@@ -538,9 +538,9 @@ Every fix below takes the same shape, so the shape is stated once:
 - Imports are function-local, because `api/permissions.py` imports `shims` and
   `drive/utils` builds a query-builder DocType at import time.
 
-Site-free, the four http suites plus `suite.tests.test_architecture` ran 434
-tests and passed, up from 367 on `main`. On the site: `test_shims` ran 261
-(main: 194), `suite.writer.tests.test_drive_adoption` ran 23 and 72 (main: 23
+Site-free, the four http suites plus `suite.tests.test_architecture` ran 436
+tests and passed, up from 367 on `main`. On the site: `test_shims` ran 263
+(main: 194), `suite.writer.tests.test_drive_adoption` ran 23 and 73 (main: 23
 and 47), `suite.writer.api.tests.test_general` ran 7 (main: 2), and
 `suite.slides.tests.test_drive_adoption` ran 30 and 71, unchanged. Every site
 case was mutation-checked: disabling its `_unadopted_row` branch makes the case
@@ -573,8 +573,10 @@ and `test_grants`. They are unverified here.
     never authorized for it. The answer is the legacy column dict this name
     already returns, not a `Document`, because §11.7 changed that shape once
     and one name may not carry two contracts. A directory upload into such a
-    parent is refused by name: creating the folders would be a second legacy
-    folder writer beside `create_folder`.
+    parent walks the `File` store: `ensure_path` is the old body and
+    `create_folder` answers a legacy parent, so every part of the path is made.
+    The gate is the old body's, on the parent the caller named, before the
+    walk.
 42. **A legacy folder's page was empty.** `create_document` writes into the
     caller's `Users/<email>` folder, and `files` read nodes only.
     `_merged_folder_page` answers a folder that still holds an Active `File`
@@ -757,9 +759,9 @@ and `test_grants`. They are unverified here.
   everything, because no `Drive Node` exists yet. Cleanup owns the crossover.
 
 - **`get_thumbnail` answers nothing for a node-less row.** The residual audit
-  classified it out of scope. The URL is only built for Image, Video and PDF,
-  and a 404 degrades to the same broken `<img>` a missing thumbnail already
-  gives.
+  classified it out of scope. The URL is only built for Image, Video and PDF
+  (`drive/utils/files.js:300-307`), and `GridItem.vue:5-24` shows the file-type
+  icon until the thumbnail loads, so a refusal leaves the icon in place.
 
 - **`get_entity_type` answers nothing for a node-less row.** Out of scope for
   the same audit. Only the `/drive/g/:id` guard reads it, and
