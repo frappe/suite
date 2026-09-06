@@ -190,6 +190,13 @@ frontend ticket has to touch these by hand:
 `upload_file`, and is loaded into Desk by `app_include_js`
 (`suite/hooks.py:31`).
 
+**Four dead search constants.** `api/files.py:537-563` still declares
+`SEARCH_PAGE_LENGTH`, `SEARCH_SCAN_WINDOW`, `MAX_SEARCH_SCAN_WINDOWS`, and
+`SEARCH_QUERY`. Nothing reads any of them: the shim walks
+`nodes.views("search", ...)` and holds its own `SEARCH_PAGE_LENGTH`. Module 3
+of the site gate found them by patching them and watching nothing change. They
+are not a defect, so ticket 23 left them; Cleanup deletes them with the module.
+
 **Hardening.** `/api/suite/drive/` is in `ALLOWED_WILDCARD_PATHS` as of this
 ticket. Cleanup removes `/api/method/suite.drive.api.` from the same list.
 `DENIED_WILDCARD_PATHS = ["/api/"]` is declared and nothing in suite or frappe
@@ -387,6 +394,25 @@ the same class, swept for after defect 31 named it.
     surface are cleaned by `routes.py:112` and predate ticket 23; they are named
     under carried risks, not changed here.
 
+Third module of the serialized gate,
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_files`,
+on `forge/drive-23-site-gate-api-files`. It ran 49 tests and reported 6
+failures and 21 errors. Twenty-six of the twenty-seven were test defects: the
+fixtures built `File` rows for names that read `Drive Node`, `TestDriveSearch`
+patched targets that no longer run, and one case asserted a mint that §11.7
+retired. Rewriting the fixtures onto nodes then reached production for the
+first time and found defect 35.
+
+35. **A folder's child count was never counted.** `nodes.readable_child_counts`
+    asked `frappe.get_all` for `count(name) as total`, and `frappe.db.query`
+    refuses a function spelled as a string in `fields`:
+    `SQL functions are not allowed as strings in SELECT`. The ticket 23 review
+    added the function and no run on a site had reached it. Every legacy list
+    row carries `children_count`, and so does the `list-add` row an upload
+    publishes, so `upload_file` raised on every call and no legacy listing
+    could be built. The count is a `frappe.db.sql` `GROUP BY` now, the way the
+    readable-child query below it in the same function is already written.
+
 ## Carried risks the review did not fix
 
 - **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
@@ -434,6 +460,46 @@ the same class, swept for after defect 31 named it.
 - **A new share sends no email.** `Drive Permission.after_insert` enqueued
   `notify_share`, which sent one. `_core.access` writes a `Drive Notification`
   row and stops.
+
+- **A site-wide share drops the sharer below MANAGE.** §5.1 resolves own
+  principals nearest-first, and `$GENERAL` is an own principal. The owner of a
+  Personal root holds MANAGE from the root anchor, which is the shallowest row
+  in the chain, so a `$GENERAL` READ row written on one file is nearer and
+  decides. The owner falls to READ on their own file, and the next
+  `update_access` refuses with 403: publishing it, changing it, and unsharing
+  it all need MANAGE. Only an admin can undo it. `$PUBLIC` does not do this,
+  because pass 2 never lowers anyone. The old body had no such rule:
+  `get_user_access_for_user` answered an owner full access before it read a
+  row. The dialog sends `$GENERAL` for "Everyone at site", so this is one
+  click. §5.1 is the engine's rule and the shim does not get to hold a second
+  one, so ticket 23 pins the new answer in a test and records it here.
+  Found by module 3 of the site gate.
+
+- **`upload_file` needs `storage_v2` in `site_config`.** `_core.upload` opens a
+  blob session, and `frappe.storage.upload.create_blob_upload` refuses with
+  `File Storage v2 is not enabled for this site` when the flag is absent. The
+  old body wrote a temp file and needed no flag. This is a §14 deployment
+  prerequisite rather than a ticket 23 defect, but it is new for a legacy
+  caller: a site that upgrades without the flag loses uploads on the legacy
+  name as well as the new route.
+
+- **A file's `file_type` comes from storage now, not from the bytes.** The old
+  `upload_file` sniffed the staged file with
+  `mimemapper.get_mime_type(path, native_first=False)` and typed it from that.
+  `_core.upload.finish_upload` takes `blob.mime_type`, so an extension the site
+  cannot name reads back as `application/octet-stream`, which the legacy mime
+  table calls `Application`. The old answer for the same upload was the sniffed
+  type. `file_type` drives icons and the legacy `file_kinds` filter, so a
+  client sees a different bucket for the same bytes. The mime decision belongs
+  to §14, not to the shim.
+
+- **Retiring `get_new_title` breaks a directory upload that collides.**
+  `FileUploader.vue:48-64` calls it to rename the top folder of a dropped
+  directory when a sibling already holds the name, and a retired name answers
+  410, so the SPA throws `Request failed with status 410`. No capability is
+  lost server-side: `shims._ensure_path` reuses an existing folder by name, and
+  `upload_file` still applies §8.6's dedupe rule to files. The retirement is
+  §11.7's own decision; the frontend ticket owns the call site.
 
 - **Two permission stores coexist until Build.** `generate_upward_path` and
   `user_has_permission` read `Drive Permission`; the forwarders write
