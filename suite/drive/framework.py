@@ -15,15 +15,33 @@ so a wrong signature fails silently: a `doc_query_conditions` that lost
 
 import frappe
 from frappe import _
+from frappe.core.doctype.permission_type.permission_type import get_doctype_ptype_map
 from frappe.utils import now
 
 from suite.drive._core import content
 from suite.drive._core.access import check
-from suite.drive._core.errors import DriveConflict, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals, parse_link_header
 from suite.drive._core.roles import DEFAULT_PTYPE_ROLE, EDIT, PTYPE_ROLE, READ
 
 ACCESS_NODE_FIELDS = ("name", "kind", "root", "path", "state")
+
+# §1: `Drive Grant` is the only permission table, "source of truth and read
+# path". The framework disagrees twice, and both times outside the four hooks
+# below, so neither can be answered by returning False:
+#
+#   row   `perm = false_if_not_shared()` when the hook denied
+#         (`frappe/permissions.py:214-216`), so one `DocShare` row re-grants
+#         read, write, share, submit, email, and print.
+#   list  `where_condition |= table.name.isin(shared_docs)`
+#         (`frappe/database/query.py:1739-1742`). With no role read the
+#         predicate is not even built and the share alone answers (`:1712-1719`).
+#
+# So a doctype Drive governs carries no share at all. `refuse_governed_share`
+# stops one being written, `validate_content_registry` refuses to activate a
+# type that still has rows, and the two read guards refuse outright rather
+# than answer False and let the framework widen it.
+SHARE_RIGHTS = ("read", "write", "share", "submit", "email", "print")
 
 # A grant on `g` decides a node when it sits on the node itself, on its root,
 # or on an ancestor named in its materialized path. `LOCATE` gives the
@@ -86,8 +104,37 @@ def validate_content_registry() -> None:
     links the contract needs are known to exist. An invalid declaration stops
     the migration rather than reaching a request, because every document
     workflow reads the same registry.
+
+    A type that still carries `DocShare` rows is refused here too. The read
+    guards below already fail closed on one, but they fail closed for the
+    person reading, so the migration that would leave them behind is the
+    right place to stop.
     """
     content.validate_registry()
+    for doctype in content.governed_doctypes():
+        if frappe.db.exists("DocShare", {"share_doctype": doctype}):
+            raise DriveConflict(
+                _("Drive cannot govern {0} while it still has shares. Rewrite them as grants first.").format(
+                    doctype
+                )
+            )
+
+
+def refuse_governed_share(doc, method=None) -> None:
+    """Refuse a `DocShare` on a doctype Drive governs (§10.2, §10.3).
+
+    Wired on `DocShare.validate`, which `frappe.share.add` and
+    `share.set_permission` both reach through `doc.save()`
+    (`frappe/share.py:79`, `:142`) even though they save with
+    `ignore_permissions`. Deleting a row runs `on_trash` instead, so a legacy
+    share can still be cleaned up. A no-op while no content type is
+    registered.
+    """
+    if not content.governs(doc.share_doctype):
+        return
+    raise DriveForbidden(
+        _("Drive decides who reads {0}. Share it in Drive instead.").format(doc.share_doctype)
+    )
 
 
 def doc_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
@@ -99,7 +146,10 @@ def doc_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     so it is an error.
     """
     spec = content.spec_for(doc.doctype)
-    return _node_allows(_document_node_of(doc, spec), _role_for_ptype(ptype), user)
+    if _node_allows(_document_node_of(doc, spec), _role_for_ptype(ptype), user):
+        return True
+    _refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
+    return False
 
 
 def doc_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
@@ -111,6 +161,7 @@ def doc_query_conditions(user: str | None = None, doctype: str | None = None) ->
     if not doctype:
         return ""
     spec = content.spec_for(doctype)
+    _refuse_shared_list(doctype, user)
     return _list_predicate(f"`tab{doctype}`.`{spec.node_field}`", user)
 
 
@@ -127,7 +178,10 @@ def satellite_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     if not node:
         raise DriveConflict(_("A Drive content document requires its node"))
     role = READ if ptype in (None, "read", "select") else EDIT
-    return _node_allows(node, role, user)
+    if _node_allows(node, role, user):
+        return True
+    _refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
+    return False
 
 
 def satellite_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
@@ -135,6 +189,7 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
     if not doctype:
         return ""
     spec, satellite = content.satellite_for(doctype)
+    _refuse_shared_list(doctype, user)
     predicate = _list_predicate("`drive_content_owner`.`" + spec.node_field + "`", user)
     if predicate in ("", "1=0"):
         return predicate
@@ -150,6 +205,65 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
         f"SELECT `drive_content_owner`.`name` FROM `tab{spec.doctype}` `drive_content_owner` "
         f"WHERE {predicate})"
     )
+
+
+def _refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | None) -> None:
+    """Refuse outright when a `DocShare` would grant the row Drive refused.
+
+    Called only after Drive said no, so the reader pays for it only on a
+    denial. `frappe.share.get_shared` is asked exactly as
+    `false_if_not_shared` asks it (`frappe/permissions.py:194-204`), so what
+    this finds is what the framework would have granted, `everyone` rows
+    included. Answering False here would hand that answer straight back.
+    """
+    from frappe.share import get_shared
+
+    right = _shared_right(doctype, ptype)
+    if right is None or not docname:
+        return
+    if not get_shared(doctype, user, rights=[right], filters=[["share_name", "=", str(docname)]], limit=1):
+        return
+    raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
+
+
+def _refuse_shared_list(doctype: str, user: str | None) -> None:
+    """Refuse a list the framework would widen with `DocShare` rows.
+
+    `get_permission_conditions` ORs the shared names around whatever this
+    module returns (`frappe/database/query.py:1739-1742`), and drops the
+    predicate altogether when the doctype carries no role read (`:1712-1719`).
+    Neither can be answered from inside the hook, so a governed doctype that
+    still has one readable share refuses the whole list instead of returning a
+    predicate the engine will widen. `refuse_governed_share` and
+    `validate_content_registry` are what keep this unreachable.
+
+    An admin is skipped. The predicate disappears for them, so the engine adds
+    no condition and has nothing to OR a share around; refusing would only
+    lock out the person who has to remove the row.
+    """
+    from frappe.share import get_shared
+
+    if is_drive_admin(user or frappe.session.user):
+        return
+    if get_shared(doctype, user, limit=1):
+        raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
+
+
+def _shared_right(doctype: str, ptype: str | None) -> str | None:
+    """Return the `DocShare` column the framework reads for one ptype.
+
+    Mirrors `false_if_not_shared` (`frappe/permissions.py:185-192`): `email`
+    and `print` are answered by a `read` share, a custom `Permission Type`
+    names its own column, and any other ptype cannot be shared. `select` is
+    not shareable either; the framework retries it as `read`
+    (`frappe/permissions.py:218-229`) and the guard answers on that pass.
+    """
+    ptype = ptype or "read"
+    if ptype in ("email", "print"):
+        return "read"
+    if ptype in SHARE_RIGHTS:
+        return ptype
+    return ptype if ptype in get_doctype_ptype_map().get(doctype, []) else None
 
 
 def _request_credentials():

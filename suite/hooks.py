@@ -232,6 +232,15 @@ override_whitelisted_methods = {
 # Document Events (deep-merged; per-doctype/per-event handler lists combined)
 # ============================================================================
 doc_events = {
+    # drive — Drive Grant is the only permission table for a registered
+    # content doctype and its satellites, but a DocShare row grants around
+    # both permission hooks (frappe/permissions.py:214-216 and
+    # frappe/database/query.py:1739-1742). A governed doctype therefore
+    # carries no share at all. Deleting a row is left alone, so a legacy share
+    # can still be cleaned up. A no-op while `drive_content_types` is empty.
+    "DocShare": {
+        "validate": ["suite.drive.framework.refuse_governed_share"],
+    },
     "File": {
         "on_update": "suite.meet.recording.ingest.delete_recording_metadata_for_removed_artifact",
     },
