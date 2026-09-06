@@ -190,7 +190,14 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 
 def _retire(name: str, replacement: str):
-    """Refuse a retired name, and say what took its place."""
+    """Refuse a retired name, and say what took its place.
+
+    A route placeholder is spelled `:id`, not `<id>`. `msgprint` cleans the
+    message before a client reads it, and strips tags again when the caller is
+    a terminal; both delete everything between angle brackets, so
+    `nodes/<id>/content` arrives as `nodes//content` and names no route the
+    reader can call.
+    """
     frappe.throw(
         _("{0} is no longer supported. {1}").format(name, replacement),
         DriveRetired,
@@ -851,7 +858,7 @@ def create_auth_token(entity_name: str | None = None) -> None:
     """
     _retire(
         "suite.drive.api.files.create_auth_token",
-        _("Drive signs a download URL at GET /api/suite/drive/nodes/<id>/content."),
+        _("Drive signs a download URL at GET /api/suite/drive/nodes/:id/content."),
     )
 
 
@@ -1104,7 +1111,7 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
     if token:
         _retire(
             "the suite.drive.api.files.get_file_content download token",
-            _("Drive signs a download URL at GET /api/suite/drive/nodes/<id>/content."),
+            _("Drive signs a download URL at GET /api/suite/drive/nodes/:id/content."),
         )
     principals = _principals()
     row = node_core.get(principals, entity_name)
@@ -1300,7 +1307,7 @@ def update_access(entity_name: str, method: str, **kwargs):
         # refused an address that is not one. A share link is §8.5's route to
         # issue, not a capability this shim hands back.
         frappe.throw(
-            _("Drive issues a share link at PUT /api/suite/drive/nodes/<id>/grants/$LINK"),
+            _("Drive issues a share link at PUT /api/suite/drive/nodes/:id/grants/$LINK"),
             frappe.ValidationError,
         )
 
