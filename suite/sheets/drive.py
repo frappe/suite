@@ -115,15 +115,48 @@ MAX_IMPORT_BYTES = 40 * 1024 * 1024
 MAX_IMPORT_CELLS = 2_000_000
 MAX_IMPORT_SHEETS = 200
 
-XLSX_MIMES = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel.sheet.macroEnabled.12",
-    "application/vnd.ms-excel",
-)
+# The xlsx package is a zip of XML, and every one of those three layers expands.
+# `MAX_IMPORT_BYTES` bounds the compressed source and nothing else, so each
+# layer states its own bound:
+#
+#   MAX_IMPORT_UNZIPPED   the sum of the members' uncompressed sizes, refused
+#                         before a single byte is inflated. A zip bomb is a
+#                         small file that claims a large one.
+#   MAX_IMPORT_SLOTS      the cells this actually materialises. A row is a
+#                         dense list, so one cell at column XFD costs 16384
+#                         slots, and `MAX_IMPORT_CELLS` counts none of them.
+#   MAX_IMPORT_MERGED     the cells every merge range covers. One
+#                         `<mergeCell ref="A1:XFD1048576"/>` is 17 billion of
+#                         them in a 4 KB file.
+MAX_IMPORT_UNZIPPED = 400 * 1024 * 1024
+MAX_IMPORT_SLOTS = 4_000_000
+MAX_IMPORT_MERGED = 500_000
+MAX_IMPORT_MERGE_RANGES = 50_000
+
+# One version envelope is one workbook plus its JSON framing, so the body cap
+# plus a margin is the whole bound. Drive wrote every blob this reads, but a
+# §14.6 migrated `Sheet Snapshot` did not go through `Sheet.validate`.
+MAX_VERSION_BYTES = MAX_SHEETS_DATA_BYTES + 1024 * 1024
 
 
 class UnreadableWorkbook(frappe.ValidationError):
     """One xlsx openpyxl refused to read."""
+
+
+def _read_bounded(stream, limit: int, what: str) -> bytes:
+    """Read one stream, refusing at `limit` rather than after it.
+
+    One byte past the bound is enough to know, so nothing larger is ever held.
+    """
+    raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        frappe.throw(
+            _("That {0} is larger than {1} MB and cannot be read").format(
+                what, limit // (1024 * 1024)
+            ),
+            frappe.ValidationError,
+        )
+    return raw
 
 
 # ── The ContentTypeSpec callbacks ────────────────────────────────────────────
@@ -165,16 +198,9 @@ def import_from_file(file_node: str, node: str) -> str:
     """
     stream, _mime = drive.read_file(file_node)
     try:
-        raw = stream.read(MAX_IMPORT_BYTES + 1)
+        raw = _read_bounded(stream, MAX_IMPORT_BYTES, _("spreadsheet"))
     finally:
         stream.close()
-    if len(raw) > MAX_IMPORT_BYTES:
-        frappe.throw(
-            _("That spreadsheet is larger than {0} MB and cannot be imported").format(
-                MAX_IMPORT_BYTES // (1024 * 1024)
-            ),
-            frappe.ValidationError,
-        )
     workbook = _workbook_from_xlsx(raw)
     return _insert_sheet(node, workbook, op_type="import", summary="Imported from a spreadsheet file")
 
@@ -207,7 +233,7 @@ def restore_version(docname: str, stream) -> None:
     The restore is one op of its own, at a fresh seq, so the timeline records it
     and `head_seq` never regresses.
     """
-    payload = _version_payload(stream.read())
+    payload = _version_payload(_read_bounded(stream, MAX_VERSION_BYTES, _("sheet version")))
     if not frappe.db.exists(DOCTYPE, docname):
         frappe.throw(_("That sheet was not found"), frappe.DoesNotExistError)
     restored_seq = _append_op(docname, "restore", f"Restored from seq {payload['head_seq']}")
@@ -396,11 +422,16 @@ def _workbook_strings(stored: str | None):
     """
     if not stored:
         return
+    plain = stored
     try:
         plain = decode_sheets_data(stored)
         parsed = json.loads(plain)
     except Exception:
-        yield from MEDIA_ID.findall(stored)
+        # `plain` is the decoded workbook whenever the envelope opened, and the
+        # stored text only when it did not. Scanning the base64 envelope instead
+        # would report nothing but base64, which is the under-reporting §10.6
+        # trashes live media for.
+        yield from MEDIA_ID.findall(plain)
         return
     stack = [parsed]
     while stack:
@@ -417,6 +448,50 @@ def _workbook_strings(stored: str | None):
 # ── xlsx import ──────────────────────────────────────────────────────────────
 
 
+def _validate_package(raw: bytes) -> None:
+    """Refuse an xlsx package before anything inflates it.
+
+    Two things `MAX_IMPORT_BYTES` cannot see, because it measures the file on
+    the wire:
+
+    Zip expansion. The members' declared uncompressed sizes are read from the
+    central directory, which costs nothing, and a package that claims more than
+    `MAX_IMPORT_UNZIPPED` is refused without inflating a byte.
+
+    Entity expansion. `xml.etree.ElementTree` expands internal entities, so a
+    worksheet part carrying a nested `<!ENTITY>` chain is a billion-laughs bomb
+    against both openpyxl's parser and `_merge_ranges`. A spreadsheet has no
+    document type declaration, so the presence of one is the refusal.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as package:
+            declared = sum(max(0, item.file_size) for item in package.infolist())
+            if declared > MAX_IMPORT_UNZIPPED:
+                frappe.throw(
+                    _("That spreadsheet expands to more than {0} MB and cannot be imported").format(
+                        MAX_IMPORT_UNZIPPED // (1024 * 1024)
+                    ),
+                    frappe.ValidationError,
+                )
+            for item in package.infolist():
+                if not item.filename.endswith(".xml") and not item.filename.endswith(".rels"):
+                    continue
+                # The prologue is all a DTD can live in, so this reads the head
+                # of each part rather than the part.
+                with package.open(item) as handle:
+                    if b"<!DOCTYPE" in handle.read(_DTD_PROBE_BYTES):
+                        raise UnreadableWorkbook(
+                            _("That file is not a spreadsheet Sheets can read")
+                        )
+    except (zipfile.BadZipFile, KeyError, RuntimeError, EOFError) as unreadable:
+        raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read")) from unreadable
+
+
+# A document type declaration must precede the root element, so the first few
+# kilobytes of a part are the whole search space.
+_DTD_PROBE_BYTES = 8192
+
+
 def _workbook_from_xlsx(raw: bytes) -> str:
     """Parse one xlsx into the workbook JSON the client reads.
 
@@ -427,6 +502,7 @@ def _workbook_from_xlsx(raw: bytes) -> str:
     from openpyxl import load_workbook
     from openpyxl.utils.exceptions import InvalidFileException
 
+    _validate_package(raw)
     source = io.BytesIO(raw)
     try:
         book = load_workbook(source, read_only=True, data_only=False)
@@ -435,13 +511,14 @@ def _workbook_from_xlsx(raw: bytes) -> str:
 
     try:
         names = list(book.sheetnames)[:MAX_IMPORT_SHEETS]
-        merges = _merge_ranges(raw, names)
+        merges = _merge_ranges(raw, _worksheet_parts(book, names))
         packed: dict[str, dict] = {}
         formats: dict[str, dict] = {}
         merged: dict[str, dict] = {}
         seen = 0
+        slots = 0
         for name in names:
-            rows, cell_formats, seen = _read_worksheet(book[name], seen)
+            rows, cell_formats, seen, slots = _read_worksheet(book[name], seen, slots)
             packed[name] = {"rows": rows}
             if cell_formats:
                 formats[name] = {"cells": cell_formats, "cols": {}, "rows": {}}
@@ -471,8 +548,15 @@ def _workbook_from_xlsx(raw: bytes) -> str:
     return plain
 
 
-def _read_worksheet(worksheet, seen: int) -> tuple[dict, dict, int]:
-    """Pack one worksheet into row arrays plus its per-cell number formats."""
+def _read_worksheet(worksheet, seen: int, slots: int) -> tuple[dict, dict, int, int]:
+    """Pack one worksheet into row arrays plus its per-cell number formats.
+
+    `seen` counts cells that carry a value; `slots` counts what the packing
+    actually allocates. They are not the same number, and only the second one
+    bounds memory: a row is stored as a dense list, so a single cell at column
+    XFD costs 16384 slots. 20000 such cells is 327 million of them, which is a
+    100 KB file that exhausts a worker.
+    """
     rows: dict[str, list] = {}
     formats: dict[str, str] = {}
     for row in worksheet.iter_rows():
@@ -492,16 +576,24 @@ def _read_worksheet(worksheet, seen: int) -> tuple[dict, dict, int]:
                 continue
             row_index = int(cell.row) - 1
             column_index = int(cell.column) - 1
-            slots = rows.setdefault(str(row_index), [])
-            while len(slots) <= column_index:
-                slots.append(None)
-            slots[column_index] = value
+            packed = rows.setdefault(str(row_index), [])
+            slots += max(0, column_index + 1 - len(packed))
+            if slots > MAX_IMPORT_SLOTS:
+                frappe.throw(
+                    _("That spreadsheet is too sparse to import: it spans more than {0} cells").format(
+                        MAX_IMPORT_SLOTS
+                    ),
+                    frappe.ValidationError,
+                )
+            while len(packed) <= column_index:
+                packed.append(None)
+            packed[column_index] = value
             number_format = _number_format(getattr(cell, "number_format", None))
             if number_format:
                 formats[f"{_column_label(column_index)}{row_index + 1}"] = {
                     "numberFormat": number_format
                 }
-    return rows, formats, seen
+    return rows, formats, seen, slots
 
 
 def _cell_value(value) -> str:
@@ -597,10 +689,26 @@ def _decimal_count(code: str) -> int:
 
 
 def _merge_slice(ranges) -> dict:
-    """Build one sheet's merge slice, the shape the merge engine restores."""
+    """Build one sheet's merge slice, the shape the merge engine restores.
+
+    Every range is expanded cell by cell into `slave_map`, so the expansion is
+    what has to be bounded rather than the number of ranges. `A1:XFD1048576` is
+    one legal range covering 17 billion cells, and the file that declares it is
+    4 KB. A workbook whose merges exceed `MAX_IMPORT_MERGED` is refused whole,
+    not truncated: a half-applied merge map draws the wrong grid.
+    """
     master_map: dict[str, dict] = {}
     slave_map: dict[str, str] = {}
+    covered = 0
     for row_start, column_start, row_end, column_end in ranges:
+        covered += (row_end - row_start + 1) * (column_end - column_start + 1)
+        if covered > MAX_IMPORT_MERGED:
+            frappe.throw(
+                _("That spreadsheet merges more than {0} cells and cannot be imported").format(
+                    MAX_IMPORT_MERGED
+                ),
+                frappe.ValidationError,
+            )
         if row_start == row_end and column_start == column_end:
             continue
         master = f"{_column_label(column_start)}{row_start + 1}"
@@ -623,26 +731,44 @@ def _merge_slice(ranges) -> dict:
 _MERGE_REF = re.compile(r"^([A-Z]{1,3})([0-9]{1,7}):([A-Z]{1,3})([0-9]{1,7})$")
 
 
-def _merge_ranges(raw: bytes, names: list[str]) -> dict[str, tuple]:
+def _worksheet_parts(book, names: list[str]) -> dict[str, str]:
+    """Map each worksheet name onto the package part that holds it.
+
+    Part numbering does not track tab order. Excel leaves `sheet1.xml` where it
+    is when a tab is moved or deleted, so pairing `book.sheetnames` with the
+    parts sorted by their numeric suffix attributes a merge to the wrong
+    worksheet. The authority is `xl/workbook.xml` through
+    `xl/_rels/workbook.xml.rels`, which openpyxl has already resolved:
+    `ReadOnlyWorksheet._worksheet_path` is the part it read the sheet from
+    (openpyxl 3.1.5). A worksheet that does not expose it contributes no
+    mapping, so its merges are dropped rather than given to a neighbour.
+    """
+    parts: dict[str, str] = {}
+    for name in names:
+        path = getattr(book[name], "_worksheet_path", None)
+        if isinstance(path, str) and path:
+            parts[name] = path.lstrip("/")
+    return parts
+
+
+def _merge_ranges(raw: bytes, parts: dict[str, str]) -> dict[str, tuple]:
     """Read every worksheet's merge ranges out of the xlsx package.
 
     openpyxl's read-only worksheet carries none, and loading the workbook in
     write mode to get them would materialise the whole thing. The package stores
     them as `<mergeCell ref="A1:B2"/>` inside each worksheet part, so they are
-    read from there, in the sheet order the workbook declares.
+    read from there — from the part `_worksheet_parts` named, never from a
+    guess at the order.
     """
     from xml.etree import ElementTree
 
     found: dict[str, tuple] = {}
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as package:
-            parts = sorted(
-                item
-                for item in package.namelist()
-                if item.startswith("xl/worksheets/sheet") and item.endswith(".xml")
-            )
-            parts.sort(key=_worksheet_order)
-            for name, part in zip(names, parts, strict=False):
+            members = set(package.namelist())
+            for name, part in parts.items():
+                if part not in members:
+                    continue
                 ranges = []
                 with package.open(part) as handle:
                     for _event, element in ElementTree.iterparse(handle, ("end",)):
@@ -653,17 +779,20 @@ def _merge_ranges(raw: bytes, names: list[str]) -> dict[str, tuple]:
                         if parsed:
                             ranges.append(parsed)
                         element.clear()
+                        if len(ranges) > MAX_IMPORT_MERGE_RANGES:
+                            frappe.throw(
+                                _(
+                                    "That spreadsheet declares more than {0} merged ranges "
+                                    "and cannot be imported"
+                                ).format(MAX_IMPORT_MERGE_RANGES),
+                                frappe.ValidationError,
+                            )
                 if ranges:
                     found[name] = tuple(ranges)
     except (zipfile.BadZipFile, KeyError, ElementTree.ParseError):
         # A package this cannot walk still imports; it imports without merges.
         return {}
     return found
-
-
-def _worksheet_order(part: str) -> tuple:
-    digits = "".join(character for character in part if character.isdigit())
-    return (int(digits) if digits else 0, part)
 
 
 def _parse_merge_ref(ref: str | None) -> tuple | None:
