@@ -36,6 +36,10 @@ the server resolves each one to a deck and a node itself.
 | `name` | string | the composite deck's docname |
 | `references` | list of strings, or its JSON text | 1 to `GROUP_LIMIT` ids, no repeats |
 
+Each id is at most `REFERENCE_ID_LIMIT` characters, the width of a docname, and
+the JSON text as a whole is at most `REQUEST_TEXT_LIMIT`. Both bounds are read
+before the text is parsed.
+
 A reference id is the `Reference Presentation` row's own name, as the manifest
 gave it. It is not a deck docname and not a node id, and neither is accepted in
 its place: both fail the membership check.
@@ -71,8 +75,12 @@ whether to draw a placeholder (§6.6).
 `presentation` is the referenced deck's docname, and it crosses for an
 unreadable reference too: the client needs no permission to hold a name it
 cannot open, and the whole-deck read path already answers the same way. It is
-`""` when the reference row names no deck at all. Such a row is always
-`readable: false`, and a client must not read `""` as a docname.
+`null` when the reference row names no deck at all, in the manifest and in a
+group alike. Such a row is always `readable: false`.
+
+`slides` is the referenced deck's `Slide` child rows as frappe serializes them,
+the same shape and the same key set `get_composite_presentation` already
+answers. That includes frappe's own row metadata, `owner` among it.
 
 ## The bound, and why it is 19
 
@@ -94,6 +102,7 @@ header items, so repeating an id cannot buy a larger group.
 | more than `GROUP_LIMIT` ids supplied | `frappe.ValidationError` |
 | an id supplied twice | `frappe.ValidationError` |
 | an id that is not one of this composite's references | `frappe.ValidationError` |
+| an id longer than a docname, or `references` text over the text bound | `frappe.ValidationError` |
 | more than 20 items in `X-Drive-Links` | `frappe.ValidationError` (from Drive) |
 | `name` is not a non-empty string | `frappe.PermissionError`, one message |
 | the name is not a composite, is not in Drive, or is unreadable | `frappe.PermissionError`, one message |
@@ -101,6 +110,12 @@ header items, so repeating an id cannot buy a larger group.
 The request-shape refusals run before the composite is resolved. They describe
 the request, disclose nothing about the site, and keep a malformed call off the
 database.
+
+These are Slides methods, not Drive routes, so frappe answers a
+`frappe.ValidationError` as HTTP **417** and a `frappe.PermissionError` as
+**403**. §4.7 maps the `X-Drive-Links` limit error to 400 on a Drive route; the
+same refusal reaches a client of these two calls as 417. A client must accept
+both for that one error.
 
 `REFUSED` is the whole-deck read path's message, unchanged. Both routes are
 guest-reachable, so "no such deck", "not a composite", and "a composite you
@@ -145,6 +160,13 @@ NODE_FIELD = slides_drive.NODE_FIELD
 # 20; `test_composite_groups` pins this number to it so the two cannot drift.
 GROUP_LIMIT = 19
 
+# A reference id is a docname, so it fits frappe's `name` column, and the whole
+# request is a short JSON list of them. Both bounds are checked before the text
+# is parsed: `composite_group` is guest-reachable and reads the request before
+# it authorizes anything, so a malformed call must cost the site nothing.
+REFERENCE_ID_LIMIT = 140
+REQUEST_TEXT_LIMIT = 8192
+
 # The whole-deck read path's refusal, word for word. A guest-reachable route
 # that answered a different text for a name that is a composite would say which
 # names are composites (§5.4).
@@ -159,14 +181,15 @@ def composite_manifest(name: str) -> dict:
     this call costs nothing per reference and tells the caller nothing it could
     not learn from the whole-deck read path.
     """
-    docname, node = _authorized_composite(name)
+    docname, node, modified = _authorized_composite(name)
     rows = slides_drive.composite_reference_rows(docname)
     return {
         "presentation": docname,
         "node": node,
         # The client's cue that a held reference list has gone stale. A save
-        # that rewrites the table mints new ids, and this moves with it.
-        "modified": str(frappe.db.get_value(DOCTYPE, docname, "modified")),
+        # that rewrites the table mints new ids, and this moves with it. Read in
+        # the same row the point check needed, not in a second query.
+        "modified": str(modified),
         "group_limit": GROUP_LIMIT,
         "reference_count": len(rows),
         "references": rows,
@@ -182,7 +205,7 @@ def composite_group(name: str, references=None) -> dict:
     unreadable carries content.
     """
     requested = _requested_references(references)
-    docname, node = _authorized_composite(name)
+    docname, node, _modified = _authorized_composite(name)
     members = {row["reference"]: row for row in slides_drive.composite_reference_rows(docname)}
     _refuse_non_members(requested, members)
     return {
@@ -199,13 +222,22 @@ def _requested_references(references) -> list[str]:
     composite, so none of them can be used to ask a question about it.
     """
     if isinstance(references, str):
+        # Length first. `json.loads` answers `RecursionError` for deeply nested
+        # text, which is not a `ValueError`, so a 20 KB body of open brackets
+        # used to escape this reader as an uncaught 500 and one `Error Log` row
+        # per call, on a route that had not authorized anything yet.
+        if len(references) > REQUEST_TEXT_LIMIT:
+            _refuse_shape()
         try:
             references = json.loads(references)
-        except ValueError:
+        except (ValueError, RecursionError):
             _refuse_shape()
     if not isinstance(references, list) or not references:
         _refuse_shape()
-    if not all(isinstance(reference, str) and reference for reference in references):
+    if not all(
+        isinstance(reference, str) and reference and len(reference) <= REFERENCE_ID_LIMIT
+        for reference in references
+    ):
         _refuse_shape()
     # Counted as supplied, before the duplicates come out. §4.7 counts header
     # items the same way, so that filtering cannot buy a larger set.
@@ -229,7 +261,7 @@ def _refuse_shape() -> NoReturn:
     )
 
 
-def _authorized_composite(name: str) -> tuple[str, str]:
+def _authorized_composite(name: str) -> tuple[str, str, object]:
     """Refuse unless `name` is a linked composite this caller may read.
 
     The point check is not wrapped in an access-swallowing helper on purpose.
@@ -243,14 +275,14 @@ def _authorized_composite(name: str) -> tuple[str, str]:
     # query rather than naming a deck, on a guest-reachable route.
     if not isinstance(name, str) or not name:
         _refuse()
-    row = frappe.db.get_value(DOCTYPE, name, ["name", NODE_FIELD, "is_composite"], as_dict=True)
+    row = frappe.db.get_value(DOCTYPE, name, ["name", NODE_FIELD, "is_composite", "modified"], as_dict=True)
     if not row or not row.get("is_composite") or not row.get(NODE_FIELD):
         _refuse()
     try:
         drive.check(row[NODE_FIELD], drive.READ)
     except drive.DriveError:
         _refuse()
-    return row["name"], row[NODE_FIELD]
+    return row["name"], row[NODE_FIELD], row["modified"]
 
 
 def _refuse() -> NoReturn:
