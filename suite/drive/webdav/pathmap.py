@@ -112,8 +112,19 @@ def addressable(row: frappe._dict) -> bool:
 
 
 def visible(row: frappe._dict) -> bool:
-    """Whether a node is reachable over DAV at all (§12.2)."""
-    return row.get("kind") in VISIBLE_KINDS and not row.get("is_template") and addressable(row)
+    """Whether a node is reachable over DAV at all (§12.2).
+
+    The same test `_VISIBLE` makes in SQL, so a row filtered here and a row
+    filtered by a path lookup answer alike. Callers feed it rows that are
+    already Active, and it checks that anyway: the day one does not, a trashed
+    node must not appear in a listing.
+    """
+    return (
+        row.get("state") == "Active"
+        and row.get("kind") in VISIBLE_KINDS
+        and not row.get("is_template")
+        and addressable(row)
+    )
 
 
 def validate_dav_name(name: str, parent: frappe._dict) -> None:
