@@ -372,6 +372,17 @@ class ShimCase(UnitTestCase):
         self.addCleanup(write.stop)
         return read.start(), count.start(), write.start()
 
+    def stub_unadopted_folder(self, answer=False):
+        """Say the upload destination is a node, without a database.
+
+        `upload_file` writes to the `File` store for a parent no node holds,
+        because `writer.api.embed.add` names one. A case about the node path
+        says so here; `_legacy_upload` has cases of its own below.
+        """
+        patcher = patch.object(shims, "_unadopted_folder", return_value=answer)
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
     def stub_unadopted_access(self, answer=None):
         """Say no `File` is waiting for this id, without a database.
 
@@ -933,6 +944,91 @@ class TestPermissionForwarders(ShimCase):
         access.grants_for.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
             shims.get_shared_with_list("n1")
+
+
+class TestUnadoptedUploadTarget(ShimCase):
+    """`upload_file` writes to the store that holds the destination.
+
+    `writer.api.embed.add` uploads a picture into the document the editor has
+    open, and a document `writer.api.docs.create_document` wrote is a `File`
+    with no node. `upload_core.create_upload` reads the parent as a node, so
+    the node branch refuses every picture added to a document the product
+    itself creates.
+    """
+
+    def store(self, *, node=False, file=True):
+        db = MagicMock()
+        db.exists.side_effect = lambda doctype, name: node if doctype == "Drive Node" else file
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        return db
+
+    def test_an_id_a_node_holds_is_not_an_unadopted_folder(self):
+        db = self.store(node=True)
+        self.assertFalse(shims._unadopted_folder("f1"))
+        db.exists.assert_called_once_with("Drive Node", "f1")
+
+    def test_an_id_only_the_file_store_holds_is_an_unadopted_folder(self):
+        self.store()
+        self.assertTrue(shims._unadopted_folder("f1"))
+
+    def test_an_id_neither_store_holds_is_not_an_unadopted_folder(self):
+        """An unknown parent keeps the workflow's own refusal. The legacy
+        write must not be reached by naming something that is not there."""
+        self.store(file=False)
+        self.assertFalse(shims._unadopted_folder("f1"))
+        self.assertFalse(shims._unadopted_folder(None))
+
+    def test_a_node_less_parent_is_written_to_the_file_store(self):
+        uploads = self.stub("upload_core")
+        self.stub("node_core")
+        self.stub_unadopted_folder(True)
+        with patch.object(shims, "_legacy_upload", return_value={"name": "e1"}) as legacy:
+            answer = shims.upload_file(parent="d1", total_file_size=12, file_modified=1, embed=1)
+        self.assertEqual(answer, {"name": "e1"})
+        uploads.create_upload.assert_not_called()
+        self.assertEqual(legacy.call_args.kwargs["parent"], "d1")
+        self.assertEqual(legacy.call_args.kwargs["total_file_size"], 12)
+        self.assertEqual(legacy.call_args.kwargs["file_modified"], 1)
+        self.assertEqual(legacy.call_args.kwargs["embed"], 1)
+
+    def test_a_node_parent_is_never_written_to_the_file_store(self):
+        nodes = self.stub("node_core")
+        uploads = self.stub("upload_core")
+        nodes.stored.return_value = node_row()
+        uploads.create_upload.return_value = {"upload_id": "u1", "mode": "chunked"}
+        uploads.finish_upload.return_value = "n1"
+        upload = MagicMock()
+        upload.filename = "Report.pdf"
+        upload.mimetype = "application/pdf"
+        upload.stream.read.return_value = b"x" * 12
+        self.enterContext(
+            patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
+        )
+        self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
+        self.stub_cache()
+        self.stub_unadopted_folder()
+        with (
+            patch.object(shims, "_legacy_upload") as legacy,
+            patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]),
+            patch.object(shims.frappe, "publish_realtime"),
+        ):
+            shims.upload_file(parent="f1")
+        legacy.assert_not_called()
+
+    def test_a_directory_upload_into_a_node_less_parent_is_refused_by_name(self):
+        """A `fullpath` names folders to create, and creating one here would
+        be a second legacy folder writer beside `create_folder`, which is a
+        forwarder and refuses this parent too. Refused with words a user can
+        act on, and nothing is written on the way out."""
+        self.stub("node_core")
+        uploads = self.stub("upload_core")
+        self.stub_unadopted_folder(True)
+        with patch.object(shims, "_legacy_upload") as legacy:
+            with self.assertRaises(frappe.ValidationError) as caught:
+                shims.upload_file(parent="d1", fullpath="pictures/cat.png")
+        self.assertIn("cannot upload a folder", str(caught.exception))
+        legacy.assert_not_called()
+        uploads.create_upload.assert_not_called()
 
 
 class TestUnadoptedAccessRead(ShimCase):
@@ -1616,6 +1712,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
+        self.stub_unadopted_folder()
 
         with (
             patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]) as listed,
@@ -1654,6 +1751,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
+        self.stub_unadopted_folder()
 
         with self.assertRaises(frappe.ValidationError) as caught:
             shims.upload_file(parent="f1", total_file_size=100)
@@ -1675,6 +1773,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
+        self.stub_unadopted_folder()
         return upload
 
     def test_an_upload_that_declares_no_size_declares_the_bytes_it_was_sent(self):
