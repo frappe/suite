@@ -89,6 +89,7 @@ header items, so repeating an id cannot buy a larger group.
 | an id supplied twice | `frappe.ValidationError` |
 | an id that is not one of this composite's references | `frappe.ValidationError` |
 | more than 20 items in `X-Drive-Links` | `frappe.ValidationError` (from Drive) |
+| `name` is not a non-empty string | `frappe.PermissionError`, one message |
 | the name is not a composite, is not in Drive, or is unreadable | `frappe.PermissionError`, one message |
 
 The request-shape refusals run before the composite is resolved. They describe
@@ -229,6 +230,11 @@ def _authorized_composite(name: str) -> tuple[str, str]:
     is a bare `frappe.ValidationError` from `parse_link_header`, and §6.2 wants
     that refusal stated rather than turned into "you cannot read this".
     """
+    # A docname, never a filter. `frappe.db.get_value` reads a dict or a list in
+    # this position as filters, so a caller who sent one would be choosing the
+    # query rather than naming a deck, on a guest-reachable route.
+    if not isinstance(name, str) or not name:
+        _refuse()
     row = frappe.db.get_value(DOCTYPE, name, ["name", NODE_FIELD, "is_composite"], as_dict=True)
     if not row or not row.get("is_composite") or not row.get(NODE_FIELD):
         _refuse()
