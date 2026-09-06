@@ -11,11 +11,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from lxml import etree
 
-from suite.drive._core.access import grant
+from suite.drive._core.access import effective_role, grant
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
-from suite.drive._core.roles import NONE
+from suite.drive._core.roles import NONE, READ
 from suite.drive.webdav import propfind
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError, map_exception
+from suite.drive.webdav.pathmap import fetch
 from suite.drive.webdav.tests.utils import (
     drop_dav_root,
     drop_nodes,
@@ -178,6 +179,40 @@ class TestWebDAVPropfind(IntegrationTestCase):
             propfind_response(STRANGER, "/dav/PropDocs")
         with self.assertRaises(NotFoundError):
             propfind_response(OWNER, "/dav/PropDocs/no-such-file.bin")
+
+    def test_a_node_shared_from_another_root_is_still_unreachable(self):
+        """§12: one mount, the caller's own Personal Root. A real READ grant
+        makes the node readable everywhere else in Drive and changes nothing
+        here, because no DAV path leads to it."""
+        shared = file_node(OWNER, self.docs, "shared.txt", b"shared bytes")
+        try:
+            grant(shared.name, STRANGER, READ, node_principals(OWNER))
+            # the grant is real: the engine hands it to them
+            self.assertGreaterEqual(effective_role(fetch(shared.name), node_principals(STRANGER)), READ)
+
+            # and their mount still lists only their own root's children
+            listed = hrefs(multistatus(propfind_response(STRANGER, "/dav/")))
+            self.assertNotIn("/dav/shared.txt", listed)
+            self.assertNotIn("/dav/PropDocs/", listed)
+
+            # every spelling of it under their mount is absent, not forbidden
+            for path in ("/dav/shared.txt", "/dav/PropDocs/shared.txt", "/dav/PropDocs"):
+                with self.subTest(path=path), self.assertRaises(NotFoundError):
+                    propfind_response(STRANGER, path, depth="0")
+        finally:
+            drop_nodes([shared.name])
+
+    def test_propfind_getetag_is_byte_identical_to_the_get_etag(self):
+        """§12.4: one strong validator. A PROPFIND that advertised a different
+        one would make every conditional GET the client builds from it fail."""
+        from suite.drive.webdav import get as get_handler
+
+        parsed = multistatus(propfind_response(OWNER, "/dav/PropDocs/report.txt", "0", prop_body("getetag")))
+        listed = parsed.find(f"{dav('response')}/{dav('propstat')}/{dav('prop')}/{dav('getetag')}").text
+
+        response = get_handler.handle(make_ctx("HEAD", "/dav/PropDocs/report.txt", OWNER))
+        self.assertEqual(listed, response.headers["ETag"])
+        self.assertEqual(listed, f'"{self.report.checksum}"')
 
     def test_propname_mode(self):
         parsed = multistatus(propfind_response(OWNER, "/dav/PropDocs/report.txt", "0", PROPNAME_BODY))

@@ -201,9 +201,12 @@ class TestWebDAVPathmap(IntegrationTestCase):
 
     def test_trashed_names_are_free(self):
         gone = file_node(USER, self.docs, "gone.txt", b"bye")
-        update(node_principals(USER), gone.name, state="Trashed")
-        self.assertFalse(resolve("Docs/gone.txt").exists)
-        self.assertFalse(pathmap.visible(pathmap.fetch(gone.name)))
+        try:
+            update(node_principals(USER), gone.name, state="Trashed")
+            self.assertFalse(resolve("Docs/gone.txt").exists)
+            self.assertFalse(pathmap.visible(pathmap.fetch(gone.name)))
+        finally:
+            drop_nodes([gone.name])
 
     def test_validate_dav_name(self):
         parent = frappe._dict(name=self.docs)
