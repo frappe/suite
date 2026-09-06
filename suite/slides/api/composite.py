@@ -68,6 +68,12 @@ carries `readable: false` and no content at all: no node id, because a node id
 is the handle every Drive route takes (§5.4), and no slides. The client decides
 whether to draw a placeholder (§6.6).
 
+`presentation` is the referenced deck's docname, and it crosses for an
+unreadable reference too: the client needs no permission to hold a name it
+cannot open, and the whole-deck read path already answers the same way. It is
+`""` when the reference row names no deck at all. Such a row is always
+`readable: false`, and a client must not read `""` as a docname.
+
 ## The bound, and why it is 19
 
 `GROUP_LIMIT` is `LINK_HEADER_LIMIT - 1`. §6.6 says to count the composite's
