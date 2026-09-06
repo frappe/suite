@@ -491,8 +491,8 @@ Second pass:
 
 ### Unresolved handoffs
 
-1. **The site gate has not run.** Nothing in this ticket has touched a
-   database. Every acceptance box waits on it.
+1. **The site gate has run module 1 of 17.** See "Site gate evidence" below.
+   Modules 2 to 17 have not been run. Every acceptance box waits on them.
 2. **Build has not run.** Forwarders and Build ship in one release (plan stage
    4 precedes stage 6). Before Build there is no node for a legacy id, and a
    forwarder answers the workflow's `DriveNotFound`. That is the workflow
@@ -506,8 +506,9 @@ Second pass:
 5. **Destructive removal stays disabled.** Nothing in Cleanup's list was
    deleted. `legacy-caller-inventory.md` records what may go, and in what
    order.
-6. **`ruff` is not installed on this machine.** Formatting and lint on the
-   changed files are unverified. Neither the bench venv nor `PATH` has it.
+6. **`ruff` is not on `PATH` or in the bench venv.** It runs through
+   `uvx ruff@0.12.3`. The site gate ran both commands; see "Formatting and
+   lint" below.
 7. **The e2e suites have not run.** Twelve legacy names are called by name from
    `e2e/drive-backed-apps/`; the inventory now lists every call site. They need
    a site and browsers.
@@ -515,3 +516,106 @@ Second pass:
    `get_entity_with_permissions` set it to mimic an API v2 error body. Nothing
    in `frontend/src` reads it, and `frappe-ui` is not vendored in this
    worktree, so whether its request layer reads it could not be checked.
+
+## Site gate evidence
+
+Status: module 1 of the 17 passes. The other 16 have not been run. Work on
+`forge/drive-23-site-gate-shims`, branched from `5c902f025`.
+
+### What module 1 reported
+
+`bench --site slides.localhost run-tests --module suite.drive.http.tests.test_shims`
+ran 164 tests and failed three. All three need a terminal. The same command
+with its output piped passed 164/164.
+
+| Test | Result | Cause |
+|---|---|---|
+| `test_a_chunked_upload_that_names_no_session_is_refused` | error | A |
+| `test_a_direct_upload_target_is_refused_where_the_reason_is` | error | A |
+| `test_create_auth_token_mints_nothing` | failure | B |
+
+**Cause A: the test replaced `frappe.cache` for the whole process.**
+`frappe.cache` is one shared object (`frappe/__init__.py:217`), and `frappe._`
+reads the merged translation dict off it
+(`frappe/translate.py:177`: `frappe.cache.hget(MERGED_TRANSLATION_KEY, ...)`).
+With the object replaced by a `MagicMock`, `_()` answered a child mock, so the
+two upload refusals called `frappe.throw` with a mock for a message. `msgprint`
+runs `msg = strip_html_tags(msg)` when `sys.stdin.isatty()`
+(`frappe/utils/messages.py:79-85`), and that regex refuses a mock:
+`TypeError: expected string or bytes-like object, got 'MagicMock'`. Piped, the
+same call raised `ValidationError` carrying a mock repr, and
+`assertRaises(frappe.ValidationError)` accepted it. Not patch leakage: the
+patch was scoped correctly and the object it replaced was the wrong one.
+
+**Cause B: a retired message named a route in angle brackets.** The
+replacement was `GET /api/suite/drive/nodes/<id>/content`. `msgprint` cleans
+the message it logs with `clean_html` unconditionally (`messages.py:77`) and
+strips tags off the exception on a terminal (`:79-85`). Both delete
+`<id>`, so the assertion read
+`Drive signs a download URL at GET /api/suite/drive/nodes//content.` This one
+is not a test defect. `message_log` is serialized into `_server_messages`
+(`frappe/utils/response.py:202-205`), which is the text a legacy client
+renders, so every legacy caller was handed a route it cannot call. The same
+message is answered by the `get_file_content` download token, and the `$LINK`
+refusal in `update_access` carried
+`PUT /api/suite/drive/nodes/<id>/grants/$LINK`.
+
+### What changed
+
+- **`shims.py`.** Three messages spell a route placeholder `:id`. `_retire`'s
+  docstring says why, so it is not spelled back.
+- **`test_shims.py`.** `ShimCase.stub_cache` installs `_MemoryCache`, which
+  answers the three `get_value`/`set_value`/`delete_value` calls `upload_file`
+  makes and passes every other attribute to the real cache. Three test bodies
+  used the old patch; all three use the stub.
+- **Three cases added, 164 to 167.** The two upload refusals now assert their
+  own text, so a mock message fails them whether the run has a terminal or not.
+  `TestRefusalText` reads `frappe.local.message_log`, which is what a client
+  renders, and asserts every retired refusal reaches it as the words it was
+  raised with and that the replacement route arrives whole. A second case walks
+  `shims.py` with `ast` and asserts no string marked for translation carries an
+  HTML tag.
+
+### Gate commands and results
+
+A terminal is allocated with `script -qec ... /dev/null`, because the failures
+do not appear without one.
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.http.tests.test_shims" /dev/null
+before: Ran 164 tests in 1.020s / FAILED (failures=1, errors=2)
+after:  Ran 167 tests in 1.119s / OK
+```
+
+Piped, the same command answers `Ran 167 tests in 1.097s / OK`.
+
+Site-free, `python -m unittest suite.drive.http.tests.test_shims`:
+`Ran 167 tests in 1.031s / OK`.
+
+`bench run-tests` exits 1 on this bench even when every test passes.
+`_cleanup_after_tests` calls `enable_scheduler` after the connection is gone
+and raises `RuntimeError: object is not bound`. It is the runner's teardown,
+not a test result. Read the summary line, not the exit code.
+
+### Mutation runs
+
+Two mutations, both killed, site-free:
+
+- Spell the three placeholders `<id>` again: 6 failures.
+- Put `patch.object(frappe, "cache", MagicMock(...))` back in `stub_cache`:
+  2 failures, the two upload refusal texts.
+
+### Formatting and lint
+
+`ruff` is reachable after all, through `uvx ruff@0.12.3`. This corrects the
+review's handoff 6.
+
+- `ruff format --check` wants to reformat both files. It wants the same three
+  hunks at `5c902f025`, and none of them is a line this work touched.
+- `ruff check` reports one `B007` at `shims.py:1759`, an unused `window` loop
+  variable that predates this branch. Nothing was changed for either.
+
+### What the gate still owes
+
+Modules 2 to 17 have not been run.
