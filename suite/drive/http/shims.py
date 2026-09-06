@@ -445,6 +445,49 @@ def _readable_row(node: str):
 # --------------------------------------------------------------------------
 
 
+def _legacy_user_access(entity) -> dict | None:
+    """Answer this name off the `File` store, for an id no node holds.
+
+    The same second store `_legacy_entity_with_permissions` reads, and for the
+    same reason: §10.2 keeps a content type's legacy rows working while that
+    type is in the expand phase, and `writer.api.docs.create_document` writes
+    one on every site running this commit. `Writer Document` is not in
+    `drive_content_types`, so the row it writes carries no node, now and after
+    Build - ticket 29 owns the replacement.
+
+    Zeros for such a row are a deny this ticket may not synthesize. The old
+    body answered `get_user_access_for_user`, which hands an owner every bit
+    set, and three Writer reads are built on that answer:
+    `general.get_document_list` drops a row whose `read` is 0,
+    `general.get_versions` throws `PermissionError`, and `general.search`
+    drops the result and recounts the summary to zero. So the author of a
+    document could not list it, could not see its history, and could not find
+    it.
+
+    **The store is decided by which one holds the id, never by a refusal.**
+    §5.2 makes `DriveNotFound` the answer for a node the caller may not read,
+    so falling back on the exception would hand the legacy rules a question
+    the workflow had already refused. Answers `None` when a node holds the id,
+    or when the `File` store has no row for it either; the caller then reads
+    the node and an unknown id keeps the zeros it answers today.
+
+    A `Document` or a `_dict` is passed on rather than re-read, which is what
+    the old body did: `_visible_rows` handed it the row it had already
+    selected.
+
+    The import is function-local: `api/permissions.py` imports this module.
+    """
+    name = entity if isinstance(entity, str) else (entity or {}).get("name")
+    if not name or frappe.db.exists("Drive Node", name):
+        return None
+    if not frappe.db.exists("File", name):
+        return None
+
+    from suite.drive.api.permissions import get_user_access_for_user
+
+    return get_user_access_for_user(entity if not isinstance(entity, str) else name, frappe.session.user)
+
+
 @_legacy
 def get_user_access(entity) -> dict:
     """`get_user_access` -> the `access` expansion of `GET /nodes/<id>`.
@@ -454,9 +497,16 @@ def get_user_access(entity) -> dict:
     with no decided row, and callers merge this into list rows and test bits.
     Turning that into a 404 would break a payload that only ever asked a
     question.
+
+    A `File` no node holds is answered by the rules that wrote it. See
+    `_legacy_user_access`: the store is chosen by which one holds the id, so a
+    refusal is never turned into a second question.
     """
     node = entity if isinstance(entity, str) else (entity or {}).get("name")
     principals = _principals()
+    unadopted = _legacy_user_access(entity)
+    if unadopted is not None:
+        return unadopted
     try:
         row = node_core.stored(node) if node else None
     except DriveNotFound:
