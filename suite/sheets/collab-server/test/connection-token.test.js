@@ -4,7 +4,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { LINK_LIMIT, InvalidToken, linkHeader, parseToken } from '../connection-token.js'
+import {
+	LINK_LIMIT,
+	MAX_LINK_LENGTH,
+	MAX_SID_LENGTH,
+	InvalidToken,
+	linkHeader,
+	parseToken,
+} from '../connection-token.js'
 
 const LINK = 'abcdefghijklmnopqrstuv'
 
@@ -72,5 +79,90 @@ describe('linkHeader', () => {
 
 	it('is empty when the caller presented no link', () => {
 		assert.equal(linkHeader({ links: [] }), '')
+	})
+})
+
+// ── Adversarial: what the header must never carry ────────────────────────────
+//
+// The parsed links become one `X-Drive-Links` header value and the sid becomes
+// a `Cookie` header. Anything that can end a header line or start a second one
+// is a forged request. Anything unbounded is a header this process builds
+// before Frappe can refuse it.
+
+describe('parseToken refuses a forged header', () => {
+	// Embedded, not trailing: `trim()` already removes a trailing CR or LF, so
+	// that one is a clean credential by the time the check sees it. The forgery
+	// is a control character with a payload behind it.
+	const FORGERIES = [
+		['a CR', `${LINK}\rX-Collab-Secret: stolen`],
+		['an LF', `${LINK}\nX-Collab-Secret: stolen`],
+		['a CRLF pair', `${LINK}\r\nX-Collab-Secret: stolen`],
+		['a NUL', `${LINK}\u0000${LINK}`],
+		['a DEL', `${LINK}\u007f${LINK}`],
+		['a bare tab', `${LINK}\tX-Collab-Secret: stolen`],
+	]
+	for (const [label, bad] of FORGERIES) {
+		it(`refuses ${label} in a link credential`, () => {
+			assert.throws(
+				() => parseToken(JSON.stringify({ sid: 'SID-XYZ', links: [bad] })),
+				/control character/,
+			)
+		})
+	}
+
+	it('refuses a link credential longer than the grammar allows', () => {
+		const long = 'a'.repeat(MAX_LINK_LENGTH + 1)
+		assert.throws(
+			() => parseToken(JSON.stringify({ links: [long] })),
+			/longer than the grammar allows/,
+		)
+	})
+
+	it('accepts one exactly at the bound, so the check is not off by one', () => {
+		const edge = 'a'.repeat(MAX_LINK_LENGTH)
+		assert.deepEqual(parseToken(JSON.stringify({ links: [edge] })), { sid: '', links: [edge] })
+	})
+
+	it('refuses a session id carrying a control character', () => {
+		assert.throws(
+			() => parseToken(JSON.stringify({ sid: 'SID\r\nCookie: other', links: [] })),
+			/not a session id/,
+		)
+	})
+
+	it('refuses a session id longer than any session id', () => {
+		assert.throws(
+			() => parseToken(JSON.stringify({ sid: 'a'.repeat(MAX_SID_LENGTH + 1) })),
+			/not a session id/,
+		)
+	})
+
+	it('refuses a bare sid carrying a control character too', () => {
+		// Not `{`-prefixed, so it takes the bare-sid arm — which has to be
+		// checked the same way, because it becomes the same Cookie header.
+		assert.throws(() => parseToken('SID\r\nX-Collab-Secret: stolen'), /not a session id/)
+	})
+
+	it('still refuses a 21st credential, the limit Frappe enforces', () => {
+		const links = Array.from({ length: LINK_LIMIT + 1 }, () => LINK)
+		assert.throws(() => parseToken(JSON.stringify({ links })), /more than 20/)
+	})
+
+	it('trims a trailing CR rather than refusing it', () => {
+		// It cannot forge anything: the credential that reaches the header has
+		// already lost it. Refusing here would drop a legitimate caller over
+		// whitespace.
+		assert.deepEqual(parseToken(JSON.stringify({ links: [`${LINK}\r\n`] })), {
+			sid: '',
+			links: [LINK],
+		})
+	})
+
+	it('builds a header with nothing in it that could split a line', () => {
+		const token = JSON.stringify({
+			sid: 'SID-XYZ',
+			links: [LINK, `${LINK}.99.${'a'.repeat(64)}`],
+		})
+		assert.equal(/[\u0000-\u001f\u007f]/.test(linkHeader(parseToken(token))), false)
 	})
 })

@@ -27,6 +27,15 @@
 // drift apart without this comment being wrong.
 export const LINK_LIMIT = 20
 
+// `token "." exp "." mac` at its longest is 22 + 1 + 10 + 1 + 64 = 98 (§4.7).
+// The margin is for a grammar that grows, not for a caller that pads.
+export const MAX_LINK_LENGTH = 256
+
+// The same bound on a session id: Frappe's is a 32-character hex string.
+export const MAX_SID_LENGTH = 256
+
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
+
 export class InvalidToken extends Error {}
 
 export function parseToken(token) {
@@ -39,6 +48,9 @@ export function parseToken(token) {
 	const parsed = raw.startsWith('{') ? asJson(raw) : { sid: raw }
 
 	const sid = typeof parsed.sid === 'string' ? parsed.sid.trim() : ''
+	if (sid.length > MAX_SID_LENGTH || CONTROL_CHARS.test(sid)) {
+		throw new InvalidToken('Auth token session id is not a session id')
+	}
 	const links = asLinks(parsed.links)
 	if (!sid && links.length === 0) {
 		// Neither a session nor a link is not an anonymous caller: it is a
@@ -78,6 +90,19 @@ function asLinks(value) {
 		const trimmed = item.trim()
 		// A comma would forge a second item inside the header Frappe parses.
 		if (trimmed.includes(',')) throw new InvalidToken('A link credential cannot contain a comma')
+		// A CR or an LF would forge a second header. undici refuses one too, but
+		// it refuses by throwing on the request, which the recheck loop counts as
+		// an unreachable Frappe rather than a bad token. Refuse it here, where it
+		// is a bad token.
+		if (CONTROL_CHARS.test(trimmed)) {
+			throw new InvalidToken('A link credential cannot contain a control character')
+		}
+		// A credential is 22 base62 characters plus an optional expiry and MAC
+		// (§4.7). Nothing legitimate is near this, and 20 unbounded items is a
+		// header the process builds before anything downstream can refuse it.
+		if (trimmed.length > MAX_LINK_LENGTH) {
+			throw new InvalidToken('A link credential is longer than the grammar allows')
+		}
 		if (trimmed) links.push(trimmed)
 	}
 	return links

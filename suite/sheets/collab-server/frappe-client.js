@@ -16,8 +16,17 @@
 // We deliberately *don't* retry — the caller (Hocuspocus) treats a failed
 // auth check as a connection refusal, and a failed persist is fine to drop
 // (the next debounce window will write the latest state again).
+//
+// Every call is bounded by `REQUEST_TIMEOUT_MS`. A `fetch` that never settles
+// throws nothing, so an unbounded one would leave the five-minute recheck
+// awaiting an answer forever: no rejection to count, no timer pending, and a
+// revoked caller connected for as long as the socket lives. A wedged Frappe
+// worker or a stalled proxy is enough. A timeout is a rejection, which the
+// recheck counts and fails closed on.
 
 import { config } from './env.js'
+
+export const REQUEST_TIMEOUT_MS = 15_000
 
 async function call(method, params = {}, { headers = {} } = {}) {
 	const url = `${config.frappeBaseUrl}/api/method/${method}`
@@ -25,6 +34,7 @@ async function call(method, params = {}, { headers = {} } = {}) {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
 		body: JSON.stringify(params),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	})
 	if (!res.ok) {
 		const body = await res.text().catch(() => '')
