@@ -24,6 +24,7 @@ imports as owned debt: a test needs the grant, root, and principal workflows
 that tickets 21 and 22 will expose over HTTP.
 """
 
+import inspect
 import io
 import json
 from contextlib import contextmanager
@@ -32,6 +33,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.utils.typing_validations import transform_parameter_types
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
@@ -248,6 +250,58 @@ class TestCompositeGroupRequest(UnitTestCase):
 
     def test_the_order_the_caller_asked_for_survives_the_request_reader(self):
         self.assertEqual(api._requested_references(["c", "a", "b"]), ["c", "a", "b"])
+
+    # the signature
+
+    def test_every_whitelisted_call_here_survives_enforced_type_checking(self):
+        """`suite` enforces annotations, so a bare argument is a 417 on the site.
+
+        The rule runs on a request and in a test, and nowhere else, so a
+        signature that breaks it passes every check that does not start frappe.
+        This calls frappe's own enforcement rather than reading `__annotations__`
+        by hand, so the two cannot drift.
+        """
+        self.assertTrue(any(frappe.get_hooks("require_type_annotated_api_methods", app_name="suite")))
+        for call in (api.composite_manifest, api.composite_group):
+            with self.subTest(call=call.__name__):
+                self.assertIn(call, frappe.whitelisted)
+                transform_parameter_types(inspect.unwrap(call), (), {}, force_types=True)
+
+    def test_the_whitelisted_call_hands_the_reader_the_value_it_was_sent(self):
+        """The annotation stands between no transport and `_requested_references`.
+
+        A JSON body delivers real types and a form delivers text, so both reach
+        this argument. Every one of them has to arrive at the reader unchanged:
+        the reader owns the shape refusals, and an annotation that refused any
+        of these first would answer one mistake in two different ways.
+        """
+        seen = []
+
+        class Reached(Exception):
+            pass
+
+        def record(references):
+            seen.append(references)
+            raise Reached
+
+        supplied = [
+            ["ref0", "ref1"],
+            '["ref0"]',
+            "not a list",
+            "",
+            None,
+            5,
+            True,
+            {"references": ["ref0"]},
+            ["ref0", 7],
+            [["ref0"]],
+        ]
+        for value in supplied:
+            with self.subTest(supplied=value):
+                with patch.object(api, "_requested_references", record):
+                    with self.assertRaises(Reached):
+                        api.composite_group("deck-1", value)
+        self.assertEqual(seen, supplied)
 
     # membership
 
@@ -793,6 +847,35 @@ class TestCompositeGroups(IntegrationTestCase):
                     answers.add(str(refused.exception))
         frappe.set_user("Administrator")
         self.assertEqual(len(answers), 1)
+
+    def test_a_malformed_group_is_refused_the_same_way_whatever_its_json_type(self):
+        """One mistake, one refusal, whether a body or a form carried it.
+
+        A JSON body hands `references` over as the type it was written as, and a
+        form hands over its text, so every type below is a shape a real client
+        can send. All of them are the same mistake and all of them read the same
+        refusal, through the module's own reader.
+        """
+        reference = self._deck(title="Ref")
+        composite = self._composite([reference])
+        docname = self._docname(composite)
+
+        answers = set()
+        for supplied in (
+            "not a list",
+            "[]",
+            None,
+            5,
+            True,
+            {"references": ["ref0"]},
+            ["ref0", 7],
+            [["ref0"]],
+        ):
+            with self.subTest(supplied=supplied):
+                with self.assertRaises(frappe.ValidationError) as refused:
+                    api.composite_group(docname, supplied)
+                answers.add(str(refused.exception))
+        self.assertEqual(answers, {"A composite group is a list of reference ids"})
 
     def test_a_deck_that_is_not_a_composite_is_refused_even_to_its_owner(self):
         """The route serves composites. Nothing else reaches it, however readable."""

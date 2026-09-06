@@ -40,6 +40,17 @@ Each id is at most `REFERENCE_ID_LIMIT` characters, the width of a docname, and
 the JSON text as a whole is at most `REQUEST_TEXT_LIMIT`. Both bounds are read
 before the text is parsed.
 
+`references` is annotated `object`, and that is the contract, not a gap in it.
+`suite` sets `require_type_annotated_api_methods`, so frappe validates every
+whitelisted argument against its annotation before the body runs. A transport
+decides the type this argument arrives as: a JSON body hands over the real
+list, a form or a query string hands over its text. Any narrower annotation
+would refuse some shapes itself, in frappe's words and with frappe's status,
+so a client sending `{"references": 5}` and one sending `references=5` would
+read two different refusals for one mistake. `object` passes every value to
+`_requested_references` unchanged, which is the single reader the refusals
+below are written on.
+
 A reference id is the `Reference Presentation` row's own name, as the manifest
 gave it. It is not a deck docname and not a node id, and neither is accepted in
 its place: both fail the membership check.
@@ -197,7 +208,7 @@ def composite_manifest(name: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
-def composite_group(name: str, references=None) -> dict:
+def composite_group(name: str, references: object = None) -> dict:
     """Answer one bounded group of this composite's references.
 
     The order is the request's, the count is the request's, and every entry
