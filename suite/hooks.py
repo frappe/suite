@@ -276,10 +276,15 @@ doc_events = {
         "on_trash": "suite.drive.utils.clear_user_group_cache",
     },
     "Presentation": {
-        # Legacy title and trash mirroring onto the backing Drive `File`. A linked
-        # deck has no `File`, so `sync_content_file` returns before it reads
-        # anything (`overrides/file.py:561-563`). §10.4 deletes these two
-        # entries at activation.
+        # Legacy title and trash mirroring onto the backing Drive `File`. A deck
+        # created through Drive has no `File`, so `sync_content_file` returns at
+        # once (`overrides/file.py:561-563`). A deck Build linked still has one
+        # until §14.10 removes it at Cleanup, so there the handler runs on and
+        # renames the `File` to `doc.get_title()` (`overrides/file.py:607-613`).
+        # That is a no-op only because `title` is frozen on both sides: it is in
+        # `legacy_fields`, so `refuse_legacy_field_write` refuses every write to
+        # it and the name cannot drift. §10.4 deletes these two entries at
+        # activation.
         "on_update": ["suite.drive.overrides.file.sync_content_file"],
         "on_trash": ["suite.drive.overrides.file.sync_content_file"],
     },
