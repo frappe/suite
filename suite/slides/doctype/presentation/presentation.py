@@ -883,9 +883,16 @@ def optimize_images(name: str):
 
 @frappe.whitelist(allow_guest=True)
 def get_editor_access(presentation_id: str) -> str:
+    """Answer one deck's access level for this caller.
+
+    A linked deck answers from its node, composite or not. The composite arm
+    used to run first and answer `"view"` off the legacy `is_composite` column
+    with no check at all, on a guest route: a stranger learned that a name is a
+    composite deck Drive owns, which is what §5.4 refuses to say. A legacy row
+    keeps that arm, because Build has not linked it and ticket 23 owns the
+    legacy read path.
+    """
     is_composite = frappe.db.get_value("Presentation", presentation_id, "is_composite")
-    if is_composite:
-        return "view"
 
     if is_drive_native(presentation_id):
         # One node, one role ladder. `Drive Grant` is the only authority (§1),
@@ -896,8 +903,13 @@ def get_editor_access(presentation_id: str) -> str:
                 drive.check(node, role)
             except frappe.ValidationError:
                 continue
-            return answer
+            # A composite is a live view over other decks. Its own body is not
+            # editable however high the caller's role is, so Edit reads as view.
+            return "view" if is_composite else answer
         return "none"
+
+    if is_composite:
+        return "view"
 
     if frappe.has_permission("Presentation", "write", presentation_id):
         return "edit"

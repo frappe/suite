@@ -1275,6 +1275,58 @@ class TestSlidesInDrive(IntegrationTestCase):
         self._as(OTHER)
         self.assertEqual(api.get_editor_access(docname), "edit")
 
+    def test_a_linked_composite_answers_editor_access_from_the_node_too(self):
+        """The composite arm used to run first and answer `"view"` off the
+        legacy `is_composite` column with no check, on a guest route. A stranger
+        learned that a name is a composite deck Drive owns (§5.4), and the
+        answer came from a column rather than from `Drive Grant` (§1)."""
+        composite = self._composite([self._deck(title="Inner access")], title="Composite ladder")
+        docname = self._docname(composite)
+        frappe.db.commit()
+
+        self._as(OTHER)
+        self.assertEqual(api.get_editor_access(docname), "none", "a stranger is told nothing")
+        frappe.set_user("Administrator")
+
+        grant(composite, OTHER, drive.READ, self.admin)
+        self._as(OTHER)
+        self.assertEqual(api.get_editor_access(docname), "view")
+        frappe.set_user("Administrator")
+
+        # A composite is a live view over other decks: Edit still reads as view.
+        grant(composite, OTHER, drive.MANAGE, self.admin)
+        self._as(OTHER)
+        self.assertEqual(api.get_editor_access(docname), "view", "its own body is not editable")
+
+    def test_a_guest_learns_nothing_from_editor_access_about_a_linked_deck(self):
+        """A Guest holds no grant, so every linked name answers the same way,
+        composite or not. Any other answer is the oracle the composite read
+        route was fixed to close."""
+        composite = self._composite([self._deck(title="Inner guest")], title="Guest composite")
+        plain = self._deck(title="Guest plain")
+        frappe.db.commit()
+
+        self._as("Guest")
+        answers = {
+            api.get_editor_access(self._docname(composite)),
+            api.get_editor_access(self._docname(plain)),
+        }
+        frappe.set_user("Administrator")
+        self.assertEqual(answers, {"none"})
+
+    def test_a_legacy_composite_still_answers_view_without_a_grant(self):
+        """The legacy arm is untouched: Build has not linked the row and ticket
+        23 owns the legacy read path."""
+        legacy = make_presentation("Legacy composite access")
+        self.addCleanup(
+            frappe.delete_doc, DOCTYPE, legacy.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.set_value(DOCTYPE, legacy.name, "is_composite", 1, update_modified=False)
+        frappe.db.commit()
+
+        self._as(OTHER)
+        self.assertEqual(api.get_editor_access(legacy.name), "view")
+
     def test_a_trashed_deck_stays_readable_and_leaves_the_list(self):
         node = self._deck(title="Binned")
         docname = self._docname(node)
