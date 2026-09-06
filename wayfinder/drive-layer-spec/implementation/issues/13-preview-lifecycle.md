@@ -4,11 +4,10 @@
 
 **Blocked by:** [10 — Upload and replace files under Drive authority and quota](10-upload-and-quota.md)
 
-**Status:** in-progress — one render branch unproved
+**Status:** done
 
-Six of the seven acceptance criteria are implemented and covered by named
-tests. The first stays unchecked: the video and PDF render branches have no
-test. See [Open gap](#open-gap).
+All seven acceptance criteria are implemented and covered by named tests that
+passed on the authorized test site.
 
 **Owner:** Suite Drive previews
 
@@ -19,7 +18,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Generate a 512-pixel longest-side WebP for supported file MIME types, using existing render dependencies.
+- [x] Generate a 512-pixel longest-side WebP for supported file MIME types, using existing render dependencies.
 - [x] Reuse by immutable source_blob before rendering. Unsupported MIME types create no preview.
 - [x] Accept document preview pushes under EDIT without touching content time or writing activity.
 - [x] Invalidate on replace, retain on trash, copy references on copy, and remove on purge.
@@ -37,9 +36,11 @@ Implemented 2026-09-06 on this branch. Suite revisions:
 `823076476f6048c6697e3e3e4788857c710ef112` (the lifecycle),
 `eb7a38fde764fa54fa5e16b083a2c3146cbe0a86` (version restore invalidates the
 preview), and `502e51f821e2c1e884751b77bbfa455fd43ce44e` (every enqueue goes
-through the previews module). Reconciled at HEAD
-`0ac59e257f7046a9f7e35e0f971eaf409f4ec99b`. No later commit changes
-`_core/previews.py` or `tests/test_previews.py`.
+through the previews module). Test revision
+`ef146bd6b380002aee0414826066a53ce079392c` adds the video and PDF render
+tests and changes no production file. Reconciled at HEAD
+`bff1dde0631aced3b47396e2bde2b8386d37ede0`. No later commit changes
+`_core/previews.py`.
 
 Changed behavior:
 
@@ -87,19 +88,21 @@ Changed behavior:
 Run on the authorized bench site against this branch. All four modules passed:
 
 ```text
-bench --site slides.localhost run-tests --module suite.drive.tests.test_previews   # 21/21
+bench --site slides.localhost run-tests --module suite.drive.tests.test_previews   # 27/27
 bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes      # 36/36
 bench --site slides.localhost run-tests --module suite.drive.tests.test_versions   # 17/17
 bench --site slides.localhost run-tests --module suite.drive.tests.test_upload     # 34/34
 ```
 
-`test_previews` is 8 unit tests in `TestPreviewContract` plus 13 integration
-tests in `TestPreviews`. The other three are regression runs, because replace,
-copy, purge, and version restore now call the previews module.
+`test_previews` is 14 unit tests in `TestPreviewContract` plus 13 integration
+tests in `TestPreviews`, run at this HEAD. The other three are regression runs,
+because replace, copy, purge, and version restore now call the previews module.
+They ran before the test-only revision `ef146bd6b`, which changes no file they
+cover.
 
 | Criterion | Tests |
 |---|---|
-| 512-pixel WebP | `test_render_makes_a_free_512_longest_side_webp` (image only), `test_renderable_mimes_are_an_explicit_sweep_safe_set` |
+| 512-pixel WebP | Pillow branch: `test_render_makes_a_free_512_longest_side_webp`. PyAV branch: `test_video_renders_the_middle_frame_as_a_512_webp`, `test_a_video_without_a_duration_renders_its_first_frame`, `test_render_stores_a_private_512_webp_for_a_video_head`. pymupdf branch: `test_pdf_renders_page_one_at_the_512_longest_side_zoom`, `test_a_portrait_pdf_takes_its_zoom_from_the_taller_side`, `test_render_stores_a_private_512_webp_for_a_pdf_head`. MIME gate: `test_renderable_mimes_are_an_explicit_sweep_safe_set` |
 | Source reuse, unsupported MIME | `test_duplicate_source_reuses_the_preview_blob_without_rendering`, `test_unsupported_mime_writes_no_preview`, `test_a_lost_reuse_blob_renders_again_but_a_moved_head_does_not` |
 | Push under EDIT | `test_push_needs_edit_and_does_not_touch_content_time_or_activity`, `test_a_root_refuses_a_pushed_preview` |
 | Lifecycle transitions | `test_trash_retains_copy_shares_and_purge_removes_preview_reference`, `test_replacement_invalidates_and_a_stale_publish_cannot_restore_the_old_preview`, `test_version_restore_invalidates_the_preview_and_queues_one_render`, `test_version_restore_onto_the_same_blob_keeps_the_preview`, `test_version_restore_invalidates_only_when_the_head_blob_moves`, `test_file_creation_requests_render_after_its_writes` |
@@ -110,17 +113,18 @@ copy, purge, and version restore now call the previews module.
 `test_schema_is_one_row_per_node_and_both_blobs_are_gc_references` and
 `test_both_preview_blob_columns_are_gc_references` cover the §3.5 schema.
 
-### Open gap
+### Render branch coverage
 
-The first criterion stays unchecked. `_render_webp` branches three ways on
-MIME: Pillow for images, PyAV for video, pymupdf for PDF. Only the Pillow
-branch is rendered by a test. `video/mp4` and `application/pdf` appear in
-`test_renderable_mimes_are_an_explicit_sweep_safe_set` as set membership, which
-proves the sweep and the gate accept them, not that either produces a
-512-pixel WebP. Closing this needs a fixture video and a fixture PDF through
-`render`.
+`_render_webp` branches three ways on MIME: Pillow for images, PyAV for video,
+pymupdf for PDF. All three now have tests. PyAV and pymupdf are optional native
+packages, so the six tests in `ef146bd6b` fake the two `import` statements and
+keep the rest real: the MIME dispatch, the mid-duration seek, the PDF zoom
+maths, the PIL encode, and the private `.webp` blob that `render` stores. Each
+one fails under a mutation of its branch.
 
-Smaller untested paths, recorded but not blocking a criterion:
+### Remaining untested paths
+
+None blocks a criterion:
 
 - Sweep pagination. No test asserts the cursor advance, the wrapped flag, or
   the 500-row batch.
