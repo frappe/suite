@@ -110,9 +110,13 @@ class TestWebDAVSettings(IntegrationTestCase):
             doc.save()
 
     def test_allowed_methods_runtime_gate(self):
-        from suite.drive.webdav import ALLOWED_METHODS
+        """The stored list still means what it always did. What changed is the
+        ceiling: ticket 24 relinks the read verbs only, so `RELINKED_METHODS` is
+        the widest set the runtime will hand out, whatever the admin asks for."""
+        from suite.drive.webdav import ALLOWED_METHODS, RELINKED_METHODS
 
-        self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
+        self.assertEqual(allowed_webdav_methods(), RELINKED_METHODS)
+        self.assertEqual(RELINKED_METHODS, ("OPTIONS", "GET", "HEAD", "PROPFIND"))
 
         frappe.db.set_single_value(
             "Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, GET, HEAD, PROPFIND"
@@ -125,10 +129,17 @@ class TestWebDAVSettings(IntegrationTestCase):
             self.assertEqual(dav_compliance(methods), "1, 3")
             self.assertEqual(dav_compliance(ALLOWED_METHODS), "1, 2, 3")
 
+            # an admin list narrows the relinked set; it never widens it
+            frappe.db.set_single_value(
+                "Drive Disk Settings", "webdav_allowed_methods", "PUT, LOCK, UNLOCK, PROPFIND"
+            )
+            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            self.assertEqual(allowed_webdav_methods(), ("OPTIONS", "PROPFIND"))
+
             # unvalidated garbage in the DB must not take every request down
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "BREW")
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-            self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
+            self.assertEqual(allowed_webdav_methods(), RELINKED_METHODS)
         finally:
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "")
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")

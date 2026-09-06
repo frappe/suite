@@ -1,8 +1,28 @@
+"""GET/HEAD from `Drive Node`, and the PUT suites parked for ticket 25.
+
+GET authorizes the node with one point check and then hands the bytes to the
+framework's stream-read (§12.3, §13.5). Range, `If-None-Match`, 304, and 416
+all belong to that path, against the same strong ETag PROPFIND publishes.
+
+The PUT classes below are unchanged and skipped. PUT is not relinked by ticket
+24: `suite/drive/webdav/put.py` still writes legacy `File` rows, and the path
+the handler would now be handed names a `Drive Node`, so the verb is refused by
+`RELINKED_METHODS` before it can run. Re-running them is ticket 25's job, not a
+matter of deleting the decorator.
+"""
+
+import io
+import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.drive._core.access import grant
+from suite.drive._core.errors import DriveNotFound
+from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM
+from suite.drive._core.roles import NONE
 from suite.drive.utils import create_drive_file, get_user_folder
 from suite.drive.utils.files import FileManager, get_s3_url, storage_key
 from suite.drive.webdav import get as get_module
@@ -10,15 +30,36 @@ from suite.drive.webdav.errors import NotFoundError
 from suite.drive.webdav.properties import compute_etag
 from suite.drive.webdav.tests.utils import (
     dispatch,
+    drop_dav_root,
+    drop_nodes,
+    enable_user_webdav,
     ensure_user_with_password,
+    file_node,
+    folder_node,
     make_ctx,
-    write_file_fixture,
+    node_principals,
+    personal_dav_root,
+    raw_child_node,
+    raw_document_node,
+)
+from suite.drive.webdav.tests.utils import (
+    legacy_file_fixture as write_file_fixture,
 )
 from suite.tests.utils import ensure_user
 
 OWNER = "webdav-content-owner@example.com"
 STRANGER = "webdav-content-stranger@example.com"
 PASSWORD = "webdav-content-pw"
+
+PARKED_FOR_25 = (
+    "PUT is not relinked by ticket 24. `suite/drive/webdav/put.py` still writes "
+    "legacy `File` rows while the resolved path names a `Drive Node`, so the verb "
+    "is absent from `RELINKED_METHODS` and `dispatch._HANDLERS` and answers 405. "
+    "Un-skip in ticket 25, once PUT spools into `frappe.storage.blob.put_blob` and "
+    "goes through `_core.nodes.create_file` / `update`, and after these cases are "
+    "rewritten onto node fixtures: the disk and S3 staging, the generation keys, "
+    "the compensation, and the drift repair they exercise are deleted with §12.3."
+)
 
 
 def pending_putparts(name: str) -> list:
@@ -35,22 +76,56 @@ PIXEL_PNG = bytes.fromhex(
 )
 
 
+class _RemoteDriver:
+    """A driver with no `get_path`, so `stream_blob` takes its non-local path.
+
+    The bench's own driver is local, and §13.5's ranged read for a remote one is
+    a different branch: `send_file` never runs, and the 206/416 are built from
+    `read_range` instead. Without this the S3 shape of the byte path would only
+    ever be exercised in production.
+    """
+
+    name = "remote"
+
+    def __init__(self, payload: bytes):
+        self.payload = payload
+        self.ranges: list[tuple[int, int]] = []
+
+    def download_url(self, key, filename, ttl, is_private=False):
+        return None  # no native redirect unless the site opts in
+
+    def read(self, key, is_private=False):
+        return io.BytesIO(self.payload)
+
+    def read_range(self, key, start, end, is_private=False):
+        self.ranges.append((start, end))
+        return io.BytesIO(self.payload[start : end + 1])
+
+
 class TestWebDAVContent(IntegrationTestCase):
+    """GET/HEAD against the caller's own Personal Root."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         ensure_user_with_password(OWNER, PASSWORD)
-        ensure_user(STRANGER)
-        with cls.set_user(OWNER):
-            cls.home = get_user_folder(OWNER).name
-            manager = FileManager()
-            # committed fixtures survive across runs, so names must be unique
-            cls.folder_name = f"Media-{frappe.generate_hash(length=6)}"
-            cls.media = create_drive_file(
-                cls.folder_name, cls.home, "Folder", lambda f: manager.create_folder(f)
-            )
-            cls.blob = write_file_fixture(cls.media.name, "data.bin", DATA, "application/octet-stream")
+        ensure_user_with_password(STRANGER, PASSWORD)
+        cls.root = personal_dav_root(OWNER)
+        personal_dav_root(STRANGER)
+        cls.folder_name = f"Media-{frappe.generate_hash(length=6)}"
+        cls.folder = folder_node(OWNER, cls.root, cls.folder_name)
+        cls.blob_file = file_node(OWNER, cls.folder, "data.bin", DATA)
+        cls.pixel = file_node(OWNER, cls.folder, "pixel.png", PIXEL_PNG)
+        # the dispatcher commits mid-request, so the fixtures have to be
+        # durable and are dropped explicitly rather than rolled back
         frappe.db.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        frappe.set_user("Administrator")
+        drop_dav_root(OWNER)
+        frappe.db.commit()
+        super().tearDownClass()
 
     def tearDown(self):
         frappe.set_user("Administrator")
@@ -65,84 +140,162 @@ class TestWebDAVContent(IntegrationTestCase):
             return b"".join(response.response)
         return response.get_data()
 
-    def test_get_streams_content_with_etag(self):
-        response = self._get(f"/dav/Home/{self.folder_name}/data.bin")
+    def test_get_streams_content_with_the_blob_checksum_as_etag(self):
+        response = self._get(f"/dav/{self.folder_name}/data.bin")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self._body(response), DATA)
-        self.assertEqual(response.headers["Content-Type"], "application/octet-stream")
         self.assertEqual(response.headers["Accept-Ranges"], "bytes")
-        self.assertTrue(response.headers["ETag"])
+        # §12.4: the same strong validator PROPFIND publishes
+        self.assertEqual(response.headers["ETag"], f'"{self.blob_file.checksum}"')
+        self.assertEqual(response.headers["ETag"], compute_etag(frappe._dict(blob=self.blob_file.blob)))
         self.assertTrue(response.headers["Last-Modified"].endswith(" GMT"))
         # user bytes must come back inert for browsers; DAV clients ignore all three
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["Content-Security-Policy"], "sandbox")
         self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=data.bin")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-cache")
+
+    def test_content_type_is_the_blob_type(self):
+        response = self._get(f"/dav/{self.folder_name}/pixel.png")
+        self.assertEqual(response.headers["Content-Type"], "image/png")
+        self.assertEqual(self._body(response), PIXEL_PNG)
 
     def test_range_request_yields_206(self):
-        response = self._get(f"/dav/Home/{self.folder_name}/data.bin", headers={"Range": "bytes=0-4"})
+        response = self._get(f"/dav/{self.folder_name}/data.bin", headers={"Range": "bytes=0-4"})
         self.assertEqual(response.status_code, 206)
         self.assertEqual(self._body(response), DATA[:5])
         self.assertIn("bytes 0-4/", response.headers["Content-Range"])
 
     def test_if_none_match_yields_304(self):
-        row = frappe._dict(
-            name=self.blob.name,
-            file_size=len(DATA),
-            content_hash=None,
-            modified=self.blob.file_modified or self.blob.modified,
+        response = self._get(
+            f"/dav/{self.folder_name}/data.bin",
+            headers={"If-None-Match": f'"{self.blob_file.checksum}"'},
         )
-        etag = compute_etag(row)
-        response = self._get(f"/dav/Home/{self.folder_name}/data.bin", headers={"If-None-Match": etag})
         self.assertEqual(response.status_code, 304)
 
     def test_head_reports_length(self):
-        response = self._get(f"/dav/Home/{self.folder_name}/data.bin", method="HEAD")
+        response = self._get(f"/dav/{self.folder_name}/data.bin", method="HEAD")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Content-Length"], str(len(DATA)))
         self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=data.bin")
 
-    def test_collection_get_redirects_to_spa(self):
-        response = self._get(f"/dav/Home/{self.folder_name}")
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], f"/drive/d/{self.media.name}")
+    def test_a_non_local_driver_serves_ranges_from_read_range(self):
+        """§13.5: no `get_path`, so the 206 is built from the driver's read."""
+        driver = _RemoteDriver(DATA)
+        with patch("frappe.storage.serve.get_driver", return_value=driver):
+            response = self._get(f"/dav/{self.folder_name}/data.bin", headers={"Range": "bytes=5-9"})
+            self.assertEqual(response.status_code, 206)
+            self.assertEqual(self._body(response), DATA[5:10])
+            self.assertEqual(response.headers["Content-Range"], f"bytes 5-9/{len(DATA)}")
+            self.assertEqual(response.headers["ETag"], f'"{self.blob_file.checksum}"')
+            self.assertEqual(driver.ranges, [(5, 9)])
 
+            whole = self._get(f"/dav/{self.folder_name}/data.bin")
+            self.assertEqual(whole.status_code, 200)
+            self.assertEqual(self._body(whole), DATA)
+
+    def test_a_non_local_driver_refuses_an_unsatisfiable_range(self):
+        driver = _RemoteDriver(DATA)
+        with patch("frappe.storage.serve.get_driver", return_value=driver):
+            response = self._get(
+                f"/dav/{self.folder_name}/data.bin", headers={"Range": f"bytes={len(DATA) + 10}-"}
+            )
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response.headers["Content-Range"], f"bytes */{len(DATA)}")
+        self.assertEqual(driver.ranges, [])
+
+    def test_an_empty_head_is_a_file_not_a_conflict(self):
+        """§8.5: a file node with no blob answers 200 with no body, and its
+        validator is the checksum of zero bytes."""
+        empty = raw_child_node(self.folder, "empty.txt", kind="file")
+        try:
+            response = self._get(f"/dav/{self.folder_name}/empty.txt")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self._body(response), b"")
+            self.assertEqual(response.headers["ETag"], f'"{EMPTY_BLOB_CHECKSUM}"')
+        finally:
+            drop_nodes([empty])
+
+    def test_collection_get_redirects_to_the_drive_ui(self):
+        response = self._get(f"/dav/{self.folder_name}")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], f"/drive/d/{self.folder}")
+
+        # the mount is the Personal Root itself, so it lands on the root view
         response = self._get("/dav")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/drive")
 
-        response = self._get(f"/dav/Home/{self.folder_name}", method="HEAD")
+        response = self._get(f"/dav/{self.folder_name}", method="HEAD")
         self.assertEqual(response.status_code, 200)
 
-    def test_missing_and_unreadable_are_404(self):
+    def test_missing_paths_are_404(self):
         with self.assertRaises(NotFoundError):
-            self._get(f"/dav/Home/{self.folder_name}/absent.bin")
-        home_name = frappe.db.get_value("File", self.home, "file_name")
+            self._get(f"/dav/{self.folder_name}/absent.bin")
+        # there is no mount of anybody else's root, so this tree is simply not
+        # in the stranger's namespace
         with self.assertRaises(NotFoundError):
-            self._get(f"/dav/Everyone/{home_name}/{self.folder_name}/data.bin", user=STRANGER)
+            self._get(f"/dav/{self.folder_name}/data.bin", user=STRANGER)
+
+    def test_an_unreadable_node_is_404_not_403(self):
+        hidden = file_node(OWNER, self.folder, "hidden.bin", b"secret")
+        try:
+            grant(hidden.name, OWNER, NONE, node_principals(OWNER))
+            # `require` refuses below READ with the engine's own not-found,
+            # which `errors.map_exception` turns into 404 (§12.1)
+            with self.assertRaises(DriveNotFound):
+                self._get(f"/dav/{self.folder_name}/hidden.bin")
+        finally:
+            drop_nodes([hidden.name])
+
+    def test_a_hidden_document_and_its_media_cannot_be_downloaded(self):
+        """§12.2: the document segment 404s before the walk reaches the media."""
+        document = raw_document_node(self.folder, "Deck")
+        media = file_node(OWNER, document, "slide-1.png", PIXEL_PNG)
+        try:
+            with self.assertRaises(NotFoundError):
+                self._get(f"/dav/{self.folder_name}/Deck")
+            with self.assertRaises(NotFoundError):
+                self._get(f"/dav/{self.folder_name}/Deck/slide-1.png")
+        finally:
+            drop_nodes([media.name, document])
+
+    def test_an_uploaded_office_file_downloads(self):
+        docx = file_node(OWNER, self.folder, "report.docx", b"PK\x03\x04 not really a docx")
+        try:
+            response = self._get(f"/dav/{self.folder_name}/report.docx")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self._body(response), docx.data)
+            self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=report.docx")
+        finally:
+            drop_nodes([docx.name])
 
     def test_end_to_end_get_through_dispatcher(self):
-        from suite.drive.webdav.tests.utils import enable_user_webdav
-
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
         enable_user_webdav(OWNER)
         frappe.db.commit()
         try:
-            response = dispatch(
-                "GET", f"/dav/Home/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD
-            )
+            response = dispatch("GET", f"/dav/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(self._body(response), DATA)
 
             response = dispatch(
                 "PROPFIND",
-                f"/dav/Home/{self.folder_name}",
+                f"/dav/{self.folder_name}",
                 user=OWNER,
                 password=PASSWORD,
                 headers={"Depth": "1"},
             )
             self.assertEqual(response.status_code, 207)
             self.assertIn(b"data.bin", response.get_data())
+
+            # a write verb is refused before it can touch the tree
+            response = dispatch(
+                "PUT", f"/dav/{self.folder_name}/new.txt", user=OWNER, password=PASSWORD, data=b"x"
+            )
+            self.assertEqual(response.status_code, 405)
+            self.assertNotIn("PUT", response.headers["Allow"])
         finally:
             frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
@@ -150,6 +303,7 @@ class TestWebDAVContent(IntegrationTestCase):
             frappe.db.commit()
 
 
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVPut(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):
@@ -1869,6 +2023,7 @@ class _FakeS3Conn:
         self.objects.pop(Key, None)
 
 
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVPutS3(IntegrationTestCase):
     """PUT against S3-backed rows, boto client faked in memory.
 

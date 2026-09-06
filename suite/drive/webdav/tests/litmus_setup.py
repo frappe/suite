@@ -2,11 +2,18 @@
 
 bench --site <site> execute suite.drive.webdav.tests.litmus_setup.prepare
 bench --site <site> execute suite.drive.webdav.tests.litmus_setup.teardown
+
+litmus cannot pass on this release: it writes before it reads in every group
+and the write verbs answer 405 until ticket 25. The fixtures are kept current
+anyway so the read groups can be exercised and so the acceptance run is one
+command away when ticket 25 lands. See litmus_expected.txt.
 """
 
 import frappe
 from frappe.utils.password import update_password
 
+from suite.drive._core.roots import personal_root_for, provision_personal_root
+from suite.drive.tests.fixtures import drop_personal_root
 from suite.drive.webdav.tests.utils import enable_user_webdav
 
 LITMUS_USER = "litmus@example.com"
@@ -14,7 +21,11 @@ LITMUS_PASSWORD = "litmus-ci-password"
 
 
 def prepare() -> str:
-    """Create the throwaway litmus user, enable WebDAV, return the DAV Home URL."""
+    """Create the throwaway litmus user, enable WebDAV, return the DAV URL.
+
+    The URL is `/dav/` itself: the one mount is the user's Personal Root, so
+    there is no `Home` collection to point litmus at any more (§12).
+    """
     if not frappe.db.exists("User", LITMUS_USER):
         frappe.get_doc(
             {
@@ -25,19 +36,22 @@ def prepare() -> str:
             }
         ).insert(ignore_permissions=True)
     update_password(LITMUS_USER, LITMUS_PASSWORD)
+    provision_personal_root(LITMUS_USER)
     enable_user_webdav(LITMUS_USER)
     frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
     frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
     frappe.db.commit()
-    return frappe.utils.get_url("/dav/Home/")
+    return frappe.utils.get_url("/dav/")
 
 
 def teardown() -> None:
     """Remove litmus leftovers; the feature toggle is left alone (CI sites are
-    disposable, dev sites keep whatever they had — reset it yourself if needed)."""
-    from suite.drive.utils import get_user_folder
+    disposable, dev sites keep whatever they had — reset it yourself if needed).
 
-    home = get_user_folder(LITMUS_USER).name
-    for name in frappe.get_all("File", filters={"folder": home}, pluck="name"):
-        frappe.get_doc("File", name).permanent_delete()
+    The whole Personal Root goes, then a fresh one is provisioned, because the
+    root is the mount: emptying it is the same as replacing it.
+    """
+    if personal_root_for(LITMUS_USER):
+        drop_personal_root(LITMUS_USER)
+    provision_personal_root(LITMUS_USER)
     frappe.db.commit()
