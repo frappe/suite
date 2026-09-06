@@ -187,6 +187,53 @@ class TestCompositeGroupRequest(UnitTestCase):
                 answers.add(str(refused.exception))
         self.assertEqual(answers, {"A composite group is a list of reference ids"})
 
+    def test_deeply_nested_json_is_refused_rather_than_raised(self):
+        """Two guards, because one of them is interpreter-dependent.
+
+        `json.loads` answers `RecursionError` for deeply nested text, and that
+        is not a `ValueError`. `composite_group` reads the request before it
+        authorizes anything, so an escape here is a 500 and one `Error Log` row
+        per call, for an unauthenticated caller, repeatable at will.
+
+        The text bound refuses the payload that reaches the depth on CPython
+        3.14. The depth at which the scanner gives up is not a promise, so the
+        `except` is proved on its own, from a stub.
+        """
+        nested = "[" * 100_000 + "]" * 100_000
+        with self.assertRaises(frappe.ValidationError) as refused:
+            api._requested_references(nested)
+        self.assertEqual(str(refused.exception), "A composite group is a list of reference ids")
+
+        with patch("json.loads", side_effect=RecursionError):
+            with self.assertRaises(frappe.ValidationError) as refused:
+                api._requested_references('["ref0"]')
+        self.assertEqual(str(refused.exception), "A composite group is a list of reference ids")
+
+    def test_an_oversized_request_text_is_refused_before_it_is_parsed(self):
+        oversized = json.dumps(["ref0" * 4000])
+        self.assertGreater(len(oversized), api.REQUEST_TEXT_LIMIT)
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            api._requested_references(oversized)
+        self.assertEqual(str(refused.exception), "A composite group is a list of reference ids")
+
+    def test_an_id_wider_than_a_docname_is_refused(self):
+        """A reference id is a docname. Nothing longer can name a row."""
+        self.assertEqual(
+            api._requested_references(["a" * api.REFERENCE_ID_LIMIT]), ["a" * api.REFERENCE_ID_LIMIT]
+        )
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            api._requested_references(["a" * (api.REFERENCE_ID_LIMIT + 1)])
+        self.assertEqual(str(refused.exception), "A composite group is a list of reference ids")
+
+    def test_a_json_list_holding_a_non_string_is_refused(self):
+        for supplied in ('["a", 7]', '["a", null]', '["a", ["b"]]', '["a", ""]'):
+            with self.subTest(supplied=supplied):
+                with self.assertRaises(frappe.ValidationError) as refused:
+                    api._requested_references(supplied)
+                self.assertEqual(str(refused.exception), "A composite group is a list of reference ids")
+
     def test_a_group_arrives_as_a_list_or_as_its_json_text(self):
         self.assertEqual(api._requested_references(["a", "b"]), ["a", "b"])
         self.assertEqual(api._requested_references('["a", "b"]'), ["a", "b"])
