@@ -1,0 +1,988 @@
+"""What WebDAV read promises once it answers from `Drive Node` (§12).
+
+These run with no site and no database: the subject is the protocol boundary -
+the method table, the one mount, the hiding rule, the Depth 1 query budget, the
+ETag both ends must agree on, and the quota and principal answers. The engine
+workflows behind it have their own tests, and `suite/drive/webdav/tests` sends
+whole requests through the dispatcher against a live site.
+"""
+
+import hashlib
+import io
+import os
+import tempfile
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import frappe
+from frappe.tests import UnitTestCase
+from lxml import etree
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
+
+from suite.drive import framework
+from suite.drive._core import nodes as node_core
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveError,
+    DriveForbidden,
+    DriveLinkExpired,
+    DriveLocked,
+    DriveNotFound,
+    DriveOverQuota,
+)
+from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM, MAX_PAGE_SIZE
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import READ
+from suite.drive.http.tests import ensure_local_context, local_attribute
+from suite.drive.webdav import (
+    ALLOWED_METHODS,
+    RELINKED_METHODS,
+    context,
+    deadprops,
+    dispatch,
+    errors,
+    get,
+    locks,
+    options,
+    pathmap,
+    properties,
+    propfind,
+    settings,
+)
+from suite.drive.webdav.xmlutil import dav
+
+USER = "dav-reader@example.com"
+PRINCIPALS = Principals(USER, (USER, "$GROUP:team", "$GENERAL"), ("$PUBLIC",))
+WRITE_METHODS = ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "LOCK", "UNLOCK", "PROPPATCH")
+
+STAMP = datetime(2026, 9, 5, 12, 0, 0)
+
+
+def setUpModule():
+    ensure_local_context()
+
+
+def node(name: str, **overrides) -> frappe._dict:
+    """One `Drive Node` row in the shape every read path receives it."""
+    row = frappe._dict(
+        name=name,
+        parent="root1",
+        root="root1",
+        path="",
+        title=name,
+        kind="file",
+        state="Active",
+        trashed_at=None,
+        trash_root=None,
+        blob=None,
+        size=0,
+        mime="text/plain",
+        url=None,
+        content_doctype=None,
+        content_docname=None,
+        content_modified=None,
+        is_template=0,
+        owner=USER,
+        creation=STAMP,
+        modified=STAMP,
+        modified_by=USER,
+    )
+    row.update(overrides)
+    return row
+
+
+def root_node(name: str = "root1") -> frappe._dict:
+    return node(name, parent=None, root=None, path="", title="My Drive", kind="root", mime=None)
+
+
+def grant_row(node_id: str, role: int = READ, principal: str = USER) -> frappe._dict:
+    return frappe._dict(node=node_id, principal=principal, role=role, password_hash=None)
+
+
+def window_rows(parent: frappe._dict, children: list[frappe._dict]) -> list[frappe._dict]:
+    """The union result `FOLDER_PAGE_SQL` returns: the parent, then the window."""
+    head = frappe._dict(parent)
+    head._drive_parent = 0
+    head._drive_document_descendant = 0
+    out = [head]
+    for child in children:
+        row = frappe._dict(child)
+        row._drive_parent = 1
+        out.append(row)
+    return out
+
+
+def resolved(node_row=None, *, segments=None, parent=None, is_mount=False) -> pathmap.ResolvedPath:
+    return pathmap.ResolvedPath(
+        segments=list(segments or []),
+        node=node_row,
+        parent=parent,
+        is_mount=is_mount,
+    )
+
+
+def multistatus(response) -> dict[str, dict[int, dict[str, etree._Element]]]:
+    """{href: {status: {clark tag: element}}} from a 207 body."""
+    root = etree.fromstring(response.get_data())
+    out: dict[str, dict[int, dict[str, etree._Element]]] = {}
+    for entry in root.findall(dav("response")):
+        href = entry.find(dav("href")).text
+        by_status: dict[int, dict[str, etree._Element]] = {}
+        for propstat in entry.findall(dav("propstat")):
+            code = int(propstat.find(dav("status")).text.split()[1])
+            by_status[code] = {element.tag: element for element in propstat.find(dav("prop"))}
+        out[href] = by_status
+    return out
+
+
+class DavCase(UnitTestCase):
+    """Site-free bindings every read path reaches for."""
+
+    def setUp(self):
+        self.db = self.bind("db", MagicMock())
+        self.bind("_webdav_path_memo", {})
+        self.bind("response_headers", {})
+        self.bind("session", frappe._dict(user=USER))
+        # `now_datetime` and the property timestamps both resolve the site zone
+        self.start(patch("frappe.get_system_settings", return_value="UTC"))
+
+    def bind(self, name, value):
+        return self.enter(local_attribute(name, value))
+
+    def enter(self, manager):
+        value = manager.__enter__()
+        self.addCleanup(manager.__exit__, None, None, None)
+        return value
+
+    def start(self, patcher):
+        value = patcher.start()
+        self.addCleanup(patcher.stop)
+        return value
+
+    def make_ctx(self, method: str, path: str, *, headers=None, data: bytes = b"") -> context.DavContext:
+        builder = EnvironBuilder(method=method, path=path, headers=dict(headers or {}), data=data)
+        request = Request(builder.get_environ())
+        frappe.local.request = request
+        ctx = context.build(request, USER)
+        # `principals` is a cached_property; seed it so no session lookup runs
+        ctx.__dict__["principals"] = PRINCIPALS
+        return ctx
+
+
+# --- A. the method table and the allow-list (§12.1) ---
+
+
+class TestMethodAllowList(DavCase):
+    def allowed(self, raw):
+        with patch("frappe.get_cached_doc", return_value=frappe._dict(webdav_allowed_methods=raw)):
+            return settings.allowed_webdav_methods()
+
+    def test_an_unconfigured_site_offers_only_the_relinked_verbs(self):
+        for raw in (None, "", "   "):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.allowed(raw), RELINKED_METHODS)
+                self.assertEqual(self.allowed(raw), ("OPTIONS", "GET", "HEAD", "PROPFIND"))
+
+    def test_an_admin_list_naming_put_still_cannot_readmit_it(self):
+        offered = self.allowed("GET, PUT, PROPFIND, LOCK, MKCOL")
+        self.assertEqual(offered, RELINKED_METHODS)
+        for method in WRITE_METHODS:
+            self.assertNotIn(method, offered)
+
+    def test_an_admin_list_still_narrows_the_relinked_surface(self):
+        self.assertEqual(self.allowed("GET"), ("OPTIONS", "GET", "HEAD"))
+        self.assertEqual(self.allowed("PROPFIND"), ("OPTIONS", "PROPFIND"))
+
+    def test_a_garbage_setting_does_not_lock_the_site_to_options(self):
+        self.assertEqual(self.allowed("FLOOP, BLARG"), RELINKED_METHODS)
+        # a list with one real verb keeps that verb and drops the noise
+        self.assertEqual(self.allowed("GET, FLOOP"), ("OPTIONS", "GET", "HEAD"))
+
+    def test_a_list_of_write_verbs_alone_leaves_nothing_but_the_handshake(self):
+        # the fallback only rescues an unparseable setting; a list of known
+        # verbs is honoured, and none of these is relinked yet
+        self.assertEqual(self.allowed("PUT, DELETE, MKCOL"), ("OPTIONS",))
+
+    def test_every_write_verb_is_still_a_known_method_and_only_the_allow_list_refuses_it(self):
+        for method in WRITE_METHODS:
+            with self.subTest(method=method):
+                self.assertIn(method, ALLOWED_METHODS)
+                self.assertNotIn(method, RELINKED_METHODS)
+
+
+class TestDispatchTable(DavCase):
+    def test_the_handler_table_holds_exactly_propfind_get_and_head(self):
+        self.assertEqual(set(dispatch._HANDLERS), {"PROPFIND", "GET", "HEAD"})
+        self.assertEqual(dispatch._HANDLERS["PROPFIND"], ("propfind", "handle"))
+        self.assertEqual(dispatch._HANDLERS["GET"], ("get", "handle"))
+        self.assertEqual(dispatch._HANDLERS["HEAD"], ("get", "handle"))
+
+    def test_the_read_verbs_resolve_to_the_relinked_handlers(self):
+        self.assertIs(dispatch._handler_for("PROPFIND"), propfind.handle)
+        self.assertIs(dispatch._handler_for("GET"), get.handle)
+        self.assertIs(dispatch._handler_for("HEAD"), get.handle)
+
+    def test_a_write_verb_is_405_with_an_allow_naming_only_relinked_verbs(self):
+        for method in WRITE_METHODS:
+            with self.subTest(method=method), self.assertRaises(errors.MethodNotAllowed) as caught:
+                dispatch._handler_for(method)
+            self.assertEqual(caught.exception.status, 405)
+            self.assertEqual(caught.exception.headers["Allow"], ", ".join(RELINKED_METHODS))
+
+
+class TestOptionsAdvertisement(DavCase):
+    def setUp(self):
+        super().setUp()
+        self.start(patch("frappe.get_cached_doc", return_value=frappe._dict(webdav_allowed_methods="")))
+
+    def test_options_advertises_the_same_allow_the_dispatcher_enforces(self):
+        request = Request(EnvironBuilder(method="OPTIONS", path="/dav/").get_environ())
+        response = options.handle(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Allow"], ", ".join(settings.allowed_webdav_methods()))
+        self.assertEqual(response.headers["Allow"], ", ".join(RELINKED_METHODS))
+        for method in WRITE_METHODS:
+            self.assertNotIn(method, response.headers["Allow"])
+
+    def test_compliance_drops_class_2_while_lock_is_not_offered(self):
+        request = Request(EnvironBuilder(method="OPTIONS", path="/dav/").get_environ())
+        self.assertEqual(options.handle(request).headers["DAV"], "1, 3")
+        self.assertEqual(settings.dav_compliance(RELINKED_METHODS), "1, 3")
+        self.assertEqual(settings.dav_compliance(ALLOWED_METHODS), "1, 2, 3")
+
+
+class TestUnreadableIsNeverForbidden(DavCase):
+    def test_propfind_asks_read_on_the_target_and_surfaces_404(self):
+        target = node("file1", title="report.txt")
+        refusal = DriveNotFound("Drive node file1 was not found")
+        with (
+            patch.object(pathmap, "resolve", return_value=resolved(target, segments=["report.txt"])),
+            patch.object(propfind, "require", side_effect=refusal) as require,
+        ):
+            ctx = self.make_ctx("PROPFIND", "/dav/report.txt", headers={"Depth": "0"})
+            with self.assertRaises(DriveNotFound):
+                propfind.handle(ctx)
+
+        require.assert_called_once_with(target, READ, PRINCIPALS)
+        self.assertEqual(errors.map_exception(refusal).status, 404)
+
+    def test_get_asks_read_on_the_node_and_surfaces_404(self):
+        target = node("file1", title="report.txt")
+        refusal = DriveNotFound("Drive node file1 was not found")
+        with (
+            patch.object(pathmap, "resolve", return_value=resolved(target, segments=["report.txt"])),
+            patch.object(get, "require", side_effect=refusal) as require,
+        ):
+            ctx = self.make_ctx("GET", "/dav/report.txt")
+            with self.assertRaises(DriveNotFound):
+                get.handle(ctx)
+
+        require.assert_called_once_with(target, READ, PRINCIPALS)
+        self.assertEqual(errors.map_exception(refusal).status, 404)
+
+
+# --- B. one mount, the caller's Personal Root (§12) ---
+
+
+class TestSingleMount(DavCase):
+    def test_the_mount_is_the_callers_personal_root_node(self):
+        self.db.sql.side_effect = [[root_node()]]
+        with patch.object(pathmap, "personal_root_for", return_value="root1") as lookup:
+            answer = pathmap.resolve([], USER)
+
+        lookup.assert_called_once_with(USER)
+        self.assertTrue(answer.is_mount)
+        self.assertTrue(answer.exists)
+        self.assertTrue(answer.is_collection)
+        self.assertEqual(answer.node.name, "root1")
+        self.assertEqual(answer.node.kind, "root")
+
+    def test_a_user_with_no_active_personal_root_has_no_mount_at_all(self):
+        with patch.object(pathmap, "personal_root_for", return_value=None):
+            for segments in ([], ["Reports"], ["Reports", "q3.txt"]):
+                with self.subTest(segments=segments):
+                    answer = pathmap.resolve(segments, USER)
+                    self.assertFalse(answer.exists)
+                    self.assertEqual(answer.missing_intermediate, bool(segments))
+        self.assertEqual(self.db.sql.call_count, 0)
+
+    def test_an_archived_root_row_leaves_every_path_unmapped(self):
+        self.db.sql.side_effect = [[], []]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            self.assertFalse(pathmap.resolve([], USER).exists)
+            self.assertFalse(pathmap.resolve(["Reports"], USER).exists)
+
+    def test_everyone_is_only_a_child_lookup_and_it_misses(self):
+        self.db.sql.side_effect = [[root_node()], [], []]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            answer = pathmap.resolve(["Everyone"], USER)
+
+        self.assertFalse(answer.exists)
+        self.assertIsNotNone(answer.parent)
+        self.assertEqual(answer.parent.name, "root1")
+        child_query = self.db.sql.call_args_list[1]
+        self.assertIn("parent = %(parent)s", child_query.args[0])
+        self.assertEqual(child_query.kwargs["values"]["parent"], "root1")
+        self.assertEqual(child_query.kwargs["values"]["segment"], "Everyone")
+
+    def test_every_walk_stays_inside_the_callers_own_root(self):
+        folder = node("folder1", title="Reports", kind="folder")
+        leaf = node("file1", parent="folder1", title="q3.txt")
+        self.db.sql.side_effect = [[root_node()], [folder], [leaf]]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            answer = pathmap.resolve(["Reports", "q3.txt"], USER)
+
+        self.assertEqual(answer.node.name, "file1")
+        parents = [call.kwargs["values"]["parent"] for call in self.db.sql.call_args_list[1:]]
+        self.assertEqual(parents, ["root1", "folder1"])
+        self.assertEqual(self.db.sql.call_args_list[0].kwargs["values"], {"name": "root1"})
+
+    def test_a_non_folder_intermediate_segment_ends_the_walk(self):
+        self.db.sql.side_effect = [[root_node()], [node("file1", title="report.txt")]]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            answer = pathmap.resolve(["report.txt", "inside.txt"], USER)
+
+        self.assertFalse(answer.exists)
+        self.assertTrue(answer.missing_intermediate)
+        # the leaf was never asked for
+        self.assertEqual(self.db.sql.call_count, 2)
+
+
+# --- C. hidden content documents and their media (§12.2) ---
+
+
+class TestHiddenContent(DavCase):
+    def test_only_folders_and_files_are_reachable_over_dav(self):
+        self.assertEqual(pathmap.VISIBLE_KINDS, ("folder", "file"))
+        for kind, expected in (
+            ("folder", True),
+            ("file", True),
+            ("document", False),
+            ("link", False),
+            ("root", False),
+        ):
+            with self.subTest(kind=kind):
+                self.assertEqual(pathmap.visible(node("n", kind=kind)), expected)
+
+    def test_a_template_is_hidden_whatever_its_kind(self):
+        for kind in ("folder", "file"):
+            with self.subTest(kind=kind):
+                self.assertFalse(pathmap.visible(node("n", kind=kind, is_template=1)))
+
+    def test_an_office_extension_never_makes_a_content_document_visible(self):
+        for title in ("Report.docx", "Book.xlsx", "Deck.pptx"):
+            with self.subTest(title=title):
+                self.assertFalse(pathmap.visible(node("n", title=title, kind="document")))
+
+    def test_an_uploaded_office_file_stays_visible_whatever_its_extension(self):
+        for title in ("report.docx", "book.xlsx", "deck.pptx", "notes", "archive.tar.gz"):
+            with self.subTest(title=title):
+                self.assertTrue(pathmap.visible(node("n", title=title, kind="file")))
+
+    def test_an_uploaded_office_file_resolves_by_direct_path(self):
+        uploaded = node("file1", title="report.docx", mime="application/octet-stream")
+        self.db.sql.side_effect = [[root_node()], [uploaded]]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            answer = pathmap.resolve(["report.docx"], USER)
+
+        self.assertTrue(answer.exists)
+        self.assertEqual(answer.node.name, "file1")
+
+    def test_the_lookup_predicate_itself_excludes_documents_links_and_templates(self):
+        self.assertEqual(
+            pathmap._VISIBLE, "state = 'Active' AND kind IN ('folder', 'file') AND is_template = 0"
+        )
+        self.db.sql.side_effect = [[root_node()], [], []]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            pathmap.resolve(["Deck"], USER)
+
+        for call in self.db.sql.call_args_list[1:]:
+            self.assertIn("kind IN ('folder', 'file')", call.args[0])
+            self.assertIn("state = 'Active'", call.args[0])
+            self.assertIn("is_template = 0", call.args[0])
+
+    def test_a_document_is_dropped_from_a_listing_page(self):
+        parent = root_node()
+        visible_file = node("file1", title="report.docx")
+        rows = [
+            visible_file,
+            node("doc1", title="Deck", kind="document"),
+            node("link1", title="Bookmark", kind="link"),
+            node("tpl1", title="Template", is_template=1),
+        ]
+        self.db.sql.side_effect = [
+            window_rows(parent, rows),
+            [grant_row("root1")],
+            [],
+        ]
+        parent_row, listed = propfind._read_page(PRINCIPALS, "root1")
+
+        self.assertEqual(parent_row.name, "root1")
+        self.assertEqual([row.name for row in listed], ["file1"])
+
+    def test_a_document_path_is_404_end_to_end(self):
+        with patch.object(pathmap, "resolve", return_value=resolved(segments=["Deck"])):
+            ctx = self.make_ctx("PROPFIND", "/dav/Deck", headers={"Depth": "0"})
+            with self.assertRaises(errors.NotFoundError):
+                propfind.handle(ctx)
+
+            ctx = self.make_ctx("GET", "/dav/Deck")
+            with self.assertRaises(errors.NotFoundError):
+                get.handle(ctx)
+
+    def test_media_under_a_document_is_unreachable_because_the_document_segment_404s(self):
+        # the `Deck` lookup finds nothing, so `cover.png` is never asked for
+        self.db.sql.side_effect = [[root_node()], [], []]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            answer = pathmap.resolve(["Deck", "cover.png"], USER)
+
+        self.assertFalse(answer.exists)
+        self.assertTrue(answer.missing_intermediate)
+        self.assertEqual(self.db.sql.call_count, 3)
+        segments = [call.kwargs["values"]["segment"] for call in self.db.sql.call_args_list[1:]]
+        self.assertEqual(segments, ["Deck", "Deck"])
+
+
+# --- D. the Depth 1 query budget (§5.3, §12.5) ---
+
+
+class TestDepthOneBudget(DavCase):
+    def setUp(self):
+        super().setUp()
+        self.get_all = self.start(patch("frappe.get_all", side_effect=self.fake_get_all))
+        self.doctype_calls: list[str] = []
+        self.blob_checksum = hashlib.sha256(b"hello").hexdigest()
+        # False = the batched read answers for none of the page's blobs
+        self.blobs_readable = True
+        self.dead_props = self.start(
+            patch.object(deadprops, "get_dead_props", wraps=deadprops.get_dead_props)
+        )
+        self.fetch_locks = self.start(patch.object(locks, "_fetch_locks", wraps=locks._fetch_locks))
+
+    def fake_get_all(self, doctype, **kwargs):
+        self.doctype_calls.append(doctype)
+        if doctype == "File Blob" and self.blobs_readable:
+            return [
+                frappe._dict(name=name, checksum=self.blob_checksum) for name in kwargs["filters"]["name"][1]
+            ]
+        return []
+
+    def run_depth_one(self, children, *, windows=1):
+        parent = root_node()
+        side_effect = []
+        for index in range(windows):
+            page = children[index * MAX_PAGE_SIZE : (index + 1) * MAX_PAGE_SIZE]
+            side_effect += [window_rows(parent, page), [grant_row("root1")], []]
+        self.db.sql.side_effect = side_effect
+
+        body = b'<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>'
+        with patch.object(pathmap, "resolve", return_value=resolved(parent, is_mount=True)):
+            ctx = self.make_ctx("PROPFIND", "/dav/", headers={"Depth": "1"}, data=body)
+            return propfind.handle(ctx)
+
+    def test_depth_one_costs_three_engine_queries_one_property_fetch_and_one_lock_fetch(self):
+        children = [
+            node("file1", title="a.txt", blob="blob1"),
+            node("folder1", title="Reports", kind="folder"),
+        ]
+        response = self.run_depth_one(children)
+
+        self.assertEqual(response.status_code, 207)
+        self.assertEqual(self.db.sql.call_count, 3)
+        self.assertEqual(self.dead_props.call_count, 1)
+        self.assertEqual(self.fetch_locks.call_count, 1)
+        self.assertEqual(self.doctype_calls.count("File Blob"), 1)
+        self.assertEqual(self.doctype_calls.count("Drive DAV Property"), 1)
+        self.assertEqual(self.doctype_calls.count("Drive DAV Lock"), 1)
+        self.assertEqual(len(multistatus(response)), 3)
+
+    def reset_budget(self):
+        self.db.sql.reset_mock()
+        self.dead_props.reset_mock()
+        self.fetch_locks.reset_mock()
+        self.doctype_calls.clear()
+
+    def test_the_budget_does_not_move_with_the_number_of_children(self):
+        for size in (2, 60):
+            with self.subTest(children=size):
+                self.reset_budget()
+                children = [node(f"file{i}", title=f"f{i}.txt", blob=f"blob{i}") for i in range(size)]
+                response = self.run_depth_one(children)
+
+                self.assertEqual(self.db.sql.call_count, 3)
+                self.assertEqual(self.dead_props.call_count, 1)
+                self.assertEqual(self.fetch_locks.call_count, 1)
+                self.assertEqual(self.doctype_calls.count("File Blob"), 1)
+                # every child is still published; only the cost stayed flat
+                self.assertEqual(len(multistatus(response)), size + 1)
+
+    def test_no_blob_read_at_all_when_no_child_holds_a_blob(self):
+        children = [
+            node("folder1", title="Reports", kind="folder"),
+            node("file1", title="empty.txt", blob=None),
+        ]
+        self.run_depth_one(children)
+
+        self.assertEqual(self.db.sql.call_count, 3)
+        self.assertNotIn("File Blob", self.doctype_calls)
+
+    def test_a_page_of_unreadable_blobs_still_costs_one_blob_read(self):
+        # the batch looked and answered for nothing; the render loop must not
+        # go back per row, which cost 11 reads for these 10 children
+        self.blobs_readable = False
+        children = [node(f"file{i}", title=f"f{i}.txt", blob=f"blob{i}") for i in range(10)]
+        response = self.run_depth_one(children)
+
+        self.assertEqual(self.doctype_calls.count("File Blob"), 1)
+        self.assertEqual(self.db.sql.call_count, 3)
+        self.assertEqual(len(multistatus(response)), 11)
+
+    def test_a_file_whose_blob_has_no_readable_checksum_is_listed_without_a_getetag(self):
+        self.blobs_readable = False
+        children = [
+            node("file1", title="a.txt", blob="blob1"),
+            node("file2", title="b.txt", blob=None),
+        ]
+        response = self.run_depth_one(children)
+        listed = multistatus(response)
+
+        self.assertEqual(response.status_code, 207)
+        # the resource is still published, just without a validator
+        self.assertIn("/dav/a.txt", listed)
+        self.assertNotIn(dav("getetag"), listed["/dav/a.txt"][200])
+        self.assertIn(dav("getcontentlength"), listed["/dav/a.txt"][200])
+        # the empty head beside it keeps the zero-bytes validator
+        self.assertEqual(listed["/dav/b.txt"][200][dav("getetag")].text, f'"{EMPTY_BLOB_CHECKSUM}"')
+
+    def test_a_folder_wider_than_one_window_pages_instead_of_truncating(self):
+        children = [node(f"file{i}", title=f"f{i:04d}.txt") for i in range(MAX_PAGE_SIZE + 5)]
+        response = self.run_depth_one(children, windows=2)
+
+        # three queries per window, and every child is published
+        self.assertEqual(self.db.sql.call_count, 6)
+        self.assertEqual(self.dead_props.call_count, 1)
+        self.assertEqual(self.fetch_locks.call_count, 1)
+        self.assertEqual(len(multistatus(response)), MAX_PAGE_SIZE + 6)
+
+
+# --- E. ETag, conditional requests and ranges (§12.4, §13.5) ---
+
+
+class LocalDriver:
+    """A driver backed by a real file on disk; `get_path` is what marks it local."""
+
+    def __init__(self, path: str):
+        self.path = path
+
+    def get_path(self, key, is_private):
+        return self.path
+
+    def download_url(self, *args, **kwargs):
+        return None
+
+
+class RemoteDriver:
+    """A driver with no `get_path`: reads and ranged reads only."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+
+    def read(self, key, is_private=False):
+        return io.BytesIO(self.data)
+
+    def read_range(self, key, start, end, is_private=False):
+        return io.BytesIO(self.data[start : end + 1])
+
+    def download_url(self, *args, **kwargs):
+        return None
+
+
+class TestEtagScheme(DavCase):
+    def test_the_etag_is_the_quoted_blob_checksum(self):
+        checksum = hashlib.sha256(b"hello").hexdigest()
+        row = node("file1", blob="blob1", size=5)
+        self.assertEqual(properties.compute_etag(row, checksum), f'"{checksum}"')
+
+    def test_an_uncached_file_reads_its_checksum_once(self):
+        checksum = hashlib.sha256(b"hello").hexdigest()
+        row = node("file1", blob="blob1", size=5)
+        with patch.object(properties, "blob_checksums", return_value={"blob1": checksum}) as read:
+            self.assertEqual(properties.compute_etag(row), f'"{checksum}"')
+        read.assert_called_once_with(["blob1"])
+
+    def test_a_file_with_no_blob_gets_the_checksum_of_zero_bytes(self):
+        self.assertEqual(EMPTY_BLOB_CHECKSUM, hashlib.sha256(b"").hexdigest())
+        self.assertEqual(properties.compute_etag(node("file1", blob=None)), f'"{EMPTY_BLOB_CHECKSUM}"')
+
+    def test_getetag_is_present_on_a_file_and_absent_on_a_collection(self):
+        checksum = hashlib.sha256(b"hello").hexdigest()
+        file_props = properties.live_properties(
+            node("file1", blob="blob1", size=5),
+            is_collection=False,
+            display_name="a.txt",
+            checksum=checksum,
+        )
+        self.assertEqual(file_props[dav("getetag")].text, f'"{checksum}"')
+
+        folder_props = properties.live_properties(
+            node("folder1", kind="folder"), is_collection=True, display_name="Reports"
+        )
+        self.assertIsNone(folder_props[dav("getetag")])
+        self.assertIsNone(folder_props[dav("getcontentlength")])
+
+    def test_a_checksum_the_batch_did_not_find_is_no_validator_and_no_second_query(self):
+        row = node("file1", blob="blob1", size=5)
+        with patch.object(properties, "blob_checksums") as read:
+            self.assertIsNone(properties.compute_etag(row, None))
+        read.assert_not_called()
+
+    def test_checksums_for_keys_every_blob_holding_row_none_included(self):
+        rows = [
+            node("file1", blob="blob1"),
+            node("file2", blob="blob2"),
+            node("file3", blob=None),
+            node("folder1", kind="folder"),
+        ]
+        with patch.object(properties, "blob_checksums", return_value={"blob1": "aa" * 32}):
+            answer = properties.checksums_for(rows)
+
+        # the key is the caller's proof that the batch already looked
+        self.assertEqual(answer, {"file1": "aa" * 32, "file2": None})
+        self.assertIn("file2", answer)
+
+    def test_one_batched_read_answers_a_whole_pages_validators(self):
+        checksums = {"blob1": "aa" * 32, "blob2": "bb" * 32}
+        rows = [
+            node("file1", blob="blob1"),
+            node("file2", blob="blob2"),
+            node("folder1", kind="folder"),
+        ]
+        with patch.object(properties, "blob_checksums", return_value=checksums) as read:
+            answer = properties.checksums_for(rows)
+        read.assert_called_once_with(["blob1", "blob2"])
+        self.assertEqual(answer, {"file1": "aa" * 32, "file2": "bb" * 32})
+
+
+class BlobStreamCase(DavCase):
+    """Range and conditional coverage through `frappe.storage.serve.stream_blob`."""
+
+    DATA = b"0123456789A"
+
+    def setUp(self):
+        super().setUp()
+        self.checksum = hashlib.sha256(self.DATA).hexdigest()
+        self.blob = frappe._dict(
+            name="blob1",
+            key="ab/cd/blob1",
+            driver="local",
+            is_private=1,
+            checksum=self.checksum,
+            mime_type="text/plain",
+            file_size=len(self.DATA),
+        )
+
+    def environ(self, headers=None):
+        return EnvironBuilder(method="GET", path="/dav/a.txt", headers=dict(headers or {})).get_environ()
+
+    def stream(self, driver, headers=None):
+        from frappe.storage import serve
+
+        with patch.object(serve, "get_driver", return_value=driver):
+            response = serve.stream_blob(
+                self.blob, "a.txt", as_attachment=True, environ=self.environ(headers)
+            )
+        self.addCleanup(response.close)
+        return response
+
+    def body(self, response) -> bytes:
+        return b"".join(response.response)
+
+
+class TestLocalDriverStreaming(BlobStreamCase):
+    def setUp(self):
+        super().setUp()
+        handle, path = tempfile.mkstemp()
+        with os.fdopen(handle, "wb") as sink:
+            sink.write(self.DATA)
+        self.addCleanup(os.unlink, path)
+        self.driver = LocalDriver(path)
+
+    def test_a_full_get_is_200_with_every_byte(self):
+        response = self.stream(self.driver)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.body(response), self.DATA)
+
+    def test_the_wire_etag_is_the_string_propfind_publishes(self):
+        response = self.stream(self.driver)
+        row = node("file1", blob="blob1", size=len(self.DATA))
+        self.assertEqual(properties.compute_etag(row, self.checksum), response.headers["ETag"])
+
+    def test_a_range_request_is_206_with_the_requested_bytes(self):
+        response = self.stream(self.driver, {"Range": "bytes=0-4"})
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.content_length, 5)
+        self.assertEqual(self.body(response), b"01234")
+
+    def test_if_none_match_with_the_published_etag_is_304(self):
+        response = self.stream(self.driver, {"If-None-Match": f'"{self.checksum}"'})
+        self.assertEqual(response.status_code, 304)
+        self.assertEqual(response.headers["ETag"], f'"{self.checksum}"')
+
+
+class TestRemoteDriverStreaming(BlobStreamCase):
+    def setUp(self):
+        super().setUp()
+        self.blob.driver = "s3"
+        self.driver = RemoteDriver(self.DATA)
+
+    def test_a_full_get_is_200_with_every_byte(self):
+        response = self.stream(self.driver)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.body(response), self.DATA)
+        self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+
+    def test_a_range_request_is_206_with_a_content_range(self):
+        response = self.stream(self.driver, {"Range": "bytes=0-4"})
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["Content-Range"], f"bytes 0-4/{len(self.DATA)}")
+        self.assertEqual(response.content_length, 5)
+        self.assertEqual(self.body(response), b"01234")
+
+    def test_an_open_ended_range_answers_the_tail(self):
+        response = self.stream(self.driver, {"Range": "bytes=5-"})
+        last = len(self.DATA) - 1
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["Content-Range"], f"bytes 5-{last}/{len(self.DATA)}")
+        self.assertEqual(self.body(response), self.DATA[5:])
+
+    def test_an_unsatisfiable_range_is_416_naming_the_size(self):
+        response = self.stream(self.driver, {"Range": f"bytes={len(self.DATA) + 10}-"})
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response.headers["Content-Range"], f"bytes */{len(self.DATA)}")
+
+    def test_if_none_match_with_the_published_etag_is_304(self):
+        response = self.stream(self.driver, {"If-None-Match": f'"{self.checksum}"'})
+        self.assertEqual(response.status_code, 304)
+        self.assertEqual(response.headers["ETag"], f'"{self.checksum}"')
+
+    def test_the_wire_etag_is_the_string_propfind_publishes(self):
+        response = self.stream(self.driver)
+        row = node("file1", blob="blob1", size=len(self.DATA))
+        self.assertEqual(properties.compute_etag(row, self.checksum), response.headers["ETag"])
+
+
+class TestStreamContentRefusals(DavCase):
+    def test_a_node_that_is_not_a_file_has_no_bytes_to_send(self):
+        for kind in ("folder", "root", "document", "link"):
+            with self.subTest(kind=kind), self.assertRaises(DriveConflict):
+                node_core.stream_content(node("n", kind=kind, blob="blob1"))
+
+    def test_an_unusable_blob_is_a_conflict_not_an_empty_file(self):
+        row = node("file1", blob="blob1", size=5)
+        unusable = (
+            None,
+            frappe._dict(name="blob1", file_size=5, is_private=1, status="Pending"),
+            frappe._dict(name="blob1", file_size=5, is_private=0, status="Ready"),
+        )
+        for blob in unusable:
+            with self.subTest(blob=blob):
+                self.db.get_value = MagicMock(return_value=blob)
+                with self.assertRaises(DriveConflict):
+                    node_core.stream_content(row)
+
+    def test_an_empty_head_answers_200_with_no_body_and_the_empty_etag(self):
+        row = node("file1", blob=None, size=0, mime="text/plain")
+        response = node_core.stream_content(row)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(), b"")
+        self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+        self.assertEqual(response.headers["ETag"], properties.compute_etag(row))
+        self.assertEqual(response.headers["ETag"], f'"{hashlib.sha256(b"").hexdigest()}"')
+
+
+class TestGetResponseHeaders(DavCase):
+    def test_a_download_is_neutralized_and_advertises_ranges(self):
+        row = node("file1", title="report.docx", blob=None, size=0)
+        with (
+            patch.object(pathmap, "resolve", return_value=resolved(row, segments=["report.docx"])),
+            patch.object(get, "require", return_value=None),
+        ):
+            ctx = self.make_ctx("GET", "/dav/report.docx")
+            response = get.handle(ctx)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["Content-Security-Policy"], "sandbox")
+        self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-cache")
+        disposition = response.headers["Content-Disposition"]
+        self.assertTrue(disposition.startswith("attachment"))
+        self.assertIn("report.docx", disposition)
+
+
+# --- F. quota properties (§7.9, §12.4) ---
+
+
+class QuotaCase(DavCase):
+    def setUp(self):
+        super().setUp()
+        self.usage = self.start(patch.object(propfind.quota_core, "get_storage_usage"))
+        self.usage.return_value = frappe._dict(
+            used_bytes=4096, reserved_bytes=0, quota_bytes=10240, effective_quota=10240
+        )
+        self.start(patch.object(propfind, "require", return_value=None))
+        self.start(patch.object(deadprops, "get_dead_props", return_value={}))
+        self.start(patch.object(locks, "discovery_map", return_value={}))
+
+    def propfind_body(self, row, body: bytes, *, is_mount=False, segments=None):
+        with patch.object(
+            pathmap, "resolve", return_value=resolved(row, segments=segments, is_mount=is_mount)
+        ):
+            path = "/dav/" + "/".join(segments or [])
+            ctx = self.make_ctx("PROPFIND", path, headers={"Depth": "0"}, data=body)
+            return multistatus(propfind.handle(ctx))
+
+
+PROP_QUOTA = (
+    b'<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop>'
+    b"<D:quota-used-bytes/><D:quota-available-bytes/></D:prop></D:propfind>"
+)
+ALLPROP = b'<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>'
+ALLPROP_INCLUDE = (
+    b'<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/><D:include>'
+    b"<D:quota-used-bytes/><D:quota-available-bytes/></D:include></D:propfind>"
+)
+
+
+class TestQuotaProperties(QuotaCase):
+    def test_used_and_available_come_from_the_personal_root(self):
+        answer = self.propfind_body(root_node(), PROP_QUOTA, is_mount=True)["/dav/"]
+        self.usage.assert_called_once_with("root1")
+        self.assertEqual(answer[200][dav("quota-used-bytes")].text, "4096")
+        self.assertEqual(answer[200][dav("quota-available-bytes")].text, str(10240 - 4096))
+
+    def test_a_deeper_folder_still_reports_the_roots_numbers(self):
+        folder = node("folder1", title="Reports", kind="folder", root="root1", path="")
+        answer = self.propfind_body(folder, PROP_QUOTA, segments=["Reports"])["/dav/Reports/"]
+        self.usage.assert_called_once_with("root1")
+        self.assertEqual(answer[200][dav("quota-used-bytes")].text, "4096")
+        self.assertEqual(answer[200][dav("quota-available-bytes")].text, str(10240 - 4096))
+
+    def test_available_is_never_negative(self):
+        self.usage.return_value = frappe._dict(used_bytes=20480, effective_quota=10240)
+        answer = self.propfind_body(root_node(), PROP_QUOTA, is_mount=True)["/dav/"]
+        self.assertEqual(answer[200][dav("quota-available-bytes")].text, "0")
+
+    def test_available_is_omitted_not_zeroed_on_an_unlimited_root(self):
+        self.usage.return_value = frappe._dict(used_bytes=4096, effective_quota=0)
+        answer = self.propfind_body(root_node(), PROP_QUOTA, is_mount=True)["/dav/"]
+
+        self.assertEqual(answer[200][dav("quota-used-bytes")].text, "4096")
+        self.assertNotIn(dav("quota-available-bytes"), answer[200])
+        self.assertIn(dav("quota-available-bytes"), answer[404])
+
+    def test_a_bare_allprop_returns_neither_quota_property(self):
+        answer = self.propfind_body(root_node(), ALLPROP, is_mount=True)["/dav/"]
+        self.assertNotIn(dav("quota-used-bytes"), answer[200])
+        self.assertNotIn(dav("quota-available-bytes"), answer[200])
+        self.assertIn(dav("displayname"), answer[200])
+        self.usage.assert_not_called()
+
+    def test_allprop_with_include_returns_them(self):
+        answer = self.propfind_body(root_node(), ALLPROP_INCLUDE, is_mount=True)["/dav/"]
+        self.assertEqual(answer[200][dav("quota-used-bytes")].text, "4096")
+        self.assertEqual(answer[200][dav("quota-available-bytes")].text, str(10240 - 4096))
+
+    def test_quota_is_not_offered_on_a_file(self):
+        row = node("file1", title="a.txt")
+        answer = self.propfind_body(row, PROP_QUOTA, segments=["a.txt"])["/dav/a.txt"]
+        self.assertIn(dav("quota-used-bytes"), answer[404])
+        self.assertIn(dav("quota-available-bytes"), answer[404])
+
+
+# --- G. principals (§6.9, §12.4) ---
+
+
+class TestDavPrincipals(DavCase):
+    LINK_TOKEN = "abcdefghijklmnopqrstuv"
+
+    def setUp(self):
+        super().setUp()
+        cache = MagicMock()
+        cache.hget.side_effect = lambda key, name, generator=None, **kw: generator()
+        self.start(patch("frappe.cache", return_value=cache))
+        self.start(patch.object(framework, "_user_groups", return_value=("team",)))
+        self.start(patch.object(framework, "is_drive_admin", return_value=False))
+
+    def build_ctx(self, headers=None):
+        builder = EnvironBuilder(method="PROPFIND", path="/dav/", headers=dict(headers or {}))
+        request = Request(builder.get_environ())
+        frappe.local.request = request
+        return context.build(request, USER)
+
+    def test_a_dav_session_carries_the_user_their_groups_general_and_public(self):
+        principals = self.build_ctx().principals
+        self.assertEqual(principals.user, USER)
+        self.assertEqual(principals.own, (USER, "$GROUP:team", "$GENERAL"))
+        self.assertEqual(principals.open, ("$PUBLIC",))
+        self.assertEqual(principals.link_tickets, ())
+
+    def test_an_x_drive_links_header_reaches_the_request_and_never_the_principals(self):
+        ticket = f"{self.LINK_TOKEN}.4102444800.{'a' * 64}"
+        ctx = self.build_ctx({"X-Drive-Links": ticket})
+
+        # the header really is on the request the handler will read
+        self.assertEqual(ctx.request.headers.get("X-Drive-Links"), ticket)
+        # and the framework would have honoured it outside DAV
+        unstripped = framework.principals_for(USER)
+        self.assertIn(f"$LINK:{self.LINK_TOKEN}", unstripped.open)
+        self.assertTrue(unstripped.link_tickets)
+
+        principals = ctx.principals
+        self.assertEqual(principals.open, ("$PUBLIC",))
+        self.assertEqual(principals.link_tickets, ())
+        self.assertFalse([p for p in principals.all() if p.startswith("$LINK:")])
+
+    def test_a_bare_link_token_header_is_discarded_too(self):
+        ctx = self.build_ctx({"X-Drive-Links": self.LINK_TOKEN})
+        self.assertEqual(ctx.principals.open, ("$PUBLIC",))
+        self.assertFalse([p for p in ctx.principals.all() if p.startswith("$LINK:")])
+
+
+# --- H. refusal mapping ---
+
+
+class TestRefusalMapping(DavCase):
+    def test_every_drive_refusal_maps_to_its_dav_status(self):
+        expected = (
+            (DriveNotFound, 404),
+            (DriveForbidden, 403),
+            (DriveConflict, 409),
+            (DriveOverQuota, 507),
+            (DriveLocked, 403),
+            (DriveLinkExpired, 403),
+            (DriveError, 400),
+        )
+        for refusal, status in expected:
+            with self.subTest(refusal=refusal.__name__):
+                self.assertEqual(errors.map_exception(refusal("refused")).status, status)
+
+    def test_not_found_is_not_swallowed_by_the_validation_error_branch(self):
+        self.assertTrue(issubclass(DriveNotFound, frappe.ValidationError))
+        mapped = errors.map_exception(DriveNotFound("gone"))
+        self.assertIsInstance(mapped, errors.NotFoundError)
+        self.assertNotIsInstance(mapped, errors.Conflict)
+        # a plain frappe ValidationError is what the 409 branch is for
+        self.assertEqual(errors.map_exception(frappe.ValidationError("nope")).status, 409)
+
+    def test_a_dav_error_passes_through_unchanged(self):
+        raised = errors.NotFoundError("Resource not found.")
+        self.assertIs(errors.map_exception(raised), raised)
+
+    def test_a_refusal_never_leaks_the_drive_message_on_404_or_403(self):
+        for refusal in (DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired):
+            with self.subTest(refusal=refusal.__name__):
+                mapped = errors.map_exception(refusal("secret node title"))
+                self.assertNotIn("secret", mapped.message)
