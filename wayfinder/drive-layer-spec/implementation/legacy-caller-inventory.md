@@ -10,7 +10,10 @@ forwarders one release after Build.
 Agents produced the caller table and the payload comparison it rests on; the
 classification, the retention reasons, and the Cleanup gates are this ticket's.
 
-**Revision:** suite `9797d1ea6` on `implement/drive-23-legacy-compatibility`.
+**Revision:** suite `29eadd1cd` on `review/drive-23-legacy-compatibility`.
+The table below was written against `9797d1ea6`; the review branch changed no
+name, no class, and no guest flag, so the table still holds. What the review
+changed is recorded in "What the review fixed" below.
 Every path is relative to the app root. The classification is executable:
 `suite.drive.http.shims.CLASSIFICATION`, checked against the legacy modules by
 `suite/drive/http/tests/test_shims.py`.
@@ -175,8 +178,10 @@ rebuilt from the new surface without inventing data.
 1. **Permission bits.** The five legacy bits are read off one rung of §5.9's
    ladder. A legacy `Drive Permission` row decided each type independently and
    could say `write=1, comment=0`; the ladder cannot spell that.
-2. **`slide_count`.** No producer on either surface. Left off the list row
-   rather than guessed. Read by `DriveListRow.vue:289-291`.
+2. **Partial shares.** `File.share` left an unnamed bit at whatever the
+   existing row held. One rung cannot merge with a stored row, so a share that
+   names no contiguous run from `read` upwards is refused rather than written.
+   No shipped caller sends a partial: `ShareDialog.getAccess` sends all five.
 3. **`share_count` on a list row** is counted from local `Drive Grant` rows.
    Legacy tested inherited general access. §5.10 keeps local rows and
    inheritance apart, so a per-row count cannot fold them.
@@ -192,10 +197,72 @@ rebuilt from the new surface without inventing data.
    the "shared with me" list.
 8. **Trash lists trash roots.** §8.7 lists one row for a deleted folder where
    the old query listed the folder and everything under it.
-9. **`s3.fetch` refusals** are now `DriveNotFound`, not the
-   `DoesNotExistError` its `except` clause names. Both are 404 and both are
-   the same answer for missing and unreadable. The permanent body is not
-   edited to catch the new class.
+9. **`s3.fetch` refusals.** Fixed by the review, see below. The gap as first
+   recorded was wrong in one direction: `DriveForbidden` is 403, not 404, so a
+   denied stored URL confirmed the object exists.
 10. **`storage_breakdown`** is scoped to the caller's personal root, not to
     every file they own. A user with files in the Shared Root sees them in
     neither the old number nor the new one.
+
+## What the review fixed
+
+Independent review on `review/drive-23-legacy-compatibility`, commits
+`037d067a9`, `d5f8d4590`, `f75f0aff1`, `be89d402d`, `29eadd1cd`. Each fix
+carries a regression test that was run against the pre-fix body first.
+
+**Security**
+
+1. `update_access` read the five bits with `max()`, so a call naming only
+   `share: 1` granted MANAGE and every verb below it. It walks the ordered
+   ladder now and stops at the first bit the caller did not set.
+2. `update_access` granted role 0 when no bit reached a rung. Role 0 is §5.10's
+   deny, so a partial share cut inherited access. It refuses now.
+3. `_child_counts` counted every Active child. A shared folder reported the
+   rows the caller cannot open. It is `_core.nodes.readable_child_counts` now,
+   which subtracts only the children carrying their own grant.
+4. `api.s3.fetch` is guest-callable and answered 403 for a denied stored URL,
+   confirming the object exists. Its `except` names the `_core` classes now.
+
+**Correctness**
+
+5. `_listing` cut rows that `next_cursor` had already passed, so paging lost
+   up to a window per page.
+6. `search` was accepted and ignored on `shared`, `favourites`, `recents`, and
+   `trash`.
+7. A listing with no `limit` and no `paginated` truncated at 100. The old
+   non-paginated branch ran with no `LIMIT`, and `data/folderTree.js` and
+   `MoveDialog.vue` both call that way.
+8. `upload_file` refused a sibling collision where the old body renamed around
+   it, and published no `list-add`, so an upload appeared only after a reload.
+9. `move` answered the moved node. `File.move` answered the destination, which
+   is what both frontend `move` resources route and refresh on.
+10. Notification rows carried `entity_type: None`, which made every row on
+    `Notifications.vue` unclickable.
+11. Presentation rows lost `slide_count`, so the list showed a byte size
+    instead of "12 slides".
+12. `get_new_title`'s retirement broke `writer.api.docs.create_document`,
+    which imported it.
+13. `.name` was read off a dict in `writer/api/embed.py` and in
+    `api/files.ensure_path`.
+14. `auto_delete_from_trash` passed rows where `delete_entities` wants ids.
+
+**Evidence**
+
+15. The permanent surface was checked with substring greps. Each of the 21 is
+    now compared with its own structure at `e390a4487`, and every legacy name's
+    `allow_guest` flag with it. One hook assertion passed on a file-text match
+    that was not the value the hook holds.
+16. `get_shared_with_list` claimed it drops expired link rows. It drops all of
+    them.
+
+## Carried risks the review did not fix
+
+- **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
+  `_insert_deny` when read was still inherited from above, so "Restricted" on a
+  file inside a public folder cut the inheritance. §5.10 makes a deny something
+  the client must ask for, so the shim removes rows and stops. A file inside a
+  publicly shared folder stays readable after "Restricted", and the dialog says
+  nothing. The frontend ticket owns telling the user.
+- **`update_access` cannot spell `share` without `write`.** The ladder puts
+  MANAGE above EDIT. A legacy row that said "may re-share, may not edit"
+  becomes UPLOAD or COMMENT, never MANAGE.
