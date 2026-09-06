@@ -1348,6 +1348,20 @@ class TestSlidesInDrive(IntegrationTestCase):
         with self.assertRaises(DriveForbidden):
             api.save_presentation_thumbnail(self._docname(node), webp_capture())
 
+    def test_a_trashed_deck_refuses_a_paste_that_names_no_picture_at_all(self):
+        """§8.8: the bin opens read-only. The trash refusal used to sit after
+        the empty-map early return, so a slide naming no media was accepted by a
+        deck in the bin, and the endpoint's own `drive.check` does not read the
+        trash state either."""
+        node = self._deck(title="Binned empty paste")
+        update(self.admin, node, state="Trashed")
+        frappe.db.commit()
+
+        with self.assertRaises(DriveForbidden):
+            drive.adopt_media(node, [])
+        with self.assertRaises(DriveForbidden):
+            api.update_slide_attachments(self._docname(node), {"elements": "[]"})
+
     def test_a_docshare_cannot_open_a_deck_the_grants_refuse(self):
         node = self._deck(title="Unshared")
         docname = self._docname(node)
