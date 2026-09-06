@@ -110,13 +110,15 @@ class TestWebDAVSettings(IntegrationTestCase):
             doc.save()
 
     def test_allowed_methods_runtime_gate(self):
-        """The stored list still means what it always did. What changed is the
-        ceiling: ticket 24 relinks the read verbs only, so `RELINKED_METHODS` is
-        the widest set the runtime will hand out, whatever the admin asks for."""
-        from suite.drive.webdav import ALLOWED_METHODS, RELINKED_METHODS
+        """The stored list narrows the implemented surface, and never widens it.
 
-        self.assertEqual(allowed_webdav_methods(), RELINKED_METHODS)
-        self.assertEqual(RELINKED_METHODS, ("OPTIONS", "GET", "HEAD", "PROPFIND"))
+        Ticket 25 relinked the write verbs, so the ceiling is now
+        `ALLOWED_METHODS` itself: an admin who narrows nothing gets a
+        read-write mount, and one who names a subset gets exactly that subset.
+        """
+        from suite.drive.webdav import ALLOWED_METHODS
+
+        self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
 
         frappe.db.set_single_value(
             "Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, GET, HEAD, PROPFIND"
@@ -125,21 +127,21 @@ class TestWebDAVSettings(IntegrationTestCase):
         try:
             methods = allowed_webdav_methods()
             self.assertEqual(methods, ("OPTIONS", "GET", "HEAD", "PROPFIND"))
-            # no locking allowed -> no class 2 advertised
+            # no locking offered -> no class 2 advertised
             self.assertEqual(dav_compliance(methods), "1, 3")
             self.assertEqual(dav_compliance(ALLOWED_METHODS), "1, 2, 3")
 
-            # an admin list narrows the relinked set; it never widens it
+            # the write verbs are real now, so a list naming them offers them
             frappe.db.set_single_value(
                 "Drive Disk Settings", "webdav_allowed_methods", "PUT, LOCK, UNLOCK, PROPFIND"
             )
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-            self.assertEqual(allowed_webdav_methods(), ("OPTIONS", "PROPFIND"))
+            self.assertEqual(allowed_webdav_methods(), ("OPTIONS", "PUT", "PROPFIND", "LOCK", "UNLOCK"))
 
             # unvalidated garbage in the DB must not take every request down
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "BREW")
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-            self.assertEqual(allowed_webdav_methods(), RELINKED_METHODS)
+            self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
         finally:
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "")
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
