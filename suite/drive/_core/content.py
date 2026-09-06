@@ -39,7 +39,7 @@ from frappe.storage.url import signed_url_for_blob
 from frappe.utils import get_attr, now_datetime
 
 from suite.drive._core.access import add_creator_grant, require
-from suite.drive._core.errors import DriveConflict, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, READ
 
@@ -441,7 +441,9 @@ class DriveContent:
         """Raise unless the caller holds `role` at this document's node."""
         from suite.drive.framework import principals_for
 
-        require(_document_node(self.node), role, principals_for())
+        node = _document_node(self.node)
+        require(node, role, principals_for())
+        _refuse_trashed_write(node, role)
 
     def drive_touch(self) -> None:
         """Record that this body changed now, at most once per request."""
@@ -528,7 +530,21 @@ def touch(principals: Principals, doctype: str, docname: str) -> None:
         raise DriveConflict(_("A Drive content document requires its node"))
     current = _document_node(node)
     require(current, EDIT, principals)
+    _refuse_trashed_write(current, EDIT)
     touch_node(node)
+
+
+def _refuse_trashed_write(node: Mapping, role: int) -> None:
+    """§8.8: a trashed document node opens read-only.
+
+    The point check answers who the caller is, not what state the node is in,
+    because Drive's own restore and purge workflows must still act on a
+    trashed node. The app-facing calls are the ones that must refuse, the same
+    way `versions._require_content_version_node` refuses a capture or a
+    restore on one.
+    """
+    if role > READ and node.get("state") != "Active":
+        raise DriveForbidden(_("Trashed Drive nodes are read-only"))
 
 
 def touch_node(node: str) -> None:

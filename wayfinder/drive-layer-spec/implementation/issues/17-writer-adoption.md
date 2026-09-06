@@ -24,6 +24,12 @@ Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`.
 were touched and not claimed up front. Both are Drive tests whose expectations
 this ticket changes; neither changes Drive behavior.
 
+The review below also changed `suite/drive/_core/content.py` and
+`suite/drive/framework.py`, both owned by ticket 16. The §8.8 trashed
+read-only rule has one home per seam and Writer is not it, so writing the
+guard in Writer would have left Slides and Sheets to repeat it. Recorded as a
+deviation from the plan's file ownership, not hidden.
+
 **Execution gate:** None beyond completed blockers.
 
 **Source:** [Drive spec](../../drive-layer-spec.md), §10.7 Writer; §14.6–14.7.
@@ -56,8 +62,10 @@ bench --site slides.localhost run-tests --module suite.drive.api.tests.test_file
 bench --site slides.localhost run-tests --module suite.tests.test_architecture
 ```
 
-`migrate` must run first. It adds the `node` column and validates the content
-registry at boot. See "Migration" below for what the registry refuses.
+`migrate` must run first. It adds the `node` column, and `after_migrate`
+validates the content registry. See "Migration" below for what the registry
+refuses, and "Blockers" for the two ways `migrate` can now fail on a site that
+carries real Writer data.
 
 ### What has run here
 
@@ -66,14 +74,20 @@ checks and no-database tests ran.
 
 | Check | Result |
 |---|---|
-| `TestWriterDeclaration`, 16 tests, no database | Pass |
+| `TestWriterDeclaration`, 21 tests, no database | Pass |
 | `suite.tests.test_architecture`, 7 tests, no database | Pass |
 | `TestContentContract` in `suite/drive/tests/test_content.py`, 41 tests, no database | 39 pass; 2 pre-existing tests need a database connection |
-| `ruff check` on the changed files | Clean |
-| `ruff format --check` on the changed files | Clean |
+| `ruff check` on the four files the review changed | Clean |
+| `ruff check` on all 11 changed `.py` files | **2 errors**, both pre-existing |
+| `ruff format --check` and `ruff check --select=I` on the changed files | Clean |
 | `compileall` on `suite/writer`, `suite/drive`, `suite/hooks.py` | Clean |
 
-The 27 tests in `TestWriterInDrive` need rows and have **not** run. The
+`ruff check` is not clean on the full changed set. `suite/writer/api/docs.py`
+raises `E731` at line 89 and `E722` at line 117. Both fire on
+`86bda351d~1` as well, so neither is new, and neither was fixed here: they are
+outside this ticket's change.
+
+The 31 tests in `TestWriterInDrive` need rows and have **not** run. The
 acceptance boxes stay clear until they do.
 
 ## Completion evidence
@@ -172,19 +186,27 @@ Implementation commit `86bda351dc8b66a9f89073370f76ddd2b57dc215`.
 No new patch. `suite/patches.txt` is untouched. The only schema change is the
 `node` column, which `migrate` adds from the doctype JSON.
 
-`validate_registry` runs at boot and refuses the site if `Writer Document`
-lacks the `node` field, owns a field Drive owns, or carries a `DocShare` row.
-A site with `DocShare` rows on `Writer Document` must clear them before
-`migrate`, because such a row would grant around both permission hooks.
+`validate_registry` runs from `after_install` and `after_migrate`
+(`suite/composition/lifecycle.py:57,65`), not at boot, and refuses the site if
+`Writer Document` lacks the `node` field, owns a field Drive owns, or carries
+a `DocShare` row. A site with `DocShare` rows on `Writer Document` must clear
+them before `migrate`, because such a row would grant around both permission
+hooks. No tool writes that rewrite; see "Blockers".
+
+Desk assignment writes a `DocShare` (`frappe/desk/form/assign_to.py` calls
+`frappe.share.add`). Any site that has ever assigned a Writer document will
+fail `migrate` on this check, and assignment on `Writer Document` fails from
+this commit on.
 
 ### Handoffs
 
 | To | What is owed |
 |---|---|
-| 28 (Build) | Link every legacy `Writer Document` row to a node. Write `Writer Version` history as `writer-document/1` envelopes, not bare HTML, or restore refuses it. |
+| 28 (Build) | Link every legacy `Writer Document` row to a node. Write `Writer Version` history as `writer-document/1` envelopes, not bare HTML, or restore refuses it. Rewrite any `DocShare` on `Writer Document` as a grant before `after_migrate` runs. |
 | 21, 22 | Root, trash, media upload, and version restore over HTTP. Until then `suite/writer/tests/test_drive_adoption.py` reaches `suite.drive._core`, recorded as owned debt in `suite/tests/test_architecture.py`. |
-| 23 | Media node creation and the media route are still legacy Writer code (`suite/writer/api/embed.py`). |
-| 34 (frontend) | Two call sites now hit methods that no longer exist: `frontend/src/apps/writer/composables/useDocument.ts:37` (`new_version`) and `frontend/src/apps/writer/resources/index.js:37` (`save_comments`). Frontend adoption is separate scope, so this ticket did not change them. `newVersion` takes different arguments and returns a different shape from `take_version`, so no alias was added. |
+| 23 | The whole legacy Writer read path is still `File`-based and cannot see a document this ticket creates: `suite/writer/api/docs.py:get_document`, `suite/writer/api/general.py:get_document_list`, `:get_versions`, the search result mapping at `:190`, `suite/drive/api/list.py:files`, and `suite/writer/api/embed.py` for media. See "Blockers". |
+| 34 (frontend) | Two call sites hit methods that no longer exist: `frontend/src/apps/writer/composables/useDocument.ts:37` (`new_version`, fired from `CoreEditor.vue:320` on a timer and from `NewVersionDialog.vue:10`) and `frontend/src/apps/writer/resources/index.js:37` (`save_comments`, fired from `useYjs.ts:83`). A further set is broken by the *changed* contract, not by a deleted method: `useDocument.ts:19` and `:29`, `drive/utils/files.js:730-736`, `Navbar.vue:74`, `VersionsSidebar.vue:234`, `CoreEditor.vue:299`, `docximporter.js:26`. `newVersion` takes different arguments and returns a different shape from `take_version`, so no alias was added. |
+| e2e | `e2e/drive-backed-apps/helpers/writer.ts` and nine specs assert the old `create_document` shape and treat its result as a legacy `File` id. No ticket owns them. |
 
 ### Risks
 
@@ -192,4 +214,105 @@ A site with `DocShare` rows on `Writer Document` must clear them before
   node raises `DriveConflict` on every row permission check. This is why the
   site commands above run `migrate` before any test.
 - The untitled fallback tries 20 names. A folder with 20 untitled documents
-  raises the last refusal instead of a friendlier message.
+  raises the last refusal instead of a friendlier message. Every refusal, not
+  only a collision, costs one attempt, and InnoDB holds the parent-chain locks
+  each attempt took until the caller's transaction ends.
+- `duplicate` carries `settings` verbatim, so a legacy row whose settings hold
+  a stale `"template"` key passes it to every copy once Build links it.
+  Nothing reads it.
+
+## Review, 2026-09-06
+
+An independent review of `86bda351d` on `review/drive-17-writer-adoption`. It
+read the ticket, §8.8, §10.1–10.7 and §14.6–14.7, ARCHITECTURE.md, ticket 16,
+the Frappe sources the ticket cites, and every changed file and test. It ran
+static and no-database checks only.
+
+### Corrections made
+
+| Severity | Defect | Fix |
+|---|---|---|
+| High | A picture written as a plain `data-node` attribute was invisible in the Yjs body. `MEDIA_PATTERNS` needs the literal text `data-node="x"`, but Yjs holds the attribute name apart from its value, so `used_nodes` did not name it and `remap_media` did not rewrite it. The daily sweep would trash a picture the document still shows, and a copy's pictures would still point at the source's nodes. Untested: every body fixture used the URL spelling. | `_attribute_ids` and `_remapped_attribute` read the attribute name as well. |
+| High | pycrdt panics were converted for `apply_update` and nowhere else. A body whose `default` root was written as a `Text` or an `Array` applies cleanly and panics on the first child read. `PanicException` derives from `BaseException`, so it escapes the `except Exception` that rolls back `nodes.copy`'s and `nodes.create_document`'s savepoints, leaving a half-written copy, and it kills `sweep_unused_media` past its own rollback. Reproduced. | `_readable_body()` wraps every pycrdt call, not one. |
+| High | A trashed document was still writable. §8.8 says a trashed node opens read-only; `versions` and `comments` both enforce it, `content` and the row hook did not. `save_doc`, `save_html`, `update_settings`, `frappe.client.save`, and `frappe.client.set_value` all landed on a node in the bin. The existing test asserted "the bin opens read-only" in a comment and only checked `read`. | `content._refuse_trashed_write` in `drive_check` and `touch`; `framework._node_allows` denies any role above READ on a node that is not Active. |
+| Medium | `on_purge` left the whole body behind. Without `delete_permanently`, `frappe.delete_doc` writes a `Deleted Document` row holding `doc.as_json()`: the Yjs body, the HTML, and the comment blob all outlive a §8.8 purge. | `delete_permanently=True`. |
+| Medium | `_decoded_body` folded "no body" and "undecodable body" into `None`. An undecodable body answered "I use no pictures", so the sweep trashed its media, and `remap_media` skipped `content`, so the copy kept the source's ids — the exact outcome `_remap_body`'s docstring promises to refuse. `content` is written straight from the client with no validation, so it is reachable. | `_decoded_body` refuses; `_body_ids` falls back to a raw scan of the column, `_remap_body` raises. |
+| Medium | `test_a_save_stamps_the_node_and_never_the_document_title` could not fail. `create_document` already stamps `content_modified`, and `assertGreaterEqual` passes on equality, so deleting `drive_touch()` left it green. | Move the clock, then `assertGreater`. |
+| Low | Three claims in the code were false: that `content.app_callback()` wraps every callback (it wraps three of eight), that the `Writer Version` cascade works around a link check `force=1` already skips, and two stale `frappe/share.py` line citations. | Corrected in place. |
+
+`TestWriterDeclaration` goes from 16 tests to 21 and `TestWriterInDrive` from
+27 to 31. Each new test was run against `86bda351d` first and fails there for
+the defect it names.
+
+### Findings recorded, not fixed
+
+- **Medium.** Five of the eight `ContentTypeSpec` callbacks run outside
+  `content.app_callback()`: `on_purge` (`nodes.py:1368`), `restore_version`
+  (`versions.py:239`), `version_bytes` (`versions.py:61`, `:191`), `export`,
+  and `used_nodes` (`content.py:699`). No callback commits today, so this is
+  an unguarded boundary rather than a live defect. It is ticket 16's contract.
+- **Medium.** `framework._role_for_ptype` maps `create` to UPLOAD and then
+  resolves the node from the row being inserted. §4.3 says `create` "has no
+  meaning on the row being inserted, so it is answered against the parent".
+  Unreachable today, because `create_document` inserts with
+  `ignore_permissions`. Ticket 16's adapter.
+- **Medium.** `version_has_permission` and `version_query_conditions`
+  (`suite/writer/overrides/__init__.py`) resolve through the legacy `File`.
+  For a Drive-native document the row check denies everyone but Administrator
+  while the list predicate still allows the owner. Unreachable until Build
+  writes `Writer Version` rows for such documents. The ticket says these
+  guards "still work"; they work for legacy rows only.
+- **Medium.** `suite/drive/overrides/file.py:147-152` still deletes the
+  `Writer Document` behind a deleted legacy `File`. Once Build links the rows,
+  deleting the File takes the document out from under a live `Drive Node`.
+  Registering the doctype is what makes that second delete authority
+  dangerous.
+- **Low.** `restore_version` writes without `update_modified=False` while
+  every other body write uses it, so a restore bumps `Writer Document.modified`
+  and a concurrent `update_settings` then throws `TimestampMismatchError`.
+- **Low.** No API path creates a Writer template. `docs.create_document` has
+  no `is_template` parameter, so "cover ordinary documents and templates"
+  holds only through `_core` and through Build (§14.7).
+- **Low.** The evidence text says
+  `test_a_failed_reference_rewrite_leaves_no_copy_and_no_charge` uses
+  `dataclasses.replace(SPEC, remap_media=explode)`. It patches
+  `writer._remap_body` instead. The test is sound; the description is not.
+- **Low.** `frappe.PermissionError` is not a `frappe.ValidationError`, so the
+  untitled loop cannot swallow one. `docs.py:47`'s comment implies it can.
+
+### Blockers
+
+Both need an orchestrator decision. Neither is fixed here, because fixing
+either means reversing a decision this ticket recorded.
+
+1. **Activation is not staged, and the accepted plan says it must be.**
+   README execution rules: "Stage content registry activation and permission-hook
+   changes after required node links exist." Ticket 16's accepted criterion:
+   "Stage registry activation after migrated data is valid." Ticket 17
+   registers `Writer Document` now, before Build (28) writes a single node
+   link. Two consequences the ticket does not record:
+   - Every legacy `Writer Document` row 409s on any row permission check and
+     vanishes from every list. The ticket records this under Risks.
+   - **Every document created from this commit on is unreachable.**
+     `create_document` returns a `Drive Node` id and writes no `File` row, but
+     `get_document`, `get_document_list`, the Drive listing, the search result
+     mapping, and the embed route are all still `File`-based. The document
+     cannot be opened, listed, searched, or given an image. The ticket's
+     Handoffs describe this as two frontend call sites.
+   The graph puts backend compatibility at ticket 23 and the frontend at 34,
+   both after 17, so neither shim belongs here. Staging the activation is what
+   the plan says makes that ordering safe. Either stage it, or accept that
+   Writer is unusable between 17 and 23 and say so on the ticket.
+
+2. **`migrate` can now fail on a site with real Writer data.**
+   `validate_content_registry` refuses the site if any `DocShare` names
+   `Writer Document`. Desk assignment writes exactly such a row. No tool
+   rewrites those rows as grants. Build (28) owes one, and it runs after this.
+
+### Not verified
+
+No bench, no `migrate`, and no site command ran. `TestWriterInDrive`'s 31
+tests, `IntegrationTestWriterDocument`, and `TestContentWorkflows` all need
+`slides.localhost` and have not run. Every claim about rows above comes from
+reading source, except the pycrdt behavior, which was reproduced against the
+installed pycrdt 0.12.26.

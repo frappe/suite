@@ -125,7 +125,7 @@ def refuse_governed_share(doc, method=None) -> None:
 
     Wired on `DocShare.validate`, which `frappe.share.add` and
     `share.set_permission` both reach through `doc.save()`
-    (`frappe/share.py:79`, `:142`) even though they save with
+    (`frappe/share.py:82`, `:141`) even though they save with
     `ignore_permissions`. Deleting a row runs `on_trash` instead, so a legacy
     share can still be cleaned up. A no-op while no content type is
     registered.
@@ -301,13 +301,23 @@ def _document_node_of(doc, spec) -> str:
 def _node_allows(node: str, role: int, user: str | None) -> bool:
     """Run one point check against the node's stored ancestry.
 
-    The row check does not filter the node state. A trashed document is still
+    A read does not filter the node state. A trashed document is still
     readable through Drive's trash and restore workflows; the list predicate
     is the one that hides it.
+
+    Anything above a read does. §8.8: a trashed document node opens read-only,
+    and this is the arm that closes the generic ORM path. `frappe.client.save`
+    and `frappe.client.set_value` reach a content row through `doc.save()`,
+    which asks this hook and nothing else; the three whitelisted body writers
+    are already refused by `DriveContent.drive_check`. Denying here is safe
+    for Drive's own workflows because they check with `access.require`, not
+    through the framework, and a hook may only deny.
     """
     row = frappe.db.get_value("Drive Node", node, ACCESS_NODE_FIELDS, as_dict=True)
     if not row:
         raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    if role > READ and row.state != "Active":
+        return False
     return check(row, role, principals_for(user))
 
 
