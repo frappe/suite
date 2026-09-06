@@ -525,6 +525,76 @@ away, so the row survived each run and the guards refused it, which is what
 they are for. Suspicion 1 below had the shape right; the source of the row was
 the test module. See "Site gate repair" in `17-writer-adoption.md`.
 
+#### Site gate repair: the Slides fixture leaked the same way
+
+Recorded above as inert. It was not. Fixed at `d5ac8beb6`, `c1157620f`, and
+`db645102f`. Agents traced the row footprint and ran the mutations.
+
+`TestSlidesBeforeActivation` writes a legacy deck and commits.
+`IntegrationTestCase` rolls back once per class, not once per test, so the
+commit makes the rows permanent and the per-test `delete_doc` cleanups delete
+them inside the transaction the class rollback throws away.
+
+Which rows survive depends on method name order alone. The last committing test
+in the class is `test_a_legacy_composite_still_answers_editor_access_without_a_grant`,
+so its commit persists every earlier cleanup and strands its own deck. Eight
+runs left eight `Presentation` rows and eight `Slide` rows.
+
+The `File` leak is wider, and it outlives decks that were cleaned up correctly.
+`after_insert` backs each legacy deck with a `File` at
+`content_doctype`/`content_docname` (`presentation.py:115-124`). Deleting the
+deck does not delete it: the `on_trash` hook calls `permanent_delete`, which
+only sets `status` to `Removed` (`overrides/file.py:394-408`). Three files per
+run survived, twenty-four in all, sixteen naming a deck that no longer existed.
+`save_presentation_thumbnail` writes a second `File` at
+`attached_to_doctype`/`attached_to_name` (`presentation.py:214-232`), so the
+sweep covers both links.
+
+Suspicion 6 below is exactly this, for the second time on this gate.
+
+`_remove_fixture_rows` is the helper `TestSlidesInDrive` already had. It is
+registered first in `setUp`, so it runs last, and it commits. Decks go before
+files, so the `after_delete` cascade back to `content_docname` finds nothing to
+do.
+
+**Two lines of the first version were not load-bearing, and mutation runs
+proved it.** The `DocShare` sweep is redundant: `delete_doc` clears the share
+rows that name the deck (`frappe/model/delete_doc.py:505`). The deck sweep read
+as redundant for a different reason: every deck the test wrote carried a backing
+`File`, and `File.after_delete` deletes the row its `content_docname` names, so
+the file sweep removed the deck as a side effect. The share sweep is gone. The
+deck sweep stayed and the test now also writes a template, which `after_insert`
+leaves with no backing `File` (`presentation.py:79-82`), so only the deck sweep
+can reach it.
+
+`test_a_committed_fixture_row_does_not_outlive_the_class_rollback` asserts the
+leak in the run that causes it, not the next one. Each of the three remaining
+lines fails it when removed:
+
+| Line removed | Failure |
+|---|---|
+| `frappe.db.commit()` | `'...' is not false : the deck is gone for good` |
+| the `File` sweep | `'...' is not false : and the File that backs it` |
+| the deck sweep | `'...' is not false : and so is the template` |
+
+The lookup is `_backing_file`, not `DriveFile.get_for_doc`. Importing
+`suite.drive.overrides.file` for it made a fourth boundary violation and failed
+`test_architecture`; the helper beside it already runs the same `get_value`.
+
+Module counts after the repair: 30 unit and 71 integration, all OK, twice in a
+row with no row change on `slides.localhost`. `test_architecture` 7 OK,
+`suite.writer.tests.test_drive_adoption` 23 unit and 44 integration OK.
+
+Rows removed from `slides.localhost`: 10 `Presentation`, 10 `Slide`, 30 `File`,
+30 `Drive Entity Activity Log`. Eight decks were the pre-existing leak; two more
+came from running the module at `HEAD` during mutation work. Every removed deck
+matched `Legacy composite access <56 hex>` and carried `node IS NULL` and one
+slide. Every removed `File` carried `content_doctype = "Presentation"` and an
+`Assigned`/`Shared`/`Legacy composite access` fixture name; no `File` with that
+column belonged to anything else. Four `Presentation` rows were kept: `Light`
+and `Dark` from `suite/fixtures/presentation.json`, and two prototype decks from
+2026-08-16.
+
 #### The one defect the gate caught
 
 The first run of `suite.slides.tests.test_drive_adoption` gave 70 integration
@@ -586,6 +656,9 @@ inconsistent one. The `_corrupt` helper puts the column back before cleanup.
 6. **`frappe.db.commit()` inside any test defeats rollback isolation.** A
    committed fixture survives into the next module and can turn a later
    activation scan from item 1 into a failure that looks unrelated.
+   **This fired twice.** Writer's fixture committed a `DocShare` and item 1 was
+   the failure that looked unrelated. Slides' fixture committed a deck and its
+   backing `File`. Both are repaired; see the two "Site gate repair" sections.
 
 ## Blockers
 
