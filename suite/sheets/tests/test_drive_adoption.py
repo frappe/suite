@@ -155,6 +155,56 @@ def simple_workbook() -> bytes:
     return workbook_bytes(build)
 
 
+def respliced_workbook(**parts: bytes) -> bytes:
+    """A real xlsx package with named members replaced verbatim.
+
+    openpyxl writes a valid package; this swaps one part for a hostile one, so
+    every test below starts from a file Excel would open.
+    """
+    book = workbook_bytes(lambda book: book.active.__setitem__("A1", "x"))
+    source = zipfile.ZipFile(io.BytesIO(book))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as package:
+        for item in source.namelist():
+            package.writestr(item, parts.get(item, source.read(item)))
+    return output.getvalue()
+
+
+def _reordered_tabs(raw: bytes, order: list[str]) -> bytes:
+    """Rewrite `xl/workbook.xml` so the tab order differs from the part order.
+
+    Excel does this whenever a tab is dragged: the `<sheet>` elements move and
+    `sheet1.xml` stays where it is.
+    """
+    from xml.etree import ElementTree
+
+    namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ElementTree.register_namespace("", namespace)
+    source = zipfile.ZipFile(io.BytesIO(raw))
+    tree = ElementTree.fromstring(source.read("xl/workbook.xml"))
+    sheets_element = tree.find(f"{{{namespace}}}sheets")
+    by_name = {element.get("name"): element for element in list(sheets_element)}
+    for element in list(sheets_element):
+        sheets_element.remove(element)
+    for name in order:
+        sheets_element.append(by_name[name])
+    rewritten = ElementTree.tostring(tree, encoding="UTF-8", xml_declaration=True)
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as package:
+        for item in source.namelist():
+            package.writestr(item, rewritten if item == "xl/workbook.xml" else source.read(item))
+    return output.getvalue()
+
+
+def worksheet_xml(body: str) -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"{body}</worksheet>"
+    ).encode()
+
+
 # ── the declaration ──────────────────────────────────────────────────────────
 
 
@@ -530,6 +580,135 @@ class TestSheetsWorkbook(unittest.TestCase):
     def test_a_quoted_or_escaped_percent_does_not_scale_the_value(self):
         self.assertTrue(sheets._number_format('#,##0"%"').startswith("custom:"))
         self.assertTrue(sheets._number_format("#,##0\\%").startswith("custom:"))
+
+    # what a hostile workbook costs
+
+    def test_one_merge_range_cannot_expand_into_the_whole_grid(self):
+        """`A1:XFD1048576` is legal, is 4 KB on the wire, and covers 17e9 cells.
+
+        Before the bound, `_merge_slice` wrote one `slaveMap` entry for each of
+        them: measured, that took a worker past 2 GB in 20 seconds.
+        """
+        evil = respliced_workbook(
+            **{
+                "xl/worksheets/sheet1.xml": worksheet_xml(
+                    '<sheetData><row r="1"><c r="A1" t="inlineStr">'
+                    "<is><t>x</t></is></c></row></sheetData>"
+                    '<mergeCells count="1"><mergeCell ref="A1:XFD1048576"/></mergeCells>'
+                )
+            }
+        )
+        self._frappe()
+        with self.assertRaises(ValueError) as refusal:
+            sheets._workbook_from_xlsx(evil)
+        self.assertIn("merges more than", str(refusal.exception))
+
+    def test_an_ordinary_merge_still_comes_across(self):
+        """The bound must refuse the bomb and nothing a person would send."""
+        def build(book):
+            book.active.title = "Data"
+            book.active["A1"] = "x"
+            book.active.merge_cells("A1:C3")
+
+        merge = self._import(workbook_bytes(build))["merge"]["Data"]
+        self.assertEqual(merge["masterMap"]["A1"]["rowSpan"], 3)
+        self.assertEqual(merge["slaveMap"]["C3"], "A1")
+
+    def test_a_sparse_row_cannot_allocate_the_columns_it_skips(self):
+        """A row is a dense list, so one cell at XFD costs 16384 slots.
+
+        `MAX_IMPORT_CELLS` counts values, not slots, so 20000 cells in a 105 KB
+        file allocated 327 million of them: measured, past 2 GB in 8 seconds.
+        """
+        rows = "".join(
+            f'<row r="{r}"><c r="XFD{r}" t="inlineStr"><is><t>v</t></is></c></row>'
+            for r in range(1, 501)
+        )
+        evil = respliced_workbook(
+            **{"xl/worksheets/sheet1.xml": worksheet_xml(f"<sheetData>{rows}</sheetData>")}
+        )
+        self._frappe()
+        with self.assertRaises(ValueError) as refusal:
+            sheets._workbook_from_xlsx(evil)
+        self.assertIn("too sparse", str(refusal.exception))
+
+    def test_a_wide_but_honest_row_is_not_refused(self):
+        def build(book):
+            for column in range(1, 51):
+                book.active.cell(row=1, column=column, value=column)
+
+        rows = self._import(workbook_bytes(build))["sheet"]["sheets"]["Sheet"]["rows"]
+        self.assertEqual(len(rows["0"]), 50)
+
+    def test_a_package_that_claims_to_expand_past_the_bound_is_refused(self):
+        """A zip bomb is small on the wire and large once inflated."""
+        evil = respliced_workbook(
+            **{"xl/worksheets/sheet1.xml": worksheet_xml("<sheetData/>") + b" " * (2 * 1024 * 1024)}
+        )
+        self._frappe()
+        with mock.patch.object(sheets, "MAX_IMPORT_UNZIPPED", 64 * 1024):
+            with self.assertRaises(ValueError) as refusal:
+                sheets._workbook_from_xlsx(evil)
+        self.assertIn("expands to more than", str(refusal.exception))
+
+    def test_a_part_carrying_a_document_type_declaration_is_refused(self):
+        """`xml.etree.ElementTree` expands internal entities, so a DTD is a bomb.
+
+        A spreadsheet never carries one, so its presence is the whole check.
+        """
+        bomb = (
+            b'<?xml version="1.0"?>'
+            b'<!DOCTYPE worksheet [<!ENTITY a "aaaaaaaaaa">'
+            b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+            b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            b"<sheetData/></worksheet>"
+        )
+        evil = respliced_workbook(**{"xl/worksheets/sheet1.xml": bomb})
+        self._frappe()
+        with self.assertRaises(sheets.UnreadableWorkbook):
+            sheets._workbook_from_xlsx(evil)
+
+    def test_a_merge_lands_on_its_own_worksheet_whatever_the_part_order(self):
+        """Part numbering does not track tab order once a tab is moved.
+
+        Pairing `sheetnames` with the parts sorted by suffix gave Beta's merge
+        to Gamma. The workbook's own relationship is the authority.
+        """
+        def build(book):
+            book.active.title = "Gamma"
+            book.active["A1"] = "g"
+            book.create_sheet("Alpha")["A1"] = "a"
+            beta = book.create_sheet("Beta")
+            beta["A1"] = "b"
+            beta.merge_cells("A1:B1")
+
+        raw = workbook_bytes(build)
+        source = zipfile.ZipFile(io.BytesIO(raw))
+        # Beta is the last tab and the last part, so the bug is only visible
+        # once the two orders differ. Reorder the tabs, not the parts.
+        merged = self._import(_reordered_tabs(raw, ["Beta", "Gamma", "Alpha"]))["merge"]
+        self.assertIn("xl/worksheets/sheet3.xml", source.namelist())
+        self.assertEqual(list(merged), ["Beta"])
+        self.assertEqual(merged["Beta"]["slaveMap"]["B1"], "A1")
+
+    def test_a_workbook_that_declares_too_many_merge_ranges_is_refused(self):
+        many = "".join(
+            f'<mergeCell ref="A{r}:B{r}"/>' for r in range(1, 12)
+        )
+        evil = respliced_workbook(
+            **{
+                "xl/worksheets/sheet1.xml": worksheet_xml(
+                    '<sheetData><row r="1"><c r="A1" t="inlineStr">'
+                    "<is><t>x</t></is></c></row></sheetData>"
+                    f'<mergeCells count="11">{many}</mergeCells>'
+                )
+            }
+        )
+        self._frappe()
+        with mock.patch.object(sheets, "MAX_IMPORT_MERGE_RANGES", 10):
+            with self.assertRaises(ValueError) as refusal:
+                sheets._workbook_from_xlsx(evil)
+        self.assertIn("merged ranges", str(refusal.exception))
 
     def test_column_labels_match_the_client_and_the_cell_codec(self):
         from suite.sheets.doctype.sheet.cell_codec import _col_label
