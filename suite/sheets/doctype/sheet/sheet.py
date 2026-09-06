@@ -5,7 +5,6 @@ from frappe.model.document import Document
 
 from suite import drive
 from suite.drive.overrides.file import File as DriveFile
-from suite.sheets import drive as sheets_drive
 from suite.sheets.doctype.sheet.storage import (
     MAX_SHEETS_DATA_BYTES,
     decode_sheets_data,
@@ -17,8 +16,6 @@ from suite.sheets.doctype.sheet.storage import (
 # applies to the *uncompressed* workbook bytes; storage.py handles the
 # envelope detection so we accept both compressed and legacy plain values.
 MAX_TITLE_LEN = 280
-
-NODE_FIELD = sheets_drive.NODE_FIELD
 
 
 class Sheet(drive.DriveContent, Document):
