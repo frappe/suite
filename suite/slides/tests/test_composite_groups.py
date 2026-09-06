@@ -219,6 +219,16 @@ class TestCompositeGroupRequest(UnitTestCase):
             api._refuse_non_members(["secret-deck-name"], {})
         self.assertNotIn("secret-deck-name", str(refused.exception))
 
+    # the name
+
+    def test_a_name_that_is_not_a_docname_is_refused_before_any_lookup(self):
+        """`frappe.db.get_value` reads a dict or a list as filters, not as a name."""
+        for name in ({"is_composite": 1}, ["deck-1"], None, "", 5, True):
+            with self.subTest(name=name):
+                with self.assertRaises(frappe.PermissionError) as refused:
+                    api._authorized_composite(name)
+                self.assertEqual(str(refused.exception), api.REFUSED)
+
     # the guest-reachable answer
 
     def test_the_route_refuses_with_the_whole_deck_read_paths_own_words(self):
