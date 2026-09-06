@@ -9,7 +9,7 @@ import dataclasses
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import frappe
 from werkzeug.wrappers import Request
@@ -17,9 +17,6 @@ from werkzeug.wrappers import Request
 from suite.drive._core.principals import Principals
 from suite.drive.webdav import DAV_PREFIX
 from suite.drive.webdav.errors import BadRequest
-
-if TYPE_CHECKING:
-    from suite.drive.utils.files import FileManager
 
 CHUNK_SIZE = 1024 * 1024
 
@@ -85,14 +82,6 @@ class DavContext:
     body: BodySource
     path: Any = None  # ResolvedPath, filled by the dispatcher once resolved
     extras: dict = field(default_factory=dict)
-
-    @cached_property
-    def manager(self) -> FileManager:
-        # Only the not-yet-relinked write verbs still reach for this. It goes
-        # with the last `manager.*` call in ticket 25 (§12.5).
-        from suite.drive.utils.files import FileManager
-
-        return FileManager()
 
     @cached_property
     def principals(self) -> Principals:

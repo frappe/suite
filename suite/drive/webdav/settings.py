@@ -1,6 +1,6 @@
 import frappe
 
-from suite.drive.webdav import ALLOWED_METHODS, RELINKED_METHODS, parse_webdav_methods
+from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
 
 
 def global_webdav_enabled() -> bool:
@@ -8,10 +8,10 @@ def global_webdav_enabled() -> bool:
 
 
 def allowed_webdav_methods() -> tuple[str, ...]:
-    """The admin-configured method allow-list, narrowed to the relinked verbs.
+    """The admin-configured method allow-list, narrowed to what DAV implements.
 
     An empty setting means the admin has not narrowed anything, so the answer
-    is every relinked method. The stored value is validated on save, but
+    is every implemented method. The stored value is validated on save, but
     unknown tokens (e.g. written directly to the DB) are ignored rather than
     failing every request."""
     raw = frappe.get_cached_doc("Drive Disk Settings").get("webdav_allowed_methods")
@@ -20,8 +20,8 @@ def allowed_webdav_methods() -> tuple[str, ...]:
         # nothing valid beyond the implied OPTIONS - treat as unconfigured
         # rather than locking the whole site down to the handshake
         methods = ALLOWED_METHODS
-    # the admin's list narrows the relinked surface; it never widens it
-    return tuple(method for method in methods if method in RELINKED_METHODS)
+    # the admin's list narrows the implemented surface; it never widens it
+    return tuple(method for method in methods if method in ALLOWED_METHODS)
 
 
 def dav_compliance(methods: tuple[str, ...]) -> str:

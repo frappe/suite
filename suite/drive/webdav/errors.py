@@ -4,7 +4,6 @@ This module must not import other webdav modules (everything imports it).
 The tiny <D:error> bodies are built by hand so no XML library is needed here.
 """
 
-from contextlib import contextmanager
 from xml.sax.saxutils import escape
 
 import frappe
@@ -215,15 +214,6 @@ def _drive_refusal(exception: Exception) -> DAVError | None:
     if isinstance(exception, DriveError):
         return BadRequest(str(exception))
     return None
-
-
-@contextmanager
-def quota_guard():
-    """validate_quota raises a bare ValueError; convert it to 507 Insufficient Storage."""
-    try:
-        yield
-    except ValueError as e:
-        raise InsufficientStorage(str(e)) from e
 
 
 def _condition_body(condition: str, href: str | None) -> str:

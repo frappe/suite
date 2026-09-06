@@ -22,19 +22,6 @@ ALLOWED_METHODS = (
 )
 
 
-# The verbs already answered from `Drive Node`. Ticket 24 relinks path lookup,
-# listing, and download; ticket 25 relinks the write verbs, and deleting this
-# tuple is what re-admits them. Until then a write verb is refused rather than
-# run, because the handlers behind it still write legacy `File` rows and the
-# path they would be handed now names a node.
-RELINKED_METHODS = (
-    "OPTIONS",
-    "GET",
-    "HEAD",
-    "PROPFIND",
-)
-
-
 def parse_webdav_methods(raw: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Parse an admin-supplied method list into (methods, unknown_tokens).
 

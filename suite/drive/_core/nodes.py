@@ -17,7 +17,7 @@ from frappe.storage.driver import get_driver
 from frappe.storage.url import signed_url_for_blob
 from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
-from suite.drive._core import content, previews
+from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
     POINT_SQL,
     _resolve_rows,
@@ -721,6 +721,33 @@ def create_link(principals: Principals, parent: str, title: str, *, url: str) ->
     return _create_empty_node(principals, parent, title, kind="link", url=url)
 
 
+def create_empty_file(
+    principals: Principals,
+    parent: str,
+    title: str,
+    *,
+    content_modified: datetime | int | float | str | None = None,
+) -> str:
+    """Create a file node with §8.5's empty head: no blob, size 0, no MIME.
+
+    WebDAV LOCK on an unmapped URL is the caller (§12.3). RFC 4918 §7.3
+    replaced lock-null resources with "create the resource, then lock it", and
+    the resource a client is about to PUT into holds no bytes yet. No blob is
+    stored, so nothing is charged and the framework GC has nothing to reap if
+    the lock expires unused.
+
+    A later PUT is an ordinary replace, and §8.5 keeps no version of a head of
+    size 0, so the empty head leaves no trace once the bytes arrive.
+    """
+    return _create_empty_node(
+        principals,
+        parent,
+        title,
+        kind="file",
+        content_modified=content_modified,
+    )
+
+
 def _create_empty_node(
     principals: Principals,
     parent: str,
@@ -728,6 +755,7 @@ def _create_empty_node(
     *,
     kind: str,
     url: str | None = None,
+    content_modified: datetime | int | float | str | None = None,
 ) -> str:
     _validate_title(title)
     savepoint = f"drive_create_{kind}_{uuid4().hex[:12]}"
@@ -743,11 +771,15 @@ def _create_empty_node(
             title=title,
             kind=kind,
             url=url,
+            content_modified=_content_time(content_modified) if kind == "file" else None,
         )
         add_creator_grant(node, parent_row, principals, via_link=via_link)
         detail = {"kind": kind, "title": title}
         if url is not None:
             detail["url"] = url
+        if kind == "file":
+            # §8.2's create detail for a file, with the empty head it has
+            detail.update({"size": 0, "blob": None})
         _record_activity(node.name, "create", principals, detail, via_link=via_link)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
@@ -1587,6 +1619,7 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 content_modified=source_row.content_modified,
             )
             by_source[source_row.name] = new_node
+            _copy_dav_properties(source_row.name, new_node.name)
             # The creator grant lands on the copied node before its media
             # exist, so a copied picture inherits it instead of carrying a
             # grant of its own, exactly as an ordinary copied child does.
@@ -2007,6 +2040,46 @@ def _content_purge_callbacks(subtree: list[dict]) -> list[tuple]:
     return callbacks
 
 
+def _copy_dav_properties(source: str, target: str) -> None:
+    """Clone one node's dead WebDAV properties onto its copy (§8.9).
+
+    Copy is the one primitive behind WebDAV COPY, and RFC 4918 §9.8.2 makes
+    dead properties part of what a COPY carries. It belongs here rather than in
+    the adapter because `copy` walks the subtree and only it holds the
+    source-to-copy pairing for every node below the one the client named.
+
+    Guarded on the field's declared target the same way the purge cascade is
+    (§3.15): on a site whose `Drive DAV Property.entity` still names `File`,
+    the table is keyed in the old namespace and node ids do not belong in it.
+    """
+    if not _dav_property_table_ready():
+        return
+    rows = frappe.get_all(
+        "Drive DAV Property",
+        filters={"entity": source},
+        fields=["ns", "prop_name", "value_xml"],
+    )
+    for row in rows:
+        frappe.get_doc(
+            {
+                "doctype": "Drive DAV Property",
+                "entity": target,
+                "ns": row.ns,
+                "prop_name": row.prop_name,
+                "value_xml": row.value_xml,
+            }
+        ).insert(ignore_permissions=True)
+
+
+def _dav_property_table_ready() -> bool:
+    if not frappe.db.exists("DocType", "Drive DAV Property") or not frappe.db.table_exists(
+        "Drive DAV Property"
+    ):
+        return False
+    field = frappe.get_meta("Drive DAV Property").get_field("entity")
+    return bool(field and field.options == "Drive Node")
+
+
 def _delete_if_field(
     doctype: str,
     fieldname: str,
@@ -2251,6 +2324,9 @@ def _record_activity(
             "actor": principals.user,
             "at": at or now_datetime(),
             "via_link": via_link,
+            # §9.4: the adapter names its client once per request; on an
+            # unnamed one (every HTTP route) this is None.
+            "client": activity.current_client(),
             "detail": detail,
         }
     ).insert(ignore_permissions=True)

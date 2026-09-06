@@ -140,8 +140,9 @@ class File(FrappeFile):
         frappe.db.delete("Drive Permission", {"entity": self.name})
         frappe.db.delete("Drive Notification", {"notif_doctype_name": self.name})
         frappe.db.delete("Drive Entity Activity Log", {"entity": self.name})
-        frappe.db.delete("Drive DAV Property", {"entity": self.name})
-        frappe.db.delete("Drive DAV Lock", {"entity": self.name})
+        # `Drive DAV Property` and `Drive DAV Lock` are not reaped here any
+        # more: their `entity` names a `Drive Node` (§3.15), so deleting a
+        # `File` matched nothing. `_core.nodes` purges both with the node.
 
         if (
             self.content_doctype

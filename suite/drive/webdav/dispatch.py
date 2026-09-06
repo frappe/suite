@@ -14,25 +14,28 @@ import frappe
 from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.wrappers import Request, Response
 
-from suite.drive.webdav import DAV_PREFIX, RELINKED_METHODS
+from suite.drive.webdav import ALLOWED_METHODS, DAV_PREFIX
 
 
 class DAVResponseException(HTTPException):
     """Carrier for a finished DAV response through frappe's exception handling."""
 
 
-# method -> (module under suite.drive.webdav, handler attribute); imported lazily
-# so non-DAV requests never load the protocol engine.
-#
-# The write verbs are absent while ticket 25 is open. Their handlers still
-# write legacy `File` rows, and the path they would be handed now names a
-# `Drive Node`, so running one would create a row in the wrong tree. They are
-# refused by the allow-list before they reach here; this table and
-# `RELINKED_METHODS` grow back together.
+# method -> (module under suite.drive.webdav, handler attribute); imported
+# lazily so non-DAV requests never load the protocol engine. OPTIONS is
+# answered before authentication and never reaches this table.
 _HANDLERS: dict[str, tuple[str, str]] = {
     "PROPFIND": ("propfind", "handle"),
     "GET": ("get", "handle"),
     "HEAD": ("get", "handle"),
+    "PUT": ("put", "handle"),
+    "DELETE": ("structure", "handle_delete"),
+    "MKCOL": ("structure", "handle_mkcol"),
+    "MOVE": ("structure", "handle_move"),
+    "COPY": ("copy", "handle"),
+    "PROPPATCH": ("proppatch", "handle"),
+    "LOCK": ("lock", "handle_lock"),
+    "UNLOCK": ("lock", "handle_unlock"),
 }
 
 
@@ -49,6 +52,7 @@ def handle_before_request() -> None:
 
 
 def _dispatch(request: Request) -> None:
+    from suite.drive._core import activity
     from suite.drive.webdav import auth, context, errors, log, options, settings
 
     if not settings.global_webdav_enabled():
@@ -61,6 +65,11 @@ def _dispatch(request: Request) -> None:
     # it too, and an over-long header throws there before anything can discard
     # the result. Werkzeug's `request.headers` is a view over this dict.
     request.environ.pop("HTTP_X_DRIVE_LINKS", None)
+
+    # §12.4: every activity row a DAV write produces carries the User-Agent in
+    # `client`, and the engine may not read the transport request. Named once
+    # here, before any handler runs, so no workflow has to be told twice.
+    activity.bind_client(request.headers.get("User-Agent"))
 
     log.start_request(request)
 
@@ -105,7 +114,7 @@ def _dispatch(request: Request) -> None:
         _respond(response)
 
 
-def _handler_for(method: str, allowed: tuple[str, ...] = RELINKED_METHODS) -> Callable:
+def _handler_for(method: str, allowed: tuple[str, ...] = ALLOWED_METHODS) -> Callable:
     entry = _HANDLERS.get(method)
     if not entry:
         from suite.drive.webdav.errors import MethodNotAllowed
