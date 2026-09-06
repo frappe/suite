@@ -1285,18 +1285,25 @@ def _upload_key(principals, session: str) -> str:
     return f"{LEGACY_UPLOAD_PREFIX}:{principals.user}:{session}"
 
 
-def _unadopted_folder(name: str | None) -> bool:
+def _unadopted_row(name: str | None) -> bool:
     """Whether this id names a `File` row that no `Drive Node` holds.
 
     The same store decision `_legacy_entity_with_permissions` makes, asked
-    about a destination rather than about a row to read. It is existence, not
-    a refusal: §5.2 answers `DriveNotFound` for a node the caller may not
-    reach, and retrying the legacy store on that answer would hand the old
-    rules a question the workflow had already refused.
+    about a destination or a row to write rather than a row to read. It is
+    existence, not a refusal: §5.2 answers `DriveNotFound` for a node the
+    caller may not reach, and retrying the legacy store on that answer would
+    hand the old rules a question the workflow had already refused.
     """
     if not name:
         return False
     return not frappe.db.exists("Drive Node", name) and bool(frappe.db.exists("File", name))
+
+
+def _legacy_file_row(name: str) -> dict:
+    """One `File` row in the shape the old bodies answered."""
+    from suite.drive.utils import FILE_FIELDS, hide_storage_key
+
+    return hide_storage_key(frappe.get_all("File", filters={"name": name}, fields=FILE_FIELDS, limit=1)[0])
 
 
 def _legacy_upload(principals, *, parent, total_file_size, file_modified, embed):
@@ -1337,11 +1344,9 @@ def _legacy_upload(principals, *, parent, total_file_size, file_modified, embed)
     from suite.drive.api.permissions import user_has_permission
     from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
     from suite.drive.utils import (
-        FILE_FIELDS,
         create_drive_file,
         get_file_type,
         get_new_file_name,
-        hide_storage_key,
         update_file_size,
     )
     from suite.drive.utils.api import prettify_file
@@ -1404,8 +1409,7 @@ def _legacy_upload(principals, *, parent, total_file_size, file_modified, embed)
         pass
 
     frappe.publish_realtime("list-add", {"file": prettify_file(row.as_dict())}, user=principals.user)
-    answer = frappe.get_all("File", filters={"name": row.name}, fields=FILE_FIELDS, limit=1)[0]
-    return hide_storage_key(answer)
+    return _legacy_file_row(row.name)
 
 
 @_legacy
@@ -1439,7 +1443,7 @@ def upload_file(
     """
     principals = _principals()
     parent = parent or _home(principals)
-    if _unadopted_folder(parent):
+    if _unadopted_row(parent):
         if fullpath:
             # A directory upload names folders to create, and creating one
             # here would mean a second legacy folder writer beside
@@ -1690,9 +1694,32 @@ def delete_entities(entity_names: list[str] | None = None, clear_all: bool = Fal
     return None
 
 
+def _legacy_rename(entity_name: str, new_title: str) -> dict:
+    """Rename on the `File` store, for an id no node holds.
+
+    `CoreEditor.vue` renames an untitled document from its first line on the
+    first Enter, so this is reached by typing rather than by any gesture the
+    reader chose. Every document `writer.api.docs.create_document` writes is a
+    `File` with no node while `Writer Document` is in the §10.2 expand phase.
+
+    `File.rename` is the rule that named the row: it holds the row, checks
+    Write, keeps the disk path, and writes the activity line. Nothing is
+    decided here.
+    """
+    frappe.get_doc("File", entity_name).rename(new_title)
+    return _legacy_file_row(entity_name)
+
+
 @_legacy
 def rename(entity_name: str, new_title: str):
-    """`rename` -> `PATCH /nodes/<id>` `{title}`."""
+    """`rename` -> `PATCH /nodes/<id>` `{title}`.
+
+    It writes to either store: a `File` that no node holds is renamed by
+    `File.rename`, because §10.2 keeps a content type's legacy rows working
+    while that type is in the expand phase.
+    """
+    if _unadopted_row(entity_name):
+        return _legacy_rename(entity_name, new_title)
     principals = _principals()
     node_core.update(principals, entity_name, title=new_title)
     return _legacy_row(node_core.stored(entity_name))
