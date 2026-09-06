@@ -67,6 +67,9 @@ REGISTRY_CACHE_ATTR = "drive_content_registry"
 FORBIDDEN_FIELD_NAMES = frozenset({"title", "trashed", "trashed_at", "trashed_on", "trashed_by"})
 FORBIDDEN_FIELD_PREFIXES = ("share_", "shared_")
 
+# The node column a `DriveContent` controller uses unless it names another one.
+DEFAULT_NODE_FIELD = "node"
+
 DOCUMENT_NODE_FIELDS = (
     "name",
     "kind",
@@ -248,7 +251,7 @@ def validate_registry() -> None:
     for doctype, spec in _build_registry().items():
         meta = _meta_or_refuse(doctype)
         _validate_node_field(meta, spec)
-        _validate_mixin(doctype)
+        _validate_mixin(doctype, spec)
         _validate_forbidden_fields(meta, spec)
         for satellite in spec.satellites:
             _validate_satellite(satellite, doctype)
@@ -336,13 +339,22 @@ def _validate_node_field(meta, spec: ContentTypeSpec) -> None:
         )
 
 
-def _validate_mixin(doctype: str) -> None:
+def _validate_mixin(doctype: str, spec: ContentTypeSpec) -> None:
     # `frappe.model.base_document.get_controller`, not a `Meta` method: `Meta`
     # has none, so reading it through the meta made every declaration fail.
     controller = get_controller(doctype)
     if not issubclass(controller, DriveContent):
         raise DriveConflict(
             _("The Drive content doctype {0} does not use the DriveContent mixin").format(doctype)
+        )
+    # The mixin reads the node column from the controller and the list
+    # predicate reads it from the declaration, because the mixin has to work
+    # before the doctype is registered. Two names that disagree would put the
+    # row check and the list filter on different columns, so activation
+    # refuses it.
+    if getattr(controller, "drive_node_field", DEFAULT_NODE_FIELD) != spec.node_field:
+        raise DriveConflict(
+            _("The Drive content doctype {0} and its declaration name different node fields").format(doctype)
         )
 
 
@@ -399,7 +411,16 @@ class DriveContent:
     and `take_version`, and it registers the `before_insert` guard that
     refuses a document with no node. The guard runs even when the controller
     declares its own `before_insert`, because `__init_subclass__` wraps it.
+
+    §10.3 stages registration: a controller carries this mixin from its
+    adoption ticket, and the doctype joins `drive_content_types` only once
+    every row of it carries a node link. So the mixin has to work before it is
+    registered, and `drive_node_field` is what names the node column until the
+    declaration does. `_validate_mixin` refuses an activation where the two
+    disagree.
     """
+
+    drive_node_field: str = DEFAULT_NODE_FIELD
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -414,8 +435,7 @@ class DriveContent:
 
     @property
     def node(self) -> str:
-        spec = spec_for(self.doctype)
-        node = self.get(spec.node_field)
+        node = self.get(node_field_of(self))
         if not node:
             raise DriveConflict(_("A Drive content document has no node"))
         return node
@@ -430,7 +450,7 @@ class DriveContent:
         called `node` die with an AttributeError. `refuse_node_change` is what
         holds the node still, not a missing setter.
         """
-        self.set(spec_for(self.doctype).node_field, value)
+        self.set(node_field_of(self), value)
 
     @property
     def node_title(self) -> str:
@@ -485,31 +505,61 @@ def _guard_hook(cls, name: str, guard) -> None:
     setattr(cls, name, guarded)
 
 
+def node_field_of(doc) -> str:
+    """Name the node column of one content document, registered or not.
+
+    The registry decides while the doctype is registered, because the list
+    predicate reads the same declaration. Before activation there is no
+    declaration to read, so the controller's own `drive_node_field` answers;
+    `_validate_mixin` refuses an activation where the two disagree.
+    """
+    spec = registry().get(doc.doctype)
+    if spec is not None:
+        return spec.node_field
+    return getattr(doc, "drive_node_field", None) or DEFAULT_NODE_FIELD
+
+
 def refuse_node_change(doc) -> None:
     """Refuse a saved content document that repoints itself at another node.
 
     §8.3: both sides of the link are set once and never change. The Drive side
     is held by `nodes._link_document` and the `Drive Node` controller; this is
-    the app side.
+    the app side. It holds on both sides of activation: a row that has a node
+    keeps it, and a legacy row that acquires one during the expand phase is
+    held to the same link rules an insert is.
     """
     if doc.get("__islocal") or not doc.get("name"):
         return
-    spec = spec_for(doc.doctype)
-    stored = frappe.db.get_value(doc.doctype, doc.name, spec.node_field)
-    if stored and stored != doc.get(spec.node_field):
+    field = node_field_of(doc)
+    stored = frappe.db.get_value(doc.doctype, doc.name, field)
+    if stored and stored != doc.get(field):
         raise DriveConflict(_("A Drive content document identity cannot change"))
+    if not stored and doc.get(field) and not governs(doc.doctype):
+        # A legacy row acquiring a node during the expand phase, which is the
+        # one window where a stored row can have no node. `require_node` only
+        # runs before an insert, so the same link rules are applied here: a
+        # node that is not a document node, or one that already names another
+        # document, is refused rather than silently accepted. A registered
+        # doctype cannot reach this, because no row of it exists without a node.
+        require_node(doc)
 
 
 def require_node(doc) -> None:
-    """Refuse a content document that names no node, or the wrong one.
+    """Refuse a content document that names the wrong node, or none at all.
 
-    §5.13 and §10.2: a document without a node cannot exist, so it is an
-    error, not a case Drive handles.
+    §5.13 and §10.2: a Drive-native document without a node cannot exist, so
+    it is an error, not a case Drive handles. Registration is what makes the
+    node mandatory: while the doctype is still in the expand phase its legacy
+    rows carry no node and keep working, and Build (§14) is what links them.
+    A row that does carry one is held to the whole rule either way, so no
+    document can name a node that is not its own.
     """
-    spec = spec_for(doc.doctype)
-    node = doc.get(spec.node_field)
+    field = node_field_of(doc)
+    node = doc.get(field)
     if not node:
-        raise DriveConflict(_("A Drive content document requires its node"))
+        if governs(doc.doctype):
+            raise DriveConflict(_("A Drive content document requires its node"))
+        return
     row = frappe.db.get_value("Drive Node", node, ("kind", "content_docname"), as_dict=True)
     if not row or row.kind != "document":
         raise DriveConflict(_("A Drive content document requires a document node"))

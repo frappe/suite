@@ -120,14 +120,23 @@ ignore_file_permissions = True
 # Drive content types (§10.3)
 # ============================================================================
 # Dotted paths to `suite.drive.ContentTypeSpec` objects, one per content app.
-# Registration is staged: an app joins this list in its own adoption ticket,
-# once its documents carry a `node` Link. The `has_permission` and
-# `permission_query_conditions` entries below move to `suite.drive.framework`
-# in the same step, never before it. Slides and Sheets join at tickets 18 and
-# 19. A registered doctype needs an open baseline role DocPerm, because a
+# Registration is staged: an app declares its spec in its own adoption ticket
+# and joins this list only once every row of its doctype carries a `node`
+# Link. Ticket 29 does that, after Build has written the links and checked
+# them. The `has_permission` and `permission_query_conditions` entries below
+# move to `suite.drive.framework.doc_has_permission` and `.doc_query_conditions`
+# in the same step, never before it.
+#
+# Writer declares `suite.writer.drive.SPEC` (ticket 17) and is not listed here
+# yet; Slides and Sheets declare theirs at tickets 18 and 19. While the list is
+# empty Drive governs no doctype: `refuse_governed_share` is a no-op, and
+# `validate_content_registry` inspects no `DocShare`, so a site with assigned
+# Writer documents still migrates.
+#
+# On activation each doctype needs an open baseline role DocPerm, because a
 # Frappe permission hook can only deny (`frappe/permissions.py:244-246`);
 # `Writer Document` has the wide-open `All` row §10.4 requires.
-drive_content_types = ["suite.writer.drive.SPEC"]
+drive_content_types = []
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
@@ -146,7 +155,8 @@ permission_query_conditions = {
     "Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
     # writer
     "Writer Template": "suite.writer.overrides.filter_templates",
-    "Writer Document": "suite.drive.framework.doc_query_conditions",
+    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
+    "Writer Document": "suite.writer.overrides.document_query_conditions",
     "Writer Version": "suite.writer.overrides.version_query_conditions",
     # sheets
     "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
@@ -174,7 +184,8 @@ has_permission = {
     # slides
     "Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
     # writer
-    "Writer Document": "suite.drive.framework.doc_has_permission",
+    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29.
+    "Writer Document": "suite.writer.overrides.document_has_permission",
     "Writer Version": "suite.writer.overrides.version_has_permission",
     "Writer Template": "suite.writer.overrides.template_has_permission",
     # sheets
@@ -240,7 +251,8 @@ doc_events = {
     # both permission hooks (frappe/permissions.py:214-216 and
     # frappe/database/query.py:1739-1742). A governed doctype therefore
     # carries no share at all. Deleting a row is left alone, so a legacy share
-    # can still be cleaned up. A no-op while `drive_content_types` is empty.
+    # can still be cleaned up. A no-op while `drive_content_types` is empty,
+    # which is what keeps Desk assignment working until ticket 29.
     "DocShare": {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },

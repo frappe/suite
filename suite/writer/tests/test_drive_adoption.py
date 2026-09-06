@@ -1,20 +1,39 @@
 """Writer's adoption of the Drive content contract (ticket 17, §10.7).
 
-`TestWriterDeclaration` proves the declaration and the body callbacks with no
-rows. `TestWriterInDrive` proves the lifecycle, history, media, permissions,
-failure rollback, and legacy compatibility on real rows.
+Adoption is an expand phase, not a switch. Writer declares its `ContentTypeSpec`
+and `Writer Document` gains the `node` Link, but `suite/hooks.py` leaves
+`drive_content_types` empty and keeps both `Writer Document` permission entries
+on `suite.writer.overrides`. The README stages registry activation and
+permission-hook changes until the node links exist, and ticket 29 makes all
+three changes together, after Build.
 
-The integration class reaches `suite.drive._core` for the workflows the
-package root does not expose yet: roots, trash, media upload, and version
-restore. Those imports are recorded as owned debt in
-`suite/tests/test_architecture.py` and go when tickets 21 and 22 put those
-workflows behind HTTP.
+So the three classes here split along that seam:
+
+`TestWriterDeclaration`   the declaration and the body callbacks, no rows. It
+                          also proves the hooks are dormant and that activation
+                          registers exactly what ticket 29 will install.
+`TestWriterBeforeActivation`
+                          what a site running this commit does: legacy rows,
+                          the legacy `create_document`, and a `DocShare` that
+                          must not fail `migrate`.
+`TestWriterInDrive`       the Drive-native lifecycle, history, media,
+                          permissions, and failure rollback, under `activated()`.
+
+`activated()` injects the registry and the two hook targets rather than shipping
+them, so nothing here depends on the site being activated and nothing here
+activates it.
+
+The integration classes reach `suite.drive._core` for the workflows the package
+root does not expose yet: roots, trash, media upload, and version restore. Those
+imports are recorded as owned debt in `suite/tests/test_architecture.py` and go
+when tickets 21 and 22 put those workflows behind HTTP.
 """
 
 import base64
 import dataclasses
 import io
 import json
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
@@ -26,19 +45,60 @@ from frappe.utils import add_to_date, get_datetime
 
 from suite import drive
 from suite.drive._core.access import grant
+from suite.drive._core.content import clear_registry_cache, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden
 from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
+from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
+from suite.writer import overrides
+from suite.writer.api import docs
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
 OTHER = "writer-adoption-other@example.com"
 
 DOCTYPE = "Writer Document"
+
+# The three entries ticket 29 installs together, once Build has linked every
+# `Writer Document` row. `suite/hooks.py` carries none of them yet.
+ACTIVATION = {
+    "drive_content_types": ["suite.writer.drive.SPEC"],
+    "has_permission": ["suite.drive.framework.doc_has_permission"],
+    "permission_query_conditions": ["suite.drive.framework.doc_query_conditions"],
+}
+
+
+@contextmanager
+def activated():
+    """Register Writer for the block, exactly the way ticket 29 will register it.
+
+    The registry is built from `drive_content_types` and the framework reads
+    both permission hooks from the same hook map, so injecting the map is the
+    whole activation. Nothing is written and nothing survives the block: the
+    per-request registry cache is dropped on the way in and on the way out.
+    """
+    real_get_hooks = frappe.get_hooks
+
+    def hooks(key=None, *args, **kwargs):
+        if key == "drive_content_types":
+            return list(ACTIVATION[key])
+        if key in ("has_permission", "permission_query_conditions"):
+            wired = dict(real_get_hooks(key, *args, **kwargs) or {})
+            wired[DOCTYPE] = list(ACTIVATION[key])
+            return wired
+        return real_get_hooks(key, *args, **kwargs)
+
+    clear_registry_cache()
+    try:
+        with patch("frappe.get_hooks", hooks):
+            yield
+    finally:
+        clear_registry_cache()
+
 
 # Valid base64, but not a Yjs update: pycrdt panics on it.
 BROKEN_BODY = b"suite.writer.api.embed.get?id=survivor and then garbage"
@@ -128,15 +188,44 @@ class TestWriterDeclaration(UnitTestCase):
     def test_the_controller_carries_the_drive_mixin(self):
         self.assertTrue(issubclass(WriterDocument, drive.DriveContent))
 
-    def test_the_two_framework_hooks_point_at_drive_and_no_writer_code(self):
+    # staged activation
+
+    def test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were(self):
+        """README execution rules: stage the registry and the permission hooks
+        after the required node links exist. Build writes them at ticket 28 and
+        ticket 29 activates. Registering now would 409 every legacy row on its
+        next permission check."""
         from suite import hooks
 
-        self.assertEqual(hooks.drive_content_types, ["suite.writer.drive.SPEC"])
-        self.assertEqual(hooks.has_permission[DOCTYPE], "suite.drive.framework.doc_has_permission")
+        self.assertEqual(hooks.drive_content_types, [], "activation waits for ticket 29")
+        self.assertEqual(hooks.has_permission[DOCTYPE], "suite.writer.overrides.document_has_permission")
         self.assertEqual(
             hooks.permission_query_conditions[DOCTYPE],
-            "suite.drive.framework.doc_query_conditions",
+            "suite.writer.overrides.document_query_conditions",
         )
+        clear_registry_cache()
+        self.assertFalse(governs(DOCTYPE), "Drive governs nothing while the registry is empty")
+
+    def test_a_dormant_registry_leaves_a_docshare_alone(self):
+        """The one thing that would fail `migrate` on a site with real Writer
+        data. Desk assignment writes a `DocShare` (`frappe.share.add`), and no
+        tool rewrites those rows as grants before Build."""
+        share = frappe._dict(share_doctype=DOCTYPE, share_name="anything")
+        refuse_governed_share(share)
+
+        with activated(), self.assertRaises(DriveForbidden):
+            refuse_governed_share(share)
+
+    def test_activation_registers_the_declaration_and_moves_both_hooks(self):
+        with activated():
+            self.assertTrue(governs(DOCTYPE))
+            self.assertIs(spec_for(DOCTYPE), writer.SPEC)
+            self.assertEqual(frappe.get_hooks("has_permission")[DOCTYPE], ACTIVATION["has_permission"])
+            self.assertEqual(
+                frappe.get_hooks("permission_query_conditions")[DOCTYPE],
+                ACTIVATION["permission_query_conditions"],
+            )
+        self.assertFalse(governs(DOCTYPE), "the injection leaves nothing behind")
 
     # the version envelope
 
@@ -253,8 +342,98 @@ class TestWriterDeclaration(UnitTestCase):
         self.assertIsNone(writer._remap_body(None, {"old": "new"}))
 
 
+class TestWriterBeforeActivation(IntegrationTestCase):
+    """What a site running this commit actually does: nothing Drive-native.
+
+    `drive_content_types` is empty here, as it is on a site. These are the two
+    outcomes the staged activation buys: a legacy document stays reachable, and
+    a `DocShare` no longer fails `migrate`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(USER)
+        ensure_user(OTHER)
+        frappe.db.commit()
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        clear_registry_cache()
+        self.addCleanup(clear_registry_cache)
+
+    def _legacy_document(self) -> str:
+        document = frappe.new_doc(DOCTYPE)
+        document.insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc, DOCTYPE, document.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        return document.name
+
+    def test_a_document_the_api_creates_is_reachable_by_the_legacy_read_path(self):
+        """The whole point of not activating. `create_document` writes a `File`
+        and a node-less document, and `get_document`, the row check, and the
+        list all still find it. A Drive-native document would have no `File`,
+        and every one of those reads is still `File`-based until ticket 23."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        entity = docs.create_document(title=f"Legacy {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        docname = entity.content_docname
+
+        self.assertEqual(entity.content_doctype, DOCTYPE)
+        self.assertIsNone(frappe.db.get_value(DOCTYPE, docname, "node"), "no node before Build")
+        self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname))
+        self.assertIn(docname, frappe.get_list(DOCTYPE, pluck="name"))
+
+        docs.get_document(entity.name)
+        self.assertEqual(frappe.response["data"]["content_docname"], docname)
+
+    def test_a_legacy_document_still_takes_its_private_history(self):
+        docname = self._legacy_document()
+        document = frappe.get_doc(DOCTYPE, docname)
+
+        document.new_version("<p>a draft</p>", title="first")
+
+        self.assertTrue(frappe.db.exists("Writer Version", {"doc": docname, "title": "first"}))
+        with self.assertRaises(frappe.ValidationError):
+            document.take_version()
+
+    def test_a_docshare_on_a_writer_document_does_not_fail_a_migration(self):
+        """`after_migrate` runs `validate_content_registry`. Desk assignment
+        writes a `DocShare` (`frappe/desk/form/assign_to.py` calls
+        `frappe.share.add`) and no tool rewrites those rows as grants before
+        Build, so activating now would refuse the site."""
+        docname = self._legacy_document()
+        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+
+        validate_content_registry()
+
+        # And the reason it has to stay dormant: activation refuses the site
+        # while that row exists. Ticket 28 owes the rewrite.
+        with activated(), self.assertRaises(DriveConflict):
+            validate_content_registry()
+
+    def test_activation_would_accept_the_declaration_itself(self):
+        # Every check `validate_registry` makes that needs a database: the node
+        # Link, the mixin, the node field name, and the fields §10.2 forbids.
+        with activated():
+            validate_content_registry()
+
+
 class TestWriterInDrive(IntegrationTestCase):
-    """Lifecycle, history, media, permissions, and legacy rows, on real rows."""
+    """Lifecycle, history, media, permissions, and legacy rows, on real rows.
+
+    Every test runs under `activated()`, because none of these workflows exist
+    on a site until ticket 29 registers the declaration.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -270,6 +449,11 @@ class TestWriterInDrive(IntegrationTestCase):
         super().setUp()
         frappe.set_user("Administrator")
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
+        # Entered first, so its exit runs last: the fixture purge below is a
+        # Drive workflow and needs the registry it injects.
+        activation = activated()
+        activation.__enter__()
+        self.addCleanup(activation.__exit__, None, None, None)
         # Registered before the first row exists, so a `setUp` that dies half
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)
@@ -690,6 +874,39 @@ class TestWriterInDrive(IntegrationTestCase):
         with self.assertRaises(DriveForbidden):
             frappe.has_permission(DOCTYPE, "read", docname)
 
+    def test_the_staged_legacy_guards_never_answer_for_a_linked_row(self):
+        """The dual path, from the other side. While the hooks are staged they
+        are `suite.writer.overrides`, and a linked row has no `File`, so the
+        legacy predicate's `owner = <user>` arm would have listed it and the
+        legacy row check would have granted its owner everything."""
+        node = self._document(title="Linked")
+        document = frappe.get_doc(DOCTYPE, self._docname(node))
+
+        self.assertFalse(overrides.document_has_permission(document, "read", USER))
+        self.assertFalse(overrides.document_has_permission(document, "write", USER))
+        for predicate in (
+            overrides.document_query_conditions(USER),
+            overrides.version_query_conditions(USER),
+        ):
+            with self.subTest(predicate=predicate):
+                self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
+
+    def test_a_linked_row_refuses_every_legacy_method(self):
+        """§14.6 and §8.11 put history and comments on the node. A linked row
+        must not grow a second, private copy of either that Drive cannot see."""
+        node = self._document(title="No legacy writes")
+        document = frappe.get_doc(DOCTYPE, self._docname(node))
+
+        for legacy in (
+            lambda: document.new_version("<p>x</p>", title="sneaky"),
+            lambda: document.save_comments("AAA=", None),
+            lambda: document.update_file(file_size=1),
+        ):
+            with self.subTest(legacy=legacy), self.assertRaises(frappe.ValidationError):
+                legacy()
+        self.assertFalse(frappe.db.exists("Writer Version", {"doc": document.name}))
+        self.assertFalse(frappe.db.get_value(DOCTYPE, document.name, "ycomments"))
+
     def test_the_legacy_columns_and_doctypes_survive_adoption(self):
         # §14.6 and §14.7: Build copies these, Cleanup removes them. Nothing
         # in this ticket may drop them early.
@@ -726,7 +943,10 @@ def _purge_fixture_roots() -> None:
     """
     admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
-    for root in roots:
-        if frappe.db.get_value("Drive Root", root, "state") == "Active":
-            update_root(root, admin, state="Archived")
-        purge_root(root, admin)
+    # Purging a document node calls the app's `on_purge`, which Drive reads from
+    # the registry, so the purge runs registered even when the caller is not.
+    with activated():
+        for root in roots:
+            if frappe.db.get_value("Drive Root", root, "state") == "Active":
+                update_root(root, admin, state="Archived")
+            purge_root(root, admin)
