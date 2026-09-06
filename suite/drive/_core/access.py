@@ -4,7 +4,7 @@ import dataclasses
 import secrets
 import string
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from uuid import uuid4
 
@@ -558,7 +558,12 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
     return {"role": answer, "source": "grant" if answer else "none", "rows": out}
 
 
-def grants_for(node_id: str, principals: Principals, *, subject: Principals | None = None) -> dict:
+def grants_for(
+    node_id: str,
+    principals: Principals,
+    *,
+    resolve_subject: Callable[[], Principals] | None = None,
+) -> dict:
     """Answer one node's share dialog: its local grants, and one explanation.
 
     Local rows only, because §5.10 keeps removal and denial apart: what an
@@ -571,9 +576,11 @@ def grants_for(node_id: str, principals: Principals, *, subject: Principals | No
     row and a live one. `password_hash` never leaves this function; the listed
     row says `has_password` instead.
 
-    MANAGE is required once, here, before any row is read. `subject` names
-    whoever `?principal=` asked about (§11.2); their own role is not a
-    condition on the caller's right to ask.
+    The subject arrives as a *callable*, not as a value, and that is the point.
+    §11.2 requires MANAGE on the target before another principal is evaluated,
+    so whoever `?principal=` named is resolved here, after the gate. Resolving
+    them at the call site would answer "that names no user" to a caller with no
+    right to ask anything about this node at all.
     """
     node = _node_or_not_found(node_id)
     require(node, MANAGE, principals)
@@ -589,8 +596,8 @@ def grants_for(node_id: str, principals: Principals, *, subject: Principals | No
             for row in rows
         ]
     }
-    if subject is not None:
-        answer["explain"] = explain(node, principals, subject=subject)
+    if resolve_subject is not None:
+        answer["explain"] = explain(node, principals, subject=resolve_subject())
     return answer
 
 
@@ -689,6 +696,8 @@ def grant(
         raise DriveForbidden(_("Only a Drive share link can have a password"))
     if role == NONE and _is_personal_root_owner(node, principal):
         raise DriveForbidden(_("A Personal Drive root owner cannot be denied"))
+    if principal.startswith("$LINK:"):
+        _refuse_borrowed_link_token(node, principal, role)
 
     normalized_expiry = _future_expiry(expires_on)
     stored_principal = _mint_link_principal() if principal == "$LINK" else principal
@@ -915,7 +924,12 @@ def unlock_link(token: str, password: str) -> dict:
         raise DriveForbidden(_("This Drive link has ambiguous password grants"))
     if protected:
         row = protected[0]
-    elif not current and capabilities:
+    elif not capabilities:
+        # Deny rows only. §6.1 lets a link principal name a deny on a child,
+        # and a row that confers nothing is not a link: §5.11 answers a token
+        # that names no grant with `DriveNotFound`, and so does `resolve_link`.
+        raise DriveNotFound(_("Drive link was not found"))
+    elif not current:
         raise DriveLinkExpired(_("This Drive link has expired"))
     else:
         raise DriveForbidden(_("This Drive link does not require a password"))
@@ -1027,6 +1041,41 @@ def _validate_principal_target(principal: str, principal_kind: str) -> None:
         frappe.throw(_("Drive grant user does not exist"), frappe.ValidationError)
     if principal_kind == "group" and not frappe.db.exists("User Group", principal.removeprefix("$GROUP:")):
         frappe.throw(_("Drive grant user group does not exist"), frappe.ValidationError)
+
+
+def _refuse_borrowed_link_token(node: Mapping, principal: str, role: int) -> None:
+    """Keep a share-link token the server's to mint and one node's to address.
+
+    §5.9 step 1 and §11.2 both say the server mints the 22-char token, so a
+    caller writing `$LINK:<token>` is naming a link that already exists, never
+    creating one. Two rules follow, and without them a `PUT` on any node the
+    caller manages reaches a link they do not own.
+
+    1. The token must already name a row. Otherwise a caller could publish
+       `$LINK:aaaaaaaaaaaaaaaaaaaaaa` and call the guessable result a secret.
+    2. At most one row per token may carry a capability. §6.1 gives a token one
+       row that grants and, below it, ordinary deny rows; §5.11's `unlock_link`
+       and §6.2's `resolve_link` both read a token as one grant. A second
+       capability row elsewhere makes a password link answer "ambiguous" for
+       everyone holding it, and makes `/drive/l/<token>` resolve to whichever
+       node sorts first.
+
+    A deny (role NONE) stays legal on any node, because that is exactly §6.1's
+    "a deny naming a link principal on a child is an ordinary grant row", and a
+    row that confers nothing is invisible to both readers above.
+    """
+    rows = frappe.get_all(
+        "Drive Grant",
+        filters={"principal": principal},
+        fields=["node", "role"],
+    )
+    if not rows:
+        frappe.throw(
+            _("A Drive share link is created with the principal $LINK, and its token is minted"),
+            frappe.ValidationError,
+        )
+    if role > NONE and any(row.node != node.get("name") and row.role > NONE for row in rows):
+        raise DriveForbidden(_("That Drive share link already addresses another node"))
 
 
 def _is_personal_root_owner(node: Mapping, principal: str) -> bool:

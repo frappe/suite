@@ -13,10 +13,12 @@ so a wrong signature fails silently: a `doc_query_conditions` that lost
 (§10.3).
 """
 
+import dataclasses
+
 import frappe
 from frappe import _
 from frappe.core.doctype.permission_type.permission_type import get_doctype_ptype_map
-from frappe.utils import now
+from frappe.utils import now, validate_email_address
 
 from suite.drive._core import content
 from suite.drive._core.access import check
@@ -117,29 +119,42 @@ def principals_for_principal(principal: str) -> Principals:
     §11.2's `GET /nodes/<id>/grants?principal=<p>` asks what somebody else can
     reach, so the answer needs an identity for them. A `<email>` is a person:
     they carry their groups, `$GENERAL`, and `$PUBLIC` as well, because that is
-    what they will actually present. The four `$` spellings are not people and
-    carry nothing but themselves, so the answer is what that one row confers
-    rather than what some anonymous holder of it might also happen to hold.
+    what they will actually present. A `$` spelling is not a person and carries
+    nothing else of its own, so the answer is what that row confers rather than
+    what some particular holder of it might also happen to hold.
+
+    `$PUBLIC` is the exception, and §6.5 is why: every session holds it, Guest
+    included. A group, `$GENERAL`, and a link holder all reach a published
+    ancestor, so an explanation that withheld `$PUBLIC` would report "no
+    access" for people who can in fact read the node.
 
     The subject never inherits this request's `X-Drive-Links` header, and never
-    carries an unlock ticket. A password link therefore explains as locked, the
-    same rule `require` applies on every other surface (§4.8); `has_password`
-    on the listed grant row is what names the password itself.
+    carries an unlock ticket - including when the named person is the caller,
+    which `principals_for` would otherwise treat as the session. One question
+    gets one answer whoever asks it. A password link therefore explains as
+    locked, the same rule `require` applies on every other surface (§4.8);
+    `has_password` on the listed grant row is what names the password itself.
+
+    The five spellings are §4.4's exactly, the same set `grant` accepts. A User
+    whose docname is not an address - `Administrator`, `Guest` - can hold no
+    grant, so explaining one would answer a question no grant row can pose.
     """
     if not isinstance(principal, str) or not principal.strip():
         frappe.throw(_("A Drive principal is required"), frappe.ValidationError)
     principal = principal.strip()
-    if principal == "$PUBLIC" or principal.startswith("$LINK:"):
-        return Principals(user=principal, own=(), open=(principal,), is_admin=False)
+    if principal == "$PUBLIC":
+        return Principals(user=principal, own=(), open=("$PUBLIC",), is_admin=False)
+    if principal.startswith("$LINK:"):
+        return Principals(user=principal, own=(), open=("$PUBLIC", principal), is_admin=False)
     if principal == "$GENERAL" or principal.startswith("$GROUP:"):
-        return Principals(user=principal, own=(principal,), open=(), is_admin=False)
-    if principal.startswith("$"):
+        return Principals(user=principal, own=(principal,), open=("$PUBLIC",), is_admin=False)
+    if principal.startswith("$") or validate_email_address(principal) != principal:
         frappe.throw(
             _("Drive principal {0} is not a known spelling").format(principal), frappe.ValidationError
         )
     if not frappe.db.exists("User", principal):
         frappe.throw(_("Drive principal {0} names no user").format(principal), frappe.ValidationError)
-    return principals_for(principal)
+    return dataclasses.replace(principals_for(principal), open=("$PUBLIC",), link_tickets=())
 
 
 def validate_content_registry() -> None:

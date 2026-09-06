@@ -15,6 +15,7 @@ from suite.drive._core.access import (
     explain,
     grant,
     require,
+    resolve_link,
     revoke,
     revoke_below,
     rotate_link,
@@ -718,6 +719,60 @@ class TestShareLinks(_GrantFixture):
 
         with self.assertRaises(DriveLinkExpired):
             unlock_link(token, "unused")
+
+    def test_a_token_that_names_only_deny_rows_is_not_a_link(self):
+        # §6.1 lets a link principal name a deny on a child. A row that confers
+        # nothing is not a link, so §5.11's "names no grant" answer applies -
+        # the same answer `resolve_link` gives.
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+        token = created["principal"].removeprefix("$LINK:")
+        child = self._child(self.folder.name, "Denied")
+        grant(child.name, created["principal"], NONE, self.admin)
+        revoke(self.folder.name, created["principal"], self.admin)
+
+        with self.assertRaises(DriveNotFound):
+            unlock_link(token, "unused")
+        with self.assertRaises(DriveNotFound):
+            resolve_link(token)
+
+    def test_a_caller_may_not_invent_a_share_link_token(self):
+        # §5.9 step 1 and §11.2: the server mints the token. A caller-chosen one
+        # is a guessable secret dressed as a 128-bit one.
+        with self.assertRaises(frappe.ValidationError):
+            grant(self.folder.name, "$LINK:" + "a" * 22, READ, self.admin)
+        self.assertFalse(frappe.db.exists("Drive Grant", {"principal": "$LINK:" + "a" * 22}))
+
+    def test_a_token_already_addressing_a_node_cannot_be_borrowed_by_another(self):
+        # The link holder is every recipient of the URL, and each of them holds
+        # MANAGE somewhere. A second capability row would make `/drive/l/<t>`
+        # resolve to whichever grant sorts first and would leave the owner's
+        # password link permanently ambiguous to unlock.
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+        elsewhere = create_root(kind="Personal", title="Borrower root", user=MANAGER)
+
+        with self.assertRaises(DriveForbidden):
+            grant(elsewhere.name, created["principal"], READ, self.admin)
+        rows = frappe.get_all("Drive Grant", filters={"principal": created["principal"]}, pluck="node")
+        self.assertEqual(rows, [self.folder.name])
+
+    def test_the_owning_node_may_still_update_its_own_link(self):
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+
+        updated = grant(self.folder.name, created["principal"], EDIT, self.admin)
+
+        self.assertEqual(updated["name"], created["name"])
+        self.assertEqual(updated["role"], EDIT)
+
+    def test_a_deny_naming_a_link_stays_legal_on_a_descendant(self):
+        # §6.1 states this case explicitly, so the borrowed-token refusal must
+        # not reach it.
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+        child = self._child(self.folder.name, "Cut")
+
+        denied = grant(child.name, created["principal"], NONE, self.admin)
+
+        self.assertEqual(denied["role"], NONE)
+        self.assertEqual(resolve_link(created["principal"].removeprefix("$LINK:"))["node"], self.folder.name)
 
 
 class TestGrantFixtureIsolation(_GrantFixture):

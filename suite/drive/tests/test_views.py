@@ -322,6 +322,51 @@ class TestDriveViews(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
 
+    def test_a_personal_list_obeys_the_three_exclusions_every_view_carries(self):
+        # §11.2: "Every view excludes `is_template` nodes except `templates`.
+        # Root nodes appear only through explicit root entry points... No view
+        # returns the children of a document node." `Drive Recent` and `Drive
+        # Favourite` are written under a plain READ check, so the exclusions
+        # have to be applied where the view answers.
+        from suite.drive._core.activity import set_favourite, visit
+
+        ordinary = self._node(self.personal.name, "Ordinary")
+        template = self._node(self.personal.name, "Template", kind="document", is_template=1)
+        deck = self._node(self.personal.name, "Deck", kind="document")
+        media = self._node(deck.name, "Slide picture", kind="file")
+        for node in (self.personal.name, ordinary.name, template.name, media.name):
+            visit(self.principals, node)
+            set_favourite(self.principals, node, True)
+
+        for name in ("recents", "favourites"):
+            with self.subTest(view=name):
+                listed = [row.name for row in views(self.principals, name)["rows"]]
+                self.assertEqual(listed, [ordinary.name])
+
+    def test_every_node_view_answers_the_whole_base_shape(self):
+        # §11.3: a list row and a detail fetch publish the same base fields.
+        listed = self._node(self.personal.name, "Listed")
+        self._grant(listed.name, OTHER, READ)
+        others = Principals(OTHER, (OTHER,), ("$PUBLIC",))
+        trashed = self._node(
+            self.personal.name, "Trashed", trashed_at="2026-01-01 00:00:00", trash_root="self"
+        )
+        self._node(self.personal.name, "Template", kind="document", is_template=1)
+
+        pages = {
+            "shared": views(others, "shared"),
+            "trash": views(self.principals, "trash", root=self.personal.name),
+            "templates": views(self.principals, "templates"),
+            "search": views(self.principals, "search", term="e"),
+        }
+        self.assertTrue(pages["trash"]["rows"] and pages["trash"]["rows"][0].name == trashed.name)
+        for name, page in pages.items():
+            self.assertTrue(page["rows"], name)
+            for row in page["rows"]:
+                for field in nodes_module.NODE_FIELD_NAMES:
+                    with self.subTest(view=name, field=field):
+                        self.assertIn(field, row)
+
     def test_folder_page_is_three_queries_and_never_lists_templates(self):
         visible = self._node(self.personal.name, "A visible")
         folder = self._node(self.personal.name, "A folder")
