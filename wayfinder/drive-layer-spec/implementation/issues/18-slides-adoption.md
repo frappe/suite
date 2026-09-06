@@ -516,8 +516,14 @@ The three Writer errors are `test_activation_would_accept_the_declaration_itself
 `test_a_stranger_reads_neither_the_row_nor_the_list`, and
 `test_an_inherited_folder_grant_reaches_the_row_and_the_list`. They reproduce
 at `a8f747fd2` with `suite/drive/_core/content.py` restored to that revision,
-so they are not this repair. They sit in Writer's list-permission path and
-belong to ticket 17. Not fixed here.
+so they are not this repair. Not fixed here; they belong to ticket 17.
+
+**"They sit in Writer's list-permission path" is wrong.** Corrected at
+`25bdc25af`. The permission path answered correctly every time. Writer's own
+adoption fixture committed a `DocShare` whose removal the class rollback threw
+away, so the row survived each run and the guards refused it, which is what
+they are for. Suspicion 1 below had the shape right; the source of the row was
+the test module. See "Site gate repair" in `17-writer-adoption.md`.
 
 #### The one defect the gate caught
 

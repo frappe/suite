@@ -610,6 +610,111 @@ the list because it freezes the four hook signatures the two guards borrow.
   1742. The two copies in `suite/writer/overrides/__init__.py` and its tests
   say 1739-1742. Not corrected here: both files are outside this commit.
 
+## Site gate repair, `25bdc25af`
+
+The three errors ticket 18's site gate recorded against this ticket are fixed.
+They were not a defect in the list-permission path. The Writer adoption test
+module poisoned the site it ran on, and the poison failed the next run.
+
+### The defect
+
+`TestWriterBeforeActivation.test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it`
+writes a legacy `Writer Document` and a `DocShare` on it, then commits. An
+`addCleanup` deletes each row.
+
+`IntegrationTestCase` rolls back once per class, not once per test. `setUpClass`
+registers `_rollback_db` with `addClassCleanup`
+(`frappe/tests/classes/integration_test_case.py:72`), and neither `setUp` nor
+`tearDown` rolls back. So the commit made both rows permanent, the two
+`delete_doc` cleanups deleted them inside the transaction, and the class
+rollback threw those deletes away. One `Writer Document` and one `DocShare` for
+`writer-adoption-other@example.com` survived every run of the module.
+`slides.localhost` carried six such pairs, one per historical run.
+
+The surviving share is what failed the next run. Each guard gave the correct
+fail-closed answer:
+
+| Test | Guard | Answer |
+|---|---|---|
+| `test_activation_would_accept_the_declaration_itself` | `validate_content_registry` | `DriveConflict`, the type still has shares |
+| `test_a_stranger_reads_neither_the_row_nor_the_list` | `_refuse_shared_list` | `DriveForbidden` on `frappe.get_list` |
+| `test_an_inherited_folder_grant_reaches_the_row_and_the_list` | `_refuse_shared_list` | `DriveForbidden` on `frappe.get_list` |
+
+`frappe.has_permission` passed in both `TestWriterInDrive` tests.
+`refuse_shared_row` filters on `share_name`, so a share written against another
+row never reaches it. Only the list guard is unscoped by row, and that is the
+design: the engine ORs every shared name around whatever the hook returns
+(`frappe/database/query.py:1738-1742`), so a governed doctype holding one
+readable share has to refuse the whole list. Nothing here was relaxed.
+
+Two of the three errors appear on a clean site, in the first run.
+`TestWriterBeforeActivation` rolls back before `TestWriterInDrive` starts, which
+resurrects the committed share inside the same process.
+`test_activation_would_accept_the_declaration_itself` sits in the leaking class,
+where the delete is still pending, so it fails on the second run and later.
+That is why the gate saw three errors and a clean site sees two.
+
+Ticket 18 recorded these as "Writer's list-permission path". That reading is
+wrong. Ticket 18's own suspicion 1 named the real shape: "a pre-existing
+`DocShare` on any `Presentation` or `Writer Document` refuses activation". The
+source of the row was the Writer test module.
+
+### The fix
+
+`TestWriterBeforeActivation` now carries `_remove_fixture_rows`, the helper
+`TestWriterInDrive` already had. It is registered first in `setUp`, so it runs
+last, after every `delete_doc` cleanup a test queues. It deletes the
+`Writer Document` and `DocShare` rows the test added, then commits, so the
+removals outlive the class rollback.
+
+`test_a_committed_fixture_row_does_not_outlive_the_class_rollback` asserts it in
+the run that causes the leak: commit a share, run the helper, roll back, and
+both rows are gone. Removing the `frappe.db.commit()` from the helper turns that
+test red and brings back `test_a_stranger_reads_neither_the_row_nor_the_list`
+and `test_an_inherited_folder_grant_reaches_the_row_and_the_list` in the same
+run. That mutation was run, and it is what proves the guard is not vacuous.
+
+### Checks run, 2026-09-06
+
+Run from `/home/faris/benches/suite-bench` against the main checkout, serialised.
+No `migrate`, no install, no restart: the change touches one test file.
+
+| Module | Result |
+|---|---|
+| `suite.writer.tests.test_drive_adoption` | 23 unit OK, 44 integration OK |
+| `suite.writer.doctype.writer_document.test_writer_document` | 2 OK |
+| `suite.writer.api.tests.test_general` | 2 OK |
+| `suite.slides.tests.test_drive_adoption` | 30 unit OK, 70 integration OK |
+| `suite.drive.tests.test_content` | 53 unit OK, 49 integration OK |
+| `suite.drive.tests.test_nodes` | 13 unit OK, 23 integration OK |
+| `suite.tests.test_architecture` | 7 OK |
+| `suite.tests.test_composition` | 3 OK |
+
+Integration is 44, not 43: the guard test is the new one.
+`test_writer_template` and `test_writer_version` hold no tests and were skipped
+by the runner, not by choice.
+
+The Writer module was run twice in a row on a cleaned site. Both runs are green
+and both leave `DocShare` and `Writer Document` at zero rows, which is the
+idempotence the leak broke. `ruff@0.12.3 check` and `format --check` pass on the
+changed file.
+
+The six leaked row pairs were deleted from `slides.localhost`. Every one was a
+node-less `Writer Document` owned by `Administrator` carrying a read `DocShare`
+for `writer-adoption-other@example.com`. No other site data was touched.
+
+### Not fixed, recorded
+
+- **`suite/slides/tests/test_drive_adoption.py` leaks the same way.**
+  `TestSlidesBeforeActivation` has no `_remove_fixture_rows`, and its committing
+  tests leak one `Presentation` per run: `slides.localhost` went from 10 rows to
+  11 across one run. No `DocShare` leaks, by accident rather than by design. A
+  later test in the same class commits, which flushes the earlier tests' pending
+  cleanup deletes; only the last committing test's rows survive. So the module
+  is green today and its garbage is inert, because `_refuse_shared_list` trips
+  on shares and not on rows. It becomes a poison the day a share outlives the
+  last commit. Ticket 18's file, not this one's.
+
 ## Handoffs
 
 | To | What is owed |
