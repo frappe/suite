@@ -123,6 +123,47 @@ def resolved(node_row=None, *, segments=None, parent=None, is_mount=False) -> pa
     )
 
 
+class _GroupCache:
+    """The one cache key the principal path reads, answered from memory.
+
+    Everything else stays on the real cache. `frappe.cache` is one object and
+    `frappe._` reads the merged translation dict off it, so replacing the whole
+    object with a `MagicMock` makes every translated string a mock. A
+    `frappe.throw` under that patch then raises `TypeError` out of
+    `strip_html_tags` on a run that has a terminal.
+    """
+
+    def __init__(self, real):
+        self.real = real
+
+    def __call__(self):
+        """`framework.principals_for` reaches the cache as `frappe.cache()`."""
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+    def hget(self, key, name, generator=None, **kwargs):
+        if key == "drive_user_groups":
+            return generator()
+        return self.real.hget(key, name, generator=generator, **kwargs)
+
+
+class _Stdin:
+    """`msgprint` asks `sys.stdin.isatty()`, and nothing else about the caller.
+
+    The exception text is stripped with `strip_html_tags` only when the run has
+    a terminal (`frappe/utils/messages.py:77-85`), so a piped run passes a
+    refusal that the site gate fails.
+    """
+
+    def __init__(self, terminal: bool):
+        self.terminal = terminal
+
+    def isatty(self) -> bool:
+        return self.terminal
+
+
 def multistatus(response) -> dict[str, dict[int, dict[str, etree._Element]]]:
     """{href: {status: {clark tag: element}}} from a 207 body."""
     root = etree.fromstring(response.get_data())
@@ -1121,9 +1162,7 @@ class TestDavPrincipals(DavCase):
 
     def setUp(self):
         super().setUp()
-        cache = MagicMock()
-        cache.hget.side_effect = lambda key, name, generator=None, **kw: generator()
-        self.start(patch("frappe.cache", return_value=cache))
+        self.start(patch.object(frappe, "cache", _GroupCache(frappe.cache)))
         self.start(patch.object(framework, "_user_groups", return_value=("team",)))
         self.start(patch.object(framework, "is_drive_admin", return_value=False))
 
@@ -1214,6 +1253,27 @@ class TestDavPrincipals(DavCase):
         response, ctx = self.dispatched({"X-Drive-Links": header})
         self.assertEqual(response.status_code, 207)
         self.assertEqual(ctx.principals.open, ("$PUBLIC",))
+
+    def test_the_oversized_refusal_carries_its_message_on_a_terminal(self):
+        """`frappe.throw` translates the message, and `frappe._` reads the
+        merged translation dict off `frappe.cache`. A test that replaced the
+        whole cache object made that message a mock, which `strip_html_tags`
+        refuses - but only on a run with a terminal, so a piped run passed and
+        the site gate failed. Both runs are asserted here."""
+        from suite.drive._core.principals import LINK_HEADER_LIMIT, parse_link_header
+
+        header = ",".join([self.LINK_TOKEN] * (LINK_HEADER_LIMIT + 5))
+        expected = f"X-Drive-Links accepts at most {LINK_HEADER_LIMIT} items"
+        log = self.bind("message_log", [])
+
+        for terminal in (False, True):
+            with self.subTest(terminal=terminal):
+                log.clear()
+                with patch("sys.stdin", _Stdin(terminal)):
+                    with self.assertRaises(frappe.ValidationError) as caught:
+                        parse_link_header(header)
+                self.assertEqual(str(caught.exception), expected)
+                self.assertEqual(log[-1]["message"], expected)
 
 
 # --- H. refusal mapping ---
