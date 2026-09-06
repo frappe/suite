@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from suite.drive._core.errors import DriveNotFound
+from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 from suite.drive.http import shims
@@ -1333,11 +1333,39 @@ class TestNotificationRouting(ShimCase):
 
 
 class TestPermanentSurface(ShimCase):
-    def test_the_stored_s3_url_entry_point_is_untouched(self):
+    def test_the_stored_s3_url_entry_point_still_resolves_a_stored_url(self):
         source = source_of("api.s3.fetch")
         self.assertIn("get_s3_url(path)", source)
         self.assertIn("get_file_content(name)", source)
         self.assertEqual(whitelisted_names()["api.s3.fetch"], True)
+
+    def test_the_s3_entry_point_answers_one_refusal_for_missing_and_denied(self):
+        """It is guest-callable and its argument is a guessable path.
+
+        The old body caught `PermissionError` and answered `DoesNotExistError`,
+        so a denied object and an absent one read the same. `get_file_content`
+        is a §11.7 forwarder now and refuses with the `_core` classes, which
+        that clause did not name: a denied read answered 403 and confirmed the
+        object exists.
+        """
+        from suite.drive.api import s3
+
+        caught = next(
+            node.type
+            for node in ast.walk(ast.parse(source_of("api.s3.fetch")))
+            if isinstance(node, ast.ExceptHandler)
+        )
+        named = {getattr(element, "attr", getattr(element, "id", "")) for element in caught.elts}
+        self.assertEqual(named, {"PermissionError", "DoesNotExistError", "DriveForbidden", "DriveNotFound"})
+        for error in (frappe.PermissionError, DriveForbidden, DriveNotFound):
+            with (
+                self.subTest(error=error.__name__),
+                patch.object(s3, "get_file_content", side_effect=error("no")),
+                patch.object(s3, "get_s3_url", return_value="u"),
+                patch.object(frappe.local, "db", MagicMock(get_value=lambda *a, **k: "n1"), create=True),
+                self.assertRaises(frappe.DoesNotExistError),
+            ):
+                s3.fetch("some/key")
 
     def test_get_file_for_doc_still_answers_the_entity_payload(self):
         source = source_of("overrides.file.get_file_for_doc")
@@ -1355,7 +1383,9 @@ class TestPermanentSurface(ShimCase):
         """
         permanent = shims.names_of("permanent")
         self.assertEqual(len(permanent), 21)
-        for name in sorted(permanent):
+        # One deliberate exception, asserted on its own above: `api.s3.fetch`
+        # widened its `except` clause so a denied stored URL still answers 404.
+        for name in sorted(set(permanent) - {"api.s3.fetch"}):
             with self.subTest(name=name):
                 self.assertEqual(current_shape(name), original_shape(name))
 
