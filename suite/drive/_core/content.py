@@ -164,6 +164,16 @@ class ContentTypeSpec:
     # app can read its own body, so only the app can answer.
     used_nodes: Callable[[str], set[str]] | None = None
 
+    # cleanup-pending columns. The names §10.2 forbids that this doctype still
+    # owns because §14.7 read them at Build and §14.10 drops them at Cleanup,
+    # one release later. Naming one here exempts it from the forbidden-field
+    # check and freezes it: `refuse_legacy_field_write` refuses every write, so
+    # "no mirror in either direction" holds while the value Build left stays
+    # readable for the §14.11 post-Build rollback. `_validate_legacy_fields`
+    # refuses a name the doctype no longer owns, so the exemption cannot
+    # outlive the column it names.
+    legacy_fields: tuple[str, ...] = ()
+
     # media remap. (docname, {old_node: new_node}) -> None. §8.9 copies a
     # document by calling `duplicate`, then copying the child media nodes,
     # then rewriting the app's own references to the new node ids. Only the
@@ -361,6 +371,7 @@ def validate_registry() -> None:
         _validate_node_field(meta, spec)
         _validate_mixin(doctype, spec)
         _validate_forbidden_fields(meta, spec)
+        _validate_legacy_fields(meta, spec)
         for satellite in spec.satellites:
             _validate_satellite(satellite, doctype)
 
@@ -411,6 +422,17 @@ def _validate_shape(spec: ContentTypeSpec) -> None:
         raise DriveConflict(_("The Drive content export formats are invalid"))
     if spec.default_export is not None and spec.default_export not in spec.export_formats:
         raise DriveConflict(_("The Drive content default export is not an offered format"))
+    if not isinstance(spec.legacy_fields, tuple) or any(
+        not isinstance(item, str) or not item for item in spec.legacy_fields
+    ):
+        raise DriveConflict(_("The Drive content legacy fields are invalid"))
+    for name in spec.legacy_fields:
+        # The exemption only reaches a field §10.2 already forbids. It is not a
+        # way to keep an arbitrary column out of a later check.
+        if name not in FORBIDDEN_FIELD_NAMES and not name.startswith(FORBIDDEN_FIELD_PREFIXES):
+            raise DriveConflict(
+                _("The Drive content legacy field {0} is not a field Drive owns").format(name)
+            )
     if not isinstance(spec.satellites, tuple) or any(
         not isinstance(item, Satellite) for item in spec.satellites
     ):
@@ -474,9 +496,32 @@ def _validate_forbidden_fields(meta, spec: ContentTypeSpec) -> None:
         )
     for field in meta.fields:
         name = field.fieldname or ""
+        if name in spec.legacy_fields:
+            # Declared, frozen, and dropped at Cleanup. §10.2's rule is "no
+            # mirror in either direction", and a column no code reads or writes
+            # is not a mirror. `title_field` above stays strict, so the doctype
+            # cannot go on displaying it either.
+            continue
         if name in FORBIDDEN_FIELD_NAMES or name.startswith(FORBIDDEN_FIELD_PREFIXES):
             raise DriveConflict(
                 _("The Drive content doctype {0} must not own the field {1}").format(spec.doctype, name)
+            )
+
+
+def _validate_legacy_fields(meta, spec: ContentTypeSpec) -> None:
+    """Refuse a legacy exemption for a column the doctype no longer owns.
+
+    `legacy_fields` is the one way past §10.2, so it has to expire with the
+    column it names. Once §14.10 drops `title`, this refuses the next migration
+    until the declaration drops the entry too. The escape hatch cannot be left
+    open by accident.
+    """
+    for name in spec.legacy_fields:
+        if not meta.get_field(name):
+            raise DriveConflict(
+                _("The Drive content doctype {0} no longer owns the legacy field {1}").format(
+                    spec.doctype, name
+                )
             )
 
 
@@ -540,6 +585,7 @@ class DriveContent:
 
     def validate(self) -> None:
         refuse_node_change(self)
+        refuse_legacy_field_write(self)
 
     @property
     def node(self) -> str:
@@ -650,6 +696,39 @@ def refuse_node_change(doc) -> None:
         # document, is refused rather than silently accepted. A registered
         # doctype cannot reach this, because no row of it exists without a node.
         require_node(doc)
+
+
+def refuse_legacy_field_write(doc) -> None:
+    """Freeze the columns §14.10 drops at Cleanup.
+
+    §10.2 forbids a content doctype owning a title or trash column because the
+    node is the only truth, "with no mirror in either direction". §14.7 reads
+    `Presentation.title` at Build and §14.10 drops it one release later, so
+    between the two there is a window where the column has to exist and must
+    not be a mirror. A declaration names it in `legacy_fields`; this refuses
+    every write to it.
+
+    Drive never writes it, the app cannot write it, and the value Build left is
+    still there for the §14.11 post-Build rollback. Nothing is reset silently:
+    a caller that tries to mirror the node title is told it cannot.
+
+    Only a registered doctype is frozen. Before activation the column is the
+    live legacy title and the app still owns it.
+    """
+    spec = registry().get(doc.doctype)
+    if spec is None or not spec.legacy_fields:
+        return
+    if doc.get("__islocal") or not doc.get("name"):
+        offered = next((field for field in spec.legacy_fields if doc.get(field)), None)
+        if offered is not None:
+            raise DriveConflict(_("A Drive content document cannot set {0}; Drive owns it").format(offered))
+        return
+    stored = frappe.db.get_value(doc.doctype, doc.name, spec.legacy_fields, as_dict=True) or {}
+    for field in spec.legacy_fields:
+        # An empty string and NULL are the same absence here, so a reload that
+        # normalises one into the other is not read as a write.
+        if (doc.get(field) or None) != (stored.get(field) or None):
+            raise DriveConflict(_("A Drive content document cannot change {0}; Drive owns it").format(field))
 
 
 def require_node(doc) -> None:

@@ -34,7 +34,7 @@
    "options": "Slide"
   },
   {
-   "description": "Legacy title. Drive owns a linked deck's title on its node; §14.10 drops this column at Cleanup.",
+   "description": "Legacy title. Drive owns a linked deck's title on its node. Frozen once the declaration is registered; §14.10 drops this column at Cleanup.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -130,6 +130,5 @@
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [],
- "title_field": "title"
+ "states": []
 }

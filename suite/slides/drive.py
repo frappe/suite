@@ -237,6 +237,12 @@ SPEC = drive.ContentTypeSpec(
     pushes_preview=True,
     on_purge=on_purge,
     satellites=(drive.Satellite(doctype=SATELLITE_DOCTYPE, link_field=SATELLITE_LINK_FIELD),),
+    # §14.7 reads this column at Build and §14.10 drops it at Cleanup, one
+    # release after activation. Declaring it here is what lets ticket 29
+    # activate without dropping a Build source early: the column stays, frozen,
+    # and `refuse_legacy_field_write` refuses every write to it. `is_template`
+    # and `thumbnail` need no entry; §10.2 forbids neither.
+    legacy_fields=("title",),
     used_nodes=used_nodes,
     remap_media=remap_media,
 )

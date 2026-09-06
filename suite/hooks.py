@@ -140,10 +140,11 @@ ignore_file_permissions = True
 # requires, and a `Guest` read row for link grants. Both are preserved as they
 # are; widening or narrowing one is an activation decision, not this one's.
 #
-# `Presentation` cannot be activated until its legacy `title` column goes:
-# §10.2 forbids a title field on a governed doctype and §14.10 drops the column
-# at Cleanup, which lands after activation. Recorded as a ticket 29 blocker in
-# `wayfinder/drive-layer-spec/implementation/issues/18-slides-adoption.md`.
+# `Presentation` still owns the legacy `title` column §14.7 read at Build and
+# §14.10 drops at Cleanup, one release after activation. `suite.slides.drive.SPEC`
+# declares it in `legacy_fields`, so activation exempts it from §10.2 and freezes
+# it instead: nothing reads it, nothing may write it, and the Build value stays
+# for the §14.11 rollback. Ticket 29 has no column to drop first.
 drive_content_types = []
 
 # ============================================================================
