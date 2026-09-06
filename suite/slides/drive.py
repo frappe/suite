@@ -39,6 +39,14 @@ the ids a pasted slide names and applies the mapping it answers. Blobs are
 shared, the destination deck owns the new nodes, and one deck holds one node per
 blob however many times a picture is pasted.
 
+## Composite references
+
+A composite deck is a live view over other decks. `composite_reference_rows`
+answers the reference list with a stable id per row, and `composite_references`
+answers one READ point check per reference for the whole-deck read path.
+`suite/slides/api/composite.py` holds the grouped-load contract that bounds
+those checks to the codes one request may carry (§6.2, §6.6).
+
 ## Versions
 
 `version_bytes` writes one `presentation/1` JSON envelope carrying the slides,
@@ -343,11 +351,41 @@ def refuse_unreadable_references(deck) -> None:
                 _("Reference presentation {0} is not in Drive yet").format(reference.presentation),
                 frappe.ValidationError,
             )
-        if not _readable(node):
+        if not node_is_readable(node):
             frappe.throw(
                 _("You cannot reference presentation {0}").format(reference.presentation),
                 frappe.PermissionError,
             )
+
+
+def composite_reference_rows(docname: str) -> list[dict]:
+    """Answer this composite's reference list, ordered, with a stable id each.
+
+    The id is the `Reference Presentation` child row's own name. Ticket 20's
+    grouped load needs one handle per reference that is stable between group
+    requests, unique when a composite names the same deck twice, and useless as
+    an injected value: a row name belongs to one composite and names nothing on
+    its own.
+
+    `presentation` is the referenced deck's docname. §6.6 marks an unreadable
+    reference rather than dropping it, so the docname crosses for every
+    reference; the node id does not (see `composite_references`).
+
+    The id is stable while the reference list is. `duplicate` and
+    `restore_version` rewrite the table, so both mint new ids, and a client
+    holding an older list is refused by the membership check rather than
+    answered from a guess.
+    """
+    rows = frappe.get_all(
+        "Reference Presentation",
+        filters={"parent": docname, "parenttype": DOCTYPE},
+        fields=["name", "idx", "presentation"],
+        order_by="idx asc",
+    )
+    return [
+        {"reference": row["name"], "index": row["idx"], "presentation": row["presentation"] or ""}
+        for row in rows
+    ]
 
 
 def composite_references(docname: str) -> list[dict]:
@@ -361,7 +399,7 @@ def composite_references(docname: str) -> list[dict]:
     answered = []
     for name in _reference_names(docname):
         node = frappe.db.get_value(DOCTYPE, name, NODE_FIELD)
-        readable = bool(node) and _readable(node)
+        readable = bool(node) and node_is_readable(node)
         answered.append(
             {
                 "presentation": name,
@@ -383,16 +421,28 @@ def deck_is_readable(docname: str) -> bool:
     The composite read route is guest-reachable, so the caller gets one answer
     for "no such deck", "no grant", and "a link that will not open" (§5.4).
     """
-    return _readable(node_of(docname))
+    return node_is_readable(node_of(docname))
 
 
-def _readable(node: str) -> bool:
+def node_is_readable(node: str) -> bool:
+    """Answer one READ point check, swallowing only Drive's own refusals.
+
+    `except drive.DriveError`, not `except frappe.ValidationError`. `require`
+    answers `DriveNotFound` below Read, because an unreadable node is never
+    disclosed (§5.4). A locked or expired link raises its own error. All four
+    are `DriveError`, and none of them means "readable".
+
+    A refusal that is not a `DriveError` is not an access answer and must not be
+    read as one. The oversized `X-Drive-Links` refusal is the case §6.2 names:
+    `parse_link_header` raises a bare `frappe.ValidationError` for more than 20
+    supplied items, and the spec requires the explicit error rather than a
+    silently trimmed set. The wider `except` here turned it into "every
+    reference is unreadable", which is exactly the silent trim (ticket 18
+    handoff, ticket 20).
+    """
     try:
         drive.check(node, drive.READ)
-    except frappe.ValidationError:
-        # `require` answers `DriveNotFound` below Read, because an unreadable
-        # node is never disclosed (§5.4). A locked or expired link raises its
-        # own error; none of them means "readable".
+    except drive.DriveError:
         return False
     return True
 
@@ -412,12 +462,7 @@ def _slide_rows(docname: str) -> list[dict]:
 
 
 def _reference_names(docname: str) -> list[str]:
-    return frappe.get_all(
-        "Reference Presentation",
-        filters={"parent": docname, "parenttype": DOCTYPE},
-        pluck="presentation",
-        order_by="idx asc",
-    )
+    return [row["presentation"] for row in composite_reference_rows(docname)]
 
 
 def _slide_element_ids(row: dict) -> set[str]:
