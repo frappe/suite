@@ -503,6 +503,164 @@ One production defect, no test defect.
     outside the one command module 14 was allowed to run. Ticket 23 evidence,
     "The rest of the boundary, diagnosed and not fixed", lists every path.
 
+The final known-residual audit for ticket 23, on
+`forge/drive-23-residual-audit`, branched from `a2369aea0`. It started from the
+three untested in-scope defects the module-14 handoff named: `get_user_access`
+answers zeros for a node-less legacy `File`, `list.files` may not serve a
+node-less legacy tree, and `embed.add` may not work for a node-less legacy
+Writer document. The module-14 note above is now out of date: every row of "The
+rest of the boundary, diagnosed and not fixed" is covered here, except the
+names classified out of scope under carried risks.
+
+The scope is one class of row. The Build gap, pre-Build legacy rows that Build
+will link, is not a shipped regression. The genuine class is rows a live writer
+creates that Build will never link before ticket 29: everything
+`writer.api.docs.create_document` writes. `drive_content_types` is `[]`, so
+`Writer Document` is in the §10.2 expand phase and every document the product
+creates is a `File` with no node.
+
+Every fix below takes the same shape, so the shape is stated once:
+
+- The store is chosen by which one holds the id. `_unadopted_row(id)` is `not
+  frappe.db.exists("Drive Node", id) and frappe.db.exists("File", id)`. Never
+  by catching a refusal: §5.2 makes `DriveNotFound` the answer for a node the
+  caller may not read.
+- No node is created early. Dormant activation is intact and ticket 29 owns it.
+- The gate is always the surviving legacy body's own check, so no deny is
+  synthesized: `File.rename`, `toggle_entity_status`, `File.share`,
+  `File.unshare`, `File.permanent_delete`, `user_has_permission`,
+  `get_user_access_for_user`.
+- No destination is synthesized. `move` refuses a cross-store move by name
+  (`_refuse_crossing`), and `remove_or_restore` uses `toggle_entity_status`,
+  which restores in place.
+- The read and the write live in the shim and die with it. `_core` is not
+  widened.
+- Imports are function-local, because `api/permissions.py` imports `shims` and
+  `drive/utils` builds a query-builder DocType at import time.
+
+Site-free, the four http suites plus `suite.tests.test_architecture` ran 434
+tests and passed, up from 367 on `main`. On the site: `test_shims` ran 261
+(main: 194), `suite.writer.tests.test_drive_adoption` ran 23 and 72 (main: 23
+and 47), `suite.writer.api.tests.test_general` ran 7 (main: 2), and
+`suite.slides.tests.test_drive_adoption` ran 30 and 71, unchanged. Every site
+case was mutation-checked: disabling its `_unadopted_row` branch makes the case
+fail or error, and each mutation was reverted in place. `shims.py` changed
+across sixteen names, so the root must rerun the suites this branch did not:
+`suite.drive.http.tests.test_dispatch`, `suite.drive.api.tests.test_files`,
+`suite.drive.api.tests.test_list`, `suite.drive.api.tests.test_notifications`,
+`suite.drive.tests.test_sync_permissions`, the three WebDAV suites,
+`suite.drive.tests.test_access`, `test_views`, `test_activity`, `test_nodes`,
+and `test_grants`. They are unverified here.
+
+40. **Zeros for a node-less `File` emptied three Writer reads.** The legacy
+    owned-row rule handed the author every bit, and `get_user_access` answered
+    zeros instead. `general.get_document_list` drops a row whose `read` is 0,
+    `general.get_versions` throws `PermissionError`, and `general.search` drops
+    the result and recounts the summary to zero. The author of a document could
+    not list it, could not open its history, and could not find it.
+    `_legacy_user_access` answers the bits the `Drive Permission` rows still
+    carry, through `get_user_access_for_user`. A `Document` or a `_dict` is
+    passed on rather than re-read, which is what the old body did.
+41. **`embed.add` could not write a picture into the document that holds it.**
+    `upload_core.create_upload` reads the parent as a node
+    (`_core/upload.py:41`) and refuses, so no document the product creates
+    could take a picture. `_legacy_upload` writes the chunked upload with the
+    old body's own helpers: the `user_has_permission(parent, "upload")` gate,
+    `get_new_file_name`, the same temp file, `validate_quota` then
+    `update_file_size`, and `embed=1` as a placement in `.embeds` with no
+    thumbnail. Two things are not the old body's. `list-add` reaches the
+    uploader alone, because §5 does not let a row travel to a session that was
+    never authorized for it. The answer is the legacy column dict this name
+    already returns, not a `Document`, because §11.7 changed that shape once
+    and one name may not carry two contracts. A directory upload into such a
+    parent is refused by name: creating the folders would be a second legacy
+    folder writer beside `create_folder`.
+42. **A legacy folder's page was empty.** `create_document` writes into the
+    caller's `Users/<email>` folder, and `files` read nodes only.
+    `_merged_folder_page` answers a folder that still holds an Active `File`
+    no node holds. Before Build no node holds the folder, so the legacy half is
+    the whole page; after Build the node half is read too, and the documents
+    written since are the only rows it cannot see. Both halves are read whole
+    and sorted by `_ordered_legacy` under the names the client is shown,
+    because a merged page cannot be paged in SQL, which is the answer
+    `_ordered_listing` already gives to the same problem. `_unadopted_children`
+    is one indexed lookup, so a folder with no legacy row never reaches the
+    merge and an adopted tree still pays the SQL window §11.4 measured. The
+    walk is bounded at `MAX_SORTABLE_ROWS` and `has_next` says when the bound
+    was reached. The legacy read's own gate applies only when no node holds the
+    folder: asking the old rules a second time would let one store refuse a
+    page the other had granted.
+43. **`track_visit` recorded nothing for a node-less document.** No unusual
+    gesture reaches it: it runs on every document open. `Drive Entity Log
+    .last_interaction` is written here and nowhere else, and
+    `general.get_document_list` orders by it and publishes it as `accessed`, so
+    every document the product creates had no opened-at and no recency order.
+    `mark_as_viewed` writes the row, behind `frappe.get_doc`, because `File`
+    carries a `has_permission` hook. `_mark_legacy_read` then clears the badge
+    for that one file, narrowed by `notif_doctype_name`. Sheets and Slides send
+    `doctype`/`docname`, so `_legacy_content_entity` resolves that pair against
+    `tabFile`.
+44. **`rename` refused the auto-title.** `CoreEditor.vue:349` renames an
+    untitled document from its first line on the first Enter, so this is
+    reached by typing rather than by a gesture the reader chose. `File.rename`
+    is the rule that named the row: it checks Write, keeps the disk path, and
+    writes the activity line.
+45. **`remove_or_restore` refused a node-less document.** Writer's own
+    `RemoveDialog.vue` names one for every document the product creates.
+    `_LegacyTrash` calls `toggle_entity_status`, which reads the row's status
+    to decide remove or restore and puts it back in place. It builds one
+    `FileManager` and one lock set for the whole list, as the old body did, so
+    two files with one owner lock that owner's storage once.
+46. **Writer's navbar could not read or change a document's sharing.**
+    `ShareDialog.vue` and `InfoDialog.vue` open on the document the editor
+    holds. `_legacy_update_access` calls `File.share` and `File.unshare`, and
+    passes the caller's own `user` spelling rather than the normalised
+    `$PUBLIC`, because the old rules keep `""` and `$GENERAL`. The deny
+    `File.unshare` writes is kept: on the `File` store it is the only way the
+    old resolver spells "restricted", and dropping it would leave an unshared
+    document readable. `_legacy_general_access` asks the old resolver the old
+    body's three questions: does the caller read it, does `Guest`, does
+    `$GENERAL`. `_legacy_shared_with_list` reads `Drive Permission` minus the
+    two site-wide principals and every deny, with the owner in front, gated by
+    `user_has_permission(entity, "share")`.
+47. **`set_favourite`, `move` and `create_folder` refused a node-less row.**
+    Favourite is an ordinary gesture and move is a less common one.
+    `_legacy_favourite` writes `Drive Favourite` with no check of its own, as
+    the old body did: the row is the caller's, `filter_drive_favourite` scopes
+    every read to them, and a gate here would be a denial §11.7 may not invent.
+    `clear_all` clears both stores, because the old name cleared everything the
+    caller held. `move` works inside one store and refuses to cross by name.
+    An unnamed destination is `File.move`'s own default, the caller's legacy
+    user folder, which is not the node personal root. `create_folder` broke on
+    a node-less parent, which Drive's New menu now names because the folder
+    page opens; `_legacy_create_folder` keeps the old body whole behind
+    `user_has_permission(parent, "upload")`.
+48. **`delete_entities` and `does_entity_exist` broke on a node-less row.**
+    `delete_entities` is reached through the DOCX-import rollback,
+    `writer/utils/docximporter.js`, which purges the pictures a failed import
+    uploaded. A named id purges from either store through
+    `File.permanent_delete`, the rule that wrote the row, which carries its own
+    Write check and tombstones with `status = "Removed"` as it always did.
+    `clear_all` still names only the node trash view: §11.2 has no trash view
+    for the legacy store, and listing one here would be a view the shim
+    invented. `does_entity_exist` answers off `tabFile`, with the same UPLOAD
+    gate, because `FileUploader.vue` asks about the folder it is about to
+    upload into and that folder's page now opens.
+49. **`create_link` broke on a node-less parent.** `NewLinkDialog.vue` names
+    the folder its page is showing, and `list.files` now opens a folder no node
+    holds. `_legacy_create_link` keeps the old body whole, behind the
+    `user_has_permission(parent, "upload")` gate `create_folder` keeps.
+50. **A file in a legacy folder could not be opened.** The fix in 42 put the
+    files a legacy folder already held back on a page, which is what made this
+    reachable. §6.8 signs a node's content and has nothing to sign for a row
+    with no node, so `get_file_internal` serves the bytes, behind the old
+    `user_has_permission(entity_name, "read")` gate. The retired download token
+    is refused first, whichever store holds the row. `Document` is in
+    `FORBIDDEN_DOWNLOAD_TYPES`, so the old body answered "Not found" for one
+    and never reached its own redirect to the editor. That dead branch is left
+    out, with the reason in the code: `openEntity` routes a `Document` to
+    `/writer/w/` instead.
+
 ## Carried risks the review did not fix
 
 - **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
@@ -597,3 +755,40 @@ One production defect, no test defect.
   `download_archive`, `get_attachments`, `sync_preview`) and `/dav` still read
   the first. Pointing them at `_core.access` before Build would deny
   everything, because no `Drive Node` exists yet. Cleanup owns the crossover.
+
+- **`get_thumbnail` answers nothing for a node-less row.** The residual audit
+  classified it out of scope. The URL is only built for Image, Video and PDF,
+  and a 404 degrades to the same broken `<img>` a missing thumbnail already
+  gives.
+
+- **`get_entity_type` answers nothing for a node-less row.** Out of scope for
+  the same audit. Only the `/drive/g/:id` guard reads it, and
+  pre-team-restructure links feed that route.
+
+- **`get_entity_activity_log` answers nothing for a node-less row.** Out of
+  scope: zero call sites in `frontend/src` and `e2e/`.
+
+- **`search` and `list.files(search=...)` do not reach the legacy store.** Out
+  of scope. They return nothing rather than refusing, and a legacy full-text
+  search would be a second search implementation.
+
+- **The store decision reads existence.** A legacy `File` left behind by a
+  purge after Build would be answered again by every name the residual audit
+  fixed. It cannot happen before Build, because no node exists at all. Tickets
+  27 and 29 own keeping the two stores in step.
+
+- **The residual branches outlive their reason if ticket 29 does not replace
+  `create_document`.** Once `drive_content_types` names Writer,
+  `content.require_node` refuses a `Writer Document` with no node, so the
+  endpoint fails loudly rather than writing more legacy rows.
+
+- **A cross-store `move` is refused by name, not performed.** Build is what
+  joins the two trees.
+
+- **Two frontend defects were found and not fixed.** Both predate ticket 23 and
+  belong to the frontend ticket.
+  `frontend/src/apps/writer/components/ErrorPage.vue:6,14` branches on
+  `error.type` while `frappeRequest` sets `exc_type`, so every non-string error
+  renders "You do not have access to this."
+  `frontend/src/apps/writer/utils/index.js:447` has a duplicated
+  `/api/method/` prefix.

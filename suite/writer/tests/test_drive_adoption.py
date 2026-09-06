@@ -67,6 +67,7 @@ from suite.drive.api.files import (
     set_favourite,
     track_visit,
     update_access,
+    upload_file,
 )
 from suite.drive.api.list import files as legacy_files
 from suite.drive.api.notifications import create_notification
@@ -928,6 +929,26 @@ class TestWriterBeforeActivation(IntegrationTestCase):
 
         self.assertTrue(does_entity_exist(entity.file_name, home))
         self.assertFalse(does_entity_exist(f"Nothing {frappe.generate_hash(6)}", home))
+
+    def test_a_folder_dropped_on_a_legacy_folder_page_lands_whole(self):
+        """`FileUploader.vue` sends one `fullpath` per file, and the folder
+        page it drops onto is a legacy folder now that `list.files` opens one.
+        `ensure_path` is the old walk, and `create_folder` answers a legacy
+        parent again, so every part of the path is made."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Dropped {frappe.generate_hash(6)}")
+        home = frappe.db.get_value("File", entity.name, "folder")
+        box = f"Box {frappe.generate_hash(6)}"
+        self._posted(PNG)
+
+        answer = upload_file(fullpath=f"{box}/inner/cat.png", parent=home)
+
+        outer = frappe.db.get_value("File", {"file_name": box, "folder": home}, "name")
+        inner = frappe.db.get_value("File", {"file_name": "inner", "folder": outer}, "name")
+        self.addCleanup(self._drop_rows, answer["name"], inner, outer)
+        self.assertEqual(frappe.db.get_value("File", answer["name"], "folder"), inner)
+        self.assertFalse(frappe.db.exists("Drive Node", answer["name"]), "and no node was created")
 
     def test_a_picture_in_that_folder_can_still_be_opened(self):
         """`list.files` puts the pictures a legacy folder already held back on
