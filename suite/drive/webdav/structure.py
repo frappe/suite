@@ -21,7 +21,7 @@ from werkzeug.wrappers import Response
 from suite.drive._core import nodes as node_core
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict
-from suite.drive._core.roles import EDIT, UPLOAD
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -144,12 +144,20 @@ def _relocate(ctx: DavContext, row: frappe._dict, dest_parent: frappe._dict, des
     savepoint = f"dav_move_{frappe.generate_hash(length=10)}"
     frappe.db.savepoint(savepoint)
     try:
-        node_core.update(ctx.principals, row.name, parent=dest_parent.name)
-        node_core.update(ctx.principals, row.name, title=dest_name)
-    except DriveConflict:
+        try:
+            node_core.update(ctx.principals, row.name, parent=dest_parent.name)
+            node_core.update(ctx.principals, row.name, title=dest_name)
+        except DriveConflict:
+            frappe.db.rollback(save_point=savepoint)
+            node_core.update(ctx.principals, row.name, title=dest_name)
+            node_core.update(ctx.principals, row.name, parent=dest_parent.name)
+    except Exception:
+        # the fallback's own first leg has to be discarded too. Placing a
+        # collection inside itself is refused in both orders, and without this
+        # the rename-first order would leave the source renamed where it
+        # stands - half of a request the client is told failed.
         frappe.db.rollback(save_point=savepoint)
-        node_core.update(ctx.principals, row.name, title=dest_name)
-        node_core.update(ctx.principals, row.name, parent=dest_parent.name)
+        raise
     else:
         frappe.db.release_savepoint(savepoint)
 
@@ -159,9 +167,13 @@ def _clear_destination(ctx: DavContext, destination: pathmap.ResolvedPath, sourc
     target = destination.node
     if target is None or target.name == source.node.name:
         return False
+    # §12.1: the read gate runs first. `require` raises DriveNotFound below
+    # READ, so a destination the caller cannot see answers 404 rather than
+    # being confirmed by the 412 or the 423 below.
+    require(target, READ, ctx.principals)
     if not ctx.overwrite:
         raise PreconditionFailed("Destination exists and Overwrite is F.")
-    # §12.1: EDIT on an overwritten target, the same role DELETE needs
+    # EDIT on an overwritten target, the same role DELETE needs
     require(target, EDIT, ctx.principals)
     locks.enforce(ctx, entity=target.name, check_descendants=destination.is_collection)
     node_core.update(ctx.principals, target.name, state="Trashed")

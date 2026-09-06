@@ -76,6 +76,10 @@ def _clear_destination(ctx: DavContext, destination: pathmap.ResolvedPath, sourc
         return False
     if target.name == source.node.name:
         raise Forbidden("Source and destination are the same resource.")
+    # §12.1: the read gate runs first. `require` raises DriveNotFound below
+    # READ, so a destination the caller cannot see answers 404 rather than
+    # being confirmed by the 412 or the 423 below.
+    require(target, READ, ctx.principals)
     if not ctx.overwrite:
         raise PreconditionFailed("Destination exists and Overwrite is F.")
     # §12.1 gives COPY no role on the destination beyond UPLOAD on its parent,
