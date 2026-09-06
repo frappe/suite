@@ -25,8 +25,6 @@ OWNER = "drive-comment-owner@example.com"
 COMMENTER = "drive-commenter@example.com"
 MENTIONED = "drive-mentioned@example.com"
 OUTSIDER = "drive-comment-outsider@example.com"
-LINK_A = "$LINK:" + "A" * 22
-LINK_B = "$LINK:" + "B" * 22
 
 
 class TestCommentWorkflows(IntegrationTestCase):
@@ -112,10 +110,27 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Comment", comment))
 
     def test_guest_name_and_link_attribution_distinguish_guest_authors(self):
-        grant(self.document.name, LINK_A, COMMENT, self.admin)
-        grant(self.document.name, LINK_B, COMMENT, self.admin)
-        guest_a = Principals("Guest", (), (LINK_A,))
-        guest_b = Principals("Guest", (), (LINK_B,))
+        # §5.9 step 1 mints the token server-side, so the fixture asks for two
+        # links with the bare `$LINK` spelling and reads back what it was given.
+        # A caller-chosen token is refused, and the refusal is the point.
+        link_a = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
+        link_b = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
+        self.assertNotEqual(link_a, link_b)
+        # Two capability links on one node stay two rows. The borrowed-token
+        # refusal reads other nodes only, so tightening it to one link per node
+        # would take this attribution case with it.
+        self.assertEqual(
+            sorted(
+                frappe.get_all(
+                    "Drive Grant",
+                    filters={"node": self.document.name, "principal": ["like", "$LINK:%"]},
+                    pluck="principal",
+                )
+            ),
+            sorted([link_a, link_b]),
+        )
+        guest_a = Principals("Guest", (), (link_a,))
+        guest_b = Principals("Guest", (), (link_b,))
         thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")[
             "thread"
         ]
@@ -129,7 +144,7 @@ class TestCommentWorkflows(IntegrationTestCase):
                 {"node": self.document.name, "action": "comment", "actor": "Guest"},
                 "via_link",
             ),
-            LINK_A,
+            link_a,
         )
         with self.assertRaises(DriveForbidden):
             edit_comment(guest_b, comment, "Hijacked")
