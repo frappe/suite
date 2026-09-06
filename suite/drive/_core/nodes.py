@@ -525,6 +525,60 @@ def title_taken(principals: Principals, parent: str, title: str) -> bool:
     )
 
 
+def readable_child_counts(principals: Principals, parents: list[str]) -> dict[str, int]:
+    """Count each named folder's Active children that the caller may read.
+
+    The third question §11.2 does not answer: a folder page returns rows, and a
+    legacy list row carries a count of what is inside each of them. It is a
+    permission answer, so it is decided here.
+
+    Counting the rows outright reports what the caller cannot open, which is
+    the leak `api/list._get_children_count` was written to close - a shared
+    `Previous Teams` reporting all 512 migrated teams to someone who can open
+    three. Resolving all of them instead would read every child of the page.
+
+    Neither is needed. A child with no local grant has the same nearest
+    decision its parent has, and the parent is a row the caller was already
+    shown. Only a child carrying its own grant can differ, so only those are
+    resolved, and only the unreadable ones are subtracted.
+
+    The caller must have been given `parents` by an authorized listing.
+    """
+    if not parents:
+        return {}
+    counts = {
+        row["parent"]: int(row["total"] or 0)
+        for row in frappe.get_all(
+            "Drive Node",
+            filters={"parent": ("in", parents), "state": "Active"},
+            fields=["parent", "count(name) as total"],
+            group_by="parent",
+        )
+    }
+    if principals.is_admin:
+        return counts
+
+    decided = frappe.db.sql(
+        """
+        SELECT DISTINCT child.name
+        FROM `tabDrive Node` child
+        JOIN `tabDrive Grant` grants ON grants.node = child.name
+        WHERE child.parent IN %(parents)s AND child.state = 'Active'
+        """,
+        {"parents": _sql_values(parents)},
+        pluck=True,
+    )
+    if not decided:
+        return counts
+
+    rows = frappe.get_all("Drive Node", filters={"name": ("in", decided)}, fields=list(NODE_FIELD_NAMES))
+    readable = {row.name for row in _readable_rows(rows, principals)}
+    for row in rows:
+        if row.name not in readable and row.parent in counts:
+            counts[row.parent] -= 1
+    return counts
+
+
 def available_title(principals: Principals, parent: str, title: str) -> str:
     """Answer the title `title` becomes below `parent` when a sibling holds it.
 

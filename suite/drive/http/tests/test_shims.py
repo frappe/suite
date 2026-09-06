@@ -514,8 +514,12 @@ class TestRecordForwarders(ShimCase):
             ],
             "next_cursor": None,
         }
-        row = shims.get_notifications()[0]
+        with patch.object(
+            shims.frappe, "get_all", return_value=[{"name": "n1", "kind": "file", "mime": "text/plain"}]
+        ):
+            row = shims.get_notifications()[0]
         self.assertEqual(row["type"], "Mention")
+        self.assertEqual(row["entity_type"], "File")
         self.assertEqual(row["from_user"], "b@example.com")
         self.assertEqual(row["notif_doctype_name"], "n1")
         self.assertEqual(row["message"], "hello")
@@ -693,11 +697,19 @@ class TestFileForwarders(ShimCase):
         cache.start()
         self.addCleanup(cache.stop)
 
-        answer = shims.upload_file(parent="f1", total_file_size=1)
+        with (
+            patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]) as listed,
+            patch.object(shims.frappe, "publish_realtime") as published,
+        ):
+            answer = shims.upload_file(parent="f1", total_file_size=1)
 
         nodes.available_title.assert_called_once_with(SOMEONE, "f1", "Report.pdf")
         self.assertEqual(uploads.finish_upload.call_args.kwargs["title"], "Report (2).pdf")
         self.assertEqual(answer["file_name"], "Report (2).pdf")
+        # `GenericPage.vue` appends the row live; without the event the upload
+        # only shows up on a reload. It goes to the uploader, not to everyone.
+        listed.assert_called_once()
+        published.assert_called_once_with("list-add", {"file": {"name": "n1"}}, user=SOMEONE.user)
 
     def test_get_entity_type_answers_folder_or_file(self):
         nodes = self.stub("node_core")
@@ -830,18 +842,48 @@ class TestFileForwarders(ShimCase):
 
 
 class TestAccessForwarder(ShimCase):
-    def test_the_highest_bit_names_the_role(self):
+    def test_the_bits_name_the_rung_they_all_reach(self):
+        """A rung carries every verb below it, so every bit below it is required.
+
+        The dialog's four levels are contiguous sets, so each one still lands
+        where it did.
+        """
         access = self.stub("access")
-        shims.update_access("n1", "share", user="b@example.com", read=1, write=1)
-        access.grant.assert_called_once_with("n1", "b@example.com", EDIT, SOMEONE)
+        levels = {
+            "reader": ({"read": 1, "comment": 1, "upload": 0, "share": 0, "write": 0}, COMMENT),
+            "upload": ({"read": 1, "comment": 1, "upload": 1, "share": 0, "write": 0}, UPLOAD),
+            "editor": ({"read": 1, "comment": 1, "upload": 1, "share": 1, "write": 1}, MANAGE),
+            "view only": ({"read": 1, "comment": 0, "upload": 0, "share": 0, "write": 0}, READ),
+        }
+        for label, (bits, rung) in levels.items():
+            with self.subTest(level=label):
+                access.grant.reset_mock()
+                shims.update_access("n1", "share", user="b@example.com", **bits)
+                access.grant.assert_called_once_with("n1", "b@example.com", rung, SOMEONE)
 
-        access.grant.reset_mock()
-        shims.update_access("n1", "share", user="b@example.com", read=1, upload="true")
-        access.grant.assert_called_once_with("n1", "b@example.com", UPLOAD, SOMEONE)
+    def test_a_share_bit_without_a_write_bit_does_not_reach_manage(self):
+        """`ShareDialog.updateGeneralAccess` sends `share: 1` for every level.
 
-        access.grant.reset_mock()
-        shims.update_access("n1", "share", user="b@example.com", read=1, share=1)
-        access.grant.assert_called_once_with("n1", "b@example.com", MANAGE, SOMEONE)
+        Read off as the highest bit alone that is MANAGE, so "anyone in the
+        organization can view" would hand every signed-in user edit, move, and
+        purge on the node and its subtree.
+        """
+        access = self.stub("access")
+        shims.update_access(
+            "n1", "share", user="$GENERAL", read=1, comment=1, share=1, write=False, upload=False
+        )
+        access.grant.assert_called_once_with("n1", "$GENERAL", COMMENT, SOMEONE)
+
+    def test_a_publish_is_held_at_the_public_ceiling(self):
+        """§6.5: a published node is the one row `(node, $PUBLIC, READ)`.
+
+        The dialog publishes with `read, comment, share`, which is above the
+        ceiling, and `access.grant` refuses anything above it - so an unclamped
+        forwarder turns "Anyone with the link" into a 403.
+        """
+        access = self.stub("access")
+        shims.update_access("n1", "share", user="", read=1, comment=1, share=1)
+        access.grant.assert_called_once_with("n1", "$PUBLIC", READ, SOMEONE)
 
     def test_an_omitted_user_is_still_the_public_principal(self):
         access = self.stub("access")
@@ -858,6 +900,22 @@ class TestAccessForwarder(ShimCase):
         shims.update_access("n1", "unshare", user="b@example.com")
         access.revoke.assert_called_once_with("n1", "b@example.com", SOMEONE)
         access.grant.assert_not_called()
+
+    def test_restricting_site_wide_access_also_unpublishes(self):
+        """`File.unshare` cleared both site-wide rows through `_clear_general`.
+
+        The dialog's "Restricted" still names only `$GENERAL`, so revoking that
+        row alone leaves a published file published.
+        """
+        for named in ("$GENERAL", "$PUBLIC", ""):
+            with self.subTest(named=named):
+                access = self.stub("access")
+                shims.update_access("n1", "unshare", user=named)
+                self.assertEqual(
+                    [call.args[1] for call in access.revoke.call_args_list],
+                    ["$PUBLIC", "$GENERAL"],
+                )
+                access.grant.assert_not_called()
 
     def test_an_unknown_method_is_refused(self):
         self.stub("access")
@@ -882,9 +940,7 @@ class ListCase(ShimCase):
         self.access.effective_role.return_value = EDIT
         self.activity.personal_marks.return_value = {"n1": {"favourite": "fav1", "opened_at": "2026-01-03"}}
         self.roots.personal_root_for.return_value = "home-root"
-        counts = patch.object(shims, "_child_counts", return_value={"n1": 3})
-        counts.start()
-        self.addCleanup(counts.stop)
+        self.nodes.readable_child_counts.return_value = {"n1": 3}
         shares = patch.object(shims, "_share_counts", return_value={"n1": -1})
         shares.start()
         self.addCleanup(shares.stop)
@@ -923,6 +979,7 @@ class TestListForwarders(ListCase):
             self.assertIn(key, row)
         self.assertEqual(row["kind"], "native")
         self.assertEqual(row["child_count"], 3)
+        self.nodes.readable_child_counts.assert_called_once_with(SOMEONE, ["n1"])
         self.assertEqual(row["share_count"], -1)
         self.assertEqual(row["is_favourite"], "fav1")
         self.assertEqual(row["accessed"], "2026-01-03")
@@ -1052,6 +1109,140 @@ class TestListForwarders(ListCase):
         self.activity.personal_marks.return_value = {}
         rows = shims.files(search="report")
         self.assertEqual([row["name"] for row in rows], ["n1"])
+
+    def test_a_caller_that_names_no_limit_and_does_not_page_gets_everything(self):
+        """`folderTree.js` and `MoveDialog.vue` call `files` exactly this way.
+
+        The old non-paginated branch ran the query with no `LIMIT`. Defaulting
+        to a hundred here hid every child past the hundredth from the sidebar
+        tree and from the move target list.
+        """
+        windows = [
+            {"rows": [node_row(name=f"a{i}") for i in range(200)], "next_cursor": "c200"},
+            {"rows": [node_row(name=f"b{i}") for i in range(50)], "next_cursor": None},
+        ]
+        asked: list[int] = []
+
+        def page(principals, parent, **kwargs):
+            asked.append(kwargs["limit"])
+            return windows[len(asked) - 1]
+
+        self.nodes.children.side_effect = page
+        self.nodes.MAX_PAGE_SIZE = 200
+        self.activity.personal_marks.return_value = {}
+        rows = shims.files()
+
+        self.assertEqual(asked, [200, 200])
+        self.assertEqual(len(rows), 250)
+
+    def test_a_paged_caller_that_names_no_limit_still_gets_one_page(self):
+        self.nodes.children.return_value = {
+            "rows": [node_row(name=f"a{i}") for i in range(100)],
+            "next_cursor": None,
+        }
+        self.activity.personal_marks.return_value = {}
+        self.assertEqual(len(shims.files(paginated=True)["rows"]), 100)
+
+    def test_a_presentation_row_carries_its_slide_count_and_no_other_row_does(self):
+        """`DriveListRow.sizeLabel` reads `slide_count != null` to pick its label.
+
+        Dropping it turned "12 slides" into a byte size; setting it everywhere
+        would relabel every ordinary file on the page.
+        """
+        self.one_page(
+            [
+                node_row(name="n1", content_doctype="Presentation", content_docname="p1"),
+                node_row(name="n2"),
+            ]
+        )
+        self.activity.personal_marks.return_value = {}
+        with patch("suite.drive.api.list._get_slide_counts", return_value={"p1": 12}) as counts:
+            rows = shims.files()
+        self.assertEqual([row["name"] for row in counts.call_args.args[0]], ["n1", "n2"])
+        self.assertEqual(rows[0]["slide_count"], 12)
+        self.assertNotIn("slide_count", rows[1])
+
+    def test_no_presentation_on_the_page_asks_the_slides_app_nothing(self):
+        self.one_page([node_row(name="n1")])
+        self.activity.personal_marks.return_value = {}
+        with patch("suite.drive.api.list._get_slide_counts", return_value={}) as counts:
+            self.assertNotIn("slide_count", shims.files()[0])
+        counts.assert_called_once()
+
+
+class TestMoveAnswersTheDestination(ShimCase):
+    def test_move_answers_the_folder_it_moved_into(self):
+        """`File.move` returned the new parent's row, and both frontend `move`
+        resources read it: the toast names it, "Go" opens it as a folder, and
+        `updateMoved` refreshes it. Answering the moved node sent the user into
+        a file and refreshed the wrong listing.
+        """
+        nodes = self.stub("node_core")
+        nodes.stored.return_value = frappe._dict(name="dest", title="Archive", parent="root")
+
+        answer = shims.move(["n1", "n2"], new_parent="dest")
+
+        self.assertEqual(answer, {"file_name": "Archive", "name": "dest", "folder": "root"})
+        nodes.stored.assert_called_once_with("dest")
+        self.assertEqual(
+            [call.args[1] for call in nodes.update.call_args_list],
+            ["n1", "n2"],
+        )
+
+    def test_move_with_no_destination_answers_the_caller_home_folder(self):
+        nodes = self.stub("node_core")
+        roots = self.stub("roots")
+        roots.personal_root_for.return_value = "home"
+        nodes.stored.return_value = frappe._dict(name="home", title="Home", parent=None)
+
+        self.assertEqual(
+            shims.move(["n1"]),
+            {"file_name": "Home", "name": "home", "folder": None},
+        )
+
+
+class TestNotificationRouting(ShimCase):
+    def notification(self, node: str):
+        activity = self.stub("activity_core")
+        activity.notifications.return_value = {
+            "rows": [
+                {
+                    "name": "notif1",
+                    "read": 0,
+                    "creation": "2026-01-01",
+                    "activity": {"actor": "a@example.com", "action": "share_add", "node": node},
+                }
+            ],
+            "next_cursor": None,
+        }
+
+    def test_a_notification_carries_the_entity_type_the_page_routes_on(self):
+        """`Notifications.vue` pushes `drive-` + `row.entity_type`. A null makes
+        every row on that page unclickable, which is what `entity_type: None`
+        did. Legacy stored "Document", "Folder", or "File".
+        """
+        cases = {
+            "folder": ("Folder", "application/pdf"),
+            "root": ("Folder", "application/pdf"),
+            "document": ("Document", "frappe_doc"),
+            "file": ("File", "application/pdf"),
+        }
+        for kind, (expected, mime) in cases.items():
+            with self.subTest(kind=kind):
+                self.notification("n1")
+                with patch.object(
+                    shims.frappe,
+                    "get_all",
+                    return_value=[{"name": "n1", "kind": kind, "mime": mime}],
+                ):
+                    rows = shims.get_notifications()
+                self.assertEqual(rows[0]["entity_type"], expected)
+
+    def test_a_notification_whose_node_is_gone_stays_unroutable(self):
+        self.notification("n1")
+        with patch.object(shims.frappe, "get_all", return_value=[]):
+            rows = shims.get_notifications()
+        self.assertIsNone(rows[0]["entity_type"])
 
 
 # --------------------------------------------------------------------------

@@ -9,7 +9,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
 from suite.drive._core import nodes as node_workflows
-from suite.drive._core.access import effective_role
+from suite.drive._core.access import effective_role, grant
 from suite.drive._core.errors import (
     DriveConflict,
     DriveForbidden,
@@ -29,7 +29,7 @@ from suite.drive._core.nodes import (
     update,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, UPLOAD
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.jobs import purge_trashed_nodes
 from suite.drive.tests.test_content import registered as registered_content
@@ -727,6 +727,45 @@ class TestNodeLifecycle(IntegrationTestCase):
             .insert(ignore_permissions=True)
             .name
         )
+
+    def test_child_counts_leave_out_the_children_the_caller_cannot_read(self):
+        other = Principals(OTHER, (OTHER,), ())
+        folder = create_folder(self.admin, self.root.name, "Team")
+        plain = create_folder(self.admin, folder, "Plain")
+        denied = create_folder(self.admin, folder, "Denied")
+        elsewhere = create_folder(self.admin, folder, "Elsewhere")
+        grant(folder, OTHER, READ, self.admin)
+        grant(denied, OTHER, 0, self.admin)
+        grant(elsewhere, USER, READ, self.admin)
+
+        counts = node_workflows.readable_child_counts(other, [folder])
+
+        # `plain` inherits the folder's READ, `elsewhere` keeps it despite a
+        # grant naming somebody else, and only the deny is subtracted.
+        self.assertEqual(counts, {folder: 2})
+        self.assertEqual(effective_role(_row(plain), other), READ)
+        self.assertEqual(effective_role(_row(denied), other), 0)
+
+    def test_child_counts_answer_every_named_folder_and_ignore_the_trash(self):
+        other = Principals(OTHER, (OTHER,), ())
+        left = create_folder(self.admin, self.root.name, "Left")
+        right = create_folder(self.admin, self.root.name, "Right")
+        create_folder(self.admin, left, "Kept")
+        trashed = create_folder(self.admin, left, "Trashed")
+        create_folder(self.admin, right, "Only")
+        frappe.db.set_value("Drive Node", trashed, "state", "Trashed")
+        grant(left, OTHER, READ, self.admin)
+        grant(right, OTHER, READ, self.admin)
+
+        self.assertEqual(
+            node_workflows.readable_child_counts(other, [left, right]),
+            {left: 1, right: 1},
+        )
+        self.assertEqual(node_workflows.readable_child_counts(other, []), {})
+
+
+def _row(node_id: str):
+    return frappe.db.get_value("Drive Node", node_id, "*", as_dict=True)
 
 
 class TestLifecyclePolicy(UnitTestCase):
