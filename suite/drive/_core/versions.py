@@ -9,9 +9,9 @@ import frappe
 from frappe import _
 from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
-from frappe.utils import get_attr, get_datetime, now_datetime
+from frappe.utils import get_datetime, now_datetime
 
-from suite.drive._core import previews
+from suite.drive._core import content, previews
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import _node, _record_activity, _validate_existing_head
@@ -403,22 +403,11 @@ def _version_bytes(node: frappe._dict, *, spec=None) -> tuple[str, int]:
 
 
 def _content_spec(node: frappe._dict, *, require_restore: bool = False):
-    # Ticket 16 introduces `_core/content.py` with a cached `spec_for(doctype)`.
-    # Until that module exists this reads the hook directly; switch to
-    # `content.spec_for` when it lands and keep the refusals below.
+    """Resolve one document node's registered content type, or refuse."""
     if not node.content_doctype or not node.content_docname:
         raise DriveConflict(_("The Drive content document link is incomplete"))
-    found = None
-    for path in frappe.get_hooks("drive_content_types") or ():
-        spec = get_attr(path)
-        if getattr(spec, "doctype", None) != node.content_doctype:
-            continue
-        if found is not None:
-            raise DriveConflict(_("The Drive content type is registered more than once"))
-        found = spec
-    if found is None:
-        raise DriveConflict(_("The Drive content type is not registered"))
-    if require_restore and not callable(getattr(found, "restore_version", None)):
+    found = content.spec_for(node.content_doctype)
+    if require_restore and not callable(found.restore_version):
         raise DriveConflict(_("This Drive content type cannot restore versions"))
     return found
 

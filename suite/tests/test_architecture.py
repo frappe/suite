@@ -410,19 +410,34 @@ class TestArchitecture(unittest.TestCase):
         self.assertEqual(
             drive.__all__,
             (
+                "COMMENT",
+                "ContentTypeSpec",
+                "DriveContent",
+                "EDIT",
+                "MANAGE",
+                "READ",
+                "Satellite",
+                "UPLOAD",
                 "bind_legacy_storage_reservation",
+                "check",
+                "copy",
+                "create_document",
                 "create_storage_reservation",
                 "ensure_personal_root",
                 "get_storage_reservation",
                 "get_storage_usage",
                 "grow_storage_reservation",
                 "personal_root_for",
+                "push_preview",
                 "reduce_storage_reservation",
                 "release_storage_reservation",
+                "take_version",
+                "touch",
             ),
         )
         for name in drive.__all__:
             self.assertTrue(getattr(drive, name, None), name)
+        self.assertIn("## Content apps", drive.__doc__)
         self.assertIn("## Errors", drive.__doc__)
         self.assertIn("## Transactions", drive.__doc__)
         self.assertIn("## Permissions", drive.__doc__)
