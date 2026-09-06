@@ -360,8 +360,38 @@ class TestWriterBeforeActivation(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        # Registered first, so it runs last: after every `delete_doc` cleanup a
+        # test queues, and after the rows those cleanups missed are swept.
+        self._documents_before = set(frappe.get_all(DOCTYPE, pluck="name"))
+        self._shares_before = self._shares_now()
+        self.addCleanup(self._remove_fixture_rows)
         clear_registry_cache()
         self.addCleanup(clear_registry_cache)
+
+    def _remove_fixture_rows(self):
+        """Commit the removals, because a test in this class commits.
+
+        `IntegrationTestCase` rolls back once per class, not once per test, so
+        a `frappe.db.commit()` inside a test makes its rows permanent. The
+        per-test `delete_doc` cleanups then delete them inside the transaction
+        that rollback throws away, and the committed rows come back.
+
+        A `Writer Document` that survives carries a `DocShare` with it, and
+        that share is poison: `_refuse_shared_list` refuses the whole list for
+        the user who holds it, and `validate_content_registry` refuses to
+        activate the type at all. Both are correct fail-closed answers, so the
+        row is what has to go.
+        """
+        frappe.set_user("Administrator")
+        for share in self._shares_now() - self._shares_before:
+            frappe.delete_doc("DocShare", share, force=1, ignore_permissions=True, ignore_missing=True)
+        for document in set(frappe.get_all(DOCTYPE, pluck="name")) - self._documents_before:
+            frappe.delete_doc(DOCTYPE, document, force=1, ignore_permissions=True, ignore_missing=True)
+        frappe.db.commit()
+
+    @staticmethod
+    def _shares_now() -> set[str]:
+        return set(frappe.get_all("DocShare", filters={"share_doctype": DOCTYPE}, pluck="name"))
 
     def _legacy_document(self) -> str:
         document = frappe.new_doc(DOCTYPE)
@@ -370,6 +400,27 @@ class TestWriterBeforeActivation(IntegrationTestCase):
             frappe.delete_doc, DOCTYPE, document.name, force=1, ignore_permissions=True, ignore_missing=True
         )
         return document.name
+
+    def test_a_committed_fixture_row_does_not_outlive_the_class_rollback(self):
+        """The leak `_remove_fixture_rows` exists to stop, asserted in the run
+        that causes it.
+
+        Without this the leak is invisible here and lands on the next run of
+        this module: one surviving share makes `_refuse_shared_list` refuse the
+        whole list for its user and makes `validate_content_registry` refuse to
+        activate the type, so three tests that share nothing with the leak fail.
+        """
+        docname = self._legacy_document()
+        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
+        frappe.db.commit()
+
+        self._remove_fixture_rows()
+        # What `_rollback_db` does at class teardown. A removal that is only
+        # queued and not committed does not survive it.
+        frappe.db.rollback()
+
+        self.assertFalse(frappe.db.exists("DocShare", share.name), "the share is gone for good")
+        self.assertFalse(frappe.db.exists(DOCTYPE, docname), "and so is the row it was written against")
 
     def test_a_document_the_api_creates_is_reachable_by_the_legacy_read_path(self):
         """The whole point of not activating. `create_document` writes a `File`
