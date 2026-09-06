@@ -465,8 +465,61 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        # Registered first, so it runs last: after every `delete_doc` cleanup a
+        # test queues, and after the rows those cleanups missed are swept.
+        self._decks_before = set(frappe.get_all(DOCTYPE, pluck="name"))
+        self._files_before = self._deck_files_now()
+        self._shares_before = self._shares_now()
+        self.addCleanup(self._remove_fixture_rows)
         clear_registry_cache()
         self.addCleanup(clear_registry_cache)
+
+    def _remove_fixture_rows(self):
+        """Commit the removals, because tests in this class commit.
+
+        `IntegrationTestCase` rolls back once per class, not once per test, so
+        a `frappe.db.commit()` inside a test makes its rows permanent. The
+        per-test `delete_doc` cleanups then delete them inside the transaction
+        that rollback throws away, and the committed rows come back.
+
+        A surviving deck is poison the same way a surviving `Writer Document`
+        is: `_refuse_shared_list` refuses the whole list for a user who holds a
+        `DocShare` on it, and `validate_content_registry` refuses to activate
+        the type. A surviving backing `File` is worse than untidy — it names a
+        deck that no longer exists, and `File.after_delete` treats that name as
+        a document to delete (`suite/drive/overrides/file.py:145-152`).
+        """
+        frappe.set_user("Administrator")
+        for share in self._shares_now() - self._shares_before:
+            frappe.delete_doc("DocShare", share, force=1, ignore_permissions=True, ignore_missing=True)
+        for deck in set(frappe.get_all(DOCTYPE, pluck="name")) - self._decks_before:
+            # Takes the `Slide` child rows and every attached `File` with it.
+            frappe.delete_doc(DOCTYPE, deck, force=1, ignore_permissions=True, ignore_missing=True)
+        # After the decks, not before, so the `after_delete` cascade back to
+        # `content_docname` finds nothing left to do.
+        for file in self._deck_files_now() - self._files_before:
+            frappe.delete_doc("File", file, force=1, ignore_permissions=True, ignore_missing=True)
+        frappe.db.commit()
+
+    @staticmethod
+    def _shares_now() -> set[str]:
+        return set(frappe.get_all("DocShare", filters={"share_doctype": DOCTYPE}, pluck="name"))
+
+    @staticmethod
+    def _deck_files_now() -> set[str]:
+        """Every `File` a deck fixture leaves behind, at both links it uses.
+
+        `after_insert` backs a legacy deck with a `File` that names it through
+        `content_doctype`/`content_docname` (`presentation.py:115-124`), and
+        deleting the deck does not delete that row: the `on_trash` hook calls
+        `permanent_delete`, which only sets `status` to `Removed`
+        (`suite/drive/overrides/file.py:394-408`). `save_presentation_thumbnail`
+        writes a second `File` at `attached_to_doctype`/`attached_to_name`
+        (`presentation.py:214-232`). Sweeping one link would leave the other.
+        """
+        return set(frappe.get_all("File", filters={"content_doctype": DOCTYPE}, pluck="name")) | set(
+            frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE}, pluck="name")
+        )
 
     def _legacy_deck(self, title="Legacy deck") -> str:
         deck = make_presentation(f"{title} {frappe.generate_hash(6)}")
@@ -474,6 +527,44 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
             frappe.delete_doc, DOCTYPE, deck.name, force=1, ignore_permissions=True, ignore_missing=True
         )
         return deck.name
+
+    def test_a_committed_fixture_row_does_not_outlive_the_class_rollback(self):
+        """The leak `_remove_fixture_rows` exists to stop, asserted in the run
+        that causes it.
+
+        Without this the leak is invisible here and lands on the next run of
+        this module. The deck that survives is the one written by the last test
+        in this class that commits, so which rows leak depends on nothing more
+        than method name order. Eight runs of this module before the fix left
+        eight `Presentation` rows, eight `Slide` rows, and twenty-four `File`
+        rows behind.
+        """
+        from suite.drive.overrides.file import File as DriveFile
+
+        name = self._legacy_deck("Committed")
+        share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
+        backing = DriveFile.get_for_doc(DOCTYPE, name)
+        api.save_presentation_thumbnail(name, webp_capture())
+        thumbnail = frappe.db.get_value(
+            "File", {"attached_to_doctype": DOCTYPE, "attached_to_name": name}, "name"
+        )
+        self.assertTrue(backing, "the deck is backed by a File")
+        self.assertTrue(thumbnail, "and the capture wrote a second one")
+        frappe.db.commit()
+
+        self._remove_fixture_rows()
+        # What `_rollback_db` does at class teardown. A removal that is only
+        # queued and not committed does not survive it.
+        frappe.db.rollback()
+
+        self.assertFalse(frappe.db.exists(DOCTYPE, name), "the deck is gone for good")
+        self.assertFalse(frappe.db.exists("DocShare", share.name), "and the share written against it")
+        self.assertFalse(frappe.db.exists("File", backing), "and the File that backs it")
+        self.assertFalse(frappe.db.exists("File", thumbnail), "and the File the capture wrote")
+        self.assertFalse(
+            frappe.get_all(SATELLITE, filters={"parent": name, "parenttype": DOCTYPE}),
+            "and the slide rows the deck carried",
+        )
 
     def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
         """The refusal is scoped to a deck that carries a node. Before Build no
