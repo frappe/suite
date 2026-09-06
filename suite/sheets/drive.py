@@ -232,6 +232,14 @@ def restore_version(docname: str, stream) -> None:
 
     The restore is one op of its own, at a fresh seq, so the timeline records it
     and `head_seq` never regresses.
+
+    The collaborative Y.Doc goes with it. Once a sheet has been opened, that
+    doc is what the editor loads and what the next save writes back, so a
+    restore that only moved `sheets_data` would be overwritten by the first
+    editor to connect, silently and with no error. Dropping the
+    `Sheet Collab State` row is what makes the next opener re-hydrate from the
+    body this just wrote — the same reason `on_purge` drops it and `duplicate`
+    never copies it.
     """
     payload = _version_payload(_read_bounded(stream, MAX_VERSION_BYTES, _("sheet version")))
     if not frappe.db.exists(DOCTYPE, docname):
@@ -242,6 +250,7 @@ def restore_version(docname: str, stream) -> None:
         docname,
         {"sheets_data": encode_sheets_data(payload["sheets_data"]), "head_seq": restored_seq},
     )
+    frappe.db.delete(COLLAB_STATE_DOCTYPE, {"sheet": docname})
 
 
 def on_purge(docname: str) -> None:
