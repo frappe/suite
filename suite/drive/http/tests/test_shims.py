@@ -384,14 +384,14 @@ class ShimCase(UnitTestCase):
         self.addCleanup(patcher.stop)
         return patcher.start()
 
-    def stub_unadopted_folder(self, answer=False):
+    def stub_unadopted_row(self, answer=False):
         """Say the upload destination is a node, without a database.
 
         `upload_file` writes to the `File` store for a parent no node holds,
         because `writer.api.embed.add` names one. A case about the node path
         says so here; `_legacy_upload` has cases of its own below.
         """
-        patcher = patch.object(shims, "_unadopted_folder", return_value=answer)
+        patcher = patch.object(shims, "_unadopted_row", return_value=answer)
         self.addCleanup(patcher.stop)
         return patcher.start()
 
@@ -1154,26 +1154,26 @@ class TestUnadoptedUploadTarget(ShimCase):
         self.enterContext(patch.object(shims.frappe, "db", db))
         return db
 
-    def test_an_id_a_node_holds_is_not_an_unadopted_folder(self):
+    def test_an_id_a_node_holds_is_not_an_unadopted_row(self):
         db = self.store(node=True)
-        self.assertFalse(shims._unadopted_folder("f1"))
+        self.assertFalse(shims._unadopted_row("f1"))
         db.exists.assert_called_once_with("Drive Node", "f1")
 
-    def test_an_id_only_the_file_store_holds_is_an_unadopted_folder(self):
+    def test_an_id_only_the_file_store_holds_is_an_unadopted_row(self):
         self.store()
-        self.assertTrue(shims._unadopted_folder("f1"))
+        self.assertTrue(shims._unadopted_row("f1"))
 
-    def test_an_id_neither_store_holds_is_not_an_unadopted_folder(self):
+    def test_an_id_neither_store_holds_is_not_an_unadopted_row(self):
         """An unknown parent keeps the workflow's own refusal. The legacy
         write must not be reached by naming something that is not there."""
         self.store(file=False)
-        self.assertFalse(shims._unadopted_folder("f1"))
-        self.assertFalse(shims._unadopted_folder(None))
+        self.assertFalse(shims._unadopted_row("f1"))
+        self.assertFalse(shims._unadopted_row(None))
 
     def test_a_node_less_parent_is_written_to_the_file_store(self):
         uploads = self.stub("upload_core")
         self.stub("node_core")
-        self.stub_unadopted_folder(True)
+        self.stub_unadopted_row(True)
         with patch.object(shims, "_legacy_upload", return_value={"name": "e1"}) as legacy:
             answer = shims.upload_file(parent="d1", total_file_size=12, file_modified=1, embed=1)
         self.assertEqual(answer, {"name": "e1"})
@@ -1198,7 +1198,7 @@ class TestUnadoptedUploadTarget(ShimCase):
         )
         self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
         self.stub_cache()
-        self.stub_unadopted_folder()
+        self.stub_unadopted_row()
         with (
             patch.object(shims, "_legacy_upload") as legacy,
             patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]),
@@ -1214,7 +1214,7 @@ class TestUnadoptedUploadTarget(ShimCase):
         act on, and nothing is written on the way out."""
         self.stub("node_core")
         uploads = self.stub("upload_core")
-        self.stub_unadopted_folder(True)
+        self.stub_unadopted_row(True)
         with patch.object(shims, "_legacy_upload") as legacy:
             with self.assertRaises(frappe.ValidationError) as caught:
                 shims.upload_file(parent="d1", fullpath="pictures/cat.png")
@@ -1294,6 +1294,40 @@ class TestUnadoptedAccessRead(ShimCase):
         self.assertIsNone(shims._legacy_user_access(None))
         self.assertIsNone(shims._legacy_user_access({}))
         bits.assert_not_called()
+
+
+class TestUnadoptedRename(ShimCase):
+    """`_legacy_rename`: the title, for an id no node holds.
+
+    `CoreEditor.vue` renames an untitled document from its first line on the
+    first Enter, so the forwarder's refusal reached a reader who had made no
+    gesture at all: a red toast reading "Drive node <id> was not found" while
+    they were typing.
+    """
+
+    def rows(self, *, unadopted=True):
+        row = MagicMock()
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=unadopted))
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        answer = MagicMock(return_value={"name": "f1", "file_name": "New.md"})
+        self.enterContext(patch.object(shims, "_legacy_file_row", answer))
+        return row, answer
+
+    def test_a_node_less_row_is_renamed_by_the_rule_that_named_it(self):
+        row, answer = self.rows()
+        nodes = self.stub("node_core")
+        self.assertEqual(shims.rename("f1", "New.md")["file_name"], "New.md")
+        row.rename.assert_called_once_with("New.md")
+        nodes.update.assert_not_called()
+        answer.assert_called_once_with("f1")
+
+    def test_an_id_a_node_holds_is_renamed_by_the_workflow(self):
+        row, _ = self.rows(unadopted=False)
+        nodes = self.stub("node_core")
+        nodes.stored.return_value = node_row(title="New.md")
+        shims.rename("n1", "New.md")
+        nodes.update.assert_called_once_with(SOMEONE, "n1", title="New.md")
+        row.rename.assert_not_called()
 
 
 class TestUnadoptedVisit(ShimCase):
@@ -1914,6 +1948,7 @@ class TestStorageAndEmbedForwarders(ShimCase):
 class TestFileForwarders(ShimCase):
     def test_rename_forwards_a_title_and_answers_the_old_row(self):
         nodes = self.stub("node_core")
+        self.stub_unadopted_row()
         nodes.stored.return_value = node_row(title="New.pdf")
         answer = shims.rename("n1", "New.pdf")
         nodes.update.assert_called_once_with(SOMEONE, "n1", title="New.pdf")
@@ -1990,7 +2025,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
-        self.stub_unadopted_folder()
+        self.stub_unadopted_row()
 
         with (
             patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]) as listed,
@@ -2029,7 +2064,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
-        self.stub_unadopted_folder()
+        self.stub_unadopted_row()
 
         with self.assertRaises(frappe.ValidationError) as caught:
             shims.upload_file(parent="f1", total_file_size=100)
@@ -2051,7 +2086,7 @@ class TestFileForwarders(ShimCase):
         form.start()
         self.addCleanup(form.stop)
         self.stub_cache()
-        self.stub_unadopted_folder()
+        self.stub_unadopted_row()
         return upload
 
     def test_an_upload_that_declares_no_size_declares_the_bytes_it_was_sent(self):
@@ -3234,6 +3269,7 @@ class TestLegacyRefusalMessages(ShimCase):
 
     def test_a_workflow_refusal_reaches_the_client_with_its_message(self):
         nodes = self.stub("node_core")
+        self.stub_unadopted_row()
         nodes.update.side_effect = DriveForbidden("Ask the folder owner for upload access")
         frappe.clear_messages()
         with self.assertRaises(DriveForbidden):
@@ -3244,6 +3280,7 @@ class TestLegacyRefusalMessages(ShimCase):
         """§11.6 reads the code off the class. Remapping every refusal to one
         of them would answer 400 for a missing node and for a full disk."""
         nodes = self.stub("node_core")
+        self.stub_unadopted_row()
         for error in (DriveNotFound, DriveForbidden, DriveConflict):
             with self.subTest(error=error.__name__):
                 nodes.update.side_effect = error("no")

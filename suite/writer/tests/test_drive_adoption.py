@@ -52,7 +52,7 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api.files import track_visit
+from suite.drive.api.files import rename, track_visit
 from suite.drive.api.list import files as legacy_files
 from suite.drive.api.notifications import create_notification
 from suite.drive.framework import refuse_governed_share, validate_content_registry
@@ -650,6 +650,31 @@ class TestWriterBeforeActivation(IntegrationTestCase):
             frappe.db.exists("Drive Entity Log", {"entity_name": entity.name, "user": OTHER}),
             "a refused visit writes nothing",
         )
+
+    def test_renaming_a_document_the_api_creates_keeps_the_title_it_was_given(self):
+        """`CoreEditor.vue` renames an untitled document from its first line on
+        the first Enter, so this ran without any gesture the reader chose."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Untitled {frappe.generate_hash(6)}")
+
+        answer = rename(entity.name, "A better title")
+
+        self.assertEqual(answer["file_name"], "A better title")
+        self.assertEqual(frappe.db.get_value("File", entity.name, "file_name"), "A better title")
+
+    def test_a_stranger_cannot_rename_somebody_elses_document(self):
+        """The gate is `File.rename`'s own Write check, the rule that named
+        the row."""
+        frappe.set_user(USER)
+        entity = self._opened(f"Untouched {frappe.generate_hash(6)}")
+        before = frappe.db.get_value("File", entity.name, "file_name")
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            rename(entity.name, "Mine now")
+        self.assertEqual(frappe.db.get_value("File", entity.name, "file_name"), before)
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
