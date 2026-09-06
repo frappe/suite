@@ -4,9 +4,22 @@
 
 **Blocked by:** [18 — Move Slides documents and media into Drive](18-slides-adoption.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 **Owner:** Suite Slides API
+
+**Starting revision:** Suite `63ec3f2d181a36d8802c5141c2d8077ee7bb3ea7`;
+Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
+
+**Claimed files:** `suite/slides/api/composite.py`,
+`suite/slides/tests/test_composite_groups.py`, `suite/slides/drive.py`,
+`frontend/src/apps/slides/contracts/composite-groups.fixture.json`,
+`frontend/src/apps/slides/contracts/composite-groups.test.ts`,
+`suite/tests/test_architecture.py`, and this ticket.
+
+`suite/slides/drive.py` and `suite/tests/test_architecture.py` are ticket 18's
+files. Ticket 18 handed both changes to this ticket in writing; see
+[Deviations from file ownership](#deviations-from-file-ownership).
 
 **Execution gate:** None beyond completed blockers.
 
