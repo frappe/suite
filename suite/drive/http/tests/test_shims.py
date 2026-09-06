@@ -407,6 +407,18 @@ class ShimCase(UnitTestCase):
         self.addCleanup(patcher.stop)
         return patcher.start()
 
+    def stub_unadopted_visit(self, answer=False):
+        """Say the visited id is a node, without a database.
+
+        `track_visit` records an open on the `File` store for an id no node
+        holds, because every document `create_document` writes is one. A case
+        about the node path says so here; `_legacy_visit` has cases of its own
+        below.
+        """
+        patcher = patch.object(shims, "_legacy_visit", return_value=answer)
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
     def stub_unadopted_file(self, answer=None):
         """Say no `File` is waiting for this id, without a database.
 
@@ -1282,6 +1294,92 @@ class TestUnadoptedAccessRead(ShimCase):
         self.assertIsNone(shims._legacy_user_access(None))
         self.assertIsNone(shims._legacy_user_access({}))
         bits.assert_not_called()
+
+
+class TestUnadoptedVisit(ShimCase):
+    """`_legacy_visit`: the opened-at row, for an id no node holds.
+
+    `writer.api.general.get_document_list` orders the caller's own documents
+    by `Drive Entity Log.last_interaction` and publishes it as `accessed`.
+    Nothing but this call writes that row, so a forwarder that only visits
+    nodes left every document `create_document` writes with no opened-at.
+    """
+
+    def store(self, *, node=False, file=True):
+        """Name what each store holds, and answer the two legacy writes."""
+        db = MagicMock()
+        db.exists.side_effect = lambda doctype, name: node if doctype == "Drive Node" else file
+        db.get_value.return_value = "f1"
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        row = MagicMock()
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        viewed = MagicMock()
+        self.enterContext(patch("suite.drive.utils.users.mark_as_viewed", viewed))
+        read = MagicMock(return_value=0)
+        self.enterContext(patch.object(shims, "_mark_legacy_read", read))
+        return db, row, viewed, read
+
+    def test_an_id_a_node_holds_is_left_to_the_workflow(self):
+        """The store is decided by which one holds the id."""
+        _, _, viewed, _ = self.store(node=True)
+        self.assertFalse(shims._legacy_visit(SOMEONE, "n1"))
+        viewed.assert_not_called()
+
+    def test_an_id_neither_store_holds_is_left_to_the_workflow(self):
+        """`_core` still owns the refusal for an id that is nowhere."""
+        _, _, viewed, _ = self.store(file=False)
+        self.assertFalse(shims._legacy_visit(SOMEONE, "n1"))
+        viewed.assert_not_called()
+
+    def test_a_node_less_row_is_recorded_by_the_rule_that_wrote_it(self):
+        _, row, viewed, _ = self.store()
+        self.assertTrue(shims._legacy_visit(SOMEONE, "f1"))
+        viewed.assert_called_once_with(row)
+
+    def test_the_badge_for_the_opened_row_is_cleared_too(self):
+        """The visible half of this call: the old body marked every unread
+        notification about the file it opened as read."""
+        _, _, _, read = self.store()
+        shims._legacy_visit(SOMEONE, "f1")
+        read.assert_called_once_with(SOMEONE, None, entity="f1")
+
+    def test_the_gate_is_the_rule_that_wrote_the_row(self):
+        """`File` carries a `has_permission` hook, so `get_doc` refuses a
+        reader with no access. No deny is invented here."""
+        db, _, viewed, _ = self.store()
+        self.enterContext(
+            patch.object(shims.frappe, "get_doc", MagicMock(side_effect=frappe.PermissionError))
+        )
+        with self.assertRaises(frappe.PermissionError):
+            shims._legacy_visit(SOMEONE, "f1")
+        viewed.assert_not_called()
+
+    def test_the_forwarder_records_a_node_less_open_without_touching_the_workflow(self):
+        activity = self.stub("activity_core")
+        self.stub_unadopted_visit(True)
+        self.assertIsNone(shims.track_visit("f1"))
+        activity.visit.assert_not_called()
+
+    def test_a_content_document_no_node_holds_still_names_its_file(self):
+        """Sheets and Slides send `doctype`/`docname`, and the old body
+        resolved that pair against `tabFile`. Both types are still in the
+        expand phase, so the node lookup answers nothing for either."""
+        db = MagicMock()
+        db.get_value.side_effect = [None, "f1"]
+        db.exists.return_value = False
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        self.stub_unadopted_visit(True)
+
+        shims.track_visit(doctype="Presentation", docname="p1")
+
+        self.assertEqual(db.get_value.call_args_list[-1].args[0], "File")
+
+    def test_a_content_document_a_node_holds_is_not_named_off_the_file_store(self):
+        db = MagicMock()
+        db.get_value.return_value = "f1"
+        db.exists.return_value = True
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        self.assertIsNone(shims._legacy_content_entity("Presentation", "p1"))
 
 
 class TestUnadoptedFileRead(ShimCase):
@@ -2191,6 +2289,7 @@ class TestFileForwarders(ShimCase):
 
     def test_track_visit_records_the_visit(self):
         activity = self.stub("activity_core")
+        self.stub_unadopted_visit()
         activity.notifications.return_value = {"rows": [], "next_cursor": None}
         shims.track_visit("n1")
         activity.visit.assert_called_once_with(SOMEONE, "n1")
