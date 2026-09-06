@@ -266,16 +266,18 @@ def _bits(role: int) -> dict:
     return {bit: int(role >= rung) for bit, rung in BIT_ROLE.items()}
 
 
-def _access_type(row, role: int, principals) -> str:
-    """Answer legacy `type`: admin, user, or guest.
+def _access_type(role: int) -> str:
+    """Answer legacy `type`: admin, user, or guest, from the rung the bits come from.
 
-    Legacy called the site admin and the owner `admin`, anyone who could write
-    `user`, and everybody else `guest`. Owner is still owner on a node row, and
-    `principals.is_admin` is the same test `access` runs, so both survive.
+    Legacy called the site admin and the owner `admin` and handed both every
+    bit set. §5.9 resolves an owner like anyone else, so an owner holds less
+    than MANAGE on a node they created in somebody else's tree. Reading `owner`
+    here made the payload contradict itself: `type: "admin"` beside `share: 0`.
+
+    The bits are the truthful half - they are what the SPA hides its buttons on
+    - so the label follows them. Nothing in the tree reads `type`.
     """
-    if principals.is_admin:
-        return "admin"
-    if principals.user != "Guest" and row.get("owner") == principals.user:
+    if role >= MANAGE:
         return "admin"
     return "user" if role >= EDIT else "guest"
 
@@ -416,7 +418,7 @@ def get_user_access(entity) -> dict:
     if row is None:
         return {**NO_ACCESS, "type": "guest"}
     role = access.effective_role(row, principals)
-    return {**_bits(role), "type": _access_type(row, role, principals)}
+    return {**_bits(role), "type": _access_type(role)}
 
 
 @_legacy
@@ -471,7 +473,7 @@ def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     answer = {
         **_legacy_row(row),
         **_bits(role),
-        "type": _access_type(row, role, principals),
+        "type": _access_type(role),
         **_user_info(row.get("owner"), ["user_image", "full_name"]),
         "breadcrumbs": trail,
         "is_favourite": row.name if marks.get("favourite") else None,
@@ -1306,8 +1308,9 @@ def update_access(entity_name: str, method: str, **kwargs):
     if method != "share":
         frappe.throw(_("Drive access method {0} is not supported").format(method), frappe.ValidationError)
 
+    expires_on = _kept_expiry(entity_name, principal, principals)
     if _flag(kwargs.get("deny")):
-        return access.grant(entity_name, principal, 0, principals)
+        return access.grant(entity_name, principal, 0, principals, expires_on=expires_on)
     role = _legacy_role(kwargs)
     if principal == "$PUBLIC":
         role = min(role, READ)
@@ -1321,7 +1324,21 @@ def update_access(entity_name: str, method: str, **kwargs):
             _("A Drive share must name at least read access."),
             frappe.ValidationError,
         )
-    return access.grant(entity_name, principal, role, principals)
+    return access.grant(entity_name, principal, role, principals, expires_on=expires_on)
+
+
+def _kept_expiry(entity_name: str, principal: str, principals):
+    """The expiry a grant already carries, so a legacy re-share keeps it.
+
+    `access.grant` replaces the whole row: §11.2 spells it `PUT`. This caller
+    has no field for an expiry and never had one, so re-sharing through it
+    cleared an expiry set from the new surface and turned a time-limited share
+    into a permanent one. `grants_for` needs MANAGE, which `grant` needs too.
+    """
+    for row in access.grants_for(entity_name, principals)["grants"]:
+        if row["principal"] == principal:
+            return row["expires_on"]
+    return None
 
 
 def _flag(value) -> bool:
@@ -1448,10 +1465,14 @@ def get_root_folder():
     where the route would have read them.
     """
     principals = _principals()
-    return {
-        "root": roots.active_root_for(kind=roots.SHARED),
-        "home": _home(principals),
-    }
+    shared = roots.active_root_for(kind=roots.SHARED)
+    if not shared:
+        # Legacy answered `drive_root().name`, which made the row when it was
+        # missing. §7 makes the Shared root part of Build, not of a read, and a
+        # `None` here travelled: the client stored it and asked for its
+        # children. The refusal is named where the reason is, as `_home` does.
+        frappe.throw(_("This site has no shared Drive folder"), frappe.ValidationError)
+    return {"root": shared, "home": _home(principals)}
 
 
 @_legacy
@@ -1596,7 +1617,7 @@ def _legacy_list_rows(principals, rows: list) -> list[dict]:
             "share_count": shares.get(row["name"], 0),
             "kind": "native",
             **_bits(role),
-            "type": _access_type(row, role, principals),
+            "type": _access_type(role),
         }
         if row.get("content_doctype") == "Presentation":
             shaped["slide_count"] = slides.get(row.get("content_docname"), 0)
@@ -1630,8 +1651,18 @@ def _matching_kinds(rows: list, file_kinds) -> list:
         return rows
     if isinstance(file_kinds, str):
         file_kinds = json.loads(file_kinds)
+    if not file_kinds:
+        return rows
+    from suite.drive.utils import MIME_LIST_MAP
+
+    # `get_file_type` answers the first table key holding the mime, so a row
+    # has one family and `frappe_doc` is under `Document` before it is under
+    # `Frappe Document`: that second family selected nothing at all. The old
+    # filter was `mime_type IN (...)` over the union of the named families and
+    # matched both, so the mimes are read here as well as the family.
     wanted = set(file_kinds)
-    return [row for row in rows if _file_type(row) in wanted]
+    mimes = {mime for kind in wanted for mime in MIME_LIST_MAP.get(kind, [])}
+    return [row for row in rows if _file_type(row) in wanted or row.get("mime") in mimes]
 
 
 def _matching_titles(rows: list, term: str | None) -> list:

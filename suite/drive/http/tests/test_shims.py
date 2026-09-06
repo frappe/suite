@@ -451,12 +451,22 @@ class TestPermissionForwarders(ShimCase):
         shims.get_user_access({"name": "n1"})
         nodes.stored.assert_called_once_with("n1")
 
-    def test_an_owner_is_still_called_admin(self):
+    def test_the_access_label_names_the_rung_the_bits_come_from(self):
+        """Legacy called the owner `admin` and handed them every bit. §5.9
+        resolves an owner like anyone else - `_core.access` has no owner rule -
+        so an owner holds UPLOAD on a node they created in a folder shared to
+        them at UPLOAD. Reading `owner` here made the payload contradict
+        itself: `type: "admin"` beside `share: 0`. The bits are the half the
+        SPA hides its buttons on, so the label follows them."""
         nodes = self.stub("node_core")
         access = self.stub("access")
         nodes.stored.return_value = node_row(owner=SOMEONE.user)
-        access.effective_role.return_value = READ
-        self.assertEqual(shims.get_user_access("n1")["type"], "admin")
+        for role, label in ((MANAGE, "admin"), (EDIT, "user"), (UPLOAD, "guest"), (READ, "guest")):
+            with self.subTest(role=role):
+                access.effective_role.return_value = role
+                answer = shims.get_user_access("n1")
+                self.assertEqual(answer["type"], label)
+                self.assertEqual(answer["share"], int(role >= MANAGE))
 
     def test_general_access_reads_public_then_site_then_restricted(self):
         nodes = self.stub("node_core")
@@ -1208,7 +1218,7 @@ class TestAccessForwarder(ShimCase):
             with self.subTest(level=label):
                 access.grant.reset_mock()
                 shims.update_access("n1", "share", user="b@example.com", **bits)
-                access.grant.assert_called_once_with("n1", "b@example.com", rung, SOMEONE)
+                access.grant.assert_called_once_with("n1", "b@example.com", rung, SOMEONE, expires_on=None)
 
     def test_a_share_bit_without_a_write_bit_does_not_reach_manage(self):
         """`ShareDialog.updateGeneralAccess` sends `share: 1` for every level.
@@ -1221,7 +1231,7 @@ class TestAccessForwarder(ShimCase):
         shims.update_access(
             "n1", "share", user="$GENERAL", read=1, comment=1, share=1, write=False, upload=False
         )
-        access.grant.assert_called_once_with("n1", "$GENERAL", COMMENT, SOMEONE)
+        access.grant.assert_called_once_with("n1", "$GENERAL", COMMENT, SOMEONE, expires_on=None)
 
     def test_a_publish_is_held_at_the_public_ceiling(self):
         """§6.5: a published node is the one row `(node, $PUBLIC, READ)`.
@@ -1232,17 +1242,17 @@ class TestAccessForwarder(ShimCase):
         """
         access = self.stub("access")
         shims.update_access("n1", "share", user="", read=1, comment=1, share=1)
-        access.grant.assert_called_once_with("n1", "$PUBLIC", READ, SOMEONE)
+        access.grant.assert_called_once_with("n1", "$PUBLIC", READ, SOMEONE, expires_on=None)
 
     def test_an_omitted_user_is_still_the_public_principal(self):
         access = self.stub("access")
         shims.update_access("n1", "share", read=1)
-        access.grant.assert_called_once_with("n1", "$PUBLIC", READ, SOMEONE)
+        access.grant.assert_called_once_with("n1", "$PUBLIC", READ, SOMEONE, expires_on=None)
 
     def test_an_explicit_deny_is_the_caller_asking_for_role_zero(self):
         access = self.stub("access")
         shims.update_access("n1", "share", user="b@example.com", read=1, deny=1)
-        access.grant.assert_called_once_with("n1", "b@example.com", 0, SOMEONE)
+        access.grant.assert_called_once_with("n1", "b@example.com", 0, SOMEONE, expires_on=None)
 
     def test_an_unshare_removes_the_row_and_writes_nothing(self):
         access = self.stub("access")
@@ -1284,7 +1294,7 @@ class TestAccessForwarder(ShimCase):
     def test_a_deny_the_caller_asked_for_is_still_written(self):
         access = self.stub("access")
         shims.update_access("n1", "share", user="b@example.com", deny=1)
-        access.grant.assert_called_once_with("n1", "b@example.com", 0, SOMEONE)
+        access.grant.assert_called_once_with("n1", "b@example.com", 0, SOMEONE, expires_on=None)
 
     def test_an_unknown_method_is_refused(self):
         self.stub("access")
@@ -1312,6 +1322,28 @@ class TestAccessForwarder(ShimCase):
                 with self.assertRaises(frappe.ValidationError):
                     shims.update_access("n1", "share", user=principal, read=1)
         access.grant.assert_not_called()
+
+    def test_a_re_share_keeps_an_expiry_it_has_no_field_for(self):
+        """`access.grant` replaces the whole row: §11.2 spells it `PUT`. This
+        caller has no field for an expiry, so re-sharing through it turned a
+        time-limited share into a permanent one."""
+        access = self.stub("access")
+        access.grants_for.return_value = {
+            "grants": [
+                {"principal": "c@example.com", "expires_on": "2030-01-01 00:00:00"},
+                {"principal": "b@example.com", "expires_on": "2026-12-31 00:00:00"},
+            ]
+        }
+        shims.update_access("n1", "share", user="b@example.com", read=1, comment=1)
+        self.assertEqual(
+            access.grant.call_args.kwargs["expires_on"], "2026-12-31 00:00:00"
+        )
+
+    def test_a_first_share_carries_no_expiry(self):
+        access = self.stub("access")
+        access.grants_for.return_value = {"grants": []}
+        shims.update_access("n1", "share", user="b@example.com", read=1)
+        self.assertIsNone(access.grant.call_args.kwargs["expires_on"])
 
     def test_an_unshare_of_a_link_is_refused_too(self):
         access = self.stub("access")
@@ -1407,6 +1439,20 @@ class TestListForwarders(ListCase):
         self.one_page([node_row(), node_row(name="n2", kind="folder", mime=None)])
         rows = shims.files(file_kinds='["Folder"]')
         self.assertEqual([row["name"] for row in rows], ["n2"])
+
+    def test_a_family_that_shares_a_mime_with_another_still_selects(self):
+        """`get_file_type` answers the first table key holding the mime, so a
+        `frappe_doc` row is `Document` and never `Frappe Document`, and that
+        family selected nothing. The old filter was `mime_type IN (...)` over
+        the union of the named families and matched both."""
+        self.one_page([node_row(name="n1", mime="frappe_doc"), node_row(name="n2", mime="text/plain")])
+        for kind in ("Document", "Frappe Document"):
+            with self.subTest(kind=kind):
+                self.assertEqual([row["name"] for row in shims.files(file_kinds=[kind])], ["n1"])
+
+    def test_a_family_filter_still_excludes_what_it_does_not_name(self):
+        self.one_page([node_row(name="n1", mime="frappe_doc"), node_row(name="n2", mime="text/plain")])
+        self.assertEqual([row["name"] for row in shims.files(file_kinds=["Text"])], ["n2"])
 
     def test_a_paginated_call_answers_the_old_envelope(self):
         self.nodes.children.return_value = {"rows": [node_row()], "next_cursor": "c50"}
@@ -1623,6 +1669,16 @@ class TestCallerHomeFolder(ShimCase):
         roots = self.stub("roots")
         roots.personal_root_for.return_value = None
         roots.provision_personal_root.return_value = None
+        with self.assertRaises(frappe.ValidationError):
+            shims.get_root_folder()
+
+    def test_a_site_with_no_shared_root_is_refused_not_handed_none(self):
+        """Legacy answered `drive_root().name`, which made the row when it was
+        missing. §7 makes the Shared root part of Build, not of a read, so a
+        `None` travelled: the client stored it and asked for its children."""
+        roots = self.stub("roots")
+        roots.active_root_for.return_value = None
+        roots.personal_root_for.return_value = "home-root"
         with self.assertRaises(frappe.ValidationError):
             shims.get_root_folder()
 
