@@ -4,9 +4,13 @@ Frappe dotted hook targets terminate here, never in `_core`. The four
 permission entry points below keep the framework's own keyword signatures:
 `has_permission` hooks are called as
 `method(doc=doc, ptype=ptype, user=user, debug=debug)` and
-`permission_query_conditions` hooks as `method(user, doctype=doctype)`. A
-handler that drops either keyword raises `TypeError` at request time, so the
-signatures are frozen (§10.3).
+`permission_query_conditions` hooks as `method(user, doctype=doctype)`.
+
+`frappe.call` drops a keyword the signature does not name rather than raising,
+so a wrong signature fails silently: a `doc_query_conditions` that lost
+`doctype` would return "" and filter nothing. The contract test in
+`suite/drive/tests/test_content.py` is what freezes these four signatures
+(§10.3).
 """
 
 import frappe
@@ -122,7 +126,7 @@ def satellite_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     node = frappe.db.get_value(spec.doctype, docname, spec.node_field)
     if not node:
         raise DriveConflict(_("A Drive content document requires its node"))
-    role = READ if ptype in ("read", "select") else EDIT
+    role = READ if ptype in (None, "read", "select") else EDIT
     return _node_allows(node, role, user)
 
 
@@ -134,8 +138,15 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
     predicate = _list_predicate("`drive_content_owner`.`" + spec.node_field + "`", user)
     if predicate in ("", "1=0"):
         return predicate
+    # A child table names its parent through `parent` plus `parenttype`. Names
+    # are unique per doctype, not across doctypes, so without the second column
+    # a row under an unrelated parent whose name matches a readable document
+    # would pass the filter.
+    owner = ""
+    if satellite.link_field == "parent":
+        owner = f"`tab{doctype}`.`parenttype` = {frappe.db.escape(spec.doctype)} AND "
     return (
-        f"`tab{doctype}`.`{satellite.link_field}` IN ("
+        f"{owner}`tab{doctype}`.`{satellite.link_field}` IN ("
         f"SELECT `drive_content_owner`.`name` FROM `tab{spec.doctype}` `drive_content_owner` "
         f"WHERE {predicate})"
     )
@@ -158,8 +169,12 @@ def _user_groups(user: str) -> tuple[str, ...]:
     )
 
 
-def _role_for_ptype(ptype: str) -> int:
-    return PTYPE_ROLE.get(ptype, DEFAULT_PTYPE_ROLE)
+def _role_for_ptype(ptype: str | None) -> int:
+    # `get_doc_permissions` asks with no ptype at all (`frappe/permissions.py`
+    # calls `has_controller_permissions(doc, None)`), so `None` must mean the
+    # cheapest verb. Answering EDIT there hides a readable document from every
+    # viewer who holds only READ.
+    return PTYPE_ROLE.get(ptype or "read", DEFAULT_PTYPE_ROLE)
 
 
 def _document_node_of(doc, spec) -> str:

@@ -7,6 +7,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.model.base_document import get_controller
 from frappe.model.document import Document
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
@@ -34,7 +35,7 @@ from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFoun
 from suite.drive._core.nodes import _link_document, copy, create_file, create_folder, purge
 from suite.drive._core.nodes import create_document as create_document_node
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import COMMENT, EDIT, READ
+from suite.drive._core.roles import COMMENT, EDIT, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive._core.versions import restore_version, take_version
 from suite.hooks import scheduler_events
@@ -135,6 +136,15 @@ def registered(*specs: ContentTypeSpec):
     def hooks(key, *args, **kwargs):
         if key == "drive_content_types":
             return paths
+        if key == "permission_query_conditions":
+            # Without this the fixture doctype has no hook entry, so a list
+            # call would never reach the predicate under test.
+            wired = dict(real_get_hooks(key, *args, **kwargs) or {})
+            for declared in specs:
+                wired[declared.doctype] = ["suite.drive.framework.doc_query_conditions"]
+                for satellite in declared.satellites:
+                    wired[satellite.doctype] = ["suite.drive.framework.satellite_query_conditions"]
+            return wired
         return real_get_hooks(key, *args, **kwargs)
 
     with (
@@ -330,6 +340,177 @@ class TestContentContract(UnitTestCase):
         self.assertIn(f"FROM `tab{CONTENT_DOCTYPE}` `drive_content_owner`", predicate)
         self.assertIn("`drive_node`.`name` = `drive_content_owner`.`node`", predicate)
 
+    def test_boot_validation_resolves_the_controller_the_framework_way(self):
+        # `Meta` carries no `get_controller`, so reading it through the meta
+        # made every declaration die with an AttributeError before it could be
+        # judged, and boot validation refused nothing at all.
+        self.assertIs(content.get_controller, get_controller)
+        with patch("suite.drive._core.content.get_controller", return_value=DriveTestContent):
+            content._validate_mixin(CONTENT_DOCTYPE)
+        with (
+            patch("suite.drive._core.content.get_controller", return_value=Document),
+            self.assertRaises(DriveConflict),
+        ):
+            content._validate_mixin(CONTENT_DOCTYPE)
+
+    def test_the_mixin_guard_runs_when_another_base_owns_the_hook(self):
+        calls = []
+
+        class Legacy:
+            def before_insert(self):
+                calls.append("legacy")
+
+        class Inherited(Legacy, DriveContent):
+            doctype = CONTENT_DOCTYPE
+            name = "one"
+            fields: typing.ClassVar[dict] = {}
+
+            def get(self, field):
+                return self.fields.get(field)
+
+        doc = Inherited()
+        with registered(spec()), stub_db(MagicMock()) as db:
+            db.get_value.return_value = None
+            with self.assertRaises(DriveConflict):
+                doc.before_insert()
+            self.assertEqual(calls, [], "an inherited hook cannot displace the node guard")
+
+            doc.fields = {"node": "node-a"}
+            db.get_value.return_value = frappe._dict(kind="document", content_docname="one")
+            doc.before_insert()
+        self.assertEqual(calls, ["legacy"])
+
+    def test_a_saved_document_cannot_repoint_itself_at_another_node(self):
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="one", node="node-b")
+        with registered(spec()), stub_db(MagicMock()) as db:
+            db.get_value.return_value = "node-a"
+            with self.assertRaises(DriveConflict):
+                content.refuse_node_change(doc)
+            db.get_value.return_value = "node-b"
+            content.refuse_node_change(doc)
+            db.get_value.return_value = None
+            content.refuse_node_change(doc)
+            content.refuse_node_change(frappe._dict(doctype=CONTENT_DOCTYPE, name=None, node="node-b"))
+
+    def test_an_app_callback_cannot_end_the_drive_transaction(self):
+        class Handle:
+            _disable_transaction_control = 0
+
+        with stub_db(Handle()):
+            with content.app_callback():
+                self.assertEqual(frappe.db._disable_transaction_control, 1)
+                with content.app_callback():
+                    self.assertEqual(frappe.db._disable_transaction_control, 2)
+                self.assertEqual(frappe.db._disable_transaction_control, 1)
+            self.assertEqual(frappe.db._disable_transaction_control, 0)
+
+            with self.assertRaises(ValueError), content.app_callback():
+                raise ValueError("the app factory failed")
+            self.assertEqual(frappe.db._disable_transaction_control, 0, "restored on the failing path")
+
+    def test_a_missing_ptype_asks_for_read_and_never_for_edit(self):
+        # `get_doc_permissions` calls the row hook with no ptype at all, so a
+        # fallback to Edit hides a document from every Read-only viewer.
+        self.assertEqual(framework._role_for_ptype(None), READ)
+        self.assertEqual(framework._role_for_ptype("read"), READ)
+        self.assertEqual(framework._role_for_ptype("write"), EDIT)
+
+        seen = []
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        doc = frappe._dict(doctype=SATELLITE_DOCTYPE, content="one")
+        with (
+            registered(declared),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive.framework._node_allows") as allows,
+        ):
+            db.get_value.return_value = "node-a"
+            allows.side_effect = lambda node, role, user: seen.append(role) or True
+            framework.satellite_has_permission(doc=doc, ptype=None, user=USER)
+            framework.satellite_has_permission(doc=doc, ptype="write", user=USER)
+        self.assertEqual(seen, [READ, EDIT])
+
+    def test_a_child_table_satellite_is_filtered_by_its_parent_doctype(self):
+        person = Principals(USER, (USER,), ())
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="parent"),))
+        with (
+            registered(declared),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive.framework.principals_for", return_value=person),
+        ):
+            db.escape.side_effect = lambda value, percent=True: "'{0}'".format(str(value).replace("'", "''"))
+            predicate = framework.satellite_query_conditions(user=USER, doctype=SATELLITE_DOCTYPE)
+        self.assertTrue(
+            predicate.startswith(f"`tab{SATELLITE_DOCTYPE}`.`parenttype` = '{CONTENT_DOCTYPE}' AND "),
+            "a name is unique per doctype, not across doctypes",
+        )
+        self.assertIn(f"`tab{SATELLITE_DOCTYPE}`.`parent` IN (", predicate)
+
+    def test_a_child_table_satellite_must_belong_to_its_content_doctype(self):
+        satellite = Satellite(doctype=SATELLITE_DOCTYPE, link_field="parent")
+        child = frappe._dict(istable=1, fields=[])
+        owns = frappe._dict(istable=0, fields=[frappe._dict(fieldtype="Table", options=SATELLITE_DOCTYPE)])
+        with patch("suite.drive._core.content._meta_or_refuse", side_effect=[child, owns]):
+            content._validate_satellite(satellite, CONTENT_DOCTYPE)
+        with (
+            patch(
+                "suite.drive._core.content._meta_or_refuse",
+                side_effect=[child, frappe._dict(istable=0, fields=[])],
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            content._validate_satellite(satellite, CONTENT_DOCTYPE)
+
+    def test_a_registry_name_that_cannot_be_one_sql_identifier_is_refused(self):
+        for override in ({"doctype": "Drive`Test"}, {"node_field": "node`"}, {"node_field": "1node"}):
+            with (
+                self.subTest(override=override),
+                registered(spec(**override)),
+                self.assertRaises(DriveConflict),
+            ):
+                registry()
+        loose = Satellite(doctype=SATELLITE_DOCTYPE, link_field="par`ent")
+        with registered(spec(satellites=(loose,))), self.assertRaises(DriveConflict):
+            registry()
+
+    def test_one_sweep_pass_drains_every_batch_it_can_reach(self):
+        # A daily job that stops after one batch never catches up on a site
+        # that changes more documents than that in a day.
+        batches = [
+            [
+                frappe._dict(
+                    name=f"node-{index}",
+                    content_doctype=CONTENT_DOCTYPE,
+                    content_docname=f"doc-{index}",
+                    content_modified="2026-09-06 00:00:00",
+                )
+                for index in range(content.MEDIA_SWEEP_BATCH)
+            ],
+            [
+                frappe._dict(
+                    name="node-last",
+                    content_doctype=CONTENT_DOCTYPE,
+                    content_docname="doc-last",
+                    content_modified="2026-09-06 00:01:00",
+                )
+            ],
+        ]
+
+        def sql(query, values=None, **kwargs):
+            return batches.pop(0) if "kind = 'document'" in query and batches else []
+
+        with (
+            registered(spec(used_nodes=lambda docname: set())),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive._core.content.frappe.cache") as cache,
+        ):
+            cache.return_value.get_value.return_value = None
+            db.sql.side_effect = sql
+            result = sweep_unused_media()
+
+        self.assertEqual(result["documents"], content.MEDIA_SWEEP_BATCH + 1)
+        self.assertEqual(result["cursor"], "node-last")
+        self.assertEqual(batches, [])
+
     def test_five_daily_drive_jobs_are_registered_and_there_is_no_sixth(self):
         daily = [entry for entry in scheduler_events["daily"] if entry.startswith("suite.drive.jobs.")]
         self.assertEqual(tuple(daily), DAILY_DRIVE_JOBS)
@@ -357,12 +538,18 @@ class TestContentWorkflows(IntegrationTestCase):
         ensure_user(USER)
         ensure_user(OTHER)
         _create_fixture_doctypes()
-        frappe.controllers.setdefault(frappe.local.site, {})[CONTENT_DOCTYPE] = DriveTestContent
+        controllers = frappe.controllers.setdefault(frappe.local.site, {})
+        controllers[CONTENT_DOCTYPE] = DriveTestContent
+        # The titled fixture carries the mixin too, so `_validate_mixin` passes
+        # and `_validate_forbidden_fields` is the check that refuses it.
+        controllers[TITLED_DOCTYPE] = DriveTestContent
         frappe.db.commit()
 
     @classmethod
     def tearDownClass(cls):
-        frappe.controllers.get(frappe.local.site, {}).pop(CONTENT_DOCTYPE, None)
+        controllers = frappe.controllers.get(frappe.local.site, {})
+        controllers.pop(CONTENT_DOCTYPE, None)
+        controllers.pop(TITLED_DOCTYPE, None)
         _drop_fixture_doctypes()
         frappe.db.commit()
         super().tearDownClass()
@@ -630,6 +817,39 @@ class TestContentWorkflows(IntegrationTestCase):
         self.assertEqual(self._used_bytes(), charged_before)
         self.assertEqual(frappe.db.count(CONTENT_DOCTYPE), 1)
 
+    def test_a_copy_gives_the_creator_one_grant_and_not_one_per_picture(self):
+        with registered(spec()):
+            document = self._document("Deck")
+            logo = self._media(document, "logo.png", b"logo-bytes")
+            picture = self._media(document, "picture.png", b"picture-bytes")
+            self._name_media(document, [logo, picture])
+            folder = create_folder(self.admin, self.root.name, "Copies")
+            grant(folder, USER, UPLOAD, self.admin)
+            copied = copy(self.person, document, folder)
+
+        media = frappe.get_all("Drive Node", filters={"parent": copied}, pluck="name")
+        self.assertEqual(len(media), 2)
+        self.assertEqual(frappe.db.count("Drive Grant", {"node": copied, "principal": USER}), 1)
+        self.assertEqual(
+            frappe.db.count("Drive Grant", {"node": ["in", media]}),
+            0,
+            "a copied picture inherits the document's creator grant instead of carrying its own",
+        )
+
+    def test_a_factory_that_commits_still_leaves_no_node_and_no_document(self):
+        def commits_then_fails(node):
+            create_empty(node)
+            frappe.db.commit()
+            raise ValueError("the app committed and then failed")
+
+        with registered(spec()):
+            nodes_before = frappe.db.count("Drive Node", {"root": self.root.name})
+            documents_before = frappe.db.count(CONTENT_DOCTYPE)
+        with registered(spec(create_empty=commits_then_fails)), self.assertRaises(ValueError):
+            self._document("Deck")
+        self.assertEqual(frappe.db.count("Drive Node", {"root": self.root.name}), nodes_before)
+        self.assertEqual(frappe.db.count(CONTENT_DOCTYPE), documents_before)
+
     # purge and versions still reach the app through the one registry
 
     def test_purge_calls_the_registered_on_purge_and_removes_the_media(self):
@@ -740,6 +960,29 @@ class TestContentWorkflows(IntegrationTestCase):
         self.assertEqual((result["documents"], result["failed"]), (0, 1))
         self.assertEqual(frappe.db.get_value("Drive Node", stale, "state"), "Active")
 
+    def test_media_the_sweep_trashed_can_be_restored_to_its_document(self):
+        from suite.drive._core.nodes import update
+
+        with registered(spec()):
+            document = self._document("Deck")
+            stale = self._media(document, "stale.png", b"stale")
+            self._name_media(document, [])
+            frappe.db.set_value(
+                "Drive Node",
+                stale,
+                "creation",
+                now_datetime() - timedelta(days=UNUSED_MEDIA_GRACE_DAYS + 1),
+                update_modified=False,
+            )
+            self.assertEqual(sweep_unused_media()["trashed"], 1)
+            self.assertEqual(frappe.db.get_value("Drive Node", stale, "state"), "Trashed")
+            restored = update(self.admin, stale, state="Active")
+        self.assertEqual(
+            (restored.state, restored.parent),
+            ("Active", document),
+            "a bin the owner cannot restore from is not a bin",
+        )
+
     def test_the_sweep_cursor_only_revisits_documents_that_changed(self):
         with registered(spec()):
             document = self._document("Deck")
@@ -824,7 +1067,9 @@ class TestContentWorkflows(IntegrationTestCase):
 
             frappe.set_user(OTHER)
             try:
-                visible = frappe.get_all(CONTENT_DOCTYPE, pluck="node")
+                # `get_list`, never `get_all`: `get_all` sets
+                # `ignore_permissions=True` and skips the predicate entirely.
+                visible = frappe.get_list(CONTENT_DOCTYPE, pluck="node")
             finally:
                 frappe.set_user("Administrator")
 
@@ -844,7 +1089,7 @@ class TestContentWorkflows(IntegrationTestCase):
 
             frappe.set_user(OTHER)
             try:
-                self.assertEqual(frappe.get_all(CONTENT_DOCTYPE, pluck="name"), [])
+                self.assertEqual(frappe.get_list(CONTENT_DOCTYPE, pluck="name"), [])
             finally:
                 frappe.set_user("Administrator")
             doc = frappe.get_doc(CONTENT_DOCTYPE, docname)
@@ -872,10 +1117,15 @@ class TestContentWorkflows(IntegrationTestCase):
         self.assertIn("must not", str(raised.exception))
 
     def test_boot_validation_refuses_a_doctype_without_the_mixin(self):
+        controllers = frappe.controllers.get(frappe.local.site, {})
         with registered(spec(doctype=TITLED_DOCTYPE, node_field="node")):
-            frappe.controllers.get(frappe.local.site, {}).pop(TITLED_DOCTYPE, None)
-            with self.assertRaises(DriveConflict):
-                validate_registry()
+            controllers.pop(TITLED_DOCTYPE, None)
+            try:
+                with self.assertRaises(DriveConflict) as raised:
+                    validate_registry()
+            finally:
+                controllers[TITLED_DOCTYPE] = DriveTestContent
+        self.assertIn("mixin", str(raised.exception))
 
     def test_boot_validation_refuses_a_satellite_that_links_elsewhere(self):
         wrong = Satellite(doctype=SATELLITE_DOCTYPE, link_field="payload")

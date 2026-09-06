@@ -44,6 +44,7 @@ def _run(label, func, *args, **kwargs):
 
 def after_install():
     from suite.calendar.install import after_install as calendar_after_install
+    from suite.drive.framework import validate_content_registry
     from suite.drive.install import after_install as drive_after_install
     from suite.drive.install import ensure_custom_fields
     from suite.mail.install import after_install as mail_after_install
@@ -52,6 +53,8 @@ def after_install():
     _run("drive.after_install", drive_after_install)
     _run("mail.after_install", mail_after_install)
     _run("calendar.after_install", calendar_after_install)
+    # A fresh install never migrates, so it needs the same boot validation.
+    _run("drive.validate_content_registry", validate_content_registry)
 
 
 def after_migrate():
