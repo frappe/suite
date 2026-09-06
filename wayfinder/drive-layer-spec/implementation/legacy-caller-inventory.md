@@ -413,6 +413,35 @@ first time and found defect 35.
     could be built. The count is a `frappe.db.sql` `GROUP BY` now, the way the
     readable-child query below it in the same function is already written.
 
+Fourth module of the serialized gate,
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_list`,
+on `forge/drive-23-site-gate-api-list`. It ran 8 tests and errored on all 8,
+one cause: `TestDriveListPagination` built `File` rows, so every `files()` call
+reached `nodes.children` with a parent that is in no root. A test defect, and
+the same one module 3 met. Rewriting the fixtures onto nodes reached production
+and found defects 36 and 37, which are one defect seen twice.
+
+36. **A folder page was sorted by a value the client is never shown.**
+    `_legacy_row` publishes legacy `modified` as `content_modified or
+    modified`, which is the `COALESCE(file_modified, modified)` the old query
+    both sorted by and published (`utils/__init__.py:160`). `ORDER_COLUMN`
+    mapped the same legacy name to §11.4's `modified`, so `children` ordered
+    the SQL window by the row's own mtime. `content.touch` stamps
+    `content_modified` with `update_modified=False` and `upload_file` stamps it
+    from the client's `file_modified`, so the two differ on every uploaded and
+    every edited file: the page arrived in an order the dates printed on it
+    contradict. The four discovery views never had this, because `_sort_key`
+    already coalesces, so one legacy argument meant two things depending on
+    which list was open. The legacy name maps to `content_modified` now, and
+    `_core.nodes.ORDER_TERMS` makes that order
+    `COALESCE(content_modified, modified)` - a folder has no `content_modified`
+    at all, so the raw column clumps every folder at one end of the list.
+37. **An unknown sort column fell back past the mapping.** Both call sites read
+    `ORDER_COLUMN.get(order_by, "modified")`, and the default is the legacy
+    name rather than the §11.4 name it maps to. Two of the five columns the
+    toolbar sends - "Type" and "Owner" - fall back, so they sorted by the wrong
+    column even once the mapping was right.
+
 ## Carried risks the review did not fix
 
 - **`unshare` on a site-wide principal writes no deny.** `File.unshare` called

@@ -491,18 +491,18 @@ Second pass:
 
 ### Unresolved handoffs
 
-1. **The site gate has run modules 1 to 3 of 17.** See "Site gate evidence" and
-   "Site gate evidence: module 3" below. Modules 4 to 17 have not been run.
-   Every acceptance box waits on them.
+1. **The site gate has run modules 1 to 4 of 17.** See "Site gate evidence"
+   and the module 3 and module 4 sections below. Modules 5 to 17 have not been
+   run. Every acceptance box waits on them.
 2. **Build has not run.** Forwarders and Build ship in one release (plan stage
    4 precedes stage 6). Before Build there is no node for a legacy id, and a
    forwarder answers the workflow's `DriveNotFound`. That is the workflow
    answering, not a fabricated deny, but it means the legacy suites cannot pass
    on this branch alone.
 3. **`suite/drive/api/tests/*` are rewritten where the gate has reached.**
-   `test_files.py` is done; module 3 says what broke and why. The rest of
-   `api/tests/` still tests the legacy names against `File` rows and waits on
-   its own gate module.
+   `test_files.py` and `test_list.py` are done; modules 3 and 4 say what broke
+   and why. `test_notifications.py` builds `Drive Notification` rows rather
+   than `File` rows, so module 5 has no fixture port to do.
 4. **Ticket 29 dormancy is preserved.** `drive_content_types = []`, no hook
    activated, no `site_config` change.
 5. **Destructive removal stays disabled.** Nothing in Cleanup's list was
@@ -775,4 +775,122 @@ upload cases, the publish case, the mime-type case, and the dedupe case.
 
 ### What the gate still owes
 
-Modules 4 to 17 have not been run.
+Modules 5 to 17 have not been run.
+
+## Site gate evidence: module 4
+
+Module 4 of 17 is `suite.drive.api.tests.test_list`. Work on
+`forge/drive-23-site-gate-api-list`, branched from `ac74ecdbf`.
+
+### What module 4 reported
+
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_list`
+ran 8 tests and errored on all 8. One cause, and it is carried risk 3 again:
+`TestDriveListPagination` built `File` rows with `create_drive_file` and shared
+them with `update_access`, so every `files()` call reached `node_core.children`
+with a parent that is in no root and met `DriveNotFound`. The module asserted
+nothing about the forwarder. It is a test defect.
+
+Two production defects were found only by rewriting the fixtures. Both are one
+defect seen twice: a folder page is sorted by a column the row does not
+publish.
+
+**A folder page ordered by a value the client never sees.** `_legacy_row`
+publishes legacy `modified` as `content_modified or modified`, which is what
+the old query published (`utils/__init__.py:160`,
+`COALESCE(file_modified, modified)`). `ORDER_COLUMN` mapped the same legacy
+name to §11.4's `modified`, so `children` sorted the SQL window by the row's
+own mtime. `content.touch` stamps `content_modified` with
+`update_modified=False` and `upload_file` stamps it from the client's own
+`file_modified`, so the two columns differ on every uploaded and every edited
+file: the page came back in an order the dates on it contradict. The four
+discovery views did not have this - `_sort_key` already coalesces - so one
+legacy argument meant two things depending on which list was open.
+
+**An unknown column fell back past the mapping.** Both call sites read
+`ORDER_COLUMN.get(order_by, "modified")`. The default is the legacy name, not
+the §11.4 name it maps to, so "Type" and "Owner" - two of the five columns the
+toolbar sends - sorted by the wrong column even once the mapping was right.
+
+### What changed
+
+- **`_core/nodes.py`.** `ORDER_TERMS` replaces the column table in
+  `_order_column` with one ordering term per §11.4 name, written twice because
+  the folder page sorts the inner window and the union around it.
+  `content_modified` is now `COALESCE(content_modified, modified)`. A null
+  there is not "before every time there is": `_create_empty_node` inserts a
+  folder without one, so the raw column clumps every folder at one end of the
+  list. The vocabulary is unchanged at four names and no other order moved.
+- **`http/shims.py`.** `ORDER_COLUMN` maps legacy `modified` to
+  `content_modified`, and `_order_column` maps the fallback the same way.
+- **`http/tests/test_shims.py`.** One assertion in
+  `test_an_unknown_sort_column_falls_back_instead_of_refusing` reads
+  `content_modified`. Module 1 is otherwise untouched and was re-run.
+- **`api/tests/test_list.py` is rebuilt on nodes.** `LegacyListCase` hangs one
+  folder off the caller's provisioned Personal root, the way `LegacyNodeCase`
+  does in module 3, and takes the same before/after root diff in `tearDown`
+  plus `quota.recompute_usage`. `drop_node_rows`, `drop_record_rows`, and
+  `nodes_in_root` come from `suite/drive/tests/fixtures.py`; `storage_v2` is
+  not needed, because nothing here opens an upload session.
+- **A fixture cannot name a mime.** `create_file` refuses any mime but the
+  blob's (`_validated_blob`, `nodes.py:2095`) and `put_blob` sniffs the bytes
+  and never reads the title (`frappe/storage/blob.py:64`). So the `file_kinds`
+  cases hand over real PDF and PNG magic bytes, and the payload case asserts
+  `file_type: "Application"` for a `.txt` file. See the carried risk below.
+- **8 cases to 26.** Eight are the original contract, ported: the paged
+  envelope, the bare list, a full page, an exhausted page, and the four denial
+  cases that are why the walk exists. The new ones pin what the rewrite of
+  `api/list` into `_listing` changed and what module 1 could only assert
+  against a mock: an unpaginated call with no limit answers the whole folder
+  (105 children) where a paginated one stops at 100, the toolbar's three
+  columns reach the folder sort and an unknown one falls back, `file_kinds`
+  selects the old families and its `start`/`limit` count matching rows, a
+  search leaves the folder for the tree, one row carries the exact 27 legacy
+  columns, `child_count` counts what the caller can see, the share marker
+  reads -2/-1/1/0 off the node's own grants, and the four views answer, sort,
+  and page.
+
+### Gate commands and results
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.api.tests.test_list" /dev/null
+before: Ran 8 tests in 1.017s / FAILED (errors=8)
+after:  Ran 26 tests in 5.378s / OK
+```
+
+Piped, the same command answers `Ran 26 tests in 5.456s / OK`.
+
+Site-free, `python -m unittest` over `test_shims`, `test_routes`, `test_shapes`,
+and `test_translator`: `Ran 339 tests in 1.522s / OK`. Module 1 is still green
+with its one assertion moved.
+
+Three mutations, each reverted in place:
+
+| Mutation | Killed by |
+|---|---|
+| `ORDER_COLUMN["modified"]` back to `"modified"` | `test_pages_use_the_modified_value_returned_to_the_client`, `test_an_unknown_column_falls_back_instead_of_refusing` |
+| `ORDER_TERMS["content_modified"]` back to the raw column | the same two |
+| `_order_column` fallback back to the literal `"modified"` | `test_an_unknown_column_falls_back_instead_of_refusing` |
+
+**Formatting and lint.** `uvx ruff@0.12.3 check --select=I` and `check` pass on
+all four changed files. `format --check` reformats `test_list.py`, which was
+done. `shims.py` and `test_shims.py` answer the same one and two hunks at
+`ac74ecdbf` as after this work, so no drift was added; they predate the branch
+and are left alone.
+
+### Carried risks
+
+1. **A node's mime is sniffed, so a text file is `application/octet-stream`.**
+   `upload.finish_upload` writes `mime=blob.mime_type` and drops the
+   `Content-Type` the caller declared (`_core/upload.py:160,172`). Legacy
+   `file_type` reads that mime, so a `.txt` file that used to list as `Text`
+   now lists as `Application`, and the `Text`, `Code`, and `Spreadsheet`
+   families select nothing a node upload produced. This is `_core.upload`'s
+   decision, from ticket 10, not §11.7's mapping: the forwarder reports the
+   node's own mime. Recorded, not fixed here.
+2. **`kind` is always `native` on a listed row.** `entity_kind` answered
+   `readonly` for a row whose `content_doctype` is `File`, which is how §14.4's
+   framework attachments were marked. No `_core` verb creates a node with that
+   content type, so the case could not be built as a fixture. It is not
+   asserted either way.
