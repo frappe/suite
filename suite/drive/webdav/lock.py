@@ -137,7 +137,7 @@ def _create(
         created = True
         depth = "0"
 
-    conflicts = locks.find_conflicts(row.name, scope=scope, depth=depth, is_folder=bool(row.is_folder))
+    conflicts = locks.find_conflicts(row.name, scope=scope, depth=depth, is_collection=bool(row.is_folder))
     tokens = locks.parsed_if(ctx).all_tokens()
     conflicts = [lock for lock in conflicts if not (lock.token in tokens and lock.owner_user == ctx.user)]
     if conflicts:

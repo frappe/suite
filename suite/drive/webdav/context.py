@@ -100,10 +100,15 @@ class DavContext:
 
         §6.9: a DAV client presents credentials and has nowhere to put a link
         token, so the session is the signed-in user's own principals - their
-        address, their groups, `$GENERAL`, and `$PUBLIC`. An `X-Drive-Links`
-        header on a DAV request is discarded rather than honoured: accepting it
-        would turn Basic auth into a carrier for an anonymous bearer on a
-        PUT-able, lockable endpoint, which §6.9 rejects by name.
+        address, their groups, `$GENERAL`, and `$PUBLIC`. Honouring an
+        `X-Drive-Links` header here would turn Basic auth into a carrier for an
+        anonymous bearer on a PUT-able, lockable endpoint, which §6.9 rejects by
+        name.
+
+        The dispatcher already drops that header from the environ, so there is
+        normally nothing to strip. This stays because it is cheap and because it
+        is the one place a reader looks to learn what a DAV session reaches
+        with.
         """
         from suite.drive import framework
 

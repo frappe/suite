@@ -44,6 +44,7 @@ from suite.drive.webdav import (
     errors,
     get,
     locks,
+    log,
     options,
     pathmap,
     properties,
@@ -250,6 +251,24 @@ class TestOptionsAdvertisement(DavCase):
         self.assertEqual(options.handle(request).headers["DAV"], "1, 3")
         self.assertEqual(settings.dav_compliance(RELINKED_METHODS), "1, 3")
         self.assertEqual(settings.dav_compliance(ALLOWED_METHODS), "1, 2, 3")
+
+    def test_an_allow_list_without_propfind_claims_no_class_at_all(self):
+        """RFC 4918 §9.1: PROPFIND is what class 1 means. `DAV: 1` over an
+        allow-list that answers 405 to it sends the client down a path it
+        cannot recover from."""
+        for methods in (("OPTIONS",), ("OPTIONS", "GET", "HEAD")):
+            with self.subTest(methods=methods):
+                self.assertEqual(settings.dav_compliance(methods), "")
+
+        with patch.object(options, "allowed_webdav_methods", return_value=("OPTIONS", "GET", "HEAD")):
+            request = Request(EnvironBuilder(method="OPTIONS", path="/dav/").get_environ())
+            response = options.handle(request)
+            self.assertNotIn("DAV", response.headers)
+            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD")
+
+            options.advertise_on_root()
+            self.assertNotIn("DAV", frappe.local.response_headers)
+            self.assertEqual(frappe.local.response_headers["MS-Author-Via"], "DAV")
 
 
 class TestUnreadableIsNeverForbidden(DavCase):
@@ -1141,6 +1160,60 @@ class TestDavPrincipals(DavCase):
         ctx = self.build_ctx({"X-Drive-Links": self.LINK_TOKEN})
         self.assertEqual(ctx.principals.open, ("$PUBLIC",))
         self.assertFalse([p for p in ctx.principals.all() if p.startswith("$LINK:")])
+
+    def dispatched(self, headers):
+        """One request through `_dispatch`, returning (response, ctx)."""
+        from suite.drive.webdav import auth
+
+        builder = EnvironBuilder(method="PROPFIND", path="/dav/", headers=dict(headers))
+        request = Request(builder.get_environ())
+        frappe.local.request = request
+        seen = {}
+
+        def handler(ctx):
+            seen["ctx"] = ctx
+            return Response(status=207)
+
+        with (
+            patch.object(settings, "global_webdav_enabled", return_value=True),
+            patch.object(settings, "user_webdav_enabled", return_value=True),
+            patch.object(settings, "allowed_webdav_methods", return_value=RELINKED_METHODS),
+            patch.object(auth, "authenticate", return_value=USER),
+            patch.object(dispatch, "_handler_for", return_value=handler),
+            patch.object(log, "configured_level", return_value=None),
+            patch("frappe.set_user"),
+            self.assertRaises(dispatch.DAVResponseException) as caught,
+        ):
+            dispatch._dispatch(request)
+        return caught.exception.response, seen.get("ctx")
+
+    def test_the_dispatcher_drops_the_link_header_before_anything_reads_it(self):
+        """§6.9 has to hold for the whole request, not for one property.
+        `framework.principals_for` reads the header from `frappe.local.request`
+        wherever it is called, and the framework permission hook calls it."""
+        ticket = f"{self.LINK_TOKEN}.4102444800.{'a' * 64}"
+        response, ctx = self.dispatched({"X-Drive-Links": ticket})
+
+        self.assertEqual(response.status_code, 207)
+        self.assertIsNone(ctx.request.headers.get("X-Drive-Links"))
+        self.assertNotIn("HTTP_X_DRIVE_LINKS", ctx.request.environ)
+        # the framework, asked directly mid-request, now finds nothing either
+        self.assertEqual(framework.principals_for(USER).open, ("$PUBLIC",))
+        self.assertEqual(framework.principals_for(USER).link_tickets, ())
+
+    def test_an_oversized_link_header_does_not_refuse_the_dav_request(self):
+        """`parse_link_header` throws over the item limit, and that
+        `ValidationError` maps to 409. A header DAV ignores by rule must not
+        be able to fail the request it rides on."""
+        from suite.drive._core.principals import LINK_HEADER_LIMIT, parse_link_header
+
+        header = ",".join([self.LINK_TOKEN] * (LINK_HEADER_LIMIT + 5))
+        with self.assertRaises(frappe.ValidationError):
+            parse_link_header(header)
+
+        response, ctx = self.dispatched({"X-Drive-Links": header})
+        self.assertEqual(response.status_code, 207)
+        self.assertEqual(ctx.principals.open, ("$PUBLIC",))
 
 
 # --- H. refusal mapping ---

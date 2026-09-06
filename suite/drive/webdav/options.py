@@ -15,20 +15,22 @@ from suite.drive.webdav.settings import allowed_webdav_methods, dav_compliance
 
 def handle(request: Request) -> Response:
     methods = allowed_webdav_methods()
-    return Response(
-        status=200,
-        headers={
-            "DAV": dav_compliance(methods),
-            "Allow": ", ".join(methods),
-            "MS-Author-Via": "DAV",
-            "Content-Length": "0",
-            "Cache-Control": "no-cache",
-        },
-    )
+    headers = {
+        "Allow": ", ".join(methods),
+        "MS-Author-Via": "DAV",
+        "Content-Length": "0",
+        "Cache-Control": "no-cache",
+    }
+    # an allow-list too narrow to be class 1 claims no class at all, and a
+    # header saying so is worse than no header
+    if compliance := dav_compliance(methods):
+        headers["DAV"] = compliance
+    return Response(status=200, headers=headers)
 
 
 def advertise_on_root() -> None:
     """Windows probes OPTIONS / before mounting /dav — add the DAV headers to
     frappe's stock empty 200 without short-circuiting the request."""
-    frappe.local.response_headers["DAV"] = dav_compliance(allowed_webdav_methods())
+    if compliance := dav_compliance(allowed_webdav_methods()):
+        frappe.local.response_headers["DAV"] = compliance
     frappe.local.response_headers["MS-Author-Via"] = "DAV"
