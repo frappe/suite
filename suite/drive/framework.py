@@ -144,9 +144,15 @@ def doc_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     registered `node_field`, and one point check answers. There is no
     "document without a node" fallback: under §5.13 that state cannot exist,
     so it is an error.
+
+    `create` is the one ptype the row cannot answer, so it goes to the parent
+    (§4.3).
     """
     spec = content.spec_for(doc.doctype)
-    if _node_allows(_document_node_of(doc, spec), _role_for_ptype(ptype), user):
+    node = _document_node_of(doc, spec)
+    role = _role_for_ptype(ptype)
+    allowed = _parent_allows(node, role, user) if ptype == "create" else _node_allows(node, role, user)
+    if allowed:
         return True
     _refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
     return False
@@ -169,6 +175,10 @@ def satellite_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     """Answer one satellite row check through its document's node (§10.3).
 
     Read to see, Edit to change. A satellite holds no rights of its own.
+
+    §4.3's `create` rule is already satisfied here: a satellite's parent is the
+    content document it links to, and that link, not the row being inserted, is
+    what answers. Edit on the document is the right price for adding one.
     """
     spec, satellite = content.satellite_for(doc.doctype)
     docname = doc.get(satellite.link_field)
@@ -218,8 +228,13 @@ def _refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | Non
     """
     from frappe.share import get_shared
 
+    # No row, no share. A `create` denial always lands here with no name,
+    # because `Document.insert` checks before `set_new_name`, so this arm is
+    # the whole answer for it.
+    if not docname:
+        return
     right = _shared_right(doctype, ptype)
-    if right is None or not docname:
+    if right is None:
         return
     if not get_shared(doctype, user, rights=[right], filters=[["share_name", "=", str(docname)]], limit=1):
         return
@@ -288,7 +303,40 @@ def _role_for_ptype(ptype: str | None) -> int:
     # calls `has_controller_permissions(doc, None)`), so `None` must mean the
     # cheapest verb. Answering EDIT there hides a readable document from every
     # viewer who holds only READ.
+    #
+    # The §4.3 table is the only place a ptype becomes a role, `create`
+    # included. Which node that role is asked of is `doc_has_permission`'s
+    # decision, not this table's.
     return PTYPE_ROLE.get(ptype or "read", DEFAULT_PTYPE_ROLE)
+
+
+def _parent_allows(node: str, role: int, user: str | None) -> bool:
+    """Answer `create` against the destination folder, never the new row (§4.3).
+
+    `Document.insert` runs `check_permission("create")` before `before_insert`
+    and before `set_new_name` (`frappe/model/document.py:730`, `:733`, `:734`),
+    so the row being asked about has no name and no rights of its own. What it
+    does carry is the node Drive already created for it, and UPLOAD on that
+    node's parent is the same check `nodes.create_document` made before the
+    factory ran.
+
+    This is the shape the framework and Drive already use for a row that takes
+    its rights from a link: core's `File` answers write, create, and delete
+    against `attached_to_name` (`frappe/core/doctype/file/file.py:897`), core's
+    tree check resolves create through the parent field
+    (`frappe/permissions.py:396`), and Drive's own legacy adapter answered
+    create against the folder (`suite/drive/api/permissions.py:308`).
+
+    Fail closed on anything else. A node that is gone, or one with no parent,
+    is a root or a broken tree, and neither can hold a content document. A
+    permission hook may only deny, so denying is the whole answer here, and
+    `create` is not a `DocShare` right, so nothing re-grants it (§10.3 note on
+    `false_if_not_shared`).
+    """
+    row = frappe.db.get_value("Drive Node", node, ("name", "parent"), as_dict=True)
+    if not row or not row.parent:
+        return False
+    return _node_allows(row.parent, role, user)
 
 
 def _document_node_of(doc, spec) -> str:

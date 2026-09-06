@@ -643,6 +643,94 @@ class TestContentContract(UnitTestCase):
             framework.satellite_has_permission(doc=doc, ptype="write", user=USER)
         self.assertEqual(seen, [READ, EDIT])
 
+    # §4.3: `create` has no meaning on the row being inserted.
+
+    def test_create_is_answered_against_the_parent_and_never_against_the_row(self):
+        # `Document.insert` checks `create` before `before_insert` and before
+        # `set_new_name`, so the row has no name and no rights of its own. The
+        # node it names is the one Drive already made; its parent is the
+        # destination folder, and UPLOAD there is what §4.3 asks for.
+        asked = []
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name=None, node="node-a")
+        with (
+            registered(spec()),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive.framework._node_allows") as allows,
+        ):
+            db.get_value.return_value = frappe._dict(name="node-a", parent="folder-a")
+            allows.side_effect = lambda node, role, user: asked.append((node, role)) or True
+            self.assertTrue(framework.doc_has_permission(doc=doc, ptype="create", user=USER))
+            self.assertTrue(framework.doc_has_permission(doc=doc, ptype="write", user=USER))
+        self.assertEqual(
+            asked,
+            [("folder-a", UPLOAD), ("node-a", EDIT)],
+            "create asks the parent for UPLOAD; every other ptype asks the row's own node",
+        )
+
+    def test_create_is_refused_when_the_parent_cannot_be_resolved(self):
+        # Fail closed. A node that is gone, or one with no parent, is a root or
+        # a broken tree, and neither can hold a content document.
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name=None, node="node-a")
+        for row in (None, frappe._dict(name="node-a", parent=None), frappe._dict(name="node-a", parent="")):
+            with (
+                self.subTest(row=row),
+                registered(spec()),
+                stub_db(MagicMock()) as db,
+                patch("suite.drive.framework._node_allows") as allows,
+            ):
+                db.get_value.return_value = row
+                self.assertFalse(framework.doc_has_permission(doc=doc, ptype="create", user=USER))
+                allows.assert_not_called()
+
+        # A row that names no node at all is still the §5.13 error, not a deny.
+        with registered(spec()), stub_db(MagicMock()), self.assertRaises(DriveConflict):
+            framework.doc_has_permission(
+                doc=frappe._dict(doctype=CONTENT_DOCTYPE, name=None, node=None),
+                ptype="create",
+                user=USER,
+            )
+
+    def test_create_on_a_satellite_is_answered_by_its_content_document(self):
+        # A satellite's parent is the document it links to, so the link, never
+        # the row being inserted, is what answers. §4.3 is already satisfied.
+        asked = []
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        doc = frappe._dict(doctype=SATELLITE_DOCTYPE, name=None, content="one")
+        with (
+            registered(declared),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive.framework._node_allows") as allows,
+        ):
+            db.get_value.return_value = "node-a"
+            allows.side_effect = lambda node, role, user: asked.append((node, role)) or True
+            self.assertTrue(framework.satellite_has_permission(doc=doc, ptype="create", user=USER))
+        self.assertEqual(asked, [("node-a", EDIT)])
+
+    def test_the_list_predicate_is_a_read_predicate_and_knows_no_create(self):
+        # `create` never reaches a list: `permission_query_conditions` runs on
+        # the read path alone and takes no ptype at all, so the predicate stays
+        # the §5 Read answer and can never widen a list to UPLOAD.
+        self.assertEqual(
+            set(inspect.signature(framework.doc_query_conditions).parameters),
+            {"user", "doctype"},
+            "the list hook takes no ptype, so it can never answer create",
+        )
+        person = Principals(USER, (USER,), ())
+        db = MagicMock()
+        db.escape.side_effect = lambda value, *args, **kwargs: f"'{value}'"
+        with (
+            registered(spec()),
+            stub_db(db),
+            patch("suite.drive.framework.now", return_value="2026-01-01 00:00:00"),
+            patch("suite.drive.framework.principals_for", return_value=person),
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("frappe.share.get_shared", return_value=[]),
+        ):
+            predicate = framework.doc_query_conditions(user=USER, doctype=CONTENT_DOCTYPE)
+        self.assertIn(f"`tab{CONTENT_DOCTYPE}`.`node`", predicate)
+        self.assertIn(f">= {READ})", predicate)
+        self.assertNotIn(f">= {UPLOAD})", predicate)
+
     def test_a_child_table_satellite_is_filtered_by_its_parent_doctype(self):
         person = Principals(USER, (USER,), ())
         declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="parent"),))
