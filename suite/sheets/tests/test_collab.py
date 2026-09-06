@@ -4,8 +4,10 @@
 
 These pin the contracts the Hocuspocus process relies on:
 
-  * ``check_collab_access`` is cookie-authenticated and never accepts Guest.
-    Read vs write split must match Sheet doctype perms.
+  * ``check_collab_access`` on a sheet Build has not linked is
+    cookie-authenticated and never accepts Guest. Read vs write split must
+    match Sheet doctype perms. The Drive-native side is in
+    ``suite.sheets.tests.test_collab_access``.
   * The persistence endpoints reject any call missing the shared secret —
     they're ``allow_guest=True`` so the secret check is the only gate.
 """
@@ -57,7 +59,11 @@ class CheckCollabAccess(unittest.TestCase):
 
         self.frappe.has_permission.return_value = False
         out = collab.check_collab_access("SH-1")
-        self.assertEqual(out, {"canRead": False, "canWrite": False})
+        self.assertFalse(out["canRead"])
+        self.assertFalse(out["canWrite"])
+        # Ticket 19: a refusal states the cadence too, so a client that retries
+        # knows when the server will ask again.
+        self.assertEqual(out["recheckSeconds"], collab.RECHECK_SECONDS)
         # Only the read probe should have run — no point asking about write
         # once read is denied.
         self.frappe.has_permission.assert_called_once_with("Sheet", doc="SH-1", ptype="read", throw=False)
