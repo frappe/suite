@@ -411,15 +411,22 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
-# drive — WebDAV protocol dispatcher (list hook, additive; answers all verbs under /dav)
-before_request = ["suite.drive.webdav.dispatch.handle_before_request"]
+# drive — WebDAV protocol dispatcher, then the /api/suite/drive/ translator
+# (list hook, additive). The two own disjoint prefixes: /dav and
+# /api/suite/drive/. The translator is reached through suite.drive.framework,
+# which is where ARCHITECTURE.md puts a Frappe dotted target that enters Drive;
+# the WebDAV entry predates that rule and is carried as declared debt.
+before_request = [
+    "suite.drive.webdav.dispatch.handle_before_request",
+    "suite.drive.framework.handle_http_request",
+]
 
 # drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
 # body cap and form_dict buffering; a no-op on frappe versions without this hook,
 # where PUT bodies fall back to buffered and capped)
 # Compatible Frappe versions consume this prefix before request form parsing so
-# upload chunk bodies remain streams instead of being buffered. HTTP routing
-# lands later; declaring the path does not expose or implement ticket-21 routes.
+# upload chunk bodies remain streams instead of being buffered. It fires for PUT
+# only, which is why the chunk route is PUT and reads the body itself.
 streaming_request_paths = ["/dav/", "/api/suite/drive/uploads/"]
 
 # ============================================================================
