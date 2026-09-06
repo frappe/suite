@@ -25,8 +25,10 @@ ACTIVITY_ACTIONS = (
     "share_edit",
     "share_remove",
 )
+# §11.4 fixes one page size for the whole HTTP surface. A record listing is
+# paged by the same helper as a folder page, so it keeps the same default and
+# the same cap rather than a second pair that could drift.
 DEFAULT_RECORD_LIMIT = 60
-MAX_RECORD_LIMIT = 200
 
 
 def record(
@@ -67,20 +69,31 @@ def history(
     principals: Principals,
     node: str,
     *,
+    cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
-) -> list[dict]:
-    """Return a newest-first node history only after checking current Read access."""
+) -> dict:
+    """Page a newest-first node history after checking current Read access.
+
+    §11.4's page, the one every Drive listing answers with. Nothing is dropped
+    after the SQL window here - the READ check is on the node, once - so the
+    window size and the row count always agree.
+    """
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+
     _authorized_node(principals, node)
+    window = page_limit(limit)
+    offset = decode_cursor(cursor)
     rows = frappe.get_all(
         "Drive Activity",
         filters={"node": node},
         fields=["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
         order_by="at desc, creation desc",
-        limit=_limit(limit),
+        limit=window,
+        start=offset,
     )
     for row in rows:
         row.detail = _json_value(row.detail, {})
-    return rows
+    return page_of(rows, offset, len(rows), window)
 
 
 def visit(principals: Principals, node: str) -> str:
@@ -139,18 +152,24 @@ def _insert_unique(doc: dict, reread) -> tuple[str | None, bool]:
 def recents(
     principals: Principals,
     *,
+    cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
-) -> list[dict]:
-    """Return only the caller's still-readable recent nodes."""
+) -> dict:
+    """Page only the caller's still-readable recent nodes, newest first."""
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+
     _require_person(principals)
+    window = page_limit(limit)
+    offset = decode_cursor(cursor)
     rows = frappe.get_all(
         "Drive Recent",
         filters={"user": principals.user},
         fields=["name", "node", "opened_at"],
         order_by="opened_at desc",
-        limit=_limit(limit),
+        limit=window,
+        start=offset,
     )
-    return _visible_personal_rows(principals, rows)
+    return page_of(_visible_personal_rows(principals, rows), offset, len(rows), window)
 
 
 def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) -> int:
@@ -196,18 +215,24 @@ def set_favourite(principals: Principals, node: str, value: bool = True) -> bool
 def favourites(
     principals: Principals,
     *,
+    cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
-) -> list[dict]:
-    """Return only the caller's still-readable favourite nodes."""
+) -> dict:
+    """Page only the caller's still-readable favourite nodes."""
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+
     _require_person(principals)
+    window = page_limit(limit)
+    offset = decode_cursor(cursor)
     rows = frappe.get_all(
         "Drive Favourite",
         filters={"user": principals.user},
         fields=["name", "node", "creation"],
         order_by="creation desc",
-        limit=_limit(limit),
+        limit=window,
+        start=offset,
     )
-    return _visible_personal_rows(principals, rows)
+    return page_of(_visible_personal_rows(principals, rows), offset, len(rows), window)
 
 
 def notify_users(activity: str, users: Iterable[str]) -> int:
@@ -234,10 +259,21 @@ def notifications(
     principals: Principals,
     *,
     only_unread: bool = False,
+    cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
-) -> list[dict]:
-    """Return the caller's notification pointers with authorized activity data."""
-    return _visible_notifications(principals, only_unread=only_unread, limit=_limit(limit))
+) -> dict:
+    """Page the caller's notification pointers with authorized activity data.
+
+    A pointer whose activity is gone, or whose node the caller can no longer
+    read, is dropped after the SQL window, so a full page can answer short.
+    `next_cursor` still advances by the window (§11.4).
+    """
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+
+    window = page_limit(limit)
+    offset = decode_cursor(cursor)
+    rows, seen = _visible_notifications(principals, only_unread=only_unread, limit=window, offset=offset)
+    return page_of(rows, offset, seen, window)
 
 
 def _visible_notifications(
@@ -245,7 +281,9 @@ def _visible_notifications(
     *,
     only_unread: bool,
     limit: int | None,
-) -> list[dict]:
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Return the visible pointers, and how many rows the SQL window held."""
     _require_person(principals)
     filters: dict[str, Any] = {"to_user": principals.user}
     if only_unread:
@@ -257,6 +295,7 @@ def _visible_notifications(
     }
     if limit is not None:
         options["limit"] = limit
+        options["start"] = offset
     rows = frappe.get_all("Drive Notification", **options)
     visible = []
     for row in rows:
@@ -271,19 +310,33 @@ def _visible_notifications(
         activity.detail = _json_value(activity.detail, {})
         row.activity = activity
         visible.append(row)
-    return visible
+    return visible, len(rows)
 
 
 def unread_count(principals: Principals) -> int:
     """Count the caller's unread, currently visible notification pointers."""
-    return len(_visible_notifications(principals, only_unread=True, limit=None))
+    return len(_visible_notifications(principals, only_unread=True, limit=None)[0])
 
 
-def mark_read(principals: Principals, notification: str | None = None) -> int:
-    """Mark one or all of the caller's visible notifications read."""
+def mark_read(principals: Principals, notifications: Iterable[str] | str | None = None) -> int:
+    """Mark named, or all, of the caller's visible notifications read.
+
+    §11.2 gives `POST /notifications/read` two bodies: a list of ids, or
+    `{all: true}`. `None` is the second one. A single id is accepted as well,
+    because a mention badge marks exactly one.
+
+    The unread inbox is read once whatever the body says, so marking fifty
+    pointers costs one pass, not fifty. Ids the caller does not hold are simply
+    absent from that pass and are not counted.
+    """
     _require_person(principals)
-    visible = _visible_notifications(principals, only_unread=True, limit=None)
-    ids = tuple(row.name for row in visible if notification is None or row.name == notification)
+    if isinstance(notifications, str):
+        notifications = (notifications,)
+    wanted = None if notifications is None else frozenset(notifications)
+    if wanted is not None and not wanted:
+        return 0
+    visible, _seen = _visible_notifications(principals, only_unread=True, limit=None)
+    ids = tuple(row.name for row in visible if wanted is None or row.name in wanted)
     if not ids:
         return 0
     frappe.db.set_value(
@@ -346,13 +399,12 @@ def _visible_personal_rows(principals: Principals, rows: list) -> list[dict]:
 
 def _authorized_node(principals: Principals, node: str) -> frappe._dict:
     from suite.drive._core.access import require
+    from suite.drive._core.nodes import NODE_FIELD_NAMES
 
-    row = frappe.db.get_value(
-        "Drive Node",
-        node,
-        ["name", "parent", "root", "path", "title", "kind", "state", "content_doctype", "content_docname"],
-        as_dict=True,
-    )
+    # The whole stored row, because a personal-list row carries its node into
+    # §11.3's shape and a partial read would publish a node whose size, mime,
+    # and owner are silently null.
+    row = frappe.db.get_value("Drive Node", node, NODE_FIELD_NAMES, as_dict=True)
     if not row:
         raise DriveNotFound(_("Drive node {0} was not found").format(node))
     require(row, READ, principals)
@@ -373,15 +425,6 @@ def _can_read(principals: Principals, node: str) -> bool:
 def _require_person(principals: Principals) -> None:
     if principals.user == "Guest":
         raise DriveForbidden(_("Guest callers do not have personal Drive records"))
-
-
-def _limit(value: int) -> int:
-    if type(value) is not int or value < 1 or value > MAX_RECORD_LIMIT:
-        frappe.throw(
-            _("Drive record limit must be between 1 and {0}").format(MAX_RECORD_LIMIT),
-            frappe.ValidationError,
-        )
-    return value
 
 
 def _json_value(value, default):

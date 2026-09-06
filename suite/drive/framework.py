@@ -111,6 +111,37 @@ def principals_for(user: str | None = None) -> Principals:
     )
 
 
+def principals_for_principal(principal: str) -> Principals:
+    """Build the principals one named grant principal reaches with.
+
+    §11.2's `GET /nodes/<id>/grants?principal=<p>` asks what somebody else can
+    reach, so the answer needs an identity for them. A `<email>` is a person:
+    they carry their groups, `$GENERAL`, and `$PUBLIC` as well, because that is
+    what they will actually present. The four `$` spellings are not people and
+    carry nothing but themselves, so the answer is what that one row confers
+    rather than what some anonymous holder of it might also happen to hold.
+
+    The subject never inherits this request's `X-Drive-Links` header, and never
+    carries an unlock ticket. A password link therefore explains as locked, the
+    same rule `require` applies on every other surface (§4.8); `has_password`
+    on the listed grant row is what names the password itself.
+    """
+    if not isinstance(principal, str) or not principal.strip():
+        frappe.throw(_("A Drive principal is required"), frappe.ValidationError)
+    principal = principal.strip()
+    if principal == "$PUBLIC" or principal.startswith("$LINK:"):
+        return Principals(user=principal, own=(), open=(principal,), is_admin=False)
+    if principal == "$GENERAL" or principal.startswith("$GROUP:"):
+        return Principals(user=principal, own=(principal,), open=(), is_admin=False)
+    if principal.startswith("$"):
+        frappe.throw(
+            _("Drive principal {0} is not a known spelling").format(principal), frappe.ValidationError
+        )
+    if not frappe.db.exists("User", principal):
+        frappe.throw(_("Drive principal {0} names no user").format(principal), frappe.ValidationError)
+    return principals_for(principal)
+
+
 def validate_content_registry() -> None:
     """Prove every declared content type against its doctype, at boot.
 

@@ -1,5 +1,6 @@
 """Drive-owned immutable version history and retention workflows."""
 
+import time
 from collections.abc import Mapping
 from contextlib import closing
 from datetime import datetime, timedelta
@@ -9,12 +10,22 @@ import frappe
 from frappe import _
 from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
+from frappe.storage.url import signed_url_for_blob
 from frappe.utils import get_datetime, now_datetime
 
 from suite.drive._core import content, previews
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import _node, _record_activity, _validate_existing_head
+from suite.drive._core.nodes import (
+    CONTENT_TTL_SECONDS,
+    DEFAULT_PAGE_SIZE,
+    _node,
+    _record_activity,
+    _validate_existing_head,
+    decode_cursor,
+    page_limit,
+    page_of,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release
 from suite.drive._core.roles import EDIT, MANAGE, READ
@@ -89,22 +100,73 @@ def take_version(
     return seq
 
 
-def list_versions(principals: Principals, node: str) -> list[dict]:
-    """List one readable node's versions newest sequence first.
-
-    Unpaged. §9.1 gives this call no signature and §11.2 requires the route
-    `GET /nodes/<id>/versions` to return a cursor page, so ticket 22 owns the
-    cursor and the limit when it wires that route.
-    """
+def list_versions(
+    principals: Principals,
+    node: str,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+) -> dict:
+    """Page one readable node's versions, newest sequence first (§11.4)."""
     current = _node(node)
     require(current, READ, principals)
     _require_version_node(current)
-    return frappe.get_all(
+    window = page_limit(limit)
+    offset = decode_cursor(cursor)
+    rows = frappe.get_all(
         "Drive Node Version",
         filters={"node": current.name},
         fields=VERSION_FIELDS,
         order_by="seq desc",
+        limit=window,
+        start=offset,
     )
+    return page_of(rows, offset, len(rows), window)
+
+
+def version_content_url(
+    principals: Principals,
+    node: str,
+    seq: int,
+    *,
+    expires_in: int = CONTENT_TTL_SECONDS,
+) -> dict:
+    """Mint one readable version's signed `/f/` URL after a READ check (§6.8).
+
+    The node is checked, not the version row: a version belongs to its node and
+    carries no grant of its own. `_validated_version_blob` then refuses bytes
+    that are missing, public, or a different size than the row claims, so a
+    signature is only ever minted over the exact blob the history recorded.
+
+    LIMITATION: `Drive Node Version` has no MIME column (§3.4) and the version
+    blob was written without one, so on a driver that presigns the object
+    directly the download arrives as `application/octet-stream`. `versions.py`
+    records the same handoff where the blob is written.
+    """
+    _validate_seq(seq)
+    current = _node(node)
+    require(current, READ, principals)
+    _require_version_node(current)
+    version = _version(current.name, seq)
+    _validated_version_blob(version)
+    return {
+        "url": signed_url_for_blob(
+            version.blob,
+            content.download_filename(_version_filename(current, version)),
+            expires_in,
+        ),
+        "expires": int(time.time()) + expires_in,
+    }
+
+
+def _version_filename(node: frappe._dict, version: frappe._dict) -> str:
+    """Name a downloaded version after its node and its sequence."""
+    label = str(version.seq)
+    title = (node.title or "download").strip() or "download"
+    stem, dot, suffix = title.rpartition(".")
+    if dot and stem:
+        return f"{stem} (v{label}).{suffix}"
+    return f"{title} (v{label})"
 
 
 def label_version(
