@@ -21,12 +21,14 @@ from suite.drive import framework
 from suite.drive._core import content, nodes, roots, versions
 from suite.drive._core.access import grant
 from suite.drive._core.content import (
+    DOCUMENT_NODE_FIELDS,
     MEDIA_REFRESH_SECONDS,
     MEDIA_TTL_SECONDS,
     UNUSED_MEDIA_GRACE_DAYS,
     ContentTypeSpec,
     DriveContent,
     Satellite,
+    adopt_media,
     list_media,
     registry,
     satellite_for,
@@ -1095,6 +1097,19 @@ class TestContentWorkflows(IntegrationTestCase):
     def _used_bytes(self) -> int:
         return frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
 
+    def _corrupt(self, node: str, field: str, value) -> None:
+        """Break one stored tree column, and put it back before the purge runs.
+
+        `_purge_fixture_roots` walks the tree Drive's own way and refuses an
+        inconsistent one, so a test that leaves a lie behind strands its roots
+        and every later run in this module fails in `setUpClass`.
+        """
+        restore = frappe.db.get_value("Drive Node", node, field)
+        self.addCleanup(
+            frappe.db.set_value, "Drive Node", node, field, restore, update_modified=False
+        )
+        frappe.db.set_value("Drive Node", node, field, value, update_modified=False)
+
     # creation and linkage
 
     def test_the_node_and_the_document_are_created_and_linked_in_one_transaction(self):
@@ -1272,6 +1287,84 @@ class TestContentWorkflows(IntegrationTestCase):
                 copy(self.admin, media, folder)
             with self.assertRaises(DriveConflict):
                 update(self.admin, media, parent=folder)
+
+    # adoption across documents
+
+    def test_adoption_reaches_a_document_that_sits_directly_below_its_root(self):
+        """A document whose parent is the root carries an empty path (§8.2).
+
+        `_validate_stored_position` reads the stored `parent` link to tell that
+        empty path apart from a node with no position at all, so the row the
+        adoption gate hands it has to carry `parent`.
+        """
+        with registered(spec()):
+            source = self._document("Source")
+            picture = self._media(source, "picture.png", b"picture-bytes")
+            destination = self._document("Destination")
+            mapping = adopt_media(self.admin, destination, [picture])
+        adopted = mapping[picture]
+        self.assertNotEqual(adopted, picture)
+        row = frappe.db.get_value("Drive Node", adopted, ["parent", "path", "blob"], as_dict=True)
+        self.assertEqual(row.parent, destination)
+        self.assertEqual(row.blob, frappe.db.get_value("Drive Node", picture, "blob"))
+        self.assertEqual(frappe.db.get_value("Drive Node", destination, "path"), "")
+        self.assertEqual(row.path, f"/{destination}/")
+
+    def test_adoption_reaches_a_document_below_a_folder_too(self):
+        """The same paste below a folder, where the stored path is not empty."""
+        with registered(spec()):
+            source = self._document("Source")
+            picture = self._media(source, "picture.png", b"picture-bytes")
+            folder = create_folder(self.admin, self.root.name, "Decks")
+            destination = self._document("Destination", parent=folder)
+            mapping = adopt_media(self.admin, destination, [picture])
+        self.assertEqual(frappe.db.get_value("Drive Node", destination, "path"), f"/{folder}/")
+        self.assertEqual(frappe.db.get_value("Drive Node", mapping[picture], "parent"), destination)
+
+    def test_adoption_refuses_a_destination_whose_path_disagrees_with_its_parent(self):
+        # The sound paste first, so the refusal below is the corruption talking
+        # and not a destination that could never take media in the first place.
+        with registered(spec()):
+            source = self._document("Source")
+            first = self._media(source, "first.png", b"first-bytes")
+            second = self._media(source, "second.png", b"second-bytes")
+            elsewhere = create_folder(self.admin, self.root.name, "Elsewhere")
+            destination = self._document("Destination")
+            self.assertIn(first, adopt_media(self.admin, destination, [first]))
+            before = frappe.db.count("Drive Node", {"parent": destination})
+            self._corrupt(destination, "path", f"/{elsewhere}/")
+            with self.assertRaises(DriveConflict):
+                adopt_media(self.admin, destination, [second])
+        self.assertEqual(frappe.db.count("Drive Node", {"parent": destination}), before)
+
+    def test_adoption_refuses_a_destination_that_stores_no_parent_at_all(self):
+        with registered(spec()):
+            source = self._document("Source")
+            first = self._media(source, "first.png", b"first-bytes")
+            second = self._media(source, "second.png", b"second-bytes")
+            destination = self._document("Destination")
+            self.assertIn(first, adopt_media(self.admin, destination, [first]))
+            before = frappe.db.count("Drive Node", {"parent": destination})
+            self._corrupt(destination, "parent", "")
+            with self.assertRaises(DriveConflict):
+                adopt_media(self.admin, destination, [second])
+        self.assertEqual(frappe.db.count("Drive Node", {"parent": destination}), before)
+
+    def test_the_document_row_carries_every_field_the_position_check_walks(self):
+        # `_document_node` reads a narrow field list, and the position check
+        # walks the row it hands over. A field the check reads but the list
+        # leaves out arrives as `None`, which the check can only refuse as an
+        # invalid tree position, and a sound document then loses a real paste.
+        tree = ast.parse(inspect.getsource(nodes._validate_stored_position))
+        walked = {
+            attribute.attr
+            for attribute in ast.walk(tree)
+            if isinstance(attribute, ast.Attribute)
+            and isinstance(attribute.value, ast.Name)
+            and attribute.value.id == "cursor"
+        }
+        self.assertIn("parent", walked)
+        self.assertEqual(walked - set(DOCUMENT_NODE_FIELDS), set())
 
     def test_a_copy_is_refused_whole_when_the_app_factory_fails(self):
         def explode(source_docname, node):
