@@ -23,6 +23,8 @@ import inspect
 import pathlib
 import sys
 import unittest
+from datetime import datetime
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -353,6 +355,22 @@ class ShimCase(UnitTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         return replacement
+
+    def stub_legacy_inbox(self, rows=()):
+        """Answer the pointerless legacy inbox without a database.
+
+        The three notification forwarders read `tabDrive Notification` directly
+        for the rows §9.5's activity pointer cannot express. A case about the
+        pointer path says so by naming an empty legacy inbox; `_legacy_inbox`
+        and `_mark_legacy_read` have cases of their own below.
+        """
+        read = patch.object(shims, "_legacy_inbox", return_value=list(rows))
+        self.addCleanup(read.stop)
+        count = patch.object(shims, "_legacy_unread_count", return_value=len(rows))
+        self.addCleanup(count.stop)
+        write = patch.object(shims, "_mark_legacy_read", return_value=0)
+        self.addCleanup(write.stop)
+        return read.start(), count.start(), write.start()
 
     def stub_cache(self):
         """Hold the shim's own upload keys in memory, and leave the rest alone."""
@@ -913,6 +931,7 @@ class TestRecordForwarders(ShimCase):
 
     def test_notifications_flatten_back_to_one_level(self):
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         activity.notifications.return_value = {
             "rows": [
                 {
@@ -951,6 +970,7 @@ class TestRecordForwarders(ShimCase):
         `None` on every row, so the page rendered a column of blank lines.
         """
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         cases = {
             "comment": "You were mentioned in a comment in: Notes.txt",
             "share_add": 'Bea shared a file with you: "Notes.txt"',
@@ -987,6 +1007,7 @@ class TestRecordForwarders(ShimCase):
 
     def test_a_notification_whose_node_is_gone_carries_no_sentence(self):
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         activity.notifications.return_value = {
             "rows": [
                 {
@@ -1004,23 +1025,212 @@ class TestRecordForwarders(ShimCase):
 
     def test_unread_count_is_still_a_scalar(self):
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         activity.unread_count.return_value = 7
         self.assertEqual(shims.get_unread_count(), 7)
 
     def test_mark_as_read_answers_nothing_and_marks_one(self):
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         self.assertIsNone(shims.mark_as_read(name="x1"))
         activity.mark_read.assert_called_once_with(SOMEONE, "x1")
 
     def test_mark_as_read_with_nothing_named_stays_a_no_op(self):
         activity = self.stub("activity_core")
+        _read, _count, write = self.stub_legacy_inbox()
         self.assertIsNone(shims.mark_as_read())
         activity.mark_read.assert_not_called()
+        write.assert_not_called()
 
     def test_mark_as_read_all_marks_all(self):
         activity = self.stub("activity_core")
+        self.stub_legacy_inbox()
         shims.mark_as_read(all=True)
         activity.mark_read.assert_called_once_with(SOMEONE, None)
+
+
+class TestLegacyInboxForwarders(ShimCase):
+    """The rows §9.5's activity pointer cannot express, still answered.
+
+    A `Drive Notification` written before Build, or by
+    `api.notifications.create_notification`, carries no `activity`.
+    `activity_core._visible_notifications` reads that pointer and drops the
+    row, so forwarding alone emptied a legacy inbox: a blank page, a zero
+    badge, and a `mark_as_read` that wrote nothing.
+    """
+
+    LEGACY_ROW: ClassVar[dict] = {
+        "name": "old1",
+        "to_user": "someone@example.com",
+        "from_user": "b@example.com",
+        "read": 0,
+        "type": "Share",
+        "message": 'Bea shared a file with you: "Notes.txt"',
+        "entity_type": "File",
+        "notif_doctype": "File",
+        "notif_doctype_name": "f1",
+        "creation": datetime(2026, 1, 2, 3, 4, 5),
+    }
+
+    def test_a_pointerless_row_reaches_the_page_as_it_was_written(self):
+        activity = self.stub("activity_core")
+        activity.notifications.return_value = {"rows": [], "next_cursor": None}
+        self.stub_legacy_inbox([dict(self.LEGACY_ROW)])
+        with patch.object(shims, "_user_info", return_value={"full_name": "Bea", "user_image": "/b.png"}):
+            rows = shims.get_notifications()
+        self.assertEqual(len(rows), 1)
+        # The sentence, the type, and the entity type are the ones the old
+        # writer stored. Nothing is rebuilt from §9.5's action vocabulary.
+        self.assertEqual(rows[0]["message"], 'Bea shared a file with you: "Notes.txt"')
+        self.assertEqual(rows[0]["type"], "Share")
+        self.assertEqual(rows[0]["entity_type"], "File")
+        self.assertEqual(rows[0]["notif_doctype"], "File")
+        self.assertEqual(rows[0]["notif_doctype_name"], "f1")
+        self.assertEqual(rows[0]["full_name"], "Bea")
+        self.assertEqual(rows[0]["user_image"], "/b.png")
+
+    def test_a_legacy_row_carries_the_twelve_columns_the_old_query_selected(self):
+        activity = self.stub("activity_core")
+        activity.notifications.return_value = {"rows": [], "next_cursor": None}
+        self.stub_legacy_inbox([dict(self.LEGACY_ROW)])
+        row = shims.get_notifications()[0]
+        self.assertEqual(set(row), set(shims.LEGACY_NOTIFICATION_FIELDS) | {"full_name", "user_image"})
+
+    def test_the_two_inboxes_arrive_newest_first_as_one_list(self):
+        """The old query ordered the whole table by `creation desc`.
+
+        Two lists concatenated would put every legacy row after every pointer
+        row, whatever the dates on them say.
+        """
+        activity = self.stub("activity_core")
+        activity.notifications.return_value = {
+            "rows": [
+                {
+                    "name": "new1",
+                    "read": 0,
+                    "creation": datetime(2026, 1, 1),
+                    "activity": {"action": "share_add", "actor": "b@example.com", "node": "n1"},
+                }
+            ],
+            "next_cursor": None,
+        }
+        self.stub_legacy_inbox([{**self.LEGACY_ROW, "creation": datetime(2026, 2, 2)}])
+        with patch.object(shims.frappe, "get_all", return_value=[]):
+            rows = shims.get_notifications()
+        self.assertEqual([row["name"] for row in rows], ["old1", "new1"])
+
+    def test_the_badge_counts_both_inboxes(self):
+        activity = self.stub("activity_core")
+        activity.unread_count.return_value = 2
+        _read, count, _write = self.stub_legacy_inbox([dict(self.LEGACY_ROW), dict(self.LEGACY_ROW)])
+        self.assertEqual(shims.get_unread_count(), 4)
+        count.assert_called_once_with(SOMEONE)
+
+    def test_marking_one_row_reaches_a_pointerless_row_too(self):
+        activity = self.stub("activity_core")
+        _read, _count, write = self.stub_legacy_inbox()
+        shims.mark_as_read(name="old1")
+        activity.mark_read.assert_called_once_with(SOMEONE, "old1")
+        write.assert_called_once_with(SOMEONE, "old1")
+
+    def test_marking_everything_reaches_a_pointerless_row_too(self):
+        activity = self.stub("activity_core")
+        _read, _count, write = self.stub_legacy_inbox()
+        shims.mark_as_read(all=True)
+        activity.mark_read.assert_called_once_with(SOMEONE, None)
+        write.assert_called_once_with(SOMEONE, None)
+
+    def test_the_workflow_is_asked_first_so_a_guest_is_refused_before_a_row_is_read(self):
+        """`_legacy_inbox` reads a table with no `Guest` rule of its own.
+
+        `activity_core` refuses a Guest in `_require_person`. Reading the
+        legacy rows first would answer an inbox to a caller the workflow was
+        about to turn away.
+        """
+        for call, stub in (
+            (lambda: shims.get_notifications(), "notifications"),
+            (lambda: shims.get_unread_count(), "unread_count"),
+            (lambda: shims.mark_as_read(all=True), "mark_read"),
+        ):
+            with self.subTest(stub=stub):
+                activity = self.stub("activity_core")
+                getattr(activity, stub).side_effect = DriveForbidden("no guests")
+                read, count, write = self.stub_legacy_inbox([dict(self.LEGACY_ROW)])
+                with self.assertRaises(DriveForbidden):
+                    call()
+                read.assert_not_called()
+                count.assert_not_called()
+                write.assert_not_called()
+
+
+class TestLegacyInboxReads(ShimCase):
+    """`_legacy_inbox` and `_mark_legacy_read` against a stubbed table."""
+
+    def test_the_inbox_read_is_scoped_to_the_caller_and_to_pointerless_rows(self):
+        with patch.object(shims.frappe, "get_all", return_value=[]) as read:
+            shims._legacy_inbox(SOMEONE, only_unread=True, limit=50)
+        self.assertEqual(
+            read.call_args.kwargs["filters"],
+            {"to_user": SOMEONE.user, "activity": ["is", "not set"], "read": 0},
+        )
+        self.assertEqual(read.call_args.kwargs["order_by"], "creation desc")
+        self.assertEqual(read.call_args.kwargs["limit"], 50)
+        self.assertEqual(read.call_args.kwargs["fields"], shims.LEGACY_NOTIFICATION_FIELDS)
+
+    def test_reading_every_row_asks_for_no_limit_and_no_read_filter(self):
+        with patch.object(shims.frappe, "get_all", return_value=[]) as read:
+            shims._legacy_inbox(SOMEONE)
+        self.assertEqual(
+            read.call_args.kwargs["filters"],
+            {"to_user": SOMEONE.user, "activity": ["is", "not set"]},
+        )
+        self.assertNotIn("limit", read.call_args.kwargs)
+
+    def test_the_badge_counts_rather_than_reading_a_whole_inbox(self):
+        """The old body was one `frappe.db.count`, and a badge polls.
+
+        Reading the rows to take their length walks an inbox that has no cap
+        on the mark path, on every sidebar render.
+        """
+        db = MagicMock()
+        db.count.return_value = 3
+        with patch.object(shims.frappe, "db", db):
+            with patch.object(shims.frappe, "get_all") as read:
+                self.assertEqual(shims._legacy_unread_count(SOMEONE), 3)
+        read.assert_not_called()
+        db.count.assert_called_once_with(
+            "Drive Notification",
+            {"to_user": SOMEONE.user, "activity": ["is", "not set"], "read": 0},
+        )
+
+    def test_marking_writes_the_recipient_into_the_update_it_runs(self):
+        db = MagicMock()
+        with patch.object(shims.frappe, "get_all", return_value=["old1", "old2"]):
+            with patch.object(shims.frappe, "db", db):
+                self.assertEqual(shims._mark_legacy_read(SOMEONE, None), 2)
+        db.set_value.assert_called_once_with(
+            "Drive Notification",
+            {"name": ["in", ("old1", "old2")], "to_user": SOMEONE.user, "read": 0},
+            "read",
+            1,
+            update_modified=False,
+        )
+
+    def test_marking_a_row_the_caller_does_not_hold_writes_nothing(self):
+        db = MagicMock()
+        with patch.object(shims.frappe, "get_all", return_value=[]) as read:
+            with patch.object(shims.frappe, "db", db):
+                self.assertEqual(shims._mark_legacy_read(SOMEONE, "someone-elses"), 0)
+        self.assertEqual(
+            read.call_args.kwargs["filters"],
+            {
+                "to_user": SOMEONE.user,
+                "read": 0,
+                "activity": ["is", "not set"],
+                "name": "someone-elses",
+            },
+        )
+        db.set_value.assert_not_called()
 
 
 # --------------------------------------------------------------------------
