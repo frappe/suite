@@ -19,6 +19,7 @@ suites prove the workflows behind them.
 """
 
 import ast
+import inspect
 import pathlib
 import unittest
 from unittest.mock import MagicMock, patch
@@ -238,6 +239,24 @@ def source_of(name: str) -> str:
     raise AssertionError(f"{name} has no source")
 
 
+def delegated_calls(name: str) -> list[str]:
+    """The `shims.<x>` names one legacy function actually calls.
+
+    A substring search for "shims." passes on a comment, so a body that
+    re-implements the workflow and says it forwards reads as a forwarder. This
+    walks for a real call node instead.
+    """
+    tree = ast.parse(source_of(name))
+    return [
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "shims"
+    ]
+
+
 def node_row(**overrides) -> frappe._dict:
     row = frappe._dict(
         name="n1",
@@ -333,9 +352,12 @@ class TestInventory(ShimCase):
         self.assertEqual(found, allowed)
 
     def test_every_forwarder_delegates_and_holds_no_second_implementation(self):
+        """A call node, not the text "shims.": a body that re-implements the
+        workflow and carries a comment saying it forwards passes a substring
+        search."""
         for name in shims.names_of("forwarder"):
             with self.subTest(name=name):
-                self.assertIn("shims.", source_of(name))
+                self.assertTrue(delegated_calls(name), name)
 
     def test_no_permanent_name_was_rewritten(self):
         for name in shims.names_of("permanent"):
@@ -349,9 +371,15 @@ class TestInventory(ShimCase):
                 self.assertTrue(reason.strip(), name)
 
     def test_every_retired_name_refuses_through_this_module(self):
+        """`_retire` is what raises `DriveRetired` with §11.7's replacement in
+        the message. A name that raised on its own would answer a different
+        class, a different code, and no replacement."""
         for name in shims.names_of("retired"):
             with self.subTest(name=name):
-                self.assertIn("shims.", source_of(name))
+                delegated = delegated_calls(name)
+                self.assertTrue(delegated, name)
+                for attr in delegated:
+                    self.assertIn("_retire(", inspect.getsource(getattr(shims, attr)))
 
 
 class TestGuestPosture(ShimCase):
@@ -559,6 +587,19 @@ class TestPermissionForwarders(ShimCase):
         with patch.object(shims, "_share_marker", return_value=0):
             answer = shims.get_entity_with_permissions("n1")
         self.assertIs(frappe.response["data"], answer)
+
+    def test_entity_with_permissions_refuses_a_node_that_is_not_active(self):
+        """The old query filtered `status: STATUS_ACTIVE`, so a trashed file
+        opened as a page said "We couldn't find what you're looking for."
+        §8.1 reads a node in any state, which is right for a route that can
+        restore one; this name only ever served a page."""
+        nodes = self.stub("node_core")
+        self.stub("access")
+        for state in ("Trashed", "Purged"):
+            with self.subTest(state=state):
+                nodes.get.return_value = node_row(state=state)
+                with self.assertRaises(DriveNotFound):
+                    shims.get_entity_with_permissions("n1")
 
     def test_entity_with_permissions_refuses_a_missing_id(self):
         with self.assertRaises(DriveNotFound):
@@ -2136,3 +2177,97 @@ class TestLegacyRefusalMessages(ShimCase):
                 nodes.update.side_effect = error("no")
                 with self.assertRaises(error):
                     shims.rename("n1", "Report.pdf")
+
+
+class TestShareMarkers(ShimCase):
+    """`share_count` is three different answers in one integer field.
+
+    Legacy read local rows only - `DrivePermission.entity.isin(names)` - so a
+    child of a published folder counted zero, and this reads the same way.
+    """
+
+    def counts(self, rows):
+        with patch.object(shims.frappe, "get_all", return_value=rows) as read:
+            answer = shims._share_counts(["n1", "n2"])
+        return answer, read
+
+    def test_a_person_counts_and_a_link_does_not(self):
+        """A share link is not a person, and the old count excluded the two
+        site-wide rows by name (`user.notin(["", GENERAL_USER])`)."""
+        answer, _ = self.counts(
+            [
+                {"node": "n1", "principal": "b@example.com"},
+                {"node": "n1", "principal": "c@example.com"},
+                {"node": "n1", "principal": "$LINK:tokentokentoken"},
+            ]
+        )
+        self.assertEqual(answer, {"n1": 2, "n2": 0})
+
+    def test_published_beats_site_wide_and_both_beat_a_count(self):
+        """-2 published, -1 every signed-in user. A node carrying both is
+        published, which is the wider of the two."""
+        answer, _ = self.counts(
+            [
+                {"node": "n1", "principal": "$PUBLIC"},
+                {"node": "n1", "principal": "$GENERAL"},
+                {"node": "n1", "principal": "b@example.com"},
+                {"node": "n2", "principal": "$GENERAL"},
+            ]
+        )
+        self.assertEqual(answer, {"n1": -2, "n2": -1})
+
+    def test_a_denied_row_is_not_a_share(self):
+        """Role 0 is §5.10's deny. Counting it would report a share to the one
+        person the node is closed to."""
+        with patch.object(shims.frappe, "get_all", return_value=[]) as read:
+            shims._share_counts(["n1"])
+        self.assertEqual(read.call_args.kwargs["filters"]["role"], [">", 0])
+
+    def test_no_names_asks_nothing(self):
+        with patch.object(shims.frappe, "get_all") as read:
+            self.assertEqual(shims._share_counts([]), {})
+        read.assert_not_called()
+
+
+class TestDirectoryUploadGate(ShimCase):
+    """`fullpath` makes a browser's directory upload create folders.
+
+    `_child_named` reads an id out of the table directly, so the question it
+    answers has to be gated first. `title_taken` is that gate and it requires
+    UPLOAD, for the reason `does_entity_exist` did: an answer about a folder
+    the caller cannot write to is an enumeration oracle.
+    """
+
+    def database(self):
+        """`frappe.db` is a bound proxy, and this suite runs with no site."""
+        db = MagicMock()
+        patcher = patch.object(frappe.local, "db", db, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return db
+
+    def test_a_caller_who_cannot_upload_reads_no_id(self):
+        nodes = self.stub("node_core")
+        nodes.title_taken.return_value = False
+        db = self.database()
+        self.assertIsNone(shims._child_named(SOMEONE, "f1", "Photos"))
+        db.get_value.assert_not_called()
+
+    def test_a_taken_title_answers_the_active_child(self):
+        nodes = self.stub("node_core")
+        nodes.title_taken.return_value = True
+        db = self.database()
+        db.get_value.return_value = "n9"
+        self.assertEqual(shims._child_named(SOMEONE, "f1", "Photos"), "n9")
+        self.assertEqual(
+            db.get_value.call_args.args[1],
+            {"parent": "f1", "title": "Photos", "state": "Active"},
+        )
+
+    def test_a_path_reuses_a_folder_it_finds_and_makes_the_rest(self):
+        nodes = self.stub("node_core")
+        nodes.create_folder.return_value = "n-new"
+        with patch.object(shims, "_child_named", side_effect=["n-photos", None]):
+            leaf = shims._ensure_path(SOMEONE, "Photos/2026/beach.jpg", "f1")
+        self.assertEqual(leaf, "n-new")
+        nodes.create_folder.assert_called_once_with(SOMEONE, "n-photos", "2026")

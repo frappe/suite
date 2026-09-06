@@ -463,6 +463,13 @@ def get_entity_with_permissions(entity_name: str | None = None) -> dict:
         raise DriveNotFound(_("We couldn't find what you're looking for."))
     principals = _principals()
     row = _page_read(principals, lambda: node_core.get(principals, entity_name))
+    if row.state != "Active":
+        # The old query filtered `status: STATUS_ACTIVE` and answered "We
+        # couldn't find what you're looking for." for anything else, so a
+        # trashed file opened as a page said so. §8.1 reads a node in any
+        # state, which is right for a route that can restore one; this name
+        # only ever served a page.
+        raise DriveNotFound(_("We couldn't find what you're looking for."))
     role = access.effective_role(row, principals)
     trail = [
         {"name": step["name"], "file_name": step["title"]} for step in node_core.breadcrumbs(row, principals)
