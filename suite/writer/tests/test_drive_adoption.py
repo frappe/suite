@@ -41,7 +41,7 @@ import frappe.share
 import pycrdt
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.utils import add_to_date, get_datetime
+from frappe.utils import get_datetime
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -780,20 +780,20 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value(DOCTYPE, document.name, "html"), "<p>x</p>")
 
     def test_a_save_stamps_the_node_and_never_the_document_title(self):
-        # `create_document` stamps `content_modified` itself, so comparing the
-        # save against that stamp proves nothing: two writes inside one second
-        # can read equal, and the assertion survives deleting `drive_touch`.
-        # The stamp is moved back an hour instead, so only a real touch passes.
+        # `create_document` stamps `content_modified` itself, so the creation
+        # stamp is the value the save must beat. `Drive Node.content_modified`
+        # is a `datetime(6)`, and the two `now_datetime()` calls sit a node
+        # insert, a factory call, and a grant apart, so the two stamps cannot
+        # read equal. Deleting `drive_touch` leaves the creation stamp in
+        # place and fails the comparison.
         node = self._document(title="Stamped")
         created = get_datetime(frappe.db.get_value("Drive Node", node, "content_modified"))
-        backdated = add_to_date(created, hours=-1)
-        frappe.db.set_value("Drive Node", node, "content_modified", backdated, update_modified=False)
         document = frappe.get_doc(DOCTYPE, self._docname(node))
 
         document.save_html("<p>new</p>")
 
         after = frappe.db.get_value("Drive Node", node, ("content_modified", "title"), as_dict=True)
-        self.assertGreater(get_datetime(after.content_modified), backdated)
+        self.assertGreater(get_datetime(after.content_modified), created)
         self.assertEqual(after.title, "Stamped")
 
     def test_an_inherited_folder_grant_reaches_the_row_and_the_list(self):
