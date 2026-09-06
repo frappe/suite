@@ -2385,6 +2385,158 @@ def _filtered_listing(principals, page_call, *, file_kinds, search, offset, wind
     }
 
 
+def _unadopted_children(parent: str) -> bool:
+    """Whether this folder holds an Active `File` child that no node holds.
+
+    One indexed lookup, and it is what decides whether a folder page costs
+    anything more than it did. A tree that Build has linked, and every tree
+    that never had a legacy row in it, answers `False` here and takes the
+    same SQL-sorted `children` window it took before.
+    """
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT 1 FROM `tabFile` legacy
+            LEFT JOIN `tabDrive Node` adopted ON adopted.name = legacy.name
+            WHERE legacy.folder = %(parent)s
+              AND legacy.status = 'Active'
+              AND adopted.name IS NULL
+            LIMIT 1
+            """,
+            {"parent": parent},
+        )
+    )
+
+
+def _ordered_legacy(rows: list, order_by: str, ascending: bool) -> list:
+    """Sort shaped legacy rows the way `get_query_data` sorted them.
+
+    `_ordered` sorts node rows, under §11.4's column names. This sorts the
+    answer, under the names the client is shown, because the two halves of a
+    merged folder page have nothing else in common: one came out of
+    `tabDrive Node` and the other out of `tabFile`.
+
+    The three levels are the old query's: the named column, then `file_name`
+    in the same direction, then `name` ascending to break the rest. The
+    tertiary level runs first and Python's sort is stable.
+    """
+    column = {"title": "file_name", "size": "file_size"}.get(_order_column(order_by), "modified")
+
+    def key(row):
+        if column == "file_name":
+            return (row.get("file_name") or "").casefold()
+        if column == "file_size":
+            return int(row.get("file_size") or 0)
+        return str(row.get("modified") or "")
+
+    rows = sorted(rows, key=lambda row: row.get("name") or "")
+    return sorted(
+        rows,
+        key=lambda row: (key(row), (row.get("file_name") or "").casefold()),
+        reverse=not ascending,
+    )
+
+
+def _legacy_children(parent: str, *, order_by, ascending, file_kinds, adopted: bool) -> tuple[list, bool]:
+    """Every Active `File` child of `parent` that no node holds, as a list row.
+
+    The old body's own read: `_get_basic_query` filtered to this folder, run
+    through `get_query_data`, which sorts, applies `file_kinds`, filters each
+    row on `get_user_access_for_user`, and publishes the same twenty-seven
+    columns `_legacy_list_rows` publishes for a node. Nothing is decided here
+    that the old body did not decide.
+
+    The gate is the old body's too - `user_has_permission(parent, "read")`,
+    answering `frappe.PermissionError` - but only when the folder is on this
+    store alone. Once Build has linked the folder, `node_core.children` reads
+    and authorizes it, and asking the legacy rules a second time would let
+    one store refuse a page the other had already granted. Each row is still
+    filtered by the rules of the store it came from.
+
+    Bounded at `MAX_SORTABLE_ROWS`, like every other walk this module sorts
+    in memory, and the caller is told when the bound was reached.
+    """
+    from suite.drive.api.list import DriveFile, _get_basic_query, get_query_data
+    from suite.drive.api.permissions import user_has_permission
+
+    if not adopted and not user_has_permission(parent, "read"):
+        frappe.throw(_("You don't have access."), frappe.PermissionError)
+
+    adopted_ids = frappe.qb.from_(frappe.qb.DocType("Drive Node")).select("name")
+    query = _get_basic_query(None).where(
+        (DriveFile.folder == parent) & DriveFile.name.notin(adopted_ids)
+    )
+    rows = get_query_data(
+        query,
+        file_kinds=file_kinds,
+        entity_name=parent,
+        order_by=order_by,
+        ascending=bool(ascending),
+        start=0,
+        limit=MAX_SORTABLE_ROWS + 1,
+        paginated=False,
+    )
+    return rows[:MAX_SORTABLE_ROWS], len(rows) > MAX_SORTABLE_ROWS
+
+
+def _merged_folder_page(
+    principals, parent: str, *, order_by, ascending, file_kinds, start, limit, paginated
+):
+    """One folder page over both stores, for a folder that still holds a legacy row.
+
+    §10.2 keeps a content type's legacy rows working while that type is in
+    the expand phase, and `writer.api.docs.create_document` writes one into
+    the caller's `Users/<email>` folder on every site running this commit.
+    Two folders reach here, and they are the same folder at two moments:
+    before Build no node holds it, so the node half is empty and this answers
+    the whole page; after Build a node holds it, and the documents written
+    since are the only rows the node half cannot see. The legacy inbox of
+    §11.7's notification names is merged for the same reason.
+
+    Both halves are read whole and sorted here rather than paged in SQL. A
+    page cannot be merged on its own - the second page would restart the
+    order - which is the answer `_ordered_listing` already gives to the same
+    problem, and `next_start` indexes the merged list the same way.
+
+    A folder with no legacy row in it never reaches here, so the SQL-sorted
+    window §11.4 measured is what an adopted tree still pays.
+    """
+    adopted = bool(frappe.db.exists("Drive Node", parent))
+    legacy, legacy_over = _legacy_children(
+        parent, order_by=order_by, ascending=ascending, file_kinds=file_kinds, adopted=adopted
+    )
+    rows, over_bound = [], legacy_over
+    if adopted:
+        window, node_over = _whole_view(
+            lambda cursor, size: node_core.children(
+                principals,
+                parent,
+                cursor=cursor,
+                limit=size,
+                order_by=_order_column(order_by),
+                ascending=bool(ascending),
+            ),
+            file_kinds,
+            None,
+        )
+        rows = _legacy_list_rows(principals, window)
+        over_bound = over_bound or node_over
+
+    merged = _ordered_legacy(rows + legacy, order_by, ascending)
+    offset = int(start or 0)
+    size = int(limit) if limit else (LEGACY_PAGE_SIZE if paginated else None)
+    page = merged[offset:] if size is None else merged[offset : offset + size]
+    if not paginated:
+        return page
+    return {
+        "rows": page,
+        # Past a bound the walk stopped reading, so the page length cannot
+        # say there is nothing more.
+        "has_next": offset + len(page) < len(merged) or over_bound,
+        "next_start": offset + len(page),
+    }
+
+
 @_legacy
 def files(
     entity_name: str | None = None,
@@ -2405,6 +2557,11 @@ def files(
 
     A folder page is sorted by `children` in SQL, on the index [004] measured.
     The search view has one order of its own, so a search is sorted here.
+
+    A folder that still holds a `File` no node holds is answered off both
+    stores. See `_merged_folder_page`: `writer.api.docs.create_document`
+    writes such a row, and the trail `get_entity_with_permissions` publishes
+    for it names the folders it is in.
     """
     principals = _principals()
     if search:
@@ -2421,6 +2578,17 @@ def files(
             order=(order_by, bool(ascending)),
         )
     parent = entity_name or _home(principals)
+    if _unadopted_children(parent):
+        return _merged_folder_page(
+            principals,
+            parent,
+            order_by=order_by,
+            ascending=ascending,
+            file_kinds=file_kinds,
+            start=start,
+            limit=limit,
+            paginated=paginated,
+        )
     return _page_read(
         principals,
         lambda: _listing(
