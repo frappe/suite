@@ -1,6 +1,6 @@
 import frappe
 
-from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
+from suite.drive.webdav import ALLOWED_METHODS, RELINKED_METHODS, parse_webdav_methods
 
 
 def global_webdav_enabled() -> bool:
@@ -14,10 +14,11 @@ def allowed_webdav_methods() -> tuple[str, ...]:
     raw = frappe.get_cached_doc("Drive Disk Settings").get("webdav_allowed_methods")
     methods, unknown = parse_webdav_methods(raw)
     if unknown and methods == ("OPTIONS",):
-        # nothing valid beyond the implied OPTIONS — treat as unconfigured
+        # nothing valid beyond the implied OPTIONS - treat as unconfigured
         # rather than locking the whole site down to the handshake
-        return ALLOWED_METHODS
-    return methods
+        methods = ALLOWED_METHODS
+    # the admin's list narrows the relinked surface; it never widens it
+    return tuple(method for method in methods if method in RELINKED_METHODS)
 
 
 def dav_compliance(methods: tuple[str, ...]) -> str:

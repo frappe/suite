@@ -48,6 +48,10 @@ MAX_PAGE_OFFSET = 10_000_000
 # same kind of grant: short enough that a leaked URL dies before it travels.
 CONTENT_TTL_SECONDS = 15 * 60
 
+# sha256 of zero bytes. §8.5 keeps a head of size 0 without a blob, and a
+# validator for those bytes is still the checksum they would have.
+EMPTY_BLOB_CHECKSUM = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 NODE_FIELD_NAMES = (
     "name",
     "parent",
@@ -500,6 +504,67 @@ def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECON
         "url": signed_url_for_blob(row.blob, content.download_filename(row.title), expires_in),
         "expires": int(time.time()) + expires_in,
     }
+
+
+def stream_content(row: frappe._dict, *, environ: dict | None = None, as_attachment: bool = True):
+    """Stream one file node's bytes to the current request, Range and all.
+
+    The caller has already spent §2.3's point check on `row`; this adds no
+    second one, exactly as `signed_content_url` adds none. It exists beside
+    that function because a signed `/f/` redirect is not usable everywhere a
+    byte path is: WebDAV's Windows client drops credentials across a redirect
+    (§12.3), so DAV needs the bytes on the same response.
+
+    Conditional requests, `Range`, `206`, `416`, and the strong `ETag` are the
+    framework's (§13.5). What Drive owns here is the refusal: a node with no
+    bytes to send is a conflict, not an empty body, and an unreachable blob is
+    never reported as a zero-length file.
+    """
+    from frappe.storage.serve import stream_blob
+    from werkzeug.wrappers import Response
+
+    if row.kind != "file":
+        raise DriveConflict(_("Only a Drive file has bytes to download"))
+    if not row.blob:
+        # §8.4's empty head. A zero-byte file is a file: it answers 200 with no
+        # body rather than the 409 a node that never had bytes gets.
+        answer = Response(b"", status=200, mimetype=row.mime or "application/octet-stream")
+        answer.headers["Accept-Ranges"] = "bytes"
+        answer.set_etag(EMPTY_BLOB_CHECKSUM)
+        return answer
+    blob = frappe.db.get_value(
+        "File Blob",
+        row.blob,
+        ["name", "file_size", "is_private", "status"],
+        as_dict=True,
+    )
+    if not blob or blob.status != "Ready" or not blob.is_private:
+        raise DriveConflict(_("The Drive file bytes are unavailable"))
+    return stream_blob(
+        row.blob,
+        content.download_filename(row.title),
+        as_attachment=as_attachment,
+        environ=environ,
+    )
+
+
+def blob_checksums(blobs: list[str]) -> dict[str, str]:
+    """Answer the content checksum of many blobs in one read.
+
+    A listing that publishes a validator for every row needs the checksums of
+    the whole page, and `Drive Node` does not carry one: the checksum belongs
+    to the blob, which two nodes may share. One `IN` read keeps a page's cost
+    flat in the number of rows.
+    """
+    wanted = sorted({blob for blob in blobs if blob})
+    if not wanted:
+        return {}
+    rows = frappe.get_all(
+        "File Blob",
+        filters={"name": ("in", wanted)},
+        fields=["name", "checksum"],
+    )
+    return {row.name: row.checksum for row in rows if row.checksum}
 
 
 def title_taken(principals: Principals, parent: str, title: str) -> bool:

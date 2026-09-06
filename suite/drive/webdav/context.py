@@ -5,6 +5,7 @@ streaming_request_paths hook it is empty by construction. Query args live on
 request.args, bodies on ctx.body.
 """
 
+import dataclasses
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -13,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import frappe
 from werkzeug.wrappers import Request
 
+from suite.drive._core.principals import Principals
 from suite.drive.webdav import DAV_PREFIX
 from suite.drive.webdav.errors import BadRequest
 
@@ -76,7 +78,7 @@ def build_body_source(request: Request) -> BodySource:
 class DavContext:
     request: Request
     user: str  # canonical authenticated user, never Guest
-    segments: list[str]  # decoded path below /dav; [] = the virtual root
+    segments: list[str]  # decoded path below /dav; [] = the Personal Root itself
     had_trailing_slash: bool
     depth: str | None  # "0" | "1" | "infinity" | None (verb applies its RFC default)
     overwrite: bool
@@ -86,9 +88,30 @@ class DavContext:
 
     @cached_property
     def manager(self) -> FileManager:
+        # Only the not-yet-relinked write verbs still reach for this. It goes
+        # with the last `manager.*` call in ticket 25 (§12.5).
         from suite.drive.utils.files import FileManager
 
         return FileManager()
+
+    @cached_property
+    def principals(self) -> Principals:
+        """The identity this DAV session reaches with.
+
+        §6.9: a DAV client presents credentials and has nowhere to put a link
+        token, so the session is the signed-in user's own principals - their
+        address, their groups, `$GENERAL`, and `$PUBLIC`. An `X-Drive-Links`
+        header on a DAV request is discarded rather than honoured: accepting it
+        would turn Basic auth into a carrier for an anonymous bearer on a
+        PUT-able, lockable endpoint, which §6.9 rejects by name.
+        """
+        from suite.drive import framework
+
+        return dataclasses.replace(
+            framework.principals_for(self.user),
+            open=("$PUBLIC",),
+            link_tickets=(),
+        )
 
 
 def build(request: Request, user: str) -> DavContext:

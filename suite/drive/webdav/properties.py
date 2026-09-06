@@ -1,9 +1,13 @@
 """Live WebDAV properties and the ETag scheme.
 
-ETags are strong: PUT/COPY populate File.content_hash (unused by Drive) with
-the body's SHA-256; legacy rows fall back to name+size+mtime, which is
-byte-stable because every content mutation either writes content_hash or
-creates a new entity.
+ETags are strong and they are the blob's own SHA-256 checksum (§12.4), which
+is exactly what the framework's stream-read puts on a GET. Both sides quoting
+the same value is what lets a client hand a `getetag` it read in a PROPFIND
+straight back in an `If-Match`; a validator computed some other way here would
+never match the one on the bytes.
+
+A file node with no blob is §8.5's empty head, and the checksum of no bytes is
+still a checksum, so it validates like any other file.
 """
 
 from datetime import UTC, datetime
@@ -13,24 +17,47 @@ import frappe
 from lxml import etree
 from werkzeug.http import http_date
 
+from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM, blob_checksums
 from suite.drive.webdav.xmlutil import dav, dav_element
 
 
-def compute_etag(row: frappe._dict) -> str:
-    if row.get("content_hash"):
-        # 128 bits of the hash: plenty for cache validation, and short enough
-        # for clients with tight header buffers (litmus builds If into 200 bytes)
-        return f'"sha256-{row.content_hash[:32]}"'
-    stamp = _as_datetime(row.modified).strftime("%Y%m%d%H%M%S%f")
-    return f'"{row.name}-{row.file_size or 0}-{stamp}"'
+def checksums_for(rows: list[frappe._dict]) -> dict[str, str]:
+    """One batched blob read for a whole listing, keyed by node id."""
+    by_blob = blob_checksums([row.blob for row in rows if row.get("blob")])
+    return {row.name: by_blob[row.blob] for row in rows if row.get("blob") and row.blob in by_blob}
+
+
+def compute_etag(row: frappe._dict, checksum: str | None = None) -> str:
+    """The strong validator for one node.
+
+    `checksum` is the blob's, when the caller has already read it for a whole
+    page. Without it a node holding bytes costs one read here, which is why
+    every listing passes it in.
+    """
+    if checksum:
+        return f'"{checksum}"'
+    if not row.get("blob"):
+        return f'"{EMPTY_BLOB_CHECKSUM}"'
+    found = blob_checksums([row.blob])
+    return f'"{found.get(row.blob) or EMPTY_BLOB_CHECKSUM}"'
 
 
 def rfc1123(value: datetime | str) -> str:
     return http_date(_to_utc(value))
 
 
+def content_time(row: frappe._dict) -> datetime | str:
+    """When the node's content last changed (§8.11).
+
+    `content_modified` is the content's own time and is what `getlastmodified`
+    reports. It is null until something writes the content, and the row time is
+    the only answer there is then.
+    """
+    return row.get("content_modified") or row.modified
+
+
 def modified_utc(row: frappe._dict) -> datetime:
-    return _to_utc(row.modified)
+    return _to_utc(content_time(row))
 
 
 def to_site_naive(value: datetime) -> datetime:
@@ -48,13 +75,15 @@ def live_properties(
     is_collection: bool,
     display_name: str,
     quota: tuple[int, int] | None = None,
+    checksum: str | None = None,
 ) -> dict[str, etree._Element | None]:
     """All live properties for one resource, keyed by Clark name; None = not
     defined for this resource (rendered as a 404 propstat when requested).
 
-    quota = (used_bytes, limit_bytes); limit 0 means unlimited (RFC 4331 allows
-    omitting quota-available-bytes then). lockdiscovery/supportedlock are
-    contributed by the locking module at assembly time.
+    quota = (used_bytes, limit_bytes); limit 0 means unlimited, and RFC 4331 §4
+    then wants `quota-available-bytes` left out rather than guessed at.
+    lockdiscovery/supportedlock are contributed by the locking module at
+    assembly time.
     """
     props: dict[str, etree._Element | None] = {
         dav("displayname"): dav_element("displayname", text=display_name),
@@ -69,16 +98,15 @@ def live_properties(
     }
 
     if row is not None:
-        props[dav("getlastmodified")] = dav_element("getlastmodified", text=rfc1123(row.modified))
+        props[dav("getlastmodified")] = dav_element("getlastmodified", text=rfc1123(content_time(row)))
         props[dav("creationdate")] = dav_element("creationdate", text=iso8601(row.creation))
 
     if row is not None and not is_collection:
-        # folders carry rolled-up subtree sizes; clients misrender them as content-length
-        props[dav("getcontentlength")] = dav_element("getcontentlength", text=str(row.file_size or 0))
+        props[dav("getcontentlength")] = dav_element("getcontentlength", text=str(row.size or 0))
         props[dav("getcontenttype")] = dav_element(
-            "getcontenttype", text=row.mime_type or "application/octet-stream"
+            "getcontenttype", text=row.mime or "application/octet-stream"
         )
-        props[dav("getetag")] = dav_element("getetag", text=compute_etag(row))
+        props[dav("getetag")] = dav_element("getetag", text=compute_etag(row, checksum))
 
     if is_collection and quota is not None:
         used, limit = quota
