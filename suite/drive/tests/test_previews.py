@@ -1,5 +1,6 @@
 import io
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -19,6 +20,7 @@ from suite.drive._core.previews import (
     PREVIEW_TTL_SECONDS,
     RENDERABLE_MIMES,
     _publish_rendered,
+    _render_webp,
     preview_expansions,
     push_preview,
     render,
@@ -39,6 +41,127 @@ def _png(width: int = 1024, height: int = 256, color: str = "red") -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (width, height), color).save(output, format="PNG")
     return output.getvalue()
+
+
+# PyAV and pymupdf are optional native packages. The fakes below stand in for
+# the two `import` statements inside `_render_webp`, so the video and PDF
+# branches run their real dispatch, zoom maths, and PIL encode on every
+# machine. Only the decode itself is faked.
+
+
+class _FakeAvStream:
+    """One PyAV stream. `type` is what the video branch filters on."""
+
+    def __init__(self, type: str, duration: int | None = None):
+        self.type = type
+        self.duration = duration
+
+
+class _FakeAvFrame:
+    def __init__(self, image: Image.Image):
+        self._image = image
+
+    def to_image(self) -> Image.Image:
+        return self._image
+
+
+class _FakeAvContainer:
+    def __init__(self, streams, frame: Image.Image):
+        self.streams = streams
+        self._frame = frame
+        self.seeks = []
+        self.decoded = []
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        self.closed = True
+        return False
+
+    def seek(self, offset, stream=None):
+        self.seeks.append((offset, stream))
+
+    def decode(self, stream):
+        self.decoded.append(stream)
+        yield _FakeAvFrame(self._frame)
+
+
+class _FakeAv:
+    """The `import av` seam."""
+
+    def __init__(self, container: _FakeAvContainer):
+        self._container = container
+        self.opened = []
+
+    def open(self, source):
+        self.opened.append(source)
+        return self._container
+
+
+class _FakeMatrix:
+    def __init__(self, zoom_x: float, zoom_y: float):
+        self.a = zoom_x
+        self.d = zoom_y
+
+
+class _FakePixmap:
+    def __init__(self, image: Image.Image):
+        self.width, self.height = image.size
+        self.samples = image.tobytes()
+
+
+class _FakePdfPage:
+    def __init__(self, width: float, height: float, color: str = "white"):
+        self.rect = frappe._dict(width=width, height=height)
+        self._color = color
+        self.pixmaps = []
+
+    def get_pixmap(self, matrix=None, colorspace=None, alpha=None):
+        self.pixmaps.append(frappe._dict(matrix=matrix, colorspace=colorspace, alpha=alpha))
+        # Rasterize at the zoom the caller asked for, the way pymupdf does.
+        size = (int(self.rect.width * matrix.a), int(self.rect.height * matrix.d))
+        return _FakePixmap(Image.new("RGB", size, self._color))
+
+
+class _FakePdf:
+    def __init__(self, page: _FakePdfPage):
+        self._page = page
+        self.loaded = []
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        self.closed = True
+        return False
+
+    def load_page(self, index):
+        self.loaded.append(index)
+        return self._page
+
+
+class _FakePyMuPdf:
+    """The `import pymupdf` seam. `csRGB` is the colorspace sentinel."""
+
+    csRGB = "fake-csRGB"
+    Matrix = _FakeMatrix
+
+    def __init__(self, pdf: _FakePdf):
+        self._pdf = pdf
+        self.opened = []
+
+    def open(self, stream=None, filetype=None):
+        self.opened.append((stream, filetype))
+        return self._pdf
+
+
+def _webp(payload: bytes) -> Image.Image:
+    image = Image.open(io.BytesIO(payload))
+    image.load()
+    return image
 
 
 class TestPreviewContract(UnitTestCase):
@@ -188,6 +311,120 @@ class TestPreviewContract(UnitTestCase):
         self.assertTrue(run("src").called)
         # The head moved on: a newer job owns the node, so do no work.
         self.assertFalse(run("other").called)
+
+    def test_video_renders_the_middle_frame_as_a_512_webp(self):
+        frame = Image.new("RGB", (1920, 1080), "orange")
+        audio = _FakeAvStream("audio", duration=999)
+        video = _FakeAvStream("video", duration=200)
+        container = _FakeAvContainer([audio, video], frame)
+        module = _FakeAv(container)
+        source = io.BytesIO(b"fake mp4 bytes")
+
+        with patch.dict(sys.modules, {"av": module}):
+            payload = _render_webp(source, "video/mp4")
+
+        self.assertEqual(module.opened, [source])
+        # The audio stream is skipped, the seek lands mid-duration in the
+        # video stream's own time base, and the container is closed.
+        self.assertEqual(container.seeks, [(100, video)])
+        self.assertEqual(container.decoded, [video])
+        self.assertTrue(container.closed)
+        with _webp(payload) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (PREVIEW_LONGEST_SIDE, 288))
+
+    def test_a_video_without_a_duration_renders_its_first_frame(self):
+        video = _FakeAvStream("video", duration=None)
+        container = _FakeAvContainer([video], Image.new("RGB", (300, 1200), "blue"))
+
+        with patch.dict(sys.modules, {"av": _FakeAv(container)}):
+            payload = _render_webp(io.BytesIO(b"fake webm bytes"), "video/webm")
+
+        self.assertEqual(container.seeks, [])
+        with _webp(payload) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (128, PREVIEW_LONGEST_SIDE))
+
+    def test_pdf_renders_page_one_at_the_512_longest_side_zoom(self):
+        page = _FakePdfPage(1024, 768)
+        pdf = _FakePdf(page)
+        module = _FakePyMuPdf(pdf)
+
+        with patch.dict(sys.modules, {"pymupdf": module}):
+            payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
+
+        self.assertEqual(module.opened, [(b"%PDF-1.7 fake", "pdf")])
+        self.assertEqual(pdf.loaded, [0])
+        self.assertTrue(pdf.closed)
+        pixmap = page.pixmaps[0]
+        self.assertEqual(len(page.pixmaps), 1)
+        self.assertEqual((pixmap.matrix.a, pixmap.matrix.d), (0.5, 0.5))
+        # Three-channel samples: `Image.frombytes("RGB", ...)` needs them.
+        self.assertEqual(pixmap.colorspace, module.csRGB)
+        self.assertFalse(pixmap.alpha)
+        with _webp(payload) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (PREVIEW_LONGEST_SIDE, 384))
+
+    def test_a_portrait_pdf_takes_its_zoom_from_the_taller_side(self):
+        page = _FakePdfPage(768, 1024)
+
+        with patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}):
+            payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
+
+        self.assertEqual((page.pixmaps[0].matrix.a, page.pixmaps[0].matrix.d), (0.5, 0.5))
+        with _webp(payload) as image:
+            self.assertEqual(image.size, (384, PREVIEW_LONGEST_SIDE))
+
+    def _render_with(self, mime: str, module_name: str, module, source_bytes: bytes):
+        """Drive `render` through one branch with no database and no blob store."""
+        snapshot = frappe._dict(name="node-a", kind="file", state="Active", blob="src", mime=mime)
+
+        def get_value(doctype, *args, **kwargs):
+            if doctype == "Drive Node":
+                return snapshot if kwargs.get("as_dict") else "src"
+            if doctype == "Drive Node Preview":
+                return None
+            return frappe._dict(name="src", key="k", driver="local", is_private=1, status="Ready")
+
+        with (
+            patch.dict(sys.modules, {module_name: module}),
+            patch("suite.drive._core.previews.frappe.db", new_callable=MagicMock) as db,
+            patch("suite.drive._core.previews.get_driver") as driver,
+            patch(
+                "suite.drive._core.previews.put_blob",
+                return_value=frappe._dict(name="preview-blob"),
+            ) as put,
+            patch("suite.drive._core.previews._publish_rendered", return_value=True) as publish,
+        ):
+            db.get_value.side_effect = get_value
+            driver.return_value.read.return_value.__enter__.return_value = io.BytesIO(source_bytes)
+            render("node-a")
+
+        driver.return_value.read.assert_called_once_with("k", is_private=True)
+        publish.assert_called_once_with("node-a", "src", "preview-blob")
+        self.assertEqual(put.call_args.kwargs, {"is_private": True, "filename": "node-a.webp"})
+        return put.call_args.args[0].getvalue()
+
+    def test_render_stores_a_private_512_webp_for_a_video_head(self):
+        container = _FakeAvContainer(
+            [_FakeAvStream("video", duration=60)], Image.new("RGB", (2048, 1024), "red")
+        )
+
+        payload = self._render_with("video/mp4", "av", _FakeAv(container), b"fake mp4 bytes")
+
+        with _webp(payload) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (PREVIEW_LONGEST_SIDE, 256))
+
+    def test_render_stores_a_private_512_webp_for_a_pdf_head(self):
+        module = _FakePyMuPdf(_FakePdf(_FakePdfPage(2048, 1024)))
+
+        payload = self._render_with("application/pdf", "pymupdf", module, b"%PDF-1.7 fake")
+
+        with _webp(payload) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (PREVIEW_LONGEST_SIDE, 256))
 
     def test_renderable_mimes_are_an_explicit_sweep_safe_set(self):
         self.assertEqual(tuple(sorted(RENDERABLE_MIMES)), RENDERABLE_MIMES)
