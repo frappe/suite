@@ -20,26 +20,39 @@ from werkzeug.http import http_date
 from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM, blob_checksums
 from suite.drive.webdav.xmlutil import dav, dav_element
 
+# `checksum` was never looked up, as opposed to looked up and absent. A batched
+# caller passes what it found, None included; only an unbatched one may read.
+UNREAD: str = object()  # type: ignore[assignment]
 
-def checksums_for(rows: list[frappe._dict]) -> dict[str, str]:
-    """One batched blob read for a whole listing, keyed by node id."""
+
+def checksums_for(rows: list[frappe._dict]) -> dict[str, str | None]:
+    """One batched blob read for a whole listing, keyed by node id.
+
+    Every row holding a blob gets a key, None included. The key is the caller's
+    proof that the batch already looked, so a blob the read did not answer for
+    costs no second query in the render loop.
+    """
     by_blob = blob_checksums([row.blob for row in rows if row.get("blob")])
-    return {row.name: by_blob[row.blob] for row in rows if row.get("blob") and row.blob in by_blob}
+    return {row.name: by_blob.get(row.blob) for row in rows if row.get("blob")}
 
 
-def compute_etag(row: frappe._dict, checksum: str | None = None) -> str:
-    """The strong validator for one node.
+def compute_etag(row: frappe._dict, checksum: str | None = UNREAD) -> str | None:
+    """The strong validator for one node, or None when there is not one.
 
     `checksum` is the blob's, when the caller has already read it for a whole
-    page. Without it a node holding bytes costs one read here, which is why
-    every listing passes it in.
+    page; passing None means the batch looked and the blob had none. Omitting
+    it costs one read here, so every listing passes it in.
+
+    A node with no blob is §8.5's empty head, and the checksum of no bytes is
+    the validator the byte path publishes for it. A node naming a blob nobody
+    can read has no validator at all, and no validator is the honest answer:
+    the empty-bytes one would tell a client that a file with bytes is empty.
     """
-    if checksum:
-        return f'"{checksum}"'
     if not row.get("blob"):
         return f'"{EMPTY_BLOB_CHECKSUM}"'
-    found = blob_checksums([row.blob])
-    return f'"{found.get(row.blob) or EMPTY_BLOB_CHECKSUM}"'
+    if checksum is UNREAD:
+        checksum = blob_checksums([row.blob]).get(row.blob)
+    return f'"{checksum}"' if checksum else None
 
 
 def rfc1123(value: datetime | str) -> str:
@@ -75,7 +88,7 @@ def live_properties(
     is_collection: bool,
     display_name: str,
     quota: tuple[int, int] | None = None,
-    checksum: str | None = None,
+    checksum: str | None = UNREAD,
 ) -> dict[str, etree._Element | None]:
     """All live properties for one resource, keyed by Clark name; None = not
     defined for this resource (rendered as a 404 propstat when requested).
@@ -106,7 +119,8 @@ def live_properties(
         props[dav("getcontenttype")] = dav_element(
             "getcontenttype", text=row.mime or "application/octet-stream"
         )
-        props[dav("getetag")] = dav_element("getetag", text=compute_etag(row, checksum))
+        if etag := compute_etag(row, checksum):
+            props[dav("getetag")] = dav_element("getetag", text=etag)
 
     if is_collection and quota is not None:
         used, limit = quota

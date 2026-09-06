@@ -8,9 +8,12 @@ def global_webdav_enabled() -> bool:
 
 
 def allowed_webdav_methods() -> tuple[str, ...]:
-    """The admin-configured method allow-list; empty setting = all methods.
-    The stored value is validated on save, but unknown tokens (e.g. written
-    directly to the DB) are ignored rather than failing every request."""
+    """The admin-configured method allow-list, narrowed to the relinked verbs.
+
+    An empty setting means the admin has not narrowed anything, so the answer
+    is every relinked method. The stored value is validated on save, but
+    unknown tokens (e.g. written directly to the DB) are ignored rather than
+    failing every request."""
     raw = frappe.get_cached_doc("Drive Disk Settings").get("webdav_allowed_methods")
     methods, unknown = parse_webdav_methods(raw)
     if unknown and methods == ("OPTIONS",):
