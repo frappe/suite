@@ -4,12 +4,10 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md)
 
-**Status:** in-progress — daily Archived recompute unproved
+**Status:** done
 
-Seven of the eight acceptance criteria are implemented and covered by named
-tests that passed on the authorized test site. The eighth stays unchecked: no
-recorded test recomputes an Archived root or asserts the daily registration.
-See [Open gap](#open-gap).
+All eight acceptance criteria are implemented and covered by named tests that
+passed on the authorized test site.
 
 **Owner:** Suite Drive and Meet
 
@@ -27,7 +25,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [x] Purge the pair atomically after descendant references, root grants/activity, and remaining root-linked records.
 - [x] Implement reservation create, grow, reduce, and release on root metadata through package-root workflows.
 - [x] Migrate all Meet reservation callers and backfill behavior to the Room Owner’s Personal Root. Remove redundant owner-lock calls.
-- [ ] Recompute Active and Archived root usage daily, including all nodes, versions, and reservations. Log drift.
+- [x] Recompute Active and Archived root usage daily, including all nodes, versions, and reservations. Log drift.
 
 ## Verification
 
@@ -42,8 +40,10 @@ Suite integration main `40330feb8` (tickets 11-14) into the source commit
 Amended by `eaf0c8ddff71c98ecc63802f4eba940446587ed0`, which clears the
 departed user's private records on offboarding and aligns the purge lock order,
 and by four Meet test-fixture commits (`3ac7a305c`, `de0f6abc7`, `94da05590`,
-`0ac59e257`). Reconciled at HEAD
-`0ac59e257f7046a9f7e35e0f971eaf409f4ec99b`.
+`0ac59e257`). Test revision `10800b6de428598cea688f7001c3fdf87e4ce516` adds the
+Archived recompute, the root-scan filter assertion, and the daily registration
+assertion; it changes no production file. Reconciled at HEAD
+`bff1dde0631aced3b47396e2bde2b8386d37ede0`.
 
 Merge result: one conflict, in `suite/drive/jobs.py`, where both sides added a
 scheduler adapter. All three were kept. `suite/hooks.py` and
@@ -109,17 +109,23 @@ Review decisions recorded on this ticket:
 ## Migration and test commands
 
 Run on the authorized bench site against this branch, after
-`bench --site <site> migrate`. All seven modules passed:
+`bench --site <site> migrate`. All eight modules passed:
 
 ```text
 bench --site slides.localhost run-tests --module suite.drive.tests.test_root_admin                                     # 11/11
-bench --site slides.localhost run-tests --module suite.drive.tests.test_quota                                          # 16/16
+bench --site slides.localhost run-tests --module suite.drive.tests.test_quota                                          # 19/19
 bench --site slides.localhost run-tests --module suite.meet.patches.test.test_backfill_recording_storage_reservations  #  6/6
 bench --site slides.localhost run-tests --module suite.meet.api.test.test_recording                                    # 41/41
 bench --site slides.localhost run-tests --module suite.meet.api.test.test_callback_security                            #  7/7
 bench --site slides.localhost run-tests --module suite.tests.test_architecture                                         #  7/7
 bench --site slides.localhost run-tests --module suite.tests.test_composition                                          #  3/3
+bench --site slides.localhost run-tests --module suite.tests.test_scheduler_events                                     #  2/2
 ```
+
+`test_quota` is 11 unit tests in `TestQuotaContract` plus 8 integration tests in
+`TestRootReservationsAndRecompute`, run at this HEAD.
+`test_scheduler_events.test_registered_methods_resolve` resolves every dotted
+path in `scheduler_events`, so the daily entry is a real callable.
 
 | Criterion | Tests |
 |---|---|
@@ -128,9 +134,9 @@ bench --site slides.localhost run-tests --module suite.tests.test_composition   
 | Fresh identity, preserved access | `test_delete_and_recreate_email_archives_old_identity_and_provisions_a_new_one`, `test_offboarding_discards_private_records_and_keeps_attributed_ones`, `test_discarding_private_records_is_idempotent_and_needs_a_user` |
 | Admin quota, purge guard | `test_admin_quota_update_and_active_purge_guard`, `test_non_admin_cannot_change_or_purge_a_root` (unit), `test_archived_purge_removes_descendants_references_and_pair` |
 | Atomic pair purge | `test_descendants_lock_before_the_root_node_and_its_metadata` (unit), `test_archived_purge_removes_descendants_references_and_pair`, `test_purge_failure_rolls_back_descendants_references_and_pair`, `test_corrupt_descendant_position_refuses_purge_without_mutation`, `test_orphan_table_without_doctype_metadata_is_ignored` (unit) |
-| Reservation workflows | `test_create_resize_release_are_root_keyed_idempotent_and_charged`, `test_every_operation_stays_on_the_bound_root_once_it_is_archived`, `test_a_grow_beyond_the_archived_root_quota_is_still_refused`, `test_binding_a_legacy_reservation_charges_it_once_and_never_rebinds`, `test_releasing_an_unbound_legacy_reservation_charges_no_root`, `test_concurrent_reservations_admit_exactly_one_near_quota`, and the eight `TestQuotaContract` unit tests |
+| Reservation workflows | `test_create_resize_release_are_root_keyed_idempotent_and_charged`, `test_every_operation_stays_on_the_bound_root_once_it_is_archived`, `test_a_grow_beyond_the_archived_root_quota_is_still_refused`, `test_binding_a_legacy_reservation_charges_it_once_and_never_rebinds`, `test_releasing_an_unbound_legacy_reservation_charges_no_root`, `test_concurrent_reservations_admit_exactly_one_near_quota`, and the eight admission and reservation unit tests in `TestQuotaContract` |
 | Meet callers migrated | `test_reprovision_during_recording_keeps_reservation_bound_to_archived_root`, `test_two_concurrent_rooms_admit_one_recording_and_roll_the_other_back`, and the six backfill tests |
-| Daily recompute | `test_recompute_repairs_nodes_versions_and_reservations`, `test_daily_recompute_isolates_roots_and_logs_drift` (unit) — see [Open gap](#open-gap) |
+| Daily recompute | `test_recompute_repairs_nodes_versions_and_reservations` (Active), `test_the_daily_pass_recomputes_an_archived_root` (Archived), `test_the_daily_scan_reads_archived_roots_as_well_as_active_ones` (unit), `test_daily_recompute_isolates_roots_and_logs_drift` (unit, drift), `test_the_recompute_is_registered_once_as_a_daily_scheduler_event` (unit), `test_registered_methods_resolve` |
 
 `test_architecture` proves the boundary rules this ticket depends on:
 `test_drive_public_interface_is_explicit_and_complete_only` pins
@@ -185,27 +191,29 @@ figure was 80; at this HEAD it is 107, after the `40330feb8` merge brought in
 tickets 11 to 14. The no-site harness was not re-run after the merge. The
 `bench` runs above supersede it.
 
-### Open gap
+### Daily recompute coverage
 
-The eighth criterion stays unchecked. `recompute_root_usage` does filter
-`state in ("Active", "Archived")` and is registered under `scheduler_events`
-`daily` in `suite/hooks.py`, and `recompute_usage` does sum nodes, versions,
-and reservations. Drift logging and per-root isolation are proved by
-`test_daily_recompute_isolates_roots_and_logs_drift`. Two things are not:
+Each part of the eighth criterion now has a test:
 
-- No test recomputes an **Archived** root.
-  `test_recompute_repairs_nodes_versions_and_reservations` uses an Active one.
-  The unit test names its fake roots `active` and `archived`, but it patches
-  `frappe.get_all` with a bare `return_value` and never asserts the call
-  arguments, so the state filter itself is invisible to it.
-- No test in the recorded set asserts the daily registration. Sibling jobs do
-  have that assertion (`test_thinner_is_registered_once_as_a_daily_scheduler_event`,
-  `test_sweep_is_registered_once_as_a_daily_scheduler_event`).
-
-Closing this needs one integration recompute against an archived root, one
-argument assertion on the patched `frappe.get_all`, and a registration
-assertion. Adding `suite.tests.test_scheduler_events` to the run set would
-cover the last one, since it resolves every registered method.
+- **Archived roots.** `test_the_daily_pass_recomputes_an_archived_root`
+  archives the root, charges a node, a version, and a reservation, corrupts
+  `used_bytes`, then runs `recompute_root_usage` against the real table. The
+  root is repaired to 23 bytes and stays Archived. Only this root is recomputed
+  for real; every other root on the site is stubbed, so the pass stays inside
+  the test's own data.
+- **The state filter.**
+  `test_the_daily_scan_reads_archived_roots_as_well_as_active_ones` asserts the
+  exact `frappe.get_all` call, so an Active-only filter fails. The drift test's
+  `get_all` fake now answers that query only and raises on any other one.
+- **Nodes, versions, and reservations.** One charge helper feeds both
+  `test_recompute_repairs_nodes_versions_and_reservations` (Active) and the
+  Archived test.
+- **Drift and isolation.** `test_daily_recompute_isolates_roots_and_logs_drift`.
+- **Daily registration.**
+  `test_the_recompute_is_registered_once_as_a_daily_scheduler_event` pins one
+  daily entry and resolves the dotted path to the job.
+  `suite.tests.test_scheduler_events` is now in the run set, and it resolves
+  every registered method.
 
 ### Coverage note on preserved access
 

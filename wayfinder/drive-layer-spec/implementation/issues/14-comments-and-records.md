@@ -4,11 +4,10 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md)
 
-**Status:** in-progress — notification uniqueness unproved
+**Status:** done
 
-Six of the seven acceptance criteria are implemented and covered by named
-tests. The sixth stays unchecked: no test proves one notification row per
-target user and activity. See [Open gap](#open-gap).
+All seven acceptance criteria are implemented and covered by named tests that
+passed on the authorized test site.
 
 **Owner:** Suite Drive record workflows
 
@@ -24,7 +23,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [x] Refuse writes on trashed content. Apply access checks before returning threads or activity.
 - [x] Implement recents, favourites, notifications, unread count, and mark-read with caller isolation.
 - [x] Visits update Recent without Activity. Clearing recents preserves favourites.
-- [ ] Grant and mention notifications point at Activity. Maintain one row per target user and activity.
+- [x] Grant and mention notifications point at Activity. Maintain one row per target user and activity.
 - [x] Purge notifications before activity and remove other dependent records. No expiration-based grant cleanup.
 
 ## Verification
@@ -37,8 +36,10 @@ Implemented 2026-09-06 on this branch. Suite revisions:
 `9847e62d111851a5a019fa15a7a013a9ea63bd11` (comment, activity, and personal
 record workflows), `cca6ca02407ffd638c250b3e619f417ddf7a9ff6` (comment lock
 order and personal record edge cases), and the test corrections
-`d186feb56`, `ec1a40371`, `952b4ac10`, `40330feb8`. Reconciled at HEAD
-`0ac59e257f7046a9f7e35e0f971eaf409f4ec99b`.
+`d186feb56`, `ec1a40371`, `952b4ac10`, `40330feb8`. Test revision
+`bff1dde0631aced3b47396e2bde2b8386d37ede0` adds the notification uniqueness
+tests and changes no production file. Reconciled at HEAD
+`bff1dde0631aced3b47396e2bde2b8386d37ede0`.
 
 Changed behavior:
 
@@ -99,16 +100,18 @@ Run on the authorized bench site against this branch. All five modules passed:
 
 ```text
 bench --site slides.localhost run-tests --module suite.drive.tests.test_comments   # 8/8
-bench --site slides.localhost run-tests --module suite.drive.tests.test_activity   # 6/6
+bench --site slides.localhost run-tests --module suite.drive.tests.test_activity   # 8/8
 bench --site slides.localhost run-tests --module suite.drive.tests.test_grants     # 24/24
-bench --site slides.localhost run-tests --module suite.drive.tests.test_previews   # 21/21
+bench --site slides.localhost run-tests --module suite.drive.tests.test_previews   # 27/27
 bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes      # 36/36
 ```
 
 `test_comments` is 5 integration tests plus 3 unit tests in
-`TestCommentLockOrder`. `test_activity` is 6 integration tests. `test_grants`,
-`test_previews`, and `test_nodes` are regression runs: grants now write
-notifications, purge now deletes preview rows, and purge ordering moved.
+`TestCommentLockOrder`. `test_activity` is 8 integration tests, run at this
+HEAD. `test_grants`, `test_previews`, and `test_nodes` are regression runs:
+grants now write notifications, purge now deletes preview rows, and purge
+ordering moved. `test_previews` gained six render tests at this HEAD; see
+[ticket 13](13-preview-lifecycle.md).
 
 | Criterion | Tests |
 |---|---|
@@ -117,25 +120,29 @@ notifications, purge now deletes preview rows, and purge ordering moved.
 | Trashed writes refused, access-checked reads | `test_unreadable_threads_are_hidden_and_trash_refuses_writes`, `test_history_and_notifications_hide_currently_unreadable_nodes` |
 | Personal lists and caller isolation | `test_personal_rows_and_mark_read_are_isolated_by_caller`, `test_losing_read_access_still_lets_the_owner_clear_their_own_mark`, `test_history_and_notifications_hide_currently_unreadable_nodes` |
 | Visit without Activity, clear preserves favourites | `test_visit_upserts_recent_without_activity_and_clear_preserves_favourite` |
-| Notifications point at Activity | `test_grant_write_creates_one_activity_pointer_for_target_user`, `test_mentions_are_deduplicated_and_point_to_activity` |
+| Notifications point at Activity, one row per pair | `test_grant_write_creates_one_activity_pointer_for_target_user`, `test_mentions_are_deduplicated_and_point_to_activity`, `test_repeating_a_notification_for_the_same_pair_adds_no_second_row`, `test_a_missed_uniqueness_check_still_cannot_duplicate_a_notification` |
 | Purge order, no expiry cleanup | `test_purge_orders_notifications_before_activity_callbacks_and_nodes` (unit), `test_purge_removes_notifications_before_activity_and_personal_rows`, `test_purge_removes_references_releases_quota_and_leaves_blob`, `test_expired_positive_deny_and_link_rows_are_retained_but_inert`, `test_expired_link_is_retained_and_returns_expired_not_locked`, `test_expired_unpassworded_link_also_returns_expired` |
 
 The three `TestCommentLockOrder` unit tests pin the node-before-thread and
 node-before-comment order and prove the stub restores the database binding.
 
-### Open gap
+### Notification uniqueness
 
-The sixth criterion stays unchecked. Its first sentence is proved: both
-notification writers point at an Activity row. Its second sentence, "Maintain
-one row per target user and activity", is not. `notify_users` enforces it twice
-over, with a `frappe.db.exists` check and the `notif_activity_user` unique
-index on `(activity, to_user)`, and `_insert_unique` swallows the duplicate
-error a concurrent writer would raise. No test calls `notify_users` twice with
-the same pair, so neither guard is exercised. Closing this needs one test that
-repeats a notification for the same activity and target and asserts a single
-row.
+`notify_users` enforces one row per activity and target user twice over: a
+`frappe.db.exists` pre-check and the `notif_activity_user` unique index on
+`(activity, to_user)`. `_insert_unique` swallows the duplicate error a
+concurrent writer would raise. Both guards now have a test.
+`test_repeating_a_notification_for_the_same_pair_adds_no_second_row` repeats
+the pair inside one call and across calls: the pointer keeps its identity and
+its read state, so a repeat cannot return a cleared item to the inbox, and a
+later activity still notifies the same user.
+`test_a_missed_uniqueness_check_still_cannot_duplicate_a_notification` blinds
+the pre-check the way a concurrent writer does, which leaves the index as the
+only guard.
 
-Smaller untested paths, recorded but not blocking a criterion:
+### Remaining untested paths
+
+None blocks a criterion:
 
 - The EDIT arm of `_require_editor_or_author`. No test has an editor modify
   another person's comment. Both refusal directions are covered: an unreadable
