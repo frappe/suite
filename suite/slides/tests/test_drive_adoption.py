@@ -939,7 +939,11 @@ class TestSlidesInDrive(IntegrationTestCase):
         """§5.4 on the source side. A caller who owns one deck can put any id in
         a slide body, so the refusal must not separate "a folder you cannot see"
         from "no such node": that is an existence and kind oracle."""
-        hidden = create_folder(self.admin, self.other_root.node, "Not yours")
+        # Under `self.root`, not `self.other_root`: a Personal root anchors a
+        # MANAGE grant to its own owner (`roots.py:280-283`), so a folder in
+        # OTHER's root is one OTHER can read, and the paste would reach the kind
+        # check instead of the read check this test is about.
+        hidden = create_folder(self.admin, self.root.node, "Not yours")
         mine = self._deck(title="Probe", parent=self.root.node)
         grant(mine, OTHER, drive.EDIT, self.admin)
         frappe.db.commit()
@@ -1080,16 +1084,28 @@ class TestSlidesInDrive(IntegrationTestCase):
         node = self._deck(title="Swept")
         kept = self._media(node, "kept.png", png())
         poster = self._media(node, "poster.png", png("green"))
-        self._media(node, "forgotten.png", png("black"))
+        forgotten = self._media(node, "forgotten.png", png("black"))
         self._write_slide(node, background=kept, elements=video_with(kept, {"url": poster}))
 
-        self.assertEqual(slides.SPEC.used_nodes(self._docname(node)), {kept, poster})
+        # An equality is the wrong shape here. `used_nodes` over-reports on
+        # purpose: it walks the whole parsed body, so an element id and a type
+        # such as `"video"` come back too. Over-reporting only keeps media
+        # alive; under-reporting is what lets §10.6 trash a live picture. What
+        # matters is that the two named pictures are in and the third is out.
+        answered = slides.SPEC.used_nodes(self._docname(node))
+        self.assertLessEqual({kept, poster}, answered, "a named picture is never lost")
+        self.assertNotIn(forgotten, answered, "and a picture nothing names is not kept alive")
 
     def test_a_background_colour_never_hides_a_picture_from_the_sweep(self):
         node = self._deck(title="Coloured")
         kept = self._media(node, "kept.png", png())
+        gone = self._media(node, "gone.png", png("black"))
         self._write_slide(node, background="#00ff00ff", elements=elements_naming(kept))
-        self.assertEqual(slides.SPEC.used_nodes(self._docname(node)), {kept})
+
+        answered = slides.SPEC.used_nodes(self._docname(node))
+        self.assertIn(kept, answered, "the colour must not hide the picture beside it")
+        self.assertNotIn(gone, answered)
+        self.assertNotIn("#00ff00ff", answered, "a colour carries a character an id cannot")
 
     # previews (§9.2, [012 §8])
 
