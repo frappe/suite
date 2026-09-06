@@ -35,10 +35,19 @@ shared names around the predicate (`frappe/database/query.py:1739-1742`).
 Neither can be answered from inside the hook, so both guards call Drive to
 refuse, exactly as `suite.drive.framework` refuses after activation.
 
-System Managers and the Administrator bypass every guard below — they already
-have unrestricted access by design, and `frappe.has_permission` answers for the
-Administrator before any controller hook runs
-(`frappe/permissions.py:109-111`).
+The Administrator bypasses every guard below: `frappe.has_permission` answers
+for them before any controller hook runs (`frappe/permissions.py:109-111`).
+
+A System Manager is a narrower story, and the two sides do not agree. The child
+guards and both list predicates exempt one, so a System Manager still reads and
+lists a linked sheet's `Sheet Op Log` and `Sheet Snapshot` rows — today's
+behaviour, unchanged, and the reason it is left alone. `sheet_has_permission`
+does not exempt one, because the refusal has to come before any answer this
+module could give. Neither matches §4.9, whose admin is the Administrator or a
+Suite Admin, and a Suite Admin is therefore denied a linked `Sheet` row here.
+Both close at ticket 29, when `suite.drive.framework` answers and
+`is_drive_admin` is the one definition. Recorded, not fixed here: fixing it
+would mean this module reading `Drive Grant`, which is ticket 29's job.
 
 Wiring lives in :mod:`suite.hooks`.
 """
@@ -69,7 +78,7 @@ _CHILD_TABLES = {
 def sheet_has_permission(doc, ptype: str = "read", user: str | None = None, debug: bool = False) -> bool:
     """Answer one `Sheet` row check while adoption is staged."""
     user = user or frappe.session.user
-    if doc is not None and doc.get(NODE_FIELD):
+    if _stored_node(doc):
         drive.refuse_shared_row(DOCTYPE, doc.get("name"), ptype, user)
         return False
     if _is_privileged(user):
@@ -84,12 +93,35 @@ def sheet_has_permission(doc, ptype: str = "read", user: str | None = None, debu
 def sheet_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
     """`permission_query_conditions` for `Sheet`, staged the same way."""
     user = user or frappe.session.user
+    # Privilege first, the order `_scope_to_readable_sheets` uses. The predicate
+    # disappears for a privileged caller, so there is nothing for the engine to
+    # OR a share around and nothing to refuse; refusing anyway would lock the
+    # operator out of the very list that finds the offending `DocShare`.
+    if _is_privileged(user):
+        return ""
     # A shared linked sheet cannot be excluded by any predicate this hook
     # returns: `frappe.db.query` ORs the shared names around it. Drive refuses
     # instead. Scoped to a sheet that carries a node, so a legacy site lists
     # what it always listed.
     drive.refuse_shared_linked_rows(DOCTYPE, NODE_FIELD, user)
     return _sheet_predicate(user)
+
+
+def _stored_node(doc) -> str | None:
+    """The node the database holds for this row, never the one the caller sent.
+
+    `frappe.client.save` builds the whole `Document` from client JSON and runs
+    the write check against it, so a caller who presents a linked row with
+    `node` cleared would otherwise take the legacy owner-or-`DocShare` branch.
+    The stored column is the only value Drive owns. An unsaved row has none, so
+    the supplied value is all there is and `require_node` polices it.
+    """
+    if doc is None:
+        return None
+    name = doc.get("name")
+    if not name or doc.get("__islocal"):
+        return doc.get(NODE_FIELD) or None
+    return frappe.db.get_value(DOCTYPE, name, NODE_FIELD) or None
 
 
 def _sheet_predicate(user: str | None) -> str:
@@ -214,6 +246,10 @@ def _child_has_permission(doc, ptype: str, user: str | None) -> bool:
         return True
     sheet_name = _extract_sheet(doc)
     if not sheet_name:
+        # The one arm with no parent to ask about. Refuse rather than deny: a
+        # `False` here is re-granted by `false_if_not_shared`, and an orphan
+        # child row is exactly the thing no share should reopen.
+        drive.refuse_shared_row(_extract_doctype(doc), _extract_name(doc), ptype, user)
         return False
     if frappe.db.get_value(DOCTYPE, sheet_name, NODE_FIELD):
         drive.refuse_shared_row(_extract_doctype(doc), _extract_name(doc), ptype, user)
