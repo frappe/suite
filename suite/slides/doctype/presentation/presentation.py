@@ -9,44 +9,96 @@ import string
 import uuid
 
 import frappe
+from frappe import _
 from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
 from frappe.query_builder.functions import Count
 
+from suite import drive
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.overrides.file import content_has_permission, content_query_conditions
+from suite.slides import drive as slides_drive
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
+NODE_FIELD = slides_drive.NODE_FIELD
 
-class Presentation(Document):
+
+class Presentation(drive.DriveContent, Document):
+    """One deck, on either side of Drive adoption.
+
+    A row that carries a `node` is Drive-native. Drive owns its title, place,
+    grants, lifecycle, versions, comments, preview, and byte charge; the
+    `DriveContent` mixin supplies `node`, `node_title`, `drive_check`,
+    `drive_touch`, and `drive_take_version` (§10.2).
+
+    A row with no node is a legacy row Build has not linked yet (§14.7). It
+    keeps the behaviour it has always had: the backing `File`, the mirrored
+    title, the legacy thumbnail File, and the forced-public composite row.
+    Ticket 23 moves the legacy read path and ticket 29 activates the registry;
+    until both, the two shapes live side by side.
+
+    The split is explicit at every method, and it only ever runs one way: a
+    linked row never falls back to the `File`, because that would be a way
+    around `Drive Grant` (§1).
+    """
+
+    @property
+    def drive_native(self) -> bool:
+        """True when Drive owns this row, false for a legacy row with no node."""
+        return bool(self.get(self.drive_node_field))
+
     def before_save(self):
+        if self.drive_native:
+            # The slug is derived from the legacy title column, and Drive owns a
+            # linked deck's title with no mirror in either direction (§10.2).
+            return
         self.slug = slug(self.title)
 
     def validate(self):
-        if self.is_composite:
-            if not self.reference_presentations:
+        if not self.is_composite:
+            return
+        if not self.reference_presentations:
+            frappe.throw("Please add at least one reference presentation to create a composite presentation.")
+
+        if self.drive_native:
+            # §6.6: the save-time "every reference must be public" rule becomes
+            # the ordinary read check. You may reference what you can read.
+            slides_drive.refuse_unreadable_references(self)
+            return
+
+        for ref in self.reference_presentations:
+            ref_doc = frappe.get_cached_doc("Presentation", ref.presentation)
+            if not is_public_presentation(ref_doc.name):
                 frappe.throw(
-                    "Please add at least one reference presentation to create a composite presentation."
+                    f"Reference presentation '{ref_doc.title}' must be public to create a composite presentation."
                 )
 
-            for ref in self.reference_presentations:
-                ref_doc = frappe.get_cached_doc("Presentation", ref.presentation)
-                if not is_public_presentation(ref_doc.name):
-                    frappe.throw(
-                        f"Reference presentation '{ref_doc.title}' must be public to create a composite presentation."
-                    )
-
     def after_insert(self):
-        if self.is_template:
+        if self.drive_native or self.is_template:
             return
         self.create_drive_file()
 
     def on_update(self):
+        if self.drive_native:
+            if self.flags.in_insert:
+                # `create_document` stamps the new node itself. Touching here
+                # would only add the row to the mixin's per-request debounce
+                # set, and the first real save of the same request would then
+                # be swallowed.
+                return
+            # The body changed, so the node's `content_modified` moves with it
+            # (§8.11). It is the deck's only stamp and the daily media sweep's
+            # cursor. Debounced to one write per request by the mixin.
+            self.drive_touch()
+            return
+
         # composite decks are always public — a system invariant, enforced directly
-        # since File.share() would require the saver to hold a share grant
+        # since File.share() would require the saver to hold a share grant.
+        # Legacy only: §6.6 removes it, and `validate` above is what replaces it
+        # for a linked row.
         if self.is_composite and not is_public_presentation(self.name):
             file = DriveFile.get_for_doc("Presentation", self.name)
             if not file:
@@ -61,6 +113,8 @@ class Presentation(Document):
             perm.save(ignore_permissions=True)
 
     def create_drive_file(self, parent: str | None = None):
+        """Legacy only. A linked deck's identity is its node, written by Drive."""
+        refuse_drive_native(self.name, "Drive node")
         return DriveFile.create_for_doc(
             self,
             parent=parent or self.flags.get("drive_parent"),
@@ -69,11 +123,32 @@ class Presentation(Document):
         )
 
 
+def is_drive_native(name: str) -> bool:
+    """True when this deck carries a Drive node, whatever else it still carries."""
+    return bool(frappe.db.get_value("Presentation", name, NODE_FIELD))
+
+
+def refuse_drive_native(name: str, instead: str) -> None:
+    """Refuse a legacy path for a deck Drive owns. It never falls back."""
+    if is_drive_native(name):
+        frappe.throw(
+            _("Drive owns this presentation. Use {0} instead.").format(instead),
+            frappe.ValidationError,
+        )
+
+
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 
 
 @frappe.whitelist()
 def save_base64_image(base64_data: str, presentation_name: str, prefix: str) -> str:
+    """Legacy only. Drive owns a linked deck's media and does not convert uploads.
+
+    A picture reaches a Drive-native deck through the Drive upload route, which
+    ticket 21 exposes and ticket 34 adopts, with the node under the deck (§8.4,
+    §10.7). Refused here rather than answered from a `File`.
+    """
+    refuse_drive_native(presentation_name, "the Drive upload route")
     presentation = frappe.get_doc("Presentation", presentation_name)
     presentation.check_permission("write")
 
@@ -177,6 +252,19 @@ def create_thumbnail_file(presentation_name: str, file_name: str, content: bytes
 
 @frappe.whitelist()
 def save_presentation_thumbnail(presentation_name: str, base64_data: str) -> str:
+    """Store the browser's deck capture.
+
+    A linked deck pushes it through Drive, which checks EDIT at the node and
+    replaces the `Drive Node Preview` row without stamping the deck ([012 §8]).
+    Conversion to webp already happened in the browser [012 §9]. A legacy deck
+    keeps its thumbnail `File` and the `thumbnail` column until Build copies
+    them (§14.7).
+    """
+    if is_drive_native(presentation_name):
+        content, _ext = get_thumbnail_content(base64_data)
+        slides_drive.push_deck_preview(presentation_name, content)
+        return ""
+
     presentation = frappe.get_doc("Presentation", presentation_name)
     presentation.check_permission("write")
 
@@ -239,9 +327,20 @@ def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
 
 @frappe.whitelist()
 def update_slide_attachments(parent: str, slide: dict | str):
-    frappe.get_doc("Presentation", parent).check_permission("write")
-
     slide = json.loads(slide) if isinstance(slide, str) else slide
+
+    if is_drive_native(parent):
+        # Cross-deck paste. Drive adopts the pasted pictures under this deck,
+        # sharing the blob and reusing a node the deck already holds for the
+        # same picture (§8.9). It checks UPLOAD at the deck node, so no separate
+        # `check_permission` runs here: a linked deck is never authorized
+        # against a `File`.
+        elements = slides_drive.elements_of(slide)
+        remap_element_ids(elements)
+        slide["elements"] = elements
+        return slides_drive.adopt_slide_media(parent, slide)
+
+    frappe.get_doc("Presentation", parent).check_permission("write")
 
     elements_data = slide.get("elements") or "[]"
     elements = elements_data if isinstance(elements_data, list) else json.loads(elements_data)
@@ -406,10 +505,20 @@ def create_presentation(
 
     presentation = frappe.new_doc("Presentation")
     if duplicate_from:
+        # A linked source is copied by `drive.create_document(from_node=...)`,
+        # which runs the `duplicate` factory, copies the media per blob, and
+        # charges the destination root (§8.9). Ticket 21 exposes it.
+        refuse_drive_native(duplicate_from, "the Drive copy")
         if not frappe.has_permission("Presentation", "read", duplicate_from):
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
         source_thumbnail = set_duplicate_metadata(presentation, duplicate_from)
     else:
+        # New-from-template is the same Drive call for a linked template, with
+        # `is_template` left false; there is no template verb (§8.10). Refused
+        # before the flag check, because a linked deck carries `is_template` on
+        # its node and the legacy column would answer "does not exist".
+        if template:
+            refuse_drive_native(template, "the Drive copy")
         if not template or not frappe.db.get_value("Presentation", template, "is_template"):
             frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
         if not frappe.has_permission("Presentation", "read", template):
@@ -429,11 +538,15 @@ def create_presentation(
 
 @frappe.whitelist()
 def delete_presentation(name: str):
+    """Legacy only. Drive owns a linked deck's lifecycle: trash, restore, purge."""
+    refuse_drive_native(name, "the Drive trash")
     return frappe.delete_doc("Presentation", name)
 
 
 @frappe.whitelist()
 def update_title(name: str, title: str):
+    """Legacy only. A linked deck's title is its node's, renamed through Drive."""
+    refuse_drive_native(name, "the Drive rename")
     presentation = frappe.get_doc("Presentation", name)
     presentation.check_permission("write")
     presentation.title = title
@@ -475,6 +588,9 @@ def attach_poster(presentation, element):
 
 @frappe.whitelist()
 def get_updated_json(presentation: str, elements: list[dict]):
+    if is_drive_native(presentation):
+        return slides_drive.adopt_element_media(presentation, elements)
+
     frappe.get_doc("Presentation", presentation).check_permission("write")
 
     for element in elements:
@@ -487,11 +603,42 @@ def get_updated_json(presentation: str, elements: list[dict]):
     return elements
 
 
+# Adoption is staged (§10.3, README execution rules). `Presentation` carries a
+# `node` Link from ticket 18, but `drive_content_types` stays empty and these two
+# hooks stay here until ticket 29 has Build's links. So both guards read the node
+# column and answer on one of two sides:
+#
+#   node set    Drive-native. `Drive Grant` is the only authority (§1), and this
+#               module cannot read it: the entries that can live in
+#               `suite.drive.framework` and arrive with the registry. Refused
+#               here, never answered from the legacy `File`, because that would
+#               be a way around Drive.
+#   no node     A legacy row Build has not linked. Unchanged File-backed
+#               behaviour until §14.7 copies it and Cleanup removes it.
+#
+# A hook may only deny (`frappe/permissions.py:244-246`), so refusing a linked
+# row costs a legacy row nothing and an Administrator nothing:
+# `frappe.has_permission` answers before any controller hook for them.
+
+
 def get_permission_query_conditions(user):
-    return content_query_conditions("Presentation", user, extra="`tabPresentation`.is_template = 1")
+    """`permission_query_conditions` for `Presentation`, staged.
+
+    The legacy predicate is owner-or-directly-shared through the backing `File`,
+    OR every template. A Drive-native row has no `File` and its template flag
+    lives on its node, so the node column is what excludes it until ticket 29
+    replaces this whole predicate with the node-based one.
+    """
+    legacy = content_query_conditions("Presentation", user, extra="`tabPresentation`.is_template = 1")
+    if not legacy:
+        return legacy
+    return f"`tabPresentation`.`{NODE_FIELD}` IS NULL AND ({legacy})"
 
 
-def has_permission(doc, ptype="read", user=None):
+def has_permission(doc, ptype="read", user=None, debug=False):
+    """`has_permission` for `Presentation`, staged the same way."""
+    if doc.get(NODE_FIELD):
+        return False
     user = user or frappe.session.user
     if doc.is_template and user != "Administrator":
         return ptype == "read" or doc.owner == user
@@ -500,6 +647,8 @@ def has_permission(doc, ptype="read", user=None):
 
 @frappe.whitelist(allow_guest=True)
 def is_public_presentation(name: str):
+    """Legacy only. A linked deck has no "public" flag: it has grants (§6.5)."""
+    refuse_drive_native(name, "the Drive sharing state")
     file = DriveFile.get_for_doc("Presentation", name)
     if not file:
         return False
@@ -558,7 +707,35 @@ def get_templates():
 
 @frappe.whitelist(allow_guest=True)
 def get_composite_presentation(name: str):
-    if not (is_public_presentation(name) and is_composite_presentation(name)):
+    """Render one composite deck for this caller.
+
+    A linked deck answers through Drive (§6.6): one READ point check on the
+    composite, then one per referenced deck against the same principals. Being
+    named grants nothing and nothing is copied, so the composite stays a live
+    view. A reference the caller cannot read is marked in `references`, never
+    dropped silently, and the client decides whether to draw a placeholder.
+
+    A legacy deck keeps the published-references rule until Build links it.
+    Ticket 20 owns the grouped load that batches the checks and the codes.
+    """
+    if not is_composite_presentation(name):
+        frappe.throw("Presentation is not public", frappe.PermissionError)
+
+    if is_drive_native(name):
+        drive.check(slides_drive.node_of(name), drive.READ)
+        doc = frappe.get_doc("Presentation", name)
+        references = slides_drive.composite_references(name)
+        composite_slides = []
+        for reference in references:
+            if not reference["readable"]:
+                continue
+            composite_slides.extend(frappe.get_cached_doc("Presentation", reference["presentation"]).slides)
+        doc.slides = composite_slides
+        answer = doc.as_dict()
+        answer["references"] = references
+        return answer
+
+    if not is_public_presentation(name):
         frappe.throw("Presentation is not public", frappe.PermissionError)
 
     doc = frappe.get_doc("Presentation", name)
@@ -613,6 +790,13 @@ def create_new_webp_file_doc(presentation_name, file_url, image, extn):
 
 @frappe.whitelist()
 def get_webp_doc(presentation_name: str, file_doc: dict):
+    """Legacy only. Drive does not convert uploads (§10.7).
+
+    The conversion reads and rewrites a local disk path and then deletes the
+    source `File`. A linked deck holds media nodes and blobs instead, and the
+    browser converts before the node exists [012 §9].
+    """
+    refuse_drive_native(presentation_name, "a webp upload")
     file_url = file_doc.get("file_url", "")
     if file_url.endswith((".webp", ".svg")):
         return file_doc
@@ -638,6 +822,8 @@ def update_element_urls(presentation, element):
 
 @frappe.whitelist()
 def optimize_images(name: str):
+    """Legacy only, and a Desk button. See `get_webp_doc`."""
+    refuse_drive_native(name, "a webp upload")
     doc = frappe.get_doc("Presentation", name)
 
     for slide in doc.slides:
@@ -657,6 +843,18 @@ def get_editor_access(presentation_id: str) -> str:
     is_composite = frappe.db.get_value("Presentation", presentation_id, "is_composite")
     if is_composite:
         return "view"
+
+    if is_drive_native(presentation_id):
+        # One node, one role ladder. `Drive Grant` is the only authority (§1),
+        # and a refusal below Read is a 404 rather than a disclosure (§5.4).
+        node = slides_drive.node_of(presentation_id)
+        for role, answer in ((drive.EDIT, "edit"), (drive.READ, "view")):
+            try:
+                drive.check(node, role)
+            except frappe.ValidationError:
+                continue
+            return answer
+        return "none"
 
     if frappe.has_permission("Presentation", "write", presentation_id):
         return "edit"

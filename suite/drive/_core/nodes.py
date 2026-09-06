@@ -538,6 +538,15 @@ def create_file(
             via_link = _via_link
         _validate_parent(parent_row, for_update=True)
         blob_row = _validated_blob(blob, size, mime)
+        if parent_row.kind == "document":
+            # §8.9: inside one document, one media node per blob. Uploading the
+            # same picture twice reuses the node, so a logo on twenty slides is
+            # one node and one charge. The blob the caller just stored is left
+            # for the framework GC; nothing here points at it.
+            reused = content.reuse_media(parent_row.name, blob_row.name, for_update=True)
+            if reused is not None:
+                frappe.db.release_savepoint(savepoint)
+                return reused
         _refuse_sibling_collision(parent_row.name, title)
         root = root_for_node(parent_row).name
         path = "" if parent_row.kind == "root" else f"{parent_row.path or '/'}{parent_row.name}/"

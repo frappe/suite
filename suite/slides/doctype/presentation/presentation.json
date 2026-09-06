@@ -4,6 +4,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "node",
   "title",
   "slug",
   "is_composite",
@@ -18,17 +19,26 @@
  ],
  "fields": [
   {
+   "description": "The Drive node that owns this deck's title, place, grants, lifecycle, and previews.",
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
    "fieldname": "slides",
    "fieldtype": "Table",
    "label": "Slides",
    "options": "Slide"
   },
   {
+   "description": "Legacy title. Drive owns a linked deck's title on its node; §14.10 drops this column at Cleanup.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Title",
-   "reqd": 1
+   "label": "Title"
   },
   {
    "fieldname": "slug",
@@ -86,7 +96,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-06 12:00:00.000000",
+ "modified": "2026-09-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Slides",
  "name": "Presentation",

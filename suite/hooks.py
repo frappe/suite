@@ -127,15 +127,23 @@ ignore_file_permissions = True
 # move to `suite.drive.framework.doc_has_permission` and `.doc_query_conditions`
 # in the same step, never before it.
 #
-# Writer declares `suite.writer.drive.SPEC` (ticket 17) and is not listed here
-# yet; Slides and Sheets declare theirs at tickets 18 and 19. While the list is
-# empty Drive governs no doctype: `refuse_governed_share` is a no-op, and
-# `validate_content_registry` inspects no `DocShare`, so a site with assigned
-# Writer documents still migrates.
+# Writer declares `suite.writer.drive.SPEC` (ticket 17) and Slides declares
+# `suite.slides.drive.SPEC` (ticket 18); neither is listed here yet, and Sheets
+# declares its own at ticket 19. While the list is empty Drive governs no
+# doctype: `refuse_governed_share` is a no-op, and `validate_content_registry`
+# inspects no `DocShare`, so a site with assigned Writer documents or shared
+# Presentations still migrates.
 #
 # On activation each doctype needs an open baseline role DocPerm, because a
 # Frappe permission hook can only deny (`frappe/permissions.py:244-246`);
-# `Writer Document` has the wide-open `All` row §10.4 requires.
+# `Writer Document` and `Presentation` both carry the open `All` row §10.4
+# requires, and a `Guest` read row for link grants. Both are preserved as they
+# are; widening or narrowing one is an activation decision, not this one's.
+#
+# `Presentation` cannot be activated until its legacy `title` column goes:
+# §10.2 forbids a title field on a governed doctype and §14.10 drops the column
+# at Cleanup, which lands after activation. Recorded as a ticket 29 blocker in
+# `wayfinder/drive-layer-spec/implementation/issues/18-slides-adoption.md`.
 drive_content_types = []
 
 # ============================================================================
@@ -152,6 +160,7 @@ permission_query_conditions = {
     "Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
     "Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
     # slides
+    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
     "Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
     # writer
     "Writer Template": "suite.writer.overrides.filter_templates",
@@ -182,6 +191,8 @@ has_permission = {
     "Drive Settings": "suite.drive.api.permissions.drive_settings_has_permission",
     "Drive User Invitation": "suite.drive.api.permissions.drive_invitation_has_permission",
     # slides
+    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29,
+    # with `suite.drive.framework.satellite_*` added for the `Slide` satellite.
     "Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
     # writer
     # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29.
@@ -264,6 +275,10 @@ doc_events = {
         "on_trash": "suite.drive.utils.clear_user_group_cache",
     },
     "Presentation": {
+        # Legacy title and trash mirroring onto the backing Drive `File`. A linked
+        # deck has no `File`, so `sync_content_file` returns before it reads
+        # anything (`overrides/file.py:561-563`). §10.4 deletes these two
+        # entries at activation.
         "on_update": ["suite.drive.overrides.file.sync_content_file"],
         "on_trash": ["suite.drive.overrides.file.sync_content_file"],
     },
