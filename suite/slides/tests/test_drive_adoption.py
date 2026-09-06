@@ -469,7 +469,6 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         # test queues, and after the rows those cleanups missed are swept.
         self._decks_before = set(frappe.get_all(DOCTYPE, pluck="name"))
         self._files_before = self._deck_files_now()
-        self._shares_before = self._shares_now()
         self.addCleanup(self._remove_fixture_rows)
         clear_registry_cache()
         self.addCleanup(clear_registry_cache)
@@ -488,22 +487,22 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         the type. A surviving backing `File` is worse than untidy — it names a
         deck that no longer exists, and `File.after_delete` treats that name as
         a document to delete (`suite/drive/overrides/file.py:145-152`).
+
+        There is no `DocShare` sweep because there is nothing left to sweep:
+        `delete_doc` clears the share rows that name the deck
+        (`frappe/model/delete_doc.py:505`). The regression test asserts that
+        outcome rather than trusting it.
         """
         frappe.set_user("Administrator")
-        for share in self._shares_now() - self._shares_before:
-            frappe.delete_doc("DocShare", share, force=1, ignore_permissions=True, ignore_missing=True)
         for deck in set(frappe.get_all(DOCTYPE, pluck="name")) - self._decks_before:
-            # Takes the `Slide` child rows and every attached `File` with it.
+            # Takes the `Slide` child rows, every attached `File`, and every
+            # `DocShare` written against the deck.
             frappe.delete_doc(DOCTYPE, deck, force=1, ignore_permissions=True, ignore_missing=True)
         # After the decks, not before, so the `after_delete` cascade back to
         # `content_docname` finds nothing left to do.
         for file in self._deck_files_now() - self._files_before:
             frappe.delete_doc("File", file, force=1, ignore_permissions=True, ignore_missing=True)
         frappe.db.commit()
-
-    @staticmethod
-    def _shares_now() -> set[str]:
-        return set(frappe.get_all("DocShare", filters={"share_doctype": DOCTYPE}, pluck="name"))
 
     @staticmethod
     def _deck_files_now() -> set[str]:
@@ -538,6 +537,12 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         than method name order. Eight runs of this module before the fix left
         eight `Presentation` rows, eight `Slide` rows, and twenty-four `File`
         rows behind.
+
+        The template deck is here so the deck sweep carries its own weight.
+        `after_insert` skips `create_drive_file` for a template
+        (`presentation.py:79-82`), so no backing `File` names it and the file
+        sweep's cascade back to `content_docname` cannot reach it. Without the
+        template every assertion below still passes with the deck sweep deleted.
         """
         from suite.drive.overrides.file import File as DriveFile
 
@@ -548,8 +553,17 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         thumbnail = frappe.db.get_value(
             "File", {"attached_to_doctype": DOCTYPE, "attached_to_name": name}, "name"
         )
+        template = frappe.get_doc(
+            {
+                "doctype": DOCTYPE,
+                "title": f"Committed template {frappe.generate_hash(6)}",
+                "is_template": 1,
+                "slides": [{"elements": "[]"}],
+            }
+        ).insert()
         self.assertTrue(backing, "the deck is backed by a File")
         self.assertTrue(thumbnail, "and the capture wrote a second one")
+        self.assertIsNone(DriveFile.get_for_doc(DOCTYPE, template.name), "the template is backed by none")
         frappe.db.commit()
 
         self._remove_fixture_rows()
@@ -558,6 +572,7 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         frappe.db.rollback()
 
         self.assertFalse(frappe.db.exists(DOCTYPE, name), "the deck is gone for good")
+        self.assertFalse(frappe.db.exists(DOCTYPE, template.name), "and so is the template")
         self.assertFalse(frappe.db.exists("DocShare", share.name), "and the share written against it")
         self.assertFalse(frappe.db.exists("File", backing), "and the File that backs it")
         self.assertFalse(frappe.db.exists("File", thumbnail), "and the File the capture wrote")
