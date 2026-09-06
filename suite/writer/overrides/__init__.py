@@ -1,5 +1,6 @@
 import frappe
 
+from suite import drive
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.overrides.file import File, content_has_permission, content_query_conditions
 
@@ -20,6 +21,14 @@ NODE_FIELD = "node"
 #               would be a way around Drive.
 #   no node     A legacy row Build has not linked. Unchanged File-backed
 #               behaviour until §14.6/§14.7 copy it and Cleanup removes it.
+#
+# Refusing a linked row is not the same as answering `False` for it. Frappe
+# widens both hooks with `DocShare` rows the app never sees: the row check
+# falls through to `false_if_not_shared` (`frappe/permissions.py:214-216`) and
+# the list ORs the shared names around the predicate
+# (`frappe/database/query.py:1739-1742`). Neither can be answered from inside
+# the hook, so both guards call Drive to refuse, exactly as
+# `suite.drive.framework` refuses after activation.
 #
 # `Writer Template` and `Writer Version` rows are legacy only by construction:
 # nothing writes a version for a linked document, and templates are Drive nodes
@@ -49,9 +58,16 @@ def document_has_permission(doc, ptype="read", user=None, debug=False):
     reads grants (`suite.drive.framework.doc_has_permission`) is installed with
     the registry at ticket 29. A hook may only deny, so this costs a legacy row
     nothing and an Administrator nothing — `frappe.has_permission` answers
-    before any controller hook for them (`frappe/permissions.py:108-110`).
+    before any controller hook for them (`frappe/permissions.py:109-111`).
+
+    `False` alone would not deny it. Frappe reads `False` as "no role
+    permission" and then asks `false_if_not_shared`, which one `DocShare`
+    answers Yes, `everyone` rows included. That is a way around `Drive Grant`
+    (§1) for the whole window between Build and ticket 29, so Drive refuses the
+    share first. A legacy row never reaches the call.
     """
     if doc.get(NODE_FIELD):
+        drive.refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
         return False
     return content_has_permission(doc, ptype, user)
 
@@ -63,6 +79,23 @@ def document_query_conditions(user=None, doctype=None):
     `File`, and a Drive-native row has neither, so `owner = <user>` alone would
     list one. The node column is what excludes it, until ticket 29 replaces
     this whole predicate with the node-based one.
+
+    No predicate can exclude a shared linked row: the shared names are ORed
+    around whatever this returns. Drive refuses the list instead, scoped to a
+    row that carries a node. Before Build no row carries one, so a site with
+    Desk assignments lists exactly what it always listed.
+    """
+    drive.refuse_shared_linked_rows(DOCTYPE, NODE_FIELD, user)
+    return _document_predicate(user)
+
+
+def _document_predicate(user=None):
+    """The staged `Writer Document` predicate on its own, with no share refusal.
+
+    `version_query_conditions` scopes versions with it. A `DocShare` on a
+    `Writer Document` does not widen a `Writer Version` list: Frappe ORs the
+    shared names of the doctype being listed. Refusing there would take a
+    legacy version list down for a share that could never have opened it.
     """
     legacy = content_query_conditions(DOCTYPE, user)
     if not legacy:
@@ -74,9 +107,19 @@ def version_has_permission(doc, ptype="read", user=None):
     """A Writer Version is readable/writable iff the backing Drive File of its
     parent document is.
 
-    A version of a linked document has no backing File and is refused. Nothing
-    writes one: `WriterDocument.new_version` refuses a linked row, and §14.6
-    migrates these rows into `Drive Node Version`.
+    Legacy only by construction today. Nothing writes a version for a linked
+    document: `WriterDocument.new_version` refuses a linked row, and the only
+    two writers of the node column insert a new document. §14.6 migrates these
+    rows into `Drive Node Version`.
+
+    Build ends that construction, and neither staged guard can answer for it.
+    Build links documents that already carry versions and keeps the backing
+    `File` until Cleanup, so this reads a Drive-owned document's history from
+    the legacy `File`, and a `DocShare` on the version row reopens it through
+    both compositions. `Writer Version` carries no node column for
+    `drive.refuse_shared_linked_rows` to scope on and no `Satellite`
+    declaration for activation to govern, so closing it is ticket 28's rewrite
+    or a ticket 29 declaration. Recorded in the ticket 17 evidence.
     """
     user = user or frappe.session.user
     if user == "Administrator":
@@ -94,13 +137,13 @@ def version_query_conditions(user):
     """`permission_query_conditions` for Writer Version — scope rows to versions
     whose parent document the caller can read (owned or directly shared).
 
-    It reuses `document_query_conditions`, so the list and the row check agree
-    on a linked document: both refuse it. Left apart, the row check denied
-    every non-admin while the list still returned the owner's rows.
+    It reuses the `Writer Document` predicate, so the list and the row check
+    agree on a linked document: both refuse it. Left apart, the row check
+    denied every non-admin while the list still returned the owner's rows.
     """
     if user == "Administrator":
         return ""
-    doc_predicate = document_query_conditions(user)
+    doc_predicate = _document_predicate(user)
     if not doc_predicate:
         return ""
     return (
