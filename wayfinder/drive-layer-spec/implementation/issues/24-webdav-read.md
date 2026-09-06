@@ -4,9 +4,23 @@
 
 **Blocked by:** [23 — Keep legacy callers working through the new Drive workflows](23-legacy-compatibility.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 **Owner:** Suite Drive WebDAV
+
+**Starting revision:** Suite `b5ad65db54d93ee7ba3b95d1f9e3593f312a2c13` on
+`implement/drive-24-webdav-read`; Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` on `forge/storage-v2` (read only,
+unchanged).
+
+**Claimed files:** `suite/drive/webdav/pathmap.py`,
+`suite/drive/webdav/propfind.py`, `suite/drive/webdav/properties.py`,
+`suite/drive/webdav/deadprops.py`, `suite/drive/webdav/locks.py`,
+`suite/drive/webdav/get.py`, `suite/drive/webdav/context.py`,
+`suite/drive/webdav/perms.py` (deleted), `suite/drive/webdav/conditional.py`,
+`suite/drive/doctype/drive_dav_lock/`, `suite/drive/doctype/drive_dav_property/`,
+`suite/drive/webdav/tests/`, `suite/drive/tests/test_webdav.py`, and this
+ticket.
 
 **Execution gate:** None beyond completed blockers.
 
