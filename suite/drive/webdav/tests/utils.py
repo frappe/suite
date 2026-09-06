@@ -38,7 +38,6 @@ __all__ = [
     "ensure_user_with_password",
     "file_node",
     "folder_node",
-    "legacy_file_fixture",
     "make_ctx",
     "node_principals",
     "personal_dav_root",
@@ -241,26 +240,3 @@ def drop_nodes(node_ids) -> None:
     node_ids = [node for node in node_ids if node]
     drop_record_rows(node_ids)
     drop_node_rows(node_ids)
-
-
-def legacy_file_fixture(parent: str, name: str, data: bytes, mime_type: str = "text/plain"):
-    """A legacy `File` row whose bytes really exist on local disk.
-
-    Only the write-verb suites parked for ticket 25 still use this: their
-    handlers write `File` rows and this is the shape they read back. It is
-    deleted together with them and with `perms.py` when ticket 25 relinks PUT,
-    MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK, and PROPPATCH onto `Drive Node`.
-    """
-    from suite.drive.utils import create_drive_file
-    from suite.drive.utils.files import FileManager
-
-    manager = FileManager()
-
-    def entity_path(file):
-        relative = manager.get_disk_path(file)
-        full = manager.site_folder / relative
-        full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_bytes(data)
-        return "/" + str(relative)
-
-    return create_drive_file(name, parent, "Text", entity_path, mime_type, len(data))
