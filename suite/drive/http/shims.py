@@ -40,6 +40,7 @@ and answers `None` in the same place. It never writes a deny to express one
 (§8.7): `_restore` refuses with `DriveConflict` and the old client is told.
 """
 
+import functools
 import json
 import re
 from pathlib import Path
@@ -226,6 +227,33 @@ def _principals():
     return framework.principals_for_request()
 
 
+def _legacy(shim):
+    """Give a legacy caller the message the old body sent it.
+
+    `report_error` names the exception class, and copies a message into the
+    body only when `msgprint` stamped one on - which `frappe.throw` does and a
+    bare `raise` does not. The workflows raise, which is right for a Python
+    caller, so a legacy client read a status code and no text: `FileUploader`
+    reads `_server_messages` alone and printed "Please contact support." for a
+    full disk, and `ErrorPage` renders `error.messages` before anything else.
+
+    Throwing the same class again fills the message in and keeps the status
+    code §11.6 gives it. `routes._route` does this at the other boundary; the
+    class is preserved here rather than remapped, because a legacy client
+    reads `exc_type` too.
+    """
+
+    @functools.wraps(shim)
+    def answered(*args, **kwargs):
+        try:
+            return shim(*args, **kwargs)
+        except DriveError as refusal:
+            frappe.throw(str(refusal), type(refusal))
+
+    answered.legacy_boundary = True
+    return answered
+
+
 def _bits(role: int) -> dict:
     """Answer the five legacy bits from one role on the ladder.
 
@@ -369,6 +397,7 @@ def _readable_row(node: str):
 # --------------------------------------------------------------------------
 
 
+@_legacy
 def get_user_access(entity) -> dict:
     """`get_user_access` -> the `access` expansion of `GET /nodes/<id>`.
 
@@ -390,6 +419,7 @@ def get_user_access(entity) -> dict:
     return {**_bits(role), "type": _access_type(row, role, principals)}
 
 
+@_legacy
 def get_general_access(entity) -> dict:
     """`get_general_access` -> what the site-wide principals reach on a node.
 
@@ -413,6 +443,7 @@ def get_general_access(entity) -> dict:
     return {**NO_ACCESS, "type": "restricted"}
 
 
+@_legacy
 def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     """`get_entity_with_permissions` -> `GET /nodes/<id>?expand=access,breadcrumbs`.
 
@@ -461,6 +492,7 @@ def _share_marker(row) -> int:
     return 0
 
 
+@_legacy
 def get_shared_with_list(entity: str) -> list[dict]:
     """`get_shared_with_list` -> `GET /nodes/<id>/grants`.
 
@@ -521,6 +553,7 @@ def _walk(page_call) -> list:
             return rows[:MAX_LEGACY_ROWS]
 
 
+@_legacy
 def get_entity_activity_log(entity_name: str) -> list[dict]:
     """`get_entity_activity_log` -> `GET /nodes/<id>/activity`.
 
@@ -610,6 +643,7 @@ def _notification_message(action: str, node: dict | None, sender_name: str | Non
     return _('{0} shared a {1} with you: "{2}"').format(sender_name or _("Someone"), kind, title)
 
 
+@_legacy
 def get_notifications(only_unread: bool = False) -> list[dict]:
     """`get_notifications` -> `GET /notifications`.
 
@@ -651,6 +685,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
     return answer
 
 
+@_legacy
 def get_unread_count() -> int:
     """`get_unread_count` -> the count behind `GET /notifications?unread=1`.
 
@@ -662,6 +697,7 @@ def get_unread_count() -> int:
     return activity_core.unread_count(_principals())
 
 
+@_legacy
 def mark_as_read(name: str | None = None, all: bool = False) -> None:
     """`mark_as_read` -> `POST /notifications/read`.
 
@@ -692,6 +728,7 @@ def _own_root(principals):
     return roots.personal_root_for(principals.user)
 
 
+@_legacy
 def storage_bar_data() -> dict:
     """`storage_bar_data` -> `GET /roots/<id>/usage` on the caller's own root.
 
@@ -715,6 +752,7 @@ def storage_bar_data() -> dict:
     }
 
 
+@_legacy
 def storage_breakdown() -> dict:
     """`storage_breakdown` -> `GET /roots/<id>/usage`, plus the two aggregates.
 
@@ -767,6 +805,7 @@ def storage_breakdown() -> dict:
 # --------------------------------------------------------------------------
 
 
+@_legacy
 def embed_file_content(embed_name: str, parent_entity_name: str):
     """`embed.get_file_content` -> `GET /nodes/<id>/media`, then a redirect.
 
@@ -793,6 +832,7 @@ def embed_file_content(embed_name: str, parent_entity_name: str):
 # --------------------------------------------------------------------------
 
 
+@_legacy
 def create_auth_token(entity_name: str | None = None) -> None:
     """Retired. §8.4 replaced the download token with a signed URL.
 
@@ -806,6 +846,7 @@ def create_auth_token(entity_name: str | None = None) -> None:
     )
 
 
+@_legacy
 def get_new_title(title: str | None = None, parent_name: str | None = None, folder: bool = False) -> None:
     """Retired. §8.6 refuses a sibling collision instead of renaming around it.
 
@@ -820,6 +861,7 @@ def get_new_title(title: str | None = None, parent_name: str | None = None, fold
     )
 
 
+@_legacy
 def sync_from_disk() -> None:
     """Retired. §14 makes Build the disk import.
 
@@ -898,6 +940,7 @@ def _upload_key(principals, session: str) -> str:
     return f"{LEGACY_UPLOAD_PREFIX}:{principals.user}:{session}"
 
 
+@_legacy
 def upload_file(
     total_file_size: int = 0,
     file_modified: int | None = None,
@@ -944,6 +987,16 @@ def upload_file(
     if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", session):
         frappe.throw(_("Invalid upload session."), frappe.ValidationError)
 
+    # The old body never read `total_file_size` to size the file - it wrote to
+    # a temp file and read the bytes back off disk - and `FileUploader.vue`
+    # only sends the field on a chunked upload, so every file below Dropzone's
+    # twenty megabyte chunk size arrives declaring nothing. A session that
+    # declares zero refuses its own first chunk with "Upload exceeds the
+    # declared file size" and deletes itself. The body in hand is the whole
+    # file whenever there is one chunk, so it is what the session declares.
+    body = upload.stream.read()
+    declared = int(total_file_size or 0) or offset + len(body)
+
     key = _upload_key(principals, session)
     upload_id = frappe.cache().get_value(key)
     if not upload_id:
@@ -951,13 +1004,24 @@ def upload_file(
             principals,
             parent,
             upload.filename,
-            int(total_file_size or 0),
+            declared,
             mime=upload.mimetype,
         )
+        if opened["mode"] == "direct":
+            # The driver handed back a presigned target for the client to PUT
+            # to. This caller has already sent its bytes here instead, and
+            # §11.7 has no way to hand them on: a presigned POST pins the
+            # object to one request and the whole declared length, which a
+            # chunked legacy upload does not have. Named here, because the
+            # framework's own refusal is "expects a direct upload, not chunks".
+            frappe.throw(
+                _("This site stores Drive files directly. Upload from the Drive app instead."),
+                frappe.ValidationError,
+            )
         upload_id = opened["upload_id"]
         frappe.cache().set_value(key, upload_id, expires_in_sec=LEGACY_UPLOAD_TTL)
 
-    upload_core.upload_chunk(principals, upload_id, offset, upload.stream.read())
+    upload_core.upload_chunk(principals, upload_id, offset, body)
     if index != total_chunks - 1:
         return None
 
@@ -981,6 +1045,7 @@ def upload_file(
     return _legacy_row(row)
 
 
+@_legacy
 def get_thumbnail(entity_name: str):
     """`get_thumbnail` -> `GET /nodes/<id>?expand=preview`.
 
@@ -999,6 +1064,7 @@ def get_thumbnail(entity_name: str):
     return None
 
 
+@_legacy
 def create_folder(file_name: str, parent: str | None = None):
     """`create_folder` -> `POST /nodes` with `kind=folder`."""
     principals = _principals()
@@ -1006,6 +1072,7 @@ def create_folder(file_name: str, parent: str | None = None):
     return _legacy_row(node_core.stored(node))
 
 
+@_legacy
 def create_link(file_name: str, link: str, parent: str | None = None):
     """`create_link` -> `POST /nodes` with `kind=link`."""
     principals = _principals()
@@ -1013,6 +1080,7 @@ def create_link(file_name: str, link: str, parent: str | None = None):
     return _legacy_row(node_core.stored(node))
 
 
+@_legacy
 def get_file_content(entity_name: str, trigger_download: bool = False, token: str | None = None):
     """`get_file_content` -> `GET /nodes/<id>/content`.
 
@@ -1041,6 +1109,7 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
     return None
 
 
+@_legacy
 def stream_file_content(entity_name: str):
     """`stream_file_content` -> `GET /nodes/<id>/content`.
 
@@ -1051,6 +1120,7 @@ def stream_file_content(entity_name: str):
     return get_file_content(entity_name)
 
 
+@_legacy
 def set_favourite(entities: list | None = None, clear_all: bool = False):
     """`set_favourite` -> `PUT`/`DELETE /nodes/<id>/favourite`.
 
@@ -1081,6 +1151,7 @@ def set_favourite(entities: list | None = None, clear_all: bool = False):
     return None
 
 
+@_legacy
 def remove_or_restore(entity_names):
     """`remove_or_restore` -> `PATCH /nodes/<id>` `{state}`.
 
@@ -1101,6 +1172,7 @@ def remove_or_restore(entity_names):
     return None
 
 
+@_legacy
 def delete_entities(entity_names: list[str] | None = None, clear_all: bool = False):
     """`delete_entities` -> `DELETE /nodes/<id>`.
 
@@ -1126,6 +1198,7 @@ def delete_entities(entity_names: list[str] | None = None, clear_all: bool = Fal
     return None
 
 
+@_legacy
 def rename(entity_name: str, new_title: str):
     """`rename` -> `PATCH /nodes/<id>` `{title}`."""
     principals = _principals()
@@ -1133,6 +1206,7 @@ def rename(entity_name: str, new_title: str):
     return _legacy_row(node_core.stored(entity_name))
 
 
+@_legacy
 def move(entity_names: list[str], new_parent: str | None = None):
     """`move` -> `PATCH /nodes/<id>` `{parent}`.
 
@@ -1187,6 +1261,7 @@ def _legacy_role(kwargs) -> int:
     return role
 
 
+@_legacy
 def update_access(entity_name: str, method: str, **kwargs):
     """`update_access` -> `PUT`/`DELETE /nodes/<id>/grants/<principal>`.
 
@@ -1256,6 +1331,7 @@ def _flag(value) -> bool:
     return bool(value)
 
 
+@_legacy
 def remove_recents(entity_names: list[str] | None = None, clear_all: bool = False):
     """`remove_recents` -> `DELETE /views/recents`.
 
@@ -1272,6 +1348,7 @@ def remove_recents(entity_names: list[str] | None = None, clear_all: bool = Fals
     return activity_core.clear_recents(principals, entity_names or [])
 
 
+@_legacy
 def does_entity_exist(name: str | None = None, folder: str | None = None):
     """`does_entity_exist` -> the sibling check inside `POST /nodes`.
 
@@ -1290,6 +1367,7 @@ SEARCH_PAGE_LENGTH = 50
 MAX_SEARCH_WINDOWS = 5
 
 
+@_legacy
 def search(query: str):
     """`search` -> `GET /views/search`, walked until the page is full.
 
@@ -1338,6 +1416,7 @@ def _legacy_search_row(row) -> dict:
     }
 
 
+@_legacy
 def translate_old_name(old_name: str):
     """`translate_old_name` -> a readability check on the id itself.
 
@@ -1349,6 +1428,7 @@ def translate_old_name(old_name: str):
     return old_name if _readable_row(old_name) else None
 
 
+@_legacy
 def get_entity_type(entity_name: str):
     """`get_entity_type` -> `GET /nodes/<id>`."""
     row = node_core.get(_principals(), entity_name)
@@ -1359,6 +1439,7 @@ def get_entity_type(entity_name: str):
     }
 
 
+@_legacy
 def get_root_folder():
     """`get_root_folder` -> the two root nodes a client bootstraps from.
 
@@ -1373,6 +1454,7 @@ def get_root_folder():
     }
 
 
+@_legacy
 def redirect_to_original(file_id: str):
     """`redirect_to_original` -> `GET /nodes/<id>`, then the original document.
 
@@ -1389,6 +1471,7 @@ def redirect_to_original(file_id: str):
     return None
 
 
+@_legacy
 def track_visit(
     entity_name: str | None = None,
     doctype: str | None = None,
@@ -1415,6 +1498,7 @@ def track_visit(
     return None
 
 
+@_legacy
 def resolve_legacy_route(old_id: str):
     """`resolve_legacy_route` -> `Drive Legacy Route`, then the node it names.
 
@@ -1781,6 +1865,7 @@ def _filtered_listing(principals, page_call, *, file_kinds, search, offset, wind
     }
 
 
+@_legacy
 def files(
     entity_name: str | None = None,
     order_by: str = "modified",
@@ -1850,6 +1935,7 @@ def _view(name, principals, *, file_kinds, search, start, limit, paginated, orde
     )
 
 
+@_legacy
 def shared(
     shared_type: str = "with",
     order_by: str = "modified",
@@ -1885,6 +1971,7 @@ def shared(
     )
 
 
+@_legacy
 def favourites(
     order_by: str = "modified",
     ascending: bool = True,
@@ -1912,6 +1999,7 @@ def favourites(
     )
 
 
+@_legacy
 def recents(
     order_by: str = "modified",
     ascending: bool = True,
@@ -1943,6 +2031,7 @@ def recents(
     )
 
 
+@_legacy
 def trash(
     order_by: str = "modified",
     ascending: bool = True,
