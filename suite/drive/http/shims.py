@@ -1382,6 +1382,26 @@ def _legacy_file_row(name: str) -> dict:
     return hide_storage_key(frappe.get_all("File", filters={"name": name}, fields=FILE_FIELDS, limit=1)[0])
 
 
+def _legacy_ensure_path(fullpath: str, parent: str) -> str:
+    """Walk a directory upload down the `File` store, for a parent no node holds.
+
+    `ensure_path` (`api/files.py:95`) is the old body, still here, and it reads
+    and writes the `File` store directly. It creates each missing folder
+    through `create_folder`, which answers a legacy parent again, so the walk
+    works whole.
+
+    The gate is the old body's, on the parent the caller named, before the
+    walk. That is the order the old body had, and `create_folder` gates each
+    folder it makes after it.
+    """
+    from suite.drive.api.files import ensure_path
+    from suite.drive.api.permissions import user_has_permission
+
+    if not user_has_permission(parent, "upload"):
+        frappe.throw(_("Ask the folder owner for upload access."), frappe.PermissionError)
+    return ensure_path(fullpath, parent)
+
+
 def _legacy_upload(principals, *, parent, total_file_size, file_modified, embed):
     """Write one chunked upload to the `File` store, for a parent no node holds.
 
@@ -1521,15 +1541,7 @@ def upload_file(
     parent = parent or _home(principals)
     if _unadopted_row(parent):
         if fullpath:
-            # A directory upload names folders to create, and creating one
-            # here would mean a second legacy folder writer beside
-            # `create_folder`, which is a forwarder and refuses this parent
-            # too. Named rather than answered with the workflow's "node was
-            # not found", which tells the user nothing they can act on.
-            frappe.throw(
-                _("Drive cannot upload a folder into this location yet. Upload the files instead."),
-                frappe.ValidationError,
-            )
+            parent = _legacy_ensure_path(fullpath, parent)
         return _legacy_upload(
             principals,
             parent=parent,
