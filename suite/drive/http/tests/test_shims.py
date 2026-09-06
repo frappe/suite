@@ -42,7 +42,7 @@ from suite.drive._core.errors import (
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 from suite.drive.http import shims
-from suite.drive.http.tests import ensure_local_context
+from suite.drive.http.tests import ensure_local_context, local_attribute
 
 APP = pathlib.Path(__file__).resolve().parents[3]
 
@@ -1197,10 +1197,8 @@ class TestUnadoptedUploadTarget(ShimCase):
         upload.filename = "Report.pdf"
         upload.mimetype = "application/pdf"
         upload.stream.read.return_value = b"x" * 12
-        self.enterContext(
-            patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
-        )
-        self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
+        self.enterContext(local_attribute("request", MagicMock(files={"file": upload})))
+        self.enterContext(local_attribute("form_dict", frappe._dict()))
         self.stub_cache()
         self.stub_unadopted_row()
         with (
@@ -2452,12 +2450,8 @@ class TestFileForwarders(ShimCase):
         upload.filename = "Report.pdf"
         upload.mimetype = "application/pdf"
         upload.stream.read.return_value = b"x"
-        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
-        request.start()
-        self.addCleanup(request.stop)
-        form = patch.object(frappe.local, "form_dict", frappe._dict(), create=True)
-        form.start()
-        self.addCleanup(form.stop)
+        self.enterContext(local_attribute("request", MagicMock(files={"file": upload})))
+        self.enterContext(local_attribute("form_dict", frappe._dict()))
         self.stub_cache()
         self.stub_unadopted_row()
 
@@ -2486,17 +2480,13 @@ class TestFileForwarders(ShimCase):
         upload = MagicMock()
         upload.filename = "Report.pdf"
         upload.stream.read.return_value = b"x"
-        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
-        request.start()
-        self.addCleanup(request.stop)
-        form = patch.object(
-            frappe.local,
-            "form_dict",
-            frappe._dict(chunk_index="1", total_chunk_count="4", chunk_byte_offset="10"),
-            create=True,
+        self.enterContext(local_attribute("request", MagicMock(files={"file": upload})))
+        self.enterContext(
+            local_attribute(
+                "form_dict",
+                frappe._dict(chunk_index="1", total_chunk_count="4", chunk_byte_offset="10"),
+            )
         )
-        form.start()
-        self.addCleanup(form.stop)
         self.stub_cache()
         self.stub_unadopted_row()
 
@@ -2513,12 +2503,8 @@ class TestFileForwarders(ShimCase):
         upload.filename = "Report.pdf"
         upload.mimetype = "application/pdf"
         upload.stream.read.return_value = body
-        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
-        request.start()
-        self.addCleanup(request.stop)
-        form = patch.object(frappe.local, "form_dict", frappe._dict(**form), create=True)
-        form.start()
-        self.addCleanup(form.stop)
+        self.enterContext(local_attribute("request", MagicMock(files={"file": upload})))
+        self.enterContext(local_attribute("form_dict", frappe._dict(**form)))
         self.stub_cache()
         self.stub_unadopted_row()
         return upload
@@ -3630,7 +3616,7 @@ class TestPermanentSurface(ShimCase):
                 self.subTest(error=error.__name__),
                 patch.object(s3, "get_file_content", side_effect=error("no")),
                 patch.object(s3, "get_s3_url", return_value="u"),
-                patch.object(frappe.local, "db", MagicMock(get_value=lambda *a, **k: "n1"), create=True),
+                local_attribute("db", MagicMock(get_value=lambda *a, **k: "n1")),
                 self.assertRaises(frappe.DoesNotExistError),
             ):
                 s3.fetch("some/key")
@@ -3798,11 +3784,7 @@ class TestDirectoryUploadGate(ShimCase):
 
     def database(self):
         """`frappe.db` is a bound proxy, and this suite runs with no site."""
-        db = MagicMock()
-        patcher = patch.object(frappe.local, "db", db, create=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return db
+        return self.enterContext(local_attribute("db", MagicMock()))
 
     def test_a_caller_who_cannot_upload_reads_no_id(self):
         nodes = self.stub("node_core")
@@ -3829,3 +3811,59 @@ class TestDirectoryUploadGate(ShimCase):
             leaf = shims._ensure_path(SOMEONE, "Photos/2026/beach.jpg", "f1")
         self.assertEqual(leaf, "n-new")
         nodes.create_folder.assert_called_once_with(SOMEONE, "n-photos", "2026")
+
+
+class TestLocalStoreIsPutBack(UnitTestCase):
+    """The store these suites borrow is the one `bench run-tests` cleans up with.
+
+    `frappe.local` is a contextvar store with `__slots__ = ()`. `mock` reads a
+    patched name out of the target's `__dict__` to decide whether to restore
+    it; there is none here, so with `create=True` it deletes the name on exit
+    and never puts the old value back. A suite that borrowed `db` that way left
+    `frappe.db` unbound, and `_cleanup_after_tests` raised "object is not
+    bound" after all 263 tests had passed - `bench` exited 1 under `OK`.
+    """
+
+    def test_a_borrowed_name_is_the_value_it_was(self):
+        frappe.local.borrowed = "real"
+        try:
+            with local_attribute("borrowed", "stub") as lent:
+                self.assertEqual(lent, "stub")
+                self.assertEqual(frappe.local.borrowed, "stub")
+            self.assertEqual(frappe.local.borrowed, "real")
+        finally:
+            delattr(frappe.local, "borrowed")
+
+    def test_a_name_the_store_never_held_is_gone_again(self):
+        self.assertFalse(hasattr(frappe.local, "never_held"))
+        with local_attribute("never_held", "stub"):
+            self.assertEqual(frappe.local.never_held, "stub")
+        self.assertFalse(hasattr(frappe.local, "never_held"))
+
+    def test_a_refusal_inside_the_loan_still_puts_the_name_back(self):
+        frappe.local.borrowed = "real"
+        try:
+            with self.assertRaises(ValueError), local_attribute("borrowed", "stub"):
+                raise ValueError("no")
+            self.assertEqual(frappe.local.borrowed, "real")
+        finally:
+            delattr(frappe.local, "borrowed")
+
+    def test_no_suite_in_this_package_patches_the_store_through_mock(self):
+        """The ban, not the symptom: `mock` cannot restore a name here at all.
+
+        `db` was the fatal one, because cleanup commits through it. `request`
+        and `form_dict` are deleted just as silently, and the next module in a
+        multi-module run starts without them.
+        """
+        offenders = []
+        for path in sorted(pathlib.Path(__file__).parent.glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "attr", None) != "object" or not node.args:
+                    continue
+                target = node.args[0]
+                if getattr(target, "attr", None) == "local":
+                    offenders.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(offenders, [], "use `local_attribute` instead of `patch.object`")
