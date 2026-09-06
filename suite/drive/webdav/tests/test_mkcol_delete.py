@@ -1,3 +1,5 @@
+import unittest
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -19,7 +21,13 @@ from suite.drive.webdav.errors import (
     NotFoundError,
     UnsupportedMediaType,
 )
-from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
+from suite.drive.webdav.tests.utils import (
+    ensure_user_with_password,
+    make_ctx,
+)
+from suite.drive.webdav.tests.utils import (
+    legacy_file_fixture as write_file_fixture,
+)
 from suite.tests.utils import ensure_user
 
 OWNER = "webdav-structure-owner@example.com"
@@ -27,6 +35,10 @@ READER = "webdav-structure-reader@example.com"
 PASSWORD = "webdav-structure-pw"
 
 
+PARKED_FOR_25 = 'MKCOL and DELETE are not relinked by ticket 24. `suite/drive/webdav/structure.py` still creates and trashes legacy `File` rows through `FileManager` while the resolved path names a `Drive Node`, so both verbs are absent from `RELINKED_METHODS` and `dispatch._HANDLERS` and answer 405. Un-skip in ticket 25, once MKCOL goes through `_core.nodes.create_folder` under UPLOAD on the parent and DELETE through `_core.nodes.update(state="Trashed")` under EDIT on the node, and after these cases are rewritten onto node fixtures: the disk layout, the `Everyone` root, and the `Drive Permission` rows they assert on are all gone from the read path.'
+
+
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVMkcolDelete(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):

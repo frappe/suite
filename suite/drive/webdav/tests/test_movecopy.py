@@ -1,3 +1,5 @@
+import unittest
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -13,7 +15,13 @@ from suite.drive.webdav.errors import (
     NotFoundError,
     PreconditionFailed,
 )
-from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
+from suite.drive.webdav.tests.utils import (
+    ensure_user_with_password,
+    make_ctx,
+)
+from suite.drive.webdav.tests.utils import (
+    legacy_file_fixture as write_file_fixture,
+)
 from suite.tests.utils import ensure_user
 
 OWNER = "webdav-movecopy-owner@example.com"
@@ -27,6 +35,10 @@ def blob_bytes(entity_name: str) -> bytes:
     return manager.get_local_path(file_url).read_bytes()
 
 
+PARKED_FOR_25 = "MOVE and COPY are not relinked by ticket 24. `suite/drive/webdav/structure.py` and `copy.py` still move and clone legacy `File` rows, and `copy.py` is the last caller of `webdav/perms.py`, so both verbs are absent from `RELINKED_METHODS` and `dispatch._HANDLERS` and answer 405. Un-skip in ticket 25, once MOVE goes through `_core.nodes.update(parent=...)` and COPY through the §8.9 copy primitive, and after these cases are rewritten onto node fixtures: there is one mount now, so the cross-root and `Everyone` cases describe a namespace that no longer exists."
+
+
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVMoveCopy(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):

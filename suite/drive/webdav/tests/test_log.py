@@ -52,20 +52,20 @@ class TestWebDAVLogging(IntegrationTestCase):
     def test_info_logs_one_line_per_request(self):
         with self._with_level("info"), self.assertLogs(self.logger_name, level="INFO") as logs:
             dispatch("OPTIONS", "/dav")
-            dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD, headers={"Depth": "0"})
+            dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD, headers={"Depth": "0"})
 
         self.assertEqual(len(logs.records), 2)
         self.assertIn("OPTIONS /dav -> 200", logs.output[0])
         self.assertIn("user=-", logs.output[0])
         propfind_line = logs.output[1]
-        self.assertIn("PROPFIND /dav/Home -> 207", propfind_line)
+        self.assertIn("PROPFIND /dav/ -> 207", propfind_line)
         self.assertIn(f"user={USER}", propfind_line)
         self.assertIn("ms", propfind_line)
         self.assertIn("client=", propfind_line)
 
     def test_failures_log_at_warning_with_note_and_no_credentials(self):
         with self._with_level("warning"), self.assertLogs(self.logger_name, level="WARNING") as logs:
-            dispatch("PROPFIND", "/dav/Home", user=USER, password="wrong-password")
+            dispatch("PROPFIND", "/dav/", user=USER, password="wrong-password")
             # a success at "warning" level stays silent
             dispatch("OPTIONS", "/dav")
 
@@ -81,7 +81,7 @@ class TestWebDAVLogging(IntegrationTestCase):
         with self._with_level("debug"), self.assertLogs(self.logger_name, level="DEBUG") as logs:
             dispatch(
                 "PROPFIND",
-                "/dav/Home",
+                "/dav/",
                 user=USER,
                 password=PASSWORD,
                 headers={"Depth": "0", "If": "(<urn:uuid:dead>)"},
@@ -96,7 +96,7 @@ class TestWebDAVLogging(IntegrationTestCase):
     def test_server_errors_log_at_error_level(self):
         from suite.drive.webdav import dispatch as dispatch_module
 
-        log_filter = {"method": "WebDAV PROPFIND /dav/Home"}
+        log_filter = {"method": "WebDAV PROPFIND /dav/"}
         frappe.db.delete("Error Log", log_filter)
         try:
             with (
@@ -104,7 +104,7 @@ class TestWebDAVLogging(IntegrationTestCase):
                 self.assertLogs(self.logger_name, level="ERROR") as logs,
                 patch.dict(dispatch_module._HANDLERS, {"PROPFIND": ("missing_module", "handle")}),
             ):
-                dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
+                dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
         finally:
             frappe.db.delete("Error Log", log_filter)
             frappe.db.commit()

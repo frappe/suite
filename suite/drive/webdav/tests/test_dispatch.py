@@ -16,6 +16,10 @@ from suite.drive.webdav.tests.utils import (
 USER = "webdav-dispatch@example.com"
 PASSWORD = "webdav-dispatch-pw-9000"
 
+# ticket 24 relinks the read verbs only; the write verbs are gated to ticket 25
+RELINKED = "OPTIONS, GET, HEAD, PROPFIND"
+GATED_VERBS = ("PUT", "DELETE", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK")
+
 
 class TestWebDAVDispatch(IntegrationTestCase):
     """The dispatcher commits and rolls back mid-request, so fixtures are
@@ -49,22 +53,22 @@ class TestWebDAVDispatch(IntegrationTestCase):
 
     def test_global_toggle_off_is_stock_404(self):
         self._set_global(0)
-        set_dav_request("PROPFIND", "/dav/Home")
+        set_dav_request("PROPFIND", "/dav/")
         self.assertRaises(NotFound, handle_before_request)
 
-    def test_options_answered_without_auth(self):
+    def test_options_advertises_only_the_relinked_verbs(self):
         response = dispatch("OPTIONS", "/dav")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["DAV"], "1, 2, 3")
+        self.assertEqual(response.headers["Allow"], RELINKED)
         self.assertEqual(response.headers["MS-Author-Via"], "DAV")
-        self.assertIn("PROPFIND", response.headers["Allow"])
-        self.assertIn("LOCK", response.headers["Allow"])
+        # no LOCK/UNLOCK on the wire means no class 2 to advertise
+        self.assertEqual(response.headers["DAV"], "1, 3")
 
     def test_options_on_server_root_advertises_dav(self):
         frappe.local.response_headers = Headers()
         self.assertIsNone(dispatch("OPTIONS", "/"))
-        self.assertEqual(frappe.local.response_headers.get("DAV"), "1, 2, 3")
+        self.assertEqual(frappe.local.response_headers.get("DAV"), "1, 3")
 
         # feature off: no advertisement
         self._set_global(0)
@@ -73,23 +77,54 @@ class TestWebDAVDispatch(IntegrationTestCase):
         self.assertIsNone(frappe.local.response_headers.get("DAV"))
 
     def test_unauthenticated_request_gets_challenge(self):
-        response = dispatch("PROPFIND", "/dav/Home")
+        response = dispatch("PROPFIND", "/dav/")
 
         self.assertEqual(response.status_code, 401)
         self.assertIn("Basic", response.headers["WWW-Authenticate"])
 
     def test_unhandled_method_is_405_with_allow(self):
-        response = dispatch("POST", "/dav/Home", user=USER, password=PASSWORD)
+        response = dispatch("POST", "/dav/", user=USER, password=PASSWORD)
 
         self.assertEqual(response.status_code, 405)
-        self.assertIn("PROPFIND", response.headers["Allow"])
-        self.assertNotIn("POST", response.headers["Allow"])
+        self.assertEqual(response.headers["Allow"], RELINKED)
+
+    def test_gated_write_verbs_are_405_with_the_relinked_allow(self):
+        """The write verbs are refused before a handler can run.
+
+        Their handlers still write legacy `File` rows and the path they would be
+        handed now names a `Drive Node`, so ticket 24 takes them out of
+        `RELINKED_METHODS` and `dispatch._HANDLERS` rather than letting one
+        create a row in the wrong tree. Ticket 25 puts them back.
+        """
+        for method in GATED_VERBS:
+            response = dispatch(method, "/dav/x.txt", user=USER, password=PASSWORD, data=b"x")
+            self.assertEqual(response.status_code, 405, method)
+            self.assertEqual(response.headers["Allow"], RELINKED, method)
+            self.assertNotIn(method, response.headers["Allow"], method)
+
+    def test_the_admin_list_narrows_the_relinked_set_and_never_widens_it(self):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, GET, LOCK")
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        frappe.db.commit()
+        try:
+            response = dispatch("OPTIONS", "/dav")
+            # LOCK asked for, LOCK not relinked: it stays off the wire
+            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD")
+            self.assertEqual(response.headers["DAV"], "1, 3")
+
+            response = dispatch("LOCK", "/dav/x.txt", user=USER, password=PASSWORD)
+            self.assertEqual(response.status_code, 405)
+            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD")
+        finally:
+            frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "")
+            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            frappe.db.commit()
 
     def test_user_toggle_off_is_403(self):
         frappe.db.set_value("Drive Settings", USER, "webdav_enabled", 0)
         frappe.db.commit()
         try:
-            response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
+            response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
         finally:
             enable_user_webdav(USER, commit=True)
 
@@ -103,38 +138,34 @@ class TestWebDAVDispatch(IntegrationTestCase):
         frappe.db.set_value("Drive Settings", fresh, "webdav_enabled", 0, update_modified=False)
         frappe.db.commit()
 
-        response = dispatch("PROPFIND", "/dav/Home", user=fresh, password=PASSWORD)
+        response = dispatch("PROPFIND", "/dav/", user=fresh, password=PASSWORD)
         self.assertEqual(response.status_code, 403)
         self.assertIn("disabled for your account", response.get_data(as_text=True))
 
     def test_method_allow_list_is_enforced(self):
-        frappe.db.set_single_value(
-            "Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, GET, HEAD, PROPFIND"
-        )
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, PROPFIND")
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
         frappe.db.commit()
         try:
-            # blocked verb: 405 naming the permitted set
-            response = dispatch("PUT", "/dav/Home/x.txt", user=USER, password=PASSWORD, data=b"x")
+            # a verb the admin left out: 405 naming the permitted set
+            response = dispatch("GET", "/dav/x.txt", user=USER, password=PASSWORD)
             self.assertEqual(response.status_code, 405)
-            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD, PROPFIND")
+            self.assertEqual(response.headers["Allow"], "OPTIONS, PROPFIND")
             self.assertIn("disabled on this site", response.get_data(as_text=True))
 
             # permitted verb still works end to end
-            response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD, headers={"Depth": "0"})
+            response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD, headers={"Depth": "0"})
             self.assertEqual(response.status_code, 207)
 
-            # the handshake reflects the restriction: no LOCK -> no class 2
             response = dispatch("OPTIONS", "/dav")
-            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD, PROPFIND")
-            self.assertEqual(response.headers["DAV"], "1, 3")
+            self.assertEqual(response.headers["Allow"], "OPTIONS, PROPFIND")
         finally:
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "")
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
             frappe.db.commit()
 
         response = dispatch("OPTIONS", "/dav")
-        self.assertEqual(response.headers["DAV"], "1, 2, 3")
+        self.assertEqual(response.headers["Allow"], RELINKED)
 
     def test_success_path_commits_before_raising(self):
         with patch.object(frappe.db, "commit", wraps=frappe.db.commit) as commit:
@@ -146,11 +177,11 @@ class TestWebDAVDispatch(IntegrationTestCase):
     def test_unexpected_handler_error_maps_to_500_and_logs_durably(self):
         from suite.drive.webdav import dispatch as dispatch_module
 
-        log_filter = {"method": "WebDAV PROPFIND /dav/Home"}
+        log_filter = {"method": "WebDAV PROPFIND /dav/"}
         frappe.db.delete("Error Log", log_filter)
         try:
             with patch.dict(dispatch_module._HANDLERS, {"PROPFIND": ("missing_module", "handle")}):
-                response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
+                response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
 
             self.assertEqual(response.status_code, 500)
             # the response body must not leak the traceback

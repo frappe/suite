@@ -1,3 +1,5 @@
+import unittest
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from lxml import etree
@@ -7,7 +9,13 @@ from suite.drive.utils.files import FileManager
 from suite.drive.webdav import copy as copy_module
 from suite.drive.webdav import deadprops, propfind, proppatch
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError
-from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
+from suite.drive.webdav.tests.utils import (
+    ensure_user_with_password,
+    make_ctx,
+)
+from suite.drive.webdav.tests.utils import (
+    legacy_file_fixture as write_file_fixture,
+)
 from suite.drive.webdav.xmlutil import dav
 from suite.tests.utils import ensure_user
 
@@ -25,6 +33,10 @@ REMOVE_CUSTOM = (
 )
 
 
+PARKED_FOR_25 = "PROPPATCH is not relinked by ticket 24. `suite/drive/webdav/proppatch.py` still reads `webdav/perms.py` and writes the Win32 mtime onto a legacy `File` row, so the verb is absent from `RELINKED_METHODS` and `dispatch._HANDLERS` and answers 405. `deadprops.py` itself is already on node identity and is read on every PROPFIND. Un-skip in ticket 25, once PROPPATCH authorizes with EDIT on the node and stamps `content_modified` through `_core.nodes.update`, and after these cases are rewritten onto node fixtures - the MOVE and COPY cases here also need those verbs back."
+
+
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVProppatch(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):

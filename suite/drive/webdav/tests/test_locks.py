@@ -1,3 +1,4 @@
+import unittest
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -18,7 +19,13 @@ from suite.drive.webdav.errors import (
     NotFoundError,
     PreconditionFailed,
 )
-from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
+from suite.drive.webdav.tests.utils import (
+    ensure_user_with_password,
+    make_ctx,
+)
+from suite.drive.webdav.tests.utils import (
+    legacy_file_fixture as write_file_fixture,
+)
 from suite.drive.webdav.xmlutil import dav
 from suite.tests.utils import ensure_user
 
@@ -34,6 +41,10 @@ LOCKINFO_EXCLUSIVE = (
 LOCKINFO_SHARED = LOCKINFO_EXCLUSIVE.replace(b"exclusive", b"shared")
 
 
+PARKED_FOR_25 = "LOCK and UNLOCK are not relinked by ticket 24. `suite/drive/webdav/lock.py` still reads `webdav/perms.py` and creates legacy `File` rows for a lock on an unmapped URL, so both verbs are absent from `RELINKED_METHODS` and `dispatch._HANDLERS` and answer 405 - which also drops class 2 from the advertised DAV header. `locks.py` itself is already on node identity and is exercised by the PROPFIND lockdiscovery path. Un-skip in ticket 25, once LOCK on an unmapped URL creates an empty node under UPLOAD on the parent (§12.3), and after these cases are rewritten onto node fixtures."
+
+
+@unittest.skip(PARKED_FOR_25)
 class TestWebDAVLocks(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):

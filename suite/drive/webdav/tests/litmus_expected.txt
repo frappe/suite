@@ -1,3 +1,19 @@
 # Tolerated litmus non-passes, one per line: <group>:<test>:<FAIL|WARNING> reason [issue]
 # CI fails on any FAIL not listed here, and on lines that now pass (delete them).
+#
+# TICKET 24 (WebDAV read relink): litmus CANNOT pass on this release, and this
+# ledger is not the place to pretend otherwise. Only OPTIONS, GET, HEAD, and
+# PROPFIND are relinked to `Drive Node`; PUT, MKCOL, DELETE, MOVE, COPY, LOCK,
+# UNLOCK, and PROPPATCH answer 405 until ticket 25 (see
+# `suite/drive/webdav/__init__.py:RELINKED_METHODS`). litmus writes before it
+# reads in every group, so expect:
+#   - http      : mostly passes (OPTIONS and the GET/HEAD probes).
+#   - basic     : fails from the first PUT onwards.
+#   - copymove  : fails outright; it is COPY and MOVE end to end.
+#   - props     : fails outright; every case sets a dead property with PROPPATCH.
+#   - locks     : fails outright; LOCK and UNLOCK are off the wire, and the
+#                 OPTIONS handshake advertises "DAV: 1, 3" rather than class 2.
+# No entries were added for those failures. This ledger may only grow from a
+# real run, and no litmus run was made for ticket 24. Re-run the suite when
+# ticket 25 lands and ledger what is still failing then.
 basic:delete_fragment:WARNING werkzeug strips URI fragments before the app sees them, so a fragment-bearing DELETE cannot be told apart from a normal one
