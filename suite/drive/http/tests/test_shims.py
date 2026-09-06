@@ -95,6 +95,32 @@ def setUpModule():
     ensure_local_context()
 
 
+def _guest_flags(text: str, prefix: str) -> dict[str, bool]:
+    """Read one module's whitelisted names and their `allow_guest` flags."""
+    found: dict[str, bool] = {}
+    tree = ast.parse(text)
+
+    def walk(node, holder=None):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                walk(child, child.name)
+            elif isinstance(child, ast.FunctionDef):
+                for decorator in child.decorator_list:
+                    call = decorator.func if isinstance(decorator, ast.Call) else decorator
+                    if getattr(call, "attr", getattr(call, "id", "")) != "whitelist":
+                        continue
+                    guest = any(
+                        keyword.arg == "allow_guest"
+                        and isinstance(keyword.value, ast.Constant)
+                        and bool(keyword.value.value)
+                        for keyword in getattr(decorator, "keywords", [])
+                    )
+                    found[f"{prefix}.{holder + '.' if holder else ''}{child.name}"] = guest
+
+    walk(tree)
+    return found
+
+
 def whitelisted_names() -> dict[str, bool]:
     """Read every legacy whitelisted name, and whether a guest may reach it."""
     found: dict[str, bool] = {}
@@ -121,6 +147,62 @@ def whitelisted_names() -> dict[str, bool]:
 
         walk(tree)
     return found
+
+
+# The revision §11.7 is measured against: the last commit before the shim
+# landed. A permanent name is one the plan never touches, so "untouched" is
+# checked against this tree rather than against a phrase in the body.
+BASE_REVISION = "e390a4487"
+
+
+def _relative_of(name: str) -> tuple[str, str]:
+    """Split one dotted legacy name into its module path and its tail."""
+    prefix, _dot, tail = name.rpartition(".")
+    while prefix not in LEGACY_MODULES.values():
+        prefix, _dot, held = prefix.rpartition(".")
+        tail = f"{held}.{tail}"
+    return next(key for key, value in LEGACY_MODULES.items() if value == prefix), tail
+
+
+def _function_shape(text: str, wanted: str) -> str:
+    """Return one function's structure, ignoring formatting and prose.
+
+    `ast.dump` drops comments and whitespace; the docstring is stripped on top
+    of that. What is left is the code, so a reworded comment passes and a
+    changed statement, argument, or decorator does not.
+    """
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.FunctionDef) and node.name == wanted:
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                body = body[1:]
+            return ast.dump(ast.Module(body=[*node.decorator_list, node.args, *body], type_ignores=[]))
+    raise AssertionError(f"{wanted} has no source")
+
+
+def original_shape(name: str) -> str:
+    """Return one legacy function's structure at `BASE_REVISION`."""
+    import subprocess
+
+    relative, tail = _relative_of(name)
+    text = subprocess.run(
+        ["git", "-C", str(APP.parent), "show", f"{BASE_REVISION}:suite/{relative}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return _function_shape(text, tail.split(".")[-1])
+
+
+def current_shape(name: str) -> str:
+    """Return one legacy function's structure in the working tree."""
+    relative, tail = _relative_of(name)
+    return _function_shape((APP / relative).read_text(), tail.split(".")[-1])
 
 
 def source_of(name: str) -> str:
@@ -1262,20 +1344,56 @@ class TestPermanentSurface(ShimCase):
         self.assertIn("get_entity_with_permissions(file)", source)
         self.assertEqual(whitelisted_names()["overrides.file.get_file_for_doc"], False)
 
+    def test_every_permanent_name_is_byte_for_byte_the_body_it_always_was(self):
+        """ "Permanent" is checked against the tree, not against a phrase.
+
+        A substring assertion passes on a body that kept the line it greps for
+        and changed everything around it. Each of the twenty-one is compared
+        with its own structure at `BASE_REVISION`: decorators, signature, and
+        every statement. Comments and docstrings are excluded, so prose may be
+        corrected and code may not.
+        """
+        permanent = shims.names_of("permanent")
+        self.assertEqual(len(permanent), 21)
+        for name in sorted(permanent):
+            with self.subTest(name=name):
+                self.assertEqual(current_shape(name), original_shape(name))
+
+    def test_the_guest_flag_of_every_legacy_name_is_the_one_it_had(self):
+        """Guest reach is the one property no reclassification may move."""
+        now = whitelisted_names()
+        import subprocess
+
+        before: dict[str, bool] = {}
+        for relative, prefix in LEGACY_MODULES.items():
+            text = subprocess.run(
+                ["git", "-C", str(APP.parent), "show", f"{BASE_REVISION}:suite/{relative}"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            before |= _guest_flags(text, prefix)
+        self.assertEqual(before, now)
+
     def test_the_dav_contract_is_still_mounted(self):
-        hooks = (APP / "hooks.py").read_text()
-        self.assertIn('"/dav"', hooks)
-        self.assertIn('"/dav/"', hooks)
-        self.assertIn("webdav", hooks)
+        from suite import hooks
+
+        self.assertIn("/dav", hooks.ALLOWED_PATHS)
+        self.assertIn("/dav/", hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertIn("/dav/", hooks.streaming_request_paths)
+        self.assertIn("suite.drive.webdav.dispatch.handle_before_request", hooks.before_request)
 
     def test_the_route_namespace_was_added_without_removing_the_method_prefix(self):
-        hooks = (APP / "hooks.py").read_text()
-        self.assertIn('"/api/suite/drive/"', hooks)
-        self.assertIn('"/api/method/suite.drive.api."', hooks)
+        from suite import hooks
+
+        self.assertIn("/api/suite/drive/", hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertIn("/api/method/suite.drive.api.", hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertEqual(hooks.DENIED_WILDCARD_PATHS, ["/api/"])
 
     def test_destructive_removal_stays_disabled(self):
-        hooks = (APP / "hooks.py").read_text()
-        self.assertIn("drive_content_types = []", hooks)
+        from suite import hooks
+
+        self.assertEqual(hooks.drive_content_types, [])
 
 
 if __name__ == "__main__":
