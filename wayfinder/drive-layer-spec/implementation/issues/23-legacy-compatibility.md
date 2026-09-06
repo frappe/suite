@@ -1400,3 +1400,129 @@ so root must rerun: `suite.drive.http.tests.test_dispatch`,
 `suite.drive.tests.test_access`, `suite.drive.tests.test_views`,
 `suite.drive.tests.test_activity`, `suite.drive.tests.test_nodes`,
 `suite.drive.tests.test_grants`.
+
+## Site gate evidence: module 1 exit status
+
+Status: the module-1 gate command now exits 0. Work on
+`forge/ticket-23-shims-gate-cleanup`, branched from `c9ead5f56`.
+
+### What the gate reported
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.http.tests.test_shims" /dev/null
+Ran 263 tests in 1.167s
+OK
+RuntimeError: object is not bound
+EXIT=1
+```
+
+Every assertion passed. `bench` then raised in its own teardown:
+`_cleanup_after_tests` (`frappe/testing/environment.py:64`) calls
+`enable_scheduler`, which writes through `frappe.db`, and `frappe.db` was no
+longer bound.
+
+Earlier runs of this module were piped into `grep` or `tail`, so the shell
+reported the filter's status and the `1` was never seen. Every `OK` recorded
+above this section is an `OK` on the assertions only.
+
+### The cause
+
+`patch.object(frappe.local, "db", MagicMock(), create=True)`.
+
+`frappe.local` is a contextvar store with `__slots__ = ()`
+(`frappe/utils/local.py:12-17`). `mock` decides whether it can restore a name
+by reading it out of the target's `__dict__` (`_patch.get_original`). There is
+none here, so the name is marked non-local, and `_patch.__exit__` takes the
+`delattr` branch. The line that would put the old value back is guarded by
+`if not self.create`, and every call site passed `create=True`. The name was
+deleted and never restored.
+
+`frappe.db` is `local("db")`, a proxy that reads that store on every access, so
+deleting the name unbinds `frappe.db` for the rest of the process. Two suites
+did it: `TestPermanentSurface` and `TestDirectoryUploadGate`. Either one alone
+reproduces the exit 1:
+
+```
+bench ... run-tests --module suite.drive.http.tests.test_shims \
+  --test test_the_s3_entry_point_answers_one_refusal_for_missing_and_denied
+EXIT=1
+```
+
+The tests after them still passed, because none of them reads `frappe.db`.
+
+### What changed
+
+Test isolation only. No production file changed.
+
+- `suite/drive/http/tests/__init__.py`: new `local_attribute` context manager.
+  It keeps the old value, sets the new one, and on exit restores the old value
+  or deletes the name if the store never held it.
+- `test_shims.py`: six call sites moved off `patch.object(frappe.local, ...)`.
+  Two borrowed `db`, four borrowed `request` and `form_dict`.
+- `test_routes.py`: one call site, `TestBatchIsolation.setUp`, borrowed `db`.
+  Site-free, so it never reached this gate, but it holds the same defect.
+
+### Tests written
+
+`TestLocalStoreIsPutBack`, four cases:
+
+- a borrowed name is the value it was
+- a name the store never held is gone again
+- a refusal inside the loan still puts the name back
+- no suite in this package patches the store through `mock`
+
+The fourth is the regression guard. It walks the AST of every file in
+`suite/drive/http/tests/` and fails on any `patch.object` whose target is
+`frappe.local`.
+
+### Gate commands and results
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.http.tests.test_shims" /dev/null
+Ran 267 tests in 1.244s
+OK
+EXIT=0
+```
+
+Site-free, from `/home/faris/benches/suite-bench/sites`:
+
+```
+python -m unittest suite.drive.http.tests.test_shims \
+  suite.drive.http.tests.test_routes suite.drive.http.tests.test_shapes \
+  suite.drive.http.tests.test_translator suite.tests.test_architecture
+Ran 440 tests in 2.844s / OK / EXIT=0
+```
+
+263 becomes 267, and 436 becomes 440. The four are the new cases.
+
+### Mutation runs
+
+Two, each reverted in place.
+
+- Put `patch.object(frappe.local, "db", ..., create=True)` back at the
+  `api.s3.fetch` case. The guard names the line, and the teardown raises again:
+  `Ran 267 / FAILED (failures=1)`, `EXIT=1`.
+- Make `local_attribute` delete on exit instead of restoring.
+  `Ran 267 / FAILED (errors=2)`, `EXIT=1`.
+
+### Formatting and lint
+
+`uvx ruff@latest format --check` and `check` on
+`suite/drive/http/tests/` answer the same hunks on `main` as on this branch:
+two format hunks and one `RUF059`, all pre-existing and all outside this diff.
+
+### The same defect, found and not fixed
+
+Both delete a name that `_cleanup_after_tests` does not read, so neither breaks
+a gate. Both are in site modules this run was not allowed to execute.
+
+- `suite/writer/tests/test_drive_adoption.py:873-874`, `request` and
+  `form_dict`.
+- `suite/mail/tests/test_admin_roles_and_disable.py:187`, `login_manager`.
+
+### What the gate still owes
+
+Nothing new. This branch changes test files only, so the unverified list of
+the residual audit stands as written above.

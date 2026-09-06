@@ -538,13 +538,16 @@ Every fix below takes the same shape, so the shape is stated once:
 - Imports are function-local, because `api/permissions.py` imports `shims` and
   `drive/utils` builds a query-builder DocType at import time.
 
-Site-free, the four http suites plus `suite.tests.test_architecture` ran 436
-tests and passed, up from 367 on `main`. On the site: `test_shims` ran 263
+Site-free, the four http suites plus `suite.tests.test_architecture` ran 440
+tests and passed, up from 367 on `main`. On the site: `test_shims` ran 267
 (main: 194), `suite.writer.tests.test_drive_adoption` ran 23 and 73 (main: 23
 and 47), `suite.writer.api.tests.test_general` ran 7 (main: 2), and
 `suite.slides.tests.test_drive_adoption` ran 30 and 71, unchanged. Every site
 case was mutation-checked: disabling its `_unadopted_row` branch makes the case
-fail or error, and each mutation was reverted in place. `shims.py` changed
+fail or error, and each mutation was reverted in place. The `test_shims` gate
+command exited 1 under its own `OK` until the suites stopped borrowing
+`frappe.local` through `mock`; see "Site gate evidence: module 1 exit status"
+in ticket 23. `shims.py` changed
 across sixteen names, so the root must rerun the suites this branch did not:
 `suite.drive.http.tests.test_dispatch`, `suite.drive.api.tests.test_files`,
 `suite.drive.api.tests.test_list`, `suite.drive.api.tests.test_notifications`,
