@@ -926,8 +926,11 @@ def _legacy_notification_row(row) -> dict:
     }
 
 
-def _mark_legacy_read(principals, name: str | None) -> int:
+def _mark_legacy_read(principals, name: str | None, entity: str | None = None) -> int:
     """Mark the caller's pointerless rows read, one named or all of them.
+
+    `entity` narrows the same set to the rows written about one `File`, which
+    is how `track_visit` clears the badge for the file it just opened.
 
     Written the way `activity_core.mark_read` writes: the unread ids are read
     first, then one `UPDATE` that repeats `to_user` and `read`. Uncapped, as
@@ -936,6 +939,8 @@ def _mark_legacy_read(principals, name: str | None) -> int:
     filters = _legacy_inbox_filters(principals, only_unread=True)
     if name is not None:
         filters["name"] = name
+    if entity is not None:
+        filters["notif_doctype_name"] = entity
     ids = tuple(frappe.get_all("Drive Notification", filters=filters, pluck="name"))
     if not ids:
         return 0
@@ -1981,6 +1986,43 @@ def redirect_to_original(file_id: str):
     return None
 
 
+def _legacy_content_entity(doctype: str, docname: str) -> str | None:
+    """The `File` a content document hangs off, for a row no node holds.
+
+    The old body resolved `doctype`/`docname` against `tabFile`, and Sheets
+    and Slides still send that form. A content type in the §10.2 expand phase
+    writes the `File` and no node, so the node lookup answers nothing for
+    every document those two products open.
+    """
+    name = frappe.db.get_value("File", {"content_doctype": doctype, "content_docname": docname}, "name")
+    if not name or frappe.db.exists("Drive Node", name):
+        return None
+    return name
+
+
+def _legacy_visit(principals, entity_name: str) -> bool:
+    """Record this open on the `File` store, for an id no node holds.
+
+    `writer.api.docs.create_document` writes a `File` and no node, and
+    `writer.api.general.get_document_list` orders the caller's documents by
+    `Drive Entity Log.last_interaction` and publishes it as `accessed`. That
+    row is only ever written here, so forwarding alone left every document
+    the product creates with no opened-at and no recency order at all.
+
+    The gate is `frappe.get_doc`, as the old body's was: `File` carries a
+    `has_permission` hook, so a reader with no access is refused by the rule
+    that wrote the row rather than by a deny invented here.
+    """
+    if frappe.db.exists("Drive Node", entity_name) or not frappe.db.exists("File", entity_name):
+        return False
+
+    from suite.drive.utils.users import mark_as_viewed
+
+    mark_as_viewed(frappe.get_doc("File", entity_name))
+    _mark_legacy_read(principals, None, entity=entity_name)
+    return True
+
+
 @_legacy
 def track_visit(
     entity_name: str | None = None,
@@ -1992,14 +2034,20 @@ def track_visit(
     The old body also cleared the caller's unread notifications about the node
     it opened. That is kept, through `mark_read`, because a badge that never
     clears is the visible half of this call.
+
+    It writes to either store: a `File` that no node holds is recorded by
+    `mark_as_viewed`, because §10.2 keeps a content type's legacy rows working
+    while that type is in the expand phase.
     """
     principals = _principals()
     if not entity_name and doctype and docname:
         entity_name = frappe.db.get_value(
             "Drive Node", {"content_doctype": doctype, "content_docname": docname}, "name"
-        )
+        ) or _legacy_content_entity(doctype, docname)
     if not entity_name:
         frappe.throw(_("A Drive file or content document is required"), frappe.ValidationError)
+    if _legacy_visit(principals, entity_name):
+        return None
     activity_core.visit(principals, entity_name)
     unread = _walk(lambda cursor: activity_core.notifications(principals, only_unread=True, cursor=cursor))
     here = [row["name"] for row in unread if (row.get("activity") or {}).get("node") == entity_name]

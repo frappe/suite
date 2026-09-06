@@ -628,6 +628,10 @@ def track_visit(
 
     §11.7 forwarder over `POST /nodes/<id>/visit`, plus the unread
     notifications about that node, which the old body also cleared.
+
+    It writes to either store: a `File` that no node holds is recorded on the
+    legacy log, because §10.2 keeps a content type's legacy rows working while
+    that type is in the expand phase.
     """
     return shims.track_visit(entity_name, doctype, docname)
 
