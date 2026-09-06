@@ -76,7 +76,7 @@ class TestCommentWorkflows(IntegrationTestCase):
 
     def test_anchor_replies_resolution_and_server_authorship(self):
         anchor = 'sheet-1:{"cell":"A1"}'
-        thread = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")
+        thread = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")["thread"]
         reply_id = reply(self.owner, thread, "Second")
         resolve(self.commenter, thread)
 
@@ -94,7 +94,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         )
 
     def test_author_can_edit_at_read_but_non_author_cannot(self):
-        thread = create_thread(self.commenter, self.document.name, "anchor", "Original")
+        thread = create_thread(self.commenter, self.document.name, "anchor", "Original")["thread"]
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         grant(self.document.name, COMMENTER, READ, self.admin)
 
@@ -114,7 +114,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         grant(self.document.name, LINK_B, COMMENT, self.admin)
         guest_a = Principals("Guest", (), (LINK_A,))
         guest_b = Principals("Guest", (), (LINK_B,))
-        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")
+        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")["thread"]
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
 
         row = frappe.db.get_value("Drive Comment", comment, ["author", "author_name"], as_dict=True)
@@ -137,7 +137,7 @@ class TestCommentWorkflows(IntegrationTestCase):
             self.document.name,
             "anchor",
             f"Hello @{MENTIONED} and @[{MENTIONED}]",
-        )
+        )["thread"]
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, ["name", "mentions"], as_dict=True)
         mentions = (
             frappe.parse_json(comment.mentions) if isinstance(comment.mentions, str) else comment.mentions
@@ -155,7 +155,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(frappe.parse_json(activity.detail)["comment"], comment.name)
 
     def test_unreadable_threads_are_hidden_and_trash_refuses_writes(self):
-        thread = create_thread(self.owner, self.document.name, "anchor", "Before trash")
+        thread = create_thread(self.owner, self.document.name, "anchor", "Before trash")["thread"]
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         with self.assertRaises(DriveNotFound):
             threads(self.outsider, self.document.name)

@@ -504,9 +504,24 @@ def chain_roles(node: Mapping, principals: Principals) -> dict[str, int]:
     }
 
 
-def explain(node: Mapping, principals: Principals) -> dict:
-    """Return current grant candidates and mark the rows deciding the answer."""
-    if principals.is_admin:
+def explain(node: Mapping, principals: Principals, *, subject: Principals | None = None) -> dict:
+    """Return current grant candidates and mark the rows deciding the answer.
+
+    §5.8 needs MANAGE at the node, like the share dialog it feeds. That is a
+    condition on the *caller*: `subject` names whoever is being explained, and
+    a stranger is the ordinary case, so their own role decides nothing about
+    who may ask. `require` supplies the refusal, which means a caller below
+    READ gets 404 rather than a 403 confirming the node exists (§5.2).
+
+    Expired rows are absent, because `EXPLAIN_SQL` filters them: §6.4 keeps an
+    expired grant on disk and makes it inert, and an inert row is not a
+    candidate for anything. Rows the subject does not hold are present, marked
+    `held: false`, because "why can this person not reach it" is the other half
+    of the question the dialog asks.
+    """
+    require(node, MANAGE, principals)
+    subject = subject or principals
+    if subject.is_admin:
         return {"role": MANAGE, "source": "site admin", "rows": []}
 
     chain = chain_ids(node)
@@ -519,17 +534,13 @@ def explain(node: Mapping, principals: Principals) -> dict:
     acc = Acc()
     ticket_results = {}
     for row in rows:
-        if row.principal in principals.all() and _grant_is_unlocked(row, principals, ticket_results):
-            acc.offer(row.principal, row.role, depth[row.node], principals)
+        if row.principal in subject.all() and _grant_is_unlocked(row, subject, ticket_results):
+            acc.offer(row.principal, row.role, depth[row.node], subject)
 
     answer = acc.answer()
-    if answer < MANAGE:
-        raise DriveForbidden(
-            _("You do not have the required access to Drive node {0}").format(node.get("name"))
-        )
     out = []
     for row in sorted(rows, key=lambda candidate: (-depth[candidate.node], candidate.principal)):
-        held = row.principal in principals.all()
+        held = row.principal in subject.all()
         out.append(
             {
                 "node": row.node,
@@ -537,14 +548,94 @@ def explain(node: Mapping, principals: Principals) -> dict:
                 "principal": row.principal,
                 "role": row.role,
                 "expires_on": row.expires_on,
-                "pass": 1 if row.principal in principals.own else 2,
+                "pass": 1 if row.principal in subject.own else 2,
                 "held": held,
                 "winner": held
-                and _grant_is_unlocked(row, principals, ticket_results)
-                and _is_winner(row, acc, depth, principals),
+                and _grant_is_unlocked(row, subject, ticket_results)
+                and _is_winner(row, acc, depth, subject),
             }
         )
     return {"role": answer, "source": "grant" if answer else "none", "rows": out}
+
+
+def grants_for(node_id: str, principals: Principals, *, subject: Principals | None = None) -> dict:
+    """Answer one node's share dialog: its local grants, and one explanation.
+
+    Local rows only, because §5.10 keeps removal and denial apart: what an
+    ancestor decides is `explain`'s answer, and a list that merged the two
+    would promise an unshare it did not perform.
+
+    Expired rows are listed. §6.4 retains them and makes them inert, and a
+    dialog that hid one would offer to create a duplicate of a row that is
+    still there. Their `expires_on` is the whole difference between an expired
+    row and a live one. `password_hash` never leaves this function; the listed
+    row says `has_password` instead.
+
+    MANAGE is required once, here, before any row is read. `subject` names
+    whoever `?principal=` asked about (§11.2); their own role is not a
+    condition on the caller's right to ask.
+    """
+    node = _node_or_not_found(node_id)
+    require(node, MANAGE, principals)
+    rows = frappe.get_all(
+        "Drive Grant",
+        filters={"node": node.name},
+        fields=["name", "node", "principal", "role", "expires_on", "password_hash"],
+        order_by="principal asc",
+    )
+    answer = {
+        "grants": [
+            _grant_result(row.name, row.node, row.principal, row.role, row.expires_on, row.password_hash)
+            for row in rows
+        ]
+    }
+    if subject is not None:
+        answer["explain"] = explain(node, principals, subject=subject)
+    return answer
+
+
+def resolve_link(token: str) -> dict:
+    """Answer which node one share-link token addresses (§6.2).
+
+    The website route `/drive/l/<token>` has to name a node before the SPA can
+    ask for anything, so this resolves the grant and stops there. It does not
+    check a role and it does not ask for a password: a password link's holder
+    needs the node id in order to be told, by the ordinary node route, that it
+    is locked (§4.8). Everything the token then authorizes is decided by
+    `require` on each request, from the token presented in `X-Drive-Links`.
+
+    Refuses an unknown or malformed token with `DriveNotFound`, and a token
+    whose every capability row is past `expires_on` with `DriveLinkExpired`, so
+    an expired link stays distinguishable from one that never existed (§6.4).
+    """
+    if not isinstance(token, str) or not _valid_link_token(token):
+        raise DriveNotFound(_("Drive link was not found"))
+    principal = f"$LINK:{token}"
+    rows = frappe.get_all(
+        "Drive Grant",
+        filters={"principal": principal},
+        fields=["name", "node", "role", "expires_on", "password_hash"],
+        order_by="name asc",
+    )
+    if not rows:
+        raise DriveNotFound(_("Drive link was not found"))
+    capabilities = [row for row in rows if row.role > NONE]
+    current = [
+        row for row in capabilities if not row.expires_on or get_datetime(row.expires_on) > now_datetime()
+    ]
+    if not current:
+        if capabilities:
+            raise DriveLinkExpired(_("This Drive link has expired"))
+        raise DriveNotFound(_("Drive link was not found"))
+    row = current[0]
+    return {
+        "token": token,
+        "principal": principal,
+        "node": row.node,
+        "role": row.role,
+        "expires_on": row.expires_on,
+        "has_password": row.password_hash is not None,
+    }
 
 
 def _is_winner(row, acc: Acc, depth: Mapping[str, int], principals: Principals) -> bool:

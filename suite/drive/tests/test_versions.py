@@ -234,7 +234,7 @@ class TestVersionWorkflows(IntegrationTestCase):
         seq = take_version(self.admin, node, kind="named", label="First")
         self.assertEqual(seq, 1)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), used_before + 4)
-        rows = list_versions(self.admin, node)
+        rows = list_versions(self.admin, node)["rows"]
         self.assertEqual([(row.seq, row.kind, row.label) for row in rows], [(1, "named", "First")])
 
         label_version(self.admin, node, 1, label="Release", pinned=True)
@@ -454,7 +454,7 @@ class TestVersionWorkflows(IntegrationTestCase):
         update(self.admin, node, state="Trashed")
         used_before = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
 
-        self.assertEqual([row.seq for row in list_versions(self.admin, node)], [seq])
+        self.assertEqual([row.seq for row in list_versions(self.admin, node)["rows"]], [seq])
         # §8.8 opens a trashed node read-only, so nothing may write its bytes.
         with self.assertRaises(DriveForbidden):
             take_version(self.admin, node)

@@ -25,8 +25,13 @@ def create_thread(
     text: str,
     *,
     author_name: str | None = None,
-) -> str:
-    """Create a thread and its first server-authored comment."""
+) -> dict:
+    """Create a thread and its first server-authored comment.
+
+    Returns both ids. §11.2's `POST /nodes/<id>/threads` answers
+    `{thread, comment}`, and the first comment is written here, so returning
+    the thread alone would make the adapter re-query for a row it just wrote.
+    """
     _validate_anchor(anchor)
     _validate_text(text)
     savepoint = f"drive_comment_thread_{uuid4().hex[:12]}"
@@ -64,7 +69,7 @@ def create_thread(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
-    return thread.name
+    return {"thread": thread.name, "comment": comment}
 
 
 def reply(

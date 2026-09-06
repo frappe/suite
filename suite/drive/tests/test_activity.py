@@ -75,8 +75,8 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(first, second)
         self.assertEqual(frappe.db.count("Drive Recent", {"user": OWNER, "node": self.node}), 1)
         self.assertEqual(frappe.db.count("Drive Activity", {"node": self.node}), activity_before)
-        self.assertEqual(recents(self.owner)[0].node.name, self.node)
-        self.assertEqual(favourites(self.owner)[0].node.name, self.node)
+        self.assertEqual(recents(self.owner)["rows"][0].node.name, self.node)
+        self.assertEqual(favourites(self.owner)["rows"][0].node.name, self.node)
 
         clear_recents(self.owner)
         self.assertFalse(frappe.db.exists("Drive Recent", {"user": OWNER, "node": self.node}))
@@ -107,11 +107,11 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
     def test_history_and_notifications_hide_currently_unreadable_nodes(self):
         activity = record(self.admin, self.node, "edit", detail={"blob": "sha"})
         notify_users(activity, (OWNER, OUTSIDER))
-        self.assertEqual(history(self.owner, self.node)[0].detail["blob"], "sha")
+        self.assertEqual(history(self.owner, self.node)["rows"][0].detail["blob"], "sha")
         with self.assertRaises(DriveNotFound):
             history(self.outsider, self.node)
-        self.assertEqual(len(notifications(self.owner)), 1)
-        self.assertEqual(notifications(self.outsider), [])
+        self.assertEqual(len(notifications(self.owner)["rows"]), 1)
+        self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
 
     def test_grant_write_creates_one_activity_pointer_for_target_user(self):
@@ -150,7 +150,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         # the reader already cleared to the inbox.
         self.assertEqual(owner_row.name, first)
         self.assertTrue(owner_row.read)
-        inbox = [row.name for row in notifications(self.owner) if row.activity.name == activity]
+        inbox = [row.name for row in notifications(self.owner)["rows"] if row.activity.name == activity]
         self.assertEqual(inbox, [first])
 
         # The row is unique per activity, not per person: a later activity on
@@ -182,7 +182,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
             [existing],
         )
         self.assertEqual(
-            [row.name for row in notifications(self.owner) if row.activity.name == activity],
+            [row.name for row in notifications(self.owner)["rows"] if row.activity.name == activity],
             [existing],
         )
 
@@ -203,11 +203,11 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         # Read authority this test needs, then take it away.
         grant(self.node, OTHER, READ, self.admin)
         set_favourite(self.other, self.node)
-        self.assertEqual(len(favourites(self.other)), 1)
+        self.assertEqual(len(favourites(self.other)["rows"]), 1)
 
         revoke(self.node, OTHER, self.admin)
         # The mark is now invisible, because the node is unreadable.
-        self.assertEqual(favourites(self.other), [])
+        self.assertEqual(favourites(self.other)["rows"], [])
         self.assertTrue(frappe.db.exists("Drive Favourite", {"user": OTHER, "node": self.node}))
 
         # Clearing a private mark is not a read of the node, so it still works.

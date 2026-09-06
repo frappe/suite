@@ -2064,7 +2064,7 @@ def children(
     `with_access` adds §11.3's access detail to every row from the grant rows
     this page already read, so an expanded listing costs no extra query.
     """
-    page_size = _page_size(limit)
+    page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     order_column = _order_column(order_by)
     direction = "ASC" if ascending else "DESC"
@@ -2139,7 +2139,7 @@ def _folder_page_from_result(
         detail = describe_page(chain, {row.name: by_child[row.name] for row in rows}, chain_rows, principals)
         for row in rows:
             row.access = detail[row.name]
-    page = _page(rows, offset, len(window), page_size)
+    page = page_of(rows, offset, len(window), page_size)
     # The listed folder, already read and authorized here. An adapter that owes
     # the caller a breadcrumb trail takes it from this row instead of spending
     # a second read and a second point check on the node it just listed.
@@ -2155,8 +2155,17 @@ def views(
     limit: int = DEFAULT_PAGE_SIZE,
     **filters,
 ) -> dict:
-    """Return one SQL window of a frozen Drive discovery view."""
-    page_size = _page_size(limit)
+    """Return one SQL window of a frozen Drive discovery view.
+
+    §11.2 freezes seven names behind one address, `GET /views/<name>`, so they
+    are dispatched here rather than at the adapter: the two personal lists are
+    kept by `_core.activity` and answer in their own row shape, and unwrapping
+    them here is what lets every view page answer in node shapes.
+    """
+    if name in ("recents", "favourites"):
+        return _personal_view(principals, name, cursor=cursor, limit=limit)
+
+    page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     values = {"limit": page_size, "offset": offset, "now": now(), "own": _sql_values(principals.own)}
 
@@ -2193,7 +2202,16 @@ def views(
     else:
         frappe.throw(_("Drive view {0} is not supported").format(name), frappe.ValidationError)
 
-    return _page(rows, offset, len(window), page_size)
+    return page_of(rows, offset, len(window), page_size)
+
+
+def _personal_view(principals: Principals, name: str, *, cursor: str | None, limit: int) -> dict:
+    """Answer a personal list as node rows, keeping its own cursor."""
+    from suite.drive._core import activity
+
+    reader = activity.recents if name == "recents" else activity.favourites
+    result = reader(principals, cursor=cursor, limit=limit)
+    return {"rows": [row.node for row in result["rows"]], "next_cursor": result["next_cursor"]}
 
 
 def encode_cursor(offset: int) -> str:
@@ -2216,12 +2234,21 @@ def decode_cursor(cursor: str | None) -> int:
     return offset
 
 
-def _page(rows: list, offset: int, window_size: int, limit: int) -> dict:
+def page_of(rows: list, offset: int, window_size: int, limit: int) -> dict:
+    """Wrap already-filtered rows in §11.4's page.
+
+    `next_cursor` advances by the raw SQL window, never by the rows that
+    survived the permission filter, and is null when the window came back
+    short. Public inside `_core` because every listing §11.2 pages - children,
+    the views, versions, activity, and the notification inbox - has to answer
+    with one cursor the client never parses.
+    """
     next_cursor = encode_cursor(offset + window_size) if window_size == limit else None
     return {"rows": rows, "next_cursor": next_cursor}
 
 
-def _page_size(limit: int) -> int:
+def page_limit(limit: int) -> int:
+    """Bound one requested page size. Over the cap is clamped, not refused."""
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         frappe.throw(_("The Drive page size is invalid"), frappe.ValidationError)
     return min(limit, MAX_PAGE_SIZE)
