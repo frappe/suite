@@ -52,6 +52,48 @@ ROUTES = (
     ("POST", re.compile(r"^uploads$"), "upload_create", ()),
     ("PUT", re.compile(r"^uploads/([^/]+)/chunk$"), "upload_chunk", ("upload_id",)),
     ("POST", re.compile(r"^uploads/([^/]+)/finish$"), "upload_finish", ("upload_id",)),
+    ("GET", re.compile(r"^nodes/([^/]+)/activity$"), "node_activity", ("node",)),
+    ("POST", re.compile(r"^nodes/([^/]+)/visit$"), "node_visit", ("node",)),
+    ("PUT", re.compile(r"^nodes/([^/]+)/favourite$"), "node_put_favourite", ("node",)),
+    ("DELETE", re.compile(r"^nodes/([^/]+)/favourite$"), "node_delete_favourite", ("node",)),
+    ("GET", re.compile(r"^nodes/([^/]+)/grants$"), "node_grants", ("node",)),
+    # The principal is the whole tail, not one segment. A `$GROUP:` names a
+    # `User Group`, whose docname may hold a slash; werkzeug has already
+    # decoded `%2F` by the time this runs, so `[^/]+` would 404 that group
+    # rather than answer it. Nothing follows the principal, so a greedy tail
+    # cannot swallow a segment another row claims.
+    ("PUT", re.compile(r"^nodes/([^/]+)/grants/(.+)$"), "node_put_grant", ("node", "principal")),
+    ("DELETE", re.compile(r"^nodes/([^/]+)/grants/(.+)$"), "node_delete_grant", ("node", "principal")),
+    ("POST", re.compile(r"^grants/([^/]+)/rotate$"), "grant_rotate", ("grant",)),
+    ("POST", re.compile(r"^links/([^/]+)/unlock$"), "link_unlock", ("token",)),
+    # The literal leads the pattern that would also match it, the same guard
+    # `nodes/batch` gets above.
+    ("DELETE", re.compile(r"^views/recents$"), "view_clear_recents", ()),
+    ("GET", re.compile(r"^views/([^/]+)$"), "view_list", ("view",)),
+    ("GET", re.compile(r"^nodes/([^/]+)/versions$"), "node_versions", ("node",)),
+    ("POST", re.compile(r"^nodes/([^/]+)/versions$"), "node_version_create", ("node",)),
+    ("PATCH", re.compile(r"^nodes/([^/]+)/versions/([^/]+)$"), "node_version_patch", ("node", "seq")),
+    ("DELETE", re.compile(r"^nodes/([^/]+)/versions/([^/]+)$"), "node_version_delete", ("node", "seq")),
+    (
+        "GET",
+        re.compile(r"^nodes/([^/]+)/versions/([^/]+)/content$"),
+        "node_version_content",
+        ("node", "seq"),
+    ),
+    (
+        "POST",
+        re.compile(r"^nodes/([^/]+)/versions/([^/]+)/restore$"),
+        "node_version_restore",
+        ("node", "seq"),
+    ),
+    ("GET", re.compile(r"^nodes/([^/]+)/threads$"), "node_threads", ("node",)),
+    ("POST", re.compile(r"^nodes/([^/]+)/threads$"), "node_thread_create", ("node",)),
+    ("PATCH", re.compile(r"^threads/([^/]+)$"), "thread_patch", ("thread",)),
+    ("POST", re.compile(r"^threads/([^/]+)/comments$"), "thread_comment_create", ("thread",)),
+    ("PATCH", re.compile(r"^comments/([^/]+)$"), "comment_patch", ("comment",)),
+    ("DELETE", re.compile(r"^comments/([^/]+)$"), "comment_delete", ("comment",)),
+    ("GET", re.compile(r"^notifications$"), "notifications_list", ()),
+    ("POST", re.compile(r"^notifications/read$"), "notifications_read", ()),
     ("GET", re.compile(r"^roots/([^/]+)/usage$"), "root_usage", ("root",)),
     ("PATCH", re.compile(r"^roots/([^/]+)$"), "root_patch", ("root",)),
     ("DELETE", re.compile(r"^roots/([^/]+)$"), "root_purge", ("root",)),
