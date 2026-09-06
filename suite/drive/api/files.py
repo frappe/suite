@@ -18,6 +18,7 @@ from werkzeug.wrappers import Response
 from werkzeug.wsgi import wrap_file
 
 from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
+from suite.drive.http import shims
 from suite.drive.utils import (
     ATTACHMENT_CONTENT_DOCTYPE,
     STATUS_ACTIVE,
@@ -55,148 +56,40 @@ def upload_file(
     parent: str | None = None,
     embed: int = 0,
 ):
-    """
-    Accept chunked file contents via a multipart upload.
-    Store the file on disk, and insert a corresponding DriveFile doc.
-    Works with normal uploads, and embeds.
-    :return: DriveFile doc once the entire file has been uploaded
+    """Accept one chunk of a multipart upload.
+
+    §11.7 forwarder over `POST /uploads`, `PUT /uploads/<id>/chunk`, and
+    `POST /uploads/<id>/finish`. It answers `None` until the last chunk lands,
+    as this name always has.
     """
     checks = frappe.get_hooks("validate_drive_upload")
     for check in checks:
         res = frappe.call(check, file=frappe.request.files["file"], parent=parent, embed=embed)
         if res is not None and res is not True:
             frappe.throw(res or "This upload was cancelled by a validation check.", TypeError)
-
-    parent = parent or get_user_folder().name
-
-    if not user_has_permission(parent, "upload"):
-        frappe.throw("Ask the folder owner for upload access.", frappe.PermissionError)
-
-    if fullpath:
-        parent = ensure_path(fullpath, parent)
-
-    # Support both chunked and non-chunked uploads
-    if frappe.form_dict.chunk_index:
-        current_chunk = int(frappe.form_dict.chunk_index)
-        total_chunks = int(frappe.form_dict.total_chunk_count)
-        offset = int(frappe.form_dict.chunk_byte_offset)
-    else:
-        offset = 0
-        current_chunk = 0
-        total_chunks = 1
-
-    file = frappe.request.files["file"]
-    file_name = get_new_file_name(file.filename, parent)
-    upload_session = frappe.form_dict.uuid
-    if not upload_session and total_chunks == 1:
-        upload_session = frappe.generate_hash(12)
-    if not isinstance(upload_session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", upload_session):
-        frappe.throw("Invalid upload session.", frappe.ValidationError)
-    temp_path = get_upload_path(f"{upload_session}_{secure_filename(file_name)}")
-    with temp_path.open("ab") as f:
-        f.seek(offset)
-        f.write(file.stream.read())
-        if not f.tell() >= int(total_file_size) or current_chunk != total_chunks - 1:
-            return
-
-    # Validate that file size is matching
-    file_size = temp_path.stat().st_size
-    acquire_owner_storage_lock(frappe.session.user)
-    try:
-        validate_quota(incoming_size=file_size)
-    except Exception:
-        temp_path.unlink(missing_ok=True)
-        raise
-
-    mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
-    file_type = get_file_type(mime_type)
-    manager = FileManager()
-
-    drive_file = create_drive_file(
-        file_name,
-        parent,
-        file_type,
-        lambda file: "/" + str(manager.get_disk_path(file, embed)),
-        mime_type,
-        file_size,
-        int(file_modified) / 1000 if file_modified else None,
+    return shims.upload_file(
+        total_file_size=total_file_size,
+        file_modified=file_modified,
+        fullpath=fullpath,
+        parent=parent,
+        embed=embed,
     )
-
-    # Upload and update parent folder size
-    manager.upload_file(temp_path, drive_file, not embed)
-    # Change path to be s3 compatible
-    if manager.s3_enabled:
-        drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-        drive_file.save()
-
-    try:
-        update_file_size(parent, file_size)
-    except Exception:
-        # Find a cleaner way to handle folder sizes as multiple simultaneous uploads will break this
-        pass
-
-    frappe.publish_realtime("list-add", {"file": prettify_file(drive_file.as_dict())})
-
-    return drive_file
 
 
 @frappe.whitelist(allow_guest=True)
 def get_thumbnail(entity_name: str):
-    drive_file = frappe.get_cached_doc("File", entity_name)
+    """Serve one file's thumbnail.
 
-    # Permission first, so callers can't probe type/existence of files they can't read.
-    if not user_has_permission(drive_file, "read"):
-        frappe.throw("No permission", frappe.PermissionError)
-
-    # Thumbnails only exist for these types; bail before touching storage otherwise.
-    if drive_file.is_folder or drive_file.file_type not in ("Image", "Video", "PDF"):
-        return ""
-
-    try:
-        thumbnail = FileManager().get_thumbnail(entity_name)
-        thumbnail_data = BytesIO(thumbnail.read())
-        thumbnail.close()
-    except Exception:
-        return ""
-
-    response = Response(
-        wrap_file(frappe.request.environ, thumbnail_data),
-        direct_passthrough=True,
-    )
-    response.headers.set("Content-Type", "image/webp")
-    response.headers.set("Cache-Control", "private, max-age=3600")
-    response.headers.set("Content-Disposition", "inline", filename=entity_name)
-    return response
+    §11.7 forwarder over `GET /nodes/<id>?expand=preview`. It answers a
+    redirect to the signed preview URL, or `""` when there is none.
+    """
+    return shims.get_thumbnail(entity_name)
 
 
 @frappe.whitelist()
 def create_folder(file_name: str, parent: str | None = None):
-    parent = parent or get_user_folder().name
-
-    parent_doc = frappe.get_doc("File", parent)
-    if not user_has_permission(parent_doc, "upload"):
-        frappe.throw(
-            "You don't have permissions for this.",
-            frappe.PermissionError,
-        )
-    validate_filename(file_name, parent, "Folder", error=f"Folder '{file_name}' already exists.")
-
-    manager = FileManager()
-    path = manager.create_folder(
-        frappe._dict(
-            {
-                "file_name": file_name,
-                "parent_path": Path(storage_key(parent_doc.file_url or "")),
-            }
-        )
-    )
-
-    return create_drive_file(
-        file_name,
-        parent,
-        "Folder",
-        path,
-    )
+    """Create a folder. §11.7 forwarder over `POST /nodes` `kind=folder`."""
+    return shims.create_folder(file_name, parent)
 
 
 def ensure_path(fullpath, parent=None):
@@ -232,92 +125,24 @@ def ensure_path(fullpath, parent=None):
 
 @frappe.whitelist()
 def create_link(file_name: str, link: str, parent: str | None = None):
-    parent = parent or get_user_folder().name
-
-    if not user_has_permission(parent, "upload"):
-        frappe.throw(
-            "Cannot create link due to insufficient permissions.",
-            frappe.PermissionError,
-        )
-
-    validate_filename(file_name, parent, "Link", error=f"Link '{file_name}' already exists.")
-
-    drive_file = frappe.get_doc(
-        {
-            "doctype": "File",
-            "is_private": 1,
-            "file_name": file_name,
-            "file_url": link,
-            "file_type": "Link",
-            "file_modified": frappe.utils.now_datetime(),
-            "folder": parent,
-        }
-    )
-    drive_file.flags.file_created = True
-    drive_file.insert()
-
-    return drive_file
+    """Create a link. §11.7 forwarder over `POST /nodes` `kind=link`."""
+    return shims.create_link(file_name, link, parent)
 
 
 @frappe.whitelist(allow_guest=True)
 def create_auth_token(entity_name: str):
-    if not user_has_permission(entity_name, "read"):
-        raise frappe.PermissionError("You do not have permission to view this file")
-    token = frappe.get_doc(
-        {
-            "doctype": "Drive Token",
-            "file": entity_name,
-            "user": frappe.session.user,
-            "expiry": frappe.utils.add_to_date(None, minutes=5),
-        }
-    ).insert(ignore_permissions=True)
-    return token.name
+    """Retired. §8.4 replaced the one-shot download token with a signed URL."""
+    return shims.create_auth_token(entity_name)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_file_content(entity_name: str, trigger_download: bool = False, token: str | None = None):
+    """Serve one file's bytes.
+
+    §11.7 forwarder over `GET /nodes/<id>/content`, which answers a redirect
+    to a signature that lives fifteen minutes.
     """
-    Central function to get files.
-    """
-    if token:
-        # Single-use capability minted by create_auth_token, for cookieless
-        # fetches (e.g. the Office Online preview).
-        auth = frappe.db.get_value("Drive Token", token, ["file", "expiry"], as_dict=True)
-        if not auth or auth.file != entity_name or frappe.utils.now_datetime() > auth.expiry:
-            raise frappe.PermissionError("You do not have permission to view this file")
-        frappe.delete_doc("Drive Token", token, ignore_permissions=True, force=True)
-    elif not user_has_permission(entity_name, "read"):
-        raise frappe.PermissionError("You do not have permission to view this file")
-
-    file = frappe.get_value(
-        "File",
-        {"name": entity_name},
-        [
-            "name",
-            "file_name",
-            "file_type",
-            "status",
-            "file_url",
-            "is_private",
-            "mime_type",
-        ],
-        as_dict=1,
-    )
-
-    if not file or file.file_type in FORBIDDEN_DOWNLOAD_TYPES or file.status != STATUS_ACTIVE:
-        frappe.throw("Not found", frappe.DoesNotExistError)
-
-    if file.file_type == "Document":
-        frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = "/drive/w/" + file.name
-        return
-    if not file.is_private:
-        # Public files (adopted framework uploads) are served straight off /files.
-        frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = file.file_url
-        return
-
-    return get_file_internal(file, trigger_download)
+    return shims.get_file_content(entity_name, trigger_download, token)
 
 
 def _serve_resumable(manager, key, download_name, mime_type=None):
@@ -374,56 +199,12 @@ def get_file_internal(file, trigger_download=0):
 
 @frappe.whitelist(allow_guest=True)
 def stream_file_content(entity_name: str):
+    """Serve one file's bytes with range support.
+
+    §11.7 forwarder over `GET /nodes/<id>/content`. Ranges are answered by
+    storage behind the signed URL, not by this worker.
     """
-    Stream file content and optionally trigger download
-
-    :param entity_name: Document-name of the file whose content is to be streamed
-    :param drive_entity: Drive Entity record object
-    """
-    range_header = frappe.request.headers.get("Range")
-    if not range_header:
-        return get_file_content(entity_name)
-    entity = frappe.get_doc("File", entity_name)
-    if not user_has_permission(entity, "read"):
-        raise frappe.PermissionError("You do not have permission to view this file")
-
-    if not entity.is_private:
-        frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = entity.file_url
-        return
-
-    size = entity.file_size
-    byte1, byte2 = 0, None
-
-    m = re.search(r"(\d+)-(\d*)", range_header)
-    g = m.groups()
-
-    if g[0]:
-        byte1 = int(g[0])
-    if g[1]:
-        byte2 = int(g[1])
-
-    length = size - byte1
-
-    max_length = 20 * 1024 * 1024  # 20 MB in bytes
-    if length > max_length:
-        length = max_length
-
-    if byte2 is not None:
-        length = byte2 - byte1
-
-    manager = FileManager()
-    data = None
-    if manager.s3_enabled and not stored_on_disk(entity.file_url):
-        data = manager.get_file(entity, f"bytes={byte1}-{byte1 + length - 1}")
-    else:
-        with manager.open_file(storage_key(entity.file_url)) as f:
-            f.seek(byte1)
-            data = f.read(length)
-
-    res = Response(data, 206, mimetype=entity.mime_type, direct_passthrough=True)
-    res.headers.add("Content-Range", "bytes {0}-{1}/{2}".format(byte1, byte1 + length - 1, size))
-    return res
+    return shims.stream_file_content(entity_name)
 
 
 def _iter_folder_files(entity_name, prefix=""):
@@ -633,60 +414,22 @@ def download_archive(token: str):
 
 @frappe.whitelist()
 def set_favourite(entities: list | None = None, clear_all: bool = False):
+    """Set or clear favourite marks.
+
+    §11.7 forwarder over `PUT`/`DELETE /nodes/<id>/favourite`.
     """
-    Favouite or unfavourite DriveEntities for specified user
-
-    :param entities: List[dict] of document names and whether favorite
-    :raises ValueError: If decoded entity_names is not a list
-    """
-    if clear_all:
-        return frappe.db.delete("Drive Favourite", {"user": frappe.session.user})
-
-    if not isinstance(entities, list):
-        frappe.throw(f"Expected list but got {type(entities)}", ValueError)
-
-    for entity in entities:
-        existing_doc = frappe.db.exists(
-            {
-                "doctype": "Drive Favourite",
-                "entity": entity["name"],
-                "user": frappe.session.user,
-            }
-        )
-        if not entity.get("is_favourite"):
-            entity["is_favourite"] = not existing_doc
-
-        if not isinstance(entity["is_favourite"], bool):
-            entity["is_favourite"] = json.loads(entity["is_favourite"])
-
-        if not entity["is_favourite"] and existing_doc:
-            frappe.delete_doc("Drive Favourite", existing_doc)
-        elif entity["is_favourite"] and not existing_doc:
-            frappe.get_doc(
-                {
-                    "doctype": "Drive Favourite",
-                    "entity": entity["name"],
-                    "user": frappe.session.user,
-                }
-            ).insert()
+    return shims.set_favourite(entities, clear_all)
 
 
 @frappe.whitelist()
 def remove_or_restore(entity_names: list[str] | str):
-    """
-    To move entities to or restore entities from the trash
+    """Trash active entities, or restore trashed ones.
 
-    :param entity_names: List of document-names
+    §11.7 forwarder over `PATCH /nodes/<id>` `{state}`. A restore names no
+    destination: §8.7 puts a node back where it was, and refuses when that
+    place is gone.
     """
-    if isinstance(entity_names, str):
-        entity_names = json.loads(entity_names)
-    if not isinstance(entity_names, list):
-        frappe.throw(f"Expected list but got {type(entity_names)}", ValueError)
-    manager = FileManager()
-    locked_owners = set()
-
-    for entity in entity_names:
-        toggle_entity_status(frappe.get_doc("File", entity), manager, locked_owners)
+    return shims.remove_or_restore(entity_names)
 
 
 def toggle_entity_status(doc, manager: FileManager, locked_owners: set):
@@ -726,115 +469,66 @@ def toggle_entity_status(doc, manager: FileManager, locked_owners: set):
 
 @frappe.whitelist()
 def delete_entities(entity_names: list[str] | None = None, clear_all: bool = False):
-    if clear_all:
-        entity_names = frappe.db.get_list(
-            "File", {"status": STATUS_TRASHED, "owner": frappe.session.user}, pluck="name"
-        )
-    elif isinstance(entity_names, str):
-        entity_names = json.loads(entity_names)
-    elif not isinstance(entity_names, list) or not entity_names:
-        frappe.throw(f"Expected non-empty list but got {type(entity_names)}", ValueError)
+    """Purge trashed entities.
 
-    for entity in entity_names:
-        frappe.get_doc("File", entity).permanent_delete()
+    §11.7 forwarder over `DELETE /nodes/<id>`.
+    """
+    return shims.delete_entities(entity_names, clear_all)
 
 
 @frappe.whitelist()
 def rename(entity_name: str, new_title: str):
-    drive_file = frappe.get_doc("File", entity_name)
-    return drive_file.rename(new_title)
+    """Rename one entity. §11.7 forwarder over `PATCH /nodes/<id>` `{title}`."""
+    return shims.rename(entity_name, new_title)
 
 
 # Will be replaced after new JS composables refactor
 @frappe.whitelist()
 def update_access(entity_name: str, method: str, **kwargs):
-    drive_file = frappe.get_doc("File", entity_name)
-    kwargs.pop("cmd")
-    if not drive_file:
-        frappe.throw("Entity does not exist", ValueError)
-    if method == "share":
-        return drive_file.share(**kwargs)
-    elif method == "unshare":
-        return drive_file.unshare(user=kwargs.get("user"))
+    """Share or unshare one entity.
+
+    §11.7 forwarder over `PUT`/`DELETE /nodes/<id>/grants/<principal>`. An
+    unshare removes the row and writes nothing: §5.10 keeps removal and denial
+    apart, so a client that wants a denial has to ask for one.
+    """
+    kwargs.pop("cmd", None)
+    return shims.update_access(entity_name, method, **kwargs)
 
 
 @frappe.whitelist()
 def remove_recents(entity_names: list[str] | None = None, clear_all: bool = False):
-    """
-    Clear recent DriveEntities for specified user
+    """Clear the caller's recent rows.
 
-    :param entity_names: List of document-names
-    :type entity_names: list[str]
-    :raises ValueError: If decoded entity_names is not a list
+    §11.7 forwarder over `DELETE /views/recents`. An empty list still clears
+    nothing.
     """
-    entity_names = entity_names or []
-    if clear_all:
-        return frappe.db.delete("Drive Entity Log", {"user": frappe.session.user})
-    elif not isinstance(entity_names, list):
-        frappe.throw(f"Expected list but got {type(entity_names)}", ValueError)
-
-    for entity in entity_names:
-        existing_doc = frappe.db.exists(
-            {
-                "doctype": "Drive Entity Log",
-                "entity_name": entity,
-                "user": frappe.session.user,
-            }
-        )
-        if existing_doc:
-            frappe.delete_doc("Drive Entity Log", existing_doc)
+    return shims.remove_recents(entity_names, clear_all)
 
 
 @frappe.whitelist()
 def does_entity_exist(name: str | None = None, folder: str | None = None):
     """Whether `folder` already holds a file called `name`.
 
-    Answers about a folder the caller cannot open are an enumeration oracle:
-    the reply is derived from names the caller is not entitled to see. Gate it
-    on `upload` rather than `read` - this only ever serves the uploader naming
-    a file it is about to write, so it should refuse anyone who could not write
-    there, and `upload_file` resolves the same folder against the same level.
+    §11.7 forwarder. It keeps the `upload` gate the old body used: the answer
+    is derived from names in a folder, so a caller who could not write there
+    is not entitled to it.
     """
-    if not folder:
-        folder = get_user_folder().name
-    if not user_has_permission(folder, "upload"):
-        frappe.throw("Ask the folder owner for upload access.", frappe.PermissionError)
-    result = frappe.db.exists("File", {"folder": folder, "file_name": name})
-    return result
+    return shims.does_entity_exist(name, folder)
 
 
 @frappe.whitelist()
 def get_new_title(title: str, parent_name: str, folder: bool = False):
-    """Return `title`, suffixed to avoid a collision inside `parent_name`.
-
-    Leaks strictly more than `does_entity_exist` - the suffix is a count of the
-    matching siblings - so it takes the same `upload` gate, for the same reason.
-    """
-    if not user_has_permission(parent_name, "upload"):
-        frappe.throw("Ask the folder owner for upload access.", frappe.PermissionError)
-    return get_new_file_name(title, parent_name, folder)
+    """Retired. §8.6 refuses a sibling collision instead of renaming around it."""
+    return shims.get_new_title(title, parent_name, folder)
 
 
 @frappe.whitelist()
 def move(entity_names: list[str], new_parent: str | None = None):
+    """Move entities into a new parent.
+
+    §11.7 forwarder over `PATCH /nodes/<id>` `{parent}`.
     """
-    Move file or folder to the new parent folder
-
-    :param new_parent: Document-name of the new parent folder. Defaults to the user directory
-    :raises NotADirectoryError: If the new_parent is not a folder, or does not exist
-    :raises FileExistsError: If a file or folder with the same name already exists in the specified parent folder
-    :return: DriveEntity doc once file is moved
-    """
-    if isinstance(entity_names, str):
-        entity_names = json.loads(entity_names)
-    if not entity_names or not isinstance(entity_names, list):
-        frappe.throw(f"Expected a non-empty list but got {type(entity_names)}", ValueError)
-
-    for entity in entity_names:
-        doc = frappe.get_doc("File", entity)
-        res = doc.move(new_parent)
-
-    return res
+    return shims.move(entity_names, new_parent)
 
 
 # `search` resolves access one row at a time, so the rows it scans are not the
@@ -871,52 +565,11 @@ SEARCH_QUERY = """
 
 @frappe.whitelist()
 def search(query: str):
-    """Search active files by name, returning only rows the caller may read.
+    """Search active files by name.
 
-    Access cannot be resolved in the query - `file_permission_criterion` does
-    not model inheritance - so it is filtered per row in Python. Filtering a
-    single fixed window that way makes the reply depend on how many *unreadable*
-    rows happen to sort first: a caller shared on few files gets a short page,
-    or an empty one, while matches they can read sit just past the window. Walk
-    successive windows instead, stopping once the page is full.
+    §11.7 forwarder over `GET /views/search`.
     """
-    text = " ".join(k + "*" for k in query.split())
-    if not text:
-        return []
-    try:
-        rows = []
-        seen = set()
-        for window in range(MAX_SEARCH_SCAN_WINDOWS):
-            batch = frappe.db.sql(
-                SEARCH_QUERY,
-                values={
-                    "text": text,
-                    "status": STATUS_ACTIVE,
-                    "limit": SEARCH_SCAN_WINDOW,
-                    "offset": window * SEARCH_SCAN_WINDOW,
-                },
-                as_dict=1,
-            )
-            for row in batch:
-                # A window can overlap the one before it if rows are written
-                # mid-scan; never pay for the same row - or return it - twice.
-                if row.name in seen:
-                    continue
-                seen.add(row.name)
-                # Pass the row, not its name: `user_has_permission` reloads the
-                # whole document when given a string, and the access check only
-                # reads fields this query already selects.
-                if not user_has_permission(row, "read"):
-                    continue
-                rows.append(row)
-                if len(rows) == SEARCH_PAGE_LENGTH:
-                    return rows
-            if len(batch) < SEARCH_SCAN_WINDOW:
-                break
-        return rows
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Frappe Drive Search Error")
-        return {"error": str(e)}
+    return shims.search(query)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -926,48 +579,43 @@ def translate_old_name(old_name: str):
     # can only be passed through when they survived migration as File names.
     # Missing and inaccessible ids both return None so guests can't probe
     # which private files exist.
-    if not frappe.db.exists("File", old_name):
-        return None
-    return old_name if user_has_permission(old_name, "read") else None
+    """Answer a pre-migration id with the id it is now.
+
+    §14.3 gives every node the id its `File` row had, so the id is returned
+    unchanged when the caller may read it. Missing and unreadable both answer
+    `None`, so a guest cannot probe which private files exist.
+    """
+    return shims.translate_old_name(old_name)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_entity_type(entity_name: str):
-    if not user_has_permission(entity_name, "read"):
-        frappe.throw("You do not have permission to view this file.", frappe.PermissionError)
+    """Answer whether an entity is a folder or a file.
 
-    entity = frappe.db.get_value(
-        "File",
-        {"status": STATUS_ACTIVE, "name": entity_name},
-        ["name", "file_type"],
-        as_dict=1,
-    )
-    if entity.file_type == "Folder":
-        entity["type"] = "folder"
-    else:
-        entity["type"] = "file"
-    return entity
+    §11.7 forwarder over `GET /nodes/<id>`.
+    """
+    return shims.get_entity_type(entity_name)
 
 
 @frappe.whitelist()
 def get_root_folder():
-    """The shared Drive tree and the caller's private folder."""
-    return {"root": drive_root().name, "home": get_user_folder().name}
+    """The shared Drive tree and the caller's private folder.
+
+    §11.7 forwarder over `_core.roots`. §11.2 has no root-discovery route, so
+    this is where a client still bootstraps from.
+    """
+    return shims.get_root_folder()
 
 
 @frappe.whitelist(allow_guest=True)
 def redirect_to_original(file_id: str):
-    """
-    Redirect Drive attachments to original files
-    """
-    file = frappe.get_cached_doc("File", file_id)
-    if not user_has_permission(file_id, "read"):
-        frappe.throw("You do not have permission to view this file.", frappe.PermissionError)
-    if not file.content_doctype == ATTACHMENT_CONTENT_DOCTYPE:
-        frappe.throw("This is not an attachment", ValueError)
+    """Redirect a Drive attachment to the document it belongs to.
 
-    frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = "/drive/g/" + file.content_docname
+    §11.7 forwarder over `GET /nodes/<id>`. §14.4 drops the content link on an
+    adopted attachment, so after Build this refuses exactly as the old body
+    refused a row that was not an attachment.
+    """
+    return shims.redirect_to_original(file_id)
 
 
 @frappe.whitelist()
@@ -976,24 +624,12 @@ def track_visit(
     doctype: str | None = None,
     docname: str | None = None,
 ):
-    if not entity_name and doctype and docname:
-        entity_name = frappe.db.get_value(
-            "File", {"content_doctype": doctype, "content_docname": docname}, "name"
-        )
-    if not entity_name:
-        frappe.throw("A Drive file or content document is required", ValueError)
-    entity = frappe.get_doc("File", entity_name)
-    mark_as_viewed(entity)
-    frappe.db.set_value(
-        "Drive Notification",
-        {
-            "to_user": frappe.session.user,
-            "notif_doctype_name": entity_name,
-            "read": False,
-        },
-        "read",
-        True,
-    )
+    """Record that the caller opened an entity.
+
+    §11.7 forwarder over `POST /nodes/<id>/visit`, plus the unread
+    notifications about that node, which the old body also cleared.
+    """
+    return shims.track_visit(entity_name, doctype, docname)
 
 
 def get_upload_path(file_name):
@@ -1011,17 +647,8 @@ def get_upload_path(file_name):
 def resolve_legacy_route(old_id: str):
     """Where a pre-migration team link should land now.
 
-    Teams became folders and their ids went with the doctype, so `/drive/t/<team>`
-    can only be answered from the mapping the migration left behind. Returns None
-    when there is nothing to point at, so the caller can 404 normally.
+    §11.7 forwarder over `Drive Legacy Route`, then a readability check on the
+    id it names. Returns `None` when there is nothing to point at, so the
+    caller can 404 normally and nobody learns a private file exists.
     """
-    entity = frappe.db.get_value("Drive Legacy Route", old_id, "entity")
-    if not entity:
-        return None
-    row = frappe.db.get_value("File", entity, ["name", "is_folder", "status"], as_dict=True)
-    if not row or row.status != STATUS_ACTIVE:
-        return None
-    if not user_has_permission(entity, "read"):
-        # don't confirm it exists to someone who cannot open it
-        return None
-    return {"name": row.name, "is_folder": bool(row.is_folder)}
+    return shims.resolve_legacy_route(old_id)

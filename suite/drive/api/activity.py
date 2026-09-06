@@ -2,6 +2,7 @@ import frappe
 from pypika import Order
 
 from suite.drive.api.permissions import user_has_permission
+from suite.drive.http import shims
 
 
 def create_new_activity_log(
@@ -32,37 +33,10 @@ def create_new_activity_log(
 
 @frappe.whitelist()
 def get_entity_activity_log(entity_name: str):
-    if not user_has_permission(entity_name, "read"):
-        frappe.throw("You do not have permission to view this file.", frappe.PermissionError)
+    """Return an entity's activity log.
 
-    Activity = frappe.qb.DocType("Drive Entity Activity Log")
-    User = frappe.qb.DocType("User")
-    selectedFields = [
-        Activity.name,
-        Activity.message,
-        Activity.owner,
-        Activity.document_field,
-        Activity.meta_value,
-        Activity.action_type,
-        Activity.old_value,
-        Activity.new_value,
-        Activity.creation,
-        User.full_name,
-        User.user_image,
-    ]
-    query = (
-        frappe.qb.from_(Activity)
-        .select(*selectedFields)
-        .left_join(User)
-        .on(Activity.owner == User.email)
-        .where(Activity.entity == entity_name)
-        .orderby(Activity.creation, order=Order.desc)
-    )
-
-    result = query.run(as_dict=True)
-    for i in result:
-        if i.action_type.startswith("share") and i.document_field == "User":
-            i.share_user_fullname, i.share_user_image = frappe.get_value(
-                "User", i.new_value, ["full_name", "user_image"]
-            )
-    return result
+    §11.7 forwarder over `GET /nodes/<id>/activity`. `action_type` and the
+    actor's display fields are kept; the rendered `message` string §9.5 dropped
+    is not rebuilt.
+    """
+    return shims.get_entity_activity_log(entity_name)

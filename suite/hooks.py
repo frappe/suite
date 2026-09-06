@@ -556,6 +556,9 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/v2/method/suite.meet.api.test_helpers.",
     "/api/v2/document/Meet%20Room/",
     "/api/method/suite.drive.api.",
+    # drive — the §11.2 route namespace. Additive: the legacy method prefix
+    # above stays until Cleanup removes it, one release after Build (§11.7).
+    "/api/suite/drive/",
     "/api/method/suite.writer.api.",
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).
