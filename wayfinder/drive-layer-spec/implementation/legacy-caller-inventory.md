@@ -10,7 +10,7 @@ forwarders one release after Build.
 Agents produced the caller table and the payload comparison it rests on; the
 classification, the retention reasons, and the Cleanup gates are this ticket's.
 
-**Revision:** suite `29eadd1cd` on `review/drive-23-legacy-compatibility`.
+**Revision:** suite `f517358f0` on `review/drive-23-legacy-compatibility`.
 The table below was written against `9797d1ea6`; the review branch changed no
 name, no class, and no guest flag, so the table still holds. What the review
 changed is recorded in "What the review fixed" below.
@@ -32,13 +32,13 @@ Every path is relative to the app root. The classification is executable:
 Call shapes below: `CR` = frappe-ui `createResource`, `call()` = frappe-ui
 `call`, `fR` = `frappeRequest`, `URL` = a raw URL used as `src`/`href`/
 navigation, `XHR` = synchronous `XMLHttpRequest`, `py` = Python import, `pw` =
-Playwright.
+Playwright (`e2e/drive-backed-apps/`).
 
 ## `suite.drive.api.files` (26)
 
 | Name | Class | Guest | Client callers | Now |
 |---|---|---|---|---|
-| `upload_file` | forwarder | yes | `drive/components/FileUploader.vue:117` (chunked XHR), `drive/utils/files.js:547`, `writer/utils/index.js:447`, `suite/public/js/FileUploader.vue:289` (Desk), `suite/writer/api/embed.py:12` (py) | `upload.create_upload` / `upload_chunk` / `finish_upload`; the client's `uuid` is bound to the server's `upload_id` in cache |
+| `upload_file` | forwarder | yes | `drive/components/FileUploader.vue:117` (Dropzone), `drive/utils/files.js:547`, `writer/utils/index.js:447`, `suite/public/js/FileUploader.vue:289` (Desk), `suite/writer/api/embed.py:12` (py) | `upload.create_upload` / `upload_chunk` / `finish_upload`; the client's `uuid` is bound to the server's `upload_id` in cache. Dropzone sets `chunking: true` and no `forceChunking`, so a file under its 20 MB `chunkSize` arrives in one part with no `total_file_size`, and the session declares the bytes in hand |
 | `get_thumbnail` | forwarder | yes | `drive/utils/files.js:305` → `GridItem.vue:62`, `DriveListRow.vue:258` (`<img src>`) | `previews.preview_expansions`; 302 to the signed preview, `""` when there is none |
 | `create_folder` | forwarder | no | `NewFolderDialog.vue:38`, `MoveDialog.vue:298` | `nodes.create_folder` |
 | `create_link` | forwarder | no | `NewLinkDialog.vue:36` | `nodes.create_link` |
@@ -48,14 +48,14 @@ Playwright.
 | `download_folder` | **retained** | yes | `utils/download.js:25` | Legacy body. No §11.2 route builds a folder archive |
 | `download_status` | **retained** | yes | `utils/download.js:76` | Legacy body. No route reports archive progress |
 | `download_archive` | **retained** | yes | `utils/download.js:43` | Legacy body. No route streams a built archive |
-| `set_favourite` | forwarder | no | `resources/files.js:182` ← `GenericPage.vue:610,623`, `Navbar.vue:272,284` | `activity.set_favourite`; `clear_all` walks the favourites view |
+| `set_favourite` | forwarder | no | `resources/files.js:182` ← `GenericPage.vue:610,623`, `Navbar.vue:271,283` | `activity.set_favourite`; `clear_all` walks the favourites view |
 | `remove_or_restore` | forwarder | no | `utils/confirmActions.js:27,46`, `writer/components/RemoveDialog.vue:38,50,85` | `nodes.update(state=...)`; reads the current state to pick the direction |
-| `delete_entities` | forwarder | no | `resources/files.js:249`, `utils/confirmActions.js:75`, `writer/utils/docximporter.js:38`; `api/scripts.py:114` (py, daily job) | `nodes.purge`; `clear_all` walks the trash view |
+| `delete_entities` | forwarder | no | `resources/files.js:249`, `utils/confirmActions.js:75`, `writer/utils/docximporter.js:38`; `api/scripts.py:64` (py, daily job) | `nodes.purge`; `clear_all` walks the trash view |
 | `rename` | forwarder | no | `resources/files.js:270` ← `useInlineRename.js:92`, `writer/components/CoreEditor.vue:349`; `ui/drive/js/resources.js:50` | `nodes.update(title=...)` |
 | `update_access` | forwarder | no | `ui/drive/js/resources.js:33` ← `ShareDialog.vue:210,220,266,283,291` | `access.grant` / `access.revoke`. Bits → one rung; an unshare writes nothing |
 | `remove_recents` | forwarder | no | `resources/files.js:229` ← `GenericPage.vue:633`, `confirmActions.js:88` | `activity.clear_recents`; an empty list still clears nothing |
 | `does_entity_exist` | forwarder | no | `FileUploader.vue:33` (synchronous XHR) | `nodes.title_taken`, which keeps the UPLOAD gate |
-| `get_new_title` | **retired** | no | `FileUploader.vue:52`; `suite/writer/api/docs.py:49` (py) | `DriveRetired` 410. §8.6 refuses a collision at write time |
+| `get_new_title` | **retired** | no | `FileUploader.vue:52` | `DriveRetired` 410. §8.6 refuses a collision at write time. `suite/writer/api/docs.py:49` used to import it and now carries the rule itself |
 | `move` | forwarder | no | `resources/files.js:305` ← `GenericPage.vue:448`, `Sidebar.vue:260`; `ui/drive/js/resources.js:12` ← `MoveDialog.vue:347` | `nodes.update(parent=...)` |
 | `search` | forwarder | no | `SearchPopup.vue:113` | `nodes.views("search")` |
 | `translate_old_name` | forwarder | yes | `resources/files.js:324` ← `routes.ts:153,168,182` | §14.3 preserves ids; the id passes through when readable, else `None` |
@@ -98,7 +98,7 @@ Playwright.
 | `scripts.sync_preview` | **retained** | no | `SyncBreakdown.vue:100` | Legacy body. §11.7 points at a route that uploads a thumbnail |
 | `scripts.sync_from_disk` | **retired** | no | `SyncBreakdown.vue:105` | `DriveRetired` 410. Build takes over the disk import |
 | `embed.get_file_content` | forwarder | yes | **none** | `content.list_media`, then 302 to the matching signed URL |
-| `s3.fetch` | **permanent** | yes | none. Reached only through stored `File.file_url` values | Untouched |
+| `s3.fetch` | **permanent** | yes | none. Reached only through stored `File.file_url` values | Signature and decorator unchanged. Its `except` names `DriveError`, so a locked or expired stored URL no longer confirms the object on a guest-callable path |
 
 ## `suite.drive.api.product` (19)
 
@@ -124,6 +124,31 @@ built at `api/notifications.py:100` and
 | `File.unshare` | retained | no | `api/files.py` only, before this ticket | Same |
 | `File.rename` | retained | no | `overrides/file.py:612` (`sync_content_file`) | Legacy body, still the content-title sync |
 | `get_file_for_doc` | **permanent** | no | `drive/sdk.js:25` ← `slides/components/SharePopover.vue:22` | Untouched. Its payload is `get_entity_with_permissions`'s |
+
+## End-to-end callers
+
+The table above lists client and Python callers. Twelve legacy names are also
+called by name from `e2e/drive-backed-apps/`, which posts to `/api/method/`
+directly and waits on the response URL. Every path below is relative to
+`e2e/drive-backed-apps/`.
+
+| Name | Called from |
+|---|---|
+| `files.update_access` | `helpers/drive.ts:100,113`, `helpers/writer.ts:31`, `specs/drive/sharing.spec.ts:18,71,107,177,209` |
+| `files.remove_or_restore` | `specs/drive/lifecycle.spec.ts:21,54,62`, `specs/drive-writer/integration.spec.ts:121` |
+| `permissions.get_entity_with_permissions` | `helpers/drive.ts:64`, `specs/drive/lifecycle.spec.ts:33`, `specs/drive/sharing.spec.ts:30` |
+| `files.move` | `specs/drive/breadcrumbs.spec.ts:169`, `specs/drive/move-permissions.spec.ts:47`, `specs/drive-writer/integration.spec.ts:91` |
+| `notifications.get_notifications` | `specs/drive/notifications.spec.ts:29,45` |
+| `list.files` | `helpers/drive.ts:21`, `specs/drive/tree-expand.spec.ts:75` |
+| `files.set_favourite` | `specs/drive/favourites-search.spec.ts:27,35` |
+| `files.rename` | `specs/drive/breadcrumbs.spec.ts:126`, `specs/drive-writer/integration.spec.ts:80` |
+| `permissions.get_shared_with_list` | `specs/drive/sharing.spec.ts:146` |
+| `list.favourites` | `specs/drive/favourites-search.spec.ts:19` |
+| `files.search` | `specs/drive/favourites-search.spec.ts:51` |
+| `files.delete_entities` | `specs/drive/lifecycle.spec.ts:26` |
+
+These were not run: this review has no site. One is known to fail by reading
+it, and it is named under "Carried risks" below.
 
 ## What Cleanup needs
 
@@ -207,8 +232,10 @@ rebuilt from the new surface without inventing data.
 ## What the review fixed
 
 Independent review on `review/drive-23-legacy-compatibility`, commits
-`037d067a9`, `d5f8d4590`, `f75f0aff1`, `be89d402d`, `29eadd1cd`. Each fix
-carries a regression test that was run against the pre-fix body first.
+`037d067a9`, `d5f8d4590`, `f75f0aff1`, `be89d402d`, `29eadd1cd`, `ec5bd104c`,
+`3a70a6228`, `45f9296b6`, `4a7c5a0ab`, `49b413d7c`, `2a18f766d`, `b4b6fde55`,
+`f517358f0`. Each fix carries a regression test that was run against the
+pre-fix body first.
 
 **Security**
 
@@ -246,14 +273,75 @@ carries a regression test that was run against the pre-fix body first.
     `api/files.ensure_path`.
 14. `auto_delete_from_trash` passed rows where `delete_entities` wants ids.
 
+**Upload**
+
+15. `upload_file` declared a zero-byte session for every file Dropzone did not
+    chunk, which is every file under 20 MB. The session refused its own first
+    chunk and deleted itself, so every SPA upload under that size and every
+    Writer embed failed. The old body never read `total_file_size`; it sized
+    the file off the disk.
+16. A storage driver that offers a presigned target opens a direct session no
+    chunk can be written to. Refused by name now; the framework's own answer
+    named nothing a legacy client could act on. See "Carried risks".
+17. `upload_file` minted a session id per chunk, so the last chunk finished a
+    file with holes in it. The old body minted one only for a single-chunk
+    upload and refused a chunked one that named none.
+
+**Refusal messages**
+
+18. The workflows raise, and `report_error` copies a message into the response
+    only when `msgprint` stamped one on. A legacy client therefore read a
+    status code and no text. `FileUploader.vue:208` reads `_server_messages`
+    alone and printed "Please contact support." for a full disk;
+    `ui/drive/js/resources.js:35` reads `error.messages[0]` and threw inside
+    its own error handler. Every shim a legacy module reaches now throws the
+    same class again at the boundary, which is what `routes._route` does at
+    the other one.
+
+**Listing bounds**
+
+19. `list.files` is `allow_guest`, and `file_kinds` and `search` are applied to
+    the page here rather than in SQL. A window of non-matching rows did not
+    advance the page, so `limit=1&file_kinds=["NoSuchKind"]` in a folder of
+    five thousand children ran five thousand SQL windows. A filtered listing
+    now walks from the top, filters, and cuts; three bounds cap the reads.
+20. The same rewrite repaired the offsets. `start` and `limit` counted matching
+    rows on the old surface, so page two of a PDF-only folder began at the
+    twenty-first PDF; a cursor built from `start` indexed unfiltered rows.
+
+**Payloads**
+
+21. `file_kinds=["Frappe Document"]` selected nothing. `get_file_type` answers
+    the first `MIME_LIST_MAP` key holding the mime and `frappe_doc` is under
+    `Document` first. The old filter was `mime_type IN (...)` over the union of
+    the named families and matched both.
+22. A legacy re-share cleared an expiry it has no field for: `access.grant`
+    replaces the whole row. The existing expiry is read back and passed through.
+23. `get_root_folder` published `root: None` on a site with no Shared root.
+24. `get_user_access` answered `type: "admin"` beside `share: 0`.
+    `_core.access` has no owner rule, so an owner holds UPLOAD on a node they
+    created in a folder shared to them at UPLOAD. The label follows the rung
+    the bits come from now.
+25. `get_entity_with_permissions` served a trashed node. The old query filtered
+    `status: STATUS_ACTIVE`.
+26. `update_access` and `translate_old_name` answered a traceback rather than a
+    refusal: one read `principal.startswith` before `access` could refuse a
+    non-string, the other caught `DriveNotFound` alone and let `DriveLocked`
+    and `DriveLinkExpired` travel.
+
 **Evidence**
 
-15. The permanent surface was checked with substring greps. Each of the 21 is
+27. The permanent surface was checked with substring greps. Each of the 21 is
     now compared with its own structure at `e390a4487`, and every legacy name's
     `allow_guest` flag with it. One hook assertion passed on a file-text match
     that was not the value the hook holds.
-16. `get_shared_with_list` claimed it drops expired link rows. It drops all of
+28. `get_shared_with_list` claimed it drops expired link rows. It drops all of
     them.
+29. `test_every_forwarder_delegates_and_holds_no_second_implementation` was a
+    substring search for "shims.". Inlining a forwarder and leaving the comment
+    "was a shims. forwarder" passed it. It walks for a call node now.
+30. `_share_counts` and `_child_named` had no test at all. The second is the
+    UPLOAD gate for a directory upload.
 
 ## Carried risks the review did not fix
 
@@ -265,4 +353,40 @@ carries a regression test that was run against the pre-fix body first.
   nothing. The frontend ticket owns telling the user.
 - **`update_access` cannot spell `share` without `write`.** The ladder puts
   MANAGE above EDIT. A legacy row that said "may re-share, may not edit"
-  becomes UPLOAD or COMMENT, never MANAGE.
+  becomes UPLOAD or COMMENT, never MANAGE. One e2e test depends on the old
+  reading: `specs/drive/sharing.spec.ts:192-221` shares `{read: 1, share: 1}`,
+  then expects the re-share to be refused with "cannot grant". The first share
+  now lands at READ, so the second call is refused by the MANAGE gate with a
+  different message. The spec needs the frontend ticket, not a shim change.
+  Read, not run: this review has no site.
+
+- **Uploads fail on a site whose `storage_driver` is `s3`.** The driver offers
+  a presigned target, so `create_blob_upload` opens a direct session. A legacy
+  caller has already sent its bytes to the server, and §11.7 has no way to hand
+  them on: a presigned POST pins the object to one request and the whole
+  declared length, which a chunked legacy upload does not have. Relaying would
+  mean buffering the whole file server-side, which is the temp file §14 removed.
+  The refusal names the cause. The new route surface is unaffected, because it
+  returns the target to the client.
+
+- **`Administrator` has no personal Drive folder.** `provision_personal_root`
+  refuses `Guest` and `Administrator` by §7, and legacy `get_user_folder()`
+  made one for anybody. An Administrator with no root migrated by Build is
+  refused by name at `_home` rather than handed a `None`. Reaching Drive as
+  `Administrator` is a §7 question, not a shim one.
+
+- **A share to an address with no `User` row is refused.** `File.share` called
+  `create_invites(user, auto=True)` and made a `Drive User Invitation`;
+  `access._validate_principal_target` refuses. `TagInput` still offers "Add
+  email", so the dialog can still submit one.
+
+- **A new share sends no email.** `Drive Permission.after_insert` enqueued
+  `notify_share`, which sent one. `_core.access` writes a `Drive Notification`
+  row and stops.
+
+- **Two permission stores coexist until Build.** `generate_upward_path` and
+  `user_has_permission` read `Drive Permission`; the forwarders write
+  `Drive Grant`. The retained names (`download_folder`, `download_status`,
+  `download_archive`, `get_attachments`, `sync_preview`) and `/dav` still read
+  the first. Pointing them at `_core.access` before Build would deny
+  everything, because no `Drive Node` exists yet. Cleanup owns the crossover.
