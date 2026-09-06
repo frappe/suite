@@ -143,7 +143,12 @@ ignore_file_permissions = True
 # `Sheet` carried an `if_owner` `All` row instead, so ticket 19 widened it to the
 # open baseline §10.4 needs and put the owner rule into
 # `suite.sheets.permissions.sheet_has_permission`, where it can also read the
-# node column. Its `Guest` read row is there for the same link grants.
+# node column. Its `Guest` read row is there for the same link grants. Only
+# `if_owner` was dropped: the row keeps `share`, `export`, `print`, `email`, and
+# `report`, because a hook can only deny and a right the row does not carry is a
+# right no hook can hand back. `share_sheet` asks `ptype="share"` and
+# `frappe.share.check_share_permission` asks it again, so a narrower row would
+# refuse the owner of a legacy sheet, which ticket 23 still owns.
 #
 # `Presentation` still owns the legacy `title` column §14.7 read at Build and
 # §14.10 drops at Cleanup, one release after activation. `suite.slides.drive.SPEC`
