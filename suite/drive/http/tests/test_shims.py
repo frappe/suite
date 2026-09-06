@@ -1330,6 +1330,51 @@ class TestUnadoptedRename(ShimCase):
         row.rename.assert_not_called()
 
 
+class TestUnadoptedTrash(ShimCase):
+    """`_LegacyTrash`: trash and restore, for ids no node holds.
+
+    Writer's own `RemoveDialog.vue` names the document the editor has open, so
+    Delete refused every document the product creates.
+    """
+
+    def store(self, *, unadopted=True):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=unadopted))
+        toggle = MagicMock()
+        self.enterContext(patch("suite.drive.api.files.toggle_entity_status", toggle))
+        manager = MagicMock()
+        self.enterContext(patch("suite.drive.utils.files.FileManager", manager))
+        rows = MagicMock(side_effect=lambda doctype, name: name)
+        self.enterContext(patch.object(shims.frappe, "get_doc", rows))
+        return toggle, manager
+
+    def test_a_node_less_row_is_toggled_by_the_rule_that_wrote_it(self):
+        toggle, _ = self.store()
+        nodes = self.stub("node_core")
+        shims.remove_or_restore(["f1"])
+        self.assertEqual(toggle.call_args.args[0], "f1")
+        nodes.update.assert_not_called()
+
+    def test_one_manager_and_one_lock_set_serve_the_whole_list(self):
+        """The old body built both once for the list, so two files owned by
+        one person lock that person's storage once."""
+        toggle, manager = self.store()
+        self.stub("node_core")
+        shims.remove_or_restore(["f1", "f2"])
+        self.assertEqual(manager.call_count, 1)
+        managers = {id(call.args[1]) for call in toggle.call_args_list}
+        locks = {id(call.args[2]) for call in toggle.call_args_list}
+        self.assertEqual(len(managers), 1)
+        self.assertEqual(len(locks), 1)
+
+    def test_a_list_of_nodes_builds_no_manager_at_all(self):
+        _, manager = self.store(unadopted=False)
+        nodes = self.stub("node_core")
+        nodes.get.return_value = node_row(state="Active")
+        shims.remove_or_restore(["n1"])
+        manager.assert_not_called()
+        nodes.update.assert_called_once_with(SOMEONE, "n1", state="Trashed")
+
+
 class TestUnadoptedVisit(ShimCase):
     """`_legacy_visit`: the opened-at row, for an id no node holds.
 
@@ -1967,6 +2012,7 @@ class TestFileForwarders(ShimCase):
 
     def test_remove_or_restore_reads_the_state_before_it_flips_it(self):
         nodes = self.stub("node_core")
+        self.stub_unadopted_row()
         nodes.get.return_value = node_row(state="Active")
         shims.remove_or_restore(["n1"])
         nodes.update.assert_called_once_with(SOMEONE, "n1", state="Trashed")
@@ -1978,6 +2024,7 @@ class TestFileForwarders(ShimCase):
 
     def test_a_restore_never_names_a_destination(self):
         nodes = self.stub("node_core")
+        self.stub_unadopted_row()
         nodes.get.return_value = node_row(state="Trashed")
         shims.remove_or_restore(["n1"])
         self.assertNotIn("parent", nodes.update.call_args.kwargs)

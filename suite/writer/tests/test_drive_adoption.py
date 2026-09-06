@@ -52,7 +52,7 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api.files import rename, track_visit
+from suite.drive.api.files import remove_or_restore, rename, track_visit
 from suite.drive.api.list import files as legacy_files
 from suite.drive.api.notifications import create_notification
 from suite.drive.framework import refuse_governed_share, validate_content_registry
@@ -675,6 +675,35 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             rename(entity.name, "Mine now")
         self.assertEqual(frappe.db.get_value("File", entity.name, "file_name"), before)
+
+    def test_a_document_the_api_creates_goes_to_the_trash_and_comes_back(self):
+        """Writer's own `RemoveDialog.vue` names the document the editor has
+        open, for both halves of the gesture."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Doomed {frappe.generate_hash(6)}")
+
+        remove_or_restore([entity.name])
+        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Trashed")
+        with self.assertRaises(DriveNotFound):
+            docs.get_document(entity.name)
+
+        remove_or_restore([entity.name])
+        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Active")
+        frappe.response.pop("data", None)
+        docs.get_document(entity.name)
+        self.assertEqual(frappe.response["data"]["name"], entity.name)
+
+    def test_a_stranger_cannot_trash_somebody_elses_document(self):
+        """The gate is `toggle_entity_status`'s own Write check."""
+        frappe.set_user(USER)
+        entity = self._opened(f"Kept {frappe.generate_hash(6)}")
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            remove_or_restore([entity.name])
+        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Active")
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
