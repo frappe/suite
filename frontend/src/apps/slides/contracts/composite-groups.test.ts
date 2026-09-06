@@ -27,6 +27,23 @@ describe("the manifest", () => {
     }
   });
 
+  it("carries exactly the fields the manifest call answers", () => {
+    expect(Object.keys(manifest).sort()).toEqual([
+      "group_limit",
+      "modified",
+      "node",
+      "presentation",
+      "reference_count",
+      "references",
+    ]);
+    // `modified` is the staleness cue: a save that rewrites the reference table
+    // mints new ids, and this moves with it. Re-fetch the manifest when it has
+    // moved rather than retrying a group with ids the server will refuse.
+    expect(typeof manifest.modified).toBe("string");
+    expect(typeof manifest.presentation).toBe("string");
+    expect(typeof manifest.node).toBe("string");
+  });
+
   it("gives every reference its own identifier", () => {
     const ids = manifest.references.map((row) => row.reference);
     expect(new Set(ids).size).toBe(ids.length);
@@ -51,6 +68,19 @@ describe("the manifest", () => {
 });
 
 describe("a group", () => {
+  it("carries exactly the fields the group call answers", () => {
+    for (const group of groups) {
+      // `request` is the fixture's own record of the call. It is never part of
+      // an answer, which is why the backend comparison subtracts it.
+      expect(Object.keys(group).sort()).toEqual([
+        "node",
+        "presentation",
+        "references",
+        "request",
+      ]);
+    }
+  });
+
   it("answers one entry per requested id, in the order it was asked", () => {
     for (const group of groups) {
       expect(group.references.map((row) => row.reference)).toEqual(
@@ -71,9 +101,34 @@ describe("a group", () => {
     }
   });
 
+  it("counts the composite's own code inside the twenty a request may carry", () => {
+    // Spec 6.6: one code for the composite, one per reference it reaches only
+    // through a link. That is the arithmetic the bound of 19 exists for, so a
+    // group whose references all came back readable must show it.
+    const byLink = groups.filter((group) =>
+      group.references.every((row) => row.readable),
+    );
+    expect(byLink.length).toBeGreaterThan(0);
+    for (const group of byLink) {
+      expect(group.request.x_drive_links.length).toBe(
+        group.references.length + 1,
+      );
+    }
+    const full = byLink.find(
+      (group) => group.references.length === fixture.group_limit,
+    );
+    expect(full).toBeDefined();
+    expect(full.request.x_drive_links.length).toBe(fixture.link_header_limit);
+  });
+
   it("covers every manifest reference across the groups, once each", () => {
+    // Set, not sequence. A client may ask for a group in any order it likes,
+    // and the answer follows the request rather than the manifest, so pinning
+    // the flattened order here would forbid a call the API allows.
     const requested = groups.flatMap((group) => group.request.references);
-    expect(requested).toEqual(manifest.references.map((row) => row.reference));
+    const named = manifest.references.map((row) => row.reference);
+    expect(requested.length).toBe(named.length);
+    expect(new Set(requested)).toEqual(new Set(named));
   });
 
   it("keeps a reference identifier and its index from the manifest", () => {
@@ -118,10 +173,65 @@ describe("a group", () => {
   });
 
   it("states the same fields for a readable and an unreadable reference", () => {
-    const shapes = groups
+    for (const group of groups) {
+      for (const row of group.references) {
+        expect(Object.keys(row).sort()).toEqual([
+          "composite",
+          "index",
+          "node",
+          "presentation",
+          "readable",
+          "reference",
+          "slides",
+        ]);
+      }
+    }
+  });
+
+  it("gives every slide of a readable reference the same fields", () => {
+    const slides = groups
       .flatMap((group) => group.references)
-      .map((row) => Object.keys(row).sort().join(","));
-    expect(new Set(shapes).size).toBe(1);
+      .filter((row) => row.readable)
+      .flatMap((row) => row.slides);
+    expect(slides.length).toBeGreaterThan(0);
+    const shape = Object.keys(slides[0]).sort();
+    // The renderer's own fields. The rest is frappe's row metadata, which the
+    // whole-deck read path already answers and this contract keeps.
+    for (const field of ["name", "background", "elements", "transition"]) {
+      expect(shape).toContain(field);
+    }
+    for (const slide of slides) {
+      expect(Object.keys(slide).sort()).toEqual(shape);
+    }
+  });
+});
+
+describe("the two reference shapes no group above produces", () => {
+  const shapes = fixture.reference_shapes;
+
+  it("gives them the same fields as any other reference row", () => {
+    const expected = Object.keys(groups[0].references[0]).sort();
+    for (const entry of Object.values(shapes)) {
+      expect(Object.keys(entry.reference).sort()).toEqual(expected);
+      expect(entry.note).toBeTruthy();
+    }
+  });
+
+  it("marks a nested composite and does not recurse into it", () => {
+    const row = shapes.nested_composite.reference;
+    expect(row.readable).toBe(true);
+    expect(row.composite).toBe(true);
+    // Its own slide rows. A client that wants the inner deck's references asks
+    // that deck for its own manifest, which runs that deck's own checks.
+    expect(Array.isArray(row.slides)).toBe(true);
+  });
+
+  it("gives a reference that names no deck a null docname, never an empty one", () => {
+    const row = shapes.reference_with_no_deck.reference;
+    expect(row.presentation).toBeNull();
+    expect(row.readable).toBe(false);
+    expect(row.node).toBeNull();
+    expect(row.slides).toBeNull();
   });
 });
 
@@ -137,8 +247,41 @@ describe("refusals", () => {
     ]);
     for (const refusal of Object.values(refusals)) {
       expect(refusal.error).toBeTruthy();
-      expect(refusal.http_status).toBeGreaterThan(0);
+      // frappe answers 417 for a `ValidationError` and 403 for a
+      // `PermissionError`. A client switching on the status needs the exact
+      // number, so `> 0` was no contract at all.
+      expect(refusal.http_status).toBe(
+        refusal.exception === "frappe.PermissionError" ? 403 : 417,
+      );
     }
+  });
+
+  it("states the exact message the server answers", () => {
+    expect(refusals.malformed_group.error).toBe(
+      "A composite group is a list of reference ids",
+    );
+    expect(refusals.oversized_group.error).toBe(
+      `A composite group takes at most ${fixture.group_limit} references`,
+    );
+    expect(refusals.repeated_reference.error).toBe(
+      "A composite group cannot name the same reference twice",
+    );
+    expect(refusals.injected_reference.error).toBe(
+      "A composite group may only name this presentation's own references",
+    );
+    expect(refusals.oversized_link_header.error).toBe(
+      `X-Drive-Links accepts at most ${fixture.link_header_limit} items`,
+    );
+    expect(refusals.unreadable_composite.error).toBe(
+      "Presentation is not public",
+    );
+  });
+
+  it("warns that five of the six messages are translated at runtime", () => {
+    // Only `unreadable_composite` is a bare literal in the source. The rest go
+    // through `_()`, so a client on a translated site must switch on the
+    // refusal kind and the status, never on this text.
+    expect(fixture.readme.join(" ")).toContain("translated");
   });
 
   it("separates a request the client got wrong from an answer about access", () => {

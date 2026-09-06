@@ -929,24 +929,88 @@ class TestCompositeGroups(IntegrationTestCase):
         self.assertEqual(manifest["group_limit"], fixture["manifest"]["group_limit"])
         self.assertEqual(manifest["reference_count"], fixture["manifest"]["reference_count"])
         self.assertEqual(len(manifest["references"]), len(fixture["manifest"]["references"]))
-        self.assertEqual(set(manifest["references"][0]), set(fixture["manifest"]["references"][0]))
+        _same_shape(self, manifest, fixture["manifest"])
+        # Every row, not just the first: a field added to one row of a real
+        # answer has to fail here.
+        for row, expected in zip(manifest["references"], fixture["manifest"]["references"], strict=True):
+            _same_shape(self, row, expected)
 
         for answered, recorded in ((first, fixture["groups"][0]), (second, fixture["groups"][1])):
             # `request` records the call that produced the group; it is the
             # fixture's own field and never part of an answer.
             self.assertEqual(set(answered), set(recorded) - {"request"})
             self.assertEqual(set(recorded["request"]), {"name", "references", "x_drive_links"})
+            self.assertEqual(len(recorded["request"]["references"]), len(recorded["references"]))
             self.assertEqual(len(answered["references"]), len(recorded["references"]))
             for row, expected in zip(answered["references"], recorded["references"], strict=True):
-                self.assertEqual(set(row), set(expected))
+                _same_shape(self, row, expected)
                 self.assertEqual(row["readable"], expected["readable"])
-                self.assertEqual(row["slides"] is None, expected["slides"] is None)
-                self.assertEqual(row["node"] is None, expected["node"] is None)
+                if not row["readable"]:
+                    continue
+                # The biggest part of the answer. Its key set is what ticket 34
+                # renders, and nothing else pinned it.
+                self.assertTrue(row["slides"] and expected["slides"])
+                for slide in row["slides"]:
+                    self.assertEqual(set(slide), set(expected["slides"][0]))
+
+        # The two shapes the 21-deck story above never produces, so the client
+        # has an example of each. They are shapes, not a recorded call.
+        answer_keys = set(first["references"][0])
+        for entry in fixture["reference_shapes"].values():
+            self.assertEqual(set(entry["reference"]), answer_keys)
+            self.assertTrue(entry["note"])
 
         self.assertEqual(fixture["group_limit"], api.GROUP_LIMIT)
         self.assertEqual(fixture["link_header_limit"], LINK_HEADER_LIMIT)
+        # Every recorded refusal against the message the server really answers,
+        # not just the one that is a literal in the source.
         recorded_errors = {name: entry["error"] for name, entry in fixture["refusals"].items()}
         self.assertEqual(recorded_errors["unreadable_composite"], api.REFUSED)
+        self.assertEqual(recorded_errors, _real_refusal_messages(docname, ids))
+        for name, entry in fixture["refusals"].items():
+            with self.subTest(refusal=name):
+                expected = 403 if entry["exception"] == "frappe.PermissionError" else 417
+                self.assertEqual(entry["http_status"], expected)
+
+
+def _same_shape(case, answered: dict, recorded: dict) -> None:
+    """Same keys and same types, which is what the fixture claims to record.
+
+    Ids, timestamps and codes are the site's, so values cannot be compared. A
+    type can: it is what a client parses, and it is what silently drifts.
+    """
+    case.assertEqual(set(answered), set(recorded))
+    for key, value in answered.items():
+        if value is None or recorded[key] is None:
+            case.assertEqual(value is None, recorded[key] is None, key)
+            continue
+        case.assertIsInstance(value, type(recorded[key]), key)
+
+
+def _real_refusal_messages(docname: str, ids: list[str]) -> dict[str, str]:
+    """Answer the six refusals from the server, so the fixture cannot drift.
+
+    Five of the six are `_()`-wrapped, so only the server can say what they are.
+    """
+    answers = {}
+    for name, call in (
+        ("malformed_group", lambda: api.composite_group(docname, "not a list")),
+        ("oversized_group", lambda: api.composite_group(docname, [f"ref{index}" for index in range(20)])),
+        ("repeated_reference", lambda: api.composite_group(docname, [ids[0], ids[0]])),
+        ("injected_reference", lambda: api.composite_group(docname, [ids[0], "deck-99"])),
+        ("unreadable_composite", lambda: api.composite_group("no-such-deck", [ids[0]])),
+    ):
+        try:
+            call()
+        except (frappe.ValidationError, frappe.PermissionError) as refused:
+            answers[name] = str(refused)
+    codes = tuple(frappe.generate_hash(length=22) for _ in range(LINK_HEADER_LIMIT + 1))
+    with link_header(*codes):
+        try:
+            api.composite_group(docname, [ids[0]])
+        except frappe.ValidationError as refused:
+            answers["oversized_link_header"] = str(refused)
+    return answers
 
 
 def _purge_fixture_roots() -> None:

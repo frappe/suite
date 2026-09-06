@@ -8,7 +8,11 @@
     "The composite names 21 separately shared decks, so it cannot be loaded in one request:",
     "the first group carries the composite's own code plus 19 reference codes, which is the",
     "20 items X-Drive-Links allows. The second group carries only the composite's code, so",
-    "both of its references come back marked unreadable, in place, with no content."
+    "both of its references come back marked unreadable, in place, with no content.",
+    "Only unreadable_composite's message is a literal in the source. The other five are",
+    "translated at runtime, so switch on the refusal kind and the HTTP status, never the text.",
+    "reference_shapes holds the two reference rows the 21-deck story above never produces.",
+    "They are shapes, not a recorded call, so no group here answers them."
   ],
   "group_limit": 19,
   "link_header_limit": 20,
@@ -760,7 +764,9 @@
           "ref19000000000000000000000000",
           "ref20000000000000000000000000"
         ],
-        "x_drive_links": ["<composite code>"]
+        "x_drive_links": [
+          "<composite code>"
+        ]
       },
       "presentation": "deck-composite",
       "node": "c0mp0site1",
@@ -841,7 +847,10 @@
     "injected_reference": {
       "request": {
         "name": "deck-composite",
-        "references": ["ref00000000000000000000000000", "deck-99"]
+        "references": [
+          "ref00000000000000000000000000",
+          "deck-99"
+        ]
       },
       "exception": "frappe.ValidationError",
       "http_status": 417,
@@ -850,7 +859,9 @@
     "oversized_link_header": {
       "request": {
         "name": "deck-composite",
-        "references": ["ref00000000000000000000000000"],
+        "references": [
+          "ref00000000000000000000000000"
+        ],
         "x_drive_links_count": 21
       },
       "exception": "frappe.ValidationError",
@@ -860,12 +871,61 @@
     "unreadable_composite": {
       "request": {
         "name": "deck-composite",
-        "references": ["ref00000000000000000000000000"]
+        "references": [
+          "ref00000000000000000000000000"
+        ]
       },
       "exception": "frappe.PermissionError",
       "http_status": 403,
       "error": "Presentation is not public",
       "note": "The same answer for a name that is not a composite and for one that does not exist."
+    }
+  },
+  "reference_shapes": {
+    "nested_composite": {
+      "note": "A reference that is itself a composite. It is answered and marked, never recursed into: slides holds that deck's own rows, and never a slide belonging to its own references. Ask for its manifest to go a level down.",
+      "reference": {
+        "reference": "ref90000000000000000000000000",
+        "index": 1,
+        "presentation": "deck-inner",
+        "readable": true,
+        "node": "node-inner00",
+        "composite": true,
+        "slides": [
+          {
+            "name": "slide001000000000000000000000",
+            "owner": "owner@example.com",
+            "creation": "2026-09-06 10:00:00.000000",
+            "modified": "2026-09-06 10:00:00.000000",
+            "modified_by": "owner@example.com",
+            "docstatus": 0,
+            "idx": 1,
+            "background": "#111111ff",
+            "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 0 slide 1\"}]",
+            "thumbnail": null,
+            "transition": "none",
+            "transition_duration": 0.0,
+            "fade_unmatched_elements": 0,
+            "client_id": "c001",
+            "parent": "deck-00",
+            "parentfield": "slides",
+            "parenttype": "Presentation",
+            "doctype": "Slide"
+          }
+        ]
+      }
+    },
+    "reference_with_no_deck": {
+      "note": "A reference row that names no deck. presentation is null, in a group and in the manifest alike, and the row is always unreadable. Never read it as a docname.",
+      "reference": {
+        "reference": "ref91000000000000000000000000",
+        "index": 2,
+        "presentation": null,
+        "readable": false,
+        "node": null,
+        "composite": null,
+        "slides": null
+      }
     }
   }
 }
