@@ -276,9 +276,12 @@ class TestRouteTable(UnitTestCase):
                     self.assertEqual(parameter.annotation, routes.Given)
                     self.assertIsNone(parameter.default)
 
-    def test_only_the_two_declared_rows_name_a_blob(self):
-        # §11.2 declares `blob` on the create and the patch bodies, and nowhere
-        # else. Both hand it straight to a workflow that re-reads the blob row.
+    def test_only_the_one_declared_row_names_a_blob(self):
+        # §11.2 declares `blob` on one body only: `POST /nodes`. It hands it
+        # straight to a workflow that re-reads the blob row. The PATCH body is
+        # `{title} | {parent} | {state} | {parent, state} | {content_modified}`,
+        # so a head is replaced through `PUT /nodes/<id>/content`, which names
+        # an upload session instead of a blob.
         import inspect
 
         naming = set()
@@ -286,7 +289,14 @@ class TestRouteTable(UnitTestCase):
             parameters = inspect.signature(inspect.unwrap(getattr(routes, name))).parameters
             if "blob" in parameters:
                 naming.add(name)
-        self.assertEqual(naming, {"node_create", "node_patch"})
+        self.assertEqual(naming, {"node_create"})
+
+    def test_the_patch_body_is_exactly_the_five_declared_alternatives(self):
+        # §11.2's PATCH row. `node` is the path id the translator writes in.
+        import inspect
+
+        parameters = set(inspect.signature(inspect.unwrap(routes.node_patch)).parameters)
+        self.assertEqual(parameters, {"node", "title", "parent", "state", "content_modified"})
 
     def test_no_handler_takes_a_storage_key_or_a_bare_url(self):
         # A blob id is checked against the stored row. These are not checkable

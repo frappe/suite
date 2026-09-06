@@ -92,12 +92,20 @@ def required_text(value, name: str) -> str:
 
 
 def whole(value, name: str, default: int) -> int:
-    """Accept an absent, integer, or all-digit argument as a whole number."""
+    """Accept an absent, integer, or all-digit argument as a whole number.
+
+    One rule for both spellings. A query string can only deliver digits, so a
+    JSON body may not deliver a negative where `?limit=-1` is already refused:
+    every argument this coerces is a size, an offset, a page bound, or a quota,
+    and none of them has a meaning below zero.
+    """
     if value is None or value == "":
         return default
     if isinstance(value, bool):
         _refuse(name)
     if isinstance(value, int):
+        if value < 0:
+            _refuse(name)
         return value
     if isinstance(value, str) and value.isdigit():
         return int(value)
@@ -153,10 +161,14 @@ def identifiers(value, name: str) -> tuple[str, ...]:
 
 
 def patch(value, name: str) -> dict:
-    """Accept a non-empty mapping of the fields `PATCH /nodes/<id>` takes."""
+    """Accept a non-empty mapping of the fields `PATCH /nodes/<id>` takes.
+
+    §11.5: "`patch` takes the same fields as `PATCH /nodes/<id>`", which §11.2
+    gives five whole bodies. Bytes are not among them on either route.
+    """
     if not isinstance(value, Mapping) or not value:
         _refuse(name)
-    allowed = ("title", "parent", "state")
+    allowed = ("title", "parent", "state", "content_modified")
     unknown = sorted(set(value) - set(allowed))
     if unknown:
         frappe.throw(

@@ -472,6 +472,16 @@ def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_
     """
     row = _node(node)
     require(row, READ, principals)
+    return signed_content_url(row, expires_in=expires_in)
+
+
+def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
+    """Mint the signed URL for a file node the caller is already READ on.
+
+    §2.3 budgets the byte path at one point check. A caller that read the row
+    through `get` has spent it, so it mints from that row instead of reading
+    and checking the same node again.
+    """
     if row.kind != "file":
         raise DriveConflict(_("Only a Drive file has bytes to download"))
     if not row.blob:
@@ -486,7 +496,7 @@ def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_
     if not blob or blob.status != "Ready" or not blob.is_private:
         raise DriveConflict(_("The Drive file bytes are unavailable"))
     return {
-        "url": signed_url_for_blob(row.blob, row.title, expires_in),
+        "url": signed_url_for_blob(row.blob, content.download_filename(row.title), expires_in),
         "expires": int(time.time()) + expires_in,
     }
 
@@ -911,8 +921,7 @@ def update(
     _bound_parent: str | None = None,
 ) -> dict:
     """Apply one complete node mutation, or restore with an explicit parent."""
-    replacing = any(value is not None for value in (blob, size, mime, content_modified))
-    if replacing:
+    if any(value is not None for value in (blob, size, mime)):
         if title is not None or parent is not None or state is not None:
             frappe.throw(_("A file replacement cannot include a tree mutation"), frappe.ValidationError)
         return _replace_file(
@@ -925,6 +934,11 @@ def update(
             _via_link=_via_link,
             _bound_parent=_bound_parent,
         )
+
+    if content_modified is not None:
+        if title is not None or parent is not None or state is not None:
+            frappe.throw(_("A content time cannot be set with a tree mutation"), frappe.ValidationError)
+        return _stamp_content_time(principals, node, content_modified)
 
     if state is not None:
         if title is not None or state not in ("Active", "Trashed"):
@@ -940,6 +954,35 @@ def update(
     if title is not None:
         return _rename(principals, node, title)
     frappe.throw(_("A Drive node mutation is required"), frappe.ValidationError)
+
+
+def _stamp_content_time(
+    principals: Principals,
+    node_id: str,
+    content_modified: datetime | int | float | str | None,
+) -> dict:
+    """Write one node's declared content time, alone (§8.11).
+
+    §11.2 makes `{content_modified}` a whole `PATCH /nodes/<id>` body, so the
+    client that already holds the bytes can hand back the mtime the file had
+    before it travelled. It is `content.touch` with the time supplied instead
+    of taken: EDIT on the node, one indexed UPDATE, no head, no version, no
+    charge, and no activity row (§9.4).
+    """
+    current = _node(node_id, for_update=True)
+    require(current, EDIT, principals)
+    if current.kind == "root":
+        raise DriveConflict(_("A Drive root holds no content to stamp"))
+    if current.state != "Active":
+        raise DriveForbidden(_("A trashed Drive node cannot be stamped"))
+    frappe.db.set_value(
+        "Drive Node",
+        current.name,
+        "content_modified",
+        _content_time(content_modified),
+        update_modified=False,
+    )
+    return _node(current.name)
 
 
 def _replace_file(
@@ -2096,7 +2139,12 @@ def _folder_page_from_result(
         detail = describe_page(chain, {row.name: by_child[row.name] for row in rows}, chain_rows, principals)
         for row in rows:
             row.access = detail[row.name]
-    return _page(rows, offset, len(window), page_size)
+    page = _page(rows, offset, len(window), page_size)
+    # The listed folder, already read and authorized here. An adapter that owes
+    # the caller a breadcrumb trail takes it from this row instead of spending
+    # a second read and a second point check on the node it just listed.
+    page["parent"] = parent_row
+    return page
 
 
 def views(
