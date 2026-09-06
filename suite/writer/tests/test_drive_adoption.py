@@ -22,6 +22,7 @@ import frappe.share
 import pycrdt
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.utils import add_to_date, get_datetime
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -57,6 +58,29 @@ def body_with(*ids: str) -> str:
                     {"src": f"/api/method/suite.writer.api.embed.get?id={found}"},
                 )
             )
+    return base64.b64encode(document.get_update()).decode("ascii")
+
+
+def node_attribute_body(*ids: str) -> str:
+    """Build one body naming `ids` with the plain `data-node` spelling.
+
+    The id is the whole attribute value here, with `data-node` held apart from
+    it as the attribute name, which is what `html` never does.
+    """
+    document = pycrdt.Doc()
+    fragment = pycrdt.XmlFragment()
+    document[writer.BODY_FRAGMENT] = fragment
+    with document.transaction():
+        paragraph = fragment.children.append(pycrdt.XmlElement("paragraph"))
+        for found in ids:
+            paragraph.children.append(pycrdt.XmlElement("image", {"data-node": found}))
+    return base64.b64encode(document.get_update()).decode("ascii")
+
+
+def rooted_body(value) -> str:
+    """Build one body whose `default` root is not an XmlFragment at all."""
+    document = pycrdt.Doc()
+    document[writer.BODY_FRAGMENT] = value
     return base64.b64encode(document.get_update()).decode("ascii")
 
 
@@ -157,6 +181,21 @@ class TestWriterDeclaration(UnitTestCase):
 
         self.assertEqual(body_ids(rewritten), {"keep"}, "a removed picture is not still named")
 
+    def test_the_plain_node_attribute_is_read_inside_the_yjs_body(self):
+        # In `html` an attribute is text, so the pattern reads `data-node="x"`
+        # whole. In the body the name and the value are held apart and the
+        # value is a bare id, so reading values alone finds nothing and the
+        # daily sweep would trash a picture the document still shows.
+        self.assertEqual(body_ids(node_attribute_body("kept")), {"kept"})
+
+    def test_a_plain_node_attribute_is_rewritten_by_a_copy(self):
+        rewritten = writer._remap_body(node_attribute_body("old"), {"old": "new"})
+        self.assertIsNotNone(rewritten, "a copy that leaves this alone points at the source's picture")
+        self.assertEqual(body_ids(rewritten), {"new"})
+
+    def test_a_node_attribute_nothing_maps_is_left_alone(self):
+        self.assertIsNone(writer._remap_body(node_attribute_body("other"), {"old": "new"}))
+
     def test_an_empty_or_unreadable_body_names_nothing_it_can_read(self):
         self.assertEqual(body_ids(""), set())
         self.assertEqual(body_ids(writer.EMPTY_BODY), set())
@@ -177,6 +216,23 @@ class TestWriterDeclaration(UnitTestCase):
         with self.assertRaises(writer.UnreadableBody) as refused:
             writer._remap_body(broken, {"survivor": "other"})
         self.assertIsInstance(refused.exception, frappe.ValidationError)
+
+    def test_a_body_that_applies_and_then_panics_still_refuses_as_a_validation_error(self):
+        # `apply_update` is not the only pycrdt call that panics. A body whose
+        # root was written as a `Text` or an `Array` applies cleanly and panics
+        # on the first child read, which is past the one guarded call.
+        for value in (pycrdt.Text("hello"), pycrdt.Array([1, 2])):
+            with self.subTest(root=type(value).__name__):
+                body = rooted_body(value)
+                with self.assertRaises(writer.UnreadableBody) as refused:
+                    writer._remap_body(body, {"old": "new"})
+                self.assertIsInstance(refused.exception, frappe.ValidationError)
+
+    def test_a_body_that_applies_and_then_panics_over_reports_for_the_sweep(self):
+        # The same body on the sweep side must fall back, not kill the pass:
+        # an escaping `BaseException` skips `sweep_unused_media`'s rollback.
+        with patch.object(frappe, "log_error"):
+            self.assertEqual(body_ids(rooted_body(pycrdt.Text("hello"))), set())
 
     # media remapping
 
@@ -474,6 +530,22 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertFalse(frappe.db.exists(DOCTYPE, docname))
         self.assertFalse(frappe.db.exists("Writer Version", legacy.name))
 
+    def test_a_purge_keeps_no_recoverable_copy_of_the_body(self):
+        # `delete_doc` keeps the whole row as JSON in `Deleted Document` unless
+        # it is told not to, so a purge that forgets `delete_permanently` leaves
+        # the body, its HTML, and the comment blob behind (§8.8: purge deletes).
+        node = self._document(title="Confidential")
+        docname = self._docname(node)
+        frappe.db.set_value(DOCTYPE, docname, "html", "<p>a secret</p>", update_modified=False)
+
+        update(self.admin, node, state="Trashed")
+        purge(self.admin, node)
+
+        self.assertFalse(
+            frappe.db.exists("Deleted Document", {"deleted_doctype": DOCTYPE, "deleted_name": docname}),
+            "a purged body must not survive as a recoverable row",
+        )
+
     def test_the_body_answers_only_the_pictures_it_still_names(self):
         """The one question §10.6 asks the app. Drive owns the trashing itself,
         and the daily pass is not run here: it would sweep every document on
@@ -504,12 +576,18 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value(DOCTYPE, document.name, "html"), "<p>x</p>")
 
     def test_a_save_stamps_the_node_and_never_the_document_title(self):
+        # `create_document` stamps `content_modified` itself, so `assertGreaterEqual`
+        # against it proves nothing: an equal value passes, and the assertion
+        # survives deleting `drive_touch`. The clock moves instead.
         node = self._document(title="Stamped")
-        before = frappe.db.get_value("Drive Node", node, "content_modified")
+        before = get_datetime(frappe.db.get_value("Drive Node", node, "content_modified"))
         document = frappe.get_doc(DOCTYPE, self._docname(node))
-        document.save_html("<p>new</p>")
+
+        with self.freeze_time(add_to_date(before, hours=1)):
+            document.save_html("<p>new</p>")
+
         after = frappe.db.get_value("Drive Node", node, ("content_modified", "title"), as_dict=True)
-        self.assertGreaterEqual(after.content_modified, before)
+        self.assertGreater(get_datetime(after.content_modified), before)
         self.assertEqual(after.title, "Stamped")
 
     def test_an_inherited_folder_grant_reaches_the_row_and_the_list(self):
@@ -542,6 +620,52 @@ class TestWriterInDrive(IntegrationTestCase):
         self._as(USER)
         self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname), "the bin opens read-only")
         self.assertNotIn(docname, frappe.get_list(DOCTYPE, pluck="name"))
+
+    def test_a_trashed_document_refuses_every_write_the_editor_makes(self):
+        # §8.8: "A document node opens read-only while it is Trashed. Edits and
+        # comments are refused." `require` cannot answer it, because restore and
+        # purge must still act on a trashed node, so the app-facing calls do.
+        node = self._document(title="Binned body")
+        document = frappe.get_doc(DOCTYPE, self._docname(node))
+        before = frappe.db.get_value(DOCTYPE, document.name, "html")
+        update(self.admin, node, state="Trashed")
+
+        for write in (
+            lambda: document.save_doc(body_with("x"), html="<p>x</p>"),
+            lambda: document.save_html("<p>x</p>"),
+            lambda: document.update_settings('{"collab": false}'),
+        ):
+            with self.subTest(write=write), self.assertRaises(DriveForbidden):
+                write()
+        self.assertEqual(frappe.db.get_value(DOCTYPE, document.name, "html"), before)
+
+    def test_a_trashed_document_refuses_the_generic_orm_write_too(self):
+        # `frappe.client.save` and `frappe.client.set_value` never reach
+        # `drive_check`. They ask the row hook, so the hook has to answer.
+        node = self._document(title="Binned ORM")
+        docname = self._docname(node)
+        # MANAGE, so the refusal can only come from the trash state.
+        grant(node, OTHER, drive.MANAGE, self.admin)
+        update(self.admin, node, state="Trashed")
+        frappe.db.commit()
+
+        self._as(OTHER)
+        self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname), "the bin still opens")
+        self.assertFalse(frappe.has_permission(DOCTYPE, "write", docname))
+        self.assertFalse(frappe.has_permission(DOCTYPE, "delete", docname))
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_doc(DOCTYPE, docname).save()
+
+    def test_a_trashed_document_still_reads_and_still_restores(self):
+        # The guard must not cost the bin its own workflows.
+        node = self._document(title="Restored body")
+        document = frappe.get_doc(DOCTYPE, self._docname(node))
+        update(self.admin, node, state="Trashed")
+        document.drive_check(drive.READ)
+
+        update(self.admin, node, state="Active")
+        document.save_html("<p>back</p>")
+        self.assertEqual(frappe.db.get_value(DOCTYPE, document.name, "html"), "<p>back</p>")
 
     # compatibility with what Build has not copied yet
 

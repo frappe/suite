@@ -23,6 +23,19 @@ of text in it, including deleted content Yjs has not collected yet, so a
 removed picture could stay charged to somebody for ever. `html` is read as
 text, because the non-collaborative editor writes it alone.
 
+The two spellings are not read the same way. Inside `html` an attribute is
+text and the patterns read it whole. Inside `content` an attribute is a name
+and a value held apart, so the plain `data-node` spelling puts a bare id in
+the value with nothing for a pattern to anchor on; the attribute name is read
+as well, which is what keeps the two bodies in agreement.
+
+Every pycrdt call runs inside `_readable_body()`. A body pycrdt cannot read
+raises `pyo3_runtime.PanicException`, which derives from `BaseException` and
+would otherwise pass straight through the `except Exception` that rolls
+Drive's savepoint back. `apply_update` is not the only call that panics: a
+body whose root fragment was written as a `Text` or an `Array` applies
+cleanly and panics on the first child read.
+
 ## Versions
 
 `version_bytes` writes one `writer-document/1` JSON envelope carrying both the
@@ -34,10 +47,16 @@ that Build (ticket 28) owes the envelope; see the ticket 17 handoffs.
 
 ## Transactions
 
-Drive calls every callback inside its own savepoint, through
-`content.app_callback()`, so none of them commits and any refusal rolls the
-node, the document, and the copied media back together. A callback that
-cannot honour its contract raises rather than half-writing.
+Drive runs every callback inside the savepoint of the workflow that calls it,
+so any refusal rolls the node, the document, and the copied media back
+together. A callback that cannot honour its contract raises rather than
+half-writing, and none of them commits.
+
+`content.app_callback()`, which enforces that last part, currently wraps only
+`create_empty`, `duplicate`, and `remap_media` (`nodes.py:446`, `:513`).
+`on_purge`, `restore_version`, `version_bytes`, `export`, and `used_nodes` run
+unguarded, so a commit added to one of them would destroy the caller's
+savepoint. Nothing here commits. Recorded for Drive, not worked around here.
 """
 
 import base64
@@ -45,6 +64,7 @@ import binascii
 import io
 import json
 import re
+from contextlib import contextmanager
 
 import frappe
 import pycrdt
@@ -68,14 +88,23 @@ HTML_MIME = "text/html"
 VERSION_SCHEMA = "writer-document/1"
 VERSION_MIME = "application/json"
 
-# A media reference inside a body is a node id carried in an attribute value.
-# Both spellings are read: the embed URL Writer has always written, with and
-# without the `suite.` prefix the standalone app used, and the plain node
-# attribute the Drive media route uses.
+# A media reference inside a body is a node id carried in an attribute. Both
+# spellings are read: the embed URL Writer has always written, with and without
+# the `suite.` prefix the standalone app used, and the plain node attribute the
+# Drive media route uses.
+#
+# The two spellings are not symmetrical. In `html` an attribute is text, so
+# both patterns read it. In the Yjs body an attribute is a name and a value
+# held apart, and the plain spelling puts the bare id in the value with
+# `data-node` nowhere in it, so the pattern alone would never see it. That is
+# what `_attribute_ids` and `_remapped_attribute` are for.
+NODE_ATTRIBUTE = "data-node"
+MEDIA_ID = r"[A-Za-z0-9_-]{1,140}"
 MEDIA_PATTERNS = (
-    re.compile(r"(?:suite\.)?writer\.api\.embed\.get\?id=([A-Za-z0-9_-]{1,140})"),
-    re.compile(r"data-node=\"([A-Za-z0-9_-]{1,140})\""),
+    re.compile(rf"(?:suite\.)?writer\.api\.embed\.get\?id=({MEDIA_ID})"),
+    re.compile(rf'{NODE_ATTRIBUTE}="({MEDIA_ID})"'),
 )
+BARE_MEDIA_ID = re.compile(MEDIA_ID)
 
 DEFAULT_SETTINGS = '{"collab": true}'
 
@@ -159,9 +188,24 @@ def on_purge(docname: str) -> None:
     """Delete the document and the app-owned rows behind it.
 
     `delete_doc` runs the controller's `on_trash`, which clears the legacy
-    `Writer Version` rows whose link would otherwise refuse the delete.
+    `Writer Version` rows. §9.1 sends a purged node's history with it, and
+    `force=1` already skips the link check, so the cascade is what the rows
+    are for, not a way around a refusal.
+
+    `delete_permanently` is what makes a purge a purge. Without it Frappe keeps
+    the whole row as JSON in `Deleted Document`
+    (`frappe/model/delete_doc.py:add_to_deleted_document`), so the body, its
+    HTML, and the comment blob would all outlive the §8.8 purge that was meant
+    to remove them.
     """
-    frappe.delete_doc(DOCTYPE, docname, force=1, ignore_permissions=True, ignore_missing=True)
+    frappe.delete_doc(
+        DOCTYPE,
+        docname,
+        force=1,
+        ignore_permissions=True,
+        ignore_missing=True,
+        delete_permanently=True,
+    )
 
 
 def used_nodes(docname: str) -> set[str]:
@@ -228,6 +272,25 @@ def _ids_in(text: str) -> set[str]:
     return {match.group(1) for pattern in MEDIA_PATTERNS for match in pattern.finditer(text)}
 
 
+def _attribute_ids(key: str, value: str) -> set[str]:
+    """Answer the media node ids one live element attribute names.
+
+    `data-node` holds the bare id, with the attribute name held apart from it,
+    so the text patterns never see it inside a Yjs body. Reading the name is
+    what makes the two spellings symmetrical between `html` and `content`.
+    """
+    if key == NODE_ATTRIBUTE and BARE_MEDIA_ID.fullmatch(value):
+        return {value}
+    return _ids_in(value)
+
+
+def _remapped_attribute(key: str, value: str, mapping: dict[str, str]) -> str:
+    """Rewrite one live element attribute, in whichever spelling it uses."""
+    if key == NODE_ATTRIBUTE:
+        return mapping.get(value, value)
+    return _remap_text(value, mapping)
+
+
 def _remap_text(text: str, mapping: dict[str, str]) -> str:
     def swap(match: re.Match) -> str:
         found = match.group(1)
@@ -241,75 +304,118 @@ def _remap_text(text: str, mapping: dict[str, str]) -> str:
 
 def _body_ids(content: str | None) -> set[str]:
     """Read the live attributes of one Yjs body, never its tombstones."""
-    raw = _decoded_body(content)
-    if raw is None:
-        return set()
     try:
+        raw = _decoded_body(content)
+        if raw is None:
+            return set()
         _, fragment = _loaded_body(raw)
+        with _readable_body():
+            found = _fragment_ids(fragment)
     except UnreadableBody:
         # An unreadable body must never cost somebody a picture, so fall back
         # to a raw scan. It over-reports, which only keeps media alive.
         frappe.log_error("Writer: could not read a document body for the media sweep", frappe.get_traceback())
-        return _ids_in(raw.decode("utf-8", "ignore"))
+        return _ids_in(_raw_text(content))
+    return found
+
+
+def _fragment_ids(fragment) -> set[str]:
     found: set[str] = set()
     for element in _elements(fragment):
-        for value in dict(element.attributes).values():
+        for key, value in dict(element.attributes).items():
             if isinstance(value, str):
-                found |= _ids_in(value)
+                found |= _attribute_ids(key, value)
     return found
 
 
 def _remap_body(content: str | None, mapping: dict[str, str]) -> str | None:
-    """Rewrite one Yjs body's media attributes, or answer None when there is nothing to do.
+    """Rewrite one Yjs body's media attributes, or answer None for no rewrite.
 
-    An unreadable body raises `UnreadableBody` rather than being skipped: Drive calls this
-    inside the copy's savepoint, and a copy whose pictures still point at the
-    source's nodes is worse than a refused copy.
+    None means one of two things and neither loses a reference: there is no
+    body at all, or nothing in it named an id the mapping carries.
+
+    A body that will not decode and a body pycrdt cannot read both raise
+    `UnreadableBody` rather than being skipped. Drive calls this inside the
+    copy's savepoint, and a copy whose pictures still point at the source's
+    nodes is worse than a refused copy.
     """
     raw = _decoded_body(content)
     if raw is None:
         return None
     document, fragment = _loaded_body(raw)
-    changed = False
-    with document.transaction():
-        for element in _elements(fragment):
-            for key, value in dict(element.attributes).items():
-                if not isinstance(value, str):
-                    continue
-                rewritten = _remap_text(value, mapping)
-                if rewritten != value:
-                    element.attributes[key] = rewritten
-                    changed = True
-    if not changed:
-        return None
-    return base64.b64encode(document.get_update()).decode("ascii")
+    with _readable_body():
+        changed = False
+        with document.transaction():
+            for element in _elements(fragment):
+                for key, value in dict(element.attributes).items():
+                    if not isinstance(value, str):
+                        continue
+                    rewritten = _remapped_attribute(key, value, mapping)
+                    if rewritten != value:
+                        element.attributes[key] = rewritten
+                        changed = True
+        if not changed:
+            return None
+        return base64.b64encode(document.get_update()).decode("ascii")
 
 
 def _decoded_body(content: str | None) -> bytes | None:
+    """Answer the update bytes, None for no body at all, or refuse.
+
+    An empty column is a document nobody has typed in, and it names nothing.
+    A column that holds something base64 will not decode is still a body; it
+    is one this module cannot read, which is a different answer. Folding the
+    two together made an undecodable body say "I use no pictures", so the
+    sweep trashed its media, and made a copy of it keep the source's ids.
+    """
     if not content:
         return None
     try:
         raw = base64.b64decode(content, validate=True)
-    except (ValueError, binascii.Error):
-        return None
+    except (ValueError, binascii.Error) as undecodable:
+        raise UnreadableBody(_("This Writer document body cannot be read")) from undecodable
     return raw or None
+
+
+def _raw_text(content: str | None) -> str:
+    """Everything a raw scan of an unreadable body may look at."""
+    if not content:
+        return ""
+    try:
+        decoded = base64.b64decode(content, validate=True).decode("utf-8", "ignore")
+    except (ValueError, binascii.Error):
+        return content
+    return f"{content}{decoded}"
+
+
+@contextmanager
+def _readable_body():
+    """Turn any pycrdt refusal into an ordinary `frappe.ValidationError`.
+
+    pycrdt is a Rust extension, and a body it cannot read raises
+    `pyo3_runtime.PanicException`. That derives from `BaseException`, so left
+    alone it passes straight through every `except Exception` between here and
+    the request, including the rollback that closes Drive's copy savepoint.
+
+    `apply_update` is not the only call that panics. A body whose root
+    fragment was written as a `Text` or an `Array` applies cleanly and panics
+    on the first child read instead, so the traversal and the rewrite are
+    guarded too. Every pycrdt call this module makes runs inside this block.
+    """
+    try:
+        yield
+    except (KeyboardInterrupt, SystemExit, UnreadableBody):
+        raise
+    except BaseException as unreadable:
+        raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable
 
 
 def _loaded_body(raw: bytes):
     document = pycrdt.Doc()
     fragment = pycrdt.XmlFragment()
     document[BODY_FRAGMENT] = fragment
-    try:
+    with _readable_body():
         document.apply_update(raw)
-    except (KeyboardInterrupt, SystemExit):
-        raise
-    except BaseException as unreadable:
-        # pycrdt is a Rust extension, and a malformed update raises
-        # `pyo3_runtime.PanicException`. That derives from `BaseException`, so
-        # left alone it passes straight through every `except Exception`
-        # between here and the request, including the rollback that closes
-        # Drive's savepoint. It is converted here and nowhere else.
-        raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable
     return document, fragment
 
 
