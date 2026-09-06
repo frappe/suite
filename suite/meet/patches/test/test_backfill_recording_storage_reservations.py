@@ -15,7 +15,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite import drive
-from suite.drive.utils import get_user_folder
+from suite.meet.api.recording import _get_drive_destination
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.meet.patches.backfill_recording_storage_reservations import execute
 
@@ -39,9 +39,11 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
         self.root = drive.personal_root_for(self.owner) or drive.ensure_personal_root(self.owner)
-        # `drive_home_folder` is mandatory and immutable, and production reads it
-        # from the same helper, so take the owner's real private folder.
-        self.home_folder = get_user_folder(self.owner).name
+        # `drive_home_folder` is mandatory and immutable, so take the owner's real
+        # private folder from the same Meet helper the recording API uses.
+        # `suite.drive` exports no folder workflow, and a test must not add one
+        # (ARCHITECTURE.md rules 4.4 and 6.5).
+        self.home_folder = _get_drive_destination(self.owner)
         self.used_before = self._used()
         self.rooms = []
         self.recordings = []
