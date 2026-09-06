@@ -41,6 +41,16 @@ from suite.drive._core.access import describe
 from suite.drive._core.errors import DriveConflict, DriveError, DriveLocked, DriveNotFound
 from suite.drive.http import shapes
 
+# Every handler argument is annotated with this one permissive alias, and none
+# of them means it. `require_type_annotated_api_methods` is on for this app, so
+# a missing annotation is a hard error and a narrow one is worse than useless:
+# pydantic refuses a mismatch with `FrappeTypeError` from outside the handler
+# body, where the §11.6 mapping cannot reach it, and answers 417 with no
+# message. The alias admits anything a JSON body or a query string can carry,
+# and `shapes` does the real checking inside the body, where a refusal is a
+# `ValidationError` the boundary maps to 400.
+Given = str | int | float | bool | list | dict | None
+
 
 def _route(handler):
     """Give every Drive refusal the v2 body §11.6 specifies.
@@ -90,13 +100,13 @@ def _principals():
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def node_create(
-    parent: str | None = None,
-    title: str | None = None,
-    kind: str | None = None,
-    url: str | None = None,
-    content_doctype: str | None = None,
-    from_node: str | None = None,
-    is_template: str | bool | None = None,
+    parent: Given = None,
+    title: Given = None,
+    kind: Given = None,
+    url: Given = None,
+    content_doctype: Given = None,
+    from_node: Given = None,
+    is_template: Given = None,
 ) -> dict:
     """Create one folder, link, or content document below `parent` (§8.3)."""
     principals = _principals()
@@ -115,7 +125,7 @@ def node_create(
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_get(node: str | None = None, expand: str | None = None) -> dict:
+def node_get(node: Given = None, expand: Given = None) -> dict:
     """Answer one readable node, with the expansions the caller asked for."""
     principals = _principals()
     asked = shapes.expansions(expand)
@@ -133,11 +143,11 @@ def node_get(node: str | None = None, expand: str | None = None) -> dict:
 @frappe.whitelist(allow_guest=True, methods=["PATCH"])
 @_route
 def node_patch(
-    node: str | None = None,
-    title: str | None = None,
-    parent: str | None = None,
-    state: str | None = None,
-    content_modified: str | int | float | None = None,
+    node: Given = None,
+    title: Given = None,
+    parent: Given = None,
+    state: Given = None,
+    content_modified: Given = None,
 ) -> dict:
     """Rename, move, trash, or restore one node (§8.2).
 
@@ -160,7 +170,7 @@ def node_patch(
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_purge(node: str | None = None) -> dict:
+def node_purge(node: Given = None) -> dict:
     """Permanently remove one subtree. MANAGE only, so never a link holder."""
     purged = node_core.purge(_principals(), shapes.required_text(node, "node"))
     return {"purged": purged}
@@ -169,13 +179,13 @@ def node_purge(node: str | None = None) -> dict:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
 def node_children(
-    node: str | None = None,
-    limit: str | int | None = None,
-    cursor: str | None = None,
-    order_by: str | None = None,
-    ascending: str | bool | None = None,
-    mime_prefix: str | None = None,
-    expand: str | None = None,
+    node: Given = None,
+    limit: Given = None,
+    cursor: Given = None,
+    order_by: Given = None,
+    ascending: Given = None,
+    mime_prefix: Given = None,
+    expand: Given = None,
 ) -> dict:
     """Page one folder's readable children in §11.4's opaque-cursor envelope."""
     principals = _principals()
@@ -211,7 +221,7 @@ def node_children(
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_copy(node: str | None = None, parent: str | None = None, title: str | None = None) -> dict:
+def node_copy(node: Given = None, parent: Given = None, title: Given = None) -> dict:
     """Copy one readable tree into `parent`, sharing blobs but no authority."""
     principals = _principals()
     copied = node_core.copy(
@@ -225,7 +235,7 @@ def node_copy(node: str | None = None, parent: str | None = None, title: str | N
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_batch(nodes: list | None = None, patch: dict | None = None) -> dict:
+def node_batch(nodes: Given = None, patch: Given = None) -> dict:
     """Apply one patch to many nodes, isolating each failure (§11.5).
 
     Partial success is a result, not an error, so the response is 200. Each
@@ -266,10 +276,10 @@ def node_batch(nodes: list | None = None, patch: dict | None = None) -> dict:
 @frappe.whitelist(allow_guest=True, methods=["PUT"])
 @_route
 def node_put_content(
-    node: str | None = None,
-    upload_id: str | None = None,
-    checksum: str | None = None,
-    content_modified: str | int | float | None = None,
+    node: Given = None,
+    upload_id: Given = None,
+    checksum: Given = None,
+    content_modified: Given = None,
 ) -> dict:
     """Replace one file's bytes from the caller's own finished upload session."""
     principals = _principals()
@@ -285,7 +295,7 @@ def node_put_content(
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_get_content(node: str | None = None, format: str | None = None) -> Response:
+def node_get_content(node: Given = None, format: Given = None) -> Response:
     """Send one readable node's bytes: a signed redirect, or a streamed export.
 
     A file redirects to a short-lived signed `/f/` URL, which the framework
@@ -316,14 +326,14 @@ def node_get_content(node: str | None = None, format: str | None = None) -> Resp
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_media(node: str | None = None) -> dict:
+def node_media(node: Given = None) -> dict:
     """List one readable document's media with signed 15-minute URLs (§6.8)."""
     return {"media": content.list_media(_principals(), shapes.required_text(node, "node"))}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_preview(node: str | None = None, image: str | None = None, mime: str | None = None) -> dict:
+def node_preview(node: Given = None, image: Given = None, mime: Given = None) -> dict:
     """Replace one document's preview with an image its app rendered (§9.2)."""
     principals = _principals()
     wanted = shapes.required_text(node, "node")
@@ -343,10 +353,10 @@ def node_preview(node: str | None = None, image: str | None = None, mime: str | 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def upload_create(
-    parent: str | None = None,
-    filename: str | None = None,
-    size: str | int | None = None,
-    mime: str | None = None,
+    parent: Given = None,
+    filename: Given = None,
+    size: Given = None,
+    mime: Given = None,
 ) -> dict:
     """Open one private blob session, refusing on the declared size (§11.2).
 
@@ -364,7 +374,7 @@ def upload_create(
 
 @frappe.whitelist(allow_guest=True, methods=["PUT"])
 @_route
-def upload_chunk(upload_id: str | None = None, offset: str | int | None = None) -> dict:
+def upload_chunk(upload_id: Given = None, offset: Given = None) -> dict:
     """Write one bounded chunk of a bound session at `?offset=`."""
     return upload_core.upload_chunk(
         _principals(),
@@ -377,12 +387,12 @@ def upload_chunk(upload_id: str | None = None, offset: str | int | None = None) 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def upload_finish(
-    upload_id: str | None = None,
-    parent: str | None = None,
-    title: str | None = None,
-    checksum: str | None = None,
-    content_modified: str | int | float | None = None,
-    replaces: str | None = None,
+    upload_id: Given = None,
+    parent: Given = None,
+    title: Given = None,
+    checksum: Given = None,
+    content_modified: Given = None,
+    replaces: Given = None,
 ) -> dict:
     """Turn one finished session into a new file, or into a replacement head."""
     principals = _principals()
@@ -421,7 +431,7 @@ def _chunk_bytes() -> bytes:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def root_usage(root: str | None = None) -> dict:
+def root_usage(root: Given = None) -> dict:
     """Report one root's counters to its own user, its managers, or an admin."""
     return dict(roots.usage_for(shapes.required_text(root, "root"), _principals()))
 
@@ -429,9 +439,9 @@ def root_usage(root: str | None = None) -> dict:
 @frappe.whitelist(methods=["PATCH"])
 @_route
 def root_patch(
-    root: str | None = None,
-    quota_bytes: str | int | None = None,
-    state: str | None = None,
+    root: Given = None,
+    quota_bytes: Given = None,
+    state: Given = None,
 ) -> dict:
     """Apply exactly one Suite Admin change to one root's metadata."""
     wanted = shapes.required_text(root, "root")
@@ -448,7 +458,7 @@ def root_patch(
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def root_purge(root: str | None = None) -> dict:
+def root_purge(root: Given = None) -> dict:
     """Purge one Archived root pair and everything below it. Suite Admin only."""
     return dict(roots.purge_root(shapes.required_text(root, "root"), _principals()))
 
