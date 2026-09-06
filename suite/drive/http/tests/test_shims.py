@@ -999,6 +999,26 @@ class TestAccessForwarder(ShimCase):
                 )
                 access.grant.assert_not_called()
 
+    def test_a_share_that_reaches_no_rung_is_refused_not_written_as_a_deny(self):
+        """Role 0 is §5.10's deny, and `File.share` never wrote one.
+
+        An unnamed bit kept its old value there and `deny` was set to 0
+        regardless, so an all-zero row meant "no access", not "denied".
+        Granting 0 here would turn a partial share into a deny that cuts
+        inheritance from the folder above.
+        """
+        for kwargs in ({}, {"write": 1}, {"share": 1}, {"comment": 1, "upload": 1}):
+            with self.subTest(kwargs=kwargs):
+                access = self.stub("access")
+                with self.assertRaises(frappe.ValidationError):
+                    shims.update_access("n1", "share", user="b@example.com", **kwargs)
+                access.grant.assert_not_called()
+
+    def test_a_deny_the_caller_asked_for_is_still_written(self):
+        access = self.stub("access")
+        shims.update_access("n1", "share", user="b@example.com", deny=1)
+        access.grant.assert_called_once_with("n1", "b@example.com", 0, SOMEONE)
+
     def test_an_unknown_method_is_refused(self):
         self.stub("access")
         with self.assertRaises(frappe.ValidationError):

@@ -1137,6 +1137,16 @@ def update_access(entity_name: str, method: str, **kwargs):
     role = _legacy_role(kwargs)
     if principal == "$PUBLIC":
         role = min(role, READ)
+    if not role:
+        # A share that reaches no rung must not be written. Role 0 is §5.10's
+        # deny, and the old row was not one: `File.share` left an unnamed bit
+        # at whatever the existing row held and set `deny=0` regardless, so an
+        # all-zero row was "no access", never "denied". Writing 0 here would
+        # turn a partial share into a deny that cuts inheritance from above.
+        frappe.throw(
+            _("A Drive share must name at least read access."),
+            frappe.ValidationError,
+        )
     return access.grant(entity_name, principal, role, principals)
 
 
