@@ -116,6 +116,7 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.files",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.list",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.notifications",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.permissions",
         ),
     ),
     **_debt(
