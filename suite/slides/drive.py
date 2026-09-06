@@ -183,6 +183,13 @@ def on_purge(docname: str) -> None:
     the whole row as JSON in `Deleted Document`
     (`frappe/model/delete_doc.py:add_to_deleted_document`), so every slide would
     outlive the §8.8 purge that was meant to remove it.
+
+    What still survives is the framework's own deletion feed: `delete_doc` ends
+    with `insert_feed`, which writes a `Comment` naming the doctype, the deck
+    name, and the owner's full name, with no `reference_name` for
+    `delete_references` to match (`frappe/model/delete_doc.py:554-573`). It
+    carries no deck body. Every Drive purge of every content type has it, so
+    removing it is a framework decision, not this adapter's.
     """
     frappe.delete_doc(
         DOCTYPE,
@@ -213,7 +220,11 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
         if background is not None:
             values["background"] = background
         elements = _elements_or_refuse(row)
-        if any(_remap_element(element, mapping) for element in elements):
+        # Every element, not the first one that changes: `any` over a generator
+        # stops at the first True and would leave the rest of the slide pointing
+        # at the source deck's nodes.
+        rewritten = [_remap_element(element, mapping) for element in elements]
+        if any(rewritten):
             values["elements"] = json.dumps(elements)
         if values:
             frappe.db.set_value(SATELLITE_DOCTYPE, row["name"], values, update_modified=False)
@@ -395,16 +406,21 @@ def _reference_names(docname: str) -> list[str]:
 
 
 def _slide_element_ids(row: dict) -> set[str]:
-    """Read the ids one slide's elements name, or over-report rather than lose one."""
+    """Read the ids one slide's elements name, or over-report rather than lose one.
+
+    The sweep walks the whole parsed body, not only `src` and `poster`. Losing a
+    picture here is what trashes it (§10.6), and no shape of a body Slides did
+    not expect may cause that: a poster nested three levels down, a list of
+    elements inside a list, a key a later release adds. Over-reporting costs the
+    sweep a node it leaves alone, which the module's own rule already accepts.
+    The narrow media-key walk stays where a rewrite needs it.
+    """
     try:
-        elements = _element_list(row.get("elements"))
+        parsed = _parsed_elements(row.get("elements"))
     except UnreadableBody:
         frappe.log_error("Slides: could not read a slide body for the media sweep", frappe.get_traceback())
         return set(MEDIA_TOKEN.findall(row.get("elements") or ""))
-    found: set[str] = set()
-    for element in elements:
-        found |= _element_ids(element)
-    return found
+    return _value_ids(parsed)
 
 
 def _elements_or_refuse(row: dict) -> list[dict]:
@@ -416,9 +432,10 @@ def _elements_or_refuse(row: dict) -> list[dict]:
     return _element_list(row.get("elements"))
 
 
-def _element_list(raw) -> list[dict]:
+def _parsed_elements(raw) -> list:
+    """Parse one `elements` column into whatever list it holds, or refuse."""
     if isinstance(raw, list):
-        return [element for element in raw if isinstance(element, dict)]
+        return raw
     if not raw:
         return []
     try:
@@ -427,43 +444,64 @@ def _element_list(raw) -> list[dict]:
         raise UnreadableBody(_("This slide body cannot be read")) from undecodable
     if not isinstance(parsed, list):
         raise UnreadableBody(_("This slide body cannot be read"))
-    return [element for element in parsed if isinstance(element, dict)]
+    return parsed
+
+
+def _element_list(raw) -> list[dict]:
+    return [element for element in _parsed_elements(raw) if isinstance(element, dict)]
 
 
 def _element_ids(element: dict) -> set[str]:
     found: set[str] = set()
     for key in ELEMENT_MEDIA_KEYS:
-        value = element.get(key)
-        if isinstance(value, dict):
-            # §14.7: a legacy poster may be a dict, not a string.
-            for nested in value.values():
-                found |= _value_ids(nested)
-            continue
-        found |= _value_ids(value)
+        found |= _value_ids(element.get(key))
     return found
 
 
 def _value_ids(value) -> set[str]:
-    if not isinstance(value, str) or not MEDIA_ID.fullmatch(value):
-        return set()
-    return {value}
+    """Read the node ids one media value names, at whatever depth it holds them.
+
+    §14.7 says a legacy `poster` may be a dict rather than a string, and it
+    fixes no depth for that dict. A walk that stops one level down answers "this
+    slide names nothing" for a picture the slide still shows, and the §10.6
+    sweep then trashes it. Under-reporting is the one direction this must never
+    take, so the walk follows every nested dict and list to the end.
+    """
+    if isinstance(value, str):
+        return {value} if MEDIA_ID.fullmatch(value) else set()
+    if isinstance(value, dict):
+        return set().union(*(_value_ids(nested) for nested in value.values())) if value else set()
+    if isinstance(value, list):
+        return set().union(*(_value_ids(nested) for nested in value)) if value else set()
+    return set()
+
+
+def _remap_value(value, mapping: dict[str, str]) -> tuple[object, bool]:
+    """Rewrite one media value in place, at the same depth `_value_ids` reads."""
+    if isinstance(value, str):
+        replacement = mapping.get(value)
+        return (replacement, True) if replacement is not None else (value, False)
+    changed = False
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            value[key], nested_changed = _remap_value(nested, mapping)
+            changed = changed or nested_changed
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            value[index], nested_changed = _remap_value(nested, mapping)
+            changed = changed or nested_changed
+    return value, changed
 
 
 def _remap_element(element: dict, mapping: dict[str, str]) -> bool:
     changed = False
     for key in ELEMENT_MEDIA_KEYS:
-        value = element.get(key)
-        if isinstance(value, dict):
-            for nested_key, nested in value.items():
-                replacement = mapping.get(nested) if isinstance(nested, str) else None
-                if replacement is not None:
-                    value[nested_key] = replacement
-                    changed = True
+        # `in`, not `get`: writing back a key the element never had would add a
+        # null `poster` to every image on the slide.
+        if key not in element:
             continue
-        replacement = mapping.get(value) if isinstance(value, str) else None
-        if replacement is not None:
-            element[key] = replacement
-            changed = True
+        element[key], key_changed = _remap_value(element[key], mapping)
+        changed = changed or key_changed
     return changed
 
 
