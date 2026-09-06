@@ -83,7 +83,7 @@ def iso8601(value: datetime | str) -> str:
 
 
 def live_properties(
-    row: frappe._dict | None,
+    row: frappe._dict,
     *,
     is_collection: bool,
     display_name: str,
@@ -92,6 +92,9 @@ def live_properties(
 ) -> dict[str, etree._Element | None]:
     """All live properties for one resource, keyed by Clark name; None = not
     defined for this resource (rendered as a 404 propstat when requested).
+
+    Every resource is a real node. The virtual root that once had no row went
+    with the single mount, so there is no rowless resource left to render.
 
     quota = (used_bytes, limit_bytes); limit 0 means unlimited, and RFC 4331 §4
     then wants `quota-available-bytes` left out rather than guessed at.
@@ -110,11 +113,10 @@ def live_properties(
         dav("quota-available-bytes"): None,
     }
 
-    if row is not None:
-        props[dav("getlastmodified")] = dav_element("getlastmodified", text=rfc1123(content_time(row)))
-        props[dav("creationdate")] = dav_element("creationdate", text=iso8601(row.creation))
+    props[dav("getlastmodified")] = dav_element("getlastmodified", text=rfc1123(content_time(row)))
+    props[dav("creationdate")] = dav_element("creationdate", text=iso8601(row.creation))
 
-    if row is not None and not is_collection:
+    if not is_collection:
         props[dav("getcontentlength")] = dav_element("getcontentlength", text=str(row.size or 0))
         props[dav("getcontenttype")] = dav_element(
             "getcontenttype", text=row.mime or "application/octet-stream"

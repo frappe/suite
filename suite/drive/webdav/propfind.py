@@ -55,7 +55,11 @@ def handle(ctx: DavContext) -> Response:
     from suite.drive.webdav import deadprops, locks
 
     rows = [resource.row for resource in resources]
-    checksums = checksums_for(rows)
+    # the page's validators cost one read, and a client that did not ask for
+    # `getetag` should not pay it (§12.5). `propname` needs it to say which
+    # rows define the property at all.
+    wants_etag = mode in ("allprop", "propname") or dav("getetag") in requested
+    checksums = checksums_for(rows) if wants_etag else {}
     dead = deadprops.get_dead_props([row.name for row in rows])
     lock_map = locks.discovery_map({r.row.name: r.ancestors for r in resources})
 
