@@ -1560,6 +1560,24 @@ class TestUnadoptedNewFolder(ShimCase):
         nodes.create_folder.assert_not_called()
         self.assertEqual(made.call_args.args[:3], ("Reports", "f1", "Folder"))
 
+    def test_a_node_less_parent_takes_a_file_link(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        self.enterContext(
+            patch("suite.drive.api.permissions.user_has_permission", MagicMock(return_value=True))
+        )
+        self.enterContext(patch("suite.drive.utils.validate_filename", MagicMock()))
+        self.enterContext(patch.object(shims.frappe.utils, "now_datetime", MagicMock()))
+        row = MagicMock()
+        row.name = "f2"
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        self.enterContext(patch.object(shims, "_legacy_file_row", MagicMock(return_value={"name": "f2"})))
+        nodes = self.stub("node_core")
+
+        self.assertEqual(shims.create_link("Docs", "https://example.com", "f1")["name"], "f2")
+
+        nodes.create_link.assert_not_called()
+        row.insert.assert_called_once_with()
+
     def test_a_parent_a_node_holds_is_still_the_workflow(self):
         self.enterContext(patch.object(shims, "_unadopted_row", return_value=False))
         nodes = self.stub("node_core")
