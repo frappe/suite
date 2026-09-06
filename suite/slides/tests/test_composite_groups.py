@@ -49,6 +49,10 @@ from suite.tests.utils import ensure_user
 OWNER = "composite-groups-owner@example.com"
 VIEWER = "composite-groups-viewer@example.com"
 STRANGER = "composite-groups-stranger@example.com"
+# Owns the root the "hidden" decks sit in, and is never a caller. A root
+# grants its own user read on everything under it, so a deck placed in a
+# caller's root is readable by that caller and proves nothing about a refusal.
+OUTSIDER = "composite-groups-outsider@example.com"
 
 DOCTYPE = "Presentation"
 SATELLITE = "Slide"
@@ -349,6 +353,7 @@ class TestCompositeGroups(IntegrationTestCase):
         ensure_user(OWNER)
         ensure_user(VIEWER)
         ensure_user(STRANGER)
+        ensure_user(OUTSIDER)
         # A run killed between `setUp` and its cleanup leaves the fixture roots
         # behind, and `create_root` then refuses every later run.
         _purge_fixture_roots()
@@ -366,7 +371,7 @@ class TestCompositeGroups(IntegrationTestCase):
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Composite Root", user=OWNER)
-        self.other_root = create_root(kind="Personal", title="Composite Other", user=VIEWER)
+        self.other_root = create_root(kind="Personal", title="Composite Other", user=OUTSIDER)
         self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
 
     def _remove_fixture_rows(self):
@@ -1049,7 +1054,7 @@ class TestCompositeGroups(IntegrationTestCase):
         # not just the one that is a literal in the source.
         recorded_errors = {name: entry["error"] for name, entry in fixture["refusals"].items()}
         self.assertEqual(recorded_errors["unreadable_composite"], api.REFUSED)
-        self.assertEqual(recorded_errors, _real_refusal_messages(docname, ids))
+        self.assertEqual(recorded_errors, _real_refusal_messages(docname, ids, composite_code))
         for name, entry in fixture["refusals"].items():
             with self.subTest(refusal=name):
                 expected = 403 if entry["exception"] == "frappe.PermissionError" else 417
@@ -1070,10 +1075,16 @@ def _same_shape(case, answered: dict, recorded: dict) -> None:
         case.assertIsInstance(value, type(recorded[key]), key)
 
 
-def _real_refusal_messages(docname: str, ids: list[str]) -> dict[str, str]:
+def _real_refusal_messages(docname: str, ids: list[str], composite_code: str) -> dict[str, str]:
     """Answer the six refusals from the server, so the fixture cannot drift.
 
     Five of the six are `_()`-wrapped, so only the server can say what they are.
+
+    Every call carries the composite's link code, because the caller is a guest
+    and membership is checked after authorization: without the code the server
+    answers `REFUSED` for `injected_reference`, which is the refusal a caller
+    who cannot read the composite gets and not the one being recorded.
+    `unreadable_composite` names a deck no code can reach, so it is unaffected.
     """
     answers = {}
     for name, call in (
@@ -1084,7 +1095,8 @@ def _real_refusal_messages(docname: str, ids: list[str]) -> dict[str, str]:
         ("unreadable_composite", lambda: api.composite_group("no-such-deck", [ids[0]])),
     ):
         try:
-            call()
+            with link_header(composite_code):
+                call()
         except (frappe.ValidationError, frappe.PermissionError) as refused:
             answers[name] = str(refused)
     codes = tuple(frappe.generate_hash(length=22) for _ in range(LINK_HEADER_LIMIT + 1))
@@ -1099,11 +1111,13 @@ def _real_refusal_messages(docname: str, ids: list[str]) -> dict[str, str]:
 def _purge_fixture_roots() -> None:
     """Hand back every Drive root this module's users own, through Drive's purge.
 
-    The three users belong to this module alone, so the filter can never reach a
+    The four users belong to this module alone, so the filter can never reach a
     live account or another test module's fixtures.
     """
     admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
-    roots = frappe.get_all("Drive Root", filters={"user": ["in", (OWNER, VIEWER, STRANGER)]}, pluck="name")
+    roots = frappe.get_all(
+        "Drive Root", filters={"user": ["in", (OWNER, VIEWER, STRANGER, OUTSIDER)]}, pluck="name"
+    )
     # Purging a document node calls the app's `on_purge`, which Drive reads from
     # the registry, so the purge runs registered even when the caller is not.
     with activated():
