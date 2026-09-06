@@ -271,6 +271,21 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assert_refused(404, self._move, self._path("b.txt"), self._path("spot.txt"))
         self.assertEqual(node_core.stored(target.name).state, "Active")
 
+    def test_overwrite_f_does_not_confirm_an_unreadable_destination(self):
+        """§12.1: the read gate runs before RFC 4918 §9.9.4's 412.
+
+        `Overwrite: F` answers 412 only because something is already there, so
+        a 412 on a node the caller cannot read is an existence oracle for it.
+        Below READ both verbs have to answer 404 instead.
+        """
+        target = file_node(OWNER, self.base, "spot.txt", b"old")
+        grant(target.name, "$GENERAL", NONE, node_principals(OWNER))
+
+        self.assert_refused(404, self._move, self._path("b.txt"), self._path("spot.txt"), overwrite=False)
+        self.assert_refused(404, self._copy, self._path("b.txt"), self._path("spot.txt"), Overwrite="F")
+        self.assertEqual(node_core.stored(target.name).state, "Active")
+        self.assertEqual(node_core.stored(self.file.name).title, "b.txt")
+
     def test_neither_verb_crosses_drive_roots(self):
         """§12: no DAV move or copy crosses roots.
 
