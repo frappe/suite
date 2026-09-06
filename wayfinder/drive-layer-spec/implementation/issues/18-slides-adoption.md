@@ -4,12 +4,16 @@
 
 **Blocked by:** [16 — Create content documents and media through one Drive contract](16-content-contract.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Slides
 
 **Starting revision:** Suite `a61e78970bcd702f4c0ef499c8e38bc6e2a4dbda`;
 Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
+
+**Final revision:** Suite `db645102f0a9221ae110cabb5a9714e3a62dfd26`, the last
+change to code or tests. The closeout after it is documentation only. Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
 
 **Claimed files:** `suite/slides/drive.py`,
 `suite/slides/doctype/presentation/presentation.py`,
@@ -27,6 +31,18 @@ deviation from the plan's file ownership, not hidden. Two reasons:
   Slides.
 - Ticket 16 handed this ticket the upload-side half of §8.9's per-blob rule in
   writing. The fix is inside `nodes.create_file`.
+
+It also changed a fourth ticket 16 file, `suite/drive/framework.py`, at
+`6b7c769c2`. `_refuse_shared_row` became public as `refuse_shared_row` and
+`refuse_shared_linked_rows` is new there. A staged app guard has to refuse a
+`DocShare` the way this module does after activation, so the code belongs beside
+`_refuse_shared_list`. Named here at closeout; the earlier text recorded only
+the two `__all__` entries.
+
+Four more files on this branch carry work this ticket caused, and are not on the
+list above: `suite/drive/tests/test_content.py` (the five `adopt_media` tests),
+`suite/writer/overrides/__init__.py` and `suite/writer/tests/test_drive_adoption.py`
+(blocker 2, ticket 17's files), and `17-writer-adoption.md` with them.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -84,7 +100,7 @@ Implemented 2026-09-06. Two commits:
 | `517d0d4dc` | The adapter, the node link, the dual path, and `adopt_media`. |
 | `cccf8814d` | 71 tests and the architecture debt entries. |
 
-An independent review then found and fixed nine defects. See
+An independent review then found and fixed thirteen defects. See
 [Review corrections](#review-corrections) for the list and the new commits.
 
 ### Changed interfaces and schema
@@ -471,7 +487,11 @@ bound to `frappe.local.db`, so a guard runs against real code with no server.
 
 Run 2026-09-06 from `/home/faris/benches/suite-bench` against the main
 worktree at `5b79746c0`, serialised. `migrate` was not run: the repair below
-touches no schema, and the site already carries the `node` column.
+touches no schema, and the site already carries the `node` column. The closeout
+query proves the column is there; no run of `migrate` is recorded for it here.
+
+The two repair sections below supersede two rows of the results table. The
+table stays as the history of the run at `5b79746c0`.
 
 ```
 bench --site slides.localhost migrate
@@ -498,7 +518,7 @@ The Drive and Writer modules are in the list because this ticket changed
 
 | Module | Result |
 |---|---|
-| `suite.slides.tests.test_drive_adoption` | 30 unit, 70 integration, all OK |
+| `suite.slides.tests.test_drive_adoption` | 30 unit, 70 integration, all OK. 71 integration after the fixture repair below |
 | `suite.slides.tests.test_pasted_media` | 3 OK |
 | `suite.slides.tests.test_thumbnail_patches` | 5 OK |
 | `suite.slides.api.test_file` | 21 OK |
@@ -510,13 +530,14 @@ The Drive and Writer modules are in the list because this ticket changed
 | `suite.drive.tests.test_upload` | 8 unit, 26 integration, all OK |
 | `suite.tests.test_architecture` | 7 OK |
 | `suite.tests.test_composition` | 3 OK |
-| `suite.writer.tests.test_drive_adoption` | 23 unit OK. 43 integration, 3 errors, all pre-existing |
+| `suite.writer.tests.test_drive_adoption` | 23 unit OK. 43 integration, 3 errors from Writer's own fixture leak. 44 integration OK after `25bdc25af` |
 
 The three Writer errors are `test_activation_would_accept_the_declaration_itself`,
 `test_a_stranger_reads_neither_the_row_nor_the_list`, and
 `test_an_inherited_folder_grant_reaches_the_row_and_the_list`. They reproduce
 at `a8f747fd2` with `suite/drive/_core/content.py` restored to that revision,
-so they are not this repair. Not fixed here; they belong to ticket 17.
+so they are not this repair. They were fixed on this branch at `25bdc25af`, in
+ticket 17's test file. The paragraph below corrects the cause.
 
 **"They sit in Writer's list-permission path" is wrong.** Corrected at
 `25bdc25af`. The permission path answered correctly every time. Writer's own
@@ -527,7 +548,7 @@ the test module. See "Site gate repair" in `17-writer-adoption.md`.
 
 #### Site gate repair: the Slides fixture leaked the same way
 
-Recorded above as inert. It was not. Fixed at `d5ac8beb6`, `c1157620f`, and
+Ticket 17 recorded this leak as inert, under "Not fixed, recorded". It was not. Fixed at `d5ac8beb6`, `c1157620f`, and
 `db645102f`. Agents traced the row footprint and ran the mutations.
 
 `TestSlidesBeforeActivation` writes a legacy deck and commits.
@@ -660,10 +681,96 @@ inconsistent one. The `_corrupt` helper puts the column back before cleanup.
    the failure that looked unrelated. Slides' fixture committed a deck and its
    backing `File`. Both are repaired; see the two "Site gate repair" sections.
 
+### Closeout, 2026-09-06
+
+Agents reconciled the seven acceptance criteria against the code at
+`a451b5092`, recounted every module the gate names, and checked every commit
+this ticket cites. Nothing ran on the bench in this pass. The closeout changes
+documentation only.
+
+**All seven criteria hold.** Where the code proves each one:
+
+| Criterion | Evidence at HEAD |
+|---|---|
+| 1 Declaration and Slide satellite | `slides/drive.py:233-258`; mixin at `presentation.py:29`; `node` first and read-only in `presentation.json:7,20-29` |
+| 2 Create, duplicate, versions, restore, purge, `used_nodes` | `slides/drive.py:110-230`; the nested walk at `:476-492`; the list materialised before `any()` at `:226-227` |
+| 3 Media nodes and shared blobs | `content.py:958-1063`; per-blob reuse on upload at `nodes.py:541-549`; `parent` in `DOCUMENT_NODE_FIELDS` at `content.py:90-100` |
+| 4 Previews through Drive, no export | `presentation.py:263-266`; `slides/drive.py:317-325`; `default_export=None` at `:239` |
+| 5 Composite read checks, nothing forced public | `presentation.py:60-77,84-95,759-767,895-916`; `slides/drive.py:353-378` |
+| 6 Legacy compatibility, Build sources kept | `presentation.py:99-113,152-181,810-853`; the freeze at `content.py:436-446,513-547,723-753` |
+| 7 Legacy paths refuse a linked deck | `refuse_drive_native` at `presentation.py:131-137`, called at `:117,151,294,520,530,551,558,676,842,869` |
+
+**Counts.** Every module count recorded above matches a static enumeration of
+the test classes at HEAD, class by class. `TestSlidesDeclaration` 30,
+`TestSlidesBeforeActivation` 11, `TestSlidesInDrive` 60. `TestWriterDeclaration`
+23, `TestWriterBeforeActivation` 6, `TestWriterInDrive` 38. The other seventeen
+modules match too. No test class inherits a test method, none is skipped, and no
+method name is defined twice, so a run collects what the enumeration counts.
+
+**Which revision ran what.** The gate is three runs, not one:
+
+| Revision | Modules |
+|---|---|
+| `5b79746c0` | The thirteen test modules in the command block, with the two superseded rows. `migrate` was not run |
+| `25bdc25af` | Writer adoption 23 and 44, `writer_document` 2, `writer.api.tests.test_general` 2, Slides 30 and 70, content 53 and 49, nodes 13 and 23, architecture 7, composition 3 |
+| after `db645102f` | Slides 30 and 71 twice, architecture 7, Writer adoption 23 and 44 |
+
+`suite.sheets.tests.test_permissions` 9, `test_share_notify` 6,
+`test_api_security` 11, and `suite.tests.test_scheduler_events` 2 are ticket
+17's regression set at `c5e544fe6`. They were not re-run here. The three commits
+after the last Drive change touch two test files only, so no module outside
+those two files can move.
+
+**Site state, read at closeout.** A read-only query on `slides.localhost`:
+`tabPresentation` carries the `node` column, and so does `tabWriter Document`.
+Four decks survive, `Light`, `Dark`, and two prototypes from 2026-08-16. None
+carries a node. `DocShare` holds no row for `Presentation` or `Writer Document`,
+and no `File` names a `Presentation` at either link. Both fixture leaks are gone
+from the site, which is what the repairs claimed.
+
+**`migrate` is not verified by a run.** The command block lists it and the run
+at `5b79746c0` skipped it. The column it adds is on the site, proved above, and
+`drive_content_types` is empty, so `validate_content_registry` inspects nothing.
+`test_a_docshare_on_a_presentation_does_not_fail_a_migration` holds the
+migration answer in a test. Recorded as unverified by a run.
+
+**Found at closeout, recorded not fixed.** A closeout may not change code.
+
+- **A rewrite drops an `elements` entry that is not a dictionary.**
+  `_element_list` (`slides/drive.py:465-466`) filters the parsed list to
+  dictionaries, and both `remap_media` (`:225-228`) and `adopt_slide_media`
+  (`:296-303`) write that filtered list back. The sweep was widened so no
+  unexpected body shape can lose a picture; the rewrite still loses the entry
+  that held it. `adopt_slide_media` re-serialises even when the mapping is
+  empty. Unreachable today: Slides writes a list of dictionaries, and the legacy
+  arm at `presentation.py:367-383` raises on the same input. Ticket 28 must not
+  write such an entry at Build. `test_a_rewrite_stays_narrow_where_the_sweep_is_wide`
+  covers a non-media key on a dictionary element, not this shape.
+- **`get_presentation_thumbnail` has no test.** It is the ninth caller of
+  `refuse_drive_native`, and `test_a_linked_deck_refuses_every_legacy_method`
+  proves the other eight through the same helper. A verification gap, not a
+  defect.
+- **`refuse_unreadable_references` runs only for a composite.**
+  `presentation.py:61-62` returns before the check when `is_composite` is false,
+  so a linked deck can hold `reference_presentations` rows nobody checked. Every
+  reader is behind the same flag, and setting the flag is a save that runs the
+  check.
+- **`title` lost `reqd`.** A Drive-native deck has no title of its own, so the
+  column had to stop being mandatory. A legacy deck can now be saved with an
+  empty title where the framework refused before.
+
+**Citation corrections.** The first review fixed thirteen defects, not nine; the
+table has thirteen rows. The Slides fixture leak was recorded as inert in ticket
+17, not in this ticket. `suite/drive/framework.py` is now named in the deviation
+list above. `7249432d6` formats `suite/drive/tests/test_content.py` and is cited
+nowhere; it changes no behaviour.
+
 ## Blockers
 
-1. **A `DocShare` on a `Presentation` still refuses activation.** Same shape as
-   Writer's. Ticket 28 owes the rewrite to grants before ticket 29 activates.
+1. **A `DocShare` on a `Presentation` still refuses activation.** Open. Same
+   shape as Writer's. Ticket 28 owes the rewrite to grants before ticket 29
+   activates. `slides.localhost` carries no such row today; see the closeout
+   query above.
    Harmless today: the registry is empty, so `validate_content_registry`
    inspects nothing. Between Build and activation the staged guards now refuse
    a share that names a linked deck rather than letting it through; see the
@@ -748,7 +855,8 @@ the same route.
   nodes under Administrator's `Templates` folder with `$GENERAL` READ, and
   every `DocShare` rewritten as a grant. §14.7 migrates no deck history, so
   Build owes no `presentation/1` envelope; a deck's first version is taken
-  after Build.
+  after Build. Every entry Build writes into `elements` must be a JSON object:
+  the rewrite path drops anything else, as the closeout records.
 - **Ticket 29, activation.** Five entries move together: `drive_content_types`
   gains `suite.slides.drive.SPEC`, both `Presentation` hooks become
   `suite.drive.framework.doc_*`, and `Slide` gains

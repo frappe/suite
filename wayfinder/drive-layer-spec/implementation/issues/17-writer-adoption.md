@@ -715,6 +715,11 @@ for `writer-adoption-other@example.com`. No other site data was touched.
   on shares and not on rows. It becomes a poison the day a share outlives the
   last commit. Ticket 18's file, not this one's.
 
+  **Fixed at ticket 18**, in `d5ac8beb6`, `c1157620f`, and `db645102f`. The
+  reading above was too narrow: the leak also stranded the backing `File` rows,
+  which outlive a deck the cleanup deleted. Ticket 18 records the row footprint
+  and the mutations that prove each swept line.
+
 ## Handoffs
 
 | To | What is owed |
