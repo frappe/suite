@@ -18,6 +18,14 @@ from suite.drive._core.roles import EDIT, UPLOAD
 BINDING_TTL_SECONDS = 24 * 60 * 60
 BINDING_PREFIX = "drive:blob-upload"
 
+# `/api/suite/drive/uploads/` is a streaming request path, which is what lets a
+# chunk body arrive unparsed - and also clears the framework's own
+# `max_content_length`. Storage refuses a chunk that would pass the declared
+# size, but only after the bytes exist, so the bound that keeps one PUT from
+# pinning arbitrary memory has to be this one. It is the largest chunk a client
+# may send, not a limit on the file.
+MAX_CHUNK_BYTES = 16 * 1024 * 1024
+
 
 def create_upload(
     principals: Principals,
@@ -59,6 +67,13 @@ def upload_chunk(
     data: bytes,
 ) -> dict:
     """Reauthorize a bound chunk and stream its supplied body to storage."""
+    if not isinstance(data, bytes | bytearray):
+        frappe.throw(_("An upload chunk is raw bytes"), frappe.ValidationError)
+    if len(data) > MAX_CHUNK_BYTES:
+        frappe.throw(
+            _("A Drive upload chunk may not exceed {0} bytes").format(MAX_CHUNK_BYTES),
+            frappe.ValidationError,
+        )
     binding = _authorized_binding(principals, upload_id)
     _reauthorize_original_destination(principals, binding)
     result = upload_blob_chunk(upload_id, offset, data)

@@ -20,6 +20,13 @@ from suite.drive._core.roots import reject_illegal_root_operation
 
 PREVIEW_LONGEST_SIDE = 512
 PREVIEW_TTL_SECONDS = 15 * 60
+
+# A pushed preview is an app-rendered thumbnail, not a photograph, so the bound
+# is generous. It exists because `_encode_image` decodes before it thumbnails:
+# a 294 KB solid WebP of 13000x13000 is 169 megapixels, sits under Pillow's own
+# 178.9 Mpx bomb threshold, peaks at 2.6 GB of resident memory, and stores 542
+# bytes. A byte cap cannot see that; a pixel count can, from the header alone.
+MAX_PUSHED_PREVIEW_PIXELS = 25_000_000
 SWEEP_BATCH = 500
 SWEEP_CURSOR_KEY = "drive:preview-sweep-cursor"
 
@@ -137,6 +144,7 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
         raise DriveForbidden(_("Only an active content document accepts a pushed preview"))
     if mime not in IMAGE_MIMES or not isinstance(image_bytes, bytes) or not image_bytes:
         frappe.throw(_("A supported preview image is required"), frappe.ValidationError)
+    _refuse_oversized_image(image_bytes)
 
     preview_bytes = _image_webp(io.BytesIO(image_bytes))
     preview = put_blob(io.BytesIO(preview_bytes), is_private=True, filename=f"{node}.webp")
@@ -145,6 +153,24 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
     if locked.kind != "document" or locked.state != "Active":
         raise DriveForbidden(_("Only an active content document accepts a pushed preview"))
     _write_preview(node, source_blob=None, preview_blob=preview.name)
+
+
+def _refuse_oversized_image(image_bytes: bytes) -> None:
+    """Refuse a pushed image on its declared pixel count, before any decode.
+
+    `Image.open` reads the header and stops, so `size` costs nothing and the
+    decompression bomb never reaches `_encode_image`.
+    """
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as probe:
+            width, height = probe.size
+    except Exception:
+        frappe.throw(_("A supported preview image is required"), frappe.ValidationError)
+    if width * height > MAX_PUSHED_PREVIEW_PIXELS:
+        frappe.throw(
+            _("A pushed Drive preview may not exceed {0} pixels").format(MAX_PUSHED_PREVIEW_PIXELS),
+            frappe.ValidationError,
+        )
 
 
 def copy_preview(source: str, target: str) -> bool:
