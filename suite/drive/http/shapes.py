@@ -156,7 +156,7 @@ def patch(value, name: str) -> dict:
     """Accept a non-empty mapping of the fields `PATCH /nodes/<id>` takes."""
     if not isinstance(value, Mapping) or not value:
         _refuse(name)
-    allowed = ("title", "parent", "state", "content_modified")
+    allowed = ("title", "parent", "state")
     unknown = sorted(set(value) - set(allowed))
     if unknown:
         frappe.throw(

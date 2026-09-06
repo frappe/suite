@@ -276,12 +276,24 @@ class TestRouteTable(UnitTestCase):
                     self.assertEqual(parameter.annotation, routes.Given)
                     self.assertIsNone(parameter.default)
 
-    def test_no_handler_takes_a_storage_identifier(self):
-        # §8.4: an upload session is the only proof that the caller produced
-        # the bytes being charged, so no route may name one directly.
+    def test_only_the_two_declared_rows_name_a_blob(self):
+        # §11.2 declares `blob` on the create and the patch bodies, and nowhere
+        # else. Both hand it straight to a workflow that re-reads the blob row.
         import inspect
 
-        forbidden = {"blob", "blob_key", "file_url", "preview_id", "content_hash"}
+        naming = set()
+        for name in GUEST_ROUTES | SESSION_ONLY_ROUTES:
+            parameters = inspect.signature(inspect.unwrap(getattr(routes, name))).parameters
+            if "blob" in parameters:
+                naming.add(name)
+        self.assertEqual(naming, {"node_create", "node_patch"})
+
+    def test_no_handler_takes_a_storage_key_or_a_bare_url(self):
+        # A blob id is checked against the stored row. These are not checkable
+        # at all: they would let a client name bytes the workflow never reads.
+        import inspect
+
+        forbidden = {"blob_key", "file_url", "file_name", "preview_id", "upload_key", "content_hash"}
         for name in GUEST_ROUTES | SESSION_ONLY_ROUTES:
             with self.subTest(handler=name):
                 parameters = set(inspect.signature(inspect.unwrap(getattr(routes, name))).parameters)

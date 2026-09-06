@@ -103,18 +103,32 @@ def node_create(
     parent: Given = None,
     title: Given = None,
     kind: Given = None,
+    blob: Given = None,
+    size: Given = None,
+    mime: Given = None,
+    content_modified: Given = None,
     url: Given = None,
     content_doctype: Given = None,
     from_node: Given = None,
     is_template: Given = None,
 ) -> dict:
-    """Create one folder, link, or content document below `parent` (§8.3)."""
+    """Create one node of any kind a client may create below `parent` (§8.3).
+
+    `blob`, `size`, and `mime` are §11.2's declared body, and they are claims
+    the workflow checks, not values it stores. `create_file` re-reads the blob
+    row, refuses unless the declared size and mime match it, writes the node
+    from the stored values, and charges the root the stored size.
+    """
     principals = _principals()
     created = node_core.create(
         principals,
         shapes.required_text(parent, "parent"),
         shapes.required_text(title, "title"),
         kind=shapes.required_text(kind, "kind"),
+        blob=shapes.text(blob, "blob"),
+        size=None if size is None else shapes.whole(size, "size", 0),
+        mime=shapes.text(mime, "mime"),
+        content_modified=content_modified,
         url=shapes.text(url, "url"),
         content_doctype=shapes.text(content_doctype, "content_doctype"),
         from_node=shapes.text(from_node, "from_node"),
@@ -147,9 +161,16 @@ def node_patch(
     title: Given = None,
     parent: Given = None,
     state: Given = None,
+    blob: Given = None,
+    size: Given = None,
+    mime: Given = None,
     content_modified: Given = None,
 ) -> dict:
-    """Rename, move, trash, or restore one node (§8.2).
+    """Rename, move, trash, restore, or replace one node's head (§8.2).
+
+    `update` takes exactly one mutation. A tree change and a replacement in
+    one body is a `ValidationError`, and so is a replacement missing any of
+    blob, size, and mime.
 
     A restore whose original parent chain is gone carries both `parent` and
     `state: "Active"`: the destination is the user's choice, and `_restore`
@@ -163,6 +184,9 @@ def node_patch(
             title=shapes.text(title, "title"),
             parent=shapes.text(parent, "parent"),
             state=shapes.text(state, "state"),
+            blob=shapes.text(blob, "blob"),
+            size=None if size is None else shapes.whole(size, "size", 0),
+            mime=shapes.text(mime, "mime"),
             content_modified=content_modified,
         )
     )
@@ -261,7 +285,6 @@ def node_batch(nodes: Given = None, patch: Given = None) -> dict:
                 title=shapes.text(mutation.get("title"), "title"),
                 parent=shapes.text(mutation.get("parent"), "parent"),
                 state=shapes.text(mutation.get("state"), "state"),
-                content_modified=mutation.get("content_modified"),
             )
         except frappe.ValidationError as refusal:
             frappe.db.rollback(save_point=savepoint)

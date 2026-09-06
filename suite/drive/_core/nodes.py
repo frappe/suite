@@ -317,7 +317,7 @@ WHERE name = %(node)s
 """
 
 
-CLIENT_CREATE_KINDS = ("folder", "link", "document")
+CLIENT_CREATE_KINDS = ("folder", "file", "link", "document")
 
 
 def get(principals: Principals, node: str) -> frappe._dict:
@@ -344,6 +344,10 @@ def create(
     title: str,
     *,
     kind: str,
+    blob: str | None = None,
+    size: int | None = None,
+    mime: str | None = None,
+    content_modified: datetime | int | float | str | None = None,
     url: str | None = None,
     content_doctype: str | None = None,
     from_node: str | None = None,
@@ -354,20 +358,36 @@ def create(
     §8.3's create shapes plus §10.1's import, behind one authorized entry so
     an adapter never chooses a workflow from an unauthorized read.
 
-    Bytes are deliberately not an argument. A file node carries a blob, a size,
-    and a mime the framework sniffed, and §8.4 makes the upload session the only
-    thing that proves the caller produced them: `create_file` therefore stays
-    reachable from `finish_upload` alone. A caller who names a blob here is
-    told where bytes come from, not charged for someone else's.
+    A file names a stored blob, and the caller's `size` and `mime` are proof
+    obligations, not data: `create_file` re-reads the blob row, refuses unless
+    the declared pair matches it exactly, writes the node from the stored
+    values, and charges the root the stored size. What the client says can
+    therefore fail the create, and can never change what is written or billed.
     """
     if kind not in CLIENT_CREATE_KINDS:
-        if kind == "file":
-            raise DriveConflict(_("Create a Drive file through an upload session"))
         frappe.throw(_("Drive node kind {0} cannot be created").format(kind), frappe.ValidationError)
 
+    if kind != "file":
+        _refuse_create_extras(blob=blob, size=size, mime=mime, content_modified=content_modified)
     if kind == "folder":
         _refuse_create_extras(url=url, content_doctype=content_doctype, from_node=from_node)
         return create_folder(principals, parent, title)
+    if kind == "file":
+        _refuse_create_extras(url=url, content_doctype=content_doctype, from_node=from_node)
+        if blob is None or size is None or mime is None:
+            frappe.throw(
+                _("A Drive file requires blob, size, and MIME type"),
+                frappe.ValidationError,
+            )
+        return create_file(
+            principals,
+            parent,
+            title,
+            blob=blob,
+            size=size,
+            mime=mime,
+            content_modified=content_modified,
+        )
     if kind == "link":
         _refuse_create_extras(content_doctype=content_doctype, from_node=from_node)
         if not isinstance(url, str) or not url.strip():
