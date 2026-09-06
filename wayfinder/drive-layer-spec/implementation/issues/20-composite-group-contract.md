@@ -4,12 +4,16 @@
 
 **Blocked by:** [18 — Move Slides documents and media into Drive](18-slides-adoption.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Slides API
 
 **Starting revision:** Suite `63ec3f2d181a36d8802c5141c2d8077ee7bb3ea7`;
 Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
+
+**Final revision:** Suite `1778ac347`, the last change to code or tests. The
+two commits after it are documentation only. Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
 
 **Claimed files:** `suite/slides/api/composite.py`,
 `suite/slides/tests/test_composite_groups.py`, `suite/slides/drive.py`,
@@ -28,13 +32,13 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Define and document the Slides grouped-load request and response contract beside its adapter tests.
-- [ ] Use stable reference identifiers and bounded requested groups. Validate membership in the composite; reject arbitrary injected references.
-- [ ] Authorize the composite and each requested reference on every group. Count the composite’s own code within the 20-item cap.
-- [ ] Return unreadable references explicitly in their requested order. Do not silently remove them or expose their content.
-- [ ] Keep each group independently loadable after grant changes. Remembered client target associations confer no authority.
-- [ ] Provide contract fixtures for frontend adoption, including more than 20 separately shared references.
-- [ ] Keep this a Slides API operation. Add no generic Drive route or new permission rule.
+- [x] Define and document the Slides grouped-load request and response contract beside its adapter tests.
+- [x] Use stable reference identifiers and bounded requested groups. Validate membership in the composite; reject arbitrary injected references.
+- [x] Authorize the composite and each requested reference on every group. Count the composite’s own code within the 20-item cap.
+- [x] Return unreadable references explicitly in their requested order. Do not silently remove them or expose their content.
+- [x] Keep each group independently loadable after grant changes. Remembered client target associations confer no authority.
+- [x] Provide contract fixtures for frontend adoption, including more than 20 separately shared references.
+- [x] Keep this a Slides API operation. Add no generic Drive route or new permission rule.
 
 ## Verification
 
@@ -42,10 +46,10 @@ Run grouped-load tests for 19 references plus a composite code, multiple groups,
 
 ## Completion evidence
 
-Implemented 2026-09-06 in this worktree, on `implement/drive-20-composite-groups`.
-Status stays `in-progress` and every box stays unchecked. The Python half of
-the shared-site gate is green at `1778ac347`; `yarn --cwd frontend test` has
-still not run.
+Implemented 2026-09-06 on `implement/drive-20-composite-groups`, merged to
+`main`. The whole gate is green at `1778ac347`: the Python half on
+`slides.localhost`, and `yarn --cwd frontend test` at closeout. See
+[Closeout](#closeout) for the frontend result and the baseline it sits on.
 
 | Commit | What it did |
 |---|---|
@@ -164,10 +168,11 @@ grouped calls.
 
 ### Criteria to tests
 
-49 tests in `suite/slides/tests/test_composite_groups.py`: 16 in
-`TestCompositeGroupRequest` with no site, 33 in `TestCompositeGroups` on real
+52 tests in `suite/slides/tests/test_composite_groups.py`: 18 in
+`TestCompositeGroupRequest` with no site, 34 in `TestCompositeGroups` on real
 rows under `activated()`. 23 more in
-`frontend/src/apps/slides/contracts/composite-groups.test.ts`.
+`frontend/src/apps/slides/contracts/composite-groups.test.ts`. The earlier
+counts here said 49, 16 and 33; `4c0a47a60` added the three signature tests.
 
 | Criterion | Tests |
 |---|---|
@@ -176,7 +181,7 @@ rows under `activated()`. 23 more in
 | 3 Authorize composite and every reference per group; count the composite's code | `test_the_composite_is_authorized_again_on_every_group`, `test_a_link_code_authorizes_its_reference_for_the_group_that_carries_it`, `test_more_than_twenty_separately_shared_references_load_in_two_groups`, `test_a_group_carrying_the_wrong_codes_marks_only_those_references`, `test_twenty_codes_are_still_accepted`, `test_an_oversized_link_header_is_refused_rather_than_marking_everything_unreadable` |
 | 4 Unreadable references explicit, in order, without content | `test_an_unreadable_reference_comes_back_in_place_with_no_content`, `test_a_group_answers_in_the_order_it_was_asked_not_the_stored_order`, `test_a_group_answers_one_entry_per_requested_id_and_nothing_else`, `test_the_order_the_caller_asked_for_survives_the_request_reader`, `test_a_readable_reference_carries_its_node_and_its_slides`, `test_a_blank_reference_row_is_unreadable_rather_than_an_error`, `test_a_reference_that_is_itself_a_composite_is_marked_and_never_recursed_into`, `test_a_group_entry_carries_the_documented_fields_and_nothing_more`, `test_the_manifest_names_an_unreadable_reference_exactly_like_a_readable_one` |
 | 5 Groups independent across grant changes; remembered targets confer nothing | `test_a_reference_revoked_between_two_groups_is_unreadable_in_the_second`, `test_a_reference_granted_between_two_groups_is_readable_in_the_second`, `test_a_placeholder_keeps_its_id_and_its_place_across_repeated_loads`, `test_a_grant_change_never_moves_a_reference_id`, `test_a_remembered_association_confers_no_authority` |
-| 6 Frontend fixtures, more than 20 separately shared references | `composite-groups.fixture.json` (21 references, two groups), `test_the_frontend_fixture_matches_a_real_answer`, and the 14 vitest cases |
+| 6 Frontend fixtures, more than 20 separately shared references | `composite-groups.fixture.json` (21 references, two groups), `test_the_frontend_fixture_matches_a_real_answer`, and the 23 vitest cases |
 | 7 A Slides operation only | `test_a_deck_that_is_not_a_composite_is_refused_even_to_its_owner`, `suite.tests.test_architecture` (7 tests, including the frozen `drive.__all__`), and the unchanged `suite/hooks.py` |
 | Non-disclosure (§5.4) | `test_a_stranger_is_refused_before_membership_is_ever_checked`, `test_both_calls_answer_a_stranger_the_same_way_three_times`, `test_a_malformed_group_is_refused_the_same_way_whatever_the_name_is`, `test_the_refusal_message_names_no_reference_and_no_deck`, `test_a_guest_reads_a_published_composite_and_only_published_references`, `test_a_shape_refusal_is_a_validation_error_not_a_permission_error` |
 | Malformed shapes | `test_every_malformed_group_is_refused_with_one_answer` (20 shapes, one answer), `test_a_group_arrives_as_a_list_or_as_its_json_text`, `test_a_json_list_holding_a_non_string_is_refused`, `test_deeply_nested_json_is_refused_rather_than_raised`, `test_an_oversized_request_text_is_refused_before_it_is_parsed` |
@@ -292,7 +297,7 @@ The first run at `840a487c4` gave **42 errors and 3 failures** in the
 | `suite.drive.tests.test_content` | 53 unit, 49 integration, 3 unspecified | OK |
 | `suite.drive.tests.test_principals` | 10 unit | OK |
 | `suite.tests.test_architecture` | 7 unspecified | OK |
-| `yarn --cwd frontend test` | — | **Not run** |
+| `yarn --cwd frontend test` | 2241 passed, 1 skipped; 57 failed, 27 errors | Contract file 23/23 OK; every failure pre-existing, see [Closeout](#closeout) |
 
 The unit class is 18, not 16, and the integration class 34, not 33: three
 tests were added at `4c0a47a60`.
@@ -523,9 +528,8 @@ which `test_drive_public_interface_is_explicit_and_complete_only` proves.
 - **Ticket 21, HTTP.** The grouped calls stay Slides methods. If the composite
   render ever moves under an HTTP route, §11.2 keeps it outside the Drive
   namespace.
-- **This ticket, remaining.** `yarn --cwd frontend test` is the last gate step.
-  It needs an install the review worktree did not have; run it from a checkout
-  that does. After it passes, the boxes can be checked.
+- **This ticket, remaining.** None. `yarn --cwd frontend test` ran at closeout
+  from the main checkout, which has the install the review worktree lacked.
 
 ### Reviewed and deliberately not changed
 
@@ -538,3 +542,124 @@ which `test_drive_public_interface_is_explicit_and_complete_only` proves.
   reference.** Bounding it would break the client before ticket 34 moves it.
   The grouped calls are the bounded path, and the ticket asks for them, not for
   a cap on the existing route.
+
+## Closeout
+
+Verified 2026-09-06 on `main` at `936c62de6`, working tree clean. The verifier
+changed no code and no test, ran no bench command, no install, no migration, no
+service, and no browser. Three subagents audited the frontend suite, the Python
+test counts, and the spec sections independently.
+
+### Every criterion, against the evidence that proves it
+
+| Criterion | Code | Evidence |
+|---|---|---|
+| 1 Contract documented beside the adapter tests | `composite.py:1-165` docstring: request table, response shapes, refusal table with statuses, the bound and its arithmetic | `test_the_frontend_fixture_matches_a_real_answer` compares keys, types, ordering and all six refusal texts against a real answer; `composite-groups.test.ts` 23/23 |
+| 2 Stable ids, bounded groups, membership, injection | id is the child row name (`drive.py:369-401`); `GROUP_LIMIT = 19` (`composite.py:172`); membership at `composite.py:303-317` | 14 tests; `test_composite_groups.py:141` pins `GROUP_LIMIT` to `LINK_HEADER_LIMIT - 1`, so the two cannot drift |
+| 3 Authorize per group, count the composite's code | `composite.py:217` re-authorizes on every call; `composite.py:331` per reference | `test_more_than_twenty_separately_shared_references_load_in_two_groups` loads 21 references as a guest over two groups, the first carrying exactly 20 codes |
+| 4 Unreadable explicit, in order, no content | `composite.py:221` one entry per requested id in request order; `composite.py:322-333` marks with `node: null`, `slides: null` | `test_an_unreadable_reference_comes_back_in_place_with_no_content`, `test_a_group_answers_in_the_order_it_was_asked_not_the_stored_order`, 7 more |
+| 5 Groups independent, remembered targets confer nothing | nothing cached between calls; the request holds reference ids only | `test_a_reference_revoked_between_two_groups_is_unreadable_in_the_second`, `test_a_reference_granted_between_two_groups_is_readable_in_the_second`, `test_a_remembered_association_confers_no_authority` |
+| 6 Fixture with more than 20 separately shared references | `composite-groups.fixture.json`: 21 references, two groups, six refusals, two extra shapes | Held from both sides: the Python comparison above and the 23 vitest cases |
+| 7 A Slides operation only | no Drive route, no `drive.__all__` entry, no `hooks.py` entry, no doctype, no patch | `git diff --name-only 63ec3f2d1~1..HEAD` is the seven claimed files and nothing else; `suite.tests.test_architecture` 7 OK, including the frozen `drive.__all__` |
+
+### The frontend gate, run at closeout
+
+`yarn --cwd frontend test` resolves to `vitest run` (`frontend/package.json:18`);
+the workspace root has no `test` script.
+
+| Run | Result |
+|---|---|
+| `composite-groups.test.ts` alone | **23 passed (23)**, 1 file, 816 ms |
+| Whole suite | 13 files failed, 144 passed, 1 skipped; **57 failed, 2241 passed, 1 skipped** of 2299; **27 errors**; exit 1 |
+
+**The 57 failures and 27 errors do not belong to this ticket, and are recorded
+as external debt.** Three facts decide it:
+
+- The commit range touches two frontend files, both new
+  (`composite-groups.fixture.json`, `composite-groups.test.ts`). No frontend
+  source file changed. Every one of the 13 failing files is unchanged across
+  `63ec3f2d1~1..HEAD`, checked per file.
+- `composite-groups.test.ts` is not among the failures. It is collected
+  (`vitest list --filesOnly` returns the same 158 files the run reports) and it
+  passes inside the full run.
+- The causes are the editor's own, plus one missing install: 26
+  `localsInner`, 18 `null.commands`, 11 keyed-plugin duplications, 3
+  `null.state`, 1 `null.getHTML`, 1 `document is not defined` — all
+  ProseMirror/TipTap lifecycle — and 1 `Failed to resolve import "mammoth"`.
+  `mammoth` is declared at `frontend/package.json:85` and locked at
+  `yarn.lock:5777`, but is absent from `frontend/node_modules`, the root
+  `node_modules`, and the pnpm store. That is an incomplete install, and this
+  run may not install.
+
+Twelve of the 13 are Slides rich-text and table editor suites; one
+(`writer/utils/docximporter.test.js`) is Writer. **Handoff:** the frontend
+tickets (32-34) inherit a red baseline. Restoring it needs an install and work
+in the editor suites, neither of which is in this ticket's scope.
+
+### Found at closeout, recorded not fixed
+
+A closeout may not change code. Neither item blocks a criterion.
+
+1. **Eight `§5.4` citations point at the wrong section.** §5.4 is "Shared with
+   me: grant roots" (`drive-layer-spec.md:997`). The non-disclosure rule these
+   comments mean is **§5.2**, "Point check for one node": `raise
+   DriveNotFound(node["name"])  # unreadable is never 403`
+   (`drive-layer-spec.md:921`) and "`require` hides an unreadable node behind
+   404, on every surface" (`:929-930`). The wrong number is at
+   `composite.py:83,133,183`, `drive.py:420,434,444`, and
+   `presentation.py:891,899`; the last two are inherited from ticket 18. The
+   behaviour conforms: one refusal text for four causes, and authorization
+   before membership. **Handoff:** the next ticket to touch either file should
+   renumber. Corrected in this document below.
+2. **§6.6's media-link clause is not delivered, and could not be here.** "For
+   each readable reference, Drive inlines its slides and mints media links for
+   that reference's own node (§6.8)" (`drive-layer-spec.md:1489`).
+   `composite_group` inlines the slides and answers the reference's node id, but
+   mints no URLs. `list_media` exists (`suite/drive/_core/content.py:814`) and
+   is **not** in `drive.__all__`, so Slides cannot reach it, and criterion 7
+   forbids adding the route that would expose it. `get_composite_presentation`
+   mints none either, so nothing regressed. **Handoff:** ticket 21 owns the
+   media route ("Wire node CRUD, copy, content, media, previews, uploads, and
+   root usage/admin routes", `21-http-node-workflows.md:20`); ticket 34 owns the
+   client that refreshes at two thirds of the TTL.
+
+### Three claims corrected in this document
+
+- **The §5.4 citations.** The criteria table's non-disclosure row and the code
+  comments cite §5.4; the rule is §5.2. Item 1 above states it. The row is left
+  as written so the tests it names still line up.
+- **The test counts.** "49 tests: 16 and 33" was written before `4c0a47a60` and
+  is now 52: 18 and 34. "The 14 vitest cases" is now 23. Both corrected in
+  place. The review-findings table still says 14, correctly: it describes the
+  file before `6cfac67b3`.
+- **`migrate` was not re-run.** The gate table says "Reported successful before
+  this session", and this closeout did not re-run it either. It is not a gap:
+  the range changes no doctype, no patch, and no fixture record
+  (`git diff --name-only` is four `.py`/`.ts`/`.json` source files, this ticket,
+  and ticket 19's), so there is nothing for a migration to carry.
+
+### What the verifier ran
+
+| Check | Result |
+|---|---|
+| `composite-groups.test.ts` alone | 23 passed |
+| `yarn --cwd frontend test` | numbers above, exit 1 |
+| Static enumeration of eight test modules | Every claimed count exact: 18+34, 30+71, 19, 3, 21, 53+49+3, 10, 7. No inherited test method, no duplicate name, no `skip` decorator anywhere |
+| Seven no-database classes, `frappe.init` with no `connect` | 121 tests, 0 failures, 0 errors, 0 skipped |
+| Spec sections §6.2, §6.6, §11.2, §4.7, §5.2 | Read and quoted against the code |
+
+The 187 integration tests were **not** re-run: that needs bench, which this run
+may not use. They stand on the site gate at `1778ac347`, recorded above.
+
+### Decision
+
+**Complete.** All seven acceptance criteria are met, each against code and a
+named test. The site gate is green for every Python module, twice in a row for
+`test_composite_groups`; the frontend contract is green alone and inside the
+full run. The full frontend suite is red on a baseline this ticket did not
+touch and may not repair, recorded above as external debt for tickets 32-34.
+
+Nothing here is active. `drive_content_types` is still `[]`, both `Presentation`
+permission entries still point at `presentation.py`, `drive.__all__` is
+unchanged, and no client calls either method. Ticket 34 adopts them; ticket 29
+owns activation.
