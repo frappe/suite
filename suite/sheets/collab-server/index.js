@@ -32,7 +32,7 @@ import { Redis } from '@hocuspocus/extension-redis'
 import { randomUUID } from 'node:crypto'
 
 import { config } from './env.js'
-import { startAccessRecheck } from './access-recheck.js'
+import { DEFAULT_RECHECK_MS, startAccessRecheck } from './access-recheck.js'
 import { parseToken } from './connection-token.js'
 import { checkAccess, loadState, persistState } from './frappe-client.js'
 
@@ -84,7 +84,7 @@ const server = new Server({
 		const recheck = startAccessRecheck({
 			check: () => checkAccess(credentials, documentName),
 			canWrite: access.canWrite,
-			intervalMs: (access.recheckSeconds || 300) * 1000,
+			intervalMs: (access.recheckSeconds || DEFAULT_RECHECK_MS / 1000) * 1000,
 			onCapability: ({ canWrite }) => {
 				connection.readOnly = !canWrite
 				// eslint-disable-next-line no-console
@@ -130,14 +130,26 @@ const server = new Server({
 // one mid-session is not part of the hook contract, so this tries the methods
 // the transport exposes and leaves the connection read-only if it finds none:
 // a caller Drive has revoked must not keep writing, whatever the socket does.
-function closeConnection(connection) {
+//
+// Read-only is not what §6.7 asks for. It asks for a disconnect, because a
+// revoked reader keeps receiving the whole document until they close the tab.
+// So the fallback is loud: an operator has to be able to see that the socket
+// stayed open, and the deploy gate has to check this against the installed
+// `@hocuspocus/server` rather than against this comment.
+export function closeConnection(connection) {
 	connection.readOnly = true
 	for (const method of ['close', 'disconnect', 'terminate']) {
 		if (typeof connection?.[method] === 'function') {
 			connection[method]()
-			return
+			return true
 		}
 	}
+	// eslint-disable-next-line no-console
+	console.error(
+		'[collab-server] revoked connection could not be closed: the transport ' +
+			'exposes no close/disconnect/terminate. It is read-only but still reading.',
+	)
+	return false
 }
 
 await server.listen()

@@ -45,7 +45,11 @@ export function startAccessRecheck({
 	let stopped = false
 	let failures = 0
 	let write = Boolean(canWrite)
-	let handle = timers.setTimeout(tick, intervalMs)
+	// The caller's cadence goes through the same validation an answer's does.
+	// Node coerces a negative or non-numeric delay to 1 ms, which turns one
+	// connection into ~900 requests a second against an `allow_guest` endpoint.
+	const period = periodOf({ recheckSeconds: intervalMs / 1000 }, DEFAULT_RECHECK_MS)
+	let handle = timers.setTimeout(tick, period)
 
 	// `unref` keeps a pending recheck from holding the process open at
 	// shutdown. Node's timers have it; an injected fake usually does not.
@@ -60,7 +64,7 @@ export function startAccessRecheck({
 		} catch (error) {
 			failures += 1
 			if (failures >= maxFailures) return finish('unreachable', error)
-			return reschedule(intervalMs)
+			return reschedule(period)
 		}
 		if (stopped) return
 		if (!access || !access.canRead) {
@@ -69,9 +73,14 @@ export function startAccessRecheck({
 		const next = Boolean(access.canWrite)
 		if (next !== write) {
 			write = next
-			onCapability?.({ canWrite: next })
+			// A throw from an injected callback would otherwise reject `tick`,
+			// which runs as a bare timer callback: an unhandled rejection, which
+			// Node turns into a process exit by default. One connection's
+			// transport must not drop every editor on the site, and the loop has
+			// to survive to ask again.
+			guard(onCapability, { canWrite: next })
 		}
-		reschedule(periodOf(access, intervalMs))
+		reschedule(periodOf(access, period))
 	}
 
 	function reschedule(delay) {
@@ -84,7 +93,20 @@ export function startAccessRecheck({
 		if (stopped) return
 		stopped = true
 		handle = null
-		onRevoke?.({ reason, error })
+		guard(onRevoke, { reason, error })
+	}
+
+	// A callback that throws has already failed to apply the answer. Report it
+	// and keep the loop's own state consistent; swallowing it silently is not
+	// the same as letting it take the process down.
+	function guard(callback, argument) {
+		if (!callback) return
+		try {
+			callback(argument)
+		} catch (error) {
+			// eslint-disable-next-line no-console
+			console.error('[collab-server] recheck callback failed', error)
+		}
 	}
 
 	return {

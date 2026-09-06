@@ -240,3 +240,130 @@ describe('an unreachable Frappe', () => {
 		assert.deepEqual(events.revoked, [], 'the streak restarted at the good answer')
 	})
 })
+
+// ── Adversarial: the loop must outlive what it calls ─────────────────────────
+//
+// The clock, the check and both effects are injected, so all four are things
+// the loop does not control. A recheck that stops rescheduling leaves a revoked
+// caller connected until the socket closes, which is the failure §6.7 exists to
+// prevent — so each test below also asserts the loop is still armed.
+
+describe('a hostile cadence', () => {
+	it('does not turn a negative interval into a hot loop', async () => {
+		// Node clamps a negative delay to 1 ms. Left alone, one connection
+		// becomes roughly 900 requests a second at an `allow_guest` endpoint.
+		const { timers } = watcher({ intervalMs: -1 })
+		await timers.advance()
+		assert.equal(timers.now(), DEFAULT_RECHECK_MS)
+	})
+
+	it('does not turn a non-numeric interval into a hot loop', async () => {
+		const { timers } = watcher({ intervalMs: Number.NaN })
+		await timers.advance()
+		assert.equal(timers.now(), DEFAULT_RECHECK_MS)
+	})
+
+	it('falls back when an answer names a nonsensical cadence', async () => {
+		const { timers } = watcher({
+			check: async () => ({ canRead: true, canWrite: true, recheckSeconds: -30 }),
+		})
+		await timers.advance()
+		const first = timers.now()
+		await timers.advance()
+		assert.equal(timers.now() - first, DEFAULT_RECHECK_MS)
+	})
+})
+
+describe('a callback that throws', () => {
+	it('keeps rechecking after onCapability throws', async () => {
+		let write = true
+		const { handle, timers } = watcher({
+			check: async () => ({ canRead: true, canWrite: write }),
+			onCapability: () => {
+				throw new Error('transport gone')
+			},
+		})
+		write = false
+		await timers.advance()
+
+		// The throw was contained, the loop kept its own answer, and it is armed.
+		assert.equal(handle.canWrite, false)
+		assert.equal(handle.stopped, false)
+		assert.equal(timers.pendingCount(), 1)
+
+		// And it still applies the next change.
+		write = true
+		await timers.advance()
+		assert.equal(handle.canWrite, true)
+	})
+
+	it('still marks the watcher stopped when onRevoke throws', async () => {
+		const { handle, timers } = watcher({
+			check: async () => ({ canRead: false, reason: 'DriveNotFound' }),
+			onRevoke: () => {
+				throw new Error('close failed')
+			},
+		})
+		await timers.advance()
+
+		assert.equal(handle.stopped, true)
+		assert.equal(timers.pendingCount(), 0, 'no timer survives a closed connection')
+	})
+
+	it('arms exactly one timer when onCapability throws on a downgrade', async () => {
+		let write = true
+		const { timers } = watcher({
+			check: async () => ({ canRead: true, canWrite: write }),
+			onCapability: () => {
+				throw new Error('transport gone')
+			},
+		})
+		write = false
+		await timers.advance()
+		assert.equal(timers.pendingCount(), 1)
+		await timers.advance()
+		assert.equal(timers.pendingCount(), 1)
+	})
+})
+
+describe('a check that never settles', () => {
+	it('leaves the connection exactly as it was', async () => {
+		let release
+		const { handle, timers } = watcher({
+			check: () =>
+				new Promise((resolve) => {
+					release = resolve
+				}),
+		})
+		// Deliberately not awaited: the tick parks on the pending check, which
+		// is what a wedged Frappe worker or a stalled proxy looks like from here.
+		const parked = timers.advance()
+		await Promise.resolve()
+
+		// Nothing revoked and nothing downgraded — but also no timer pending, so
+		// nothing re-asks while the call is out. That is why every call in
+		// `frappe-client` carries `AbortSignal.timeout`: the hang has to become a
+		// rejection, which the next test counts.
+		assert.equal(handle.stopped, false)
+		assert.equal(handle.canWrite, true)
+		assert.equal(timers.pendingCount(), 0)
+
+		release({ canRead: true, canWrite: true })
+		await parked
+		assert.equal(timers.pendingCount(), 1, 'and the loop re-arms once it lands')
+	})
+
+	it('counts a timeout rejection toward the fail-closed budget', async () => {
+		const { events, timers } = watcher({
+			check: async () => {
+				const error = new Error('The operation was aborted due to timeout')
+				error.name = 'TimeoutError'
+				throw error
+			},
+		})
+		for (let i = 0; i < MAX_CONSECUTIVE_FAILURES; i++) await timers.advance()
+
+		assert.equal(events.revoked.length, 1)
+		assert.equal(events.revoked[0].reason, 'unreachable')
+	})
+})
