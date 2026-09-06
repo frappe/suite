@@ -491,8 +491,8 @@ Second pass:
 
 ### Unresolved handoffs
 
-1. **The site gate has run modules 1 to 4 of 17.** See "Site gate evidence"
-   and the module 3 and module 4 sections below. Modules 5 to 17 have not been
+1. **The site gate has run modules 1 to 5 of 17.** See "Site gate evidence"
+   and the module 3, 4, and 5 sections below. Modules 6 to 17 have not been
    run. Every acceptance box waits on them.
 2. **Build has not run.** Forwarders and Build ship in one release (plan stage
    4 precedes stage 6). Before Build there is no node for a legacy id, and a
@@ -500,9 +500,12 @@ Second pass:
    answering, not a fabricated deny, but it means the legacy suites cannot pass
    on this branch alone.
 3. **`suite/drive/api/tests/*` are rewritten where the gate has reached.**
-   `test_files.py` and `test_list.py` are done; modules 3 and 4 say what broke
-   and why. `test_notifications.py` builds `Drive Notification` rows rather
-   than `File` rows, so module 5 has no fixture port to do.
+   `test_files.py`, `test_list.py`, and `test_notifications.py` are done;
+   modules 3, 4, and 5 say what broke and why. The earlier claim here - that
+   `test_notifications.py` builds `Drive Notification` rows rather than `File`
+   rows, so module 5 had no fixture port to do - was wrong. The store did not
+   change; the row's meaning did, and the port is from a rendered row to a
+   §9.5 activity pointer. Module 5 corrects it.
 4. **Ticket 29 dormancy is preserved.** `drive_content_types = []`, no hook
    activated, no `site_config` change.
 5. **Destructive removal stays disabled.** Nothing in Cleanup's list was
@@ -879,7 +882,7 @@ done. `shims.py` and `test_shims.py` answer the same one and two hunks at
 `ac74ecdbf` as after this work, so no drift was added; they predate the branch
 and are left alone.
 
-### Carried risks
+### Carried risks: module 4
 
 1. **A node's mime is sniffed, so a text file is `application/octet-stream`.**
    `upload.finish_upload` writes `mime=blob.mime_type` and drops the
@@ -894,3 +897,175 @@ and are left alone.
    framework attachments were marked. No `_core` verb creates a node with that
    content type, so the case could not be built as a fixture. It is not
    asserted either way.
+
+## Site gate evidence: module 5
+
+Module 5 of 17 is `suite.drive.api.tests.test_notifications`. Work on
+`forge/drive-23-site-gate-api-notifications`, branched from `ba25e6d22`.
+
+### What module 5 reported
+
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_notifications`
+ran 1 unit test and 3 integration tests and failed one:
+`TestMarkAsRead.test_recipient_can_mark_own_notification_as_read` called
+`mark_as_read` and `Drive Notification.read` stayed 0. One cause, and it is
+both a test defect and a production defect.
+
+**The fixture built a row §9.5 cannot read.** `setUp` inserted a
+`Drive Notification` with `to_user`, `from_user`, `message`, and no
+`activity`. §9.5 made the row a pointer at a `Drive Activity` row, and
+`activity._visible_notifications` (`_core/activity.py:334-341`) reads the
+pointer, gets `None`, and drops the row. `mark_read` marks what that read
+returns, so it marked nothing.
+
+**The other two cases passed for the wrong reason.** Nothing in the module was
+markable, so `test_other_user_cannot_mark_notification_as_read` and
+`test_mark_all_only_touches_own_notifications` asserted only that a no-op is a
+no-op. A shim that marked every row on the site would have passed both.
+
+**Handoff 3 of the review was wrong and is corrected here.** It said
+"`test_notifications.py` builds `Drive Notification` rows rather than `File`
+rows, so module 5 has no fixture port to do." The store did change: the row's
+meaning did. The port is from a rendered row to an activity pointer.
+
+**A production defect was found by asking what the stale fixture was a copy
+of.** The pointerless row is not a shape the old suite invented. It is the
+shape every legacy writer still writes.
+
+### The production defect
+
+`api.notifications.create_notification` writes a row with no `activity`
+(`api/notifications.py:92-105`). Two live paths reach it, and neither is
+gated on whether Build has run:
+
+- `writer_document.notify_comments` (`writer_document.py:233-236`), for every
+  mention in a legacy Writer document's comments. `save_comments` refuses a
+  Drive-native row, so this is the path every document created today takes.
+- `Drive Permission.after_insert` -> `notify_share` -> `create_notification`,
+  for the folder `utils.grant_owner_access` gives every new `User`
+  (`utils/__init__.py:371-384` <- `install.after_user_insert`).
+
+Before ticket 23 the three names read `tabDrive Notification` directly and
+never asked about a pointer. After it, every such row is invisible:
+`get_notifications` answers a page without it, `get_unread_count` reads zero,
+and `mark_as_read` writes nothing. `Notifications.vue:84-88` sets `row.read`
+optimistically and reloads, so the row comes back unread on the next render.
+
+§14 drops these rows at Build and starts the inbox empty
+(`drive-layer-spec.md:3762`, ticket 29), and nothing converts them. That is a
+decision about the rows a site already holds. It is not a licence to lose the
+rows written after it, and Build has not run at all: forwarders and Build ship
+in one release, so on this branch the pointerless inbox is the only inbox.
+
+### What changed
+
+- **`http/shims.py`.** `_legacy_inbox_filters` scopes a pointerless read to
+  `to_user` and `activity is not set`, which is the only scope the old query
+  had. `_legacy_inbox` pages the rows, `_legacy_notification_row` publishes
+  the twelve columns the old query selected, `_legacy_unread_count` is one
+  `frappe.db.count` the way the old body counted, and `_mark_legacy_read`
+  writes the way `activity.mark_read` writes: read the unread ids, then one
+  `UPDATE` that repeats `to_user` and `read`.
+- **The three forwarders call the workflow first.** `activity._require_person`
+  is the Guest refusal, and `_legacy_inbox` has no Guest rule of its own.
+  Reading the rows first would answer an inbox to a caller the workflow was
+  about to turn away.
+- **The read lives in the shim, not in `_core`.** §11.2 has no way to publish
+  a row with no activity: the new shape is `{name, activity, read}` and the
+  legacy row's sentence, type, and `File` id are not on it. Widening `_core`
+  would put a legacy shape on the route surface. This read dies with the shim.
+- **No node check is added on top of `to_user`.** `notif_doctype_name` names a
+  `File`, the caller was the recipient when the row was written, and the
+  acceptance criteria forbid synthesizing a deny. The pointer rows keep the
+  §9.5 check they already had.
+- **The two inboxes are merged newest-first, not concatenated.** The old query
+  ordered the whole table by `creation desc`. Sorted on the text of the stamp:
+  a `datetime` arrives from the database and a string from a serialized page,
+  and the two do not compare.
+- **`http/tests/test_shims.py`.** `ShimCase.stub_legacy_inbox` names an empty
+  legacy inbox for the cases that are about the pointer path, so module 1
+  still runs with no database. 12 cases added, 173 to 185:
+  `TestLegacyInboxForwarders` covers the merged list, the merged count, both
+  mark paths, and the Guest ordering; `TestLegacyInboxReads` pins the two
+  filters, the badge's `count` rather than a walk, and the recipient in the
+  `UPDATE`.
+- **`api/tests/test_notifications.py` is rebuilt on both inboxes.**
+  `NotificationCase` hangs one folder off the sender's provisioned Personal
+  root and takes the same before/after root diff in `tearDown` as
+  `LegacyListCase` in module 4. `share()` calls `access.grant`, which records
+  `share_add` and calls `notify_users`: the pointer row is written by the
+  production path, not by hand. `pointerless()` writes the row
+  `create_notification` writes, and it needs a real `File` -
+  `notif_doctype_name` is a Dynamic Link, so the row cannot name a file that
+  is not there.
+- **4 cases to 18.** The three original contract cases are ported to a pointer
+  row, and the two that proved nothing now have a row that is genuinely
+  markable. The rest: the flat row's twelve columns, the `entity_type` and
+  `notif_doctype_name` the page routes on, `only_unread`, cross-user
+  isolation, a row about a node the caller lost, the scalar badge, `all`
+  clearing every row the caller holds, naming nothing staying a no-op, and six
+  on the pointerless inbox including one that calls `create_notification`
+  itself rather than asserting against a shape written by the test.
+
+### Gate commands and results
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.api.tests.test_notifications" /dev/null
+before: Ran 1 unit test / OK, Ran 3 tests in 0.667s / FAILED (failures=1)
+after:  Ran 1 unit test / OK, Ran 18 tests in 1.422s / OK
+```
+
+Piped, the same command answers `Ran 18 tests in 1.689s / OK`.
+
+Site-free, `python -m unittest` over `test_shims`, `test_routes`,
+`test_shapes`, and `test_translator`: `Ran 351 tests in 1.661s / OK`, up from
+339. `test_shims` alone: `Ran 185 tests / OK`, up from 173.
+
+Seven mutations, each reverted in place. Two survived the first run and are
+recorded with what closed them:
+
+| Mutation | Killed by |
+|---|---|
+| Drop the legacy rows from `get_notifications` | `test_a_pointerless_row_is_listed_with_the_words_it_was_written_with`, `test_the_two_inboxes_arrive_as_one_list_newest_first`, `test_the_writer_comment_path_writes_a_row_the_legacy_names_still_answer` |
+| Drop `_legacy_unread_count` from `get_unread_count` | `test_a_pointerless_row_is_counted_by_the_badge`, the writer-comment case |
+| Drop `_mark_legacy_read` from the named `mark_as_read` | `test_a_recipient_can_clear_a_pointerless_row`, the writer-comment case |
+| Drop `to_user` from `_legacy_inbox_filters` | 6 cases, including `test_a_row_about_a_node_the_caller_lost_is_dropped` |
+| Concatenate the two inboxes instead of sorting | `test_the_two_inboxes_arrive_as_one_list_newest_first` |
+| Drop `_mark_legacy_read` from `mark_as_read(all=True)` | **survived.** Every `all` case held pointer rows only. `test_marking_everything_clears_a_pointerless_row_too` was added and kills it |
+| Drop `to_user` from the `UPDATE` in `_mark_legacy_read` | **survived on the site.** The ids are already scoped by the read, so it changes no outcome; it is defence in depth. Killed site-free by `test_marking_writes_the_recipient_into_the_update_it_runs`, which asserts the filter the write runs with |
+
+**Formatting and lint.** `uvx ruff@0.12.3 check --select=I` and `check` pass on
+`test_notifications.py`. `check` answers the same one `B007` on `shims.py` as
+at `ba25e6d22`, which predates the branch. `format --check` wants the same
+three hunks on `shims.py` and `test_shims.py` before and after this work, and
+none of them is a line this work touched; `test_notifications.py` is already
+formatted.
+
+### Carried risks: module 5
+
+1. **A pointerless row keeps being written after Build.** Neither
+   `notify_comments` nor `grant_owner_access` is Build-gated, so a Build that
+   empties the inbox as §14 specifies will start filling it again with rows
+   the §11.2 route surface cannot publish. The shim answers for them, so no
+   client loses one; Cleanup has to delete the writers in the same release it
+   deletes the shim, or ticket 29 has to move them onto `notify_users`.
+   Recorded, not fixed here: both writers are outside this ticket's claimed
+   files.
+2. **A pointerless row carries no node check.** The pointer rows re-check Read
+   and drop a row about a node the caller lost; a pointerless row names a
+   `File` and is answered on `to_user` alone, as the old query answered it.
+   Tightening it would be a deny this ticket may not synthesize.
+3. **`get_unread_count` walks the pointer inbox row by row.**
+   `activity._visible_notifications` reads every unread row with no limit and
+   asks `_can_read` per row, and a sidebar badge polls it. That is §11.2's
+   own read, from ticket 22, not §11.7's mapping. The legacy half is one
+   `frappe.db.count`. Recorded, not changed here.
+4. **`create_notification` is not covered end to end from the Writer page.**
+   The module calls it directly with a legacy `File`.
+   `writer_document.save_comments` enqueues it through a YJS comment blob, and
+   `suite.writer` suites are modules 14 and 16 of this gate.
+
+### What the gate still owes
+
+Modules 6 to 17 have not been run.
