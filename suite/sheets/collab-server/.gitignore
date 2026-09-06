@@ -1,4 +1,7 @@
 node_modules/
-package-lock.json
+# package-lock.json is committed on purpose: ticket 19 gate step 7a.
+# `^4.1.0` resolves to 4.6.0 today, and the runtime contract this server
+# depends on (test/hocuspocus-contract.test.js) is checked against that
+# exact tree. Nothing may float the version silently.
 .env
 .env.local
