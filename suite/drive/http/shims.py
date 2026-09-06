@@ -517,6 +517,34 @@ def get_user_access(entity) -> dict:
     return {**_bits(role), "type": _access_type(role)}
 
 
+def _legacy_general_access(entity) -> dict | None:
+    """Answer the site-wide reach off the `File` store, for an id no node holds.
+
+    Writer's `ShareDialog.vue` and `InfoDialog.vue` both open on the document
+    the editor has, and every document `writer.api.docs.create_document`
+    writes is a `File` with no node while `Writer Document` is in the §10.2
+    expand phase.
+
+    The old body's own three questions, asked of the old resolver: does the
+    caller read it, does `Guest`, does `$GENERAL`. Nothing is decided here.
+    """
+    name = entity if isinstance(entity, str) else (entity or {}).get("name")
+    if not _unadopted_row(name):
+        return None
+
+    from suite.drive.api.permissions import NO_ACCESS, get_user_access_for_user
+    from suite.drive.utils import GENERAL_USER
+
+    row = entity if not isinstance(entity, str) else name
+    if not get_user_access_for_user(row, frappe.session.user)["read"]:
+        frappe.throw(_("You don't have access to this file."), frappe.PermissionError)
+    for user, kind in (("Guest", "public"), (GENERAL_USER, "site")):
+        reach = get_user_access_for_user(row, user)
+        if reach["read"]:
+            return {**reach, "type": kind}
+    return {**NO_ACCESS, "type": "restricted"}
+
+
 @_legacy
 def get_general_access(entity) -> dict:
     """`get_general_access` -> what the site-wide principals reach on a node.
@@ -529,8 +557,15 @@ def get_general_access(entity) -> dict:
     The gate is the old one: legacy needed `read` on the entity, so a caller
     below READ gets the workflow's 404 rather than an answer about somebody
     else's reach.
+
+    It answers from either store: a `File` that no node holds is answered by
+    the old resolver, because §10.2 keeps a content type's legacy rows working
+    while that type is in the expand phase.
     """
     node = entity if isinstance(entity, str) else (entity or {}).get("name")
+    unadopted = _legacy_general_access(entity)
+    if unadopted is not None:
+        return unadopted
     row = node_core.get(_principals(), node)
     public = _principal_role(row, "$PUBLIC")
     if public >= READ:
@@ -691,6 +726,41 @@ def _share_marker(row) -> int:
     return 0
 
 
+def _legacy_shared_with_list(entity: str) -> list[dict]:
+    """The old body's own query, for an id no node holds.
+
+    `Drive Permission` rows, minus the two site-wide principals and every deny,
+    with the owner in front. The gate is `user_has_permission(entity, "share")`,
+    the rule that wrote the rows.
+    """
+    from suite.drive.api.permissions import user_has_permission
+    from suite.drive.utils import GENERAL_USER, GROUP_PREFIX
+
+    if not user_has_permission(entity, "share"):
+        frappe.throw(_("You do not have permission to check the shares."), frappe.PermissionError)
+
+    people = frappe.get_all(
+        "Drive Permission",
+        filters=[["entity", "=", entity], ["user", "not in", ["", GENERAL_USER]], ["deny", "=", 0]],
+        order_by="user",
+        fields=["user", "read", "write", "comment", "upload", "share"],
+    )
+    for person in people:
+        if person.user.startswith(GROUP_PREFIX):
+            person.is_group = 1
+            person.full_name = person.user[len(GROUP_PREFIX) :]
+        else:
+            person.update(_user_info(person.user, ["user_image", "full_name", "email"]))
+
+    owner_info = _user_info(
+        frappe.db.get_value("File", entity, "owner"), ["user_image", "full_name", "name as user"]
+    )
+    if owner_info:
+        # The owner's User row can be gone; the file outlives them.
+        people.insert(0, frappe._dict(owner_info))
+    return people
+
+
 @_legacy
 def get_shared_with_list(entity: str) -> list[dict]:
     """`get_shared_with_list` -> `GET /nodes/<id>/grants`.
@@ -703,7 +773,13 @@ def get_shared_with_list(entity: str) -> list[dict]:
 
     Every `$LINK:` row is dropped, expired or not. A link is a credential, not
     a person, and §4.4 gives the dialog no control that would show one.
+
+    It answers from either store: a `File` that no node holds is answered off
+    `Drive Permission`, because §10.2 keeps a content type's legacy rows
+    working while that type is in the expand phase.
     """
+    if _unadopted_row(entity):
+        return _legacy_shared_with_list(entity)
     principals = _principals()
     rows = access.grants_for(entity, principals)["grants"]
     people = []
@@ -1812,6 +1888,29 @@ def _legacy_role(kwargs) -> int:
     return role
 
 
+def _legacy_update_access(entity_name: str, method: str, kwargs: dict):
+    """Share or unshare on the `File` store, for an id no node holds.
+
+    `File.share` and `File.unshare` are the rules that wrote the rows. They
+    keep the legacy spelling of the two site-wide principals - `""` and
+    `$GENERAL` - which is why the caller's own `user` is passed on rather than
+    the `$PUBLIC` the node path normalises to.
+
+    The deny `File.unshare` writes stays. It is not a denial invented here: on
+    the `File` store a deny row is the only way the old resolver expresses
+    "restricted" for a file that reads through a public folder above it, and
+    dropping it would leave an unshared document readable.
+    """
+    row = frappe.get_doc("File", entity_name)
+    if method == "share":
+        return row.share(**kwargs)
+    if method == "unshare":
+        return row.unshare(user=kwargs.get("user"))
+    frappe.throw(
+        _("Drive access method {0} is not supported").format(_spelled(method)), frappe.ValidationError
+    )
+
+
 @_legacy
 def update_access(entity_name: str, method: str, **kwargs):
     """`update_access` -> `PUT`/`DELETE /nodes/<id>/grants/<principal>`.
@@ -1825,6 +1924,11 @@ def update_access(entity_name: str, method: str, **kwargs):
     is passed through as one; `unshare` removes rows and writes none. §5.10
     keeps removal and denial apart, so the old body's habit of inserting a deny
     to cut inheritance stops here: a client that wants a denial has to say so.
+
+    It writes to either store: a `File` that no node holds is shared by
+    `File.share`, because §10.2 keeps a content type's legacy rows working
+    while that type is in the expand phase. Writer's own `ShareDialog.vue`
+    names one for every document the product creates.
     """
     principals = _principals()
     kwargs.pop("cmd", None)
@@ -1845,6 +1949,9 @@ def update_access(entity_name: str, method: str, **kwargs):
             _("Drive issues a share link at PUT /api/suite/drive/nodes/:id/grants/$LINK"),
             frappe.ValidationError,
         )
+
+    if _unadopted_row(entity_name):
+        return _legacy_update_access(entity_name, method, kwargs)
 
     if method == "unshare":
         # One gesture, both rows. `File.unshare("$GENERAL")` called
