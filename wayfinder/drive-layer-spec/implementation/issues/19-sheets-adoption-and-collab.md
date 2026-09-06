@@ -94,6 +94,8 @@ what prove the Drive lifecycle.
 | `88c92650f` | Review fix: a restore drops the collaborative document |
 | `fe122fe8a` | Review fix: refuse a Guest on a legacy sheet, do not throw |
 | `7150208c1` | Review fix: bound what the collab server accepts and survives |
+| `f9a23c268` | Gate step 9 fix: a sheet owner may take back the share they granted |
+| `9e064776c` | Gate steps 6 and 9 as tests, and fixture cleanup that leaves no rows |
 
 ### What changed
 
@@ -334,8 +336,9 @@ command. No migration, no install, and no service restart.
   injected time and passes. Gate step 7b is the only place this can be settled;
   `closeConnection` now logs an error rather than passing silently when it finds
   no close method.
-- The two `bench console` probes in gate steps 2, 3 and 6. They were written
-  against the code, not run.
+- ~~The gate step 6 probe~~. Run, and replaced by `TestTheGateProbes`
+  (`9e064776c`). The step 9 probe is covered by the same class. The step 2 and
+  3 probes are still written against the code, not run.
 
 ### The site gate
 
@@ -405,29 +408,62 @@ fixed by `0971534cc`, and the one Meet failure by `e15a9a50f`.
 The earlier run at `0971534cc` read 871 integration with 1 failure,
 `suite.meet.api.test.test_recording_reliability.test_one_active_recording_per_room_owner_by_default`.
 
-**6. The DocShare bypass, by hand.** No test can reach it: the widening happens
-inside Frappe, after the hook has answered. Link a sheet, share it with a user
-who holds no grant, and confirm both the row read and the list refuse.
+Gate steps 6 and 9 run, on `slides.localhost`, at `9e064776c`. The whole app was
+not re-run.
 
-```sh
-bench --site slides.localhost console <<'EOF'
-import frappe
-from frappe.share import add
-sheet = frappe.db.get_value("Sheet", {"node": ["is", "set"]}, "name")
-assert sheet, "link a sheet through Build first"
-add("Sheet", sheet, "victim@example.com", read=1)
-frappe.set_user("victim@example.com")
-for call in (lambda: frappe.get_doc("Sheet", sheet),
-             lambda: frappe.get_list("Sheet"),
-             lambda: frappe.get_list("Sheet Op Log")):
-    try:
-        call(); print("BYPASS: returned", call)
-    except frappe.PermissionError as e:
-        print("refused:", e)
-frappe.set_user("Administrator")
-frappe.db.rollback()
-EOF
-```
+| Module | Result |
+|---|---|
+| `test_drive_adoption`, first run | 68 integration OK, 59 database-free OK |
+| `test_drive_adoption`, second run | 68 integration OK, 59 database-free OK |
+| `suite.sheets.tests.test_permissions` | 14 tests, OK |
+| `suite.sheets.tests.test_api_security` | 11 tests, OK |
+| `suite.sheets.tests.test_share_notify` | 6 tests, OK |
+| `suite.drive.tests.test_content` | 53 + 49 + 3 tests, OK |
+| `suite.tests.test_architecture` | 7 tests, OK |
+| `suite.tests.test_composition` | 3 tests, OK |
+| `uvx ruff@0.12.3 check` on both changed files | All checks passed |
+
+`test_drive_adoption` went from 42 integration tests to 68. The 26 new ones are
+gate steps 6 and 9. `test_share_notify` is not in the step 4 list and was run
+anyway, because `f9a23c268` changes the endpoint it covers.
+
+After both runs the site holds no fixture user, no fixture Drive root, no
+linked `Sheet`, no fixture `DocShare`, and no orphan op log, seq row, snapshot,
+collab state, or backing `File`.
+
+**6. The DocShare bypass. Done, and now a test.** `9e064776c` turns it into
+`TestTheGateProbes` in `suite.sheets.tests.test_drive_adoption`. Run step 4 and
+it runs.
+
+The claim that no test could reach it was wrong. The class creates the linked
+sheet under `activated()`, adds the share while `suite/hooks.py` is untouched,
+and reads through `frappe.client.get` and `frappe.get_list`. Every arm refuses:
+
+| Probe | Staged hooks | Under `activated()` |
+|---|---|---|
+| named share, row read | `DriveForbidden` | `DriveForbidden` |
+| named share, `Sheet` list | `DriveForbidden` | `DriveForbidden` |
+| named share, `Sheet Op Log` list | answers without the sheet | answers without the sheet |
+| `everyone` share, all three | same | same |
+| share on one `Sheet Op Log` row | `frappe.PermissionError` | `DriveForbidden` |
+| share on one `Sheet Snapshot` row | `frappe.PermissionError` | `DriveForbidden` |
+| a new share, written under activation | — | `DriveForbidden` |
+
+Four controls run the same share against a sheet with no node and prove it does
+widen there: the row opens, the list carries it, and the op log list carries it
+too. Without them a refusal test passes on a site where nothing is shared.
+
+The script this step used to carry could not have proved any of it:
+
+- `frappe.get_doc` runs no permission check (`frappe/model/document.py:336`),
+  so its row probe answered for every caller and would have printed `BYPASS`
+  on a site that is refusing correctly.
+- The refusal is a `DriveForbidden`, a `ValidationError` with a 403. The
+  script's `except frappe.PermissionError` does not catch it.
+- The op log list refuses nothing here, because the share is on the parent and
+  `frappe.db.query` ORs shared names of the doctype being listed. It answers
+  with the linked sheet absent, which the script would also have read as
+  `BYPASS`.
 
 **7. The collab server, against its installed dependency.** Steps 7a and 7b are
 the two things this branch could not check anywhere.
@@ -453,9 +489,35 @@ holder, drop the grant to READ, and confirm the tab goes read-only within the
 recheck period. Then drop the grant entirely and confirm the socket closes.
 Nothing below the browser can prove this.
 
-**9. `bench migrate` on a site with legacy sheets.** Every guard has a legacy
-arm that must keep working. Confirm an owner still opens, shares, renames,
-trashes, and restores a sheet with no node.
+**9. The legacy arm on a migrated site. Done, and now a test.** `9e064776c`
+covers it in the same class. `slides.localhost` is migrated and carries legacy
+sheets, so the fixtures run on exactly the site this step names.
+
+An ordinary owner — a `Suite User`, not an operator, because the Administrator
+is answered before any hook runs (`frappe/permissions.py:109`) — opens, shares,
+lists shares, renames, trashes, restores, and unshares a sheet with no node
+through `suite.sheets.api`. The adversarial arms: a stranger cannot open it, a
+reader cannot trash it or revoke someone else's share, a trashed sheet does not
+open until it is restored, and the backing `File` survives a rename under its
+new name.
+
+The probe found one defect, fixed in `f9a23c268`. `unshare_sheet` reached
+`frappe.share.remove`, which deletes the `DocShare` row without
+`ignore_permissions`. `DocShare` carries a System Manager DocPerm and nothing
+else, so an ordinary owner could grant a named share and never take it back.
+The `everyone` branch two lines above already passed `ignore_permissions`, and
+`frappe.share.add` writes the row the same way (`frappe/share.py:82`). Older
+than this ticket, which only added the linked-sheet refusal to that endpoint.
+The authority is unchanged: the `share` right on the sheet is what may revoke.
+
+**Fixture residue.** Each test in the class records every table a fixture can
+write, deletes what it added, and asserts the delta is empty. Removing the
+delete step makes those assertions fail, so they are not vacuous. Two older
+leaks are closed with it: `TestSheetsBeforeActivation` left one backing `File`
+per legacy fixture, because `File.permanent_delete` marks the row `Removed`
+rather than deleting it, and both older classes left their fixture users on the
+site. 120 orphan `File` rows had accumulated on `slides.localhost` and were
+removed.
 
 ### Handoffs
 
@@ -473,7 +535,7 @@ trashes, and restores a sheet with no node.
 | 29 | `Drive Node` and `Sheet Seq` are taken in opposite orders by the Drive workflows and by `versioning`. Not reachable today because no Drive workflow calls `versioning.save`, but it is a lock-order inversion waiting for the ticket that joins them |
 | 34 | A restore now deletes the persisted `Sheet Collab State` row, so a reconnect rebuilds from the restored body. A Y.Doc already live in the collab server is not evicted: an open tab keeps the replaced document until it reconnects. Eviction needs a server-side signal |
 | 34 | The client does not declare its own awareness identity. The collab server names a Guest with a `randomUUID()`; the client has to stop trusting any name in the token |
-| 23 | A purge drops the `Sheet` row but not the legacy `File` backing a pre-Build sheet. Orphan rows accumulate until ticket 23 removes the backing |
+| 23 | A purge drops the `Sheet` row but not the legacy `File` backing a pre-Build sheet. Orphan rows accumulate until ticket 23 removes the backing. Measured: 120 had built up on `slides.localhost` from test fixtures alone. `9e064776c` makes the fixtures clean up after themselves; the production path is still ticket 23's |
 | Deploy | The collab server has no lockfile. `npm install` at the gate writes one, and it has to be committed |
 
 ## Independent adversarial review
