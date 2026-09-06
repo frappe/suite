@@ -379,8 +379,16 @@ def create_document(
     savepoint = f"drive_create_document_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        source = _copyable_document_source(principals, from_node, content_doctype)
-        parent_row = _lock_create_parent(parent)
+        if from_node is None:
+            source = None
+            parent_row = _lock_create_parent(parent)
+        else:
+            # `copy`'s lock order, so a template and a destination never
+            # deadlock, and the source body and media cannot move, be trashed,
+            # or be purged between the read and the factory call.
+            source_row, parent_row, source_subtree = _lock_move_rows(from_node, parent)
+            _validate_subtree(source_row, source_subtree)
+            source = _copyable_document_source(principals, source_row, content_doctype)
         via_link = require(parent_row, UPLOAD, principals)
         _validate_parent(parent_row, for_update=True, allow_document=False)
         _refuse_sibling_collision(parent_row.name, title)
@@ -395,11 +403,13 @@ def create_document(
         )
         docname = _content_factory(spec, node.name, source)
         _link_document(node.name, spec, docname)
+        # The creator grant lands on the document before its media exist, so a
+        # copied picture inherits it instead of carrying a grant of its own.
+        add_creator_grant(node, parent_row, principals, via_link=via_link)
         if source is not None:
             _admit_document_media(spec, source, node.root)
             _copy_document_media(principals, spec, source, node, docname, destination_link=via_link)
             previews.copy_preview(source.name, node.name)
-        add_creator_grant(node, parent_row, principals, via_link=via_link)
         _record_activity(
             node.name,
             "create",
@@ -417,13 +427,10 @@ def create_document(
 
 def _copyable_document_source(
     principals: Principals,
-    from_node: str | None,
+    source: frappe._dict,
     content_doctype: str,
-) -> frappe._dict | None:
-    """Return the readable active document `from_node` names, or None."""
-    if from_node is None:
-        return None
-    source = _node(from_node)
+) -> frappe._dict:
+    """Validate the locked source row a new-from-template create names."""
     require(source, READ, principals)
     if source.kind != "document" or source.state != "Active":
         raise DriveConflict(_("A Drive document can only be created from a content document"))
@@ -436,7 +443,8 @@ def _copyable_document_source(
 
 def _content_factory(spec, node: str, source: frappe._dict | None) -> str:
     """Call the app's factory with the node id and validate the docname."""
-    docname = spec.create_empty(node) if source is None else spec.duplicate(source.content_docname, node)
+    with content.app_callback():
+        docname = spec.create_empty(node) if source is None else spec.duplicate(source.content_docname, node)
     if not isinstance(docname, str) or not docname:
         raise DriveConflict(_("The Drive content factory returned no document"))
     return docname
@@ -465,7 +473,7 @@ def _link_document(node: str, spec, docname: str) -> None:
     )
     if int(frappe.db.sql("SELECT ROW_COUNT()")[0][0]) != 1:
         raise DriveConflict(_("A Drive content document identity cannot change"))
-    linked = frappe.db.get_value(spec.doctype, docname, spec.node_field)
+    linked = frappe.db.get_value(spec.doctype, docname, spec.node_field, for_update=True)
     if linked and linked != node:
         raise DriveConflict(_("That content document already names another Drive node"))
     if not linked:
@@ -502,7 +510,8 @@ def _copy_document_media(
         destination_link=destination_link,
     )
     if remapped:
-        spec.remap_media(target_docname, remapped)
+        with content.app_callback():
+            spec.remap_media(target_docname, remapped)
 
 
 def create_file(
@@ -871,7 +880,13 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
 
         if reparented_to is not None:
             require(destination, UPLOAD, principals)
-        _validate_generic_destination(current, destination, operation="restore")
+        if reparented_to is None and destination.kind == "document":
+            # Media the §10.6 sweep trashed goes back to the document it came
+            # from. The generic destination rules cannot describe a document
+            # parent, and a bin the owner cannot restore from is not a bin.
+            _validate_parent(destination, for_update=True)
+        else:
+            _validate_generic_destination(current, destination, operation="restore")
         if root_id(destination) != current.root:
             raise DriveConflict(_("A restored node must stay in its original Drive root"))
 
@@ -1004,6 +1019,10 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 content_modified=source_row.content_modified,
             )
             by_source[source_row.name] = new_node
+            # The creator grant lands on the copied node before its media
+            # exist, so a copied picture inherits it instead of carrying a
+            # grant of its own, exactly as an ordinary copied child does.
+            add_creator_grant(new_node, copied_parent, principals, via_link=destination_link)
             if source_row.kind == "document":
                 spec = specs[source_row.name]
                 docname = _content_factory(spec, new_node.name, source_row)
@@ -1016,7 +1035,6 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                     docname,
                     destination_link=destination_link,
                 )
-            add_creator_grant(new_node, copied_parent, principals, via_link=destination_link)
             _record_activity(
                 new_node.name,
                 "create",
@@ -1025,8 +1043,11 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 via_link=activity_link,
             )
             previews.copy_preview(source_row.name, new_node.name)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        # `copy` now holds both root rows, both chains, and the whole source
+        # subtree while app factories run, so a deadlock is a live outcome and
+        # InnoDB has already discarded this savepoint when it is.
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
