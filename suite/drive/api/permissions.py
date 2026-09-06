@@ -105,6 +105,10 @@ def get_entity_with_permissions(entity_name: str | None = None):
 
     §11.7 forwarder, and the payload `get_file_for_doc` publishes, so its keys
     are the ones §11.7 makes permanent by reference.
+
+    It answers from either store: a `File` that no node holds is read by the
+    rules that wrote it, because §10.2 keeps a content type's legacy rows
+    working while that type is in the expand phase.
     """
     return shims.get_entity_with_permissions(entity_name)
 
