@@ -1634,9 +1634,44 @@ def get_thumbnail(entity_name: str):
     return None
 
 
+def _legacy_create_folder(file_name: str, parent: str):
+    """Add a folder to the `File` store, under a parent no node holds.
+
+    The old body, kept whole. `list.files` now serves a folder no node holds,
+    because `writer.api.docs.create_document` writes its documents into one,
+    so Drive's own New menu opens on that page and names that parent.
+
+    The gate is `user_has_permission(parent, "upload")`, the rule that wrote
+    the folder above it.
+    """
+    from pathlib import Path
+
+    from suite.drive.api.permissions import user_has_permission
+    from suite.drive.utils import create_drive_file, validate_filename
+    from suite.drive.utils.files import FileManager, storage_key
+
+    parent_doc = frappe.get_doc("File", parent)
+    if not user_has_permission(parent_doc, "upload"):
+        frappe.throw(_("You don't have permissions for this."), frappe.PermissionError)
+    validate_filename(file_name, parent, "Folder", error=_("Folder '{0}' already exists.").format(file_name))
+
+    path = FileManager().create_folder(
+        frappe._dict({"file_name": file_name, "parent_path": Path(storage_key(parent_doc.file_url or ""))})
+    )
+    return _legacy_file_row(create_drive_file(file_name, parent, "Folder", path).name)
+
+
 @_legacy
 def create_folder(file_name: str, parent: str | None = None):
-    """`create_folder` -> `POST /nodes` with `kind=folder`."""
+    """`create_folder` -> `POST /nodes` with `kind=folder`.
+
+    It writes to either store: a parent that no node holds takes a `File`
+    folder, because §10.2 keeps a content type's legacy rows working while
+    that type is in the expand phase and the page that lists that parent now
+    opens.
+    """
+    if _unadopted_row(parent):
+        return _legacy_create_folder(file_name, parent)
     principals = _principals()
     node = node_core.create_folder(principals, parent or _home(principals), file_name)
     return _legacy_row(node_core.stored(node))
@@ -1690,15 +1725,53 @@ def stream_file_content(entity_name: str):
     return get_file_content(entity_name)
 
 
+def _legacy_favourite(name: str, value: bool) -> None:
+    """Mark or clear on the `File` store, for an id no node holds.
+
+    Writer's navbar and the Drive row menu both offer Favourite on a document
+    `writer.api.docs.create_document` wrote, and every one of those is a `File`
+    with no node while `Writer Document` is in the §10.2 expand phase.
+
+    The old body's two statements, kept whole. It carried no check of its own:
+    `Drive Favourite` is the caller's own row, `filter_drive_favourite` scopes
+    every read of it to them, and `insert` answers to whatever the doctype
+    holds. Adding a gate here would be a denial §11.7 may not invent.
+    """
+    existing = frappe.db.exists({"doctype": "Drive Favourite", "entity": name, "user": frappe.session.user})
+    if not value and existing:
+        frappe.delete_doc("Drive Favourite", existing)
+    elif value and not existing:
+        frappe.get_doc({"doctype": "Drive Favourite", "entity": name, "user": frappe.session.user}).insert()
+
+
+def _legacy_favourites_held(principals) -> list[str]:
+    """The caller's own marks on rows no node holds, for `clear_all`."""
+    return frappe.db.sql(
+        """
+        SELECT mark.entity FROM `tabDrive Favourite` mark
+        LEFT JOIN `tabDrive Node` adopted ON adopted.name = mark.entity
+        WHERE mark.user = %(user)s AND adopted.name IS NULL""",
+        {"user": principals.user},
+        pluck=True,
+    )
+
+
 @_legacy
 def set_favourite(entities: list | None = None, clear_all: bool = False):
     """`set_favourite` -> `PUT`/`DELETE /nodes/<id>/favourite`.
 
     `clear_all` has no route of its own, so it is walked: every favourite the
     caller still holds is cleared through the same workflow one mark uses.
+
+    It writes to either store, one id at a time: a `File` that no node holds is
+    marked on `Drive Favourite` itself, because §10.2 keeps a content type's
+    legacy rows working while that type is in the expand phase. `clear_all`
+    clears both stores, because the old name cleared everything the caller had.
     """
     principals = _principals()
     if clear_all:
+        for name in _legacy_favourites_held(principals):
+            _legacy_favourite(name, False)
         # `_visible_personal_rows` replaces `row.node` with the node row it
         # authorized, so the id is one level in. Passing the dict filtered
         # `Drive Favourite` on a dict, matched nothing, and cleared nothing.
@@ -1708,15 +1781,26 @@ def set_favourite(entities: list | None = None, clear_all: bool = False):
     if not isinstance(entities, list):
         frappe.throw(_("Expected list but got {0}").format(_spelled(type(entities))), frappe.ValidationError)
 
-    marks = activity_core.personal_marks(principals, [entity.get("name") for entity in entities])
+    unadopted = {entity.get("name") for entity in entities if _unadopted_row(entity.get("name"))}
+    marks = activity_core.personal_marks(
+        principals, [entity.get("name") for entity in entities if entity.get("name") not in unadopted]
+    )
     for entity in entities:
         node = entity.get("name")
         value = entity.get("is_favourite")
         if value is None or value == "":
             # The old body toggled when the client said nothing.
-            value = not (marks.get(node) or {}).get("favourite")
+            if node in unadopted:
+                value = not frappe.db.exists(
+                    {"doctype": "Drive Favourite", "entity": node, "user": principals.user}
+                )
+            else:
+                value = not (marks.get(node) or {}).get("favourite")
         if isinstance(value, str):
             value = json.loads(value)
+        if node in unadopted:
+            _legacy_favourite(node, bool(value))
+            continue
         activity_core.set_favourite(principals, node, bool(value))
     return None
 
@@ -1833,6 +1917,36 @@ def rename(entity_name: str, new_title: str):
     return _legacy_row(node_core.stored(entity_name))
 
 
+def _refuse_crossing():
+    """One tree cannot hold the other's rows until Build joins them.
+
+    A `File` no node holds and a `Drive Node` are two trees on one site while
+    a content type is in the §10.2 expand phase. Moving between them would
+    have to decide which store the row lands in and what happens to the half
+    that stays, and ticket 29 owns that. Refused by name rather than by
+    `File.move`'s "Can only move into folders", which is about something else.
+    """
+    frappe.throw(
+        _("Drive cannot move this into that folder yet."),
+        frappe.ValidationError,
+    )
+
+
+def _legacy_move(entity_names: list[str], new_parent: str | None):
+    """Move on the `File` store, for rows no node holds.
+
+    `File.move` is the rule that placed the row: it holds the row, checks
+    Upload on the destination and Write on the row, refuses a non-folder and a
+    move into itself, keeps the disk path, and answers the destination. An
+    unnamed destination is its own default, the caller's legacy user folder,
+    not the node personal root: the two are different folders until Build.
+    """
+    answer = None
+    for name in entity_names:
+        answer = frappe.get_doc("File", name).move(new_parent)
+    return answer
+
+
 @_legacy
 def move(entity_names: list[str], new_parent: str | None = None):
     """`move` -> `PATCH /nodes/<id>` `{parent}`.
@@ -1843,6 +1957,11 @@ def move(entity_names: list[str], new_parent: str | None = None):
     to <file_name>", "Go" opens `name` as a folder, and `updateMoved(name)`
     refreshes that folder's page. Returning the moved node instead sent the
     user into a file and refreshed the wrong listing.
+
+    It writes to either store, and refuses to cross between them: a `File` no
+    node holds and a `Drive Node` are two trees until Build joins them, and
+    picking one for a row that came from the other is a destination §11.7 may
+    not invent.
     """
     principals = _principals()
     if isinstance(entity_names, str):
@@ -1852,7 +1971,14 @@ def move(entity_names: list[str], new_parent: str | None = None):
             _("Expected a non-empty list but got {0}").format(_spelled(type(entity_names))),
             frappe.ValidationError,
         )
+    legacy = [name for name in entity_names if _unadopted_row(name)]
+    if legacy:
+        if len(legacy) != len(entity_names) or (new_parent and not _unadopted_row(new_parent)):
+            _refuse_crossing()
+        return _legacy_move(entity_names, new_parent)
     destination = new_parent or _home(principals)
+    if _unadopted_row(destination):
+        _refuse_crossing()
     for node in entity_names:
         node_core.update(principals, node, parent=destination)
     row = node_core.stored(destination)
