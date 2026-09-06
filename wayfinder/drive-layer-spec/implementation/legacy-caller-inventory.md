@@ -349,7 +349,8 @@ First module of the serialized gate,
 `bench --site slides.localhost run-tests --module suite.drive.http.tests.test_shims`,
 on `forge/drive-23-site-gate-shims`. It ran 164 tests and failed three. All
 three failures need a terminal, so a piped run of the same command passed. The
-first defect below reaches a client either way.
+first defect below reaches a client either way, and defect 33 is the rest of
+the same class, swept for after defect 31 named it.
 
 31. **A retired name named a route no reader could call.** `create_auth_token`
     and the `get_file_content` download token both answered
@@ -367,6 +368,25 @@ first defect below reaches a client either way.
     passed. The stub holds the shim's three upload keys and passes every other
     call to the real cache.
 
+33. **A refusal deleted the value it was raised to name.** Six messages spelled
+    a runtime value into the text, and every one of them could carry an angle
+    bracket that `clean_html` and `strip_html_tags` then delete. Five spelled
+    `type(x)`, which is always `<class 'list'>`: `set_favourite`,
+    `remove_or_restore`, `delete_entities`, `move`, and `remove_recents` each
+    told a legacy client `Expected list but got ` and named neither side. The
+    sixth echoed the `method` argument `update_access` was called with, which is
+    request text. `_home` spelled the user id, and a mail address written
+    `<a@example.com>` left no name at all. A type is named by `__name__` now,
+    and any other runtime value goes through `_spelled`.
+34. **The `_legacy` boundary handed `_core` refusals to the cleaner.** Throwing
+    the refusal again is what fills the message in for a legacy client
+    (`shims.py:290`), and it is also the first time a `_core` message meets
+    `clean_html`. Several `_core` refusals spell an id the caller sent, so a
+    node named `a<b>c` answered `Drive node ac was not found`. The message goes
+    through `_plain` at that boundary. The same messages on the §11.2 route
+    surface are cleaned by `routes.py:112` and predate ticket 23; they are named
+    under carried risks, not changed here.
+
 ## Carried risks the review did not fix
 
 - **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
@@ -375,6 +395,13 @@ first defect below reaches a client either way.
   the client must ask for, so the shim removes rows and stops. A file inside a
   publicly shared folder stays readable after "Restricted", and the dialog says
   nothing. The frontend ticket owns telling the user.
+- **The route surface still deletes the values its refusals name.**
+  `_core/nodes.py:369, 759, 1939, 2231, 2316` and `_core/activity.py:51, 441`
+  spell a client-supplied kind, doctype, node id, or view name into a message
+  that `routes.py:112` throws. Legacy callers are covered by `_plain` at the
+  shim boundary; a §11.2 caller still reads the text with the value deleted.
+  Every one of those lines predates ticket 23 and belongs to the route surface,
+  so ticket 23 did not edit them.
 - **`update_access` cannot spell `share` without `write`.** The ladder puts
   MANAGE above EDIT. A legacy row that said "may re-share, may not edit"
   becomes UPLOAD or COMMENT, never MANAGE. One e2e test depends on the old
