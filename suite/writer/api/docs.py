@@ -6,13 +6,13 @@ import markdown
 import mimemapper
 from markdown.extensions.wikilinks import WikiLinkExtension
 
-from suite.drive.api.files import get_new_title
 from suite.drive.api.permissions import (
     get_entity_with_permissions,
     user_has_permission,
 )
 from suite.drive.utils import (
     create_drive_file,
+    get_new_file_name,
     get_user_folder,
 )
 from suite.drive.utils.files import FileManager, storage_key
@@ -46,7 +46,10 @@ def create_document(title: str | None = None, parent: str | None = None, templat
         )
 
     if not title:
-        title = get_new_title("Untitled Document", parent)
+        # `get_new_title` is retired by §11.7; the rule it wrapped is not.
+        # `create_drive_file` below writes a `File` row, so the sibling check
+        # is still the legacy one.
+        title = get_new_file_name("Untitled Document", parent)
 
     writer_doc = frappe.new_doc("Writer Document")
     writer_doc.settings = (

@@ -812,6 +812,12 @@ def upload_file(
     `embed=1` is not a placement any more. §9.4 makes an embed a media node
     below the document it is in, which is the `parent` the caller already
     named, so the flag decides nothing here.
+
+    The filename is deduplicated before the write, as the old body's
+    `get_new_file_name` did. §8.6 refuses a sibling collision and tells the
+    user to pick another title; this caller has no dialog to ask with and its
+    contract was to rename around a clash, so `available_title` answers §8.6's
+    own suffix rule for it. The route still refuses.
     """
     principals = _principals()
     parent = parent or _home(principals)
@@ -852,7 +858,7 @@ def upload_file(
         principals,
         upload_id,
         parent=parent,
-        title=upload.filename,
+        title=node_core.available_title(principals, parent, upload.filename),
         content_modified=int(file_modified) / 1000 if file_modified else None,
     )
     return _legacy_row(node_core.stored(node))
@@ -1327,23 +1333,45 @@ def _matching_kinds(rows: list, file_kinds) -> list:
     return [row for row in rows if _file_type(row) in wanted]
 
 
-def _listing(principals, page_call, *, file_kinds, start, limit, paginated):
+def _matching_titles(rows: list, term: str | None) -> list:
+    """Keep the rows whose title contains `term`, as the old `LIKE` did.
+
+    §11.2 gives the tree-wide search its own view and gives the other five
+    listings no search argument at all. The old surface accepted one on every
+    one of them and answered `file_name LIKE '%term%'`, so the same filter is
+    applied to the page here rather than dropping an argument the toolbar still
+    sends. Case-insensitive, because the column's collation is.
+    """
+    if not term:
+        return rows
+    needle = term.strip().casefold()
+    if not needle:
+        return rows
+    return [row for row in rows if needle in (row.get("title") or "").casefold()]
+
+
+def _listing(principals, page_call, *, file_kinds, search, start, limit, paginated):
     """Answer one legacy listing, paged the way the old surface paged.
 
     Legacy walked raw windows until the page was full, because its permission
     filter ran after the SQL, and it published `has_next` and a raw
     `next_start`. §11.4's cursor is that same offset, encoded, so the walk is
     kept and the two envelopes translate exactly.
+
+    Each window asks for only what the page still needs. Asking for the whole
+    window every time overshoots: the surplus rows are cut to fit the page
+    while `next_cursor` has already moved past them, so the client's next call
+    resumes beyond rows it was never shown.
     """
     window = int(limit) if limit else LEGACY_PAGE_SIZE
     offset = int(start or 0)
     cursor = node_core.encode_cursor(offset) if offset else None
     rows: list = []
-    while True:
-        page = page_call(cursor, window)
-        rows.extend(_matching_kinds(page["rows"], file_kinds))
+    while len(rows) < window:
+        page = page_call(cursor, window - len(rows))
+        rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
         cursor = page["next_cursor"]
-        if not cursor or len(rows) >= window:
+        if not cursor:
             break
     rows = _legacy_list_rows(principals, rows[:window])
     if not paginated:
@@ -1380,6 +1408,7 @@ def files(
                 principals, "search", term=search, cursor=cursor, limit=window
             ),
             file_kinds=file_kinds,
+            search=None,
             start=start,
             limit=limit,
             paginated=paginated,
@@ -1396,17 +1425,19 @@ def files(
             ascending=bool(ascending),
         ),
         file_kinds=file_kinds,
+        search=None,
         start=start,
         limit=limit,
         paginated=paginated,
     )
 
 
-def _view(name, principals, *, file_kinds, start, limit, paginated, **filters):
+def _view(name, principals, *, file_kinds, search, start, limit, paginated, **filters):
     return _listing(
         principals,
         lambda cursor, window: node_core.views(principals, name, cursor=cursor, limit=window, **filters),
         file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -1440,6 +1471,7 @@ def shared(
         "shared",
         _principals(),
         file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -1465,6 +1497,7 @@ def favourites(
         "favourites",
         _principals(),
         file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -1490,6 +1523,7 @@ def recents(
         "recents",
         _principals(),
         file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -1520,6 +1554,7 @@ def trash(
         "trash",
         principals,
         file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,

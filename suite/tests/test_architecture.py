@@ -103,7 +103,6 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_pasted_media.py|import|suite.drive.overrides.file",
             "suite/slides/tests/utils.py|import|suite.drive.overrides.file",
             "suite/slides/tests/utils.py|import|suite.drive.overrides.file#2",
-            "suite/writer/api/docs.py|import|suite.drive.api.files",
             "suite/writer/api/docs.py|import|suite.drive.api.permissions",
             "suite/writer/api/docs.py|import|suite.drive.utils",
             "suite/writer/api/docs.py|import|suite.drive.utils.files",

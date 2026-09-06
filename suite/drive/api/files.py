@@ -115,9 +115,9 @@ def ensure_path(fullpath, parent=None):
             "name",
         )
         if not exists:
-            # use the higher-level folder creation
-            doc = create_folder(folder, parent=current_parent)
-            current_parent = doc.name
+            # use the higher-level folder creation, which answers the legacy
+            # columns as a plain dict now that it forwards (§11.7)
+            current_parent = create_folder(folder, parent=current_parent)["name"]
         else:
             current_parent = exists
     return current_parent

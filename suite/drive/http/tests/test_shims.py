@@ -665,6 +665,40 @@ class TestFileForwarders(ShimCase):
         self.assertTrue(shims.does_entity_exist("Report.pdf", "f1"))
         nodes.title_taken.assert_called_once_with(SOMEONE, "f1", "Report.pdf")
 
+    def test_an_upload_renames_around_a_sibling_instead_of_refusing(self):
+        """The old body deduplicated with `get_new_file_name` before it wrote.
+
+        §8.6 refuses a collision so the UI can ask for another title, and this
+        caller has no dialog: dropzone sends a filename and reads the row back.
+        Without the rename the second copy of `Report.pdf` is a 409.
+        """
+        nodes = self.stub("node_core")
+        uploads = self.stub("upload_core")
+        nodes.available_title.return_value = "Report (2).pdf"
+        nodes.stored.return_value = node_row(title="Report (2).pdf")
+        uploads.create_upload.return_value = {"upload_id": "u1"}
+        uploads.finish_upload.return_value = "n1"
+
+        upload = MagicMock()
+        upload.filename = "Report.pdf"
+        upload.mimetype = "application/pdf"
+        upload.stream.read.return_value = b"x"
+        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
+        request.start()
+        self.addCleanup(request.stop)
+        form = patch.object(frappe.local, "form_dict", frappe._dict(), create=True)
+        form.start()
+        self.addCleanup(form.stop)
+        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
+        cache.start()
+        self.addCleanup(cache.stop)
+
+        answer = shims.upload_file(parent="f1", total_file_size=1)
+
+        nodes.available_title.assert_called_once_with(SOMEONE, "f1", "Report.pdf")
+        self.assertEqual(uploads.finish_upload.call_args.kwargs["title"], "Report (2).pdf")
+        self.assertEqual(answer["file_name"], "Report (2).pdf")
+
     def test_get_entity_type_answers_folder_or_file(self):
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row(kind="folder", mime=None)
@@ -955,6 +989,69 @@ class TestListForwarders(ListCase):
         self.one_page([])
         with self.assertRaises(frappe.ValidationError):
             shims.shared(shared_type="public")
+
+    def test_a_page_never_resumes_past_a_row_it_did_not_show(self):
+        """The walk asks for what the page still needs, not the whole window.
+
+        The old surface did (`list.py`, `need = window - len(rows)`), and the
+        difference is rows the client never sees: a first window thinned by the
+        permission filter, a second one full, and the surplus is cut to fit the
+        page while `next_cursor` has already moved past it.
+        """
+        windows = [
+            {"rows": [node_row(name=f"a{i}", title=f"a{i}") for i in range(6)], "next_cursor": "c10"},
+            {"rows": [node_row(name=f"b{i}", title=f"b{i}") for i in range(4)], "next_cursor": "c14"},
+        ]
+        asked: list[int] = []
+
+        def page(principals, parent, **kwargs):
+            asked.append(kwargs["limit"])
+            return windows[len(asked) - 1]
+
+        self.nodes.children.side_effect = page
+        self.activity.personal_marks.return_value = {}
+        answer = shims.files(paginated=True, limit=10)
+
+        self.assertEqual(asked, [10, 4])
+        self.assertEqual(len(answer["rows"]), 10)
+        self.assertEqual(answer["rows"][-1]["name"], "b3")
+        self.assertEqual(answer["next_start"], 14)
+
+    def test_a_search_inside_a_view_still_filters_the_view(self):
+        """The old query answered `file_name LIKE '%term%'` on all five lists.
+
+        §11.2 gives the term to one view only, so the toolbar's search box would
+        otherwise return the whole list unfiltered on the other four.
+        """
+        for call in (shims.shared, shims.favourites, shims.recents, shims.trash):
+            with self.subTest(view=call.__name__):
+                self.one_page(
+                    [node_row(name="n1", title="Budget.pdf"), node_row(name="n2", title="Notes.md")]
+                )
+                self.activity.personal_marks.return_value = {}
+                rows = call(search="budget")
+                self.assertEqual([row["file_name"] for row in rows], ["Budget.pdf"])
+
+    def test_a_search_term_that_matches_nothing_answers_nothing(self):
+        self.one_page([node_row(name="n1", title="Budget.pdf")])
+        self.activity.personal_marks.return_value = {}
+        self.assertEqual(shims.favourites(search="invoice"), [])
+
+    def test_an_empty_search_leaves_the_view_alone(self):
+        self.one_page([node_row(name="n1", title="Budget.pdf")])
+        self.activity.personal_marks.return_value = {}
+        self.assertEqual(len(shims.favourites(search="   ")), 1)
+
+    def test_the_search_view_is_not_filtered_twice(self):
+        """`files(search=...)` goes to the view that already applied the term.
+
+        Re-applying it here would drop every match the view found on something
+        other than the title.
+        """
+        self.one_page([node_row(name="n1", title="Untitled")])
+        self.activity.personal_marks.return_value = {}
+        rows = shims.files(search="report")
+        self.assertEqual([row["name"] for row in rows], ["n1"])
 
 
 # --------------------------------------------------------------------------
