@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveForbidden, DriveLinkExpired, DriveLocked, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 from suite.drive.http import shims
@@ -905,6 +905,38 @@ class TestFileForwarders(ShimCase):
         self.assertEqual(shims.search("   "), [])
         nodes.views.assert_not_called()
 
+    def test_search_walks_windows_until_the_page_is_full(self):
+        """The view permission-filters after its SQL window, so one window makes
+        the reply depend on how many rows the caller cannot read sort first.
+        The old body walked ten windows for this reason and said so."""
+        nodes = self.stub("node_core")
+        nodes.MAX_PAGE_SIZE = 200
+        windows = [
+            {"rows": [node_row(name=f"a{i}") for i in range(2)], "next_cursor": "c200"},
+            {"rows": [node_row(name=f"b{i}") for i in range(60)], "next_cursor": "c400"},
+        ]
+        nodes.views.side_effect = lambda *a, **k: windows[min(nodes.views.call_count - 1, 1)]
+
+        rows = shims.search("report")
+
+        self.assertEqual(nodes.views.call_count, 2)
+        self.assertEqual(len(rows), 50)
+        self.assertEqual(nodes.views.call_args.kwargs["cursor"], "c200")
+
+    def test_search_stops_walking_when_the_view_is_exhausted(self):
+        nodes = self.stub("node_core")
+        nodes.MAX_PAGE_SIZE = 200
+        nodes.views.return_value = {"rows": [node_row(name="a1")], "next_cursor": None}
+        self.assertEqual(len(shims.search("report")), 1)
+        self.assertEqual(nodes.views.call_count, 1)
+
+    def test_search_never_walks_past_its_scan_bound(self):
+        nodes = self.stub("node_core")
+        nodes.MAX_PAGE_SIZE = 200
+        nodes.views.return_value = {"rows": [], "next_cursor": "c200"}
+        self.assertEqual(shims.search("report"), [])
+        self.assertEqual(nodes.views.call_count, shims.MAX_SEARCH_WINDOWS)
+
     def test_track_visit_records_the_visit(self):
         activity = self.stub("activity_core")
         activity.notifications.return_value = {"rows": [], "next_cursor": None}
@@ -1023,6 +1055,24 @@ class TestAccessForwarder(ShimCase):
         self.stub("access")
         with self.assertRaises(frappe.ValidationError):
             shims.update_access("n1", "publish")
+
+    def test_a_legacy_share_cannot_mint_a_share_link(self):
+        """`access.grant("$LINK", ...)` mints a token and answers its
+        `/drive/l/` URL. `File.share` had no branch for it: an unknown
+        principal went to `create_invites`, which refuses a non-address. §11.7
+        gives no legacy name a link-issuing contract."""
+        access = self.stub("access")
+        for principal in ("$LINK", "$LINK:abcdefghijklmnopqrstuv"):
+            with self.subTest(principal=principal):
+                with self.assertRaises(frappe.ValidationError):
+                    shims.update_access("n1", "share", user=principal, read=1)
+        access.grant.assert_not_called()
+
+    def test_an_unshare_of_a_link_is_refused_too(self):
+        access = self.stub("access")
+        with self.assertRaises(frappe.ValidationError):
+            shims.update_access("n1", "unshare", user="$LINK:abcdefghijklmnopqrstuv")
+        access.revoke.assert_not_called()
 
 
 # --------------------------------------------------------------------------
@@ -1272,6 +1322,76 @@ class TestListForwarders(ListCase):
         counts.assert_called_once()
 
 
+class TestSignedOutVisitor(ShimCase):
+    """`ErrorPage.vue` sends a signed-out visitor to `/login` on one condition:
+    `exc_type == "PermissionError"`. The old bodies threw exactly that, so a
+    share link opened while signed out reached the login screen. The workflow's
+    `DriveNotFound` left it on "Uh oh!" with no way forward.
+    """
+
+    def as_guest(self):
+        self.caller.stop()
+        guest = patch.object(shims, "_principals", return_value=GUEST)
+        guest.start()
+        self.addCleanup(guest.stop)
+
+    def test_a_page_read_tells_a_signed_out_visitor_to_sign_in(self):
+        self.as_guest()
+        nodes = self.stub("node_core")
+        nodes.get.side_effect = DriveNotFound("gone")
+        with self.assertRaises(frappe.PermissionError):
+            shims.get_entity_with_permissions("n1")
+
+    def test_a_listing_tells_a_signed_out_visitor_the_same_thing(self):
+        self.as_guest()
+        nodes = self.stub("node_core")
+        nodes.decode_cursor.return_value = 0
+        nodes.children.side_effect = DriveNotFound("gone")
+        with self.assertRaises(frappe.PermissionError):
+            shims.files("n1")
+
+    def test_a_signed_in_caller_keeps_the_workflow_refusal(self):
+        nodes = self.stub("node_core")
+        nodes.get.side_effect = DriveNotFound("gone")
+        with self.assertRaises(DriveNotFound):
+            shims.get_entity_with_permissions("n1")
+
+    def test_the_substitution_says_nothing_a_missing_id_did_not(self):
+        """Uniform for a Guest: an id that exists and one that does not answer
+        the same refusal, so it is no more an oracle than the 404 was."""
+        self.as_guest()
+        nodes = self.stub("node_core")
+        raised = []
+        for reason in ("no such node", "not for you"):
+            nodes.get.side_effect = DriveNotFound(reason)
+            with self.assertRaises(frappe.PermissionError) as caught:
+                shims.get_entity_with_permissions("n1")
+            raised.append(str(caught.exception))
+        self.assertEqual(raised[0], raised[1])
+
+
+class TestCallerHomeFolder(ShimCase):
+    def test_a_caller_with_no_personal_root_is_refused_not_handed_none(self):
+        """`provision_personal_root` refuses `Administrator`. A `None` travelled:
+        `get_root_folder` published `home: None` and the next call failed
+        somewhere else, about a missing node or an invalid root."""
+        roots = self.stub("roots")
+        roots.personal_root_for.return_value = None
+        roots.provision_personal_root.return_value = None
+        with self.assertRaises(frappe.ValidationError):
+            shims.get_root_folder()
+
+    def test_a_guest_is_refused_before_a_root_is_read(self):
+        self.caller.stop()
+        guest = patch.object(shims, "_principals", return_value=GUEST)
+        guest.start()
+        self.addCleanup(guest.stop)
+        roots = self.stub("roots")
+        with self.assertRaises(frappe.ValidationError):
+            shims._home(GUEST)
+        roots.personal_root_for.assert_not_called()
+
+
 class TestListOrdering(ListCase):
     """`order_by` and `ascending` reach the three views that used to sort.
 
@@ -1483,6 +1603,10 @@ class TestPermanentSurface(ShimCase):
         is a §11.7 forwarder now and refuses with the `_core` classes, which
         that clause did not name: a denied read answered 403 and confirmed the
         object exists.
+
+        The base class is named, not the two leaves. A locked link is 401 and
+        an expired one is 410, and either one on this guessable path is the
+        same disclosure the 403 was.
         """
         from suite.drive.api import s3
 
@@ -1492,8 +1616,8 @@ class TestPermanentSurface(ShimCase):
             if isinstance(node, ast.ExceptHandler)
         )
         named = {getattr(element, "attr", getattr(element, "id", "")) for element in caught.elts}
-        self.assertEqual(named, {"PermissionError", "DoesNotExistError", "DriveForbidden", "DriveNotFound"})
-        for error in (frappe.PermissionError, DriveForbidden, DriveNotFound):
+        self.assertEqual(named, {"PermissionError", "DoesNotExistError", "DriveError"})
+        for error in (frappe.PermissionError, DriveForbidden, DriveNotFound, DriveLocked, DriveLinkExpired):
             with (
                 self.subTest(error=error.__name__),
                 patch.object(s3, "get_file_content", side_effect=error("no")),

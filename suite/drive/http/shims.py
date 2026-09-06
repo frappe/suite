@@ -311,6 +311,35 @@ def _principal_role(row, principal: str) -> int:
     return access.effective_role(row, framework.principals_for_principal(principal))
 
 
+def _page_read(principals, call):
+    """Run a page's own read, and send a signed-out visitor to the login page.
+
+    `ErrorPage.vue` redirects to `/login?redirect-to=` on one condition:
+    `error.exc_type == "PermissionError"` while nobody is signed in. The old
+    bodies threw exactly that for a row the caller could not read, so following
+    a share link while signed out landed on the login screen. §5.2 makes the
+    workflow answer `DriveNotFound` instead, and the visitor stopped on "Uh
+    oh!" with a Login button that discards the address they arrived on.
+
+    The two pages that render `ErrorPage` are the two wrapped here:
+    `File.vue:5` and `GenericPage.vue:5` read `verify.error` from
+    `get_entity_with_permissions` and `getEntities.error` from `list.files`.
+    `useDocument.ts:19` puts the first one under Writer's own `ErrorPage`,
+    which reads the same field.
+
+    The substitution is a Guest's only, and it is uniform: every id a Guest
+    cannot read answers the same refusal whether it exists or not, so it
+    discloses nothing `DriveNotFound` was hiding. A signed-in caller keeps the
+    workflow's own class.
+    """
+    try:
+        return call()
+    except DriveNotFound:
+        if principals.user != "Guest":
+            raise
+        frappe.throw(_("You don't have access to this file."), frappe.PermissionError)
+
+
 def _readable_row(node: str):
     """Read a node the caller may see, or answer `None`.
 
@@ -391,7 +420,7 @@ def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     if not entity_name:
         raise DriveNotFound(_("We couldn't find what you're looking for."))
     principals = _principals()
-    row = node_core.get(principals, entity_name)
+    row = _page_read(principals, lambda: node_core.get(principals, entity_name))
     role = access.effective_role(row, principals)
     trail = [
         {"name": step["name"], "file_name": step["title"]} for step in node_core.breadcrumbs(row, principals)
@@ -791,10 +820,24 @@ ORDER_COLUMN = {
 
 
 def _home(principals) -> str:
-    """The caller's own root node, provisioned on first use as §14.3 says."""
+    """The caller's own root node, provisioned on first use as §14.3 says.
+
+    It never answers `None`. `provision_personal_root` refuses `Guest` and
+    `Administrator` (§7: a Personal root belongs to an ordinary Suite user),
+    and a `None` here travelled: `get_root_folder` published `home: None`, and
+    the next `files()`, `trash()`, `move()`, or `delete_entities(clear_all=1)`
+    failed somewhere else with a message about a missing node or an invalid
+    root. The refusal is named where the reason is.
+    """
     if principals.user == "Guest":
         frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
-    return roots.personal_root_for(principals.user) or roots.provision_personal_root(principals.user)
+    home = roots.personal_root_for(principals.user) or roots.provision_personal_root(principals.user)
+    if not home:
+        frappe.throw(
+            _("{0} has no personal Drive folder").format(principals.user),
+            frappe.ValidationError,
+        )
+    return home
 
 
 def _child_named(principals, parent: str, title: str) -> str | None:
@@ -1120,6 +1163,16 @@ def update_access(entity_name: str, method: str, **kwargs):
     principal = kwargs.get("user") or "$PUBLIC"
     if principal == "":
         principal = "$PUBLIC"
+    if principal == "$LINK" or principal.startswith("$LINK:"):
+        # `access.grant("$LINK", ...)` mints a token and answers its `/drive/l/`
+        # URL. §11.7 gives no legacy name that contract, and `File.share` had
+        # no branch for it: an unknown principal went to `create_invites`, which
+        # refused an address that is not one. A share link is §8.5's route to
+        # issue, not a capability this shim hands back.
+        frappe.throw(
+            _("Drive issues a share link at PUT /api/suite/drive/nodes/<id>/grants/$LINK"),
+            frappe.ValidationError,
+        )
 
     if method == "unshare":
         # One gesture, both rows. `File.unshare("$GENERAL")` called
@@ -1184,13 +1237,40 @@ def does_entity_exist(name: str | None = None, folder: str | None = None):
     return node_core.title_taken(principals, folder or _home(principals), name)
 
 
+# The old scan, in the new window size: `SEARCH_PAGE_LENGTH` readable rows out
+# of at most `MAX_SEARCH_WINDOWS * MAX_PAGE_SIZE` raw ones. `api/files.search`
+# read ten windows of a hundred for the same thousand.
+SEARCH_PAGE_LENGTH = 50
+MAX_SEARCH_WINDOWS = 5
+
+
 def search(query: str):
-    """`search` -> `GET /views/search`."""
+    """`search` -> `GET /views/search`, walked until the page is full.
+
+    The view's permission filter runs after the SQL window (`page_of`), so one
+    fixed window makes the reply depend on how many rows the caller *cannot*
+    read happen to sort first: someone shared on few files gets a short page,
+    or an empty one, while matches they can read sit just past row fifty. The
+    old body walked successive windows for exactly this reason and said so.
+    """
     principals = _principals()
     if not query or not query.strip():
         return []
-    page = node_core.views(principals, "search", term=query.strip(), limit=50)
-    return [_legacy_search_row(row) for row in page["rows"]]
+    rows: list = []
+    cursor = None
+    for _window in range(MAX_SEARCH_WINDOWS):
+        page = node_core.views(
+            principals,
+            "search",
+            term=query.strip(),
+            cursor=cursor,
+            limit=node_core.MAX_PAGE_SIZE,
+        )
+        rows.extend(page["rows"])
+        cursor = page["next_cursor"]
+        if not cursor or len(rows) >= SEARCH_PAGE_LENGTH:
+            break
+    return [_legacy_search_row(row) for row in rows[:SEARCH_PAGE_LENGTH]]
 
 
 def _legacy_search_row(row) -> dict:
@@ -1626,21 +1706,24 @@ def files(
             order=(order_by, bool(ascending)),
         )
     parent = entity_name or _home(principals)
-    return _listing(
+    return _page_read(
         principals,
-        lambda cursor, window: node_core.children(
+        lambda: _listing(
             principals,
-            parent,
-            cursor=cursor,
-            limit=window,
-            order_by=ORDER_COLUMN.get(order_by, "modified"),
-            ascending=bool(ascending),
+            lambda cursor, window: node_core.children(
+                principals,
+                parent,
+                cursor=cursor,
+                limit=window,
+                order_by=ORDER_COLUMN.get(order_by, "modified"),
+                ascending=bool(ascending),
+            ),
+            file_kinds=file_kinds,
+            search=None,
+            start=start,
+            limit=limit,
+            paginated=paginated,
         ),
-        file_kinds=file_kinds,
-        search=None,
-        start=start,
-        limit=limit,
-        paginated=paginated,
     )
 
 
