@@ -1288,7 +1288,7 @@ is:
 | Name(s) | Particular to it | Reached by | Commits |
 |---|---|---|---|
 | `get_user_access` | Answers the bits the `Drive Permission` rows still carry. The three Writer reads built on it come back with it: `get_document_list`, `get_versions`, `search` in `writer/api/general.py` | The author listing, versioning or finding their own document | `1090672f3` / `72557bbed`, `727d59cab` |
-| `upload_file` | Writes the picture into the document that holds it. A directory upload into a legacy parent is refused by name, because creating the folders would be a second legacy folder writer | `embed.add` | `580c5b8c5` / `5b9798d0d` |
+| `upload_file` | Writes the picture into the document that holds it. A directory upload walks the `File` store through `ensure_path`, the old body, which `create_folder` made work again | `embed.add`, and a folder dropped on a legacy folder page | `580c5b8c5` / `5b9798d0d`, `1972c38b0` / `77c43ab8b` |
 | `list.files` | Pages a legacy folder. Both halves are read whole and merged, because a page cannot be merged on its own | The Drive folder page | `2be00015f` / `a861cc8a6`, `be515e4e7` |
 | `track_visit` | Rank 1, no unusual gesture: every document open | Opening a document | `42d0b1684` / `71a6a5e94` |
 | `rename` | Rank 1: the auto-title on the first Enter, `CoreEditor.vue:349` | Typing the first line | `b31aa9adb` / `c08a3d3cc` |
@@ -1307,7 +1307,7 @@ kept. On the `File` store it is the only way the old resolver spells
 
 | Name | Reason |
 |---|---|
-| `get_thumbnail` | The URL is only built for Image, Video and PDF. A 404 degrades to the same broken `<img>` a missing thumbnail already gives |
+| `get_thumbnail` | The URL is only built for Image, Video and PDF (`drive/utils/files.js:300-307`). `GridItem.vue:5-24` shows the file-type icon until the thumbnail loads, so a refusal leaves the icon in place |
 | `get_entity_type` | Only the `/drive/g/:id` guard reads it, and that route is fed by pre-team-restructure links |
 | `get_entity_activity_log` | Zero call sites in `frontend/src` and `e2e/` |
 | The Drive search names, `search` and `list.files(search=...)` | They return nothing rather than refusing, and a legacy full-text search would be a second search implementation |
@@ -1327,29 +1327,32 @@ Site-free, from `/home/faris/benches/suite-bench/sites`:
   suite.drive.http.tests.test_routes suite.drive.http.tests.test_shapes \
   suite.drive.http.tests.test_translator suite.tests.test_architecture
 main:  Ran 367 tests / OK
-after: Ran 434 tests in 2.866s / OK
+after: Ran 436 tests in 2.758s / OK
 ```
 
-`test_shims` alone: `Ran 261 tests in 1.321s / OK`, up from 194.
+`test_shims` alone: `Ran 263 tests in 1.385s / OK`, up from 194.
 
 Site modules, serialized, `script -qec "bench --site slides.localhost
 run-tests --module <m>" /dev/null`:
 
 ```
-suite.writer.tests.test_drive_adoption   Ran 23 / OK and Ran 72 / OK  (main: 23 and 47)
-suite.writer.api.tests.test_general      Ran 7 tests in 0.697s / OK   (main: 2)
-suite.drive.http.tests.test_shims        Ran 261 tests in 1.122s / OK (main: 194)
+suite.writer.tests.test_drive_adoption   Ran 23 / OK and Ran 73 / OK  (main: 23 and 47)
+suite.writer.api.tests.test_general      Ran 7 tests in 0.808s / OK   (main: 2)
+suite.drive.http.tests.test_shims        Ran 263 tests in 1.190s / OK (main: 194)
 suite.slides.tests.test_drive_adoption   Ran 30 / OK and Ran 71 / OK  (unchanged from main)
 ```
 
 ### Mutation runs
 
 Every site case was mutation-checked. Disabling its `_unadopted_row` branch
-makes the case error or fail, and each mutation was reverted in place. The last
-one run: commenting out the `get_file_content` branch turns
+makes the case error or fail, and each mutation was reverted in place. Two
+examples. Commenting out the `get_file_content` branch turns
 `test_a_picture_in_that_folder_can_still_be_opened` and
 `test_a_stranger_cannot_open_a_picture_in_somebody_elses_folder` into errors,
-`Ran 72 / FAILED (errors=2)`.
+`Ran 72 / FAILED (errors=2)`. Putting the old refusal back in front of the
+directory walk turns
+`test_a_folder_dropped_on_a_legacy_folder_page_lands_whole` into an error,
+`Ran 73 / FAILED (errors=1)`.
 
 ### Formatting and lint
 
