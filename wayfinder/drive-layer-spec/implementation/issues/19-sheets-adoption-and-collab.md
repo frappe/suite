@@ -243,6 +243,48 @@ fixture conflicts with itself inside the run. It blocks gate step 5.
 `test_drive_adoption.py` before and after `fa4c7db13`, so the repair adds no
 formatting drift. The drift itself predates this ticket and was left alone.
 
+Site gate run, on `slides.localhost`, at `0971534cc`. `test_grants` is fixed,
+so gate step 5 ran for the first time. Every command ran serially, one bench
+invocation at a time:
+
+| Gate step | Command | Result |
+|---|---|---|
+| — | `run-tests --module suite.drive.tests.test_grants` | 26 tests, OK, twice |
+| — | `run-tests --module suite.drive.tests.test_views` | 10 + 10 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_roots` | 24 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_nodes` | 13 + 23 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_access` | 12 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_upload` | 26 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_versions` | 7 + 10 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_principals` | 10 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_activity` | 8 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_root_admin` | OK |
+| — | `run-tests --module suite.drive.tests.test_quota` | OK |
+| 4 | `run-tests --module suite.tests.test_architecture` | 7 tests, OK |
+| 5 | `run-tests --app suite` | 221 unit OK, 871 integration with 1 failure, 545 unspecified OK |
+
+The cause of the `test_grants` block was `ensure_user`. It inserts a real
+`User`, the `after_insert` hook chain provisions an Active Personal root, and
+the fixture then asks `create_root` for a second one. Drive refused correctly.
+The hook only runs for a new user, which is why the module errored while
+`test_upload`, whose fixture emails were already committed on the site, passed.
+`0971534cc` records the repair. It changes no Drive production code.
+
+Gate step 5 now has one failure, and it is not this ticket's and not Drive's:
+
+- `suite.meet.api.test.test_recording_reliability`,
+  `test_one_active_recording_per_room_owner_by_default`, asserts `'Recording'`
+  and reads `'Starting'`. It fails the same way at `e338cccb1` with the repair
+  stashed, and it fails on its own module run.
+
+One environment note for anyone repeating step 5. The bench has no RQ worker,
+so every run leaves its background jobs queued. The `short` queue reached its
+550 cap and later runs of `test_upload` and `test_versions` then errored with
+`QueueOverloaded` from `previews.enqueue_render`, not from any code fault.
+Emptying the `short` and `default` queues cleared it, and one full app run
+refills `short` to about 99. Check the queue depth before trusting a step 5
+failure.
+
 Every Python check ran under
 `PYTHONPATH=apps/frappe:<worktree> python -m unittest` from
 `/home/faris/benches/suite-bench/sites`, with no site connected and no bench
@@ -327,10 +369,11 @@ bench --site slides.localhost run-tests --module suite.tests.test_architecture
 bench --site slides.localhost run-tests --app suite
 ```
 
-Blocked today by `suite.drive.tests.test_grants`: 24 tests, 24 errors, all the
-same `setUp` conflict on `drive-grant-target@example.com`. It fails the same way
-at `e9171a963`, so it is not this ticket's, but this step cannot pass until it
-is fixed. Step 4's modules all pass.
+Ran at `0971534cc`: 221 unit OK, 871 integration with 1 failure, 545 unspecified
+OK. The one failure is
+`suite.meet.api.test.test_recording_reliability.test_one_active_recording_per_room_owner_by_default`,
+which fails the same way at `e338cccb1` with the repair stashed. Step 4's
+modules all pass. The earlier `test_grants` block is fixed by `0971534cc`.
 
 **6. The DocShare bypass, by hand.** No test can reach it: the widening happens
 inside Frappe, after the hook has answered. Link a sheet, share it with a user
