@@ -442,6 +442,12 @@ class TestCompositeGroups(IntegrationTestCase):
 
         self.assertEqual([row["readable"] for row in answered], [True, False])
         self.assertEqual(answered[1]["presentation"], "")
+        # The whole-deck path reads the same table. A falsy name is "no
+        # filters" to `get_value`, which would have answered some other deck's
+        # node id on a guest-reachable route.
+        marked = slides.composite_references(self._docname(composite))[1]
+        self.assertFalse(marked["readable"])
+        self.assertIsNone(marked["node"])
 
     # the bound, on real rows
 
