@@ -766,6 +766,7 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
         ensure_user(USER)
         _purge_fixture_roots()
         frappe.db.commit()
+        cls.addClassCleanup(_drop_fixture_users)
 
     def setUp(self):
         super().setUp()
@@ -779,7 +780,9 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
         for name in frappe.get_all(DOCTYPE, filters={"title": ("like", "adoption-%")}, pluck="name"):
             frappe.db.delete(OP_LOG, {"sheet": name})
             frappe.db.delete("Sheet Seq", {"sheet": name})
+            frappe.db.delete("DocShare", {"share_doctype": DOCTYPE, "share_name": name})
             frappe.delete_doc(DOCTYPE, name, force=1, ignore_permissions=True, ignore_missing=True)
+            _drop_backing_file(name)
         frappe.db.commit()
 
     def _legacy_sheet(self, title="adoption-legacy") -> str:
@@ -920,6 +923,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         ensure_user(OTHER)
         _purge_fixture_roots()
         frappe.db.commit()
+        cls.addClassCleanup(_drop_fixture_users)
 
     def setUp(self):
         super().setUp()
@@ -1282,14 +1286,540 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.assertFalse(satellite_has_permission(document, "write", OTHER))
 
 
-def _purge_fixture_roots() -> None:
-    """Hand back every Drive root the two fixture users own, through Drive's purge.
+# ── the two probes the site gate ran by hand ─────────────────────────────────
 
-    `USER` and `OTHER` belong to this module alone, so the filter can never
-    reach a live account or another test.
+GATE_OWNER = "sheets-gate-owner@example.com"
+GATE_VICTIM = "sheets-gate-victim@example.com"
+GATE_STRANGER = "sheets-gate-stranger@example.com"
+GATE_USERS = (GATE_OWNER, GATE_VICTIM, GATE_STRANGER)
+
+# What a gate fixture writes and has to hand back. Rows in `_GATE_ADDED` are
+# deleted outright after each test. Rows in `_GATE_WITNESS` are only counted,
+# because Drive's own purge is what removes them and a raw delete here would
+# hide a purge that never ran.
+_GATE_ADDED = (
+    OP_LOG,
+    "Sheet Seq",
+    "Sheet Snapshot",
+    COLLAB_STATE,
+    "Sheet Cell",
+    "DocShare",
+    "Notification Log",
+    "Email Queue",
+    "Error Log",
+    "Version",
+    "Comment",
+    "ToDo",
+    DOCTYPE,
+)
+# `File` and its activity log are witnesses rather than deletions: they belong
+# to Drive, and a test may not write a `Drive *` table (ARCHITECTURE.md rule
+# 2.2). `_drop_backing_file` hands them back through the File controller.
+_GATE_WITNESS = (
+    "Drive Root",
+    "Drive Node",
+    "Drive Grant",
+    "File",
+    "File Blob",
+    "Drive Entity Activity Log",
+    "User",
+)
+
+
+def _census(doctypes: tuple[str, ...]) -> dict[str, set[str]]:
+    """Every name each table holds right now."""
+    census = {}
+    for doctype in doctypes:
+        census[doctype] = set(frappe.get_all(doctype, pluck="name"))
+    return census
+
+
+def _open(docname: str) -> dict:
+    """The stock row read, the way `/api/v2/document/Sheet/<name>` runs it.
+
+    `frappe.get_doc` on its own checks nothing (`frappe/model/document.py:336`),
+    so a probe built on it answers for every caller and proves nothing.
+    `frappe.client.get` is `get_doc` plus `check_permission`
+    (`frappe/client.py:107-113`), which is where the guard and the `DocShare`
+    both get their say.
+    """
+    import frappe.client
+
+    return frappe.client.get(DOCTYPE, docname)
+
+
+def _listed(doctype: str, field: str = "name") -> list[str]:
+    """`get_list`, which runs the permission hook and ORs the caller's shares.
+
+    `get_all` sets `ignore_permissions`, so it never reaches either one.
+    """
+    return frappe.get_list(doctype, pluck=field, limit_page_length=0)
+
+
+class TestTheGateProbes(IntegrationTestCase):
+    """Gate steps 6 and 9, as tests rather than two `bench console` scripts.
+
+    Step 6 is the `DocShare` bypass. Frappe widens a denied row check with
+    `false_if_not_shared` (`frappe/permissions.py:214-216`) and ORs the
+    caller's shared names around a list predicate
+    (`frappe/database/query.py:1737-1742`). Neither can be answered from inside
+    a hook, so both guards refuse instead. The ticket called this unreachable
+    by test. It is reachable: the sheet is created under `activated()`, the
+    share is added while the hooks are the ones the site actually ships, and
+    the read runs through `frappe.client.get` and `frappe.get_list`.
+
+    Step 9 is the legacy arm. Every guard answers on two sides, and a sheet
+    Build has not linked has to keep the behaviour it always had: its owner
+    opens, shares, renames, trashes, and restores it through the legacy
+    endpoints.
+
+    Each refusal test has a control that runs the same share against a legacy
+    sheet and proves it does widen there. Without one, a refusal test passes
+    for a site where nothing is shared at all.
+
+    The three users, their roots, and every row a test writes are taken back
+    off the site afterwards, and `_assert_no_residue` is what checks it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.addClassCleanup(_drop_fixture_users, GATE_USERS)
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        for user in GATE_USERS:
+            ensure_user(user)
+        _purge_fixture_roots(GATE_USERS)
+        frappe.db.commit()
+        self.census = _census(_GATE_ADDED + _GATE_WITNESS)
+        # Registered first, so it runs last: the residue check has to see the
+        # site after every other cleanup, not between two of them.
+        self.addCleanup(self._assert_no_residue)
+        self.addCleanup(self._drop_gate_rows)
+        self.addCleanup(_purge_fixture_roots, GATE_USERS)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+    # fixtures
+
+    def _linked_sheet(self) -> tuple[str, str]:
+        """One sheet linked the way Build links it, under a registered SPEC.
+
+        `activated()` injects the registry for the two calls that need it and
+        nothing else. `suite/hooks.py` is untouched, so every read below runs
+        against the hooks the site ships today.
+        """
+        with activated():
+            root = create_root(kind="Personal", title="Gate Root", user=GATE_OWNER)
+            node = drive.create_document(root.node, "gate-linked", content_doctype=DOCTYPE)
+        return node, frappe.db.get_value("Drive Node", node, "content_docname")
+
+    def _legacy_sheet(self, title="gate-legacy") -> str:
+        """One sheet with no node, owned by `GATE_OWNER` rather than by an admin."""
+        self._as(GATE_OWNER)
+        name = frappe.get_doc({"doctype": DOCTYPE, "title": title, "sheets_data": "{}"}).insert().name
+        frappe.set_user("Administrator")
+        return name
+
+    def _op_row(self, sheet: str) -> str:
+        return (
+            frappe.get_doc({"doctype": OP_LOG, "sheet": sheet, "seq": 1, "op_type": "edit"})
+            .insert(ignore_permissions=True)
+            .name
+        )
+
+    def _share(self, doctype: str, name: str, user: str | None = None, **rights) -> None:
+        """One `DocShare`, added as Administrator so the share right is not the test."""
+        import frappe.share
+
+        frappe.set_user("Administrator")
+        frappe.share.add(doctype, name, user, notify=False, **rights)
+
+    def _as(self, user: str) -> None:
+        frappe.set_user(user)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+    # cleanup
+
+    def _drop_gate_rows(self) -> None:
+        frappe.set_user("Administrator")
+        sheets = set(frappe.get_all(DOCTYPE, pluck="name")) - self.census[DOCTYPE]
+        for doctype in _GATE_ADDED:
+            added = tuple(set(frappe.get_all(doctype, pluck="name")) - self.census[doctype])
+            if not added:
+                continue
+            frappe.db.delete(doctype, {"name": ("in", added)})
+            if doctype == "Email Queue":
+                frappe.db.delete("Email Queue Recipient", {"parent": ("in", added)})
+        # The backing `File` last. Its `after_delete` cascades into the content
+        # document (`suite/drive/overrides/file.py:146-152`), so it has to run
+        # when there is no longer one to take with it.
+        for sheet in sheets:
+            _drop_backing_file(sheet)
+        frappe.db.commit()
+
+    def _assert_no_residue(self) -> None:
+        frappe.set_user("Administrator")
+        left = {}
+        for doctype, before in self.census.items():
+            added = sorted(set(frappe.get_all(doctype, pluck="name")) - before)
+            if added:
+                left[doctype] = added
+        frappe.db.commit()
+        self.assertEqual(left, {}, "a gate fixture left rows on the site")
+
+    # ── gate step 6: the DocShare bypass, on the hooks the site ships ────────
+
+    def test_a_named_share_cannot_open_a_linked_sheet(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, GATE_VICTIM, read=1, write=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(DriveForbidden):
+            _open(docname)
+
+    def test_a_named_share_cannot_list_a_linked_sheet(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, GATE_VICTIM, read=1, write=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(DriveForbidden):
+            _listed(DOCTYPE)
+
+    def test_a_named_share_does_not_widen_the_op_log_list(self):
+        """The share is on the sheet, so the child list has nothing to OR.
+
+        It answers rather than refusing, and what it answers must not name the
+        linked sheet. `test_the_same_share_widens_a_legacy_op_log_list` is the
+        control that proves an empty answer here is the guard, not an empty
+        table.
+        """
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, GATE_VICTIM, read=1)
+        self.assertTrue(frappe.get_all(OP_LOG, filters={"sheet": docname}, pluck="name"))
+
+        self._as(GATE_VICTIM)
+        self.assertNotIn(docname, _listed(OP_LOG, "sheet"))
+
+    def test_an_everyone_share_cannot_open_a_linked_sheet(self):
+        """`get_shared` answers an `everyone` row for every user but a Guest
+        (`frappe/share.py:188-190`), so it widens exactly as a named row does."""
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, None, read=1, everyone=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(DriveForbidden):
+            _open(docname)
+
+    def test_an_everyone_share_cannot_list_a_linked_sheet(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, None, read=1, everyone=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(DriveForbidden):
+            _listed(DOCTYPE)
+
+    def test_an_everyone_share_does_not_widen_the_op_log_list(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, None, read=1, everyone=1)
+
+        self._as(GATE_VICTIM)
+        self.assertNotIn(docname, _listed(OP_LOG, "sheet"))
+
+    def test_a_share_on_one_op_log_row_refuses_the_whole_op_log_list(self):
+        """The one link no node column can scope: the share is on the child."""
+        _node, docname = self._linked_sheet()
+        op = frappe.get_all(OP_LOG, filters={"sheet": docname}, pluck="name")[0]
+        self._share(OP_LOG, op, GATE_VICTIM, read=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(frappe.PermissionError):
+            _listed(OP_LOG, "sheet")
+
+    def test_a_share_on_one_snapshot_row_refuses_the_whole_snapshot_list(self):
+        """`Sheet Snapshot` keeps its own guard past activation, and gets the
+        same refusal for the same reason."""
+        _node, docname = self._linked_sheet()
+        snapshot = (
+            frappe.get_doc(
+                {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
+            )
+            .insert(ignore_permissions=True)
+            .name
+        )
+        self._share("Sheet Snapshot", snapshot, GATE_VICTIM, read=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(frappe.PermissionError):
+            _listed("Sheet Snapshot", "sheet")
+
+    # the controls: the same share, against a sheet Build has not linked
+
+    def test_the_same_share_opens_and_lists_a_legacy_sheet(self):
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
+
+        self._as(GATE_VICTIM)
+        self.assertEqual(_open(name)["name"], name)
+        self.assertIn(name, _listed(DOCTYPE))
+
+    def test_the_same_everyone_share_opens_a_legacy_sheet(self):
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, None, read=1, everyone=1)
+
+        self._as(GATE_VICTIM)
+        self.assertEqual(_open(name)["name"], name)
+        self.assertIn(name, _listed(DOCTYPE))
+
+    def test_the_same_share_widens_a_legacy_op_log_list(self):
+        name = self._legacy_sheet()
+        self._op_row(name)
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
+
+        self._as(GATE_VICTIM)
+        self.assertIn(name, _listed(OP_LOG, "sheet"))
+
+    def test_an_unshared_stranger_sees_no_legacy_sheet_either(self):
+        """The other half of the control: the share is what widens, not the row."""
+        name = self._legacy_sheet()
+
+        self._as(GATE_STRANGER)
+        with self.assertRaises(frappe.PermissionError):
+            _open(name)
+        self.assertNotIn(name, _listed(DOCTYPE))
+
+    # the same probes once ticket 29 has moved the hooks
+
+    def test_activation_answers_a_named_share_the_same_way(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, GATE_VICTIM, read=1, write=1)
+
+        self._as(GATE_VICTIM)
+        with activated():
+            with self.assertRaises(DriveForbidden):
+                _open(docname)
+            with self.assertRaises(DriveForbidden):
+                _listed(DOCTYPE)
+            self.assertNotIn(docname, _listed(OP_LOG, "sheet"))
+
+    def test_activation_answers_an_everyone_share_the_same_way(self):
+        _node, docname = self._linked_sheet()
+        self._share(DOCTYPE, docname, None, read=1, everyone=1)
+
+        self._as(GATE_VICTIM)
+        with activated():
+            with self.assertRaises(DriveForbidden):
+                _open(docname)
+            with self.assertRaises(DriveForbidden):
+                _listed(DOCTYPE)
+
+    def test_activation_refuses_a_new_share_outright(self):
+        """`refuse_governed_share` is why a share on a linked sheet can only be
+        one Build inherited, never one written after ticket 29."""
+        _node, docname = self._linked_sheet()
+
+        with activated(), self.assertRaises(DriveForbidden):
+            self._share(DOCTYPE, docname, GATE_VICTIM, read=1)
+
+    # ── gate step 9: the legacy arm, on a sheet with no node ─────────────────
+
+    def test_an_owner_opens_shares_renames_trashes_and_restores_a_node_less_sheet(self):
+        """Gate step 9, end to end, through the endpoints the client calls.
+
+        The owner is an ordinary `Suite User`, not an operator: the
+        Administrator is answered before any hook runs
+        (`frappe/permissions.py:109`), so a round trip as one proves nothing.
+        """
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self.assertIsNone(frappe.db.get_value(DOCTYPE, name, sheets.NODE_FIELD))
+
+        self._as(GATE_OWNER)
+        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
+        self.assertTrue(api.get_sheet(name)["can_write"])
+
+        api.share_sheet(name, GATE_VICTIM, write=0)
+        self.assertEqual([row["user"] for row in api.get_sheet_shares(name)], [GATE_VICTIM])
+
+        api.rename_sheet(name, "gate-renamed")
+        self.assertEqual(api.get_sheet(name)["title"], "gate-renamed")
+
+        api.delete_sheet(name)
+        self.assertTrue(frappe.db.get_value(DOCTYPE, name, "trashed"))
+        api.restore_sheet(name)
+        self.assertFalse(frappe.db.get_value(DOCTYPE, name, "trashed"))
+
+        api.unshare_sheet(name, GATE_VICTIM)
+        self.assertEqual(api.get_sheet_shares(name), [])
+
+    def test_an_owner_can_take_back_a_named_share(self):
+        """`DocShare` carries a System Manager DocPerm and nothing else, so the
+        delete has to be ignored the way `frappe.share.add` ignores the insert
+        (`frappe/share.py:82`). Without that an owner grants and never revokes."""
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._as(GATE_OWNER)
+        api.share_sheet(name, GATE_VICTIM, write=1)
+        api.unshare_sheet(name, GATE_VICTIM)
+
+        self.assertEqual(api.get_sheet_shares(name), [])
+        frappe.set_user(GATE_VICTIM)
+        with self.assertRaises(frappe.PermissionError):
+            api.get_sheet(name)
+
+    def test_an_owner_can_take_back_an_everyone_share(self):
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._as(GATE_OWNER)
+        api.share_sheet(name, everyone=1)
+        self.assertTrue(api.get_sheet_shares(name))
+        api.unshare_sheet(name, everyone=1)
+
+        self.assertEqual(api.get_sheet_shares(name), [])
+
+    def test_a_reader_cannot_take_back_someone_else_s_share(self):
+        """The `share` right on the sheet is what revoking costs, and ignoring
+        the `DocShare` DocPerm must not move that gate."""
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
+        self._share(DOCTYPE, name, GATE_STRANGER, read=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(frappe.PermissionError):
+            api.unshare_sheet(name, GATE_STRANGER)
+        frappe.set_user("Administrator")
+        self.assertEqual(len(api.get_sheet_shares(name)), 2)
+
+    def test_a_stranger_cannot_take_back_a_share(self):
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
+
+        self._as(GATE_STRANGER)
+        with self.assertRaises(frappe.PermissionError):
+            api.unshare_sheet(name, GATE_VICTIM)
+        frappe.set_user("Administrator")
+        self.assertEqual(len(api.get_sheet_shares(name)), 1)
+
+    def test_a_node_less_sheet_keeps_its_backing_drive_file_through_a_rename(self):
+        """The legacy `File` is the other half of the legacy arm: §14.6 keeps it
+        until ticket 23 removes it, and a rename has to carry it along.
+
+        The row is read straight from the table rather than through
+        `File.get_for_doc`, so this class adds no import across the Drive
+        boundary and the debt baseline stays where ticket 19 left it.
+        """
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._as(GATE_OWNER)
+        api.rename_sheet(name, "gate-renamed")
+
+        frappe.set_user("Administrator")
+        backing = frappe.db.get_value(
+            "File", {"content_doctype": DOCTYPE, "content_docname": name}, ("name", "file_name"), as_dict=True
+        )
+        self.assertTrue(backing)
+        self.assertEqual(backing.file_name, "gate-renamed")
+
+    def test_a_sharee_opens_a_node_less_sheet_read_only(self):
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
+
+        self._as(GATE_VICTIM)
+        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
+        self.assertFalse(api.get_sheet(name)["can_write"])
+
+    def test_a_sharee_cannot_trash_a_node_less_sheet(self):
+        """`delete` is not a shareable right (`frappe/permissions.py:189`), so
+        the trash stays with the owner however wide the share is."""
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._share(DOCTYPE, name, GATE_VICTIM, read=1, write=1)
+
+        self._as(GATE_VICTIM)
+        with self.assertRaises(frappe.PermissionError):
+            api.delete_sheet(name)
+
+    def test_a_stranger_cannot_open_a_node_less_sheet(self):
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+
+        self._as(GATE_STRANGER)
+        with self.assertRaises(frappe.PermissionError):
+            api.get_sheet(name)
+
+    def test_a_trashed_node_less_sheet_opens_again_only_after_a_restore(self):
+        from suite.sheets import api
+
+        name = self._legacy_sheet()
+        self._as(GATE_OWNER)
+        api.delete_sheet(name)
+        with self.assertRaises(frappe.DoesNotExistError):
+            api.get_sheet(name)
+
+        api.restore_sheet(name)
+        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
+
+    def test_a_node_less_sheet_is_in_its_owner_s_list(self):
+        name = self._legacy_sheet()
+
+        self._as(GATE_OWNER)
+        self.assertIn(name, _listed(DOCTYPE))
+
+
+def _drop_fixture_users(users: tuple[str, ...] = (USER, OTHER)) -> None:
+    """Take the fixture users, and the roots their inserts provisioned, back off.
+
+    Every class here creates its users in `setUpClass`, so leaving them behind
+    grows the site by one account and one Personal root per module that runs.
+    """
+    frappe.set_user("Administrator")
+    _purge_fixture_roots(users)
+    for user in users:
+        frappe.delete_doc("User", user, force=1, ignore_permissions=True, ignore_missing=True)
+    frappe.db.commit()
+
+
+def _drop_backing_file(docname: str) -> None:
+    """Take the legacy `File` a `Sheet` insert provisions off the site.
+
+    `File.permanent_delete` marks the row `Removed` rather than deleting it
+    (`suite/drive/overrides/file.py:402-406`), so a fixture that deletes only
+    its `Sheet` leaves one orphan row behind on every run. Ticket 23 removes
+    the backing for good; until then a test takes back what it made.
+
+    Through `delete_doc`, not a raw delete: `File.after_delete` is what clears
+    the activity log and the favourites that hang off the row
+    (`suite/drive/overrides/file.py:131-145`), and a test may not write a
+    `Drive *` table itself (ARCHITECTURE.md rule 2.2).
+    """
+    for name in frappe.get_all(
+        "File", filters={"content_doctype": DOCTYPE, "content_docname": docname}, pluck="name"
+    ):
+        frappe.delete_doc("File", name, force=1, ignore_permissions=True, ignore_missing=True)
+
+
+def _purge_fixture_roots(users: tuple[str, ...] = (USER, OTHER)) -> None:
+    """Hand back every Drive root the named fixture users own, through Drive's purge.
+
+    Every user this module names belongs to it alone, so the filter can never
+    reach a live account or another test. A `User` insert provisions a Personal
+    root of its own, so this also runs before a fixture creates one.
     """
     admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
-    roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
+    roots = frappe.get_all("Drive Root", filters={"user": ["in", users]}, pluck="name")
     # Purging a document node calls the app's `on_purge`, which Drive reads from
     # the registry, so the purge runs registered even when the caller is not.
     with activated():
