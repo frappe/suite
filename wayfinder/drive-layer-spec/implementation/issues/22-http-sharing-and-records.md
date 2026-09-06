@@ -4,7 +4,7 @@
 
 **Blocked by:** [21 — Expose node, upload, and root workflows through HTTP](21-http-node-workflows.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Drive HTTP
 
@@ -27,13 +27,13 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Wire grant listing, write, revoke, revoke-below, rotation, password unlock, and website link resolution.
-- [ ] Expose explanations through GET node grants with principal=. Require MANAGE on the target before evaluating another principal.
-- [ ] Freeze explanation response shape in adapter tests and client fixtures. Preserve resolver provenance and expired-row semantics.
-- [ ] DELETE removes the local grant only; PUT role 0 explicitly denies. Invalid grant arguments return HTTP 400 without mutation.
-- [ ] Wire all specified views, version operations, threads/comments, activity, visits, favourites, and notifications.
-- [ ] Keep pagination and expansion semantics consistent across endpoints. Notification and personal-list actions remain caller-scoped.
-- [ ] Exercise every route-table entry and all specified error classes, including locked versus expired links.
+- [x] Wire grant listing, write, revoke, revoke-below, rotation, password unlock, and website link resolution.
+- [x] Expose explanations through GET node grants with principal=. Require MANAGE on the target before evaluating another principal.
+- [x] Freeze explanation response shape in adapter tests and client fixtures. Preserve resolver provenance and expired-row semantics.
+- [x] DELETE removes the local grant only; PUT role 0 explicitly denies. Invalid grant arguments return HTTP 400 without mutation.
+- [x] Wire all specified views, version operations, threads/comments, activity, visits, favourites, and notifications.
+- [x] Keep pagination and expansion semantics consistent across endpoints. Notification and personal-list actions remain caller-scoped.
+- [x] Exercise every route-table entry and all specified error classes, including locked versus expired links.
 
 ## Verification
 
@@ -41,8 +41,11 @@ Run route-table coverage and response-shape tests, with negative authorization c
 
 ## Completion evidence
 
-Status: implementation and tests written. Not reviewed. Not run through the
-site gate. The acceptance boxes stay unchecked until both happen.
+Status: implementation written, independently reviewed, fixed, and run through
+the complete serialized site gate. All seven gate modules pass on
+`slides.localhost`. The acceptance boxes are checked against real requests and
+real database state, not against a reading of the code. The closeout below
+records what each box rests on, and the one deviation inside criterion 3.
 
 ### Revisions
 
@@ -709,3 +712,192 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
 bench --site slides.localhost run-tests --module suite.drive.tests.test_access
 bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
 ```
+
+## Site gate, complete, and closeout
+
+Every command in the required serialized gate ran on `slides.localhost` and
+passed. 252 tests across seven modules. The status becomes `done` and all seven
+acceptance boxes are checked. Criterion 3 carries one deviation, recorded below.
+
+### Revisions at closeout
+
+- Suite start `d1f78cc2c76e5d34777bb81ad2496e068ff61899` on
+  `implement/drive-22-http-sharing-records`.
+- Implementation `9fb39f793`. Independent review `27f86ca89`, which carries the
+  review fixes in `2494a2b90`.
+- Gate branches off `main`: `forge/drive-22-comments-gate` at `35834c957`,
+  `forge/drive-22-views-gate` at `684acc1d7`.
+- Gate test repairs: `f51537b87` (dispatch), `c01f64475` (comments),
+  `2735935c4` (views).
+- The gate ran against `684acc1d7`. The last production change is `2494a2b90`.
+  Every commit after it touches three test files and this ticket only, so no
+  gate result is stale.
+- Closeout on `forge/drive-22-closeout`, this commit.
+- Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, read only, unchanged.
+  Confirmed at closeout: `forge/storage-v2`, working tree clean.
+
+### The gate, run
+
+`bench --site slides.localhost migrate` ran first and passed. Then each module,
+serialized, one command at a time, nothing else touching the site.
+
+| Command (`bench --site slides.localhost run-tests --module ...`) | Result |
+|---|---|
+| `suite.drive.http.tests.test_dispatch` | `Ran 154 tests in 6.184s` OK |
+| `suite.drive.tests.test_activity` | 8 integration OK |
+| `suite.drive.tests.test_versions` | 7 unit OK, 10 integration OK |
+| `suite.drive.tests.test_comments` | 3 unit OK, 5 integration OK |
+| `suite.drive.tests.test_access` | 12 unit OK |
+| `suite.drive.tests.test_views` | 10 unit OK, 12 integration OK |
+| `suite.drive.tests.test_grants` | 31 integration OK |
+
+Each count matches the module. The test methods in the working tree are 154, 8,
+17, 8, 12, 22, and 31, and the `UnitTestCase` and `IntegrationTestCase` split of
+each file matches the reported categories exactly.
+
+`logs/bench.log` and `logs/frappe.testing.log` hold the invocation record:
+migrate at 17:22:13, then dispatch, activity, versions, comments, access, views,
+grants, in that order, ending at 17:36:25.
+
+**Three modules needed a rerun. Four passed first time.**
+
+- `test_dispatch` failed once on one accounting expectation, fixed in
+  `f51537b87`. Recorded above under "Site gate, module 1 of 7".
+- `test_comments` errored once on a fixture that minted its own link token,
+  fixed in `c01f64475`. Recorded above.
+- `test_views` failed twice on a stale whole-dict assertion, fixed in
+  `2735935c4`. Recorded above. The log shows three `test_views` invocations. The
+  first failed, the last passed, and the middle one holds no preserved result.
+- `test_activity`, `test_versions`, `test_access`, and `test_grants` each ran
+  once and passed. No fix was needed for any of them, and no file they cover has
+  changed since.
+
+No production file changed anywhere in the gate. All three repairs are test
+files. Ticket 29 dormancy is untouched: no `drive_content_types` entry, no hook
+activation, no `site_config` change.
+
+### Closeout checks, run at `684acc1d7`
+
+```
+cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<suite>:<frappe> \
+  ../env/bin/python -m unittest suite.drive.http.tests.test_translator \
+  suite.drive.http.tests.test_shapes suite.drive.http.tests.test_routes \
+  suite.tests.test_architecture
+Ran 173 tests in 1.554s
+OK
+```
+
+```
+ruff 0.14.10 format --check <22 changed .py paths>   22 files already formatted
+ruff 0.14.10 check <22 changed .py paths>            All checks passed!
+ruff 0.12.3  format --check <same>                   22 files already formatted
+ruff 0.12.3  check <same>                            All checks passed!
+```
+
+The changed set is `d1f78cc2c..684acc1d7`: 22 Python files, plus `.gitignore`,
+`suite/www/drive_link.html`, and this ticket. Neither ruff version reports
+anything on any of them.
+
+### What each box rests on
+
+Agents audited the criteria against the code and the spec. The reconciliation
+below is mine.
+
+1. **Grant wiring.** All seven pieces have a route row, a handler, and a `_core`
+   workflow: list (`translator.py:59`), write (`:65`), revoke and revoke-below
+   (`:66`, `?below=1`), rotate (`:67`), unlock (`:68`), and the website link page
+   (`hooks.py:53` to `www/drive_link.py:43`). Pinned by `test_dispatch.py:1454`
+   to `:1642`, `test_routes.py:357`, and `test_grants.py:775`.
+2. **Explanation gating.** `routes.py:566` passes the subject as an unresolved
+   callable. `grants_for` calls `require(node, MANAGE, ...)` at `access.py:586`
+   and invokes the subject only at `:600`. `test_routes.py:524` proves the
+   resolver is never called when the gate refuses.
+3. **Explanation shape.** `shapes.explain_shape:151` publishes exactly
+   `{role, source, rows}`, frozen by `test_shapes.py:306` and `:309`.
+   Provenance keys `node`, `principal`, `pass`, `held`, and `winner` survive.
+   Expired rows list on `grants_for` and are absent from `explain`
+   (`test_grants.py:360`, `:410`). See the deviation below.
+4. **Delete and deny.** Neither delete path reaches `access.grant`
+   (`test_routes.py:612`). Role 0 denies through `shapes.whole`
+   (`routes.py:611`). A missing or blank role throws at `routes.py:606` before
+   the workflow, and no-mutation is pinned at `test_routes.py:565`, `:631`,
+   `:655` and `test_grants.py:150`.
+5. **Record wiring.** 42 route rows, matching §11.2 row for row: 15 nodes,
+   3 uploads, 5 grants and links, 2 views, 12 versions and comments, 5
+   notifications and roots. No declared row lacks a route and no route lacks a
+   row. Every view name dispatches from `nodes.py:2166`, and an unknown name
+   answers 400 at `:2203`.
+6. **Pagination and scope.** One cursor implementation, `nodes.encode_cursor`,
+   `decode_cursor`, `page_of`, and `page_limit`, used by children, views,
+   personal views, versions, activity, and notifications. The HTTP envelope is
+   two keys, minted once in `shapes.page:219`. One expansion parser,
+   `shapes.expansions:276`, refusing an unknown name with 400. Every handler
+   takes identity from `_principals()` alone (`routes.py:115`), and no route
+   accepts a user or principal argument for notifications, recents, favourites,
+   or visits.
+7. **Route and error coverage.** Every one of the 42 rows is reached by a real
+   request in `test_dispatch.py`. All seven §11.6 classes are exercised.
+   Locked and expired stay distinct: `test_dispatch.py:1659` asserts 401
+   `DriveLocked` with `WWW-Authenticate: DriveLink realm="drive"`, and `:1665`
+   asserts 410 `DriveLinkExpired` on the same link.
+
+### Deviations
+
+1. **Criterion 3 has no client fixture.** The explanation shape is frozen in
+   adapter tests only. The repo holds exactly one client contract fixture,
+   `frontend/src/apps/slides/contracts/composite-groups.fixture.json`, from
+   ticket 20. No Drive HTTP equivalent exists. The spec never asks for one: the
+   accepted decision for `explain` says "Test authorization and response shape",
+   and §5.8 fixes the shape. The SPA consumes no Drive route yet, so a fixture
+   would pin a contract with no client on the other end. The box is checked on
+   the adapter half. The client half is handed to ticket 33, which owns sharing
+   in the SPA.
+2. **Route-table coverage is asserted at the translator, not at dispatch.**
+   `test_translator.py:116` asserts `len(cases) == len(translator.ROUTES)` and
+   that each path reaches its handler with its path ids. Nothing asserts that
+   every row receives a real request. The one row no request reached,
+   `PUT /nodes/<id>/content`, was found by review reading, not by a failing
+   test, and is now covered at `test_dispatch.py:1024`. A dispatch-level
+   coverage assertion would have caught it. Recorded for ticket 30.
+3. **`test_every_declared_status_is_reachable_over_http` covers three classes.**
+   `test_dispatch.py:1270` checks 404, 400, and 409. The other four §11.6
+   classes are each covered by a separate case, not by that test. The name
+   overstates what it asserts.
+4. **One negative authorization case lives in `_core`, not over HTTP.** A
+   non-author without EDIT patching or deleting a comment is pinned at
+   `test_comments.py:96`. No HTTP case sends it. Explanation, versions, and
+   notifications all have HTTP negative cases.
+5. **`test_activity.py` and `test_versions.py` carry no cursor or limit case.**
+   §11.4 for those two domains rests on the shared helper and on the HTTP tests.
+6. **The explanation shape follows §5.8, not §11.2's table cell.** Already
+   recorded as decision 1. The spec cell should be corrected to an object.
+
+### Handoffs, at closeout
+
+Closed by this ticket:
+
+- The caller-supplied link token handoff is fixed. `access.grant` refuses a
+  `$LINK:<token>` principal that names no grant, or one whose live grants sit on
+  another node. `test_grants.py:738` and `:745` pin both halves.
+- The version MIME handoff was overstated. A file node's version reuses the
+  node's head blob, which carries `mime_type`.
+- The favourite-clearing oracle was refuted. `set_favourite` answers `{}` for
+  any node id.
+
+Open, and not this ticket's work:
+
+- **The SPA cannot use a resolved link.** `/drive/g/<node>` is still the legacy
+  `File` page. It reads neither `?link` nor the fragment the resolver now uses.
+  A shared link resolves and lands on a page that cannot spend the token. This
+  is the largest remaining gap in the feature. Ticket 33 owns it.
+- The "Reported, not fixed" list above stands for ticket 30: the grant read
+  ordering in `rotate_link`, the 403/404 asymmetry between grant writes and
+  reads, `revoke_below` reading `frappe.db._cursor.rowcount`, the unbounded
+  `{"all": true}` notification read, the guest mention oracle, `HEAD` answering
+  404, and the two undeclared arguments.
+- Ticket 29 dormancy is preserved.
+
+### Bench note
+
+`suite-bench` runs no RQ worker. Each run leaves background jobs queued, and the
+`short` queue reaches `frappe.QueueOverloaded` if it is not emptied between runs.
