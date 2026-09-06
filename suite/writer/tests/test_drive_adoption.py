@@ -52,9 +52,10 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api.files import remove_or_restore, rename, track_visit
+from suite.drive.api.files import remove_or_restore, rename, track_visit, update_access
 from suite.drive.api.list import files as legacy_files
 from suite.drive.api.notifications import create_notification
+from suite.drive.api.permissions import get_general_access, get_shared_with_list, get_user_access
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
@@ -704,6 +705,53 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             remove_or_restore([entity.name])
         self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Active")
+
+    def test_sharing_a_document_the_api_creates_lets_the_other_reader_in(self):
+        """Writer's `ShareDialog.vue` names the document the editor has open."""
+        frappe.set_user(USER)
+        entity = self._opened(f"Shared {frappe.generate_hash(6)}")
+
+        update_access(entity.name, "share", user=OTHER, read=1, comment=1)
+
+        self.assertEqual([person["user"] for person in get_shared_with_list(entity.name)], [USER, OTHER])
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.assertEqual(get_user_access(entity.name)["read"], 1)
+        self.assertEqual(get_user_access(entity.name)["write"], 0)
+
+    def test_publishing_a_document_the_api_creates_reads_back_as_published(self):
+        """`InfoDialog.vue` reads `get_general_access` for the same document."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Published {frappe.generate_hash(6)}")
+        self.assertEqual(get_general_access(entity.name)["type"], "restricted")
+
+        update_access(entity.name, "share", user="", read=1)
+
+        self.assertEqual(get_general_access(entity.name)["type"], "public")
+
+    def test_unsharing_a_document_the_api_creates_takes_the_reader_back_out(self):
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Unshared {frappe.generate_hash(6)}")
+        update_access(entity.name, "share", user=OTHER, read=1)
+
+        update_access(entity.name, "unshare", user=OTHER)
+
+        self.assertEqual([person["user"] for person in get_shared_with_list(entity.name)], [USER])
+
+    def test_a_stranger_cannot_share_somebody_elses_document(self):
+        """The gate is `File.share`'s own share check, the rule that wrote the
+        rows."""
+        frappe.set_user(USER)
+        entity = self._opened(f"Unshareable {frappe.generate_hash(6)}")
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            update_access(entity.name, "share", user=OTHER, read=1)
+        with self.assertRaises(frappe.PermissionError):
+            get_shared_with_list(entity.name)
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""

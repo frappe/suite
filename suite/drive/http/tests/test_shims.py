@@ -660,6 +660,7 @@ class TestRefusalText(ShimCase):
 
     def test_a_refusal_echoes_the_method_the_caller_sent(self):
         """`method` is whatever the legacy client put in the request body."""
+        self.stub_unadopted_row()
         self.assert_arrives_whole(
             "update_access",
             lambda: shims.update_access("n1", "<share>"),
@@ -822,6 +823,7 @@ class TestPermissionForwarders(ShimCase):
                 self.assertEqual(answer["share"], int(role >= MANAGE))
 
     def test_general_access_reads_public_then_site_then_restricted(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row()
         with patch.object(shims, "_principal_role", side_effect=[READ]):
@@ -834,6 +836,7 @@ class TestPermissionForwarders(ShimCase):
         self.assertEqual(answer["read"], 0)
 
     def test_general_access_needs_read_on_the_entity_first(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
@@ -964,6 +967,7 @@ class TestPermissionForwarders(ShimCase):
         self.assertEqual(answer[2]["write"], 1)
 
     def test_shared_with_list_asks_the_workflow_for_the_manage_gate(self):
+        self.stub_unadopted_row()
         access = self.stub("access")
         access.grants_for.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
@@ -1373,6 +1377,116 @@ class TestUnadoptedTrash(ShimCase):
         shims.remove_or_restore(["n1"])
         manager.assert_not_called()
         nodes.update.assert_called_once_with(SOMEONE, "n1", state="Trashed")
+
+
+class TestUnadoptedShare(ShimCase):
+    """The three sharing names, for an id no node holds.
+
+    Writer's `ShareDialog.vue` and `InfoDialog.vue` open on the document the
+    editor has, so Share and Show Info refused every document the product
+    creates.
+    """
+
+    def store(self, *, unadopted=True):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=unadopted))
+        row = MagicMock()
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        return row
+
+    def test_a_node_less_row_is_shared_by_the_rule_that_wrote_it(self):
+        row = self.store()
+        access = self.stub("access")
+        shims.update_access("f1", "share", user="b@example.com", read=1, comment=1)
+        row.share.assert_called_once_with(user="b@example.com", read=1, comment=1)
+        access.grant.assert_not_called()
+
+    def test_the_caller_spelling_of_the_public_principal_is_kept(self):
+        """`File.share` reads `""` as anyone with the link. Handing it the
+        `$PUBLIC` the node path normalises to would write a row for a user of
+        that name."""
+        row = self.store()
+        self.stub("access")
+        shims.update_access("f1", "share", user="", read=1)
+        self.assertEqual(row.share.call_args.kwargs["user"], "")
+
+    def test_a_node_less_row_is_unshared_by_the_rule_that_wrote_it(self):
+        row = self.store()
+        access = self.stub("access")
+        shims.update_access("f1", "unshare", user="b@example.com")
+        row.unshare.assert_called_once_with(user="b@example.com")
+        access.revoke.assert_not_called()
+
+    def test_an_unknown_method_is_still_refused_on_the_file_store(self):
+        self.store()
+        self.stub("access")
+        with self.assertRaises(frappe.ValidationError):
+            shims.update_access("f1", "publish", read=1)
+
+    def test_a_share_link_is_refused_before_either_store_is_named(self):
+        """§11.7 retires the capability, so the store makes no difference."""
+        row = self.store()
+        self.stub("access")
+        with self.assertRaises(frappe.ValidationError):
+            shims.update_access("f1", "share", user="$LINK")
+        row.share.assert_not_called()
+
+    def test_the_general_access_of_a_node_less_row_is_the_old_three_answers(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        from suite.drive.api import permissions
+
+        bits = MagicMock(
+            side_effect=[
+                {"read": 1},
+                {"read": 0},
+                {"read": 1, "write": 0, "comment": 0, "share": 0, "upload": 0},
+            ]
+        )
+        self.enterContext(patch.object(permissions, "get_user_access_for_user", bits))
+        nodes = self.stub("node_core")
+
+        self.assertEqual(shims.get_general_access("f1")["type"], "site")
+
+        nodes.get.assert_not_called()
+        self.assertEqual(
+            [call.args[1] for call in bits.call_args_list], [frappe.session.user, "Guest", "$GENERAL"]
+        )
+
+    def test_a_caller_who_cannot_read_a_node_less_row_is_refused(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        from suite.drive.api import permissions
+
+        self.enterContext(
+            patch.object(permissions, "get_user_access_for_user", MagicMock(return_value={"read": 0}))
+        )
+        self.stub("node_core")
+        with self.assertRaises(frappe.PermissionError):
+            shims.get_general_access("f1")
+
+    def test_the_shared_with_list_of_a_node_less_row_reads_the_old_rows(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        from suite.drive.api import permissions
+
+        self.enterContext(patch.object(permissions, "user_has_permission", MagicMock(return_value=True)))
+        rows = MagicMock(return_value=[frappe._dict(user="$GROUP:Team", read=1)])
+        self.enterContext(patch.object(shims.frappe, "get_all", rows))
+        self.enterContext(patch.object(shims.frappe, "db", MagicMock()))
+        self.enterContext(patch.object(shims, "_user_info", MagicMock(return_value={})))
+        access = self.stub("access")
+
+        people = shims.get_shared_with_list("f1")
+
+        access.grants_for.assert_not_called()
+        self.assertEqual(people[0]["is_group"], 1)
+        self.assertEqual(people[0]["full_name"], "Team")
+
+    def test_a_caller_without_the_share_bit_is_refused_the_list(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        from suite.drive.api import permissions
+
+        self.enterContext(patch.object(permissions, "user_has_permission", MagicMock(return_value=False)))
+        self.stub("access")
+        with self.assertRaises(frappe.PermissionError):
+            shims.get_shared_with_list("f1")
 
 
 class TestUnadoptedVisit(ShimCase):
@@ -2389,6 +2503,12 @@ class TestFileForwarders(ShimCase):
 
 
 class TestAccessForwarder(ShimCase):
+    def setUp(self):
+        super().setUp()
+        # Every case here is about the node path. `_legacy_update_access` has
+        # cases of its own in `TestUnadoptedShare`.
+        self.stub_unadopted_row()
+
     def test_the_bits_name_the_rung_they_all_reach(self):
         """A rung carries every verb below it, so every bit below it is required.
 
