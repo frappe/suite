@@ -121,10 +121,13 @@ ignore_file_permissions = True
 # ============================================================================
 # Dotted paths to `suite.drive.ContentTypeSpec` objects, one per content app.
 # Registration is staged: an app joins this list in its own adoption ticket,
-# once its documents carry a `node` Link and the migrated links are valid. The
-# `has_permission` and `permission_query_conditions` entries below move to
-# `suite.drive.framework` in the same step, never before it.
-drive_content_types = []
+# once its documents carry a `node` Link. The `has_permission` and
+# `permission_query_conditions` entries below move to `suite.drive.framework`
+# in the same step, never before it. Slides and Sheets join at tickets 18 and
+# 19. A registered doctype needs an open baseline role DocPerm, because a
+# Frappe permission hook can only deny (`frappe/permissions.py:244-246`);
+# `Writer Document` has the wide-open `All` row §10.4 requires.
+drive_content_types = ["suite.writer.drive.SPEC"]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
@@ -143,7 +146,7 @@ permission_query_conditions = {
     "Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
     # writer
     "Writer Template": "suite.writer.overrides.filter_templates",
-    "Writer Document": "suite.writer.overrides.document_query_conditions",
+    "Writer Document": "suite.drive.framework.doc_query_conditions",
     "Writer Version": "suite.writer.overrides.version_query_conditions",
     # sheets
     "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
@@ -171,7 +174,7 @@ has_permission = {
     # slides
     "Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
     # writer
-    "Writer Document": "suite.drive.overrides.file.content_has_permission",
+    "Writer Document": "suite.drive.framework.doc_has_permission",
     "Writer Version": "suite.writer.overrides.version_has_permission",
     "Writer Template": "suite.writer.overrides.template_has_permission",
     # sheets

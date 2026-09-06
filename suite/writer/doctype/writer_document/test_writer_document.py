@@ -12,26 +12,17 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class IntegrationTestWriterDocument(IntegrationTestCase):
+    """A Writer document exists only under a Drive node.
+
+    The lifecycle, history, media, and permission behaviour is covered in
+    `suite/writer/tests/test_drive_adoption.py`, which owns the Drive fixtures.
     """
-    Integration tests for WriterDocument.
-    Use this class for testing interactions between multiple components.
-    """
 
-    def test_delete_purges_versions(self):
-        doc = frappe.new_doc("Writer Document")
-        doc.save()
-        version = frappe.get_doc(
-            {
-                "doctype": "Writer Version",
-                "doc": doc.name,
-                "snapshot": "<p>hello</p>",
-                "title": "2026-01-01 00:00",
-            }
-        ).insert()
-
-        # a version links back to the document — without the cascade the
-        # framework's link check refuses the delete
-        doc.delete()
-
-        self.assertFalse(frappe.db.exists("Writer Document", doc.name))
-        self.assertFalse(frappe.db.exists("Writer Version", version.name))
+    def test_a_document_cannot_be_created_outside_drive(self):
+        # `create_document` writes the node first and calls the app's factory
+        # with it (§8.3), so a bare insert has no node and cannot exist.
+        # `DriveConflict` subclasses `frappe.ValidationError`; the concrete type
+        # is asserted in `suite/writer/tests/test_drive_adoption.py`, which is
+        # where the Drive imports are owned.
+        with self.assertRaises(frappe.ValidationError):
+            frappe.new_doc("Writer Document").insert(ignore_permissions=True)
