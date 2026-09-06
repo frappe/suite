@@ -1677,9 +1677,46 @@ def create_folder(file_name: str, parent: str | None = None):
     return _legacy_row(node_core.stored(node))
 
 
+def _legacy_create_link(file_name: str, link: str, parent: str):
+    """Add a link to the `File` store, under a parent no node holds.
+
+    The old body, kept whole, and the same gate `_legacy_create_folder` keeps:
+    `user_has_permission(parent, "upload")`. `NewLinkDialog.vue` names the
+    folder its page is showing, and `list.files` now opens a folder no node
+    holds.
+    """
+    from suite.drive.api.permissions import user_has_permission
+    from suite.drive.utils import validate_filename
+
+    if not user_has_permission(parent, "upload"):
+        frappe.throw(_("Cannot create link due to insufficient permissions."), frappe.PermissionError)
+    validate_filename(file_name, parent, "Link", error=_("Link '{0}' already exists.").format(file_name))
+
+    row = frappe.get_doc(
+        {
+            "doctype": "File",
+            "is_private": 1,
+            "file_name": file_name,
+            "file_url": link,
+            "file_type": "Link",
+            "file_modified": frappe.utils.now_datetime(),
+            "folder": parent,
+        }
+    )
+    row.flags.file_created = True
+    row.insert()
+    return _legacy_file_row(row.name)
+
+
 @_legacy
 def create_link(file_name: str, link: str, parent: str | None = None):
-    """`create_link` -> `POST /nodes` with `kind=link`."""
+    """`create_link` -> `POST /nodes` with `kind=link`.
+
+    It writes to either store, for the reason `create_folder` does: the page
+    that names a parent no node holds now opens.
+    """
+    if _unadopted_row(parent):
+        return _legacy_create_link(file_name, link, parent)
     principals = _principals()
     node = node_core.create_link(principals, parent or _home(principals), file_name, url=link)
     return _legacy_row(node_core.stored(node))
