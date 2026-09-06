@@ -69,10 +69,13 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.sql("DELETE FROM `tabDrive DAV Lock`")
         # every node under this mount is this suite's fixture, and a case that
         # denies `$GENERAL` on one cannot read it back to clean up by hand
-        drop_nodes(frappe.get_all("Drive Node", filters={"root": self.root}, pluck="name"))
+        mine = frappe.get_all("Drive Node", filters={"root": self.root}, pluck="name")
+        if mine:
+            # scoped to this mount: another module's lock rows are not ours to drop
+            frappe.db.delete("Drive DAV Lock", {"entity": ["in", mine]})
+        drop_nodes(mine)
         super().tearDown()
 
     # --- helpers ---
