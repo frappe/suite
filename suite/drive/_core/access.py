@@ -634,7 +634,7 @@ def resolve_link(token: str) -> dict:
         "node": row.node,
         "role": row.role,
         "expires_on": row.expires_on,
-        "has_password": row.password_hash is not None,
+        "has_password": bool(row.password_hash),
     }
 
 
@@ -1094,7 +1094,10 @@ def _grant_result(
         "principal": principal,
         "role": role,
         "expires_on": expires_on,
-        "has_password": password_hash is not None,
+        # Truthiness, not `is not None`: the authorization path reads the
+        # column the same way, so an empty string cannot mean "locked" here
+        # and "open" there.
+        "has_password": bool(password_hash),
     }
     if principal.startswith("$LINK:"):
         result["url"] = f"/drive/l/{principal.removeprefix('$LINK:')}"
