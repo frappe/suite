@@ -238,9 +238,17 @@ class TestWebDAVContent(IntegrationTestCase):
             self._get(f"/dav/{self.folder_name}/data.bin", user=STRANGER)
 
     def test_an_unreadable_node_is_404_not_403(self):
+        """§12.1: a node below READ answers 404, never 403.
+
+        The mount is the caller's own Personal Root, and §11.2 refuses a deny
+        that names that root's own user inside it. The deny therefore names
+        `$GENERAL`, which the caller carries as well: nearest depth beats
+        identity tier (§5.1), so the node answers NONE while the folder above
+        it stays readable and the mount is unchanged.
+        """
         hidden = file_node(OWNER, self.folder, "hidden.bin", b"secret")
         try:
-            grant(hidden.name, OWNER, NONE, node_principals(OWNER))
+            grant(hidden.name, "$GENERAL", NONE, node_principals(OWNER))
             # `require` refuses below READ with the engine's own not-found,
             # which `errors.map_exception` turns into 404 (§12.1)
             with self.assertRaises(DriveNotFound):
