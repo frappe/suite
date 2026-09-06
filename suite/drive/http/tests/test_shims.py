@@ -284,6 +284,36 @@ def node_row(**overrides) -> frappe._dict:
     return row
 
 
+class _MemoryCache:
+    """The three cache calls `upload_file` makes, answered from memory.
+
+    Everything else is the real cache. `frappe.cache` is one shared object and
+    `frappe._` reads the merged translation dict off it, so replacing the whole
+    object with a `MagicMock` makes every translated string a mock. A refusal
+    raised under that patch then carries a mock repr, and `msgprint` raises
+    `TypeError` out of `strip_html_tags` when the run has a terminal.
+    """
+
+    def __init__(self, real):
+        self.real = real
+        self.values = {}
+
+    def __call__(self):
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+    def get_value(self, key, *args, **kwargs):
+        return self.values.get(key)
+
+    def set_value(self, key, value, *args, **kwargs):
+        self.values[key] = value
+
+    def delete_value(self, key, *args, **kwargs):
+        self.values.pop(key, None)
+
+
 class ShimCase(UnitTestCase):
     """Every test runs with the caller fixed and no database in reach."""
 
@@ -304,6 +334,14 @@ class ShimCase(UnitTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         return replacement
+
+    def stub_cache(self):
+        """Hold the shim's own upload keys in memory, and leave the rest alone."""
+        stub = _MemoryCache(frappe.cache)
+        patcher = patch.object(frappe, "cache", stub)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return stub
 
 
 # --------------------------------------------------------------------------
@@ -436,6 +474,7 @@ class TestRetired(ShimCase):
         from suite.drive._core.errors import DriveError
 
         self.assertTrue(issubclass(shims.DriveRetired, DriveError))
+
 
 class TestRefusalText(ShimCase):
     """A refusal has to survive the trip to the reader.
@@ -978,9 +1017,7 @@ class TestFileForwarders(ShimCase):
         form = patch.object(frappe.local, "form_dict", frappe._dict(), create=True)
         form.start()
         self.addCleanup(form.stop)
-        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
-        cache.start()
-        self.addCleanup(cache.stop)
+        self.stub_cache()
 
         with (
             patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]) as listed,
@@ -1018,13 +1055,14 @@ class TestFileForwarders(ShimCase):
         )
         form.start()
         self.addCleanup(form.stop)
-        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
-        cache.start()
-        self.addCleanup(cache.stop)
+        self.stub_cache()
 
-        with self.assertRaises(frappe.ValidationError):
+        with self.assertRaises(frappe.ValidationError) as caught:
             shims.upload_file(parent="f1", total_file_size=100)
         uploads.create_upload.assert_not_called()
+        # The refusal carries its own words. A stubbed cache that swallowed
+        # `frappe._` too made this a mock repr, and no client could read it.
+        self.assertIn("Invalid upload session.", str(caught.exception))
 
     def posted_file(self, body=b"x" * 12, **form):
         """One multipart POST to `upload_file`, with nothing cached for it."""
@@ -1038,9 +1076,7 @@ class TestFileForwarders(ShimCase):
         form = patch.object(frappe.local, "form_dict", frappe._dict(**form), create=True)
         form.start()
         self.addCleanup(form.stop)
-        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
-        cache.start()
-        self.addCleanup(cache.stop)
+        self.stub_cache()
         return upload
 
     def test_an_upload_that_declares_no_size_declares_the_bytes_it_was_sent(self):
@@ -1094,9 +1130,10 @@ class TestFileForwarders(ShimCase):
             "fields": {},
         }
         self.posted_file()
-        with self.assertRaises(frappe.ValidationError):
+        with self.assertRaises(frappe.ValidationError) as caught:
             shims.upload_file(parent="f1")
         uploads.upload_chunk.assert_not_called()
+        self.assertIn("This site stores Drive files directly.", str(caught.exception))
 
     def test_an_unreadable_id_answers_none_whichever_refusal_it_meets(self):
         """`translate_old_name` is guest-callable and answers `None` for
