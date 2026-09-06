@@ -28,7 +28,8 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.principals import Principals, ticket_ok
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
-from suite.drive._core.roots import create_root
+from suite.drive._core.roots import create_root, personal_root_for
+from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
 
 TARGET = "drive-grant-target@example.com"
@@ -42,6 +43,8 @@ class _GrantFixture(IntegrationTestCase):
         super().setUpClass()
         ensure_user(TARGET)
         ensure_user(MANAGER)
+        drop_personal_root(TARGET)
+        drop_personal_root(MANAGER)
 
     def setUp(self):
         super().setUp()
@@ -715,3 +718,23 @@ class TestShareLinks(_GrantFixture):
 
         with self.assertRaises(DriveLinkExpired):
             unlock_link(token, "unused")
+
+
+class TestGrantFixtureIsolation(_GrantFixture):
+    """The fixture, not the `User` insert hook, owns the target root."""
+
+    def test_dropping_a_provisioned_root_removes_the_whole_pair(self):
+        ensure_user(UNHELD)
+        provisioned = personal_root_for(UNHELD)
+        self.assertIsNotNone(provisioned)
+
+        drop_personal_root(UNHELD)
+
+        self.assertIsNone(personal_root_for(UNHELD))
+        self.assertFalse(frappe.db.exists("Drive Root", provisioned))
+        self.assertFalse(frappe.db.exists("Drive Node", provisioned))
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": provisioned}))
+
+    def test_the_fixture_root_is_the_only_active_personal_root_for_the_target(self):
+        self.assertEqual(personal_root_for(TARGET), self.root.name)
+        self.assertEqual(frappe.db.count("Drive Root", {"user": TARGET, "state": "Active"}), 1)
