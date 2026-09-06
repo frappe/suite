@@ -36,15 +36,20 @@ class TestWebDAVDispatch(IntegrationTestCase):
         self._set_global(1)
 
     def tearDown(self):
-        self._set_global(0, commit=True)
+        self._set_global(0)
         frappe.set_user("Administrator")
         super().tearDown()
 
-    def _set_global(self, value: int, commit: bool = False):
+    def _set_global(self, value: int):
+        """Committed, because a refused dispatch rolls the transaction back.
+
+        Every error path in the dispatcher calls `db.rollback`, and
+        `clear_document_cache` re-clears the cached Single on rollback, so an
+        uncommitted toggle is discarded by the first 401/403/405 of a test and
+        the next request reads the site as feature-off."""
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", value)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-        if commit:
-            frappe.db.commit()
+        frappe.db.commit()
 
     def test_non_dav_paths_pass_through(self):
         for path in ("/davsomething", "/drive/home", "/api/method/ping"):
