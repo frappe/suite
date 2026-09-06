@@ -224,3 +224,192 @@ not change their subject.
   but it means the route confirms a node id the caller cannot read.
 - Ticket 29 dormancy is preserved. No `drive_content_types` entry, no hook
   activation, no `site_config` change.
+
+## Independent review
+
+Reviewed on `review/drive-22-http-sharing-records`, a separate worktree, over
+`d1f78cc2c..9fb39f793`. The implementation report above was not trusted. Every
+acceptance criterion, every new route, and every documented concern was checked
+against the code and against §11.2–§11.4, §11.6, and the resolver, grant,
+sharing, record, pagination, security, and architecture sections they cite.
+
+The status stays `in-progress` and the boxes stay unchecked. The site gate has
+not run.
+
+Agents audited grants and links, record authorization, and route and test
+completeness. The fixes, the refutations, and this section are mine.
+
+### Defects found and fixed
+
+Ordered by severity.
+
+1. **A caller with MANAGE could steal or brick another node's share link.**
+   `PUT /nodes/<id>/grants/$LINK:<token>` wrote a caller-supplied token
+   verbatim. Two grants could then carry one token. `resolve_share_link` would
+   answer the attacker's node, and `unlock_link` would see "ambiguous password
+   grants" and refuse the victim's link with 403 forever. `access.grant` now
+   refuses a `$LINK:<token>` principal that names no grant at all, and refuses
+   one whose live grants sit on another node. The bare `$LINK` spelling, which
+   mints a server token, is unchanged, and so is updating or denying a token
+   the node already holds. This closes the ticket's own second handoff note.
+   (`_core/access.py`)
+2. **`?principal=` was a site-wide user oracle.** `node_grants` resolved the
+   named principal, which reads `User`, before `grants_for` checked MANAGE. A
+   caller with no role on the node learned whether any address exists.
+   Acceptance criterion 2 and the handler's own docstring both say the gate
+   comes first. `grants_for` now takes the subject as a callable and invokes it
+   after `require(node, MANAGE, ...)`. (`_core/access.py`, `http/routes.py`)
+3. **Activity leaked link tokens to every reader.** `activity_shape` published
+   `via_link` and `detail.principal` verbatim, so a `share_add` row handed any
+   READ holder, guest included, a live EDIT-grade token. Both are now masked to
+   `$LINK`. The source row is not mutated. (`http/shapes.py`)
+4. **The share token rode the redirect query string.** `/drive/l/<token>` sent
+   the browser to `/drive/g/<node>?link=<token>`, which lands in the reverse
+   proxy log, Frappe's log, and the `Referer` of every outbound link and
+   third-party subresource the SPA loads. It is a bearer capability. It now
+   rides the URL fragment, which is never sent to a server. (`www/drive_link.py`)
+5. **Six guest-reachable routes ran their strings through `sanitize_html`.**
+   `is_whitelisted` sanitizes every Guest `form_dict` string unless
+   `xss_safe=True`. A guest comment, a thread anchor, a version label, and a
+   link password were all rewritten in transit. Each mangled password still
+   burned one of the five unlock tries. The six handlers now declare
+   `xss_safe=True`. Escaping belongs at render, not at the boundary.
+   (`http/routes.py`)
+6. **`PATCH .../versions/<seq>` cleared the field the caller did not name.**
+   Sending `{"label": "Release"}` unpinned the version, destroying §9.1
+   retention. `label_version` now takes a `KEEP` sentinel per field, refuses a
+   call that names neither, and returns the resulting state.
+   (`_core/versions.py`, `http/routes.py`)
+7. **`recents` and `favourites` ignored the three §11.2 view exclusions.**
+   A starred root, a starred template, or a starred child of a document node
+   appeared in a personal list. `_personal_view` now filters all three.
+   (`_core/nodes.py`)
+8. **Three views published an incomplete node shape.** `SHARED_SQL`,
+   `TRASH_SQL`, and `TEMPLATES_SQL` selected a partial column list, so
+   `url`, `content_modified`, and the content columns were missing from rows
+   §11.3 declares whole. All four view queries now project `NODE_FIELDS_N`.
+   (`_core/nodes.py`)
+9. **`role=""` became an explicit deny.** An empty string coerced to 0, which
+   is `NONE`, so a malformed write silently denied a principal. `node_put_grant`
+   now refuses a blank role with 400 before the workflow. (`http/routes.py`)
+10. **A subject's explanation understated its access.** `principals_for_principal`
+    gave no `$PUBLIC` to a `$GENERAL`, `$GROUP:`, or `$LINK:` subject, so
+    `explain` reported less than the principal actually holds (§6.5). It also
+    accepted any string Frappe happened to have a `User` for, including
+    `Administrator` and `Guest`, which are not §4.4 spellings. Both fixed.
+    (`framework.py`)
+11. **The subject inherited the caller's link header.** When `?principal=`
+    named the caller, `principals_for` returned the request's own
+    `X-Drive-Links` tokens and unlock tickets, so a password link explained as
+    unlocked. The subject is now stripped of both in every case. (`framework.py`)
+12. **`password: ""` was hashed and stored.** A blank password produced a link
+    that `_grant_is_unlocked` reads as locked and that no password opens.
+    `node_put_grant` now coerces a blank password to `None`. (`http/routes.py`)
+13. **`unlock_link` and `resolve_link` disagreed on a deny-only token.**
+    One answered 403, the other 404, for the same token. Both now answer 404.
+    (`_core/access.py`)
+14. **An unbounded cursor offset reached the database.** A crafted cursor
+    decoding to a huge offset produced a MariaDB error and a 500 with a
+    traceback instead of §11.6's 400. `decode_cursor` now bounds the offset and
+    rejects a non-canonical integer. (`_core/nodes.py`)
+
+### Documented concerns, investigated
+
+- **Missing version MIME.** Overstated. A file node's version reuses the
+  node's head blob, which carries `mime_type`, so a version download is served
+  with the same type as the node itself. No change made.
+- **Caller-supplied link token uniqueness and entropy.** Real. Fixed as
+  defect 1. Entropy is now moot for a fresh token, because only the bare
+  `$LINK` spelling mints one, and that path uses the server's generator.
+- **Favourite clearing as an id oracle.** Refuted. `set_favourite` answers
+  `{}` for any node id, whether or not the row exists and whether or not the
+  node exists. It confirms nothing. The handoff note is inaccurate.
+- **Database-sensitive dispatch assumptions.** Confirmed as a real gate risk
+  and left as written, because they can only be settled by running them. The
+  `rowcount` assumption behind `rows: 2`, the empty-`Drive Recent` assumption
+  behind `{"cleared": 1}`, and the `preview: null` assumption are all
+  site-state dependent. Two more of the same kind were found: an unfiltered
+  site-wide `Drive Activity` count in `TestBatch`, and an `explain` lookup that
+  raises `StopIteration` if the fixture user picks up `Suite Admin` from
+  another module.
+
+### Reported, not fixed
+
+Out of this ticket's scope, or a spec question rather than a defect.
+
+- The SPA route `/drive/g/<node>` the link page redirects to is the legacy
+  `File`-based page. It reads no `?link` and no fragment. Until tickets 32–33
+  rebuild it, a shared link resolves and then lands on a page that cannot use
+  the token. This is the largest remaining gap in the feature as a whole.
+- `explain`'s shape is §5.8's object; §11.2's table cell writes a list. The
+  implementation decision to follow §5.8 is right, and the spec cell should be
+  corrected.
+- `rotate_link` reads the grant row before it checks MANAGE, so it separates
+  "no such grant" from "not yours" for a caller with neither.
+- Grant writes answer 403 where grant reads answer 404 for the same unreachable
+  node.
+- `revoke_below` writes an activity row for zero deletions and reads
+  `frappe.db._cursor.rowcount`, a private attribute.
+- `POST /notifications/read` with `{"all": true}` is an unbounded N+1.
+- The guest mention list is a user-address oracle.
+- `HEAD` on a GET route answers 404, because the route table matches on the
+  literal method.
+- `view_clear_recents` accepts an undeclared `nodes` list, and `node_create`
+  accepts an undeclared `is_template`.
+- `test_translator.py:291` asserts the opposite of what its name says, and two
+  ordering comments in `translator.py` describe a rule the code does not apply.
+
+### Tests added by this review
+
+| File | Added | Total | Run here |
+|---|---|---|---|
+| `http/tests/test_shapes.py` | 4 | 46 | yes |
+| `http/tests/test_routes.py` | 20 | 95 | yes |
+| `http/tests/test_dispatch.py` | 5 | 154 | no, needs a site |
+| `tests/test_grants.py` | 5 | 31 | no, needs a site |
+| `tests/test_views.py` | 2 | 22 | no, needs a site |
+| `tests/test_versions.py` | 0 | 17 | no, needs a site |
+
+The five new `test_dispatch.py` cases send `PUT /nodes/<id>/content`, the one
+§11.2 route-table entry that no request reached. The existing version-label
+test was extended rather than duplicated.
+
+### Commands and results, this review
+
+```
+cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<worktree>:<frappe> \
+  env/bin/python -m unittest suite.drive.http.tests.test_translator \
+  suite.drive.http.tests.test_shapes suite.drive.http.tests.test_routes \
+  suite.tests.test_architecture
+Ran 173 tests in 1.268s
+OK
+```
+
+```
+env/bin/python -m compileall -q suite/drive suite/www suite/tests
+(no output, exit 0)
+```
+
+```
+ruff 0.12.3 format --check <22 changed files>
+22 files already formatted
+ruff 0.12.3 check <22 changed files>
+All checks passed!
+```
+
+Not run: `test_dispatch.py` and the `_core` suites. They need a live site.
+
+### Required site gate, after this review
+
+Unchanged from the list above. Every module this review edited is already on
+it. Serialized, on `slides.localhost`, one command at a time:
+
+```
+bench --site slides.localhost run-tests --module suite.drive.http.tests.test_dispatch
+bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
+bench --site slides.localhost run-tests --module suite.drive.tests.test_comments
+bench --site slides.localhost run-tests --module suite.drive.tests.test_access
+bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
+```
