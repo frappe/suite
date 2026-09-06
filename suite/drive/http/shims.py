@@ -1645,6 +1645,28 @@ def set_favourite(entities: list | None = None, clear_all: bool = False):
     return None
 
 
+class _LegacyTrash:
+    """`toggle_entity_status`, over as many `File` rows as the caller named.
+
+    The old body built one `FileManager` and one set of storage locks for the
+    whole list and passed both down, so a list that names two files owned by
+    one person locks that person's storage once. Built on first use, because a
+    list of nodes needs neither.
+    """
+
+    def __init__(self):
+        self.manager = None
+        self.locked_owners: set = set()
+
+    def toggle(self, name: str) -> None:
+        from suite.drive.api.files import toggle_entity_status
+        from suite.drive.utils.files import FileManager
+
+        if self.manager is None:
+            self.manager = FileManager()
+        toggle_entity_status(frappe.get_doc("File", name), self.manager, self.locked_owners)
+
+
 @_legacy
 def remove_or_restore(entity_names):
     """`remove_or_restore` -> `PATCH /nodes/<id>` `{state}`.
@@ -1653,6 +1675,12 @@ def remove_or_restore(entity_names):
     decides which, exactly as `toggle_entity_status` did. A restore names no
     destination: §8.7 puts a node back where it was and refuses when that place
     is gone, and this shim will not pick a different one to avoid the refusal.
+
+    It writes to either store, one id at a time: a `File` that no node holds is
+    trashed by `toggle_entity_status` itself, which is the rule that wrote the
+    row and puts it back in the same place §8.7 would. Writer's own
+    `RemoveDialog.vue` names one for every document the product creates, while
+    §10.2 keeps that content type in the expand phase.
     """
     principals = _principals()
     if isinstance(entity_names, str):
@@ -1661,7 +1689,11 @@ def remove_or_restore(entity_names):
         frappe.throw(
             _("Expected list but got {0}").format(_spelled(type(entity_names))), frappe.ValidationError
         )
+    legacy = _LegacyTrash()
     for node in entity_names:
+        if _unadopted_row(node):
+            legacy.toggle(node)
+            continue
         row = node_core.get(principals, node)
         state = "Trashed" if row.state == "Active" else "Active"
         node_core.update(principals, node, state=state)
