@@ -12,6 +12,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from suite import drive
 from suite.drive.api.files import delete_entities, remove_or_restore
 from suite.drive.utils import create_drive_file, get_user_folder
 from suite.drive.utils.files import TRASH_PREFIX, FileManager
@@ -114,9 +115,18 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
     def test_one_active_recording_per_room_owner_by_default(self):
         other = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
         first = start(self.room.name, str(uuid.uuid4()))
+        root = drive.personal_root_for(self.owner)
+        charged_bytes = drive.get_storage_usage(root)["used_bytes"]
+        reservations = frappe.db.count("Drive Storage Reservation", {"root": root})
 
         with self.assertRaisesRegex(frappe.ValidationError, "Room Owner already has"):
             start(other.name, str(uuid.uuid4()))
+
+        # A refused start keeps nothing: no recording row for the second room,
+        # no reservation for it, and no bytes charged to the owner root.
+        self.assertEqual(frappe.db.count("Meet Recording", {"meet_room": other.name}), 0)
+        self.assertEqual(frappe.db.count("Drive Storage Reservation", {"root": root}), reservations)
+        self.assertEqual(drive.get_storage_usage(root)["used_bytes"], charged_bytes)
 
         stop(self.room.name)
         self.assertEqual(start(other.name, str(uuid.uuid4()))["status"], "Recording")

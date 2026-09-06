@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -364,6 +366,26 @@ def _fail_startup(room, recording, failure_code: str):
     _publish_state(room, None, hosts_only=True)
 
 
+@contextmanager
+def _admission_transaction() -> Iterator[None]:
+    """Undo one refused admission without waiting for the caller to roll back.
+
+    The owner limit is only authoritative once this recording and its
+    reservation exist, so a refusal has to remove writes that are already in
+    the transaction. A savepoint drops exactly those writes, which keeps the
+    contract the same for an HTTP caller and for an in-process one.
+    """
+    savepoint = f"meet_recording_admission_{frappe.generate_hash(length=12)}"
+    frappe.db.savepoint(savepoint)
+    try:
+        yield
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+
+
 def _fixture_enabled() -> bool:
     return bool(
         frappe.conf.get("recording_fixture_mode")
@@ -454,35 +476,36 @@ def start(meeting_id: str, request_id: str) -> dict:
         frappe.throw(_("A recording is already starting or active"))
 
     now = now_datetime()
-    recording = frappe.get_doc(
-        {
-            "doctype": "Meet Recording",
-            "meet_room": room.name,
-            "room_owner": room.owner,
-            "initiated_by": frappe.session.user,
-            "calendar_event": room.calendar_event,
-            "status": "Starting",
-            "estimated_seconds": preflight["estimated_seconds"],
-            "estimated_bytes": preflight["estimated_bytes"],
-            "budget_bytes": preflight["budget_bytes"],
-            "max_ends_at": add_to_date(now, seconds=MAX_SECONDS + STARTUP_TIMEOUT_SECONDS),
-            "recorder_job_id": frappe.generate_hash(length=32),
-            "request_id": request_id,
-            "pending_deadline": add_to_date(now, seconds=STARTUP_TIMEOUT_SECONDS),
-            "drive_home_folder": destination,
-        }
-    ).insert(ignore_permissions=True)
-    drive.create_storage_reservation(
-        _get_drive_root(room.owner),
-        recording_storage_reservation_key(recording.name),
-        cint(recording.budget_bytes),
-    )
-    if _count_active_owner_recordings(room.owner) > owner_limit:
-        # The owner limit is checked here, after this recording and its
-        # reservation exist, so the count is taken once and includes them both.
-        # Refusing rolls the whole transaction back: the recording row, the
-        # reservation, and the bytes it charged to the root all disappear.
-        frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
+    with _admission_transaction():
+        recording = frappe.get_doc(
+            {
+                "doctype": "Meet Recording",
+                "meet_room": room.name,
+                "room_owner": room.owner,
+                "initiated_by": frappe.session.user,
+                "calendar_event": room.calendar_event,
+                "status": "Starting",
+                "estimated_seconds": preflight["estimated_seconds"],
+                "estimated_bytes": preflight["estimated_bytes"],
+                "budget_bytes": preflight["budget_bytes"],
+                "max_ends_at": add_to_date(now, seconds=MAX_SECONDS + STARTUP_TIMEOUT_SECONDS),
+                "recorder_job_id": frappe.generate_hash(length=32),
+                "request_id": request_id,
+                "pending_deadline": add_to_date(now, seconds=STARTUP_TIMEOUT_SECONDS),
+                "drive_home_folder": destination,
+            }
+        ).insert(ignore_permissions=True)
+        drive.create_storage_reservation(
+            _get_drive_root(room.owner),
+            recording_storage_reservation_key(recording.name),
+            cint(recording.budget_bytes),
+        )
+        if _count_active_owner_recordings(room.owner) > owner_limit:
+            # The owner limit is checked here, after this recording and its
+            # reservation exist, so the count is taken once and includes them both.
+            # Refusing rolls the admission back: the recording row, the
+            # reservation, and the bytes it charged to the root all disappear.
+            frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
     frappe.db.commit()
     client = None if _fixture_enabled() else _client()
     outcome = (
