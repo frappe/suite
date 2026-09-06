@@ -611,22 +611,84 @@ class TestRecordForwarders(ShimCase):
                         "action": "comment",
                         "actor": "b@example.com",
                         "node": "n1",
-                        "detail": {"message": "hello"},
+                        "detail": {"thread": "t1", "comment": "c1", "resolved": False},
                     },
                 }
             ],
             "next_cursor": None,
         }
         with patch.object(
-            shims.frappe, "get_all", return_value=[{"name": "n1", "kind": "file", "mime": "text/plain"}]
+            shims.frappe,
+            "get_all",
+            return_value=[{"name": "n1", "kind": "file", "mime": "text/plain", "title": "Notes.txt"}],
         ):
             row = shims.get_notifications()[0]
         self.assertEqual(row["type"], "Mention")
         self.assertEqual(row["entity_type"], "File")
         self.assertEqual(row["from_user"], "b@example.com")
         self.assertEqual(row["notif_doctype_name"], "n1")
-        self.assertEqual(row["message"], "hello")
         self.assertEqual(row["read"], 0)
+
+    def test_a_notification_carries_the_sentence_the_page_renders(self):
+        """`Notifications.vue:51` renders `row.message` as the row's only text.
+
+        §9.5 replaced the rendered message with an `action` and a structured
+        `detail`, and no writer puts a `message` in either: `comments.py`
+        writes `{thread, comment, resolved}` and `access.py` writes
+        `{principal, old_role, new_role}`. Reading `detail["message"]` answered
+        `None` on every row, so the page rendered a column of blank lines.
+        """
+        activity = self.stub("activity_core")
+        cases = {
+            "comment": "You were mentioned in a comment in: Notes.txt",
+            "share_add": 'Bea shared a file with you: "Notes.txt"',
+            "share_edit": 'Bea shared a file with you: "Notes.txt"',
+        }
+        for action, expected in cases.items():
+            with self.subTest(action=action):
+                activity.notifications.return_value = {
+                    "rows": [
+                        {
+                            "name": "x1",
+                            "read": 0,
+                            "creation": "2026-01-02 03:04:05",
+                            "activity": {
+                                "action": action,
+                                "actor": "b@example.com",
+                                "node": "n1",
+                                "detail": {"principal": "b@example.com"},
+                            },
+                        }
+                    ],
+                    "next_cursor": None,
+                }
+                with patch.object(
+                    shims.frappe,
+                    "get_all",
+                    return_value=[
+                        {"name": "n1", "kind": "file", "mime": "text/plain", "title": "Notes.txt"}
+                    ],
+                ):
+                    with patch.object(shims, "_user_info", return_value={"full_name": "Bea"}):
+                        row = shims.get_notifications()[0]
+                self.assertEqual(row["message"], expected)
+
+    def test_a_notification_whose_node_is_gone_carries_no_sentence(self):
+        activity = self.stub("activity_core")
+        activity.notifications.return_value = {
+            "rows": [
+                {
+                    "name": "x1",
+                    "read": 0,
+                    "creation": "2026-01-02",
+                    "activity": {"action": "share_add", "actor": "b@example.com", "node": "n1"},
+                }
+            ],
+            "next_cursor": None,
+        }
+        with patch.object(shims.frappe, "get_all", return_value=[]):
+            row = shims.get_notifications()[0]
+        self.assertIsNone(row["message"])
 
     def test_unread_count_is_still_a_scalar(self):
         activity = self.stub("activity_core")
@@ -814,6 +876,36 @@ class TestFileForwarders(ShimCase):
         listed.assert_called_once()
         published.assert_called_once_with("list-add", {"file": {"name": "n1"}}, user=SOMEONE.user)
 
+    def test_a_chunked_upload_that_names_no_session_is_refused(self):
+        """The old body minted a session id only for a single-chunk upload.
+
+        Minting one per chunk instead binds every chunk to its own
+        `upload_id`, and the last chunk finishes a file with holes in it.
+        """
+        self.stub("node_core")
+        uploads = self.stub("upload_core")
+        upload = MagicMock()
+        upload.filename = "Report.pdf"
+        upload.stream.read.return_value = b"x"
+        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
+        request.start()
+        self.addCleanup(request.stop)
+        form = patch.object(
+            frappe.local,
+            "form_dict",
+            frappe._dict(chunk_index="1", total_chunk_count="4", chunk_byte_offset="10"),
+            create=True,
+        )
+        form.start()
+        self.addCleanup(form.stop)
+        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
+        cache.start()
+        self.addCleanup(cache.stop)
+
+        with self.assertRaises(frappe.ValidationError):
+            shims.upload_file(parent="f1", total_file_size=100)
+        uploads.create_upload.assert_not_called()
+
     def test_get_entity_type_answers_folder_or_file(self):
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row(kind="folder", mime=None)
@@ -906,6 +998,28 @@ class TestFileForwarders(ShimCase):
         activity.personal_marks.return_value = {"n1": {"favourite": "fav1", "opened_at": None}}
         shims.set_favourite([{"name": "n1"}])
         activity.set_favourite.assert_called_once_with(SOMEONE, "n1", False)
+
+    def test_clearing_every_favourite_names_the_node_not_its_row(self):
+        """`favourites()` answers personal rows whose `node` is the node row.
+
+        `_visible_personal_rows` replaces `row.node` with the row it
+        authorized, so passing `row["node"]` straight on filtered
+        `Drive Favourite` on a dict. It matched nothing, and "clear all"
+        cleared nothing.
+        """
+        activity = self.stub("activity_core")
+        activity.favourites.return_value = {
+            "rows": [
+                {"name": "fav1", "node": node_row(name="n1")},
+                {"name": "fav2", "node": node_row(name="n2")},
+            ],
+            "next_cursor": None,
+        }
+        shims.set_favourite(clear_all=True)
+        self.assertEqual(
+            [call.args[1] for call in activity.set_favourite.call_args_list],
+            ["n1", "n2"],
+        )
 
     def test_set_favourite_reads_a_string_flag(self):
         activity = self.stub("activity_core")
@@ -1592,7 +1706,7 @@ class TestNotificationRouting(ShimCase):
                 with patch.object(
                     shims.frappe,
                     "get_all",
-                    return_value=[{"name": "n1", "kind": kind, "mime": mime}],
+                    return_value=[{"name": "n1", "kind": kind, "mime": mime, "title": "Notes"}],
                 ):
                     rows = shims.get_notifications()
                 self.assertEqual(rows[0]["entity_type"], expected)

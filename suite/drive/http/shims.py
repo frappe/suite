@@ -560,27 +560,49 @@ NOTIFICATION_TYPE = {
 }
 
 
-def _entity_types(node_ids: list[str]) -> dict[str, str]:
-    """Answer legacy `entity_type` for a page of nodes, in one read.
+def _notification_nodes(node_ids: list[str]) -> dict[str, dict]:
+    """Answer legacy `entity_type` and the title, for a page of nodes, in one read.
 
     `Drive Notification.entity_type` held "Document", "Folder", or "File", and
-    `Notifications.vue` routes on it: `drive-` + the value. It is derived here
-    rather than published as `None`, because a null makes every row on that
-    page unclickable.
+    `Notifications.vue` routes on it: `drive-` + the value. Neither it nor the
+    title is on the notification row any more, and both are derived here
+    rather than published as `None`: a null `entity_type` makes every row on
+    that page unclickable, and the title is half of the sentence the row is.
     """
     wanted = sorted({node for node in node_ids if node})
     if not wanted:
         return {}
-    rows = frappe.get_all("Drive Node", filters={"name": ("in", wanted)}, fields=["name", "kind", "mime"])
+    rows = frappe.get_all(
+        "Drive Node", filters={"name": ("in", wanted)}, fields=["name", "kind", "mime", "title"]
+    )
     answer = {}
     for row in rows:
         if _file_type(row) == "Document":
-            answer[row["name"]] = "Document"
+            kind = "Document"
         elif row["kind"] in ("folder", "root"):
-            answer[row["name"]] = "Folder"
+            kind = "Folder"
         else:
-            answer[row["name"]] = "File"
+            kind = "File"
+        answer[row["name"]] = {"entity_type": kind, "title": row["title"]}
     return answer
+
+
+def _notification_message(action: str, node: dict | None, sender_name: str | None) -> str | None:
+    """Rebuild the sentence `Drive Notification.message` used to hold.
+
+    §9.5 replaced the rendered message with an `action` and a structured
+    `detail`, and no writer puts a `message` in either. `Notifications.vue:51`
+    renders `row.message` as the row's only text, so a page of rows with no
+    message is a page of blank lines. The two sentences are `notify_share`'s
+    and `notify_mentions`', word for word, built from the same three parts.
+    """
+    if not node:
+        return None
+    title = node.get("title")
+    if action == "comment":
+        return _("You were mentioned in a comment in: {0}").format(title)
+    kind = (node.get("entity_type") or "File").lower()
+    return _('{0} shared a {1} with you: "{2}"').format(sender_name or _("Someone"), kind, title)
 
 
 def get_notifications(only_unread: bool = False) -> list[dict]:
@@ -594,7 +616,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
     rows = _walk(
         lambda cursor: activity_core.notifications(principals, only_unread=bool(only_unread), cursor=cursor)
     )
-    kinds = _entity_types([(row.get("activity") or {}).get("node") for row in rows])
+    kinds = _notification_nodes([(row.get("activity") or {}).get("node") for row in rows])
     people: dict[str, dict] = {}
     answer = []
     for row in rows:
@@ -602,6 +624,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
         sender = record.get("actor")
         if sender not in people:
             people[sender] = _user_info(sender, ["full_name", "user_image"])
+        node = kinds.get(record.get("node"))
         answer.append(
             {
                 "name": row.get("name"),
@@ -609,8 +632,10 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
                 "from_user": sender,
                 "read": int(row.get("read") or 0),
                 "type": NOTIFICATION_TYPE.get(record.get("action"), "Share"),
-                "message": record.get("detail", {}).get("message"),
-                "entity_type": kinds.get(record.get("node")),
+                "message": _notification_message(
+                    record.get("action"), node, people[sender].get("full_name")
+                ),
+                "entity_type": (node or {}).get("entity_type"),
                 "notif_doctype": "Drive Node",
                 "notif_doctype_name": record.get("node"),
                 "creation": row.get("creation"),
@@ -905,7 +930,12 @@ def upload_file(
     else:
         index, total_chunks, offset = 0, 1, 0
 
-    session = frappe.form_dict.uuid or frappe.generate_hash(12)
+    # The old body minted a session id only for a single-chunk upload, and
+    # refused a chunked one that named none. Minting here instead binds every
+    # chunk to a new `upload_id`, and the last one finishes a file with holes.
+    session = frappe.form_dict.uuid
+    if not session and total_chunks == 1:
+        session = frappe.generate_hash(12)
     if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", session):
         frappe.throw(_("Invalid upload session."), frappe.ValidationError)
 
@@ -1024,8 +1054,11 @@ def set_favourite(entities: list | None = None, clear_all: bool = False):
     """
     principals = _principals()
     if clear_all:
+        # `_visible_personal_rows` replaces `row.node` with the node row it
+        # authorized, so the id is one level in. Passing the dict filtered
+        # `Drive Favourite` on a dict, matched nothing, and cleared nothing.
         for row in _walk(lambda cursor: activity_core.favourites(principals, cursor=cursor)):
-            activity_core.set_favourite(principals, row["node"], False)
+            activity_core.set_favourite(principals, row["node"]["name"], False)
         return None
     if not isinstance(entities, list):
         frappe.throw(_("Expected list but got {0}").format(type(entities)), frappe.ValidationError)
