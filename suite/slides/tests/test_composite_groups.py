@@ -24,6 +24,7 @@ imports as owned debt: a test needs the grant, root, and principal workflows
 that tickets 21 and 22 will expose over HTTP.
 """
 
+import io
 import json
 from contextlib import contextmanager
 from pathlib import Path
@@ -414,10 +415,18 @@ class TestCompositeGroups(IntegrationTestCase):
         self.assertEqual({row["presentation"] for row in answered}, {self._docname(reference)})
         self.assertEqual([row["readable"] for row in answered], [True, True])
 
-    def test_a_reference_that_is_itself_a_composite_is_marked_and_holds_no_slides(self):
-        """Ticket 18 left the semantics: one call resolves one level, no recursion."""
+    def test_a_reference_that_is_itself_a_composite_is_marked_and_never_recursed_into(self):
+        """Ticket 18 left the semantics: one call resolves one level, no recursion.
+
+        The inner deck answers with its own slide table. `create_empty` gives
+        every deck one slide, and flagging a deck composite does not take it
+        away, so "a composite has no slides" is not a rule this route can state.
+        The rule it does state is that the leaf's slides are not in this answer.
+        """
         leaf = self._deck(title="Leaf")
+        self._background(leaf, "#aaaaaaff")
         inner = self._composite([leaf], title="Inner")
+        self._background(inner, "#bbbbbbff")
         outer = self._composite([inner], title="Outer")
         [identifier] = self._ids(outer)
 
@@ -425,7 +434,68 @@ class TestCompositeGroups(IntegrationTestCase):
 
         self.assertTrue(answered["readable"])
         self.assertTrue(answered["composite"])
-        self.assertEqual(answered["slides"], [])
+        self.assertEqual([slide["background"] for slide in answered["slides"]], ["#bbbbbbff"])
+        self.assertEqual(answered["node"], inner)
+
+    def test_a_group_entry_carries_the_documented_fields_and_nothing_more(self):
+        """The contract's key set, readable and unreadable, checked directly."""
+        mine = self._deck(title="Mine")
+        hidden = self._deck(title="Hidden", parent=self.other_root.node)
+        composite = self._composite([mine, hidden])
+        self._share(composite, VIEWER)
+        self._share(mine, VIEWER)
+        ids = self._ids(composite)
+
+        self._as(VIEWER)
+        answered = api.composite_group(self._docname(composite), ids)
+        self.assertEqual(set(answered), {"presentation", "node", "references"})
+        for row in answered["references"]:
+            self.assertEqual(
+                set(row),
+                {"reference", "index", "presentation", "readable", "node", "composite", "slides"},
+            )
+
+    def test_the_manifest_names_an_unreadable_reference_exactly_like_a_readable_one(self):
+        """The manifest opens nothing, so it must not become a readability oracle."""
+        mine = self._deck(title="Mine")
+        hidden = self._deck(title="Hidden", parent=self.other_root.node)
+        composite = self._composite([mine, hidden])
+        self._share(composite, VIEWER)
+        self._share(mine, VIEWER)
+
+        self._as(VIEWER)
+        answered = api.composite_manifest(self._docname(composite))["references"]
+
+        self.assertEqual(len(answered), 2)
+        self.assertEqual([set(row) for row in answered], [{"reference", "index", "presentation"}] * 2)
+        self.assertEqual([row["index"] for row in answered], [1, 2])
+        self.assertEqual(answered[1]["presentation"], self._docname(hidden))
+
+    def test_a_reference_id_held_across_a_version_restore_is_refused_not_guessed(self):
+        """`restore_version` rewrites the table, so a held list is stale, not wrong."""
+        first_deck = self._deck(title="First")
+        second_deck = self._deck(title="Second")
+        composite = self._composite([first_deck, second_deck])
+        docname = self._docname(composite)
+        held = self._ids(composite)
+        before = api.composite_manifest(docname)["modified"]
+
+        payload = {
+            "schema": slides.VERSION_SCHEMA,
+            "theme": None,
+            "is_composite": 1,
+            "slides": [],
+            "references": [self._docname(first_deck)],
+        }
+        slides.restore_version(docname, io.BytesIO(json.dumps(payload).encode("utf-8")))
+
+        minted = api.composite_manifest(docname)
+        self.assertEqual(len(minted["references"]), 1)
+        self.assertNotEqual(minted["modified"], before)
+        self.assertNotIn(minted["references"][0]["reference"], held)
+        # The stale id is refused by membership, never answered from a guess.
+        with self.assertRaises(frappe.ValidationError):
+            api.composite_group(docname, held)
 
     def test_a_blank_reference_row_is_unreadable_rather_than_an_error(self):
         reference = self._deck(title="Ref")
