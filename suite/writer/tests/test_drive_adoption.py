@@ -52,12 +52,15 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
+from suite.drive.api.files import track_visit
 from suite.drive.api.list import files as legacy_files
+from suite.drive.api.notifications import create_notification
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
 from suite.writer import overrides
 from suite.writer.api import docs, embed
+from suite.writer.api.general import get_document_list
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
@@ -569,6 +572,84 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.addCleanup(frappe.set_user, "Administrator")
         with self.assertRaises(frappe.PermissionError):
             legacy_files(entity_name=entity.folder)
+
+    def _opened(self, title: str):
+        """One document `create_document` writes, with no node behind it."""
+        entity = docs.create_document(title=title)
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        self.addCleanup(frappe.db.delete, "Drive Entity Log", {"entity_name": entity.name})
+        self.assertFalse(frappe.db.exists("Drive Node", entity.name), "no node before Build")
+        return entity
+
+    def test_opening_a_document_the_api_creates_records_when_it_was_opened(self):
+        """`useDocument` calls `track_visit` on every open, and nothing else
+        writes `Drive Entity Log`. `get_document_list` orders the caller's own
+        documents by that row and publishes it as `accessed`, so a forwarder
+        that only visits nodes left every document with neither."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Opened {frappe.generate_hash(6)}")
+
+        track_visit(entity_name=entity.name)
+
+        self.assertTrue(
+            frappe.db.get_value(
+                "Drive Entity Log", {"entity_name": entity.name, "user": USER}, "last_interaction"
+            ),
+            "the open is on the log the list reads",
+        )
+        frappe.response.pop("data", None)
+        get_document_list()
+        rows = {row["name"]: row for row in frappe.response["data"]}
+        self.assertTrue(rows[entity.name]["accessed"], "and the list publishes it")
+
+    def test_opening_a_document_clears_the_badge_it_was_announced_with(self):
+        """The visible half. `writer_document.notify_comments` still writes a
+        pointerless `Drive Notification` naming the `File`, and the old body
+        marked every unread row about the file it opened as read."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Announced {frappe.generate_hash(6)}")
+        row = frappe.get_doc("File", entity.name)
+        # The notifier runs as the site, not as the reader it announces to.
+        frappe.set_user("Administrator")
+        self.assertTrue(create_notification(OTHER, USER, "Comment", row, "somebody said something"))
+        frappe.set_user(USER)
+        announced = frappe.get_all(
+            "Drive Notification", filters={"notif_doctype_name": entity.name}, pluck="name"
+        )
+        for row in announced:
+            self.addCleanup(
+                frappe.delete_doc,
+                "Drive Notification",
+                row,
+                force=1,
+                ignore_permissions=True,
+                ignore_missing=True,
+            )
+
+        track_visit(entity_name=entity.name)
+
+        self.assertEqual(
+            frappe.get_all("Drive Notification", filters={"notif_doctype_name": entity.name}, pluck="read"),
+            [1],
+        )
+
+    def test_a_stranger_cannot_record_a_visit_to_somebody_elses_document(self):
+        """The gate is the `File` hook, as the old body's was."""
+        frappe.set_user(USER)
+        entity = self._opened(f"Unopened {frappe.generate_hash(6)}")
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            track_visit(entity_name=entity.name)
+        self.assertFalse(
+            frappe.db.exists("Drive Entity Log", {"entity_name": entity.name, "user": OTHER}),
+            "a refused visit writes nothing",
+        )
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
