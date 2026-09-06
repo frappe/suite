@@ -1441,7 +1441,103 @@ def _matching_titles(rows: list, term: str | None) -> list:
     return [row for row in rows if needle in (row.get("title") or "").casefold()]
 
 
-def _listing(principals, page_call, *, file_kinds, search, start, limit, paginated):
+# The most rows this module will hold in memory to sort a view the workflow
+# does not sort. A list longer than this keeps the view's own order rather
+# than losing the rows past the bound: `_ordered_listing` says why.
+MAX_SORTABLE_ROWS = 2000
+
+
+def _sort_key(row, column: str):
+    """One row's value under a legacy sort column, in the old collation."""
+    if column == "title":
+        return (row.get("title") or "").casefold()
+    if column == "size":
+        return int(row.get("size") or 0)
+    return str(row.get("content_modified") or row.get("modified") or "")
+
+
+def _ordered(rows: list, order_by: str, ascending: bool) -> list:
+    """Sort a whole listing the way `get_query_data` sorted it.
+
+    Three levels, and the old query had all three: the named column, then
+    `file_name` in the same direction, then `name` ascending to break the
+    remaining ties. The tertiary level runs first and Python's sort is stable,
+    so it survives the pass above it whichever way that one points.
+
+    The column vocabulary is `ORDER_COLUMN`'s, the same three §11.4 kept, and
+    an unknown name falls back to `modified` here exactly as it does on the
+    folder page. Nothing wider is invented for a view than a folder can answer.
+    """
+    column = ORDER_COLUMN.get(order_by, "modified")
+    rows = sorted(rows, key=lambda row: row.get("name") or "")
+    return sorted(
+        rows,
+        key=lambda row: (_sort_key(row, column), _sort_key(row, "title")),
+        reverse=not ascending,
+    )
+
+
+def _whole_view(page_call, file_kinds, search) -> tuple[list, bool]:
+    """Collect every row of a view, and say whether it ran past the bound."""
+    rows: list = []
+    cursor = None
+    while True:
+        page = page_call(cursor, node_core.MAX_PAGE_SIZE)
+        rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
+        cursor = page["next_cursor"]
+        if not cursor:
+            return rows, False
+        if len(rows) >= MAX_SORTABLE_ROWS:
+            return rows, True
+
+
+def _ordered_listing(principals, page_call, *, file_kinds, search, start, limit, paginated, order):
+    """Answer a listing whose source has no sort of its own.
+
+    `_core.nodes.children` takes the caller's column and sorts in SQL. The
+    discovery views do not: §11.2 froze one order per view, and `shared`,
+    `favourites`, and `trash` each carry theirs. The old `get_query_data`
+    sorted all three by the column the toolbar names, so the argument arrives
+    here still meaning something and must not be accepted and dropped -
+    clicking a column header did nothing on those three lists.
+
+    A page cannot be sorted on its own: the second page would restart the
+    order. So the view is walked whole, sorted, and cut into the page the
+    caller asked for. `next_start` indexes the sorted list rather than the raw
+    window, which is the same contract the client already has - an opaque
+    offset it hands back - and one listing never mixes the two, because the
+    sort argument is what chooses this path.
+
+    Past `MAX_SORTABLE_ROWS` the walk stops and the listing falls back to the
+    view's own order. Truncating instead would drop rows the caller can see,
+    and a wrong order is recoverable where a missing file is not.
+    """
+    rows, over_bound = _whole_view(page_call, file_kinds, search)
+    if over_bound:
+        return _listing(
+            principals,
+            page_call,
+            file_kinds=file_kinds,
+            search=search,
+            start=start,
+            limit=limit,
+            paginated=paginated,
+        )
+    rows = _ordered(rows, *order)
+    offset = int(start or 0)
+    window = int(limit) if limit else (LEGACY_PAGE_SIZE if paginated else None)
+    page = rows[offset:] if window is None else rows[offset : offset + window]
+    shaped = _legacy_list_rows(principals, page)
+    if not paginated:
+        return shaped
+    return {
+        "rows": shaped,
+        "has_next": offset + len(page) < len(rows),
+        "next_start": offset + len(page),
+    }
+
+
+def _listing(principals, page_call, *, file_kinds, search, start, limit, paginated, order=None):
     """Answer one legacy listing, paged the way the old surface paged.
 
     Legacy walked raw windows until the page was full, because its permission
@@ -1460,7 +1556,21 @@ def _listing(principals, page_call, *, file_kinds, search, start, limit, paginat
     tree (`data/folderTree.js`) and the move dialog both call that way, so a
     default page here hid every child past the first hundred from the sidebar
     and from the move target list.
+
+    `order` is set only by a caller whose source does not sort; it hands the
+    whole listing to `_ordered_listing` instead of walking it a page at a time.
     """
+    if order is not None:
+        return _ordered_listing(
+            principals,
+            page_call,
+            file_kinds=file_kinds,
+            search=search,
+            start=start,
+            limit=limit,
+            paginated=paginated,
+            order=order,
+        )
     window = int(limit) if limit else (LEGACY_PAGE_SIZE if paginated else None)
     offset = int(start or 0)
     cursor = node_core.encode_cursor(offset) if offset else None
@@ -1497,6 +1607,9 @@ def files(
     §11.2 gave that its own view, so a search here is forwarded there. An
     unknown `order_by` still falls back to `modified` instead of refusing:
     the toolbar sends five column names and only three of them survive §11.4.
+
+    A folder page is sorted by `children` in SQL, on the index [004] measured.
+    The search view has one order of its own, so a search is sorted here.
     """
     principals = _principals()
     if search:
@@ -1510,6 +1623,7 @@ def files(
             start=start,
             limit=limit,
             paginated=paginated,
+            order=(order_by, bool(ascending)),
         )
     parent = entity_name or _home(principals)
     return _listing(
@@ -1530,7 +1644,7 @@ def files(
     )
 
 
-def _view(name, principals, *, file_kinds, search, start, limit, paginated, **filters):
+def _view(name, principals, *, file_kinds, search, start, limit, paginated, order=None, **filters):
     return _listing(
         principals,
         lambda cursor, window: node_core.views(principals, name, cursor=cursor, limit=window, **filters),
@@ -1539,6 +1653,7 @@ def _view(name, principals, *, file_kinds, search, start, limit, paginated, **fi
         start=start,
         limit=limit,
         paginated=paginated,
+        order=order,
     )
 
 
@@ -1573,6 +1688,7 @@ def shared(
         start=start,
         limit=limit,
         paginated=paginated,
+        order=(order_by, bool(ascending)),
     )
 
 
@@ -1587,9 +1703,9 @@ def favourites(
 ):
     """`list.favourites` -> `GET /views/favourites`.
 
-    Ordered by when the mark was made, which is the view's own order; the old
-    list ordered by `modified` and never said so in its result, so nothing
-    reads the difference except the eye.
+    The view is ordered by when the mark was made. The old list was ordered by
+    the column the toolbar names, and `Favourites.vue` still shows that
+    control, so the page is sorted here.
     """
     return _view(
         "favourites",
@@ -1599,6 +1715,7 @@ def favourites(
         start=start,
         limit=limit,
         paginated=paginated,
+        order=(order_by, bool(ascending)),
     )
 
 
@@ -1616,6 +1733,11 @@ def recents(
     `accessed` survives: it is the caller's own `Drive Recent.opened_at`, read
     through `personal_marks` with the favourite mark, so the page can still
     group rows by the day they were opened.
+
+    The one list that keeps the view's order and drops `order_by`, because the
+    old body dropped it too: `get_query_data`'s `recents_only` branch ordered
+    by `last_interaction` whatever the caller named, and `Recents.vue` passes
+    `show-sort="false"` so the toolbar offers no column here.
     """
     return _view(
         "recents",
@@ -1656,5 +1778,6 @@ def trash(
         start=start,
         limit=limit,
         paginated=paginated,
+        order=(order_by, bool(ascending)),
         root=_home(principals),
     )

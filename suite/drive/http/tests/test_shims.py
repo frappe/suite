@@ -1272,6 +1272,122 @@ class TestListForwarders(ListCase):
         counts.assert_called_once()
 
 
+class TestListOrdering(ListCase):
+    """`order_by` and `ascending` reach the three views that used to sort.
+
+    `GenericPage.queryParams` puts both on every list request it makes, and
+    `get_query_data` ordered `shared`, `favourites`, and `trash` by them. The
+    frozen views carry one order each, so clicking a column header on those
+    three pages changed nothing at all.
+    """
+
+    def unsorted_view(self, titles):
+        rows = [node_row(name=f"n{i}", title=title) for i, title in enumerate(titles)]
+        self.nodes.views.return_value = {"rows": rows, "next_cursor": None}
+        self.activity.personal_marks.return_value = {}
+        return rows
+
+    def test_a_view_is_sorted_by_the_column_the_toolbar_names(self):
+        for call in (shims.shared, shims.favourites, shims.trash):
+            with self.subTest(view=call.__name__):
+                self.unsorted_view(["Report.pdf", "Agenda.md", "Notes.txt"])
+                rows = call(order_by="file_name")
+                self.assertEqual(
+                    [row["file_name"] for row in rows],
+                    ["Agenda.md", "Notes.txt", "Report.pdf"],
+                )
+
+    def test_a_descending_sort_turns_the_whole_list_around(self):
+        self.unsorted_view(["Agenda.md", "Report.pdf", "Notes.txt"])
+        rows = shims.favourites(order_by="file_name", ascending=False)
+        self.assertEqual(
+            [row["file_name"] for row in rows],
+            ["Report.pdf", "Notes.txt", "Agenda.md"],
+        )
+
+    def test_a_size_sort_reads_the_size_and_not_its_digits(self):
+        rows = [
+            node_row(name="n1", title="a", size=9),
+            node_row(name="n2", title="b", size=1024),
+            node_row(name="n3", title="c", size=100),
+        ]
+        self.nodes.views.return_value = {"rows": rows, "next_cursor": None}
+        self.activity.personal_marks.return_value = {}
+        self.assertEqual(
+            [row["file_size"] for row in shims.shared(order_by="file_size")],
+            [9, 100, 1024],
+        )
+
+    def test_an_unknown_column_falls_back_to_modified_on_a_view_too(self):
+        rows = [
+            node_row(name="n1", title="a", modified="2026-03-01"),
+            node_row(name="n2", title="b", modified="2026-01-01"),
+        ]
+        self.nodes.views.return_value = {"rows": rows, "next_cursor": None}
+        self.activity.personal_marks.return_value = {}
+        self.assertEqual([row["name"] for row in shims.trash(order_by="owner")], ["n2", "n1"])
+
+    def test_recents_keeps_the_view_order_the_old_body_kept(self):
+        """`get_query_data`'s `recents_only` branch ordered by `last_interaction`
+        whatever the caller named, and `Recents.vue` hides the sort control."""
+        self.unsorted_view(["Report.pdf", "Agenda.md"])
+        rows = shims.recents(order_by="file_name")
+        self.assertEqual([row["file_name"] for row in rows], ["Report.pdf", "Agenda.md"])
+
+    def test_a_search_is_sorted_because_the_search_view_has_its_own_order(self):
+        rows = [node_row(name="n1", title="Report.pdf"), node_row(name="n2", title="Agenda.md")]
+        self.nodes.views.return_value = {"rows": rows, "next_cursor": None}
+        self.activity.personal_marks.return_value = {}
+        answer = shims.files(search="a", order_by="file_name")
+        self.assertEqual([row["file_name"] for row in answer], ["Agenda.md", "Report.pdf"])
+
+    def test_a_second_page_continues_the_sorted_order(self):
+        """A page sorted on its own restarts the order on the next scroll."""
+        self.unsorted_view(["d", "b", "a", "c"])
+        first = shims.shared(order_by="file_name", paginated=True, limit=2)
+        self.assertEqual([row["file_name"] for row in first["rows"]], ["a", "b"])
+        self.assertTrue(first["has_next"])
+
+        self.unsorted_view(["d", "b", "a", "c"])
+        second = shims.shared(order_by="file_name", paginated=True, limit=2, start=first["next_start"])
+        self.assertEqual([row["file_name"] for row in second["rows"]], ["c", "d"])
+        self.assertFalse(second["has_next"])
+
+    def test_a_folder_page_is_still_sorted_by_the_workflow(self):
+        """`children` sorts in SQL on the index [004] measured. Sorting the page
+        again here would page a folder through memory for no gain."""
+        self.one_page([node_row(name="n1", title="b"), node_row(name="n2", title="a")])
+        self.activity.personal_marks.return_value = {}
+        rows = shims.files(order_by="file_name")
+        self.assertEqual([row["file_name"] for row in rows], ["b", "a"])
+        self.assertEqual(self.nodes.children.call_args.kwargs["order_by"], "title")
+
+    def test_a_view_past_the_bound_keeps_its_own_order_and_loses_no_row(self):
+        """Sorting needs the whole list. Past the bound the view's order stands,
+        because a wrong order is recoverable and a dropped file is not."""
+        windows = [
+            {
+                "rows": [node_row(name=f"a{i}", title=f"{9999 - i}") for i in range(200)],
+                "next_cursor": f"c{200 * (n + 1)}",
+            }
+            for n in range(11)
+        ]
+        windows.append({"rows": [node_row(name="last", title="0")], "next_cursor": None})
+        asked: list = []
+
+        def page(principals, name, **kwargs):
+            asked.append(kwargs["limit"])
+            return windows[min(len(asked) - 1, len(windows) - 1)]
+
+        self.nodes.views.side_effect = page
+        self.nodes.MAX_PAGE_SIZE = 200
+        self.activity.personal_marks.return_value = {}
+        rows = shims.shared(order_by="file_name", paginated=True, limit=3)
+
+        self.assertEqual([row["file_name"] for row in rows["rows"]], ["9999", "9998", "9997"])
+        self.assertTrue(rows["has_next"])
+
+
 class TestMoveAnswersTheDestination(ShimCase):
     def test_move_answers_the_folder_it_moved_into(self):
         """`File.move` returned the new parent's row, and both frontend `move`
