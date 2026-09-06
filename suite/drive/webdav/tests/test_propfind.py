@@ -71,8 +71,8 @@ class TestWebDAVPropfind(IntegrationTestCase):
         cls.root = personal_dav_root(OWNER, quota_bytes=QUOTA)
         personal_dav_root(STRANGER)
         cls.docs = folder_node(OWNER, cls.root, "PropDocs")
-        cls.report = file_node(OWNER, cls.docs, "report.txt", REPORT, mime="text/plain")
-        cls.notes = file_node(OWNER, cls.docs, "notes.md", NOTES, mime="text/markdown")
+        cls.report = file_node(OWNER, cls.docs, "report.txt", REPORT)
+        cls.notes = file_node(OWNER, cls.docs, "notes.md", NOTES)
 
     def tearDown(self):
         frappe.set_user("Administrator")
