@@ -24,11 +24,12 @@ from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
 from frappe.utils import get_test_client
 
+from suite.drive._core import activity as activity_core
 from suite.drive._core import upload as upload_core
 from suite.drive._core.access import grant, unlock_link
 from suite.drive._core.nodes import create_file, create_folder
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
@@ -56,6 +57,81 @@ NODE_SHAPE_FIELDS = {
     "modified",
     "content_modified",
 }
+
+GRANT_SHAPE_FIELDS = {
+    "name",
+    "node",
+    "principal",
+    "role",
+    "expires_on",
+    "has_password",
+}
+
+EXPLAIN_ROW_FIELDS = {
+    "node",
+    "depth",
+    "principal",
+    "role",
+    "expires_on",
+    "pass",
+    "held",
+    "winner",
+}
+
+VERSION_SHAPE_FIELDS = {
+    "name",
+    "node",
+    "seq",
+    "kind",
+    "label",
+    "pinned",
+    "actor",
+    "size",
+    "creation",
+}
+
+ACTIVITY_SHAPE_FIELDS = {
+    "name",
+    "node",
+    "action",
+    "actor",
+    "at",
+    "via_link",
+    "client",
+    "detail",
+}
+
+THREAD_SHAPE_FIELDS = {
+    "name",
+    "node",
+    "anchor",
+    "resolved",
+    "resolved_by",
+    "resolved_at",
+    "creation",
+    "comments",
+}
+
+NOTIFICATION_SHAPE_FIELDS = {
+    "name",
+    "read",
+    "creation",
+    "activity",
+}
+
+# The seven names 11.2 freezes, in table order. A view outside this tuple is a
+# name the route table does not answer.
+VIEW_NAMES = (
+    "shared",
+    "recents",
+    "favourites",
+    "trash",
+    "archived-roots",
+    "templates",
+    "search",
+)
+
+PAST = "2020-01-01 00:00:00"
 
 
 @contextmanager
@@ -88,6 +164,20 @@ def drop_node_rows(nodes) -> None:
     for table in ("Drive Activity", "Drive Grant", "Drive Node Version", "Drive Node Preview"):
         frappe.db.delete(table, {"node": ["in", nodes]})
     frappe.db.delete("Drive Node", {"name": ["in", nodes]})
+
+
+def drop_record_rows(nodes) -> None:
+    """Delete the side rows `drop_node_rows` leaves behind.
+
+    A recent, a favourite, a thread, and a comment all point at a node, and
+    none of them is removed with it. They are dropped before the node rows so
+    a link never dangles.
+    """
+    nodes = [node for node in nodes if node]
+    if not nodes:
+        return
+    for table in ("Drive Recent", "Drive Favourite", "Drive Comment", "Drive Comment Thread"):
+        frappe.db.delete(table, {"node": ["in", nodes]})
 
 
 class DriveHTTPCase(IntegrationTestCase):
@@ -334,7 +424,8 @@ class TestAddressing(DriveHTTPCase):
         self.refusal(response, 404, "DriveNotFound")
 
     def test_an_unclaimed_path_answers_json_not_html(self):
-        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/grants")
+        # `/history` is not a route row. `/activity` is the one that is.
+        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/history")
         self.refusal(response, 404, "DriveNotFound")
         self.assertEqual(response.mimetype, "application/json")
 
@@ -1186,3 +1277,665 @@ class TestGrantedCollaborator(DriveHTTPCase):
         )
         self.refusal(response, 403, "DriveForbidden")
         self.assertLess(READ, UPLOAD)
+
+
+class TestGrantRoutes(DriveHTTPCase):
+    """§11.2's grant table: one listing, one explanation, four writes."""
+
+    def setUp(self):
+        super().setUp()
+        self.shared = create_folder(self.owner, self.root.name, "Shared")
+        self.inner = create_folder(self.owner, self.shared, "Inner")
+        frappe.db.commit()
+        self.addCleanup(self.drop_tree)
+
+    def drop_tree(self):
+        frappe.db.rollback()
+        drop_record_rows([self.inner, self.shared])
+        drop_node_rows([self.inner, self.shared])
+        frappe.db.commit()
+
+    def add_grant(self, node, principal, role, expires_on=None):
+        """Insert one grant row directly.
+
+        `access.grant` refuses an expiry in the past (§5.9) and §6.4 keeps an
+        expired row on disk, so only a direct insert can build that state.
+        """
+        row = frappe.get_doc(
+            {
+                "doctype": "Drive Grant",
+                "node": node,
+                "principal": principal,
+                "role": role,
+                "expires_on": expires_on,
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.commit()
+        return row.name
+
+    def test_a_grant_list_carries_the_local_rows_including_an_expired_one(self):
+        live = self.add_grant(self.shared, STRANGER, READ)
+        stale = self.add_grant(self.shared, "$GENERAL", READ, expires_on=PAST)
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.shared}/grants"))
+        listed = {row["name"]: row for row in answer["grants"]}
+        self.assertEqual(set(listed), {live, stale})
+        self.assertEqual(set(listed[live]), GRANT_SHAPE_FIELDS)
+        self.assertEqual(listed[live]["node"], self.shared)
+        self.assertIsNone(listed[live]["expires_on"])
+        self.assertEqual(listed[stale]["expires_on"], PAST)
+        self.assertNotIn("explain", answer)
+
+    def test_a_grant_list_names_the_ancestor_row_nowhere(self):
+        # §5.10 keeps removal and denial apart, so the listing is local rows
+        # only. The root anchor grant sits one node up and is `explain`'s job.
+        self.add_grant(self.inner, STRANGER, READ)
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants"))
+        self.assertEqual([row["node"] for row in answer["grants"]], [self.inner])
+
+    def test_a_listed_grant_never_carries_its_password_hash(self):
+        created = grant(self.shared, "$LINK", READ, self.owner, password="correct horse")
+        frappe.db.commit()
+        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.shared}/grants")
+        answer = self.data(response)
+        row = next(item for item in answer["grants"] if item["name"] == created["name"])
+        self.assertEqual(set(row), GRANT_SHAPE_FIELDS | {"url"})
+        self.assertTrue(row["has_password"])
+        self.assertNotIn("password_hash", response.get_data(as_text=True))
+
+    def test_a_principal_query_adds_the_explanation_and_marks_its_winner(self):
+        self.add_grant(self.shared, STRANGER, READ)
+        answer = self.data(
+            self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants", query={"principal": STRANGER})
+        )
+        explain = answer["explain"]
+        self.assertEqual(set(explain), {"role", "source", "rows"})
+        self.assertEqual(explain["role"], READ)
+        self.assertEqual(explain["source"], "grant")
+        for row in explain["rows"]:
+            self.assertEqual(set(row), EXPLAIN_ROW_FIELDS)
+        anchor = next(row for row in explain["rows"] if row["principal"] == OWNER)
+        self.assertEqual((anchor["node"], anchor["depth"], anchor["role"]), (self.root.name, 0, MANAGE))
+        self.assertFalse(anchor["held"])
+        winner = next(row for row in explain["rows"] if row["winner"])
+        self.assertEqual((winner["node"], winner["principal"], winner["pass"]), (self.shared, STRANGER, 1))
+        self.assertTrue(winner["held"])
+
+    def test_an_editor_may_not_read_the_grant_list_or_its_explanation(self):
+        grant(self.shared, STRANGER, EDIT, self.owner)
+        frappe.db.commit()
+        sid = self.session_for(STRANGER)
+        response = self.drive(
+            "GET", f"{PREFIX}/nodes/{self.shared}/grants", query={"principal": OWNER}, sid=sid
+        )
+        self.refusal(response, 403, "DriveForbidden")
+
+    def test_a_caller_with_no_access_is_not_told_the_node_exists(self):
+        sid = self.session_for(STRANGER)
+        response = self.drive(
+            "GET", f"{PREFIX}/nodes/{self.shared}/grants", query={"principal": STRANGER}, sid=sid
+        )
+        self.refusal(response, 404, "DriveNotFound")
+
+    def test_a_manager_may_ask_about_a_principal_who_holds_nothing(self):
+        answer = self.data(
+            self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants", query={"principal": STRANGER})
+        )
+        explain = answer["explain"]
+        self.assertEqual(explain["role"], NONE)
+        self.assertEqual(explain["source"], "none")
+        self.assertTrue(explain["rows"])
+        self.assertTrue(all(row["held"] is False for row in explain["rows"]))
+        self.assertTrue(all(row["winner"] is False for row in explain["rows"]))
+
+    def test_a_role_zero_write_denies_a_principal_who_inherits_access(self):
+        grant(self.shared, STRANGER, READ, self.owner)
+        frappe.db.commit()
+        sid = self.session_for(STRANGER)
+        self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", sid=sid))
+        written = self.data(
+            self.as_owner("PUT", f"{PREFIX}/nodes/{self.inner}/grants/{STRANGER}", body={"role": 0})
+        )
+        self.assertEqual(written["grant"]["role"], NONE)
+        self.assertEqual(written["grant"]["principal"], STRANGER)
+        self.refusal(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", sid=sid), 404, "DriveNotFound")
+
+    def test_a_delete_removes_the_local_row_and_leaves_the_inherited_one(self):
+        grant(self.shared, STRANGER, READ, self.owner)
+        grant(self.inner, STRANGER, EDIT, self.owner)
+        frappe.db.commit()
+        sid = self.session_for(STRANGER)
+        answer = self.data(self.as_owner("DELETE", f"{PREFIX}/nodes/{self.inner}/grants/{STRANGER}"))
+        self.assertEqual(answer, {"result": "revoked"})
+        self.reread()
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": self.inner, "principal": STRANGER}))
+        seen = self.data(
+            self.drive("GET", f"{PREFIX}/nodes/{self.inner}", query={"expand": "access"}, sid=sid)
+        )
+        self.assertEqual(seen["access"]["role"], READ)
+        self.assertEqual(seen["access"]["source_node"], self.shared)
+
+    def test_a_delete_below_evicts_the_subtree_and_reports_the_count(self):
+        grant(self.shared, STRANGER, READ, self.owner)
+        grant(self.inner, STRANGER, EDIT, self.owner)
+        frappe.db.commit()
+        answer = self.data(
+            self.as_owner("DELETE", f"{PREFIX}/nodes/{self.shared}/grants/{STRANGER}", query={"below": "1"})
+        )
+        self.assertEqual(answer, {"result": "revoked", "rows": 2})
+        self.reread()
+        self.assertEqual(
+            frappe.db.count(
+                "Drive Grant", {"principal": STRANGER, "node": ["in", [self.shared, self.inner]]}
+            ),
+            0,
+        )
+
+    def test_a_link_is_minted_then_rotated_and_the_old_token_stops_working(self):
+        minted = self.data(
+            self.as_owner("PUT", f"{PREFIX}/nodes/{self.inner}/grants/$LINK", body={"role": READ})
+        )
+        token = minted["grant"]["principal"].split(":", 1)[1]
+        self.assertEqual(minted["url"], f"/drive/l/{token}")
+        opened = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=token))
+        self.assertEqual(opened["name"], self.inner)
+
+        rotated = self.data(
+            self.as_owner("POST", f"{PREFIX}/grants/{minted['grant']['name']}/rotate", body={})
+        )
+        fresh = rotated["grant"]["principal"].split(":", 1)[1]
+        self.assertNotEqual(fresh, token)
+        self.assertEqual(rotated["url"], f"/drive/l/{fresh}")
+        self.assertEqual(rotated["grant"]["name"], minted["grant"]["name"])
+        self.refusal(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=token), 404, "DriveNotFound")
+        reopened = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=fresh))
+        self.assertEqual(reopened["name"], self.inner)
+
+    def test_a_public_grant_publishes_the_node_to_an_anonymous_reader(self):
+        self.refusal(self.drive("GET", f"{PREFIX}/nodes/{self.inner}"), 404, "DriveNotFound")
+        written = self.data(
+            self.as_owner("PUT", f"{PREFIX}/nodes/{self.inner}/grants/$PUBLIC", body={"role": 10})
+        )
+        self.assertEqual(written["grant"]["principal"], "$PUBLIC")
+        self.assertEqual(written["grant"]["role"], READ)
+        self.assertNotIn("url", written)
+        answer = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}"))
+        self.assertEqual(answer["name"], self.inner)
+
+    def test_a_grant_write_without_a_role_is_refused_and_writes_nothing(self):
+        before = frappe.db.count("Drive Grant", {"node": self.inner})
+        response = self.as_owner("PUT", f"{PREFIX}/nodes/{self.inner}/grants/{STRANGER}", body={})
+        self.refusal(response, 400, "DriveError")
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Grant", {"node": self.inner}), before)
+
+    def test_a_guest_is_not_heard_on_any_grant_route(self):
+        calls = (
+            ("GET", f"{PREFIX}/nodes/{self.inner}/grants", None),
+            ("PUT", f"{PREFIX}/nodes/{self.inner}/grants/$PUBLIC", {"role": READ}),
+            ("DELETE", f"{PREFIX}/nodes/{self.inner}/grants/$PUBLIC", None),
+            ("POST", f"{PREFIX}/grants/no-such-grant/rotate", {}),
+        )
+        for method, path, body in calls:
+            with self.subTest(method=method, path=path):
+                response = self.drive(method, path, body=body)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json["errors"][0]["type"], "PermissionError")
+
+
+class TestShareLinkRoutes(DriveHTTPCase):
+    """§4.8's ticket, and the two refusals a link must keep apart."""
+
+    def setUp(self):
+        super().setUp()
+        self.gated = create_folder(self.owner, self.root.name, "Gated")
+        frappe.db.commit()
+        self.addCleanup(self.drop_folder)
+
+    def drop_folder(self):
+        frappe.db.rollback()
+        drop_node_rows([self.gated])
+        frappe.db.commit()
+
+    def link(self, **kwargs):
+        created = grant(self.gated, "$LINK", READ, self.owner, **kwargs)
+        frappe.db.commit()
+        return created, created["principal"].split(":", 1)[1]
+
+    def test_an_unlock_answers_a_ticket_that_then_opens_the_node_for_a_guest(self):
+        _created, token = self.link(password="correct horse")
+        answer = self.data(
+            self.drive("POST", f"{PREFIX}/links/{token}/unlock", body={"password": "correct horse"})
+        )
+        self.assertEqual(set(answer), {"ticket", "expires"})
+        self.assertGreater(answer["expires"], int(time.time()))
+        opened = self.data(
+            self.drive("GET", f"{PREFIX}/nodes/{self.gated}", links=f"{token}.{answer['ticket']}")
+        )
+        self.assertEqual(opened["name"], self.gated)
+
+    def test_a_wrong_link_password_is_refused(self):
+        _created, token = self.link(password="correct horse")
+        response = self.drive("POST", f"{PREFIX}/links/{token}/unlock", body={"password": "wrong"})
+        self.refusal(response, 401, "DriveLocked")
+
+    def test_a_password_link_with_no_ticket_answers_locked(self):
+        _created, token = self.link(password="correct horse")
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.gated}", links=token)
+        self.refusal(response, 401, "DriveLocked")
+        self.assertEqual(response.headers.get("WWW-Authenticate"), 'DriveLink realm="drive"')
+
+    def test_an_expired_link_answers_gone_not_locked(self):
+        created, token = self.link()
+        frappe.db.set_value("Drive Grant", created["name"], "expires_on", PAST, update_modified=False)
+        frappe.db.commit()
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.gated}", links=token)
+        self.refusal(response, 410, "DriveLinkExpired")
+
+    def test_unlock_is_reachable_without_a_session(self):
+        # A caller unlocks before they hold anything, so the route is guest
+        # reachable. An unknown token is answered by the workflow, not by the
+        # framework's session gate.
+        response = self.drive("POST", f"{PREFIX}/links/{'a' * 22}/unlock", body={"password": "x"})
+        self.refusal(response, 404, "DriveNotFound")
+
+
+class TestViewRoutes(DriveHTTPCase):
+    """§11.2's seven frozen views, paged by §11.4."""
+
+    def setUp(self):
+        super().setUp()
+        self.clear_personal_rows()
+        self.addCleanup(self.clear_personal_rows)
+
+    def clear_personal_rows(self):
+        frappe.db.rollback()
+        for user in (OWNER, STRANGER):
+            frappe.db.delete("Drive Recent", {"user": user})
+            frappe.db.delete("Drive Favourite", {"user": user})
+        frappe.db.commit()
+
+    def view(self, name, **query):
+        return self.data(self.as_owner("GET", f"{PREFIX}/views/{name}", query=query))
+
+    def test_every_frozen_view_name_answers_a_page(self):
+        required = {"trash": {"root": self.root.name}, "search": {"term": "report"}}
+        for name in VIEW_NAMES:
+            with self.subTest(view=name):
+                answer = self.view(name, **required.get(name, {}))
+                self.assertEqual(set(answer), {"rows", "next_cursor"})
+                self.assertIsInstance(answer["rows"], list)
+
+    def test_trash_without_a_root_and_search_without_a_term_are_bad_requests(self):
+        for name in ("trash", "search"):
+            with self.subTest(view=name):
+                response = self.as_owner("GET", f"{PREFIX}/views/{name}")
+                self.refusal(response, 400, "DriveError")
+
+    def test_an_unknown_view_name_is_a_bad_request(self):
+        self.refusal(self.as_owner("GET", f"{PREFIX}/views/everything"), 400, "DriveError")
+
+    def test_a_view_expands_a_preview_and_refuses_the_other_two(self):
+        self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
+        answer = self.view("favourites", expand="preview")
+        self.assertEqual([row["name"] for row in answer["rows"]], [self.file])
+        self.assertIn("preview", answer["rows"][0])
+        self.assertIsNone(answer["rows"][0]["preview"])
+        for expansion in ("access", "breadcrumbs"):
+            with self.subTest(expand=expansion):
+                response = self.as_owner("GET", f"{PREFIX}/views/favourites", query={"expand": expansion})
+                self.refusal(response, 400, "DriveError")
+
+    def test_a_personal_view_is_scoped_to_the_caller(self):
+        self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        sid = self.session_for(STRANGER)
+        for name in ("favourites", "recents"):
+            with self.subTest(view=name):
+                theirs = self.data(self.drive("GET", f"{PREFIX}/views/{name}", sid=sid))
+                self.assertEqual(theirs["rows"], [])
+                self.assertEqual([row["name"] for row in self.view(name)["rows"]], [self.file])
+
+    def test_clearing_recents_leaves_the_favourites_alone(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
+        answer = self.data(self.as_owner("DELETE", f"{PREFIX}/views/recents"))
+        self.assertEqual(answer, {"cleared": 1})
+        self.assertEqual(self.view("recents")["rows"], [])
+        self.assertEqual([row["name"] for row in self.view("favourites")["rows"]], [self.file])
+
+    def test_a_guest_is_not_heard_on_the_view_routes(self):
+        for method, path in (
+            ("GET", f"{PREFIX}/views/recents"),
+            ("GET", f"{PREFIX}/views/shared"),
+            ("DELETE", f"{PREFIX}/views/recents"),
+        ):
+            with self.subTest(method=method, path=path):
+                response = self.drive(method, path)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json["errors"][0]["type"], "PermissionError")
+
+
+class TestVersionRoutes(DriveHTTPCase):
+    """§9.1's history over §11.2's six version rows."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = self.make_file(self.folder, "versioned.bin", b"version bytes")
+        frappe.db.commit()
+        self.addCleanup(self.drop_node)
+
+    def drop_node(self):
+        frappe.db.rollback()
+        drop_node_rows([self.node])
+        frappe.db.commit()
+
+    def take(self, **body):
+        return self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.node}/versions", body=body))
+
+    def test_a_take_answers_a_sequence_and_the_page_never_carries_the_blob(self):
+        self.assertEqual(self.take(kind="named", label="First"), {"seq": 1})
+        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/versions")
+        page = self.data(response)
+        self.assertEqual(set(page), {"rows", "next_cursor"})
+        self.assertIsNone(page["next_cursor"])
+        row = page["rows"][0]
+        self.assertEqual(set(row), VERSION_SHAPE_FIELDS)
+        self.assertEqual((row["seq"], row["kind"], row["label"], row["actor"]), (1, "named", "First", OWNER))
+        self.assertNotIn("blob", response.get_data(as_text=True))
+
+    def test_a_label_and_a_pin_are_written_and_answered(self):
+        self.take()
+        answer = self.data(
+            self.as_owner(
+                "PATCH",
+                f"{PREFIX}/nodes/{self.node}/versions/1",
+                body={"label": "Release", "pinned": True},
+            )
+        )
+        self.assertEqual(answer, {"label": "Release", "pinned": 1})
+        self.reread()
+        stored = frappe.db.get_value(
+            "Drive Node Version", {"node": self.node, "seq": 1}, ["label", "pinned"], as_dict=True
+        )
+        self.assertEqual((stored.label, stored.pinned), ("Release", 1))
+
+    def test_a_restore_answers_the_sequence_it_captured_first(self):
+        self.take()
+        answer = self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.node}/versions/1/restore", body={}))
+        self.assertEqual(answer, {"seq": 2})
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": self.node}), 2)
+
+    def test_a_version_delete_removes_the_row(self):
+        self.take()
+        self.assertEqual(self.data(self.as_owner("DELETE", f"{PREFIX}/nodes/{self.node}/versions/1")), {})
+        self.reread()
+        self.assertFalse(frappe.db.exists("Drive Node Version", {"node": self.node, "seq": 1}))
+
+    def test_a_version_content_read_redirects_to_a_signed_url(self):
+        self.take()
+        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/versions/1/content")
+        self.assertEqual(response.status_code, 302)
+        location = response.headers["Location"]
+        self.assertTrue(location.startswith("/f/"), location)
+        self.assertIn("e=", location)
+        self.assertIn("s=", location)
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+
+    def test_a_link_holder_may_not_delete_a_version(self):
+        # §11.2 gives the delete MANAGE, and §5.10 caps a link at EDIT, so no
+        # link holder ever reaches this row.
+        created = grant(self.node, "$LINK", EDIT, self.owner)
+        frappe.db.commit()
+        token = created["principal"].split(":", 1)[1]
+        self.take()
+        sid = self.session_for(STRANGER)
+        response = self.drive("DELETE", f"{PREFIX}/nodes/{self.node}/versions/1", sid=sid, links=token)
+        self.refusal(response, 403, "DriveForbidden")
+        self.reread()
+        self.assertTrue(frappe.db.exists("Drive Node Version", {"node": self.node, "seq": 1}))
+
+    def test_an_unknown_sequence_is_not_found(self):
+        response = self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/versions/9/content")
+        self.refusal(response, 404, "DriveNotFound")
+
+    def test_a_sequence_below_one_is_a_bad_request(self):
+        response = self.as_owner("DELETE", f"{PREFIX}/nodes/{self.node}/versions/0")
+        self.refusal(response, 400, "DriveError")
+
+
+class TestThreadRoutes(DriveHTTPCase):
+    """§9.3's threads and comments over §11.2's six rows."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc = self.make_document("Threaded")
+        frappe.db.commit()
+        self.addCleanup(self.drop_document)
+
+    def drop_document(self):
+        frappe.db.rollback()
+        drop_record_rows([self.doc])
+        drop_node_rows([self.doc])
+        frappe.db.commit()
+
+    def open_thread(self, text="First note", anchor="block-1"):
+        return self.data(
+            self.as_owner("POST", f"{PREFIX}/nodes/{self.doc}/threads", body={"anchor": anchor, "text": text})
+        )
+
+    def threads_of(self, thread):
+        listed = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.doc}/threads"))
+        return next(row for row in listed["threads"] if row["name"] == thread)
+
+    def test_a_thread_create_answers_both_ids_and_the_list_carries_the_comment(self):
+        opened = self.open_thread()
+        self.assertEqual(set(opened), {"thread", "comment"})
+        thread = self.threads_of(opened["thread"])
+        self.assertEqual(set(thread), THREAD_SHAPE_FIELDS)
+        self.assertEqual(thread["node"], self.doc)
+        self.assertFalse(thread["resolved"])
+        self.assertEqual([row["name"] for row in thread["comments"]], [opened["comment"]])
+        self.assertEqual(thread["comments"][0]["author"], OWNER)
+        self.assertEqual(thread["comments"][0]["content"], "First note")
+
+    def test_a_thread_is_resolved_and_then_reopened(self):
+        opened = self.open_thread()
+        path = f"{PREFIX}/threads/{opened['thread']}"
+        self.assertEqual(self.data(self.as_owner("PATCH", path, body={"resolved": True})), {"resolved": True})
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Comment Thread", opened["thread"], "resolved"), 1)
+        self.assertEqual(
+            self.data(self.as_owner("PATCH", path, body={"resolved": False})), {"resolved": False}
+        )
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Comment Thread", opened["thread"], "resolved"), 0)
+
+    def test_a_resolve_without_the_flag_is_a_bad_request(self):
+        opened = self.open_thread()
+        response = self.as_owner("PATCH", f"{PREFIX}/threads/{opened['thread']}", body={})
+        self.refusal(response, 400, "DriveError")
+
+    def test_a_reply_is_appended_to_its_thread(self):
+        opened = self.open_thread()
+        answer = self.data(
+            self.as_owner("POST", f"{PREFIX}/threads/{opened['thread']}/comments", body={"text": "Second"})
+        )
+        self.assertEqual(set(answer), {"comment"})
+        thread = self.threads_of(opened["thread"])
+        self.assertEqual({row["name"] for row in thread["comments"]}, {opened["comment"], answer["comment"]})
+
+    def test_a_comment_is_edited_and_then_deleted(self):
+        opened = self.open_thread()
+        path = f"{PREFIX}/comments/{opened['comment']}"
+        self.assertEqual(self.data(self.as_owner("PATCH", path, body={"text": "Rewritten"})), {})
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Comment", opened["comment"], "content"), "Rewritten")
+        self.assertEqual(self.data(self.as_owner("DELETE", path)), {})
+        self.reread()
+        self.assertFalse(frappe.db.exists("Drive Comment", opened["comment"]))
+
+    def test_a_guest_holding_a_comment_link_comments_under_a_server_set_author(self):
+        # §6.7: a guest supplies the display name they typed, never the
+        # identity. The author column is the server's to write.
+        created = grant(self.doc, "$LINK", COMMENT, self.owner)
+        frappe.db.commit()
+        token = created["principal"].split(":", 1)[1]
+        answer = self.data(
+            self.drive(
+                "POST",
+                f"{PREFIX}/nodes/{self.doc}/threads",
+                body={"anchor": "block-2", "text": "From outside", "author_name": "Visitor"},
+                links=token,
+            )
+        )
+        self.reread()
+        stored = frappe.db.get_value(
+            "Drive Comment", answer["comment"], ["author", "author_name"], as_dict=True
+        )
+        self.assertEqual((stored.author, stored.author_name), ("Guest", "Visitor"))
+
+    def test_a_thread_list_is_refused_on_a_node_the_caller_cannot_read(self):
+        sid = self.session_for(STRANGER)
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.doc}/threads", sid=sid)
+        self.refusal(response, 404, "DriveNotFound")
+
+
+class TestRecordRoutes(DriveHTTPCase):
+    """§9.4's history and §9.5's private per-person marks."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = create_folder(self.owner, self.root.name, "Recorded")
+        frappe.db.commit()
+        self.addCleanup(self.drop_node)
+
+    def drop_node(self):
+        frappe.db.rollback()
+        drop_record_rows([self.node])
+        drop_node_rows([self.node])
+        frappe.db.commit()
+
+    def test_the_activity_page_carries_the_create_row_in_its_declared_shape(self):
+        page = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/activity"))
+        self.assertEqual(set(page), {"rows", "next_cursor"})
+        self.assertIsNone(page["next_cursor"])
+        self.assertEqual([row["action"] for row in page["rows"]], ["create"])
+        row = page["rows"][0]
+        self.assertEqual(set(row), ACTIVITY_SHAPE_FIELDS)
+        self.assertEqual((row["node"], row["actor"]), (self.node, OWNER))
+
+    def test_the_activity_page_honours_its_limit_and_hands_back_a_cursor(self):
+        self.data(self.as_owner("PATCH", f"{PREFIX}/nodes/{self.node}", body={"title": "Renamed"}))
+        first = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/activity", query={"limit": "1"}))
+        self.assertEqual(len(first["rows"]), 1)
+        self.assertIsNotNone(first["next_cursor"])
+        second = self.data(
+            self.as_owner(
+                "GET",
+                f"{PREFIX}/nodes/{self.node}/activity",
+                query={"limit": "1", "cursor": first["next_cursor"]},
+            )
+        )
+        self.assertEqual(len(second["rows"]), 1)
+        self.assertNotEqual(second["rows"][0]["name"], first["rows"][0]["name"])
+
+    def test_activity_is_refused_on_a_node_the_caller_cannot_read(self):
+        sid = self.session_for(STRANGER)
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.node}/activity", sid=sid)
+        self.refusal(response, 404, "DriveNotFound")
+
+    def test_a_visit_records_one_recent_row_for_the_caller_alone(self):
+        self.assertEqual(self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.node}/visit", body={})), {})
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Recent", {"node": self.node, "user": OWNER}), 1)
+        self.assertEqual(frappe.db.count("Drive Recent", {"node": self.node, "user": STRANGER}), 0)
+        self.assertEqual(frappe.db.count("Drive Activity", {"node": self.node, "action": "create"}), 1)
+
+    def test_a_favourite_is_set_and_cleared_for_the_caller_alone(self):
+        self.assertEqual(self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.node}/favourite")), {})
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Favourite", {"node": self.node, "user": OWNER}), 1)
+        self.assertEqual(frappe.db.count("Drive Favourite", {"node": self.node, "user": STRANGER}), 0)
+        self.assertEqual(self.data(self.as_owner("DELETE", f"{PREFIX}/nodes/{self.node}/favourite")), {})
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Favourite", {"node": self.node}), 0)
+
+    def test_a_guest_is_not_heard_on_a_visit_or_a_favourite(self):
+        calls = (
+            ("POST", f"{PREFIX}/nodes/{self.node}/visit", {}),
+            ("PUT", f"{PREFIX}/nodes/{self.node}/favourite", None),
+            ("DELETE", f"{PREFIX}/nodes/{self.node}/favourite", None),
+        )
+        for method, path, body in calls:
+            with self.subTest(method=method):
+                response = self.drive(method, path, body=body)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json["errors"][0]["type"], "PermissionError")
+
+
+class TestNotificationRoutes(DriveHTTPCase):
+    """§9.5's inbox: the caller's own pointers, and nobody else's."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = create_folder(self.owner, self.root.name, "Notified")
+        self.activity = activity_core.record(self.owner, self.node, "edit", detail={"version": 1})
+        activity_core.notify_users(self.activity, (OWNER, STRANGER))
+        self.mine = frappe.db.get_value(
+            "Drive Notification", {"activity": self.activity, "to_user": OWNER}, "name"
+        )
+        self.theirs = frappe.db.get_value(
+            "Drive Notification", {"activity": self.activity, "to_user": STRANGER}, "name"
+        )
+        frappe.db.commit()
+        self.addCleanup(self.drop_node)
+
+    def drop_node(self):
+        frappe.db.rollback()
+        drop_record_rows([self.node])
+        drop_node_rows([self.node])
+        frappe.db.commit()
+
+    def test_the_inbox_pages_the_callers_own_rows_and_never_another_users(self):
+        page = self.data(self.as_owner("GET", f"{PREFIX}/notifications"))
+        self.assertEqual(set(page), {"rows", "next_cursor"})
+        names = [row["name"] for row in page["rows"]]
+        self.assertIn(self.mine, names)
+        self.assertNotIn(self.theirs, names)
+        row = next(item for item in page["rows"] if item["name"] == self.mine)
+        self.assertEqual(set(row), NOTIFICATION_SHAPE_FIELDS)
+        self.assertEqual(row["read"], 0)
+        self.assertEqual(row["activity"]["name"], self.activity)
+        self.assertEqual(row["activity"]["node"], self.node)
+
+    def test_reading_another_users_notification_marks_nothing(self):
+        answer = self.data(
+            self.as_owner("POST", f"{PREFIX}/notifications/read", body={"notifications": [self.theirs]})
+        )
+        self.assertEqual(answer, {"read": 0})
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Notification", self.theirs, "read"), 0)
+
+    def test_reading_the_callers_own_notification_marks_exactly_it(self):
+        answer = self.data(
+            self.as_owner("POST", f"{PREFIX}/notifications/read", body={"notifications": [self.mine]})
+        )
+        self.assertEqual(answer, {"read": 1})
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Notification", self.mine, "read"), 1)
+        self.assertEqual(frappe.db.get_value("Drive Notification", self.theirs, "read"), 0)
+
+    def test_naming_neither_notifications_nor_all_is_a_bad_request(self):
+        response = self.as_owner("POST", f"{PREFIX}/notifications/read", body={})
+        self.refusal(response, 400, "DriveError")
+
+    def test_a_guest_is_not_heard_on_the_notification_routes(self):
+        for method, path, body in (
+            ("GET", f"{PREFIX}/notifications", None),
+            ("POST", f"{PREFIX}/notifications/read", {"all": True}),
+        ):
+            with self.subTest(method=method, path=path):
+                response = self.drive(method, path, body=body)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json["errors"][0]["type"], "PermissionError")
