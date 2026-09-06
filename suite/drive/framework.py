@@ -51,6 +51,20 @@ SHARE_RIGHTS = ("read", "write", "share", "submit", "email", "print")
 NODE_DEPTH = 1_000_000
 
 
+def handle_http_request() -> None:
+    """Run the `/api/suite/drive/` translator on every request on the site.
+
+    Frappe's dotted hook targets terminate in this module (ARCHITECTURE.md),
+    so `suite/hooks.py` names this rather than the translator itself. The
+    import is function-local because this module is loaded by the permission
+    hooks too, and the translator brings in the whole route table; a request
+    that is not Drive's leaves after the prefix comparison inside it.
+    """
+    from suite.drive.http.translator import handle_before_request
+
+    handle_before_request()
+
+
 def is_drive_admin(user: str | None = None) -> bool:
     user = user or frappe.session.user
     return user == "Administrator" or "Suite Admin" in frappe.get_roles(user)
