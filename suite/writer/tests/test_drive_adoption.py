@@ -444,6 +444,70 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         docs.get_document(entity.name)
         self.assertEqual(frappe.response["data"]["content_docname"], docname)
 
+    def test_the_legacy_read_path_publishes_the_page_payload_the_editor_reads(self):
+        """`get_document` merges the document onto the payload
+        `get_entity_with_permissions` published, and §10.2 keeps that row on
+        the `File` store while the type is in the expand phase. The page reads
+        the permission bits to hide its buttons and the trail to draw the
+        breadcrumb, so the whole payload is what has to arrive, not the id."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        entity = docs.create_document(title=f"Payload {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+
+        docs.get_document(entity.name)
+        payload = frappe.response["data"]
+
+        self.assertEqual(payload["name"], entity.name)
+        self.assertEqual(payload["content_doctype"], DOCTYPE)
+        self.assertEqual(payload["read"], 1)
+        self.assertEqual(payload["write"], 1)
+        self.assertEqual(payload["kind"], "native")
+        # The creator owns the row, so the trail reaches their own Home.
+        self.assertTrue(payload["breadcrumbs"])
+        self.assertEqual(payload["breadcrumbs"][-1]["name"], entity.name)
+        # `hide_storage_key`: the raw storage key leaks the owner's path.
+        self.assertIsNone(payload["file_url"])
+        self.assertEqual(payload["share_count"], 0, "a new document is shared with nobody")
+
+    def test_a_stranger_is_refused_the_document_by_the_rule_that_wrote_it(self):
+        """The legacy gate still decides. No node carries this row, so the
+        answer comes from `generate_upward_path` - the rule `create_document`
+        checked on the way in - and it refuses with the class `ErrorPage.vue`
+        sends a signed-out visitor to the login page on."""
+        frappe.set_user(USER)
+        entity = docs.create_document(title=f"Private {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        # `frappe.response` outlives one test, so the refusal is asked to
+        # leave an empty envelope rather than merely not to fill this one.
+        frappe.response.pop("data", None)
+        with self.assertRaises(frappe.PermissionError):
+            docs.get_document(entity.name)
+        self.assertIsNone(frappe.response.get("data"))
+
+    def test_a_removed_row_is_not_found_by_the_legacy_read_path(self):
+        """The old query filtered `status: STATUS_ACTIVE`, so a document in
+        the trash opened as a page said it was gone rather than rendering."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        entity = docs.create_document(title=f"Removed {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.set_value("File", entity.name, "status", "Removed", update_modified=False)
+
+        with self.assertRaises(DriveNotFound):
+            docs.get_document(entity.name)
+
     def test_a_legacy_document_still_takes_its_private_history(self):
         docname = self._legacy_document()
         document = frappe.get_doc(DOCTYPE, docname)
