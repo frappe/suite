@@ -467,10 +467,11 @@ to this worktree. `slides.drive.__file__` is asserted to come from the
 worktree. Four of the new unit tests answer `frappe.db` with a `MagicMock`
 bound to `frappe.local.db`, so a guard runs against real code with no server.
 
-### The site gate, not run here
+### The site gate, run on `slides.localhost`
 
-The orchestrator serialises these. Run from
-`/home/faris/benches/suite-bench`, with `PYTHONPATH` set to this worktree:
+Run 2026-09-06 from `/home/faris/benches/suite-bench` against the main
+worktree at `5b79746c0`, serialised. `migrate` was not run: the repair below
+touches no schema, and the site already carries the `node` column.
 
 ```
 bench --site slides.localhost migrate
@@ -486,28 +487,75 @@ bench --site slides.localhost run-tests --module suite.drive.api.tests.test_file
 bench --site slides.localhost run-tests --module suite.drive.tests.test_upload
 bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
 bench --site slides.localhost run-tests --module suite.tests.test_architecture
+bench --site slides.localhost run-tests --module suite.tests.test_composition
 ```
 
-`migrate` should add the `node` column and nothing else. The Drive and Writer
-modules are in the list because this ticket changed `nodes.create_file`,
-`content`, and `drive.__all__`, which they all exercise. `test_upload` is in it
-for the same reason and was missing from the earlier list.
+The Drive and Writer modules are in the list because this ticket changed
+`nodes.create_file`, `content`, and `drive.__all__`, which they all exercise.
+`test_composition` was added to the run beside `test_architecture`.
 
-Expected counts from this HEAD: `suite.slides.tests.test_drive_adoption` is 30
-unit (`TestSlidesDeclaration`) and 70 integration
-(`TestSlidesBeforeActivation` 10, `TestSlidesInDrive` 60), 100 in total.
-`suite.writer.tests.test_drive_adoption` is 23 unit and 43 integration, 66 in
-total.
+#### Results
 
-**70 Slides integration tests and 43 Writer ones are unverified.** They have
-never run: this worktree may not touch `slides.localhost`. Nothing outside the
-"Static and pure checks" table above has been executed, including every test
-either review added for a defect it fixed.
+| Module | Result |
+|---|---|
+| `suite.slides.tests.test_drive_adoption` | 30 unit, 70 integration, all OK |
+| `suite.slides.tests.test_pasted_media` | 3 OK |
+| `suite.slides.tests.test_thumbnail_patches` | 5 OK |
+| `suite.slides.api.test_file` | 21 OK |
+| `suite.drive.tests.test_content` | 53 unit, 49 integration, all OK |
+| `suite.drive.tests.test_nodes` | 13 unit, 23 integration, all OK |
+| `suite.drive.tests.test_previews` | 14 unit, 13 integration, all OK |
+| `suite.drive.tests.test_versions` | 7 unit, 10 integration, all OK |
+| `suite.drive.api.tests.test_files` | 49 OK |
+| `suite.drive.tests.test_upload` | 8 unit, 26 integration, all OK |
+| `suite.tests.test_architecture` | 7 OK |
+| `suite.tests.test_composition` | 3 OK |
+| `suite.writer.tests.test_drive_adoption` | 23 unit OK. 43 integration, 3 errors, all pre-existing |
 
-#### What the gate is most likely to catch
+The three Writer errors are `test_activation_would_accept_the_declaration_itself`,
+`test_a_stranger_reads_neither_the_row_nor_the_list`, and
+`test_an_inherited_folder_grant_reaches_the_row_and_the_list`. They reproduce
+at `a8f747fd2` with `suite/drive/_core/content.py` restored to that revision,
+so they are not this repair. They sit in Writer's list-permission path and
+belong to ticket 17. Not fixed here.
 
-Each item below is a static suspicion, not an observed failure. They are
-ordered by how likely they are to stop the run.
+#### The one defect the gate caught
+
+The first run of `suite.slides.tests.test_drive_adoption` gave 70 integration
+tests and 6 errors. Every trace ended the same way: `adopt_media` called
+`nodes._validate_stored_position` on a sound destination and got
+`DriveConflict("The Drive node has an invalid tree position")`.
+
+`_document_node` read a field list with no `parent`, and the position check
+walks the stored `parent` link. A `frappe._dict` answers `None` for a column it
+was never asked for, so the check read every content document as a node with no
+parent. The empty `path` in the traces was correct, not the fault: §3.1 gives a
+direct child of a root `parent = <root id>`, `root = <root id>`, and
+`path = ""`. Every cross-deck paste failed, for every caller.
+
+| Commit | What it did |
+|---|---|
+| `5b1fe60c4` | Added `parent` to `DOCUMENT_NODE_FIELDS`, with the reason on the tuple |
+| `5b79746c0` | Five Drive-level `adopt_media` tests, all red before `5b1fe60c4` |
+
+`adopt_media` had no test in `suite.drive.tests.test_content` before this. It
+was reached only through the Slides module, which is why a defect in Drive's
+own core surfaced on an app ticket's site gate. The new tests cover a
+destination below a root and one below a folder, refuse a destination whose
+path disagrees with its parent, refuse one that stores no parent, and assert
+from the check's own source that the field list covers every column it walks.
+Validation was not relaxed for folders, media, or documents: the two refusal
+tests paste once into a sound destination first, so neither can pass because
+adoption is broken everywhere.
+
+#### What the gate was expected to catch
+
+Each item below was a static suspicion written before the run. None of them is
+what the run found. Items 1 and 3 did not fire, because the registry is still
+empty. Item 5's shape did appear, from the new tests rather than from the site:
+a test that leaves a node's stored position corrupt strands the fixture roots,
+because `_purge_fixture_roots` walks the tree Drive's own way and refuses an
+inconsistent one. The `_corrupt` helper puts the column back before cleanup.
 
 1. **A pre-existing `DocShare` on any `Presentation` or `Writer Document`
    refuses activation.** `validate_content_registry` scans the whole table at
