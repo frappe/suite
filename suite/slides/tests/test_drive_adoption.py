@@ -475,6 +475,35 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         )
         return deck.name
 
+    def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
+        """The refusal is scoped to a deck that carries a node. Before Build no
+        row has one, so a site with Desk assignments lists what it always did.
+
+        This belongs here and not beside the linked-deck guard tests: a legacy
+        row is one with no node, and `require_node` refuses to insert one once
+        the declaration is registered (`content.py:762-765`).
+        """
+        name = self._legacy_deck("Assigned")
+        share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
+
+        self.assertIn("`tabPresentation`.`node` IS NULL", api.get_permission_query_conditions(OTHER))
+
+    def test_a_legacy_composite_still_answers_editor_access_without_a_grant(self):
+        """`get_editor_access` now asks the node first. The legacy arm below it
+        is untouched: Build has not linked the row and ticket 23 owns the legacy
+        read path."""
+        name = self._legacy_deck("Legacy composite access")
+        frappe.db.set_value(DOCTYPE, name, "is_composite", 1, update_modified=False)
+        frappe.db.commit()
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.assertEqual(api.get_editor_access(name), "view")
+
     def test_a_legacy_deck_keeps_its_title_its_slug_and_its_backing_file(self):
         """The whole point of not activating. A node-less deck is untouched:
         the mirrored title, the slug, and the `File` every legacy read path
@@ -1314,19 +1343,6 @@ class TestSlidesInDrive(IntegrationTestCase):
         frappe.set_user("Administrator")
         self.assertEqual(answers, {"none"})
 
-    def test_a_legacy_composite_still_answers_view_without_a_grant(self):
-        """The legacy arm is untouched: Build has not linked the row and ticket
-        23 owns the legacy read path."""
-        legacy = make_presentation("Legacy composite access")
-        self.addCleanup(
-            frappe.delete_doc, DOCTYPE, legacy.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        frappe.db.set_value(DOCTYPE, legacy.name, "is_composite", 1, update_modified=False)
-        frappe.db.commit()
-
-        self._as(OTHER)
-        self.assertEqual(api.get_editor_access(legacy.name), "view")
-
     def test_a_trashed_deck_stays_readable_and_leaves_the_list(self):
         node = self._deck(title="Binned")
         docname = self._docname(node)
@@ -1487,21 +1503,6 @@ class TestSlidesInDrive(IntegrationTestCase):
             api.has_permission(deck, "read", OTHER)
         with self.assertRaises(DriveForbidden):
             api.get_permission_query_conditions(OTHER)
-
-    def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
-        """The refusal is scoped to a deck that carries a node. Before Build no
-        row has one, so a site with Desk assignments lists what it always did."""
-        legacy = make_presentation("Assigned")
-        self.addCleanup(
-            frappe.delete_doc, DOCTYPE, legacy.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        share = frappe.share.add(DOCTYPE, legacy.name, OTHER, read=1)
-        self.addCleanup(
-            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        frappe.db.commit()
-
-        self.assertIn("`tabPresentation`.`node` IS NULL", api.get_permission_query_conditions(OTHER))
 
     def test_a_linked_deck_refuses_every_legacy_method(self):
         """A linked deck never falls back to the `File`: that would be a way
