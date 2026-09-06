@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 
+from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.drive.api.files import get_file_content, get_s3_url
 
 
@@ -11,5 +12,9 @@ def fetch(path: str):
         frappe.throw(_("Not found"), frappe.DoesNotExistError)
     try:
         return get_file_content(name)
-    except (frappe.PermissionError, frappe.DoesNotExistError):
+    except (frappe.PermissionError, frappe.DoesNotExistError, DriveForbidden, DriveNotFound):
+        # This entry point is guest-callable and the path is guessable, so a
+        # refusal must not say which of the two it was. `get_file_content` is a
+        # §11.7 forwarder now and refuses with the `_core` classes; without
+        # them here a denied read answers 403 and confirms the object exists.
         frappe.throw(_("Not found"), frappe.DoesNotExistError)
