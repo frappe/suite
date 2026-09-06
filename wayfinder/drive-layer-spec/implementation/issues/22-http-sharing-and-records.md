@@ -520,3 +520,97 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_access
 bench --site slides.localhost run-tests --module suite.drive.tests.test_views
 bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
 ```
+
+## Site gate, `suite.drive.tests.test_comments`
+
+The module now passes on `slides.localhost`: 3 unit tests and 5 integration
+tests, OK. Status stays `in-progress`. `test_activity`, `test_versions`,
+`test_access`, `test_views`, and `test_grants` are not claimed here.
+
+### The one error, and what it was
+
+First run, at commit `84db9926f`: 3 unit tests passed, 4 of 5 integration tests
+passed, and one errored.
+
+```
+TestCommentWorkflows.test_guest_name_and_link_attribution_distinguish_guest_authors
+frappe.ValidationError: A Drive share link is created with the principal
+$LINK, and its token is minted
+```
+
+The counts are the first run as reported. The message is the string
+`_refuse_borrowed_link_token` throws.
+
+The fixture was wrong. The refusal was right.
+
+The test minted nothing. It called `grant(document, "$LINK:AAAA...", COMMENT,
+admin)` with a token of its own choosing, twice. §5.9 step 1 and §11.2 both put
+the token in the server's hands, so `$LINK:<token>` names a link that already
+exists. This review's defect 1 added `_refuse_borrowed_link_token`
+(`_core/access.py:1046`), which refuses a token that names no row at all. The
+fixture's two tokens named no row, so the guard fired on the first line of the
+test.
+
+The guard is the anti-hijack invariant, not a bug. Without it a caller with
+MANAGE writes `$LINK:aaaaaaaaaaaaaaaaaaaaaa` on their own node and calls the
+guessable result a secret, or writes a victim's live token and makes
+`/drive/l/<token>` resolve to whichever grant sorts first. `test_grants.py:738`
+and `test_grants.py:745` pin both halves. Loosening the guard to let the fixture
+through would delete the fix this ticket landed.
+
+### Fix
+
+`suite/drive/tests/test_comments.py`, one test and two dead constants:
+
+- The fixture asks twice for the bare `$LINK` spelling and reads `principal`
+  back off each result. That is the same shape `test_grants.py` uses.
+- `LINK_A` and `LINK_B`, the two invented tokens, are deleted. Nothing else
+  referenced them.
+- The two minted principals are asserted distinct, so a mint that returned one
+  token twice fails here instead of silently collapsing the guest identities
+  the test exists to tell apart.
+- Regression, new: the test now reads back the node's `$LINK:` grant rows and
+  pins them to exactly the two minted principals. `_refuse_borrowed_link_token`
+  looks at other nodes only, so two capability links on one node are legal.
+  Tightening it to one link per node would break guest attribution, and the
+  assertion says so at the point of failure.
+
+No production file changed. The invariant is untouched.
+
+Agents did not run here. The diagnosis, the fix, and this section are mine.
+
+### Commands and results
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_comments
+Ran 3 tests in 0.001s   OK   (unit)
+Ran 5 tests in 0.415s   OK   (integration)
+```
+
+```
+cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<suite>:<frappe> \
+  ../env/bin/python -m unittest suite.drive.http.tests.test_translator \
+  suite.drive.http.tests.test_shapes suite.drive.http.tests.test_routes \
+  suite.tests.test_architecture
+Ran 173 tests in 1.459s
+OK
+```
+
+```
+ruff 0.14.10 format --check suite/drive/tests/test_comments.py
+1 file already formatted
+ruff 0.14.10 check suite/drive/tests/test_comments.py
+All checks passed!
+```
+
+### Remaining gate
+
+Five modules, serialized, one command at a time:
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
+bench --site slides.localhost run-tests --module suite.drive.tests.test_access
+bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
+```
