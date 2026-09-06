@@ -3,9 +3,9 @@
 Three responsibilities, split by who calls them and how they authenticate:
 
   1. ``check_collab_access`` — called by Hocuspocus' ``onAuthenticate`` hook
-     with the user's session cookie forwarded from the browser. Returns the
-     read/write flags + identity bundle (name, initials, avatar) the server
-     attaches to the connection.
+     with the user's session cookie and link credentials forwarded from the
+     browser. Returns the read/write flags + identity bundle (name, initials,
+     avatar) the server attaches to the connection.
 
   2. ``load_collab_state`` / ``persist_collab_state`` — server-to-server
      calls from the Node process to read/write the persisted Y.Doc binary
@@ -21,6 +21,34 @@ Y.Doc is empty hydrates it from the ``sheets_data`` blob it already
 loaded for the editor, then sets a ``bootstrapped`` flag inside the
 Y.Doc so concurrent first-openers don't double-hydrate. Keeps the
 collab server schema-agnostic.
+
+## A linked sheet answers from Drive (§6.7)
+
+``check_collab_access`` reads the sheet's ``node`` column and answers on one of
+two sides, the same split every other staged Sheets guard makes:
+
+  node set    `Drive Grant` decides, through one point check. EDIT and above
+              writes, READ or COMMENT connects read-only, anything lower is
+              refused. The caller's link credentials arrive in the request's
+              ``X-Drive-Links`` header, which the collab server forwards from
+              the browser, so `suite.drive` builds the same principals it would
+              for any other request and the 20-item limit is enforced in the
+              one place that owns it
+              (`suite.drive._core.principals.parse_link_header`).
+  no node     A legacy row Build has not linked. Unchanged Frappe permission
+              behaviour, and a Guest is still refused: a legacy sheet has no
+              link grant to hold.
+
+Access is not decided once. Every answer carries ``recheckSeconds``, and the
+collab server rechecks each live connection on that cadence: a revoked or
+expired grant closes the socket, and a downgrade from EDIT turns the connection
+read-only in place (§6.7).
+
+A Guest gets a server-controlled identity. Nothing the browser sends names the
+person on the wire, because a link grant proves a capability and not an
+identity: a Guest is "Guest", with no email, no avatar, and no display name a
+caller can choose. The collab server tells two Guests apart by the connection
+it made, never by anything either of them said.
 """
 
 from __future__ import annotations
@@ -29,25 +57,85 @@ import hmac
 
 import frappe
 
+from suite import drive
+
 # Header the collab server sends with every server-to-server call.
 _COLLAB_SECRET_HEADER = "X-Collab-Secret"
+
+# §6.7: how often the collab server re-asks this endpoint for a live
+# connection. It travels in every answer so the cadence has one definition and
+# the server never hard-codes it.
+RECHECK_SECONDS = 5 * 60
+
+# What a Guest is called on the wire. Server-controlled, so a link holder
+# cannot present themselves as somebody else.
+GUEST_LABEL = "Guest"
 
 
 # ── Browser-side: auth hook called by Hocuspocus ──────────────────────────────
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def check_collab_access(name: str) -> dict:
     """Return the caller's read/write capability + identity for a given sheet.
 
-    Cookie-authenticated. Hocuspocus' ``onAuthenticate`` calls this with the
-    user's session forwarded; the response decides whether the websocket is
-    accepted and whether it's allowed to push updates.
+    Hocuspocus' ``onAuthenticate`` calls this with the user's session forwarded,
+    and calls it again every ``recheckSeconds`` for as long as the connection
+    lives. The answer decides whether the websocket is accepted, whether it may
+    push updates, and whether it stays open.
 
     Read access without write means "viewer" — the connection still receives
     updates and emits awareness (cursor, presence), but writes are dropped
     at the server before fan-out.
+
+    ``allow_guest=True`` is what lets a link grant work. A Guest with no link
+    credential still gets nothing: `Drive Grant` is the only thing that can
+    answer for them, and a legacy sheet has none.
     """
+    node = frappe.db.get_value("Sheet", name, "node")
+    if node:
+        return _drive_access(node)
+    return _legacy_access(name)
+
+
+def _drive_access(node: str) -> dict:
+    """Answer one linked sheet from `Drive Grant` alone (§1, §6.7).
+
+    Two point checks, not one: the ladder decides the capability, so EDIT is
+    asked separately from READ. Each is one indexed grant query over the node's
+    materialised ancestry, which is what makes a five-minute recheck per live
+    connection affordable.
+
+    A refusal is returned, not raised. The collab server reads ``canRead: False``
+    as a clean close, and the reason tells a revoked grant from an expired link
+    so the browser can say which happened. `DriveNotFound` is Drive masking a
+    node below READ (§5.4); it is answered exactly like a refusal, so the reply
+    never says whether the sheet exists.
+    """
+    try:
+        drive.check(node, drive.READ)
+    except drive.DriveError as refusal:
+        return _refused(type(refusal).__name__)
+    can_write = _may_edit(node)
+    return _granted(frappe.session.user, can_write)
+
+
+def _may_edit(node: str) -> bool:
+    """True when the caller holds EDIT or above at `node`.
+
+    UPLOAD sits between COMMENT and EDIT on the ladder and does not write a
+    body: it places new nodes. So the write flag asks for EDIT and nothing
+    lower answers it.
+    """
+    try:
+        drive.check(node, drive.EDIT)
+    except drive.DriveError:
+        return False
+    return True
+
+
+def _legacy_access(name: str) -> dict:
+    """Answer one sheet Build has not linked, exactly as before ticket 19."""
     if frappe.session.user == "Guest":
         frappe.throw("Login required", frappe.AuthenticationError)
 
@@ -56,15 +144,50 @@ def check_collab_access(name: str) -> dict:
         # Don't 403 here — the collab server treats {canRead: False} as a
         # clean refusal and closes the socket. Returning structured data
         # is easier to surface to the client than parsing exception text.
-        return {"canRead": False, "canWrite": False}
+        return _refused("DriveForbidden")
 
     can_write = bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False))
-    user = frappe.session.user
-    identity = _user_identity(user)
+    return _granted(frappe.session.user, can_write)
+
+
+def _refused(reason: str) -> dict:
+    return {
+        "canRead": False,
+        "canWrite": False,
+        "reason": reason,
+        "recheckSeconds": RECHECK_SECONDS,
+    }
+
+
+def _granted(user: str, can_write: bool) -> dict:
+    identity = _identity(user)
     return {
         "canRead": True,
         "canWrite": can_write,
+        "recheckSeconds": RECHECK_SECONDS,
         "user": user,
+        **identity,
+    }
+
+
+def _identity(user: str) -> dict:
+    """Name the connected caller, on the server's terms.
+
+    A Guest holds a link, and a link proves a capability rather than an
+    identity, so there is nothing about them to look up and nothing they may
+    tell us. They are "Guest" with no avatar. The collab server is what tells
+    two of them apart, from the connection it made.
+    """
+    if user == "Guest":
+        return {
+            "isGuest": True,
+            "fullName": GUEST_LABEL,
+            "initials": GUEST_LABEL[0],
+            "userImage": "",
+        }
+    identity = _user_identity(user)
+    return {
+        "isGuest": False,
         "fullName": identity["full_name"],
         "initials": identity["initials"],
         "userImage": identity["user_image"],
