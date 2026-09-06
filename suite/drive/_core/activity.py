@@ -30,6 +30,24 @@ ACTIVITY_ACTIONS = (
 # the same cap rather than a second pair that could drift.
 DEFAULT_RECORD_LIMIT = 60
 
+# §9.4: `client` holds the User-Agent on WebDAV requests only. The engine may
+# not read the transport request, so the adapter names its client once per
+# request and every write below that point picks it up. Longer than the column
+# is truncated, not refused: the row is the record of a write that succeeded.
+MAX_CLIENT_LENGTH = 255
+
+
+def bind_client(client: str | None) -> None:
+    """Name the client every activity row written in this request belongs to."""
+    frappe.local.drive_activity_client = (
+        client.strip()[:MAX_CLIENT_LENGTH] if isinstance(client, str) and client.strip() else None
+    )
+
+
+def current_client() -> str | None:
+    """The client an adapter named for this request, or None on an unnamed one."""
+    return getattr(frappe.local, "drive_activity_client", None)
+
 
 def record(
     principals: Principals,
@@ -45,7 +63,9 @@ def record(
         frappe.throw(_("Drive activity action is invalid"), frappe.ValidationError)
     if via_link is not None and not via_link.startswith("$LINK:"):
         frappe.throw(_("Drive activity link attribution is invalid"), frappe.ValidationError)
-    if client is not None and len(client) > 255:
+    if client is None:
+        client = current_client()
+    if client is not None and len(client) > MAX_CLIENT_LENGTH:
         frappe.throw(_("Drive activity client is too long"), frappe.ValidationError)
     if not frappe.db.exists("Drive Node", node):
         raise DriveNotFound(_("Drive node {0} was not found").format(node))

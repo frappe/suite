@@ -15,8 +15,10 @@ from lxml import etree
 from werkzeug.http import parse_date
 from werkzeug.wrappers import Response
 
-from suite.drive.api.permissions import user_has_permission
-from suite.drive.webdav import deadprops, pathmap, perms
+from suite.drive._core import nodes as node_core
+from suite.drive._core.access import require
+from suite.drive._core.roles import EDIT
+from suite.drive.webdav import deadprops, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError
@@ -54,18 +56,16 @@ class Instruction:
 
 def handle(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
-    if resolved.root == "virtual" and resolved.is_mount:
-        raise Forbidden("Cannot modify the namespace root.")
+    if resolved.is_mount:
+        raise Forbidden("Cannot modify the WebDAV namespace root's properties.")
     if not resolved.exists:
         raise NotFoundError("Resource not found.")
 
-    row = resolved.entity
-    # an unreadable resource is 404, not 403 — indistinguishable from absent,
-    # matching GET/PROPFIND so write verbs don't leak existence
-    if not perms.resolve_entity_access(row, ctx.user)["read"]:
-        raise NotFoundError("Resource not found.")
-    if not user_has_permission(row.name, "write"):
-        raise Forbidden("You cannot modify this resource's properties.")
+    row = resolved.node
+    # §12.1: EDIT on the node. Below READ `require` raises DriveNotFound, so
+    # an unreadable resource is 404 and never 403 - indistinguishable from
+    # absent, matching GET and PROPFIND, so a write verb leaks no existence.
+    require(row, EDIT, ctx.principals)
     evaluate_preconditions(ctx.request, row)
 
     from suite.drive.webdav import locks
@@ -77,7 +77,7 @@ def handle(ctx: DavContext) -> Response:
 
     failed = any(instruction.status != 200 for instruction in instructions)
     if not failed:
-        _apply(row, instructions)
+        _apply(ctx, row, instructions)
 
     return _multistatus(ctx, resolved, instructions, failed)
 
@@ -124,15 +124,21 @@ def _validate(row: frappe._dict, instructions: list[Instruction]) -> None:
                 instruction.status = 507
 
 
-def _apply(row: frappe._dict, instructions: list[Instruction]) -> None:
+def _apply(ctx: DavContext, row: frappe._dict, instructions: list[Instruction]) -> None:
     for instruction in instructions:
         if instruction.action == "set":
             deadprops.upsert(row.name, instruction.element)
             if instruction.tag == WIN32_MTIME:
                 from suite.drive.webdav.properties import to_site_naive
 
-                stamp = to_site_naive(parse_date(instruction.element.text))
-                frappe.db.set_value("File", row.name, "file_modified", stamp, update_modified=False)
+                # §8.11: Win32LastModifiedTime is a client mtime, so it lands
+                # in `content_modified` through the workflow that owns it -
+                # one indexed update, no version, no charge, no activity row.
+                node_core.update(
+                    ctx.principals,
+                    row.name,
+                    content_modified=to_site_naive(parse_date(instruction.element.text)),
+                )
         else:
             deadprops.remove(row.name, instruction.tag)
 

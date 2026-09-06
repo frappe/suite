@@ -1,22 +1,22 @@
 """LOCK and UNLOCK.
 
-Windows/Office's new-file flow is LOCK (unmapped URL) → PUT with the token →
-UNLOCK, and RFC 4918 §7.3 replaced lock-null resources with "create an empty
-resource, then lock it" — so LOCK on an unmapped URL creates a real zero-byte
-file. Refresh is an empty-body LOCK carrying the token in If.
-"""
+Windows and Office open a new file as LOCK on an unmapped URL, then PUT with
+the token, then UNLOCK. RFC 4918 §7.3 replaced lock-null resources with
+"create the resource, then lock it", so a LOCK at an unmapped URL creates a
+real node with §8.5's empty head: no blob, no bytes, and no charge (§12.3).
+An expired unused lock leaves that node exactly as it stands.
 
-import hashlib
+Refresh is an empty-body LOCK carrying the token in an If header.
+"""
 
 import frappe
 from lxml import etree
 from werkzeug.wrappers import Response
 
-from suite.drive.api.files import get_upload_path
-from suite.drive.api.permissions import user_has_permission
-from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
-from suite.drive.utils import create_drive_file, get_ancestors_of
-from suite.drive.webdav import locks, pathmap, perms
+from suite.drive._core import nodes as node_core
+from suite.drive._core.access import chain_ids, effective_role, require
+from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
     BadRequest,
@@ -26,7 +26,6 @@ from suite.drive.webdav.errors import (
     Locked,
     NotFoundError,
     PreconditionFailed,
-    quota_guard,
 )
 from suite.drive.webdav.xmlutil import XML_BODY_CAP, dav, dav_element, parse_xml, xml_response
 
@@ -37,8 +36,8 @@ MAX_OWNER_XML_BYTES = 64 * 1024
 
 def handle_lock(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
-    if resolved.is_mount or resolved.root == "virtual":
-        raise Forbidden("Cannot lock the namespace root.")
+    if resolved.is_mount:
+        raise Forbidden("Cannot lock the WebDAV namespace root.")
 
     depth = ctx.depth if ctx.depth is not None else "infinity"
     if depth == "1":
@@ -55,10 +54,10 @@ def handle_unlock(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
     if not resolved.exists or resolved.is_mount:
         raise NotFoundError("Resource not found.")
-    # unreadable is indistinguishable from absent — otherwise the 409-vs-404
-    # split below is an existence oracle (anti-enumeration, matches other verbs)
-    if not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
-        raise NotFoundError("Resource not found.")
+    # unreadable is indistinguishable from absent - otherwise the 409-vs-404
+    # split below is an existence oracle (anti-enumeration, matches other
+    # verbs). `require` raises DriveNotFound below READ, which is that answer.
+    require(resolved.node, READ, ctx.principals)
 
     header = ctx.request.headers.get("Lock-Token", "").strip()
     if not header.startswith("<") or not header.endswith(">"):
@@ -66,15 +65,14 @@ def handle_unlock(ctx: DavContext) -> Response:
     token = header[1:-1]
 
     lock = locks.find_lock(token)
-    if lock is None or not _covers(lock, resolved.entity.name):
+    if lock is None or not _covers(lock, resolved.node):
         raise Conflict(
             "The token does not identify a lock on this resource.",
             condition="lock-token-matches-request-uri",
         )
 
-    from suite.drive.api.permissions import is_drive_admin
-
-    if lock.owner_user != ctx.user and not is_drive_admin(ctx.user):
+    # §12.1: the lock owner, or a Suite Admin
+    if lock.owner_user != ctx.user and not ctx.principals.is_admin:
         raise Forbidden("Only the lock owner may unlock this resource.")
 
     locks.delete_lock(token)
@@ -85,7 +83,7 @@ def _refresh(ctx: DavContext, resolved: pathmap.ResolvedPath, timeout: int) -> R
     # an unreadable target answers exactly like an unmapped one (anti-enumeration,
     # as on UNLOCK): the owner-mismatch Forbidden below would otherwise confirm
     # a hidden resource and its lock to anyone holding a leaked token
-    if not resolved.exists or not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
+    if not resolved.exists or effective_role(resolved.node, ctx.principals) < READ:
         raise PreconditionFailed("Nothing to refresh at this URL.")
 
     submitted = locks.parsed_if(ctx).all_tokens()
@@ -93,11 +91,7 @@ def _refresh(ctx: DavContext, resolved: pathmap.ResolvedPath, timeout: int) -> R
         raise PreconditionFailed("Refresh requires the lock token in an If header.")
 
     lock = next(
-        (
-            lock
-            for token in submitted
-            if (lock := locks.find_lock(token)) and _covers(lock, resolved.entity.name)
-        ),
+        (lock for token in submitted if (lock := locks.find_lock(token)) and _covers(lock, resolved.node)),
         None,
     )
     if lock is None:
@@ -114,21 +108,19 @@ def _create(
 ) -> Response:
     scope, owner_xml = _parse_lockinfo(body)
 
-    # bound the lock table before materializing anything — the unmapped-URL path
-    # writes a real File row + blob, which must not happen once a user is at the
-    # cap (checking after would orphan the blob when the DB row rolls back)
+    # bound the lock table before anything is created: the unmapped-URL path
+    # writes a node, and a user already at the cap must not leave one behind
+    # for a lock that is then refused
     if locks.user_active_lock_count(ctx.user) >= locks.MAX_ACTIVE_LOCKS_PER_USER:
         raise InsufficientStorage("Too many active locks; release some before creating more.")
 
     created = False
     if resolved.exists:
-        row = resolved.entity
-        # unreadable is indistinguishable from absent (anti-enumeration)
-        if not perms.resolve_entity_access(row, ctx.user)["read"]:
-            raise NotFoundError("Resource not found.")
-        if not user_has_permission(row.name, "write"):
-            raise Forbidden("You cannot lock this resource.")
-        if not row.is_folder:
+        row = resolved.node
+        # §12.1: EDIT on an existing node. Below READ this raises
+        # DriveNotFound, so an unreadable target is 404 (anti-enumeration).
+        require(row, EDIT, ctx.principals)
+        if not resolved.is_collection:
             depth = "0"  # depth is meaningless on a non-collection
     else:
         if ctx.had_trailing_slash:
@@ -137,7 +129,8 @@ def _create(
         created = True
         depth = "0"
 
-    conflicts = locks.find_conflicts(row.name, scope=scope, depth=depth, is_collection=bool(row.is_folder))
+    is_collection = row.kind in ("root", "folder")
+    conflicts = locks.find_conflicts(row.name, scope=scope, depth=depth, is_collection=is_collection)
     tokens = locks.parsed_if(ctx).all_tokens()
     conflicts = [lock for lock in conflicts if not (lock.token in tokens and lock.owner_user == ctx.user)]
     if conflicts:
@@ -154,7 +147,7 @@ def _create(
         owner_user=ctx.user,
         owner_xml=owner_xml,
         requested_timeout=timeout,
-        lock_root=pathmap.href_for(ctx.segments, bool(row.is_folder)),
+        lock_root=pathmap.href_for(ctx.segments, is_collection),
     )
     return _lock_response(lock, status=201 if created else 200, with_token_header=True)
 
@@ -185,54 +178,34 @@ def _parse_lockinfo(body: etree._Element) -> tuple[str, str | None]:
 
 
 def _create_empty_resource(ctx: DavContext, resolved: pathmap.ResolvedPath) -> frappe._dict:
-    if resolved.missing_intermediate or resolved.root == "unknown" or resolved.parent is None:
+    """§12.3's lock-null replacement: an empty Active node under UPLOAD.
+
+    RFC 4918 §7.3 dropped lock-null resources in favour of "create the
+    resource, then lock it", and Windows and Office open a new file that way.
+    The node holds no blob at all, so nothing is stored and nothing is
+    charged; if the lock expires with no PUT, the empty node stays [009 §6].
+    """
+    if resolved.missing_intermediate or resolved.parent is None:
         raise Conflict("Intermediate collections do not exist.")
     parent, name = resolved.parent, ctx.segments[-1]
-    # unreadable parent reads as absent, not forbidden (anti-enumeration)
-    access = perms.resolve_entity_access(parent, ctx.user)
-    if not (access["read"] or access["upload"]):
-        raise NotFoundError("Resource not found.")
-    if not access["upload"]:
-        raise Forbidden("Ask the folder owner for upload access.")
+    # §12.1: UPLOAD on the parent for a LOCK at an unmapped URL. Below READ
+    # this raises DriveNotFound, so an invisible parent answers 404.
+    require(parent, UPLOAD, ctx.principals)
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
 
-    # mirror put._create's storage gate: an over-quota user must not mint new
-    # File rows through the lock-null create path either
-    acquire_owner_storage_lock(ctx.user)
-    with quota_guard():
-        validate_quota(incoming_size=0)
-
-    manager = ctx.manager
-    scratch = get_upload_path(f"webdav_{frappe.generate_hash(length=12)}_lock")
-    scratch.write_bytes(b"")
-    try:
-        drive_file = create_drive_file(
-            name,
-            parent.name,
-            "Application",
-            lambda file: "/" + str(manager.get_disk_path(file)),
-            "application/octet-stream",
-            0,
-        )
-        manager.upload_file(scratch, drive_file, create_thumbnail=False)
-        if manager.s3_enabled:
-            from suite.drive.utils.files import get_s3_key, get_s3_url
-
-            drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-            drive_file.save()
-        drive_file.db_set("content_hash", hashlib.sha256(b"").hexdigest(), update_modified=False)
-    finally:
-        scratch.unlink(missing_ok=True)
-
+    node = node_core.create_empty_file(ctx.principals, parent.name, name)
     pathmap.reset_memo()
-    return pathmap.fetch(drive_file.name)
+    return pathmap.fetch(node)
 
 
-def _covers(lock: locks.LockInfo, entity: str) -> bool:
-    if lock.entity == entity:
+def _covers(lock: locks.LockInfo, row: frappe._dict) -> bool:
+    """Whether one lock reaches this node - itself, or a depth-infinity
+    ancestor. §3.1 materialises the ancestry on the row, so the chain costs
+    nothing beyond the row already in hand."""
+    if lock.entity == row.name:
         return True
-    return lock.depth == "infinity" and lock.entity in get_ancestors_of(entity)
+    return lock.depth == "infinity" and lock.entity in chain_ids(row)[:-1]
 
 
 def _lock_response(lock: locks.LockInfo, status: int, with_token_header: bool) -> Response:
