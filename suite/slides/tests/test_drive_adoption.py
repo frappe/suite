@@ -1129,11 +1129,33 @@ class TestSlidesInDrive(IntegrationTestCase):
         )
 
     def test_a_stranger_reads_no_composite_at_all(self):
+        """One answer for "not a composite", "no such deck", and "a composite
+        you cannot read". `get_composite_presentation` is guest-reachable, so
+        `deck_is_readable` swallows Drive's own `DriveNotFound` and the route
+        raises the single `frappe.PermissionError` it raises for the other two
+        (`presentation.py:759-767`). A `DriveNotFound` expectation here would
+        assert the disclosure the route exists to prevent."""
         composite = self._composite([self._deck(title="Inner")], title="Private composite")
         frappe.db.commit()
         self._as(OTHER)
-        with self.assertRaises(DriveNotFound):
+        with self.assertRaises(frappe.PermissionError):
             api.get_composite_presentation(self._docname(composite))
+
+    def test_the_composite_route_answers_a_stranger_the_same_way_three_times(self):
+        """The three refusals have to be indistinguishable, or the route tells a
+        stranger which names are linked composites (§5.4)."""
+        composite = self._composite([self._deck(title="Inner three")], title="Private three")
+        plain = self._deck(title="Not a composite")
+        frappe.db.commit()
+
+        self._as(OTHER)
+        answers = set()
+        for name in (self._docname(composite), self._docname(plain), "no-such-deck"):
+            with self.subTest(name=name):
+                with self.assertRaises(frappe.PermissionError) as refused:
+                    api.get_composite_presentation(name)
+                answers.add(str(refused.exception))
+        self.assertEqual(len(answers), 1, "three different messages would separate the three cases")
 
     def _composite(self, referenced: list[str], title: str) -> str:
         node = self._deck(title=title)
