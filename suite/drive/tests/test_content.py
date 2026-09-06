@@ -1105,9 +1105,7 @@ class TestContentWorkflows(IntegrationTestCase):
         and every later run in this module fails in `setUpClass`.
         """
         restore = frappe.db.get_value("Drive Node", node, field)
-        self.addCleanup(
-            frappe.db.set_value, "Drive Node", node, field, restore, update_modified=False
-        )
+        self.addCleanup(frappe.db.set_value, "Drive Node", node, field, restore, update_modified=False)
         frappe.db.set_value("Drive Node", node, field, value, update_modified=False)
 
     # creation and linkage
