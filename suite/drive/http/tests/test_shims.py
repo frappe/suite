@@ -26,7 +26,13 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from suite.drive._core.errors import DriveForbidden, DriveLinkExpired, DriveLocked, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveLinkExpired,
+    DriveLocked,
+    DriveNotFound,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 from suite.drive.http import shims
@@ -118,6 +124,17 @@ def _guest_flags(text: str, prefix: str) -> dict[str, bool]:
                     found[f"{prefix}.{holder + '.' if holder else ''}{child.name}"] = guest
 
     walk(tree)
+    return found
+
+
+def shim_entry_points() -> set[str]:
+    """Every `shims.<name>` the eleven legacy modules reach for."""
+    found: set[str] = set()
+    for relative in LEGACY_MODULES:
+        tree = ast.parse((APP / relative).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and getattr(node.value, "id", "") == "shims":
+                found.add(node.attr)
     return found
 
 
@@ -845,7 +862,7 @@ class TestFileForwarders(ShimCase):
         uploads = self.stub("upload_core")
         nodes.available_title.return_value = "Report (2).pdf"
         nodes.stored.return_value = node_row(title="Report (2).pdf")
-        uploads.create_upload.return_value = {"upload_id": "u1"}
+        uploads.create_upload.return_value = {"upload_id": "u1", "mode": "chunked"}
         uploads.finish_upload.return_value = "n1"
 
         upload = MagicMock()
@@ -905,6 +922,78 @@ class TestFileForwarders(ShimCase):
         with self.assertRaises(frappe.ValidationError):
             shims.upload_file(parent="f1", total_file_size=100)
         uploads.create_upload.assert_not_called()
+
+    def posted_file(self, body=b"x" * 12, **form):
+        """One multipart POST to `upload_file`, with nothing cached for it."""
+        upload = MagicMock()
+        upload.filename = "Report.pdf"
+        upload.mimetype = "application/pdf"
+        upload.stream.read.return_value = body
+        request = patch.object(frappe.local, "request", MagicMock(files={"file": upload}), create=True)
+        request.start()
+        self.addCleanup(request.stop)
+        form = patch.object(frappe.local, "form_dict", frappe._dict(**form), create=True)
+        form.start()
+        self.addCleanup(form.stop)
+        cache = patch.object(frappe, "cache", return_value=MagicMock(get_value=lambda key: None))
+        cache.start()
+        self.addCleanup(cache.stop)
+        return upload
+
+    def test_an_upload_that_declares_no_size_declares_the_bytes_it_was_sent(self):
+        """`FileUploader.vue` sends `total_file_size` on a chunked upload only,
+        so every file below Dropzone's twenty megabyte chunk size arrives
+        declaring nothing. The old body sized the file off the disk instead. A
+        session that declares zero refuses its own first chunk with "Upload
+        exceeds the declared file size" and deletes itself.
+        """
+        nodes = self.stub("node_core")
+        uploads = self.stub("upload_core")
+        nodes.stored.return_value = node_row()
+        uploads.create_upload.return_value = {"upload_id": "u1", "mode": "chunked"}
+        uploads.finish_upload.return_value = "n1"
+        self.posted_file(body=b"y" * 4096)
+
+        with (
+            patch.object(shims, "_legacy_list_rows", return_value=[{"name": "n1"}]),
+            patch.object(shims.frappe, "publish_realtime"),
+        ):
+            shims.upload_file(parent="f1")
+
+        self.assertEqual(uploads.create_upload.call_args.args[3], 4096)
+        self.assertEqual(uploads.upload_chunk.call_args.args[3], b"y" * 4096)
+
+    def test_an_upload_that_declares_a_size_keeps_it(self):
+        """A chunked caller sends the whole file's size with every chunk, and
+        only that number can size a session the first chunk opens."""
+        nodes = self.stub("node_core")
+        uploads = self.stub("upload_core")
+        nodes.stored.return_value = node_row()
+        uploads.create_upload.return_value = {"upload_id": "u1", "mode": "chunked"}
+        self.posted_file(
+            body=b"z" * 8, uuid="abc", chunk_index="0", total_chunk_count="4", chunk_byte_offset="0"
+        )
+        self.assertIsNone(shims.upload_file(parent="f1", total_file_size=900))
+        self.assertEqual(uploads.create_upload.call_args.args[3], 900)
+
+    def test_a_direct_upload_target_is_refused_where_the_reason_is(self):
+        """A driver that offers a presigned target opens a session no chunk
+        can be written to. This caller has already sent its bytes here, and
+        §11.7 has no way to hand them on. The framework's own refusal is
+        "expects a direct upload, not chunks", which names nothing a legacy
+        client can act on."""
+        self.stub("node_core")
+        uploads = self.stub("upload_core")
+        uploads.create_upload.return_value = {
+            "upload_id": "u1",
+            "mode": "direct",
+            "url": "https://bucket.example/",
+            "fields": {},
+        }
+        self.posted_file()
+        with self.assertRaises(frappe.ValidationError):
+            shims.upload_file(parent="f1")
+        uploads.upload_chunk.assert_not_called()
 
     def test_an_unreadable_id_answers_none_whichever_refusal_it_meets(self):
         """`translate_old_name` is guest-callable and answers `None` for
@@ -1954,3 +2043,40 @@ class TestPermanentSurface(ShimCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLegacyRefusalMessages(ShimCase):
+    """A legacy client reads the message, not the exception class.
+
+    `report_error` copies a message into the response only when `msgprint`
+    stamped one on, which `frappe.throw` does and a bare `raise` does not. The
+    workflows raise, so without a boundary here a legacy caller reads a status
+    code and nothing else: `FileUploader.vue` reads `_server_messages` alone
+    and prints "Please contact support." for anything it finds nothing in.
+    """
+
+    def test_every_shim_a_legacy_module_reaches_speaks_through_the_boundary(self):
+        silent = sorted(
+            name
+            for name in shim_entry_points()
+            if not getattr(getattr(shims, name), "legacy_boundary", False)
+        )
+        self.assertEqual(silent, [])
+
+    def test_a_workflow_refusal_reaches_the_client_with_its_message(self):
+        nodes = self.stub("node_core")
+        nodes.update.side_effect = DriveForbidden("Ask the folder owner for upload access")
+        frappe.clear_messages()
+        with self.assertRaises(DriveForbidden):
+            shims.rename("n1", "Report.pdf")
+        self.assertIn("Ask the folder owner for upload access", str(frappe.local.message_log))
+
+    def test_the_boundary_keeps_the_class_its_status_code_comes_from(self):
+        """§11.6 reads the code off the class. Remapping every refusal to one
+        of them would answer 400 for a missing node and for a full disk."""
+        nodes = self.stub("node_core")
+        for error in (DriveNotFound, DriveForbidden, DriveConflict):
+            with self.subTest(error=error.__name__):
+                nodes.update.side_effect = error("no")
+                with self.assertRaises(error):
+                    shims.rename("n1", "Report.pdf")
