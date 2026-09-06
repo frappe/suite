@@ -164,7 +164,6 @@ def file_node(
     title: str,
     data: bytes = b"",
     *,
-    mime: str | None = None,
     content_modified=None,
 ) -> frappe._dict:
     """One blob-backed file node, with the blob metadata the DAV suites assert on.
@@ -173,6 +172,11 @@ def file_node(
     strong ETag is the blob's checksum and `getcontenttype` is the blob's
     sniffed mime, so a test that hard-coded either would be asserting against
     its own guess instead of the bytes on the wire.
+
+    The mime is the blob's own and cannot be chosen. `put_blob` sniffs it from
+    the content and takes no override, and `_core.nodes._validated_blob` refuses
+    a file whose mime differs from its blob's, so a fixture that named one would
+    only build a shape the product refuses.
     """
     blob = put_blob(io.BytesIO(data), is_private=True, filename=title)
     node = node_core.create_file(
@@ -181,7 +185,7 @@ def file_node(
         title,
         blob=blob.name,
         size=blob.file_size,
-        mime=mime or blob.mime_type,
+        mime=blob.mime_type,
         content_modified=content_modified,
     )
     return frappe._dict(
