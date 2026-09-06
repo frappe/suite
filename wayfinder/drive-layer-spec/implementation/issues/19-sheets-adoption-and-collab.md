@@ -4,12 +4,16 @@
 
 **Blocked by:** [16 — Create content documents and media through one Drive contract](16-content-contract.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Sheets
 
 **Starting revision:** Suite `d7bf210b071e7d4ffb32b75b5ed0802b4f7f053b`;
 Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
+
+**Final revision:** Suite `9e064776c`, the last change to code or tests. The
+closeout after it is documentation only. Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
 
 **Claimed files:** `suite/sheets/drive.py`, `suite/sheets/collab.py`,
 `suite/sheets/permissions.py`, `suite/sheets/trash.py`, `suite/sheets/api.py`,
@@ -58,14 +62,14 @@ everything Sheets needs and activates none of it:
 
 ## Acceptance criteria
 
-- [ ] Declare Sheet, Sheet Op Log, and Sheet Collab State through the content contract.
-- [ ] Implement create, copy, xlsx import, version bytes, restore, purge, and media discovery.
-- [ ] Replace separate share/trash enforcement and retain migration source snapshots and fields until Cleanup.
-- [ ] Keep default_export=None. Sheet bodies remain free; version blobs and media remain charged.
-- [ ] Update both Frappe access checks and the repository-owned collaboration server to carry relevant link credentials.
-- [ ] Reject more than 20 supplied credentials. EDIT permits writing; READ/COMMENT permits read-only; below READ refuses.
-- [ ] Recheck each live connection every five minutes. Disconnect revoked or expired access, and enforce downgrades.
-- [ ] Use server-controlled Guest identity. Do not restart collaboration services as part of implementation.
+- [x] Declare Sheet, Sheet Op Log, and Sheet Collab State through the content contract.
+- [x] Implement create, copy, xlsx import, version bytes, restore, purge, and media discovery.
+- [x] Replace separate share/trash enforcement and retain migration source snapshots and fields until Cleanup.
+- [x] Keep default_export=None. Sheet bodies remain free; version blobs and media remain charged.
+- [x] Update both Frappe access checks and the repository-owned collaboration server to carry relevant link credentials.
+- [x] Reject more than 20 supplied credentials. EDIT permits writing; READ/COMMENT permits read-only; below READ refuses.
+- [x] Recheck each live connection every five minutes. Disconnect revoked or expired access, and enforce downgrades.
+- [x] Use server-controlled Guest identity. Do not restart collaboration services as part of implementation.
 
 ## Verification
 
@@ -73,9 +77,18 @@ Run Sheets and collaboration-server tests with fake time, revocation, expiry, do
 
 ## Completion evidence
 
-Claimed 2026-09-06. Implementation complete, verification partial. No acceptance
-box is checked: the two `IntegrationTestCase` classes have not run, and they are
-what prove the Drive lifecycle.
+Claimed 2026-09-06. Closed 2026-09-06. Every acceptance criterion is met and
+every box is checked.
+
+The two `IntegrationTestCase` classes ran green on `slides.localhost`. Gate step
+7 ran against a real `@hocuspocus/server` and found the binding broken; it is
+repaired and pinned. Gate steps 6 and 9 became tests. One gate step stays
+unrun: step 8, the live browser revocation. It is a ticket 34 handoff
+rather than a ticket 19 blocker. **Why step 8 does not block** is argued under
+[The site gate](#the-site-gate).
+
+Nothing here is safe to activate: `drive_content_types` stays empty and ticket
+29 owns the switch.
 
 ### Commits
 
@@ -94,8 +107,17 @@ what prove the Drive lifecycle.
 | `88c92650f` | Review fix: a restore drops the collaborative document |
 | `fe122fe8a` | Review fix: refuse a Guest on a legacy sheet, do not throw |
 | `7150208c1` | Review fix: bound what the collab server accepts and survives |
+| `a252f406a` | Gate step 7a: pin the collab server dependency tree |
+| `e2b7ae846` | Gate step 7b: bind the recheck to the connection hocuspocus gives |
 | `f9a23c268` | Gate step 9 fix: a sheet owner may take back the share they granted |
 | `9e064776c` | Gate steps 6 and 9 as tests, and fixture cleanup that leaves no rows |
+
+`a252f406a` and `e2b7ae846` are `73b6b3d14` and `679b67b10` from
+`fix/drive-19-hocuspocus-runtime`, cherry-picked. Verified content-identical at
+closeout: `git diff 679b67b10 main -- suite/sheets/collab-server/` is empty, and
+all seven files match byte for byte. The runtime evidence those commits carried
+in `58b5095a1` is merged into this ticket below; that documentation commit was
+not itself cherry-picked.
 
 ### What changed
 
@@ -147,7 +169,9 @@ identity, and the collab server tells two apart by a `randomUUID()` it generates
 
 Every answer carries `recheckSeconds`. `access-recheck.js` re-asks on that
 cadence: revoked or expired closes the socket, a downgrade across the EDIT line
-turns the connection read-only, an upgrade releases writes again.
+turns the connection read-only, an upgrade releases writes again. `hooks.js`
+binds that policy to hocuspocus and `index.js` is boot only, so `node --test`
+drives the whole connection lifecycle against the installed library.
 
 ### Deviations and decisions, recorded
 
@@ -321,24 +345,87 @@ Every Python check ran under
 `/home/faris/benches/suite-bench/sites`, with no site connected and no bench
 command. No migration, no install, and no service restart.
 
+Collab-server runtime run, at `e2b7ae846`, on 2026-09-06. Gate step 7. The
+first run against a real `@hocuspocus/server`, and it closes step 7:
+
+| Check | Result |
+|---|---|
+| `npm install` in `suite/sheets/collab-server` | 24 packages, 0 vulnerabilities |
+| `@hocuspocus/server` resolved from `^4.1.0` | **4.6.0**, now pinned by `package-lock.json` |
+| `npm test` at `fa4c7db13` (before this repair) | 55 tests, 55 pass, 0 fail |
+| `npm test` at `e2b7ae846` | **89 tests, 89 pass, 0 fail** |
+| `node --check` on all 12 collab-server JS files | clean |
+| Boot `index.js` on a spare port with fake env | `Hocuspocus v4.6.0 running`, exits clean |
+
+No lint ran: the repo configures no JavaScript linter for this package.
+
+**What the runtime says, against what `index.js` assumed.** Three assumptions,
+one right and two wrong:
+
+| Assumption | Verdict |
+|---|---|
+| `onAuthenticate` is handed a `connection` | **Wrong.** The payload is `onAuthenticatePayload` (`src/types.ts:320`): `connectionConfig`, no `connection`. `connection.readOnly = …` threw a TypeError inside the hook, and hocuspocus turns a throw there into permission-denied. Every connection was refused and no recheck ever started |
+| `connection.readOnly`, set mid-session, stops writes | **Right.** `MessageReceiver` reads it per message at 217 and 259. A downgrade needs nothing else. Asserted on the document, not on a spy |
+| One of `close` / `disconnect` / `terminate` exists | **Half right.** `close(event)` exists; `disconnect` and `terminate` do not. `close()` removes the connection from the document and drops its route in `ClientConnection`, so the caller stops reading and stops writing, but it leaves the websocket open |
+
+§6.7 asks for a disconnect, so `closeConnection` now closes
+`connection.webSocket` as well. The three steps are ordered so each is useful
+alone: `readOnly`, then `close()`, then the socket. It returns `false` and logs
+an error only when the transport exposes no socket close.
+
+Two more facts the binding needs, both asserted:
+
+- `connected` is the first hook carrying the live `Connection`, so the recheck
+  starts there.
+- `onDisconnect` receives the same context object `connected` did, and
+  `Connection.onClose` fires on every close path. Both stop the watcher, so a
+  context replaced by a later `onTokenSync` cannot orphan a timer.
+
+The 34 new tests run against a real `Hocuspocus` fed real protocol frames over
+a fake socket. No port, no service, no site.
+
+Re-run at closeout, at `9a2448da0`, twice and independently, from
+`suite/sheets/collab-server` with the package already installed: `npm test`
+gives **89 tests, 17 suites, 89 pass, 0 fail**. No install, no service, no site.
+`package-lock.json` is tracked and pins `@hocuspocus/server`,
+`@hocuspocus/common`, `extension-database`, and `extension-redis` all at 4.6.0,
+matching the installed tree.
+
+
 ### Not verified
 
 - ~~`TestSheetsBeforeActivation` and `TestSheetsInDrive`~~. Both ran green on
   `slides.localhost` at `fa4c7db13`. See the site gate run above.
 - ~~The `Sheet` doctype JSON change~~. `bench migrate` reached the site. The
   DocPerm assertion in gate step 2 is still unrun.
-- `index.js` binding the recheck to hocuspocus. `@hocuspocus/server` is not
-  installed in this worktree, and the review searched the whole machine and
-  found no copy of its source in any other bench or cache. There is also no
-  lockfile, so nothing pins a version inside `^4.1.0`. `connection.readOnly`
-  mid-session and `onDisconnect({ context })` carrying the watcher are read from
-  the library's documented shape, not observed. The policy itself is tested with
-  injected time and passes. Gate step 7b is the only place this can be settled;
-  `closeConnection` now logs an error rather than passing silently when it finds
-  no close method.
+- ~~`index.js` binding the recheck to hocuspocus~~. Settled at `e2b7ae846`.
+  `npm install` resolves `^4.1.0` to `@hocuspocus/server` 4.6.0, the lockfile
+  now holds it, and the binding was read out of that version's `src/` and then
+  driven end to end. Two of the three assumptions were wrong; see the runtime
+  run above. The binding is rewritten and the four library facts it stands on
+  are asserted in `test/hocuspocus-contract.test.js`.
 - ~~The gate step 6 probe~~. Run, and replaced by `TestTheGateProbes`
-  (`9e064776c`). The step 9 probe is covered by the same class. The step 2 and
-  3 probes are still written against the code, not run.
+  (`9e064776c`). The step 9 probe is covered by the same class.
+- **The gate step 2 console probe never ran, and no test can run it.** The three
+  tests that look like coverage (`test_the_open_baseline_row_still_carries_every_legacy_right`,
+  `test_the_open_baseline_row_no_longer_restricts_itself_to_the_owner`, and
+  `test_guest_reads_only_through_a_link_grant`) read `sheet.json` off disk
+  through `_doc_perm`, in a site-free `unittest.TestCase`. They cannot see
+  JSON-versus-live-meta drift, which is the only thing step 2 exists to catch.
+  What settles the substance instead is behaviour on the migrated site: gate
+  step 9's legacy arm has an ordinary `Suite User` owner share, list shares, and
+  unshare a node-less sheet, and `share_sheet` asks `ptype="share"`
+  (`suite/sheets/api.py:168`). Those tests pass on `slides.localhost`, so the
+  live `All` row does carry `share` and does not restrict to the owner. The
+  narrow metadata assertion is unrun; the right it guards is proved.
+- **The gate step 3 test is a proxy.** `test_the_registry_is_still_empty`,
+  `test_both_sheet_permission_hooks_are_still_the_app_s_own`, and
+  `test_neither_satellite_is_wired_to_the_framework_yet` read `suite.hooks`
+  module attributes, not `_build_registry()` and not `frappe.get_hooks`. They
+  cannot see a cross-app merge or a site override. The console probe never ran.
+- Step 8 stays open: no browser has watched a live revocation. Everything below
+  the browser is covered by tests against the real library. It is a ticket 34
+  handoff, argued in the site gate below.
 
 ### The site gate
 
@@ -439,15 +526,27 @@ The claim that no test could reach it was wrong. The class creates the linked
 sheet under `activated()`, adds the share while `suite/hooks.py` is untouched,
 and reads through `frappe.client.get` and `frappe.get_list`. Every arm refuses:
 
+Corrected at closeout against the tests that exist. An earlier version of this
+table claimed an `activated()` result for three probes no test enters
+`activated()` for. Only what a test asserts is listed; "not covered" means the
+staged answer is proved and the activated one is ticket 29's to prove.
+
 | Probe | Staged hooks | Under `activated()` |
 |---|---|---|
 | named share, row read | `DriveForbidden` | `DriveForbidden` |
 | named share, `Sheet` list | `DriveForbidden` | `DriveForbidden` |
 | named share, `Sheet Op Log` list | answers without the sheet | answers without the sheet |
-| `everyone` share, all three | same | same |
-| share on one `Sheet Op Log` row | `frappe.PermissionError` | `DriveForbidden` |
-| share on one `Sheet Snapshot` row | `frappe.PermissionError` | `DriveForbidden` |
+| `everyone` share, row read | `DriveForbidden` | `DriveForbidden` |
+| `everyone` share, `Sheet` list | `DriveForbidden` | `DriveForbidden` |
+| `everyone` share, `Sheet Op Log` list | answers without the sheet | not covered |
+| share on one `Sheet Op Log` row | `frappe.PermissionError` | not covered |
+| share on one `Sheet Snapshot` row | `frappe.PermissionError` | not covered |
 | a new share, written under activation | — | `DriveForbidden` |
+
+The staged column is what this ticket ships, and every cell in it is a passing
+test. The three uncovered cells are activation behaviour, which ticket 29 owns;
+`Sheet Snapshot` in particular keeps its own guard past activation (§14.6), so
+its activated answer should not be assumed to change.
 
 Four controls run the same share against a sheet with no node and prove it does
 widen there: the row opens, the list carries it, and the op log list carries it
@@ -474,20 +573,56 @@ npm install
 npm test
 ```
 
-7a. Commit the lockfile `npm install` writes. There is none in the repo, so
-nothing pins `@hocuspocus/server` inside `^4.1.0` today.
+Both steps ran on 2026-09-06. See the runtime run above.
 
-7b. Read the installed `node_modules/@hocuspocus/server` and confirm two things
-`index.js` assumes: that setting `connection.readOnly` mid-session stops writes,
-and that one of `close` / `disconnect` / `terminate` exists on the connection
-object. `closeConnection` returns `false` and logs
-`revoked connection could not be closed` when it finds none. If it does, §6.7 is
-not met: a revoked reader keeps receiving the document until the tab closes.
+7a. Done at `a252f406a`. `package-lock.json` is tracked and pins
+`@hocuspocus/server` 4.6.0.
 
-**8. One live revocation, with a browser.** Open a linked sheet as an EDIT
-holder, drop the grant to READ, and confirm the tab goes read-only within the
-recheck period. Then drop the grant entirely and confirm the socket closes.
-Nothing below the browser can prove this.
+7b. Done at `e2b7ae846`. The four facts the binding stands on are asserted
+against the installed package by `test/hocuspocus-contract.test.js`, so this
+step is a test run rather than a reading exercise from here on. §6.7 is met: a
+revoke sets `readOnly`, detaches the connection from the document, and closes
+the websocket.
+
+**8. One live revocation, with a browser. Not run, and it does not block this
+ticket.** Open a linked sheet as an EDIT holder, drop the grant to READ, and
+confirm the tab goes read-only within the recheck period. Then drop the grant
+entirely and confirm the socket closes.
+
+This step is a ticket 34 handoff, not a ticket 19 blocker. The reasons are in
+source precedence, and each is checkable:
+
+- **No acceptance criterion asks for it.** README execution rule 10 sets `done`
+  against the acceptance criteria. None of the eight names a browser. The
+  ticket's own **Verification** line asks for "Sheets and collaboration-server
+  tests", which is what ran.
+- **Criterion 8 forbids what the step needs.** "Do not restart collaboration
+  services as part of implementation." The README stop conditions repeat it:
+  "Do not push, create PRs, publish services, restart services, or install
+  dependencies as part of this run." No collaboration service is running on this
+  bench, so step 8 cannot be performed without breaking the criterion it would
+  be verifying.
+- **Ticket 34 owns it by name.** Its acceptance criterion "Use only relevant
+  document credentials for collaboration and reflect server read-only/refused
+  states" and its verification line "run content-app browser journeys with …
+  collab downgrade" are this step.
+- **The client cannot exercise it today.** The browser sends a bare `sid`
+  (`frontend/src/apps/sheets/components/SheetEditor/useCollaboration.js:292`)
+  and nothing in `frontend/src` emits the `{sid, links}` shape. `frontend/` is
+  not in this ticket's claimed files. A link-credential revocation is therefore
+  unreachable from a browser until 34 lands.
+- **README release gates say so.** "Frontend adoption … does not block backend
+  implementation."
+
+**Why the executable tests suffice for ticket 19.** Criterion 7 is a server
+behaviour, and the thing step 8 would add over the tests is the browser's own
+reaction. What the server does is now asserted against the installed
+`@hocuspocus/server` 4.6.0 rather than against its documentation: `readOnly`
+flipped mid-session drops the next update, `Connection.close()` detaches and
+leaves the socket open, and `closeConnection` therefore closes the socket too.
+That was the exact gap step 7b existed to close, and closing it is what makes
+the remaining browser check a client-integration question. Step 8 is recorded as
+34's, not waived.
 
 **9. The legacy arm on a migrated site. Done, and now a test.** `9e064776c`
 covers it in the same class. `slides.localhost` is migrated and carries legacy
@@ -510,10 +645,19 @@ The `everyone` branch two lines above already passed `ignore_permissions`, and
 than this ticket, which only added the linked-sheet refusal to that endpoint.
 The authority is unchanged: the `share` right on the sheet is what may revoke.
 
-**Fixture residue.** Each test in the class records every table a fixture can
-write, deletes what it added, and asserts the delta is empty. Removing the
-delete step makes those assertions fail, so they are not vacuous. Two older
-leaks are closed with it: `TestSheetsBeforeActivation` left one backing `File`
+**Fixture residue.** Each test in the class censuses 20 tables before it runs
+and asserts an empty delta afterwards. 13 of them (`_GATE_ADDED`) are deleted
+outright; the other 7 (`_GATE_WITNESS`: the four `Drive *` tables, `File`,
+`File Blob`, `User`) are counted only and come back through Drive's own purge
+and the `File` controller, because a test may not write a `Drive *` table
+(ARCHITECTURE.md rule 2.2). The assertion is registered first so it runs last.
+
+It is not vacuous by construction: every test writes a `Sheet` and most write a
+`DocShare`, both in `_GATE_ADDED`, so dropping `_drop_gate_rows` must leave a
+non-empty delta. That is the structure, not a recorded experiment. No run with
+the delete step removed is logged, and the earlier wording overstated it as one.
+
+Two older leaks are closed with it: `TestSheetsBeforeActivation` left one backing `File`
 per legacy fixture, because `File.permanent_delete` marks the row `Removed`
 rather than deleting it, and both older classes left their fixture users on the
 site. 120 orphan `File` rows had accumulated on `slides.localhost` and were
@@ -536,7 +680,10 @@ removed.
 | 34 | A restore now deletes the persisted `Sheet Collab State` row, so a reconnect rebuilds from the restored body. A Y.Doc already live in the collab server is not evicted: an open tab keeps the replaced document until it reconnects. Eviction needs a server-side signal |
 | 34 | The client does not declare its own awareness identity. The collab server names a Guest with a `randomUUID()`; the client has to stop trusting any name in the token |
 | 23 | A purge drops the `Sheet` row but not the legacy `File` backing a pre-Build sheet. Orphan rows accumulate until ticket 23 removes the backing. Measured: 120 had built up on `slides.localhost` from test fixtures alone. `9e064776c` makes the fixtures clean up after themselves; the production path is still ticket 23's |
-| Deploy | The collab server has no lockfile. `npm install` at the gate writes one, and it has to be committed |
+| ~~Deploy~~ | ~~The collab server has no lockfile~~. Done at `a252f406a`: `package-lock.json` is tracked and pins 4.6.0 |
+| 34 | Gate step 8, the live browser revocation. Nothing below the browser is left to prove; the client has to send `{sid, links}` and reflect the read-only and refused states |
+| A later Sheets ticket | The xlsx import truncates past `MAX_IMPORT_SHEETS` worksheets instead of refusing. See the closeout |
+| 29 | The `All` DocPerm on `Sheet` carries `select: 1`, added by this ticket and recorded only at closeout. Activate against the real row |
 
 ## Independent adversarial review
 
@@ -564,6 +711,10 @@ server independently.
 | 12 | Medium | An injected `onCapability` or `onRevoke` that threw rejected `tick`, which runs as a bare timer callback. Node turns an unhandled rejection into a process exit, so one connection's transport could drop every editor on the site | `7150208c1` |
 | 13 | Medium | `_legacy_access` raised `AuthenticationError` for a Guest. The collab server reads a non-2xx status as an unreachable Frappe, so a settled and permanent refusal burned three fail-closed periods and was reported as a network problem | `fe122fe8a` |
 | 14 | Low | `openpyxl` was used directly but declared nowhere. It reached the venv as a transitive Frappe dependency, so a Frappe release that drops it breaks the importer | `f76d6c55f` |
+| 15 | High | `onAuthenticate` set `connection.readOnly`, but `@hocuspocus/server` 4.6.0 hands that hook no `connection`. The TypeError became a permission-denied, so no caller could open a sheet and no recheck ever started. The hook now sets `connectionConfig.readOnly` and `connected` starts the recheck against the live `Connection` | `e2b7ae846` |
+| 16 | High | `Connection.close()` leaves the websocket open, so a revoked reader kept the socket. §6.7 asks for a disconnect, so `closeConnection` now closes `connection.webSocket` after detaching the connection | `e2b7ae846` |
+| 17 | Medium | `^4.1.0` had no lockfile. The server ran against whatever npm resolved that day, across the payload change between 4.1 and 4.6 that caused finding 15 | `a252f406a` |
+| 18 | Low | The caller's `sid` was about to travel on the connection context, which reaches every extension and every later hook. The recheck carries a bound call instead; the credentials stay in the closure | `e2b7ae846` |
 
 ### Checked and left alone
 
@@ -601,7 +752,6 @@ server independently.
 | `used_nodes` over-reports every id-shaped token in the body | Recorded deviation 4. Over-reporting keeps media alive, so it fails safe |
 | `xml.etree.ElementTree` expands internal entities, and `defusedxml` is not installed | Mitigated, not removed: `_validate_package` rejects any part whose first 8 KB carries a `<!DOCTYPE`. Installing `defusedxml` is outside this run |
 | `RUF059` at `test_collab_access.py:94` | Present at `e8a337284`. Not this review's change |
-| No lockfile in `collab-server` | `npm install` is outside this run. Gate step 7a |
 
 ### Recommendation
 
@@ -619,5 +769,92 @@ Two conditions, both at the gate rather than in the branch:
 2. Gate step 2 has to confirm the `Sheet` DocPerm row that actually lands. The
    JSON has never reached a site.
 
+The gate then ran, and findings 15 to 18 came out of it. Condition 1 is settled:
+4.6.0 exposes `Connection.close()`, it leaves the socket open, and
+`closeConnection` closes the socket too, so §6.7 is met. Condition 2 is settled
+in substance rather than by the probe it names. See **Not verified** and the
+closeout.
+
 Nothing here is safe to activate: `drive_content_types` stays empty, and ticket
 29 owns the switch.
+
+## Closeout
+
+Verified 2026-09-06 on `main` at `9a2448da0`, working tree clean. The verifier
+changed no code and no test, ran no bench command, no install, no migration, no
+service, and no browser. Three subagents audited the declaration and lifecycle,
+the collaboration surface, and the gate evidence independently.
+
+### Every criterion, against the evidence that proves it
+
+| Criterion | Code | Evidence |
+|---|---|---|
+| Declare Sheet and its two satellites | `sheets/drive.py:310-338`, matching §10.7 field for field | `TestSheetsDeclaration` (21 database-free); `_validate_shape(SPEC)` passes |
+| Create, copy, xlsx import, version bytes, restore, purge, media discovery | `sheets/drive.py:165,170,184,208,226,256,287`, all seven wired into `SPEC` | `test_drive_adoption` 68 integration + 59 database-free, run twice |
+| Replace share/trash enforcement, retain Build sources | `sheets/permissions.py`; nine refusals in `api.py`, two in `trash.py`; `title`/`trashed`/`head_snapshot`/`Sheet Snapshot` all still present | `test_permissions` 14, `test_api_security` 11, `test_share_notify` 6, `TestTheGateProbes` |
+| `default_export=None`, bodies free, versions and media charged | `create_document`/`import_document` admit nothing; `versions.py:65` and `nodes.py:678` admit | `test_content` 53 + 49 + 3 |
+| Link credentials through both access checks and the collab server | `connection-token.js:47` → `frappe-client.js:61` (`X-Drive-Links`) → `framework.py:321` → `principals` | `test_collab_access` 24, `test_collab` 13, collab-server 89 |
+| 20-item limit and the ladder | `principals.py:60` throws on a 21st, never truncates; `collab.py:101-134` asks READ then EDIT | `test_collab_access` 24 |
+| Five-minute recheck, disconnect, downgrade | `collab.py:68`; `access-recheck.js`; `hooks.js:60-95,160-190` | collab-server 89 against installed 4.6.0 |
+| Server-controlled Guest identity, no service restarted | `collab.py:179-201`; `hooks.js:144` `randomUUID`; `parseToken` returns only `{sid, links}` | `test_collab_access` 24; no service touched in this run |
+
+Architecture and composition hold at `7` and `3`. Full app at `e15a9a50f`: 221
+unit OK, 871 integration OK with 26 skipped, 545 unspecified OK, exit zero.
+
+### What ran after the last full app run
+
+`run-tests --app suite` last ran at `e15a9a50f`. Two commits changed code or
+tests after it:
+
+| Commit | Change | Covered by |
+|---|---|---|
+| `f9a23c268` | one line in `unshare_sheet` | `test_api_security` 11, `test_share_notify` 6, `test_permissions` 14, `TestTheGateProbes`, all run at `9e064776c` |
+| `9e064776c` | `test_drive_adoption.py` only | itself, run twice |
+
+`a252f406a` and `e2b7ae846` are JavaScript only and are covered by the 89-test
+run. The whole app was not re-run after `9e064776c`; the affected modules were.
+`frappe.share.remove(..., flags={"ignore_permissions": True})` reaches
+`delete_doc`, which folds the flag onto the document before the permission check
+(`frappe/model/delete_doc.py:282-294`), so the fix does what it claims.
+
+### Found at closeout, recorded not fixed
+
+A closeout may not change code. Both are handoffs, neither blocks a criterion.
+
+1. **The xlsx import silently drops worksheets past 200.**
+   `sheets/drive.py:522` is `names = list(book.sheetnames)[:MAX_IMPORT_SHEETS]`.
+   Every other import bound refuses the workbook; this one truncates, reports
+   success, and records nothing. `_merge_slice` states the opposite policy for
+   the same class of problem in its own docstring (`:707`): "refused whole, not
+   truncated". No test covers it. It also makes deviation 7's "every formula and
+   every merge comes across" false past 200 worksheets. **Handoff:** the ticket
+   that touches the importer next should throw here, as the other four bounds
+   do.
+2. **`select: 1` was added to the `All` DocPerm and never recorded.** The
+   pre-image row at `d7bf210b0` had no `select`; `sheet.json` has it now. The
+   `What changed` note says only that the row loses `if_owner` and gains a Guest
+   row, and review finding 1 lists the restored rights without it. Effect is
+   contained: `select` routes through `sheet_has_permission`, and `_READ_PTYPES`
+   (`permissions.py:255`) maps it to parent read on the child guards. Gate step
+   2 prints `select` but does not assert it, so the probe would not have caught
+   a wrong value either. Recorded so ticket 29 activates against the real row.
+
+### One inaccuracy corrected in this document
+
+The gate step 6 table claimed an `activated()` result for three probes that no
+test enters `activated()` for. The table now says "not covered" for those three
+and the staged column, which is what this ticket ships, is fully proved. The
+fixture-residue paragraph claimed a removal experiment that is not recorded
+anywhere; it now states the structural argument instead.
+
+### Decision
+
+**Complete.** All eight acceptance criteria are met. Gate step 8 is not run and
+is recorded as ticket 34's, with the argument under the site gate. Gate steps 2
+and 3 have no console run; step 2's substance is proved behaviourally on the
+migrated site and step 3's test is a proxy, both recorded above rather than
+claimed as run.
+
+Nothing here is active. `drive_content_types` is `[]`, both `Sheet` hooks still
+point at `suite.sheets.permissions`, and neither satellite is wired. Ticket 29
+owns the switch.
