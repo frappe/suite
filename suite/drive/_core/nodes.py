@@ -443,8 +443,10 @@ def _copyable_document_source(
 
 def _content_factory(spec, node: str, source: frappe._dict | None) -> str:
     """Call the app's factory with the node id and validate the docname."""
-    with content.app_callback():
-        docname = spec.create_empty(node) if source is None else spec.duplicate(source.content_docname, node)
+    if source is None:
+        docname = content.call_app(spec.create_empty, node)
+    else:
+        docname = content.call_app(spec.duplicate, source.content_docname, node)
     if not isinstance(docname, str) or not docname:
         raise DriveConflict(_("The Drive content factory returned no document"))
     return docname
@@ -510,8 +512,7 @@ def _copy_document_media(
         destination_link=destination_link,
     )
     if remapped:
-        with content.app_callback():
-            spec.remap_media(target_docname, remapped)
+        content.call_app(spec.remap_media, target_docname, remapped)
 
 
 def create_file(
@@ -1366,7 +1367,7 @@ def _purge_locked(
     _delete_if_field("Drive Legacy Route", "entity", node_ids, require_options="Drive Node")
 
     for callback, docname in callbacks:
-        callback(docname)
+        content.call_app(callback, docname)
     frappe.db.delete("Drive Node", {"name": ["in", node_ids]})
     release(current.get("root"), charged)
     return len(subtree)

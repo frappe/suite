@@ -20,7 +20,13 @@ import `nodes` inside the function, the same one-way break `roots` uses.
 
 `touch` is one UPDATE and joins the caller's transaction. `sweep_unused_media`
 commits one document at a time and rolls a failing document back on its own,
-so a bad `used_nodes` answer never stops the pass.
+so a bad `used_nodes` answer never stops the pass. Its own commit and rollback
+sit outside `_sweep_document`, so the guard around `used_nodes` never disarms
+them.
+
+Every call into a `ContentTypeSpec` callback goes through `call_app` or
+`call_app_stream`, so app code always runs with transaction control disabled
+(§10.1). `nodes`, `roots`, and `versions` hold no unguarded call site.
 """
 
 import functools
@@ -118,7 +124,8 @@ class ContentTypeSpec:
     import_from_file: Callable[[str, str], str] | None = None
     """(file_node, node) -> docname. An xlsx becoming a sheet."""
 
-    # bytes
+    # bytes. Both are invoked through `call_app_stream`, which guards the call
+    # and the returned stream.
     export: Callable[[str, str], tuple[IO[bytes], str]] | None = None
     """(docname, format) -> (stream, mime). Streamed, never stored."""
     version_bytes: Callable[[str], tuple[IO[bytes], str]] | None = None
@@ -178,6 +185,90 @@ def app_callback():
         yield
     finally:
         frappe.db._disable_transaction_control -= 1
+
+
+def call_app(callback: Callable, /, *args, **kwargs):
+    """Call one `ContentTypeSpec` callback inside `app_callback`.
+
+    Every Drive call path into app code goes through here, so a callback can
+    never be reached with the transaction unguarded. The guard nests by count,
+    so a caller that already holds one loses nothing by using this.
+    """
+    with app_callback():
+        return callback(*args, **kwargs)
+
+
+def call_app_stream(callback: Callable, /, *args, **kwargs) -> tuple[IO[bytes], str]:
+    """Call a `(stream, mime)` callback and guard the stream it answered.
+
+    `version_bytes` and `export` hand Drive a stream that Drive reads after the
+    callback has returned. A lazily produced stream runs app code on every
+    `read`, so the guard has to travel with the stream instead of ending at the
+    call. `GuardedStream` re-enters `app_callback` per operation rather than
+    holding it open, so nothing Drive does between reads is guarded and the
+    stream is never closed early.
+    """
+    result = call_app(callback, *args, **kwargs)
+    if not isinstance(result, tuple) or len(result) != 2:
+        raise DriveConflict(_("The Drive content callback returned invalid bytes"))
+    stream, mime = result
+    if not hasattr(stream, "read") or not isinstance(mime, str) or not mime:
+        raise DriveConflict(_("The Drive content callback returned invalid bytes"))
+    return GuardedStream(stream), mime
+
+
+class GuardedStream:
+    """An app-supplied byte stream whose every operation stays guarded.
+
+    Delegates to the wrapped stream. A callable attribute is returned wrapped
+    in `app_callback`, so `read`, `seek`, and `close` all run with transaction
+    control disabled; a plain attribute is returned as it is.
+    """
+
+    def __init__(self, stream: IO[bytes]):
+        self.stream = stream
+
+    def read(self, *args, **kwargs):
+        with app_callback():
+            return self.stream.read(*args, **kwargs)
+
+    def seek(self, *args, **kwargs):
+        with app_callback():
+            return self.stream.seek(*args, **kwargs)
+
+    def close(self):
+        with app_callback():
+            return self.stream.close()
+
+    def __iter__(self):
+        # Delegate rather than re-implement: a file object iterates by line and
+        # a raw stream by chunk, and the wrapper must not change which.
+        iterator = iter(self.stream)
+        while True:
+            with app_callback():
+                item = next(iterator, None)
+            if item is None:
+                return
+            yield item
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+        return False
+
+    def __getattr__(self, name: str):
+        attribute = getattr(self.stream, name)
+        if not callable(attribute):
+            return attribute
+
+        @functools.wraps(attribute)
+        def guarded(*args, **kwargs):
+            with app_callback():
+                return attribute(*args, **kwargs)
+
+        return guarded
 
 
 def registry() -> dict[str, ContentTypeSpec]:
@@ -762,7 +853,7 @@ def copyable_media_bytes(document_nodes: Iterable[str]) -> int:
 def _sweep_document(spec: ContentTypeSpec, row: frappe._dict) -> int:
     from suite.drive._core.nodes import _trash
 
-    answer = spec.used_nodes(row.content_docname)
+    answer = call_app(spec.used_nodes, row.content_docname)
     used = _validated_used_nodes(answer)
     cutoff = now_datetime() - timedelta(days=UNUSED_MEDIA_GRACE_DAYS)
     system = Principals("Administrator", ("Administrator",), (), is_admin=True)
