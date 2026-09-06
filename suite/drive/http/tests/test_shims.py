@@ -372,6 +372,18 @@ class ShimCase(UnitTestCase):
         self.addCleanup(write.stop)
         return read.start(), count.start(), write.start()
 
+    def stub_unadopted_file(self, answer=None):
+        """Say no `File` is waiting for this id, without a database.
+
+        `get_entity_with_permissions` reads the `File` store for an id no node
+        holds, because a content type still in the expand phase writes one
+        (§10.2). A case about the node path says so by naming nothing there;
+        `_legacy_entity_with_permissions` has cases of its own below.
+        """
+        patcher = patch.object(shims, "_legacy_entity_with_permissions", return_value=answer)
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
     def stub_cache(self):
         """Hold the shim's own upload keys in memory, and leave the rest alone."""
         stub = _MemoryCache(frappe.cache)
@@ -777,6 +789,7 @@ class TestPermissionForwarders(ShimCase):
             shims.get_general_access("n1")
 
     def test_entity_with_permissions_keeps_the_old_payload(self):
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         access = self.stub("access")
         activity = self.stub("activity_core")
@@ -824,6 +837,7 @@ class TestPermissionForwarders(ShimCase):
         self.assertEqual(answer["share_count"], -2)
 
     def test_entity_with_permissions_appends_the_leaf_to_the_trail(self):
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         access = self.stub("access")
         activity = self.stub("activity_core")
@@ -839,6 +853,7 @@ class TestPermissionForwarders(ShimCase):
         )
 
     def test_entity_with_permissions_still_fills_the_data_envelope(self):
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         access = self.stub("access")
         activity = self.stub("activity_core")
@@ -855,6 +870,7 @@ class TestPermissionForwarders(ShimCase):
         opened as a page said "We couldn't find what you're looking for."
         §8.1 reads a node in any state, which is right for a route that can
         restore one; this name only ever served a page."""
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         self.stub("access")
         for state in ("Trashed", "Purged"):
@@ -901,6 +917,136 @@ class TestPermissionForwarders(ShimCase):
         access.grants_for.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
             shims.get_shared_with_list("n1")
+
+
+class TestUnadoptedFileRead(ShimCase):
+    """`_legacy_entity_with_permissions`: the `File` store, for an id no node holds.
+
+    §10.2 keeps a content type's legacy rows working while it is in the expand
+    phase, and `writer.api.docs.create_document` writes one on every site
+    running this commit. The node store cannot express that row, so this name
+    reads the store that holds it.
+    """
+
+    FILE_ROW: ClassVar[dict] = {
+        "name": "n1",
+        "file_name": "Legacy Document",
+        "folder": "f1",
+        "file_url": "/private/files/legacy",
+        "file_size": 12,
+        "file_type": "Document",
+        "is_folder": 0,
+        "content_doctype": "Writer Document",
+        "content_docname": "w1",
+        "creation": "2026-09-07 10:00:00",
+        "modified": "2026-09-07 10:00:00",
+        "owner": SOMEONE.user,
+        "attached_to_doctype": None,
+        "attached_to_name": None,
+    }
+
+    READS: ClassVar[dict] = {"read": 1, "write": 1, "comment": 1, "share": 1, "upload": 1, "type": "admin"}
+    READS_NOT: ClassVar[dict] = {
+        "read": 0,
+        "write": 0,
+        "comment": 0,
+        "share": 0,
+        "upload": 0,
+        "type": "guest",
+    }
+
+    def store(self, *, node=False, rows=None, access=None, guest=0, general=0, favourite=None):
+        """Name what each store holds, and answer the legacy access rule."""
+        from suite.drive import utils
+        from suite.drive.api import permissions
+
+        db = MagicMock()
+        db.exists.return_value = node
+        db.get_value.return_value = favourite
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        self.enterContext(patch.object(shims.frappe, "get_all", return_value=list(rows or [])))
+
+        reach = {"Guest": {**self.READS_NOT, "read": guest}}
+        bits = MagicMock(side_effect=lambda entity, user: dict(reach.get(user, access or self.READS)))
+        self.enterContext(patch.object(permissions, "get_user_access_for_user", bits))
+        self.enterContext(patch.object(utils, "generate_upward_path", return_value=[{"read": general}]))
+        self.enterContext(
+            patch.object(utils, "get_valid_breadcrumbs", return_value=[{"name": "f1", "file_name": "Home"}])
+        )
+        return db, bits
+
+    def test_an_id_a_node_holds_is_not_read_off_the_file_store(self):
+        """The store is decided by which one holds the id. Reading `File`
+        for an id that has a node would answer twice about one row."""
+        db, _ = self.store(node=True, rows=[self.FILE_ROW])
+        with patch.object(shims.frappe, "get_all") as read:
+            self.assertIsNone(shims._legacy_entity_with_permissions("n1"))
+        read.assert_not_called()
+        db.exists.assert_called_once_with("Drive Node", "n1")
+
+    def test_an_id_neither_store_holds_answers_nothing(self):
+        self.store(rows=[])
+        self.assertIsNone(shims._legacy_entity_with_permissions("n1"))
+
+    def test_the_file_read_asks_for_the_active_row_under_the_old_columns(self):
+        from suite.drive.utils import FILE_FIELDS
+
+        self.store(rows=[self.FILE_ROW])
+        with patch.object(shims.frappe, "get_all", return_value=[]) as read:
+            shims._legacy_entity_with_permissions("n1")
+        self.assertEqual(read.call_args.args[0], "File")
+        self.assertEqual(read.call_args.kwargs["filters"], {"name": "n1", "status": "Active"})
+        self.assertEqual(read.call_args.kwargs["fields"], FILE_FIELDS)
+        self.assertEqual(read.call_args.kwargs["limit"], 1)
+
+    def test_the_payload_is_the_one_the_old_body_published(self):
+        self.store(rows=[self.FILE_ROW], favourite="n1")
+        answer = shims._legacy_entity_with_permissions("n1")
+        for key in (*self.FILE_ROW, "read", "write", "share", "comment", "upload", "type"):
+            self.assertIn(key, answer)
+        self.assertEqual(answer["content_docname"], "w1")
+        self.assertEqual(answer["breadcrumbs"], [{"name": "f1", "file_name": "Home"}])
+        self.assertEqual(answer["is_favourite"], "n1")
+        self.assertEqual(answer["kind"], "native")
+        self.assertIs(frappe.response["data"], answer)
+
+    def test_a_managed_file_url_is_still_blanked(self):
+        answer = self.store(rows=[self.FILE_ROW]) and shims._legacy_entity_with_permissions("n1")
+        self.assertIsNone(answer["file_url"])
+
+    def test_the_old_gate_refuses_a_caller_who_cannot_read_the_row(self):
+        """The legacy rule answers, and it answers `PermissionError` - the
+        class `ErrorPage.vue` sends a signed-out visitor to the login page on.
+        Nothing here decides a refusal the old body did not decide."""
+        self.store(rows=[self.FILE_ROW], access=self.READS_NOT)
+        with self.assertRaises(frappe.PermissionError):
+            shims._legacy_entity_with_permissions("n1")
+        self.assertIsNone(frappe.response.get("data"))
+
+    def test_the_general_marker_reads_published_then_site_then_restricted(self):
+        """Legacy's `share_count`: -2 published, -1 site, 0 restricted, read
+        off the same store as the row it decorates."""
+        for guest, general, marker in ((1, 0, -2), (0, 1, -1), (0, 0, 0)):
+            with self.subTest(marker=marker):
+                self.store(rows=[self.FILE_ROW], guest=guest, general=general)
+                self.assertEqual(shims._legacy_entity_with_permissions("n1")["share_count"], marker)
+
+    def test_the_forwarder_answers_the_file_row_without_reading_a_node(self):
+        nodes = self.stub("node_core")
+        self.stub_unadopted_file({"name": "n1", "file_name": "Legacy Document"})
+        self.assertEqual(shims.get_entity_with_permissions("n1")["file_name"], "Legacy Document")
+        nodes.get.assert_not_called()
+
+    def test_a_refusal_from_the_workflow_is_never_retried_on_the_file_store(self):
+        """§5.2 answers `DriveNotFound` for a node the caller may not read.
+        Falling back on the exception would hand the legacy rules a question
+        the workflow had already refused."""
+        nodes = self.stub("node_core")
+        nodes.get.side_effect = DriveNotFound("not for you")
+        legacy = self.stub_unadopted_file()
+        with self.assertRaises(DriveNotFound):
+            shims.get_entity_with_permissions("n1")
+        legacy.assert_called_once_with("n1")
 
 
 # --------------------------------------------------------------------------
@@ -2123,6 +2269,7 @@ class TestSignedOutVisitor(ShimCase):
 
     def test_a_page_read_tells_a_signed_out_visitor_to_sign_in(self):
         self.as_guest()
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         nodes.get.side_effect = DriveNotFound("gone")
         with self.assertRaises(frappe.PermissionError):
@@ -2137,6 +2284,7 @@ class TestSignedOutVisitor(ShimCase):
             shims.files("n1")
 
     def test_a_signed_in_caller_keeps_the_workflow_refusal(self):
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         nodes.get.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
@@ -2146,6 +2294,7 @@ class TestSignedOutVisitor(ShimCase):
         """Uniform for a Guest: an id that exists and one that does not answer
         the same refusal, so it is no more an oracle than the 404 was."""
         self.as_guest()
+        self.stub_unadopted_file()
         nodes = self.stub("node_core")
         raised = []
         for reason in ("no such node", "not for you"):
