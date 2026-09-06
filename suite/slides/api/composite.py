@@ -113,11 +113,13 @@ placeholder the client drew for an unreadable reference does not move.
 
 ## A reference that is itself a composite
 
-It is answered, marked `composite: true`, with its own `slides` list, which is
-empty: a composite carries no slides of its own. There is no recursion. Ticket
-18 left the semantics here; the rule is that one call resolves one level, and a
-client that wants the inner deck's references asks for its manifest, which runs
-that deck's own checks.
+It is answered and marked `composite: true`. Its `slides` list is its own slide
+table, whatever that holds: `create_empty` gives every new deck one slide, so an
+ordinary deck later flagged composite still carries it. What the list never
+holds is a slide belonging to the inner deck's own references. There is no
+recursion. Ticket 18 left the semantics here; the rule is that one call resolves
+one level, and a client that wants the inner deck's references asks for its
+manifest, which runs that deck's own checks.
 """
 
 import json
