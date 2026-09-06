@@ -58,6 +58,127 @@ def node_shape(row: Mapping) -> dict:
     }
 
 
+def version_shape(row: Mapping) -> dict:
+    """Return one stored version row as the shape `GET .../versions` publishes.
+
+    `blob` is dropped for the reason `node_shape` drops it: a storage id is not
+    a client's to name, and the only way to the bytes is
+    `GET /nodes/<id>/versions/<seq>/content`, which mints a signature after a
+    READ check (§8.4, §6.8).
+    """
+    return {
+        "name": row.get("name"),
+        "node": row.get("node"),
+        "seq": int(row.get("seq") or 0),
+        "kind": row.get("kind"),
+        "label": row.get("label"),
+        "pinned": int(row.get("pinned") or 0),
+        "actor": row.get("actor"),
+        "size": int(row.get("size") or 0),
+        "creation": stamp(row.get("creation")),
+    }
+
+
+def activity_shape(row: Mapping) -> dict:
+    """Return one activity row as §9.4's columns, times formatted."""
+    return {
+        "name": row.get("name"),
+        "node": row.get("node"),
+        "action": row.get("action"),
+        "actor": row.get("actor"),
+        "at": stamp(row.get("at")),
+        "via_link": row.get("via_link"),
+        "client": row.get("client"),
+        "detail": row.get("detail") or {},
+    }
+
+
+def notification_shape(row: Mapping) -> dict:
+    """Return one notification pointer with the activity it renders from.
+
+    `to_user` is withheld: §11.2 scopes this route to the caller, so the only
+    value it could ever carry is the caller's own address.
+    """
+    return {
+        "name": row.get("name"),
+        "read": int(row.get("read") or 0),
+        "creation": stamp(row.get("creation")),
+        "activity": activity_shape(row.get("activity") or {}),
+    }
+
+
+def grant_shape(row: Mapping) -> dict:
+    """Return one grant row as §11.2 publishes it, with its expiry formatted."""
+    answer = {
+        "name": row.get("name"),
+        "node": row.get("node"),
+        "principal": row.get("principal"),
+        "role": row.get("role"),
+        "expires_on": stamp(row.get("expires_on")),
+        "has_password": bool(row.get("has_password")),
+    }
+    if row.get("url"):
+        answer["url"] = row["url"]
+    return answer
+
+
+def explain_shape(result: Mapping) -> dict:
+    """Return §5.8's explanation with its row times formatted.
+
+    The keys are §5.8's exactly - `role`, `source`, and one row per candidate
+    carrying `node`, `depth`, `principal`, `role`, `expires_on`, `pass`,
+    `held`, and `winner`. `node` and `principal` are the provenance: which node
+    a row sits on, and which principal it names. Nothing is added, because the
+    accepted decision cites §5.8 for the shape a client may rely on.
+    """
+    return {
+        "role": result.get("role"),
+        "source": result.get("source"),
+        "rows": [
+            {
+                "node": row.get("node"),
+                "depth": row.get("depth"),
+                "principal": row.get("principal"),
+                "role": row.get("role"),
+                "expires_on": stamp(row.get("expires_on")),
+                "pass": row.get("pass"),
+                "held": bool(row.get("held")),
+                "winner": bool(row.get("winner")),
+            }
+            for row in result.get("rows") or ()
+        ],
+    }
+
+
+def thread_shape(row: Mapping) -> dict:
+    """Return one comment thread and its comments, times formatted."""
+    return {
+        "name": row.get("name"),
+        "node": row.get("node"),
+        "anchor": row.get("anchor"),
+        "resolved": bool(row.get("resolved")),
+        "resolved_by": row.get("resolved_by"),
+        "resolved_at": stamp(row.get("resolved_at")),
+        "creation": stamp(row.get("creation")),
+        "comments": [comment_shape(comment) for comment in row.get("comments") or ()],
+    }
+
+
+def comment_shape(row: Mapping) -> dict:
+    """Return one comment row, times formatted."""
+    return {
+        "name": row.get("name"),
+        "thread": row.get("thread"),
+        "node": row.get("node"),
+        "content": row.get("content"),
+        "author": row.get("author"),
+        "author_name": row.get("author_name"),
+        "mentions": list(row.get("mentions") or ()),
+        "creation": stamp(row.get("creation")),
+        "modified": stamp(row.get("modified")),
+    }
+
+
 def stamp(value) -> str | None:
     """Format one row time to the second, the shape §11.3 publishes."""
     if value is None or value == "":
@@ -140,6 +261,40 @@ def expansions(value, name: str = "expand") -> frozenset:
             frappe.ValidationError,
         )
     return frozenset(asked)
+
+
+def sequence(value, name: str) -> int:
+    """Accept a version sequence: a whole number above zero, never absent."""
+    if value is None or value == "":
+        _refuse(name)
+    answer = whole(value, name, 0)
+    if answer < 1:
+        _refuse(name)
+    return answer
+
+
+def name_list(value, name: str) -> tuple[str, ...]:
+    """Accept a bounded, possibly empty list of distinct non-blank row ids.
+
+    `identifiers` refuses an empty list because a batch that names no node is a
+    malformed gesture. Marking no notifications read is not: it is the answer
+    `{"read": 0}`, and a client clearing an already-empty badge should not get
+    a 400 for it.
+    """
+    if not isinstance(value, list | tuple):
+        _refuse(name)
+    if len(value) > MAX_BATCH_NODES:
+        frappe.throw(
+            _("A Drive request may name at most {0} rows").format(MAX_BATCH_NODES),
+            frappe.ValidationError,
+        )
+    answer = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            _refuse(name)
+        if item not in answer:
+            answer.append(item)
+    return tuple(answer)
 
 
 def identifiers(value, name: str) -> tuple[str, ...]:

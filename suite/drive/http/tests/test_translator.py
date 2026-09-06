@@ -38,13 +38,57 @@ GUEST_ROUTES = frozenset(
         "node_get_content",
         "node_media",
         "node_preview",
+        "node_activity",
         "upload_create",
         "upload_chunk",
         "upload_finish",
+        "link_unlock",
+        "node_versions",
+        "node_version_create",
+        "node_version_patch",
+        "node_version_content",
+        "node_version_restore",
+        "node_threads",
+        "node_thread_create",
+        "thread_patch",
+        "thread_comment_create",
+        "comment_patch",
+        "comment_delete",
         "unknown",
     }
 )
-SESSION_ONLY_ROUTES = frozenset({"node_purge", "root_usage", "root_patch", "root_purge"})
+# Three reasons a row is not heard without a session, and no fourth.
+#
+# MANAGE, which no open principal reaches: a link caps at EDIT and `$PUBLIC` at
+# READ (§5.9), so the grant routes, the version delete, and the root routes can
+# only ever refuse a Guest - after telling them the node exists.
+#
+# A personal record, which is keyed on the caller's email (§9.5). `Guest` is
+# one email for every anonymous visitor on the site, so a Guest recents list, a
+# Guest star, and a Guest inbox are all one shared list.
+#
+# A view, which is answered from the caller's own principals or from those same
+# personal lists (§5.4-5.7). A Guest has neither.
+SESSION_ONLY_ROUTES = frozenset(
+    {
+        "node_purge",
+        "node_grants",
+        "node_put_grant",
+        "node_delete_grant",
+        "grant_rotate",
+        "node_version_delete",
+        "node_visit",
+        "node_put_favourite",
+        "node_delete_favourite",
+        "view_list",
+        "view_clear_recents",
+        "notifications_list",
+        "notifications_read",
+        "root_usage",
+        "root_patch",
+        "root_purge",
+    }
+)
 
 
 def translate(path, method="GET", form=None):
@@ -85,6 +129,66 @@ class TestTranslator(UnitTestCase):
             ("POST", "/api/suite/drive/uploads", "upload_create", {}),
             ("PUT", "/api/suite/drive/uploads/u1/chunk", "upload_chunk", {"upload_id": "u1"}),
             ("POST", "/api/suite/drive/uploads/u1/finish", "upload_finish", {"upload_id": "u1"}),
+            ("GET", "/api/suite/drive/nodes/n1/activity", "node_activity", {"node": "n1"}),
+            ("POST", "/api/suite/drive/nodes/n1/visit", "node_visit", {"node": "n1"}),
+            ("PUT", "/api/suite/drive/nodes/n1/favourite", "node_put_favourite", {"node": "n1"}),
+            ("DELETE", "/api/suite/drive/nodes/n1/favourite", "node_delete_favourite", {"node": "n1"}),
+            ("GET", "/api/suite/drive/nodes/n1/grants", "node_grants", {"node": "n1"}),
+            (
+                "PUT",
+                "/api/suite/drive/nodes/n1/grants/$PUBLIC",
+                "node_put_grant",
+                {"node": "n1", "principal": "$PUBLIC"},
+            ),
+            (
+                "DELETE",
+                "/api/suite/drive/nodes/n1/grants/a@example.com",
+                "node_delete_grant",
+                {"node": "n1", "principal": "a@example.com"},
+            ),
+            ("POST", "/api/suite/drive/grants/g1/rotate", "grant_rotate", {"grant": "g1"}),
+            ("POST", "/api/suite/drive/links/t1/unlock", "link_unlock", {"token": "t1"}),
+            ("DELETE", "/api/suite/drive/views/recents", "view_clear_recents", {}),
+            ("GET", "/api/suite/drive/views/shared", "view_list", {"view": "shared"}),
+            ("GET", "/api/suite/drive/nodes/n1/versions", "node_versions", {"node": "n1"}),
+            ("POST", "/api/suite/drive/nodes/n1/versions", "node_version_create", {"node": "n1"}),
+            (
+                "PATCH",
+                "/api/suite/drive/nodes/n1/versions/3",
+                "node_version_patch",
+                {"node": "n1", "seq": "3"},
+            ),
+            (
+                "DELETE",
+                "/api/suite/drive/nodes/n1/versions/3",
+                "node_version_delete",
+                {"node": "n1", "seq": "3"},
+            ),
+            (
+                "GET",
+                "/api/suite/drive/nodes/n1/versions/3/content",
+                "node_version_content",
+                {"node": "n1", "seq": "3"},
+            ),
+            (
+                "POST",
+                "/api/suite/drive/nodes/n1/versions/3/restore",
+                "node_version_restore",
+                {"node": "n1", "seq": "3"},
+            ),
+            ("GET", "/api/suite/drive/nodes/n1/threads", "node_threads", {"node": "n1"}),
+            ("POST", "/api/suite/drive/nodes/n1/threads", "node_thread_create", {"node": "n1"}),
+            ("PATCH", "/api/suite/drive/threads/t9", "thread_patch", {"thread": "t9"}),
+            (
+                "POST",
+                "/api/suite/drive/threads/t9/comments",
+                "thread_comment_create",
+                {"thread": "t9"},
+            ),
+            ("PATCH", "/api/suite/drive/comments/c9", "comment_patch", {"comment": "c9"}),
+            ("DELETE", "/api/suite/drive/comments/c9", "comment_delete", {"comment": "c9"}),
+            ("GET", "/api/suite/drive/notifications", "notifications_list", {}),
+            ("POST", "/api/suite/drive/notifications/read", "notifications_read", {}),
             ("GET", "/api/suite/drive/roots/r1/usage", "root_usage", {"root": "r1"}),
             ("PATCH", "/api/suite/drive/roots/r1", "root_patch", {"root": "r1"}),
             ("DELETE", "/api/suite/drive/roots/r1", "root_purge", {"root": "r1"}),
@@ -174,7 +278,8 @@ class TestTranslator(UnitTestCase):
 
     def test_an_unclaimed_path_inside_the_prefix_is_unknown(self):
         for path in (
-            "/api/suite/drive/nodes/n1/grants",
+            "/api/suite/drive/nodes/n1/versions/3",
+            "/api/suite/drive/views/recents/extra",
             "/api/suite/drive/nodes/n1/children/extra",
             "/api/suite/drive/",
             "/api/suite/drive/../../v2/method/frappe.client.get_list",
