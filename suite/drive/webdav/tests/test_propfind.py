@@ -151,10 +151,17 @@ class TestWebDAVPropfind(IntegrationTestCase):
             drop_nodes([docx.name])
 
     def test_unreadable_children_are_omitted(self):
-        """§12.1: a child shows only when its role is READ or higher."""
+        """§12.1: a child shows only when its role is READ or higher.
+
+        The mount is the caller's own Personal Root, and §11.2 refuses a deny
+        that names that root's own user inside it. The deny therefore names
+        `$GENERAL`, which the caller carries as well: nearest depth beats
+        identity tier (§5.1), so the child answers NONE while `PropDocs` above
+        it stays READ and the mount is unchanged.
+        """
         hidden = file_node(OWNER, self.docs, "hidden.txt", b"no")
         try:
-            grant(hidden.name, OWNER, NONE, node_principals(OWNER))
+            grant(hidden.name, "$GENERAL", NONE, node_principals(OWNER))
             listed = hrefs(multistatus(propfind_response(OWNER, "/dav/PropDocs")))
             self.assertIn("/dav/PropDocs/report.txt", listed)
             self.assertNotIn("/dav/PropDocs/hidden.txt", listed)
