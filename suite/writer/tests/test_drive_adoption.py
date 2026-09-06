@@ -55,6 +55,7 @@ from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
 from suite.drive.api.files import (
     create_folder,
+    create_link,
     delete_entities,
     does_entity_exist,
     move,
@@ -826,6 +827,20 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.assertEqual(folder["file_type"], "Folder")
         self.assertFalse(frappe.db.exists("Drive Node", folder["name"]), "and no node was created")
         self.assertIn(folder["name"], {row["name"] for row in legacy_files(entity_name=home)})
+
+    def test_a_link_made_in_the_folder_that_holds_the_document_lands_there(self):
+        """`NewLinkDialog.vue` names the folder its page is showing."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Linked {frappe.generate_hash(6)}")
+        home = frappe.db.get_value("File", entity.name, "folder")
+
+        link = create_link(f"Site {frappe.generate_hash(6)}", "https://example.com", home)
+        self.addCleanup(self._drop_rows, link["name"])
+
+        self.assertEqual(link["file_type"], "Link")
+        self.assertEqual(link["folder"], home)
+        self.assertFalse(frappe.db.exists("Drive Node", link["name"]), "and no node was created")
 
     def test_a_document_the_api_creates_will_not_move_into_the_node_tree(self):
         """The two stores are two trees until Build joins them, so this is
