@@ -43,8 +43,9 @@ Run grouped-load tests for 19 references plus a composite code, multiple groups,
 ## Completion evidence
 
 Implemented 2026-09-06 in this worktree, on `implement/drive-20-composite-groups`.
-Status stays `in-progress` and every box stays unchecked: the shared-site gate
-below has not run.
+Status stays `in-progress` and every box stays unchecked. The Python half of
+the shared-site gate is green at `1778ac347`; `yarn --cwd frontend test` has
+still not run.
 
 | Commit | What it did |
 |---|---|
@@ -58,6 +59,8 @@ below has not run.
 | `d1e893c6c` | Review: one empty value for a reference that names no deck. |
 | `adbf503df` | Review: refuse a malformed group before it costs a 500. |
 | `6cfac67b3` | Review: make the contract tests able to fail. |
+| `4c0a47a60` | Gate: annotate `references`, and hold the signature with two tests. |
+| `1778ac347` | Gate: put the hidden deck in a root its reader cannot own. |
 
 ### Changed behaviour and interfaces
 
@@ -237,11 +240,10 @@ the run used a throwaway config that widens `server.fs.allow`, drops
 here**. Prettier is not installed either, so the two frontend files follow the
 surrounding style by hand rather than by tool.
 
-#### The site gate, required, not yet run
+#### The site gate, Python half run 2026-09-06
 
 Serialised on `slides.localhost` from `/home/faris/benches/suite-bench`, in
-this order, one command at a time, with the previous one finished. Nothing
-below has been run.
+this order, one command at a time, with the previous one finished.
 
 ```
 bench --site slides.localhost migrate
@@ -272,7 +274,98 @@ Expected counts, from a static enumeration of the classes at `6cfac67b3`:
 class inherits a test method, none is skipped, and no method name is defined
 twice in the new module.
 
-**Suspicions written before the run.** Each is a guess, not a result.
+##### What the gate answered
+
+The first run at `840a487c4` gave **42 errors and 3 failures** in the
+`test_composite_groups` integration class. Every error was the same
+`FrappeTypeError`, and all three failures were caused by it. Results at
+`1778ac347`:
+
+| Module | Counts | Result |
+|---|---|---|
+| `migrate` | — | Reported successful before this session; not re-run here |
+| `suite.slides.tests.test_composite_groups` | 18 unit, 34 integration | OK, twice in a row |
+| `suite.slides.tests.test_drive_adoption` | 30 unit, 71 integration | OK |
+| `suite.slides.doctype.presentation.test_presentation` | 19 integration | OK |
+| `suite.slides.tests.test_pasted_media` | 3 integration | OK |
+| `suite.slides.api.test_file` | 21 integration | OK |
+| `suite.drive.tests.test_content` | 53 unit, 49 integration, 3 unspecified | OK |
+| `suite.drive.tests.test_principals` | 10 unit | OK |
+| `suite.tests.test_architecture` | 7 unspecified | OK |
+| `yarn --cwd frontend test` | — | **Not run** |
+
+The unit class is 18, not 16, and the integration class 34, not 33: three
+tests were added at `4c0a47a60`.
+
+##### The 42 errors
+
+`suite/hooks.py` sets `require_type_annotated_api_methods`, so frappe validates
+every whitelisted argument against its annotation before the body runs.
+`composite_group` declared `references=None` with no annotation, and frappe
+raised `FrappeTypeError` for every call. Two things hid it:
+
+- `frappe.whitelist` applies the check only inside a request or a test
+  (`apply_condition=_in_request_or_test`), so every static check, every
+  no-database run, and the vitest suite pass with the argument bare.
+- The unit class calls `_requested_references` and `_authorized_composite`
+  directly, so it never crosses the wrapper.
+
+It was a live defect, not a test artefact: a real client of the route read a
+417 for every call.
+
+`references: object` is now the annotation, and the module docstring says why.
+A transport picks the type this argument arrives as: `make_form_dict` hands a
+JSON body over as the real list and a form or query string as text, and a
+hostile caller can send any type JSON carries. Measured against
+`transform_parameter_types`, `list[str] | str | None` refuses `5`, `True`,
+`{...}`, `[["a"]]` and `["a", 7]` with frappe's own text, so a JSON client and
+a form client would read two different refusals for one mistake. `object`
+passes every value to `_requested_references` unchanged.
+
+##### The three empty answer sets
+
+Not a fourth defect, and not a test flaw. All three tests collect refusal
+messages inside `self.subTest`. `FrappeTypeError` subclasses `TypeError`, not
+`frappe.ValidationError`, so it escaped `assertRaises`, `subTest` recorded an
+error, and the `answers.add(...)` line below it never ran. The sets were empty
+because the loop bodies never finished. Annotating `references` emptied all 42
+errors and all 3 failures at once.
+
+##### Two fixture flaws the annotation then exposed
+
+Both proved before they were changed, both in the test module.
+
+1. **`other_root` belonged to VIEWER.** `create_root` writes an anchor grant
+   for its own user, so a deck placed in VIEWER's root is readable by VIEWER.
+   `test_an_unreadable_reference_comes_back_in_place_with_no_content` and
+   `test_a_placeholder_keeps_its_id_and_its_place_across_repeated_loads` read
+   that root as VIEWER and asserted `readable: false`. The proof that the root
+   and not the point check was wrong: three sibling tests place a deck in the
+   same root, read it as STRANGER, and get `readable: false`. The root now
+   belongs to OUTSIDER, who is never a caller.
+2. **`_real_refusal_messages` probed without authorization.** It ran as a guest
+   with no `X-Drive-Links`, so `_authorized_composite` refused first and
+   `injected_reference` recorded `Presentation is not public` instead of the
+   membership message. That is the module's documented order, not a defect in
+   it: membership is checked after authorization. Each probe now carries the
+   composite's link code, the way the manifest and group calls above it do. The
+   three shape refusals are unaffected, because the reader runs before
+   authorization.
+
+No non-disclosure assertion was weakened. `assertRaises(frappe.PermissionError)`
+and the `api.REFUSED` equality checks are untouched.
+
+##### The guard against a recurrence
+
+Three tests, all of which fail with the annotation reverted (checked):
+
+| Test | Reverted-annotation result |
+|---|---|
+| `test_every_whitelisted_call_here_survives_enforced_type_checking` | Errors on `composite_group`; calls frappe's own enforcement, so it cannot drift from it |
+| `test_the_whitelisted_call_hands_the_reader_the_value_it_was_sent` | Errors on all 10 shapes, then fails on the recorded list |
+| `test_a_malformed_group_is_refused_the_same_way_whatever_its_json_type` | Errors on all 8 shapes, then fails |
+
+**Suspicions written before the run.** Each was a guess. Outcomes added after.
 
 1. **`TestSlidesInDrive` and `TestCompositeGroups` both create Personal roots.**
    The users differ, so the roots differ, but a run killed between `setUp` and
@@ -302,6 +395,19 @@ twice in the new module.
    calls `restore_version` directly.** It saves as Administrator, whose admin
    bypass carries `refuse_unreadable_references`. If the fixture user changes,
    the save refuses instead.
+
+None of the eight happened. The module ran clean twice in a row, and the only
+site-only defect was the one no static check could reach.
+
+##### Read on the site, deliberately not changed
+
+`name: str` has the same asymmetry the annotation fix removes for
+`references`. Over HTTP, a `name` that is a dict, a list, a number or a
+boolean reads frappe's `FrappeTypeError` (417), not the `REFUSED`
+`PermissionError` (403) the Refusals table promises;
+`_authorized_composite`'s own guard only sees a value frappe already accepted.
+It discloses nothing, it breaks no test, and it is outside this gate's scope,
+so it is recorded rather than changed.
 
 ## Independent adversarial review
 
@@ -417,6 +523,9 @@ which `test_drive_public_interface_is_explicit_and_complete_only` proves.
 - **Ticket 21, HTTP.** The grouped calls stay Slides methods. If the composite
   render ever moves under an HTTP route, §11.2 keeps it outside the Drive
   namespace.
+- **This ticket, remaining.** `yarn --cwd frontend test` is the last gate step.
+  It needs an install the review worktree did not have; run it from a checkout
+  that does. After it passes, the boxes can be checked.
 
 ### Reviewed and deliberately not changed
 
