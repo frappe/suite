@@ -304,8 +304,11 @@ in this worktree, with a test for each.
 
 Not fixed, recorded instead:
 
-- **Writer's staged guards carry the same `DocShare` bypass.** Ticket 17's file.
-  Blocker 2 above.
+- **Writer's staged guards carried the same `DocShare` bypass.** Ticket 17's
+  file, so it was recorded here and fixed on this branch at `524f62c46`. The
+  evidence is in
+  [17 — Move Writer lifecycle and history into Drive](17-writer-adoption.md)
+  under "Staged share fix". Blocker 2 below is closed with it.
 - **A purge leaves the framework's deletion `Comment`.** `delete_doc` ends with
   `insert_feed`, which writes a row naming the doctype, the deck, and the
   owner's full name, with no `reference_name` for anything to match. It carries
@@ -393,12 +396,17 @@ fixed.
    a share that names a linked deck rather than letting it through; see the
    review section below.
 
-2. **Writer's staged guards carry the same `DocShare` bypass this ticket fixed
-   in Slides.** `suite/writer/overrides/__init__.py` answers `False` for a
-   linked row and writes no list refusal, so Frappe's `false_if_not_shared` and
-   the shared-names OR reopen it. Ticket 17's file, not this one's, so it is
-   recorded here and not edited. `drive.refuse_shared_row` and
-   `drive.refuse_shared_linked_rows` are the two calls it needs.
+2. **Closed, `524f62c46`. Writer's staged guards carried the same `DocShare`
+   bypass this ticket fixed in Slides.** `suite/writer/overrides/__init__.py`
+   answered `False` for a linked row and wrote no list refusal, so Frappe's
+   `false_if_not_shared` and the shared-names OR reopened it. Both guards now
+   call `drive.refuse_shared_row` and `drive.refuse_shared_linked_rows`, the
+   two package-root entries this ticket added. It is ticket 17's file, so the
+   defect, the five tests, and the checks are recorded in
+   [17 — Move Writer lifecycle and history into Drive](17-writer-adoption.md)
+   under "Staged share fix". Ticket 28 still owes the rewrite of the
+   `Writer Document` shares to grants, and now the `Writer Version` rows with
+   them.
 
 ### Resolved: activation and the legacy `title` column
 

@@ -477,13 +477,146 @@ The site run above covers both. `test_content` is 53 unit and 44 integration,
 which includes the 11 new contract tests and the three adversarial workflow
 tests that could not run when the corrections landed.
 
+## Staged share fix, `524f62c46`
+
+Ticket 18's review found the same `DocShare` bypass in both apps' staged
+guards, fixed Slides, and recorded Writer as ticket 17's file
+([18 — Move Slides documents and media into Drive](18-slides-adoption.md),
+Blocker 2). This closes the Writer half, on the same review branch.
+
+### The defect
+
+Between Build and ticket 29 the two guards in
+`suite/writer/overrides/__init__.py` are the only ones running for
+`Writer Document`, and both answered `False` for a linked row. `False` is not a
+denial:
+
+| Composition | What Frappe does next | Effect |
+|---|---|---|
+| row | `perm = false_if_not_shared()` after the hook denied (`frappe/permissions.py:214-216`) | one `DocShare` re-grants read, write, share, submit, email, and print |
+| list | `where_condition \|= table.name.isin(shared_docs)` (`frappe/database/query.py:1739-1742`) | the shared names are ORed around any predicate the hook returns |
+
+`frappe.share.get_shared` matches an `everyone = 1` row for every signed-in
+user (`frappe/share.py:188-190`), so one such row reached every linked document
+on the site. `Drive Grant` is the only authority (§1), so this was a way around
+it for the whole Build-to-activation window.
+
+### The fix
+
+- `document_has_permission` calls `drive.refuse_shared_row` before it returns
+  `False` for a linked row.
+- `document_query_conditions` calls `drive.refuse_shared_linked_rows`.
+- `version_query_conditions` takes its SQL from the new private
+  `_document_predicate`, so the version list does not inherit that refusal.
+
+Both calls are Drive package-root entries the Slides fix added, so Writer
+imports nothing below Drive's root and reads no `Drive Grant` itself. Both are
+scoped to a row that carries a node: a legacy row is still the app's to share,
+and no row carries a node before Build. Activation timing does not move, the
+registry stays dormant, and no `DocShare` row is rewritten.
+
+The split matters because Frappe ORs the shared names of the doctype being
+listed. A `DocShare` on a `Writer Document` never widens a `Writer Version`
+list, so refusing there would deny a legacy reader their own history for a row
+that could not have opened it, and it would raise out of
+`suite/writer/api/general.py:130`, the desk version list, and search.
+
+### Tests
+
+Five, in `suite/writer/tests/test_drive_adoption.py`.
+
+| Test | What it proves |
+|---|---|
+| `test_a_docshare_cannot_open_a_linked_row_through_the_staged_guards` | a user share is refused on the row and on the list, and the Administrator list is not refused |
+| `test_an_everyone_docshare_reaches_a_linked_row_no_more_easily` | an `everyone` row is refused for a signed-in user, and matches no Guest, so the guard refuses a Guest nothing |
+| `test_the_row_guard_refuses_exactly_the_rights_the_share_carries` | `write` on a write-only row, `read`, `email`, and `print` on a read-only one, silence for `select` and `delete` |
+| `test_a_share_on_a_linked_row_leaves_the_legacy_version_list_alone` | the version predicate still answers, with the node clause intact |
+| `test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it` | a node-less row keeps its exact legacy behaviour: `frappe.has_permission` answers True through the share and `frappe.get_list` returns the name |
+
+The share rows are hand-written with `ignore_validate`, because
+`refuse_governed_share` refuses a new one under `activated()` and because no
+tool rewrites the rows a site already had. That is the state Build inherits.
+
+Counts at this HEAD: `TestWriterDeclaration` 23, `TestWriterBeforeActivation`
+5, `TestWriterInDrive` 38, 66 in total. **The 43 integration tests are
+unverified.** They have not run: this worktree may not touch
+`slides.localhost`.
+
+### Checks run here
+
+No bench, no migrate, no shared-site command.
+
+| Check | Result |
+|---|---|
+| `python -m compileall suite/writer suite/drive suite/tests suite/hooks.py` | Clean |
+| `ruff 0.14.5 check` on both changed files | Clean |
+| `ruff 0.14.5 format --check` on both changed files | 2 files already formatted |
+| `ruff 0.14.5 check suite/writer` | 4 errors, every one pre-existing in a file this commit does not touch: `E731` and `E722` in `api/docs.py`, two `RUF012` in `search.py` |
+| `suite.tests.test_architecture`, 7 tests, no database | OK, 0.95s |
+| `TestWriterDeclaration`, 23 tests, no database | OK, 0.15s |
+
+Ruff is 0.14.5 here, not the 0.12.3 recorded above. The two `api/docs.py`
+errors are the same two; the two `RUF012` are new to the version, not to the
+code.
+
+The pure runs use `frappe.init(site="slides.localhost")` with no connection,
+from `/home/faris/benches/suite-bench/sites`, with `PYTHONPATH` set to this
+worktree. `suite.writer.overrides.__file__` is asserted to come from the
+worktree.
+
+### The site gate, expanded
+
+Run from `/home/faris/benches/suite-bench`, with `PYTHONPATH` set to this
+worktree. The first three are what this commit adds to ticket 18's gate.
+
+```
+bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.writer.doctype.writer_document.test_writer_document
+bench --site slides.localhost run-tests --module suite.tests.test_architecture
+bench --site slides.localhost migrate
+bench --site slides.localhost run-tests --module suite.slides.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.drive.tests.test_content
+```
+
+`migrate` still adds the `node` column and nothing else. `test_content` is in
+the list because it freezes the four hook signatures the two guards borrow.
+
+### Not fixed, recorded
+
+- **`Writer Version` is open on both sides once Build runs.**
+  `version_has_permission` answers from the backing `File` of the parent
+  document, and returns `False` when there is none, which the row composition
+  above reopens. Build links documents that already carry version rows and
+  keeps the `File` until Cleanup (§14.10), so after Build that guard answers a
+  Drive-owned document's history from the legacy `File`, and a `DocShare` on
+  the version row reopens it. The list side is the same: `Writer Version`
+  grants role read to `Suite User`, so the predicate is built and the shared
+  names are ORed around it. Neither staged guard reaches it. `Writer Version`
+  carries no node column for `refuse_shared_linked_rows` to scope on, and
+  `suite.writer.drive.SPEC` declares `satellites=()`, so activation does not
+  govern it either. Unreachable today: the only two writers of the node column
+  insert a new document, so no linked row has a version except one an
+  Administrator writes by hand. Owned by 28 and 29; the module docstring in
+  `suite/writer/overrides/__init__.py` names it.
+- **The list guard refuses a Suite Admin.** `refuse_shared_linked_rows` skips
+  the literal `Administrator` only, while `_refuse_shared_list`, the guard
+  after activation, skips `is_drive_admin`. A Suite Admin who holds a
+  `DocShare` on a linked row therefore loses the whole `Writer Document` list
+  until the row is deleted. Drive's file, not this one's, and Slides carries
+  the same behaviour from ticket 18.
+- **A wrong citation, twice.** `suite/drive/framework.py:257` and
+  `suite/slides/doctype/presentation/presentation.py:648` cite
+  `frappe/database/query.py:1737-1741`; the block is 1738-1742 and the OR is
+  1742. The two copies in `suite/writer/overrides/__init__.py` and its tests
+  say 1739-1742. Not corrected here: both files are outside this commit.
+
 ## Handoffs
 
 | To | What is owed |
 |---|---|
 | 21, 23 | Move `suite.writer.api.docs.create_document` onto `drive.create_document`, and the read path with it: `docs.get_document`, `general.get_document_list`, `:get_versions`, the search mapping at `:190`, `drive/api/list.py:files`, `writer/api/embed.py`. Until then `suite/writer/tests/test_drive_adoption.py` reaches `suite.drive._core`, recorded as owned debt in `suite/tests/test_architecture.py` under owner "Suite Writer", to be removed when tickets 21 and 22 expose those workflows over HTTP. The listing filter is `mime_type == "frappe_doc"` while a node carries `frappe/writer`. |
 | 22, 24 | First consumers of `export`. `content.call_app_stream` is the guarded entry point an export route must use; nothing reads `default_export` or `export_formats` yet. |
-| 28 (Build) | Link every legacy `Writer Document` row to a node. Write `Writer Version` history as `writer-document/1` envelopes, not bare HTML, or restore refuses it. Rewrite every `DocShare` on `Writer Document` as a grant, or ticket 29 refuses the site. |
+| 28 (Build) | Link every legacy `Writer Document` row to a node. Write `Writer Version` history as `writer-document/1` envelopes, not bare HTML, or restore refuses it. Rewrite every `DocShare` on `Writer Document` as a grant, or ticket 29 refuses the site. Rewrite the `Writer Version` rows too, or the version history of a linked document stays reachable through a share and through the surviving `File`: see "Not fixed, recorded" above. |
 | 29 | The activation, as three changes in one step: `drive_content_types = ["suite.writer.drive.SPEC"]`, `has_permission["Writer Document"] = "suite.drive.framework.doc_has_permission"`, and `permission_query_conditions["Writer Document"] = "suite.drive.framework.doc_query_conditions"`. `activated()` in `suite/writer/tests/test_drive_adoption.py` is that step, written out. Then delete `suite.writer.overrides.document_has_permission` and `document_query_conditions`. |
 | 34 (frontend) | Adopt `take_version` in place of `new_version` (`useDocument.ts:37`, `CoreEditor.vue:320`, `NewVersionDialog.vue:10`) and Drive comments in place of `save_comments` (`resources/index.js:37`, `useYjs.ts:83`). Both still work today; both go with the legacy row. `newVersion` takes different arguments and returns a different shape from `take_version`, so no alias exists. |
 | 35 (Cleanup) | `suite/drive/overrides/file.py:146-152` deletes the content document behind a deleted `File`. Once Build links the rows, that second delete authority can take a `Writer Document` out from under a live `Drive Node`. |
