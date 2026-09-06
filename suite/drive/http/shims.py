@@ -2463,9 +2463,7 @@ def _legacy_children(parent: str, *, order_by, ascending, file_kinds, adopted: b
         frappe.throw(_("You don't have access."), frappe.PermissionError)
 
     adopted_ids = frappe.qb.from_(frappe.qb.DocType("Drive Node")).select("name")
-    query = _get_basic_query(None).where(
-        (DriveFile.folder == parent) & DriveFile.name.notin(adopted_ids)
-    )
+    query = _get_basic_query(None).where((DriveFile.folder == parent) & DriveFile.name.notin(adopted_ids))
     rows = get_query_data(
         query,
         file_kinds=file_kinds,
@@ -2479,9 +2477,7 @@ def _legacy_children(parent: str, *, order_by, ascending, file_kinds, adopted: b
     return rows[:MAX_SORTABLE_ROWS], len(rows) > MAX_SORTABLE_ROWS
 
 
-def _merged_folder_page(
-    principals, parent: str, *, order_by, ascending, file_kinds, start, limit, paginated
-):
+def _merged_folder_page(principals, parent: str, *, order_by, ascending, file_kinds, start, limit, paginated):
     """One folder page over both stores, for a folder that still holds a legacy row.
 
     §10.2 keeps a content type's legacy rows working while that type is in
