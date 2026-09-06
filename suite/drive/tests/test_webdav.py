@@ -18,7 +18,7 @@ import frappe
 from frappe.tests import UnitTestCase
 from lxml import etree
 from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
+from werkzeug.wrappers import Request, Response
 
 from suite.drive import framework
 from suite.drive._core import nodes as node_core
@@ -773,33 +773,99 @@ class TestRemoteDriverStreaming(BlobStreamCase):
 
 
 class TestStreamContentRefusals(DavCase):
+    def environ(self, headers=None):
+        return EnvironBuilder(method="GET", path="/dav/a.txt", headers=dict(headers or {})).get_environ()
+
     def test_a_node_that_is_not_a_file_has_no_bytes_to_send(self):
         for kind in ("folder", "root", "document", "link"):
             with self.subTest(kind=kind), self.assertRaises(DriveConflict):
-                node_core.stream_content(node("n", kind=kind, blob="blob1"))
+                node_core.stream_content(node("n", kind=kind, blob="blob1"), environ=self.environ())
 
     def test_an_unusable_blob_is_a_conflict_not_an_empty_file(self):
         row = node("file1", blob="blob1", size=5)
         unusable = (
-            None,
+            frappe.DoesNotExistError("gone"),
             frappe._dict(name="blob1", file_size=5, is_private=1, status="Pending"),
             frappe._dict(name="blob1", file_size=5, is_private=0, status="Ready"),
         )
         for blob in unusable:
             with self.subTest(blob=blob):
-                self.db.get_value = MagicMock(return_value=blob)
-                with self.assertRaises(DriveConflict):
-                    node_core.stream_content(row)
+                fetch = {"side_effect": blob} if isinstance(blob, Exception) else {"return_value": blob}
+                with (
+                    patch("frappe.get_doc", **fetch),
+                    self.assertRaises(DriveConflict),
+                ):
+                    node_core.stream_content(row, environ=self.environ())
+
+    def test_the_blob_is_read_once_and_handed_to_the_stream(self):
+        """Two reads of one `File Blob` per download is one too many: the doc
+        this branch already loaded is what `stream_blob` would have loaded."""
+        row = node("file1", blob="blob1", size=5)
+        blob = frappe._dict(name="blob1", file_size=5, is_private=1, status="Ready", checksum="abc")
+        with (
+            patch("frappe.get_doc", return_value=blob) as get_doc,
+            patch("frappe.storage.serve.stream_blob", return_value=Response(b"")) as stream,
+        ):
+            node_core.stream_content(row, environ=self.environ())
+
+        self.assertEqual(get_doc.call_count, 1)
+        self.assertIs(stream.call_args.args[0], blob)
 
     def test_an_empty_head_answers_200_with_no_body_and_the_empty_etag(self):
         row = node("file1", blob=None, size=0, mime="text/plain")
-        response = node_core.stream_content(row)
+        response = node_core.stream_content(row, environ=self.environ())
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_data(), b"")
         self.assertEqual(response.headers["Accept-Ranges"], "bytes")
         self.assertEqual(response.headers["ETag"], properties.compute_etag(row))
         self.assertEqual(response.headers["ETag"], f'"{hashlib.sha256(b"").hexdigest()}"')
+
+    def test_an_empty_head_answers_304_to_its_own_validator(self):
+        """A zero-byte file publishes a validator, so it has to honour one."""
+        row = node("file1", blob=None, size=0, mime="text/plain")
+        environ = self.environ({"If-None-Match": f'"{EMPTY_BLOB_CHECKSUM}"'})
+        response = node_core.stream_content(row, environ=environ)
+
+        self.assertEqual(response.status_code, 304)
+        self.assertEqual(response.headers["ETag"], f'"{EMPTY_BLOB_CHECKSUM}"')
+
+
+class TestIfRange(DavCase):
+    """RFC 7233 §3.2: a stale `If-Range` means the whole representation.
+
+    The framework's remote-driver path never reads the header, so a Range
+    spliced onto a replaced blob would be a silently corrupt download.
+    """
+
+    CHECKSUM = "a" * 64
+
+    def environ(self, headers):
+        return EnvironBuilder(method="GET", path="/dav/a.txt", headers=headers).get_environ()
+
+    def kept(self, headers) -> bool:
+        stripped = node_core._range_honouring_environ(self.environ(headers), self.CHECKSUM)
+        return "HTTP_RANGE" in stripped
+
+    def test_a_matching_strong_tag_keeps_the_range(self):
+        self.assertTrue(self.kept({"Range": "bytes=0-4", "If-Range": f'"{self.CHECKSUM}"'}))
+
+    def test_a_stale_tag_drops_the_range(self):
+        self.assertFalse(self.kept({"Range": "bytes=0-4", "If-Range": '"deadbeef"'}))
+
+    def test_a_weak_tag_never_satisfies_a_range(self):
+        self.assertFalse(self.kept({"Range": "bytes=0-4", "If-Range": f'W/"{self.CHECKSUM}"'}))
+
+    def test_a_date_form_is_left_to_the_driver_path(self):
+        self.assertTrue(self.kept({"Range": "bytes=0-4", "If-Range": "Sat, 05 Sep 2026 12:00:00 GMT"}))
+
+    def test_no_range_header_is_left_alone(self):
+        environ = self.environ({"If-Range": '"deadbeef"'})
+        self.assertIs(node_core._range_honouring_environ(environ, self.CHECKSUM), environ)
+
+    def test_a_blob_with_no_checksum_cannot_satisfy_if_range(self):
+        environ = self.environ({"Range": "bytes=0-4", "If-Range": '"deadbeef"'})
+        self.assertNotIn("HTTP_RANGE", node_core._range_honouring_environ(environ, None))
 
 
 class TestGetResponseHeaders(DavCase):
@@ -820,6 +886,76 @@ class TestGetResponseHeaders(DavCase):
         disposition = response.headers["Content-Disposition"]
         self.assertTrue(disposition.startswith("attachment"))
         self.assertIn("report.docx", disposition)
+
+    def get(self, row, headers=None):
+        with (
+            patch.object(pathmap, "resolve", return_value=resolved(row, segments=[row.title])),
+            patch.object(get, "require", return_value=None),
+        ):
+            return get.handle(self.make_ctx("GET", f"/dav/{row.title}", headers=headers))
+
+    def dispatcher_answer(self, row, refusal):
+        """What the dispatcher makes of an exception the byte path raised.
+
+        `dispatch._dispatch` calls `errors.map_exception` then
+        `errors.to_response`; this is that pair, with the framework exception
+        the streamer would have raised.
+        """
+        with (
+            patch.object(pathmap, "resolve", return_value=resolved(row, segments=[row.title])),
+            patch.object(get, "require", return_value=None),
+            patch.object(node_core, "stream_content", side_effect=refusal),
+            self.assertRaises(type(refusal)) as caught,
+        ):
+            get.handle(self.make_ctx("GET", f"/dav/{row.title}"))
+        return errors.to_response(errors.map_exception(caught.exception))
+
+    def test_last_modified_is_the_time_getlastmodified_publishes(self):
+        """§12.4: `content_modified` is the content's time. werkzeug derives
+        its own from the blob file's mtime, which is shared by every node that
+        dedupes onto those bytes, so the byte path must be told."""
+        stamp = datetime(2026, 8, 24, 10, 30, 0)
+        row = node("file1", title="a.txt", blob=None, size=0, content_modified=stamp)
+        response = self.get(row)
+
+        published = properties.live_properties(row, is_collection=False, display_name="a.txt")
+        self.assertEqual(response.headers["Last-Modified"], published[dav("getlastmodified")].text)
+        self.assertEqual(response.headers["Last-Modified"], properties.rfc1123(stamp))
+
+    def test_a_304_carries_no_representation_metadata(self):
+        """RFC 7232 §4.1, and RFC 7234 §4.3.4: a cache copies onto the stored
+        response whatever a 304 carries."""
+        row = node("file1", title="a.txt", blob=None, size=0)
+        response = self.get(row, {"If-None-Match": f'"{EMPTY_BLOB_CHECKSUM}"'})
+
+        self.assertEqual(response.status_code, 304)
+        for header in ("Content-Disposition", "Content-Security-Policy", "X-Content-Type-Options"):
+            self.assertNotIn(header, response.headers)
+        self.assertEqual(response.headers["ETag"], f'"{EMPTY_BLOB_CHECKSUM}"')
+
+    def test_a_range_the_bytes_cannot_satisfy_is_416_not_500(self):
+        """`send_file` refuses a Range by raising werkzeug's own exception. The
+        local driver is the default on every non-S3 site, so this is the common
+        path, and a 500 here also wrote an Error Log row per client retry."""
+        from werkzeug.exceptions import RequestedRangeNotSatisfiable
+
+        row = node("file1", title="a.txt", blob="blob1", size=11)
+        answer = self.dispatcher_answer(row, RequestedRangeNotSatisfiable(length=11))
+
+        self.assertEqual(answer.status_code, 416)
+        self.assertEqual(answer.headers["Content-Range"], "bytes */11")
+
+    def test_bytes_missing_from_the_driver_are_404_not_500(self):
+        """The base handler caught `FileNotFoundError` and answered 404. The
+        framework raises werkzeug's `NotFound` instead, and an unmapped 500
+        also had the dispatcher log and commit an Error Log row."""
+        from werkzeug.exceptions import NotFound as FrameworkNotFound
+
+        row = node("file1", title="a.txt", blob="blob1", size=11)
+        answer = self.dispatcher_answer(row, FrameworkNotFound())
+
+        self.assertEqual(answer.status_code, 404)
+        self.assertNotIn("Drive", answer.get_data(as_text=True))
 
 
 # --- F. quota properties (§7.9, §12.4) ---

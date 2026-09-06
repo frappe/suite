@@ -518,34 +518,60 @@ def stream_content(row: frappe._dict, *, environ: dict | None = None, as_attachm
     Conditional requests, `Range`, `206`, `416`, and the strong `ETag` are the
     framework's (§13.5). What Drive owns here is the refusal: a node with no
     bytes to send is a conflict, not an empty body, and an unreachable blob is
-    never reported as a zero-length file.
+    never reported as a zero-length file. Drive also owns `If-Range`, because
+    the framework's remote-driver path does not read it and a Range spliced
+    onto a replaced blob is a silently corrupt download.
     """
     from frappe.storage.serve import stream_blob
     from werkzeug.wrappers import Response
 
     if row.kind != "file":
         raise DriveConflict(_("Only a Drive file has bytes to download"))
+    if environ is None:
+        environ = frappe.local.request.environ
     if not row.blob:
         # §8.4's empty head. A zero-byte file is a file: it answers 200 with no
-        # body rather than the 409 a node that never had bytes gets.
+        # body rather than the 409 a node that never had bytes gets. It carries
+        # the same validator a listing publishes for it, so it answers 304 to a
+        # client holding that validator like any other file.
         answer = Response(b"", status=200, mimetype=row.mime or "application/octet-stream")
-        answer.headers["Accept-Ranges"] = "bytes"
         answer.set_etag(EMPTY_BLOB_CHECKSUM)
-        return answer
-    blob = frappe.db.get_value(
-        "File Blob",
-        row.blob,
-        ["name", "file_size", "is_private", "status"],
-        as_dict=True,
-    )
-    if not blob or blob.status != "Ready" or not blob.is_private:
+        # werkzeug skips range handling, and the header with it, at length 0
+        answer.headers["Accept-Ranges"] = "bytes"
+        return answer.make_conditional(environ, accept_ranges=True, complete_length=0)
+    try:
+        blob = frappe.get_doc("File Blob", row.blob)
+    except frappe.DoesNotExistError:
+        raise DriveConflict(_("The Drive file bytes are unavailable")) from None
+    if blob.status != "Ready" or not blob.is_private:
         raise DriveConflict(_("The Drive file bytes are unavailable"))
     return stream_blob(
-        row.blob,
+        blob,
         content.download_filename(row.title),
         as_attachment=as_attachment,
-        environ=environ,
+        environ=_range_honouring_environ(environ, blob.checksum),
     )
+
+
+def _range_honouring_environ(environ: dict, checksum: str | None) -> dict:
+    """Drop `Range` when `If-Range` names a validator this blob no longer has.
+
+    RFC 7233 §3.2: an `If-Range` that does not match means send the whole
+    representation, not a slice of a different one. Only the entity-tag form is
+    decided here; the date form is left to the driver path that already reads
+    `Last-Modified`. A weak tag never satisfies a Range request, so it counts
+    as a miss.
+    """
+    if "HTTP_RANGE" not in environ:
+        return environ
+    presented = (environ.get("HTTP_IF_RANGE") or "").strip()
+    if not presented or not presented.startswith(('"', "W/")):
+        return environ
+    if checksum and presented == f'"{checksum}"':
+        return environ
+    stripped = dict(environ)
+    stripped.pop("HTTP_RANGE", None)
+    return stripped
 
 
 def blob_checksums(blobs: list[str]) -> dict[str, str]:
