@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import inspect
 import io
 import json
 import pathlib
@@ -324,6 +325,30 @@ class TestSheetsDeclaration(unittest.TestCase):
     def test_the_declaration_is_frozen_so_nothing_can_edit_it_at_runtime(self):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             sheets.SPEC.default_export = "xlsx"
+
+    def test_the_drive_entry_points_keep_the_argument_order_this_module_calls(self):
+        """Pin the leading positionals, because a swap here is silent.
+
+        `nodes` and `versions` take `Principals` first; `grant` takes it
+        fourth; the two framework hooks take `user` first because Frappe calls
+        them that way (`frappe/model/db_query.py:1343`). Passing a node where
+        `Principals` belongs reaches the database as a filter and fails deep
+        inside the query builder, far from the call that made the mistake.
+        """
+        expected = {
+            create_file: ["principals", "parent", "title"],
+            create_folder: ["principals", "parent", "title"],
+            update: ["principals", "node"],
+            purge: ["principals", "node"],
+            restore_version: ["principals", "node", "seq"],
+            grant: ["node_id", "principal", "role", "principals"],
+            satellite_query_conditions: ["user", "doctype"],
+            satellite_has_permission: ["doc", "ptype", "user", "debug"],
+        }
+        for function, leading in expected.items():
+            with self.subTest(function=function.__name__):
+                parameters = list(inspect.signature(function).parameters)
+                self.assertEqual(parameters[: len(leading)], leading)
 
 
 # ── the body, as pure functions ──────────────────────────────────────────────
@@ -1164,8 +1189,8 @@ class TestSheetsInDrive(IntegrationTestCase):
             {"doctype": COLLAB_STATE, "sheet": docname, "ydoc_state": "AAA", "byte_size": 3}
         ).insert(ignore_permissions=True)
 
-        update(node, self.admin, state="Trashed")
-        purge(node, self.admin)
+        update(self.admin, node, state="Trashed")
+        purge(self.admin, node)
 
         self.assertFalse(frappe.db.exists(DOCTYPE, docname))
         self.assertFalse(frappe.db.exists(OP_LOG, {"sheet": docname}))
@@ -1176,8 +1201,8 @@ class TestSheetsInDrive(IntegrationTestCase):
         """`delete_permanently` is what makes a purge a purge."""
         node = self._sheet()
         docname = self._docname(node)
-        update(node, self.admin, state="Trashed")
-        purge(node, self.admin)
+        update(self.admin, node, state="Trashed")
+        purge(self.admin, node)
         self.assertFalse(frappe.db.exists("Deleted Document", {"deleted_name": docname}))
 
     # media discovery
@@ -1215,16 +1240,27 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.assertTrue(satellite_has_permission(frappe.get_doc(OP_LOG, op), "read", OTHER))
 
     def test_the_op_log_list_is_scoped_to_readable_sheets(self):
+        # Both sheets sit in USER's root, so the grant is the only difference
+        # between them. A sheet in OTHER's own root proves nothing here: a
+        # Personal root anchors MANAGE to its user, so OTHER reads all of it.
         mine = self._sheet(title="Mine")
-        theirs = drive.create_document(self.other_root.node, "Theirs", content_doctype=DOCTYPE)
+        theirs = self._sheet(title="Theirs")
         grant(mine, OTHER, drive.READ, self.admin)
 
         self._as(OTHER)
-        condition = satellite_query_conditions(OP_LOG, OTHER)
-        listed = frappe.get_all(OP_LOG, pluck="sheet", limit_page_length=0)
+        condition = satellite_query_conditions(OTHER, OP_LOG)
+        # `get_list`, not `get_all`: `get_all` sets `ignore_permissions=True`,
+        # so it never runs `permission_query_conditions` and would list both.
+        listed = frappe.get_list(OP_LOG, pluck="sheet", limit_page_length=0)
         self.assertTrue(condition, "a non-admin gets a predicate")
         self.assertIn(self._docname(mine), listed)
         self.assertNotIn(self._docname(theirs), listed)
+        self.assertEqual(self._ops_matching(condition), set(listed))
+
+    def _ops_matching(self, predicate: str) -> set[str]:
+        """The sheets the raw predicate admits, as `get_list` would apply it."""
+        rows = frappe.db.sql(f"SELECT `sheet` FROM `tabSheet Op Log` WHERE {predicate}")
+        return {row[0] for row in rows}
 
     def test_the_collaborative_document_takes_the_same_rights(self):
         node = self._sheet()
