@@ -463,7 +463,7 @@ def _slide_rows(docname: str) -> list[dict]:
     )
 
 
-def _reference_names(docname: str) -> list[str]:
+def _reference_names(docname: str) -> list[str | None]:
     # `or None` reproduces `pluck` exactly, so the version envelope and the save
     # check answer for a blank row exactly what they answered before ticket 20
     # gave the table a second reader.
