@@ -251,3 +251,247 @@ ticket 23's compatibility surface. Modules 2 to 12 are ticket 24's own
 verification and have never been executed.
 
 This ticket stays open until that gate runs.
+
+## Independent review
+
+A separate reviewer audited the whole diff from `b5ad65db5` through
+`a47013073`, read every referenced normative section, and fixed what it found.
+Implementation notes were not taken as evidence: every claim below was checked
+against the code. The four commits are on this branch.
+
+| Commit | Subject |
+|---|---|
+| `75cc52e9d` | make the DAV byte path answer for itself |
+| `f66c3f2a0` | keep the DAV namespace one name to one row |
+| `03c82c063` | stop advertising and carrying what DAV cannot honour |
+| `73a3941fd` | prove the mount boundary and the one validator live |
+
+### Defects found and fixed
+
+**The byte path (`75cc52e9d`).** GET leaves through
+`frappe.storage.serve.stream_blob`, which is werkzeug's ground and answers with
+werkzeug's own exceptions.
+
+1. An unsatisfiable `Range` was a 500. `send_file` raises
+   `RequestedRangeNotSatisfiable`, `map_exception` had no `HTTPException`
+   branch, and the dispatcher wrote and committed an Error Log row on every
+   client retry. Local is the default driver, so this was the common path; only
+   the remote driver had a 416 test. Now 416, with `Content-Range` carried
+   through.
+2. Bytes missing from the driver were a 500, not 404. Same gap.
+3. `If-Range` was ignored. A download resumed after the file was replaced
+   spliced an old head onto new bytes. Decided in `stream_content` now, where
+   the blob checksum is already in hand.
+4. `Last-Modified` was the blob file's mtime, which blob dedupe shares between
+   unrelated nodes, while `getlastmodified` published `content_modified`. The
+   two surfaces name one time (§8.11, §12.4).
+5. An empty head answered a flat 200 that ignored its own validator, and
+   carried no `Accept-Ranges`.
+6. A 304 carried representation metadata a shared cache would store onto the
+   cached response (RFC 7232 §4.1).
+7. A download read `File Blob` twice; it reads it once.
+8. A 401 raised outside `auth` carried no `WWW-Authenticate`, so a client had
+   nothing to retry with.
+
+**The namespace (`f66c3f2a0`).**
+
+9. `pathmap._child` resolved rows the listing drops. `visible` applies the
+   naming policy; `_child` applied only its SQL half, so a title holding a
+   backslash or a control character 404s in PROPFIND and then downloads by
+   hand. One rule now governs both.
+10. Two Active siblings may hold one title, and `href_for` quotes the title, so
+    both were published at one href: two sizes and two ETags at a URL that
+    answers from one row. The listing publishes the row the lookup reaches, the
+    oldest, and drops the shadowed one. Titles differing only by case each
+    resolve exactly, so both keep their own href.
+11. `<D:prop/>` with no children produced a response element with an href and
+    no propstat, which RFC 4918 §14.24 does not allow.
+12. A quota probe at a file spent `get_storage_usage`'s three queries to
+    produce a 404 propstat.
+
+**What the protocol claims about itself (`03c82c063`).**
+
+13. `X-Drive-Links` was stripped from `ctx.principals` and nowhere else. The
+    header stayed on the request, so `framework.principals_for` honoured it
+    wherever else it is called, the framework permission hook included. Worse,
+    a header over `LINK_HEADER_LIMIT` threw inside `parse_link_header`, which
+    maps to 409, so a credential §6.9 says to ignore could refuse the whole
+    request. The dispatcher now drops it from the environ before anything reads
+    it.
+14. `dav_compliance` advertised `1, 3` even when the admin's allow-list holds
+    no PROPFIND. RFC 4918 §9.1 makes PROPFIND what class 1 means, so that sent
+    a client at a request the site answers 405 to. It returns an empty string
+    now, and OPTIONS omits the header rather than sending one.
+15. `lock.py` called `locks.find_conflicts(..., is_folder=...)` after this
+    ticket renamed the keyword to `is_collection`: a `TypeError`. LOCK is off
+    the allow-list so nothing reaches it today; ticket 25 would have.
+16. `DAV_COMPLIANCE = "1, 2, 3"` in `webdav/__init__.py` was unread and a fixed
+    claim the allow-list can contradict. Deleted.
+
+### What the review checked and found correct
+
+- One mount. `pathmap.resolve` starts at `personal_root_for(user)` and there is
+  no other entry. A file OWNER really grants STRANGER READ on stays unreachable
+  from STRANGER's mount; that is now a live test.
+- Unreadable is 404, never 403. `require` and `require_from_rows` both raise
+  `DriveNotFound` below READ, `_drive_refusal` recognises it before the
+  `frappe.ValidationError` family it belongs to, and `_collect_resources`
+  answers an unresolved path the same way as a hidden one.
+- The Depth-1 parent is authorized. `nodes.children` runs the point check on
+  the parent, so the batched path is not an auth hole.
+- Hiding is by kind. `_VISIBLE` and `visible` test `kind`, never the title's
+  extension, so `report.docx` is an ordinary file and a Writer document is
+  invisible. Child media hang under the document node, so hiding the document
+  404s the walk before it reaches them.
+- `checksums_for` keys every blob-holding row, `None` included, so the batch
+  stays flat and a blob nobody can read publishes no `getetag`.
+- Quota reads the Personal Root and omits `quota-available-bytes` when the root
+  is unlimited.
+- The XML parser is hardened, the path memo cannot bleed across users or
+  requests, and no migration, hook, or build file was touched, so ticket 29
+  stays dormant.
+- The DocType retarget activates the `require_options="Drive Node"` purge
+  cascade for locks and dead properties while leaving `Drive Legacy Route`
+  dormant, as the ticket states.
+
+### Findings recorded, not fixed
+
+- **The write handlers are legacy-shaped throughout, not just at their entry
+  points.** `copy.py` reads `tabFile` directly, and `structure.py`, `put.py`,
+  and `lock.py` read `row.is_folder`, which a `Drive Node` row does not carry
+  (it reads `None`, silently). This is ticket 25's whole job. Only the
+  `find_conflicts` keyword was corrected here, because this ticket introduced
+  that mismatch.
+- **`_VISIBLE`'s `is_template = 0` clause is unreachable through the
+  controller.** `Drive Node._validate_kind_shape` refuses `is_template` on
+  every kind except `document`, and `kind IN ('folder','file')` already
+  excludes documents. The clause is defence against a raw DB write, which is
+  worth keeping; a live test for it would need a row the controller refuses to
+  create.
+- **`pathmap`'s "one indexed point query per segment" claim was too strong.**
+  `title = BINARY %(segment)s` compares a binary collation against a
+  `utf8mb4_unicode_ci` column, so only the `(parent, state)` index prefix is
+  certain to be used. The docstring now says that, and the site gate carries an
+  `EXPLAIN` to settle it.
+
+### Commands run in review, and real results
+
+All site-free, in the review worktree. No `bench`, `migrate`, `install`,
+`restart`, `push`, or PR. `slides.localhost` was not touched.
+
+```
+$ python -m compileall -q suite/drive
+COMPILEALL OK
+
+$ uvx ruff@0.12.3 format --check suite/drive/webdav suite/drive/tests/test_webdav.py
+42 files already formatted
+
+$ uvx ruff@0.12.3 check suite/drive/webdav suite/drive/tests/test_webdav.py
+All checks passed!
+
+$ cd sites && PYTHONPATH=<worktree>:<frappe> ../env/bin/python \
+    -m unittest suite.drive.tests.test_webdav
+Ran 90 tests in 0.144s
+OK
+
+$ ... frappe.init(site=""); test_xmlutil + test_ifheader + test_conditional
+Ran 27 tests in 0.005s
+OK
+
+$ ... unittest discovery across suite/drive/webdav/tests
+TOTAL 260 live 233 other 27
+```
+
+`test_webdav` grew from 69 cases to 90. The 21 new ones cover the byte path
+(416, 404-from-driver, `If-Range` in six shapes, the 304, the single blob read,
+`Last-Modified`), the namespace (a dropped title not resolving, duplicate
+titles publishing one href, case variants keeping separate hrefs, the empty
+`<D:prop/>`, the free quota probe), and the advertisement (`X-Drive-Links`
+dropped at the dispatcher, an oversized header not refusing the request, no
+compliance class without PROPFIND).
+
+Two live cases were added and **not run**: the shared-node mount boundary and
+`getetag` against the GET `ETag`, both in `test_propfind.py`. They are in the
+gate below.
+
+### Residual risks after review
+
+- The 233 live DAV tests are still unrun. They import, collect, and lint clean.
+  That is all that is proved.
+- The `If-Range` rule is decided against the blob checksum only. A weak
+  validator or an HTTP-date `If-Range` drops the `Range` and serves the whole
+  body, which is correct but conservative.
+- `_one_row_per_name` picks the oldest of a duplicate pair by `creation`. Two
+  rows created inside the same second tie, and the survivor is then whichever
+  the window ordered first. Both are readable and neither is wrong; which one a
+  client sees is unstable across requests. The real fix is a unique index on
+  `(parent, state, title)`, which is not this ticket's schema.
+- The earlier risks stand: the Depth-1 budget cases in `test_propfind.py`
+  assert a ceiling rather than a count, `create_file` enqueues a preview render
+  on a bench with no RQ worker, and litmus cannot pass while the write verbs
+  are gated off.
+
+## Revised site gate
+
+Supersedes the gate above. DocType JSON changed, so migrate first. Then one
+module per invocation, serialized, never in parallel.
+
+```
+bench --site slides.localhost migrate
+
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+Modules, in order:
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_pathmap`
+3. `suite.drive.webdav.tests.test_propfind`
+4. `suite.drive.webdav.tests.test_properties`
+5. `suite.drive.webdav.tests.test_put_get`
+6. `suite.drive.webdav.tests.test_dispatch`
+7. `suite.drive.webdav.tests.test_settings`
+8. `suite.drive.webdav.tests.test_auth`
+9. `suite.drive.webdav.tests.test_log`
+10. `suite.drive.webdav.tests.test_conditional`
+11. `suite.drive.webdav.tests.test_ifheader`
+12. `suite.drive.webdav.tests.test_xmlutil`
+13. `suite.drive.tests.test_nodes`
+14. `suite.drive.tests.test_access`
+15. `suite.drive.tests.test_quota`
+16. `suite.drive.tests.test_roots`
+17. `suite.drive.http.tests.test_shims`
+
+Modules 13 to 17 are the regression check: the engine the relink leans on, and
+ticket 23's compatibility surface. Modules 2 to 12 are ticket 24's own
+verification and have never been executed.
+
+Then one step that is not a test. Write the query to a file first: the table
+name needs backticks, and a backtick inside a double-quoted shell argument is
+command substitution.
+
+```
+cat > /tmp/dav-explain.sql <<'SQL'
+EXPLAIN SELECT name FROM `tabDrive Node`
+WHERE parent = '<folder node id>'
+  AND state = 'Active' AND kind IN ('folder', 'file') AND is_template = 0
+  AND title = BINARY '<child title>'
+ORDER BY creation ASC LIMIT 1\G
+SQL
+
+bench --site slides.localhost mariadb < /tmp/dav-explain.sql
+```
+
+Replace the two placeholders with a real folder node id on the site and a real
+child title under it. Pick them with:
+
+```
+bench --site slides.localhost execute frappe.db.get_all --kwargs "{'doctype': 'Drive Node', 'filters': {'kind': 'file', 'state': 'Active'}, 'fields': ['name', 'parent', 'title'], 'limit_page_length': 5}"
+```
+
+It passes when `key` names an index whose leading column is `parent` and `rows`
+is bounded by that folder's child count. It fails on a full table scan: the
+per-segment walk would then be linear in the whole tree, and §12.5's budget
+would not hold on a real site however flat the query count is.
+
+This ticket stays open until the gate and the `EXPLAIN` both run.
