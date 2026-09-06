@@ -4,9 +4,13 @@ The node is authorized first, then the bytes leave through the framework's
 public stream-read (§12.3, §13.5): `send_file(conditional=True)` for a local
 blob, and a 206 built from the driver's ranged read for a remote one. Range,
 `If-None-Match`, 304, and 416 are all handled there, against the same strong
-ETag PROPFIND publishes. `drive_webdav_s3_redirect` survives inside it as the
-opt-in 302 to a signed native URL, off by default because the Windows
-mini-redirector mishandles auth across a cross-host redirect.
+ETag PROPFIND publishes; `If-Range` is decided one layer down, where the
+blob's checksum is already in hand. `drive_webdav_s3_redirect` survives inside
+it as the opt-in 302 to a signed native URL, off by default because the
+Windows mini-redirector mishandles auth across a cross-host redirect.
+
+`Last-Modified` is set here rather than taken from the framework: it has to be
+the node's `content_modified`, the same time `getlastmodified` publishes.
 
 Collections have no bytes, so a browser landing on one is sent to the Drive UI.
 """
@@ -21,6 +25,7 @@ from suite.drive._core.roles import READ
 from suite.drive.webdav import pathmap
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import NotFoundError
+from suite.drive.webdav.properties import content_time, rfc1123
 
 
 def handle(ctx: DavContext) -> Response:
@@ -37,7 +42,14 @@ def handle(ctx: DavContext) -> Response:
         return _collection_response(ctx, "/drive" if resolved.is_mount else f"/drive/d/{row.name}")
 
     response = node_core.stream_content(row, environ=ctx.request.environ)
-    _neutralize_active_content(response.headers, download_filename(row.title))
+    if response.status_code in (200, 206):
+        # RFC 7232 §4.1: a 304 carries no representation metadata, and a cache
+        # copies whatever it does carry onto the stored response
+        _neutralize_active_content(response.headers, download_filename(row.title))
+    # the byte path and `getlastmodified` must name one time (§8.11, §12.4).
+    # werkzeug derives its own from the blob file's mtime, which is when those
+    # bytes were first stored - shared by every node that dedupes onto them.
+    response.headers["Last-Modified"] = rfc1123(content_time(row))
     response.headers["Cache-Control"] = "private, no-cache"
     if "Accept-Ranges" not in response.headers:
         # werkzeug advertises ranges only on an actual 206

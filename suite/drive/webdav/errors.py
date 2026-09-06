@@ -8,7 +8,12 @@ from contextlib import contextmanager
 from xml.sax.saxutils import escape
 
 import frappe
+from werkzeug.exceptions import HTTPException
 from werkzeug.wrappers import Response
+
+# The realm `auth.REALM` names. Repeated rather than imported: every WebDAV
+# module imports this one, so it may import none of them.
+BASIC_CHALLENGE = 'Basic realm="Frappe Drive", charset="UTF-8"'
 
 
 class DAVError(Exception):
@@ -37,6 +42,13 @@ class BadRequest(DAVError):
 class AuthRequired(DAVError):
     status = 401
 
+    def __init__(self, message: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        # RFC 7235: a 401 with no challenge gives a client nothing to retry
+        # with, and DAV clients only speak Basic. `auth._challenge` builds the
+        # same string; this covers the 401s that arrive from anywhere else.
+        self.headers.setdefault("WWW-Authenticate", BASIC_CHALLENGE)
+
 
 class Forbidden(DAVError):
     status = 403
@@ -60,6 +72,10 @@ class PreconditionFailed(DAVError):
 
 class UnsupportedMediaType(DAVError):
     status = 415
+
+
+class RangeNotSatisfiable(DAVError):
+    status = 416
 
 
 class Locked(DAVError):
@@ -101,12 +117,37 @@ def to_response(error: DAVError) -> Response:
     return response
 
 
+# A framework HTTPException already carries a status this hierarchy models.
+# `Locked` is absent on purpose: it takes a lock root, and no framework
+# exception has one to give.
+_HTTP_STATUS_ERRORS: dict[int, type[DAVError]] = {
+    400: BadRequest,
+    401: AuthRequired,
+    403: Forbidden,
+    404: NotFoundError,
+    405: MethodNotAllowed,
+    409: Conflict,
+    412: PreconditionFailed,
+    415: UnsupportedMediaType,
+    416: RangeNotSatisfiable,
+    502: BadGateway,
+    507: InsufficientStorage,
+}
+
+# Headers a framework exception carries that the DAV answer must keep. A 416
+# without `Content-Range` tells the client nothing about the real length, and
+# `bytes */<size>` is the whole point of RFC 7233's refusal.
+_CARRIED_HEADERS = frozenset({"content-range", "allow", "retry-after", "www-authenticate"})
+
+
 def map_exception(exception: Exception) -> DAVError:
     """Fallback mapping for Drive/frappe exceptions a handler let escape."""
     if isinstance(exception, DAVError):
         return exception
     if mapped := _drive_refusal(exception):
         return mapped
+    if isinstance(exception, HTTPException):
+        return _framework_status(exception)
     if isinstance(exception, frappe.AuthenticationError):
         return AuthRequired(str(exception))
     if isinstance(exception, frappe.PermissionError):
@@ -116,6 +157,26 @@ def map_exception(exception: Exception) -> DAVError:
     if isinstance(exception, frappe.ValidationError):
         return Conflict(str(exception))
     return DAVError("Internal server error.")
+
+
+def _framework_status(exception: HTTPException) -> DAVError:
+    """Map a framework HTTPException onto the DAV status it already names.
+
+    The byte path leaves through `frappe.storage.serve.stream_blob`, and that
+    is werkzeug's ground: `send_file` raises `RequestedRangeNotSatisfiable`
+    for a Range it will not serve, and `NotFound` when the blob's bytes are
+    gone from the driver. Both are answers, not faults. Without this branch
+    they fell to the generic 500 below, which also had the dispatcher write
+    and commit an Error Log row on every client retry.
+    """
+    factory = _HTTP_STATUS_ERRORS.get(exception.code or 500)
+    if factory is None:
+        return DAVError("Internal server error.")
+    headers = {name: value for name, value in exception.get_headers() if name.lower() in _CARRIED_HEADERS}
+    # werkzeug's description is an HTML-ish sentence about the framework; the
+    # DAV answer is the status, and 404 keeps this module's one wording
+    message = "Resource not found." if factory is NotFoundError else ""
+    return factory(message, headers=headers)
 
 
 def _drive_refusal(exception: Exception) -> DAVError | None:
