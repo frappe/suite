@@ -345,7 +345,11 @@ def refuse_unreadable_references(deck) -> None:
     about. Build links every deck before ticket 29 activates.
     """
     for reference in deck.reference_presentations:
-        node = frappe.db.get_value(DOCTYPE, reference.presentation, NODE_FIELD)
+        # A docname, never a filter. The row comes from the submitted document,
+        # so a dict or a list here would become `get_value` filters and the read
+        # check would ask about a deck the saver never named.
+        name = reference.presentation if isinstance(reference.presentation, str) else None
+        node = frappe.db.get_value(DOCTYPE, name, NODE_FIELD) if name else None
         if not node:
             frappe.throw(
                 _("Reference presentation {0} is not in Drive yet").format(reference.presentation),
@@ -383,7 +387,10 @@ def composite_reference_rows(docname: str) -> list[dict]:
         order_by="idx asc",
     )
     return [
-        {"reference": row["name"], "index": row["idx"], "presentation": row["presentation"] or ""}
+        # `None`, not `""`. `composite_references` and the whole-deck read path
+        # answer `None` for the same row, and a client keying a placeholder on
+        # this field must not read an empty string as a docname.
+        {"reference": row["name"], "index": row["idx"], "presentation": row["presentation"] or None}
         for row in rows
     ]
 
@@ -398,8 +405,11 @@ def composite_references(docname: str) -> list[dict]:
     """
     answered = []
     for name in _reference_names(docname):
-        # `get_value` reads a falsy name as "no filters" and answers some other
-        # deck's node. A blank reference row names nothing and is unreadable.
+        # A blank reference row names nothing, so it is unreadable and never
+        # asked about. `get_value` answers `None` for a falsy name rather than
+        # another deck's node, so this is a saved query, not a closed hole; the
+        # hole is a dict or a list in the name position, guarded above and in
+        # `suite/slides/api/composite.py`.
         node = frappe.db.get_value(DOCTYPE, name, NODE_FIELD) if name else None
         readable = bool(node) and node_is_readable(node)
         answered.append(
@@ -464,10 +474,10 @@ def _slide_rows(docname: str) -> list[dict]:
 
 
 def _reference_names(docname: str) -> list[str | None]:
-    # `or None` reproduces `pluck` exactly, so the version envelope and the save
-    # check answer for a blank row exactly what they answered before ticket 20
-    # gave the table a second reader.
-    return [row["presentation"] or None for row in composite_reference_rows(docname)]
+    # `composite_reference_rows` already answers `None` for a blank row, which is
+    # what `pluck` answered, so the version envelope and the save check are
+    # unchanged by ticket 20 giving the table a second reader.
+    return [row["presentation"] for row in composite_reference_rows(docname)]
 
 
 def _slide_element_ids(row: dict) -> set[str]:

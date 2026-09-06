@@ -511,7 +511,10 @@ class TestCompositeGroups(IntegrationTestCase):
         answered = api.composite_group(self._docname(composite), ids)["references"]
 
         self.assertEqual([row["readable"] for row in answered], [True, False])
-        self.assertEqual(answered[1]["presentation"], "")
+        # `None`, the same empty value `composite_references` answers below, so
+        # a client never reads an empty string as a docname.
+        self.assertIsNone(answered[1]["presentation"])
+        self.assertIsNone(api.composite_manifest(self._docname(composite))["references"][1]["presentation"])
         # The whole-deck path reads the same table. A falsy name is "no
         # filters" to `get_value`, which would have answered some other deck's
         # node id on a guest-reachable route.
