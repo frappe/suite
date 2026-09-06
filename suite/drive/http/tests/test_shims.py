@@ -1489,6 +1489,54 @@ class TestUnadoptedShare(ShimCase):
             shims.get_shared_with_list("f1")
 
 
+class TestUnadoptedPurge(ShimCase):
+    """`delete_entities` and `does_entity_exist`, for ids no node holds.
+
+    `writer/utils/docximporter.js` rolls back the pictures a failed import
+    uploaded, and every one of those is a `File` under the document.
+    """
+
+    def test_a_named_node_less_row_is_purged_by_the_rule_that_wrote_it(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        row = MagicMock()
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        nodes = self.stub("node_core")
+        shims.delete_entities(["f1"])
+        row.permanent_delete.assert_called_once_with()
+        nodes.purge.assert_not_called()
+
+    def test_clearing_the_trash_still_names_only_the_node_view(self):
+        """§11.2 has no trash view for the `File` store, and listing one here
+        would be a view this shim invented."""
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=False))
+        self.enterContext(patch.object(shims, "_home", return_value="r1"))
+        nodes = self.stub("node_core")
+        nodes.views.return_value = {"rows": [], "next_cursor": None}
+        shims.delete_entities(clear_all=True)
+        nodes.purge.assert_not_called()
+
+    def test_a_node_less_folder_answers_the_name_check_off_the_old_table(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        self.enterContext(
+            patch("suite.drive.api.permissions.user_has_permission", MagicMock(return_value=True))
+        )
+        db = MagicMock()
+        db.exists.return_value = "f2"
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        nodes = self.stub("node_core")
+        self.assertTrue(shims.does_entity_exist("Notes.txt", "f1"))
+        nodes.title_taken.assert_not_called()
+
+    def test_the_name_check_keeps_the_upload_gate_on_the_old_table(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        self.enterContext(
+            patch("suite.drive.api.permissions.user_has_permission", MagicMock(return_value=False))
+        )
+        self.stub("node_core")
+        with self.assertRaises(frappe.PermissionError):
+            shims.does_entity_exist("Notes.txt", "f1")
+
+
 class TestUnadoptedNewFolder(ShimCase):
     """`_legacy_create_folder`: a folder under a parent no node holds."""
 
@@ -2272,6 +2320,7 @@ class TestFileForwarders(ShimCase):
         self.assertNotIn("parent", nodes.update.call_args.kwargs)
 
     def test_delete_entities_purges_each_named_node(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         shims.delete_entities(["n1", "n2"])
         self.assertEqual(
@@ -2284,6 +2333,7 @@ class TestFileForwarders(ShimCase):
             shims.delete_entities([])
 
     def test_does_entity_exist_asks_the_workflow_that_holds_the_upload_gate(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.title_taken.return_value = True
         self.assertTrue(shims.does_entity_exist("Report.pdf", "f1"))
