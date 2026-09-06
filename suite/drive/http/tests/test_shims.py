@@ -1489,6 +1489,54 @@ class TestUnadoptedShare(ShimCase):
             shims.get_shared_with_list("f1")
 
 
+class TestUnadoptedContent(ShimCase):
+    """`_legacy_file_content`: the bytes, for an id no node holds.
+
+    `list.files` opens a folder no node holds, so the files it already held are
+    on a page again and clicking one asks for its bytes.
+    """
+
+    def store(self, *, row=None):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        self.enterContext(
+            patch("suite.drive.api.permissions.user_has_permission", MagicMock(return_value=True))
+        )
+        self.enterContext(
+            patch.object(shims.frappe, "get_value", MagicMock(return_value=row and frappe._dict(row)))
+        )
+        served = MagicMock(return_value="bytes")
+        self.enterContext(patch("suite.drive.api.files.get_file_internal", served))
+        return served
+
+    def test_a_node_less_row_is_served_by_the_old_reader(self):
+        served = self.store(row={"name": "f1", "file_type": "Image", "status": "Active"})
+        nodes = self.stub("node_core")
+        self.assertEqual(shims.get_file_content("f1"), "bytes")
+        nodes.signed_content_url.assert_not_called()
+        self.assertEqual(served.call_args.args[0].name, "f1")
+
+    def test_a_node_less_document_is_not_downloadable(self):
+        """`Document` is a forbidden download type, so the old body answered
+        "Not found" and never reached its own redirect to the editor. No
+        client asks this name about a document."""
+        served = self.store(row={"name": "f1", "file_type": "Document", "status": "Active"})
+        self.stub("node_core")
+        with self.assertRaises(frappe.DoesNotExistError):
+            shims.get_file_content("f1")
+        served.assert_not_called()
+
+    def test_a_trashed_node_less_row_is_not_found(self):
+        self.store(row={"name": "f1", "file_type": "Image", "status": "Trashed"})
+        self.stub("node_core")
+        with self.assertRaises(frappe.DoesNotExistError):
+            shims.get_file_content("f1")
+
+    def test_a_retired_token_is_refused_before_either_store(self):
+        self.stub("node_core")
+        with self.assertRaises(frappe.ValidationError):
+            shims.get_file_content("f1", token="t1")
+
+
 class TestUnadoptedPurge(ShimCase):
     """`delete_entities` and `does_entity_exist`, for ids no node holds.
 
@@ -2556,6 +2604,7 @@ class TestFileForwarders(ShimCase):
             self.assertEqual(shims.resolve_legacy_route("t1"), {"name": "n1", "is_folder": True})
 
     def test_get_file_content_redirects_to_a_signed_url(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row()
         nodes.signed_content_url.return_value = {"url": "/f/signed", "expires": 1}
@@ -2563,12 +2612,14 @@ class TestFileForwarders(ShimCase):
         self.assertEqual(frappe.local.response["location"], "/f/signed")
 
     def test_get_file_content_sends_a_document_to_the_editor(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row(kind="document", mime=None)
         shims.get_file_content("n1")
         self.assertEqual(frappe.local.response["location"], "/drive/w/n1")
 
     def test_streaming_is_the_same_redirect(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row()
         nodes.signed_content_url.return_value = {"url": "/f/signed", "expires": 1}
