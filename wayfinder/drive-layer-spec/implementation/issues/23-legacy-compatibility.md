@@ -22,7 +22,9 @@
 `suite/drive/tests/test_sync_permissions.py`,
 `suite/drive/webdav/tests/test_mkcol_delete.py`,
 `wayfinder/drive-layer-spec/implementation/legacy-caller-inventory.md`, and this
-ticket.
+ticket. The review added `suite/drive/api/s3.py`,
+`suite/drive/tests/test_nodes.py`, `suite/writer/api/docs.py`,
+`suite/writer/api/embed.py`, and `suite/tests/test_architecture.py`.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -247,12 +249,150 @@ bench --site slides.localhost run-tests --module suite.drive.webdav.tests.test_p
 bench --site slides.localhost run-tests --module suite.drive.tests.test_access
 bench --site slides.localhost run-tests --module suite.drive.tests.test_views
 bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
+bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
+bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.slides.tests.test_drive_adoption
 ```
+
+The last three were added by the review. `test_nodes` carries the new
+`readable_child_counts` cases; the two adoption suites cover
+`writer.api.docs.create_document` and the presentation `slide_count` path,
+both of which the review changed.
 
 The `api.tests.*` suites are the ones that will move: they exercise the legacy
 names against `File` rows, and those names now answer about `Drive Node`. Their
 failures are the real measure of how much of the old contract survived, and
 they cannot be read without a database.
+
+## Independent review evidence
+
+Status: reviewed on `review/drive-23-legacy-compatibility`, branched from
+`25354709a`. The review did not trust the evidence above; every claim it
+repeats was re-derived from the code. Sixteen defects were found and fixed.
+The acceptance boxes stay unchecked: they still rest on the serialized site
+gate below, which needs `bench` and a database.
+
+Agents produced the independent name inventory, the auth and guest sweep, and
+the dropped-behavior sweep. The fixes, the regression tests, and this section
+are the review's.
+
+### Review revisions
+
+- `037d067a9` repair the legacy paths ticket 23 broke
+- `d5f8d4590` close the leaks and the dropped list decorations
+- `f75f0aff1` pin the permanent surface to the tree, not to a phrase
+- `be89d402d` stop the S3 entry point confirming an object it refuses
+- `29eadd1cd` refuse a legacy share that reaches no rung
+
+### What the review confirmed
+
+Re-derived, not read off this file:
+
+- 69 whitelisted names across the 11 modules, at both `e390a4487` and HEAD, by
+  AST. 26 guest-callable. The four classes partition at 37/21/3/8. No
+  signature and no decorator drifted.
+- The three retired names refuse as their first statement. Nothing is written
+  and no token is minted on the way there. The `get_file_content` download
+  token is refused before the node is read.
+- No `$LINK:` principal, ticket, expiry, or MAC is minted anywhere in the shim.
+- `remove_or_restore` names no destination. `_core` refuses when the original
+  place is gone.
+- Only one call site grants role 0, and only when the caller sent `deny`.
+- `overrides/file.py` is byte-identical to `e390a4487`. `/dav`,
+  `webdav/*`, and `api/product.py` are untouched. `toggle_entity_status` is
+  retained and WebDAV still reaches it.
+- `suite/hooks.py` is additive: `ALLOWED_WILDCARD_PATHS` gained
+  `/api/suite/drive/` and kept `/api/method/suite.drive.api.` and `/dav/`.
+  `drive_content_types` is `[]`.
+
+### What the review changed
+
+Four security fixes, ten correctness fixes, two evidence fixes. Each carries a
+regression test that was run against the pre-fix body and fails there.
+`legacy-caller-inventory.md`, section "What the review fixed", lists all
+sixteen with the caller each one breaks.
+
+The one permanent body the review edited is `api.s3.fetch`: its `except` clause
+did not name the `_core` refusal classes, so a denied stored URL answered 403
+and confirmed the object exists. The permanent-shape test carries that
+exception explicitly and asserts the widened clause.
+
+`_core/nodes.py` gained one read, `readable_child_counts`. The count of a
+folder's children is a permission answer, so it is decided in `_core` rather
+than in the shim.
+
+### Review commands and results
+
+Site-free, run in the review worktree at `29eadd1cd`:
+
+```
+cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<frappe>:<worktree> \
+  env/bin/python -m unittest suite.drive.http.tests.test_shims \
+  suite.drive.http.tests.test_routes suite.drive.http.tests.test_shapes \
+  suite.drive.http.tests.test_translator suite.tests.test_architecture
+Ran 283 tests in 2.060s
+OK
+```
+
+`test_shims` alone: `Ran 110 tests in 0.590s / OK`, up from 88.
+
+```
+ruff 0.12.3 format <changed files>   (2 files left unchanged on the last run)
+ruff 0.12.3 check <changed files>    All checks passed!
+```
+
+`suite.drive.http.tests.test_dispatch` errors in 19 `setUpClass` calls with
+`AttributeError: session`. It needs a bound site. That is true at `25354709a`
+as well, so it is the site gate's, not a regression.
+
+Not run here, and named as unverified: every `_core` suite, `test_dispatch`,
+`suite.drive.api.tests.*`, `suite.drive.tests.test_nodes`, the WebDAV suites,
+`suite.writer.tests.test_drive_adoption`, and `suite.slides.tests.*`. All of
+them need a live site and a database.
+
+### Review tests written
+
+`suite/drive/http/tests/test_shims.py` grew from 88 to 110 cases, no database.
+`suite/drive/tests/test_nodes.py` gained 2 cases, which need a site.
+
+- **Permanent surface, rewritten.** Each of the 21 permanent names is compared
+  with its own structure at `e390a4487`: decorators, signature, and every
+  statement, with comments and docstrings excluded. Every legacy name's
+  `allow_guest` flag is compared with the same revision. The hook assertions
+  import `suite.hooks` and read the real lists. One of them had been passing on
+  a file-text match that was not the value the hook holds.
+- **Access.** The ladder walk, the `$PUBLIC` READ clamp, both site-wide rows on
+  one unshare, and the refusal of a share that reaches no rung.
+- **Listings.** The unbounded non-paginated walk, the hundred-row paged
+  default, `slide_count` on presentation rows and on no other row.
+- **Records.** `move` answers the destination; notifications carry the
+  `entity_type` the page routes on, and `None` when the node is gone.
+- **Uploads.** `list-add` is published to the uploader and carries a full
+  legacy list row.
+- **`_core`.** `readable_child_counts` leaves out a denied child, keeps a child
+  whose own grant names somebody else, ignores the trash, and answers every
+  named folder.
+
+### Unresolved risks the review did not fix
+
+1. **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
+   `_insert_deny` when read was still inherited from above. §5.10 makes a deny
+   something the client must ask for, and the acceptance criteria forbid
+   synthesizing one, so the shim removes rows and stops. A file inside a
+   publicly shared folder stays readable after "Restricted", and
+   `ShareDialog.vue` says nothing. The frontend ticket owns telling the user.
+2. **`update_access` cannot spell `share` without `write`.** MANAGE sits above
+   EDIT on the ladder. A legacy row that said "may re-share, may not edit"
+   becomes UPLOAD or COMMENT.
+3. **`list-add` reaches the uploader only.** The old body broadcast the row to
+   every connected session. A second person watching the same folder no longer
+   sees the upload appear. Restoring the broadcast would send a node row to
+   sessions never authorized for it.
+4. **A no-limit listing is unbounded.** It matches the old non-paginated
+   branch, which ran with no `LIMIT`. A folder with tens of thousands of
+   children now walks that many rows through `_legacy_list_rows`.
+5. **Everything the site gate owns.** See below. Nothing in this review has
+   touched a database either.
 
 ### Unresolved handoffs
 
