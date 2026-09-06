@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.drive.api.files import remove_or_restore
+from suite.drive.api.files import toggle_entity_status
 from suite.drive.utils import (
     STATUS_ACTIVE,
     STATUS_TRASHED,
@@ -137,7 +137,10 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
 
         # recoverable through Drive's own restore
         with self.set_user(OWNER):
-            remove_or_restore([victim.name])
+            # The /dav DELETE path's own toggle, which `remove_or_restore` used
+            # to reach. That name is now a §11.7 forwarder onto Drive Node, and
+            # this test is about File rows.
+            toggle_entity_status(frappe.get_doc("File", victim.name), FileManager(), set())
         self.assertEqual(frappe.db.get_value("File", victim.name, "status"), STATUS_ACTIVE)
 
     def test_delete_folder_hides_subtree(self):
