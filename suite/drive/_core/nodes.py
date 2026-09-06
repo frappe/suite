@@ -106,11 +106,11 @@ FROM (
           AND state = 'Active'
           AND kind <> 'root'
           AND is_template = 0
-        ORDER BY {order_by} {direction}
+        ORDER BY {inner_order} {direction}
         LIMIT %(limit)s OFFSET %(offset)s
     ) children
 ) page
-ORDER BY page._drive_parent, page.{order_by} {direction}
+ORDER BY page._drive_parent, {outer_order} {direction}
 """
 
 SHARED_SQL = """
@@ -2207,7 +2207,8 @@ def _folder_page_query(order_column: str = "title", direction: str = "ASC") -> s
         parent_fields=", ".join(f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
-        order_by=order_column,
+        inner_order=ORDER_TERMS[order_column].format(p=""),
+        outer_order=ORDER_TERMS[order_column].format(p="page."),
         direction=direction,
     )
 
@@ -2411,16 +2412,26 @@ def page_limit(limit: int) -> int:
     return min(limit, MAX_PAGE_SIZE)
 
 
+# One ordering term per §11.4 sort column, written twice because the folder
+# page sorts the inner window and the union around it. `{p}` is the table
+# prefix each level needs.
+#
+# `content_modified` is null until something writes the content, and a null is
+# not "before every time there is": it means the node has never been edited
+# apart from its own row, so the row's time is the answer. Sorting the raw
+# column instead clumps every never-edited node at one end of the list.
+ORDER_TERMS = {
+    "title": "{p}title",
+    "content_modified": "COALESCE({p}content_modified, {p}modified)",
+    "modified": "{p}modified",
+    "size": "{p}size",
+}
+
+
 def _order_column(order_by: str) -> str:
-    columns = {
-        "title": "title",
-        "content_modified": "content_modified",
-        "modified": "modified",
-        "size": "size",
-    }
-    if order_by not in columns:
+    if order_by not in ORDER_TERMS:
         frappe.throw(_("The Drive listing order is invalid"), frappe.ValidationError)
-    return columns[order_by]
+    return order_by
 
 
 def _grant_rows(node_ids: list[str], principals: Principals) -> list:
