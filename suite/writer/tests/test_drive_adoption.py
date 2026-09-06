@@ -58,6 +58,7 @@ from suite.drive.api.files import (
     create_link,
     delete_entities,
     does_entity_exist,
+    get_file_content,
     move,
     remove_or_restore,
     rename,
@@ -920,6 +921,34 @@ class TestWriterBeforeActivation(IntegrationTestCase):
 
         self.assertTrue(does_entity_exist(entity.file_name, home))
         self.assertFalse(does_entity_exist(f"Nothing {frappe.generate_hash(6)}", home))
+
+    def test_a_picture_in_that_folder_can_still_be_opened(self):
+        """`list.files` puts the pictures a legacy folder already held back on
+        a page, and clicking one asks for its bytes. §6.8 has nothing to sign
+        for a row with no node, so the old reader serves it."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Illustrated {frappe.generate_hash(6)}")
+        self._posted(PNG)
+        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
+        self.addCleanup(self._drop_rows, picture)
+
+        with patch("suite.drive.api.files.get_file_internal") as reader:
+            get_file_content(picture)
+
+        self.assertEqual(reader.call_args.args[0].name, picture)
+
+    def test_a_stranger_cannot_open_a_picture_in_somebody_elses_folder(self):
+        frappe.set_user(USER)
+        entity = self._opened(f"Private art {frappe.generate_hash(6)}")
+        self._posted(PNG)
+        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
+        self.addCleanup(self._drop_rows, picture)
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            get_file_content(picture)
 
     def test_a_stranger_cannot_add_a_picture_to_somebody_elses_document(self):
         """The gate is the old body's, `user_has_permission(parent, "upload")`,
