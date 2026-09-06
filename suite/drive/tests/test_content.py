@@ -282,6 +282,15 @@ class TestContentContract(UnitTestCase):
             doc.node = "node-b"
             self.assertEqual(doc.fields, {"body": "node-b"}, "the declared field, not the accessor name")
 
+        # And unregistered, which is where a doctype sits between its adoption
+        # ticket and activation: the controller names its own column.
+        content.clear_registry_cache()
+        doc.fields = {}
+        doc.drive_node_field = "body"
+        doc.node = "node-c"
+        self.assertEqual(doc.fields, {"body": "node-c"}, "the controller answers while dormant")
+        self.assertEqual(doc.node, "node-c")
+
     def test_a_document_that_names_another_node_is_refused(self):
         doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="one", node="node-a")
         with registered(spec()), stub_db(MagicMock()) as db:
@@ -382,12 +391,22 @@ class TestContentContract(UnitTestCase):
         # judged, and boot validation refused nothing at all.
         self.assertIs(content.get_controller, get_controller)
         with patch("suite.drive._core.content.get_controller", return_value=DriveTestContent):
-            content._validate_mixin(CONTENT_DOCTYPE)
+            content._validate_mixin(CONTENT_DOCTYPE, spec())
         with (
             patch("suite.drive._core.content.get_controller", return_value=Document),
             self.assertRaises(DriveConflict),
         ):
-            content._validate_mixin(CONTENT_DOCTYPE)
+            content._validate_mixin(CONTENT_DOCTYPE, spec())
+
+    def test_activation_refuses_a_controller_that_names_another_node_field(self):
+        # The mixin reads the node column from the controller before the
+        # doctype is registered and from the declaration after it, so the two
+        # names have to be the same one. Activation is where that is provable.
+        with (
+            patch("suite.drive._core.content.get_controller", return_value=DriveTestContent),
+            self.assertRaises(DriveConflict),
+        ):
+            content._validate_mixin(CONTENT_DOCTYPE, spec(node_field="body"))
 
     def test_the_mixin_guard_runs_when_another_base_owns_the_hook(self):
         calls = []
@@ -1426,16 +1445,18 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec(satellites=(wrong,))), self.assertRaises(DriveConflict):
             validate_registry()
 
-    def test_only_an_adopted_app_is_registered_and_every_declaration_is_valid(self):
-        """Staged activation: an app appears here in its own adoption ticket.
+    def test_the_registry_is_empty_until_activation_stages_an_app_into_it(self):
+        """Staged activation (§10.3, README execution rules).
 
-        Writer is registered by ticket 17. Slides and Sheets join at tickets 18
-        and 19, so the set is exact rather than a lower bound: a doctype that
-        arrives without its adoption ticket fails here.
+        An app declares its spec in its own adoption ticket — Writer at 17,
+        Slides at 18, Sheets at 19 — and joins `drive_content_types` only at
+        ticket 29, once Build has linked every row. Until then Drive governs no
+        doctype: no permission hook moves, and `validate_content_registry`
+        inspects no `DocShare`, so a site with real content data still
+        migrates.
         """
         content.clear_registry_cache()
-        self.assertEqual(sorted(registry()), ["Writer Document"])
-        validate_registry()
+        self.assertEqual(registry(), {}, "staged activation: no app is registered yet")
 
 
 def _purge_fixture_roots() -> None:

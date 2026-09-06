@@ -368,21 +368,17 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
     def test_content_link_cannot_be_forged_to_hijack_another_users_document(self):
         """content_doctype/content_docname are the sole permission delegation
-        point for a content document still on the legacy File (see
+        point for content documents like Writer Document (see
         content_has_permission in suite/drive/overrides/file.py): whoever's
         File claims a document inherits full access to it. Only Drive's own
         creation flow may ever set these fields — a user must not be able to
-        point their own File at someone else's document and hijack it.
-
-        The victim is a Presentation, not a Writer Document: Writer moved to
-        Drive Grant authority at ticket 17, so its rights no longer come
-        through a File at all. Slides moves at ticket 18 and this test moves
-        with it."""
+        point their own File at someone else's document and hijack it."""
         with self.set_user(OWNER):
-            victim_doc = frappe.get_doc({"doctype": "Presentation", "title": "Victim"}).insert()
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            DriveFile.create_for_doc(victim_doc)
 
         with self.set_user(OTHER_USER):
-            self.assertFalse(frappe.has_permission("Presentation", "read", victim_doc.name))
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
 
             attacker_file = create_drive_file(
                 f"{frappe.generate_hash(8)}.txt",
@@ -393,7 +389,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
             # Forging the link via an update to a File the attacker owns must fail.
             forged = frappe.get_doc("File", attacker_file.name)
-            forged.content_doctype = "Presentation"
+            forged.content_doctype = "Writer Document"
             forged.content_docname = victim_doc.name
             with self.assertRaises(frappe.PermissionError):
                 forged.save()
@@ -406,12 +402,12 @@ class TestDriveFilesAPI(IntegrationTestCase):
                         "file_name": "forged.txt",
                         "is_private": 1,
                         "folder": get_user_folder(OTHER_USER).name,
-                        "content_doctype": "Presentation",
+                        "content_doctype": "Writer Document",
                         "content_docname": victim_doc.name,
                     }
                 ).insert()
 
-            self.assertFalse(frappe.has_permission("Presentation", "read", victim_doc.name))
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
 
     def test_content_link_cannot_be_cleared_by_a_shared_collaborator(self):
         """File write access can come from a Drive share, not just ownership.
@@ -420,8 +416,8 @@ class TestDriveFilesAPI(IntegrationTestCase):
         doing so would sever content_has_permission's delegation and orphan
         the document relative to after_delete's cascade-delete."""
         with self.set_user(OWNER):
-            victim_doc = frappe.get_doc({"doctype": "Presentation", "title": "Shared"}).insert()
-            backing_file = frappe.get_doc("File", DriveFile.get_for_doc("Presentation", victim_doc.name))
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            backing_file = DriveFile.create_for_doc(victim_doc)
             backing_file.share(user=MEMBER, write=True)
 
         with self.set_user(MEMBER):

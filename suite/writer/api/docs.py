@@ -1,17 +1,21 @@
 import io
+from pathlib import Path
 
 import frappe
 import markdown
 import mimemapper
-from frappe import _
 from markdown.extensions.wikilinks import WikiLinkExtension
 
-from suite import drive
+from suite.drive.api.files import get_new_title
 from suite.drive.api.permissions import (
     get_entity_with_permissions,
     user_has_permission,
 )
-from suite.drive.utils.files import FileManager
+from suite.drive.utils import (
+    create_drive_file,
+    get_user_folder,
+)
+from suite.drive.utils.files import FileManager, storage_key
 
 # To be moved to mimemapper
 QUICK_MAP = {
@@ -20,49 +24,64 @@ QUICK_MAP = {
 }
 
 
-# `Untitled Document` is the one title nobody chose, so Drive's sibling refusal
-# (§8.6) must not surface as an error the user cannot act on. An explicit title
-# is still refused on collision, because there the UI can ask for another one.
-UNTITLED = "Untitled Document"
-UNTITLED_ATTEMPTS = 20
+# Creation is staged. The Drive-native workflow is `suite.drive.create_document`
+# with `content_doctype="Writer Document"`; ticket 21 puts it behind HTTP and
+# ticket 23 keeps the legacy callers working through it. Until then this
+# endpoint stays on the legacy `File`, because every read path around it still
+# is: `get_document` below, `general.get_document_list`, `general.get_versions`,
+# the search result mapping, `drive.api.list.files`, and `writer.api.embed`. A
+# document created here has no node and takes the legacy path everywhere
+# (§14.6 links it, ticket 29 activates the registry).
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist()
 def create_document(title: str | None = None, parent: str | None = None, template: str | None = None):
-    """Create one Writer document, or a copy of a template, through Drive.
+    parent = parent or get_user_folder().name
+    parent_doc = frappe.get_doc("File", parent)
 
-    `parent` is a Drive node id and defaults to the caller's Personal root.
-    `template` is the node id of a Writer document to start from, which is how
-    §8.10 spells new-from-template: there is no template verb.
-    """
-    parent = parent or drive.ensure_personal_root(frappe.session.user)
-    if not parent:
-        frappe.throw(_("You have no Drive of your own to create a document in"))
+    if not user_has_permission(parent, "upload"):
+        frappe.throw(
+            "Cannot access folder due to insufficient permissions",
+            frappe.PermissionError,
+        )
 
-    if title:
-        node = drive.create_document(parent, title, content_doctype="Writer Document", from_node=template)
-        return _created(node, title)
+    if not title:
+        title = get_new_title("Untitled Document", parent)
 
-    # Every Drive refusal is a `frappe.ValidationError` and the sibling one
-    # carries no code of its own, so a refusal that is not a collision is
-    # retried too. The loop is bounded and the last refusal is what the caller
-    # sees, so a forbidden parent still reports itself rather than a collision.
-    refusal = None
-    for attempt in range(1, UNTITLED_ATTEMPTS + 1):
-        candidate = UNTITLED if attempt == 1 else f"{UNTITLED} ({attempt})"
-        try:
-            node = drive.create_document(
-                parent, candidate, content_doctype="Writer Document", from_node=template
-            )
-        except frappe.ValidationError as refused:
-            refusal = refused
-            continue
-        return _created(node, candidate)
-    raise refusal
+    writer_doc = frappe.new_doc("Writer Document")
+    writer_doc.settings = (
+        '{"collab": true}' if not template else '{"collab": true, "template": "' + template + '"}'
+    )
+    writer_doc.save()
 
+    manager = FileManager()
+    path = manager.create_folder(
+        frappe._dict(
+            {
+                "file_name": title,
+                "parent_path": Path(storage_key(parent_doc.file_url)),
+            }
+        )
+    )
+    manager.create_folder(
+        frappe._dict(
+            {
+                "file_name": ".embeds",
+                "parent_path": Path(path) if path else None,
+            }
+        )
+    )
 
-def _created(node: str, title: str) -> dict:
-    return {"name": node, "title": title}
+    entity = create_drive_file(
+        title,
+        parent,
+        "Document",
+        path,
+        mime_type="frappe_doc",
+        content_doctype="Writer Document",
+        content_docname=writer_doc.name,
+    )
+    return entity
 
 
 @frappe.whitelist(allow_guest=True)
@@ -107,6 +126,15 @@ def clean_content_for_obsidian(content):
     content = content[:property_end] + content[property_end:].replace("\n", "\n\n")
     content = content[:property_end] + content[property_end:].replace("\n\n\n", "\n<p></p>")
     return content
+
+
+@frappe.whitelist(allow_guest=True)
+def save_comments(doc: str, data: str):
+    file = frappe.get_doc("File", {"content_docname": doc, "content_doctype": "Writer Document"})
+    if not user_has_permission(file, "comment"):
+        frappe.throw("You cannot comment on this file.")
+
+    frappe.get_doc("Writer Document", doc).save_comments(data, file)
 
 
 @frappe.whitelist()
