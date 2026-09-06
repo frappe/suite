@@ -84,6 +84,9 @@ Implemented 2026-09-06. Two commits:
 | `517d0d4dc` | The adapter, the node link, the dual path, and `adopt_media`. |
 | `cccf8814d` | 71 tests and the architecture debt entries. |
 
+An independent review then found and fixed nine defects. See
+[Review corrections](#review-corrections) for the list and the new commits.
+
 ### Changed interfaces and schema
 
 - New `suite/slides/drive.py`. `SPEC` declares `doctype="Presentation"`,
@@ -103,14 +106,25 @@ Implemented 2026-09-06. Two commits:
   `suite/drive/__init__.py` gained it in `__all__`; the pinned tuple in
   `suite/tests/test_architecture.py` follows.
 - `nodes.create_file` under a `kind="document"` parent now returns the node
-  already holding that blob instead of inserting a second one. The blob the
-  caller stored is left to the framework GC.
+  already holding that blob instead of inserting a second one. `put_blob`
+  deduplicates on checksum, so the reused node already references the caller's
+  blob and nothing is orphaned. The reuse path answers a node whose title is the
+  first upload's, not the caller's, and records no `create` activity.
 - `content.reuse_media` and `content.adopt_media` are new;
   `MEDIA_SOURCE_FIELDS` names the columns an adoption reads.
 - Schema: `Presentation` gains a read-only `node` Link to `Drive Node`, first
   in `field_order`, with a search index. `title` loses `reqd` and gains a
-  description naming §14.10. No field is dropped and no DocPerm row changes.
-  `Slide` is unchanged.
+  description naming §14.10, and `title_field` is dropped so the doctype stops
+  displaying the frozen column (§10.2 forbids a mirror in either direction).
+  No field is dropped, no data moves, and no DocPerm row changes. `Slide` is
+  unchanged.
+- `ContentTypeSpec.legacy_fields`, `content.refuse_legacy_field_write`, and
+  `content._validate_legacy_fields` are new. They are what let ticket 29
+  activate with the `title` column still in place; see
+  [Resolved: activation and the legacy `title` column](#resolved-activation-and-the-legacy-title-column).
+- `suite/drive/__init__.py` gained `adopt_media`, `refuse_shared_row`, and
+  `refuse_shared_linked_rows` in `__all__`; the pinned tuple in
+  `suite/tests/test_architecture.py` follows.
 - `suite/hooks.py`: `drive_content_types` still `[]`. Both `Presentation`
   permission entries still point at `presentation.py`, each with the ticket-29
   replacement named beside it. The `doc_events["Presentation"]` mirroring
@@ -137,21 +151,44 @@ The split runs one way only. A linked deck is never answered from a `File`,
 because that would be a way around `Drive Grant` (§1).
 `get_permission_query_conditions` wraps the legacy predicate with
 `` `tabPresentation`.`node` IS NULL AND (…) `` and `has_permission` returns
-False for any row carrying a node, so the staged legacy guards cannot open one.
+False for any row carrying a node.
+
+Answering False is not enough on its own. Frappe reads a denied controller check
+as "no role permission" and then asks `false_if_not_shared`
+(`frappe/permissions.py:214-216`), and `frappe.db.query` ORs the shared names
+around the list predicate (`frappe/database/query.py:1737-1741`). Both guards
+therefore call Drive: `drive.refuse_shared_row` on the row and
+`drive.refuse_shared_linked_rows` on the list, scoped to a deck that carries a
+node. A legacy row is still the app's to share, and before Build no row carries
+a node, so a site with Desk assignments lists what it always listed.
+
+For `Administrator` the legacy predicate is empty (`overrides/file.py:536-537`),
+so the wrapper returns nothing and linked decks stay in an Administrator's
+`get_list`. `has_permission` still refuses each row.
 
 ### Decisions
 
 - **A media reference is one whole node id.** `Slide.background` holds a colour
   as often as a node, and an element `src` may still hold a `/private/files/`
-  URL. A whole-token match on `[A-Za-z0-9_-]{1,140}` can never read either as
-  an id. It over-reports a bare id-shaped word, which only keeps media alive,
-  and `remap_media` rewrites nothing it was not given.
+  URL. A whole-token match on `[A-Za-z0-9_-]{1,140}` can never read a hex or
+  functional colour or a URL as an id: each carries a character an id cannot.
+  A bare id-shaped word such as `red` **is** reported as used, which only keeps
+  media alive, and `remap_media` rewrites nothing it was not given.
 - **An unreadable `elements` column over-reports for the sweep and refuses a
   rewrite.** A copy whose pictures still point at the source's nodes is worse
   than a refused copy; a sweep that reads "this deck names nothing" would trash
   a picture the deck still shows.
-- **A dictionary poster is walked, not skipped.** §14.7 says a legacy poster
-  may be a dict. `used_nodes` and `remap_media` both descend into it.
+- **The sweep reads the whole body; the rewrite reads two keys.** Deliberately
+  asymmetric. `used_nodes` walks every string in the parsed `elements` column,
+  so no body shape Slides did not anticipate can make it answer "this slide
+  names nothing" and let §10.6 trash a live picture. It over-reports words that
+  are not nodes, which costs the sweep nothing. `remap_media` and the adoption
+  reader stay on `src` and `poster`, because rewriting a value that is not a
+  reference corrupts a body.
+- **A dictionary poster is walked to the bottom, not skipped.** §14.7 says a
+  legacy poster may be a dict and fixes no depth for it. `used_nodes`,
+  `remap_media`, and the adoption reader all recurse through nested dicts and
+  lists.
 - **Cross-deck paste is `adopt_media`, not `copy`.**
   `nodes._validate_generic_destination` refuses a copy into or out of a content
   document, so `copy` could not move a picture between decks. `adopt_media`
@@ -226,17 +263,71 @@ activates one.
 | No linked deck bypasses Drive | `test_the_staged_legacy_guards_never_answer_for_a_linked_row`, `test_a_linked_deck_refuses_every_legacy_method`, `test_a_linked_deck_never_grows_a_backing_file`, `test_a_docshare_cannot_open_a_deck_the_grants_refuse` |
 | Access, trash, stamps | `test_an_inherited_folder_grant_reaches_the_row_and_the_list`, `test_a_stranger_reads_neither_the_row_nor_the_list`, `test_the_editor_access_answer_comes_from_the_node`, `test_a_trashed_deck_stays_readable_and_leaves_the_list`, `test_a_trashed_deck_refuses_a_paste_and_a_preview_push`, `test_a_save_stamps_the_node_and_never_the_deck_title`, `test_a_stranger_cannot_create_a_deck_in_somebody_elses_drive` |
 | Dormant hooks, no `migrate` failure | `test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were`, `test_a_dormant_registry_leaves_a_docshare_alone`, `test_a_docshare_on_a_presentation_does_not_fail_a_migration` |
-| Activation, proved without activating | `test_activation_registers_the_declaration_and_moves_all_four_hooks`, `test_activation_still_refuses_the_legacy_title_column` |
+| Activation, proved without activating | `test_activation_registers_the_declaration_and_moves_all_four_hooks`, `test_activation_accepts_the_frozen_legacy_title_column`, `test_activation_still_refuses_a_title_column_nobody_declared`, `test_a_legacy_declaration_expires_with_the_column_cleanup_drops`, `test_the_doctype_no_longer_names_the_legacy_column_as_its_display_title`, `test_a_legacy_declaration_only_covers_a_field_drive_owns`, `test_slides_declares_the_one_legacy_column_it_keeps_past_activation` |
+| The frozen legacy column | `test_a_linked_deck_cannot_write_the_frozen_legacy_title`, `test_a_save_keeps_the_build_title_so_the_rollback_source_survives` |
+| No `DocShare` around the staged guards | `test_a_docshare_cannot_open_a_linked_deck_through_the_staged_guards`, `test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone` |
+| Media the sweep must not lose | `test_a_poster_is_walked_to_the_bottom_however_deep_it_nests`, `test_a_deep_poster_is_rewritten_at_the_same_depth_it_is_read`, `test_the_sweep_reads_a_body_shape_slides_never_wrote`, `test_a_rewrite_stays_narrow_where_the_sweep_is_wide`, `test_the_sweep_answer_over_reports_and_the_adoption_answer_does_not`, `test_a_rewrite_never_grows_a_media_key_the_element_did_not_have`, `test_a_copy_repoints_every_element_on_a_slide_not_only_the_first` |
+| Adoption: disclosure, containment, the gate | `test_a_paste_naming_a_node_the_caller_cannot_read_is_never_told_what_it_is`, `test_a_paste_cannot_pull_an_ordinary_file_in_from_outside_a_deck`, `test_a_paste_that_names_no_media_is_still_checked` |
 
 ### Migration
 
-No new patch. `suite/patches.txt` is untouched. The only schema change is the
-`node` column, which `migrate` adds from the doctype JSON.
+No new patch. `suite/patches.txt` is untouched. The schema changes are the
+`node` column, which `migrate` adds from the doctype JSON, and the removal of
+`title_field`, which is doctype metadata and moves no data.
 
 `validate_content_registry` runs from `after_install` and `after_migrate`
 (`suite/composition/lifecycle.py:57,65`). With the registry empty it iterates
 nothing, so no doctype is proved and no `DocShare` is inspected. A site with
 shared Presentations migrates unchanged and Desk assignment keeps working.
+
+## Review corrections
+
+An independent review of `9fc790ba6` against the spec, the plan, ticket 16's
+contract corrections, and ticket 17's staged pattern. Everything below is fixed
+in this worktree, with a test for each.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| High | A `DocShare` opened a linked deck through both staged guards. Answering `False` is not a denial: Frappe falls through to `false_if_not_shared` and ORs shared names around the list predicate. §1 bypass for the whole Build-to-activation window. | Both guards call Drive: `drive.refuse_shared_row` and the new `drive.refuse_shared_linked_rows`, scoped to a deck with a node. |
+| High | `remap_media` rewrote only the first changed element on a slide. `any()` over a generator short-circuits, so a copy of a slide with two or more pictures kept naming the source deck's nodes. | Materialise the list before `any()`. |
+| High | `used_nodes` under-reported any body shape it did not expect: a poster nested more than one level, a poster holding a list, an element below a list. §10.6 would trash a picture the deck still shows. | `_value_ids` recurses through dicts and lists; the sweep walks the whole parsed body. |
+| Medium | `adopt_media` validated node kind before the READ check, so a caller with no grant learned that an id names a folder rather than nothing. §5.4 disclosure. | READ first, then state, then kind. |
+| Medium | `adopt_media` returned `{}` before any permission check when the paste named no media, and both Slides paste endpoints relied on it as their only gate. | The UPLOAD check runs before the early return, and both endpoints take `drive.check(node, UPLOAD)` of their own. |
+| Medium | `composite_references` handed out the `Drive Node` id of a reference the caller cannot read, on a guest-reachable route. | `node` is `None` for an unreadable reference; `readable` still marks it. |
+| Medium | `is_public_presentation` raised for a linked deck, so a legacy composite naming a reference Build had already linked failed to save and failed to render. | Internal `_is_public` answers `False` for a linked deck; the whitelisted method still refuses. |
+| Medium | `get_presentation_thumbnail` answered a linked deck from the legacy `title`-era `thumbnail` column with no permission check, contradicting "a linked deck is never answered from a `File`". | Refuses a linked deck and names the Drive preview. |
+| Medium | `get_composite_presentation` gave a different error for an unreadable linked composite than for a name that is not one, on a guest route. | One `PermissionError` for all three cases, through `slides_drive.deck_is_readable`. |
+| Medium | `_validate_adoptable_media` refused with "media below a Drive content document" while checking only `kind == "file"`, so an ordinary file could be pulled into a deck. | The ancestor check is enforced. |
+| Medium | One expired or locked link on a source id aborted a whole paste; only `DriveNotFound` was skipped. | Every "you cannot read this" answer skips the id. |
+| Medium | The `activated()` test helper declared `hooks(key=…)` while frappe's signature is `get_hooks(hook=…)`, so three framework call sites raised `TypeError` inside the block. Ticket 29 would have copied it. | Renamed to `hook`. |
+| Medium | `test_a_composite_save_grants_the_reference_nothing_and_forces_nothing_public` counted `Drive Grant` rows; the forced-public row is a `Drive Permission`. It would have passed without the change. | Counts the `Drive Permission` rows the legacy path writes. |
+
+Not fixed, recorded instead:
+
+- **Writer's staged guards carry the same `DocShare` bypass.** Ticket 17's file.
+  Blocker 2 above.
+- **A purge leaves the framework's deletion `Comment`.** `delete_doc` ends with
+  `insert_feed`, which writes a row naming the doctype, the deck, and the
+  owner's full name, with no `reference_name` for anything to match. It carries
+  no deck body, and every Drive purge of every content type has it, so removing
+  it is a framework decision. `test_a_purge_keeps_no_recoverable_copy_of_the_deck`
+  covers the body, not the deletion audit trail.
+- **`get_templates` uses `frappe.get_all`**, so neither permission hook applies,
+  and it returns every `Slide` row with `fields=["*"]`. Pre-existing and
+  unchanged here. §14.7 gives migrated templates a `$GENERAL` READ grant, so the
+  migrated set is not a leak; a user-created template that gets a node would be.
+  Ticket 21 owns the template route.
+- **`get_presentation_thumbnail`, `is_composite_presentation`, and
+  `get_editor_access`'s composite arm run no permission check for a legacy
+  deck.** Pre-existing. Ticket 23 owns the legacy read path.
+- **A row whose `node` is `''` rather than `NULL`** is excluded by the SQL and
+  treated as legacy by `has_permission`. Frappe writes `NULL` for an unset Link,
+  so it needs a direct write to occur. Inherited from Writer's staged guard.
+- **`composite_references` is an uncapped point check per reference** on a
+  guest-reachable route. Ticket 20 owns the grouped load; the cap is not there
+  today.
+- **`push_preview` enforces no byte cap of its own.** The 6 MB limit lives in
+  Slides' `get_thumbnail_content`, so ticket 21's route would inherit none.
 
 ## Verification
 
@@ -250,10 +341,10 @@ Run in this worktree. No bench, no migrate, no shared-site command.
 | Check | Result |
 |---|---|
 | `python -m compileall suite/slides suite/drive suite/tests suite/hooks.py` | Clean |
-| `uvx ruff@0.12.3 check suite/slides suite/drive suite/tests/test_architecture.py suite/hooks.py` | One error, pre-existing: `E722` at `suite/drive/patches/team_restructure.py:56`. Untouched file, fires on the starting revision too. |
-| `uvx ruff@0.12.3 format --check` on every changed `.py` | Clean |
-| `suite.tests.test_architecture` boundary scan, executed statically | No unexpected violation, no resolved debt |
-| `TestSlidesDeclaration`, 18 tests, no database | OK, 0.012s |
+| `uvx ruff@0.12.3 check suite/slides suite/drive suite/tests suite/hooks.py` | One error, pre-existing: `E722` at `suite/drive/patches/team_restructure.py:56`. Untouched file, fires on the starting revision too. |
+| `uvx ruff@0.12.3 format --check` on every changed `.py` | 8 files already formatted |
+| `suite.tests.test_architecture`, 7 tests, no database | OK, 0.96s |
+| `TestSlidesDeclaration`, 26 tests, no database | OK, 0.012s |
 
 The declaration class runs with `frappe.init(site="slides.localhost")` and no
 connection, from `/home/faris/benches/suite-bench/sites` with `PYTHONPATH` set
@@ -284,38 +375,61 @@ bench --site slides.localhost run-tests --module suite.tests.test_architecture
 modules are in the list because this ticket changed `nodes.create_file`,
 `content`, and `drive.__all__`, which they all exercise.
 
-Expected counts from this HEAD: `suite.slides.tests.test_drive_adoption` is 18
-unit and 53 integration.
+Expected counts from this HEAD: `suite.slides.tests.test_drive_adoption` is 26
+unit (`TestSlidesDeclaration`) and 64 integration (`TestSlidesBeforeActivation`
+7, `TestSlidesInDrive` 57), 90 in total.
 
-**53 integration tests are unverified.** They have never run: this worktree may
-not touch `slides.localhost`. Nothing below the "Static and pure checks" table
-above has been executed.
+**64 integration tests are unverified.** They have never run: this worktree may
+not touch `slides.localhost`. Nothing outside the "Static and pure checks" table
+above has been executed, including every test the review added for a defect it
+fixed.
 
 ## Blockers
 
-1. **Activation refuses `Presentation` while the `title` column exists.**
-   §10.2 forbids a content doctype owning a `title` field, and
-   `content._validate_forbidden_fields` enforces it on every registry build.
-   §14.7 needs `title` as a Build source and §14.10 drops it at Cleanup, which
-   lands after activation, so the two rules cannot both hold at ticket 29.
-   `title_field` is `"title"` and fails the same check.
-
-   This ticket keeps the column, because dropping a Build source early is the
-   worse error. Ticket 29 owes the decision, one of two:
-
-   - relax `_validate_forbidden_fields` for a legacy column no registered code
-     reads, or
-   - drop `title`, `title_field`, `is_template`, and `thumbnail` in ticket 29
-     immediately after Build, accepting that "after Build, ship the old code"
-     stops being a rollback.
-
-   `test_activation_still_refuses_the_legacy_title_column` pins the current
-   state so the decision cannot be skipped.
-
-2. **A `DocShare` on a `Presentation` still refuses activation.** Same shape as
+1. **A `DocShare` on a `Presentation` still refuses activation.** Same shape as
    Writer's. Ticket 28 owes the rewrite to grants before ticket 29 activates.
    Harmless today: the registry is empty, so `validate_content_registry`
-   inspects nothing.
+   inspects nothing. Between Build and activation the staged guards now refuse
+   a share that names a linked deck rather than letting it through; see the
+   review section below.
+
+2. **Writer's staged guards carry the same `DocShare` bypass this ticket fixed
+   in Slides.** `suite/writer/overrides/__init__.py` answers `False` for a
+   linked row and writes no list refusal, so Frappe's `false_if_not_shared` and
+   the shared-names OR reopen it. Ticket 17's file, not this one's, so it is
+   recorded here and not edited. `drive.refuse_shared_row` and
+   `drive.refuse_shared_linked_rows` are the two calls it needs.
+
+### Resolved: activation and the legacy `title` column
+
+§10.2 forbids a content doctype owning a `title` field. §14.7 reads
+`Presentation.title` at Build and §14.10 drops it at Cleanup, one release after
+activation, and §14.11's post-Build rollback is "ship the old code", which reads
+the same column. So the column has to outlive activation.
+
+§10.2's stated reason is that the title lives on the node "with no mirror in
+either direction". A column no code reads or writes is not a mirror. The
+resolution keeps the reason and drops the over-strict test:
+
+- `ContentTypeSpec.legacy_fields` names the columns §14.10 drops at Cleanup.
+  Slides declares `("title",)`. `is_template` and `thumbnail` need no entry;
+  §10.2 forbids neither.
+- `_validate_shape` refuses a `legacy_fields` entry that is not already a name
+  §10.2 forbids, so the hatch cannot exempt an arbitrary column.
+- `_validate_forbidden_fields` exempts a declared name. `title_field` stays
+  strict, so `presentation.json` drops `"title_field": "title"`. That removes
+  the read-direction mirror and moves no data: §14.7 reads the column, not the
+  meta.
+- `_validate_legacy_fields` refuses a declared name the doctype no longer owns.
+  Once Cleanup drops `title`, the next migration fails until the declaration
+  drops the entry, so the exemption cannot outlive the column.
+- `content.refuse_legacy_field_write` freezes the column at runtime for a
+  registered doctype: every write is refused, in either direction. The Build
+  value stays exactly as Build left it.
+
+Ticket 29 therefore flips five entries and drops no column. Sheets (19) has the
+same shape with `title`, `trashed`, `trashed_on`, and `trashed_by`, and takes
+the same route.
 
 ## Handoffs
 
@@ -340,7 +454,13 @@ above has been executed.
 - **Ticket 29, activation.** Five entries move together: `drive_content_types`
   gains `suite.slides.drive.SPEC`, both `Presentation` hooks become
   `suite.drive.framework.doc_*`, and `Slide` gains
-  `suite.drive.framework.satellite_*`. Blocker 1 above must be settled first.
+  `suite.drive.framework.satellite_*`. No column has to be dropped first: the
+  `title` exemption is declared and the column is frozen. Blocker 1 above, the
+  `DocShare` rewrite, still has to land at ticket 28.
+- **Ticket 35, Cleanup.** When it drops `Presentation.title` it must drop
+  `legacy_fields=("title",)` from `suite/slides/drive.py` in the same release.
+  `_validate_legacy_fields` refuses the migration otherwise, which is the point:
+  the exemption expires with the column.
 - **Ticket 34, frontend.** `save_presentation_thumbnail` answers `""` for a
   linked deck instead of a `file_url`, and `update_slide_attachments` answers
   node ids rather than `/private/files/` URLs. The client must read the deck
