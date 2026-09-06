@@ -936,11 +936,31 @@ LEGACY_UPLOAD_TTL = 24 * 60 * 60
 
 # Legacy sort columns that survive §11.4's four. Anything else fell back to
 # `modified` on the old surface rather than refusing, so it still does.
+#
+# Legacy `modified` was one column, `COALESCE(file_modified, modified)`, and
+# the old query sorted by the same expression it published. A node carries the
+# pair apart, and `_legacy_row` publishes the coalesce, so the legacy name maps
+# to §11.4's `content_modified` - the ordering that falls back to the row's own
+# time. Mapping it to `modified` sorted the page by a value the client is never
+# shown, and `upload_file` stamps `content_modified` from the client's own
+# `file_modified`, so the two differ on every uploaded file.
 ORDER_COLUMN = {
     "file_name": "title",
     "file_size": "size",
-    "modified": "modified",
+    "modified": "content_modified",
 }
+
+
+def _order_column(order_by: str) -> str:
+    """The §11.4 column one legacy sort name asks for.
+
+    The toolbar sends five names and §11.4 keeps three, and the old query fell
+    back to `modified` for the other two rather than refusing. The fallback is
+    mapped like any name the caller does spell, or an unknown column would
+    sort by a column the row does not publish while `modified` sorted by the
+    one it does.
+    """
+    return ORDER_COLUMN.get(order_by, ORDER_COLUMN["modified"])
 
 
 def _home(principals) -> str:
@@ -1776,7 +1796,7 @@ def _ordered(rows: list, order_by: str, ascending: bool) -> list:
     an unknown name falls back to `modified` here exactly as it does on the
     folder page. Nothing wider is invented for a view than a folder can answer.
     """
-    column = ORDER_COLUMN.get(order_by, "modified")
+    column = _order_column(order_by)
     rows = sorted(rows, key=lambda row: row.get("name") or "")
     return sorted(
         rows,
@@ -1993,7 +2013,7 @@ def files(
                 parent,
                 cursor=cursor,
                 limit=window,
-                order_by=ORDER_COLUMN.get(order_by, "modified"),
+                order_by=_order_column(order_by),
                 ascending=bool(ascending),
             ),
             file_kinds=file_kinds,

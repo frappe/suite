@@ -1700,7 +1700,9 @@ class TestListForwarders(ListCase):
     def test_an_unknown_sort_column_falls_back_instead_of_refusing(self):
         self.one_page([])
         shims.files(order_by="file_type")
-        self.assertEqual(self.nodes.children.call_args.kwargs["order_by"], "modified")
+        # Legacy `modified` is `COALESCE(file_modified, modified)`, which is
+        # §11.4's `content_modified` order. `ORDER_COLUMN` says why.
+        self.assertEqual(self.nodes.children.call_args.kwargs["order_by"], "content_modified")
         shims.files(order_by="file_name")
         self.assertEqual(self.nodes.children.call_args.kwargs["order_by"], "title")
         shims.files(order_by="file_size")
