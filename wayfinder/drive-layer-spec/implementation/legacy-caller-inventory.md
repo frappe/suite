@@ -90,9 +90,9 @@ Playwright (`e2e/drive-backed-apps/`).
 | Name | Class | Guest | Client callers | Now |
 |---|---|---|---|---|
 | `activity.get_entity_activity_log` | forwarder | no | **none** | `activity.history`, under the old column names |
-| `notifications.get_notifications` | forwarder | no | `pages/Notifications.vue:102` | `activity.notifications`, flattened to one level |
-| `notifications.get_unread_count` | forwarder | no | `resources/permissions.js:18` ← `Sidebar.vue:161` | `activity.unread_count`. Still a scalar |
-| `notifications.mark_as_read` | forwarder | no | `pages/Notifications.vue:116,131` | `activity.mark_read`. Still answers `None` |
+| `notifications.get_notifications` | forwarder | no | `pages/Notifications.vue:102` | `activity.notifications`, flattened to one level, merged newest-first with the caller's pointerless rows |
+| `notifications.get_unread_count` | forwarder | no | `resources/permissions.js:18` ← `Sidebar.vue:161` | `activity.unread_count` plus the pointerless unread count. Still a scalar |
+| `notifications.mark_as_read` | forwarder | no | `pages/Notifications.vue:116,131` | `activity.mark_read`, and the pointerless rows beside it. Still answers `None` |
 | `storage.storage_bar_data` | forwarder | no | `resources/files.js:328` ← `StorageBar.vue:31`, `FileUploader.vue:224` | `roots.usage_for` on the caller's own root |
 | `storage.storage_breakdown` | forwarder | no | `Settings/StorageSettings.vue:82` | `roots.usage_for`, plus the two aggregates read from `Drive Node` |
 | `scripts.sync_preview` | **retained** | no | `SyncBreakdown.vue:100` | Legacy body. §11.7 points at a route that uploads a thumbnail |
@@ -441,6 +441,37 @@ and found defects 36 and 37, which are one defect seen twice.
     name rather than the §11.4 name it maps to. Two of the five columns the
     toolbar sends - "Type" and "Owner" - fall back, so they sorted by the wrong
     column even once the mapping was right.
+
+Fifth module of the serialized gate,
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_notifications`,
+on `forge/drive-23-site-gate-api-notifications`. It ran 1 unit test and 3
+integration tests and failed one:
+`TestMarkAsRead.test_recipient_can_mark_own_notification_as_read` called
+`mark_as_read` and the row stayed unread. One test defect and one production
+defect, from the same root.
+
+The fixture built a `Drive Notification` by hand with `to_user`, `from_user`,
+`message`, and no `activity`. §9.5 made the row a pointer at a `Drive Activity`
+row, so `activity._visible_notifications` read the pointer, found nothing, and
+dropped it. That is the test defect. The other two cases in the class passed
+for the wrong reason: nothing in the module was markable at all, so "another
+user cannot mark this" and "mark all leaves it alone" asserted only that a
+no-op is a no-op.
+
+38. **A notification with no activity pointer was invisible to every legacy
+    name.** `get_notifications` answered a page without it, `get_unread_count`
+    did not count it, and `mark_as_read` could not clear it. Pointerless rows
+    are not only historical: `api.notifications.create_notification` still
+    writes one for every mention in a legacy Writer document's comments
+    (`writer_document.notify_comments`), and for the folder share every new
+    `User` is given (`Drive Permission.after_insert` -> `notify_share`, reached
+    from `utils.get_user_folder`). §14 drops the table's rows at Build and
+    starts the inbox empty, but Build has not run and neither writer is
+    Build-gated, so the inbox would fill with rows the page cannot show and the
+    reader cannot clear. `shims._legacy_inbox`, `_legacy_unread_count`, and
+    `_mark_legacy_read` answer for them, scoped to `to_user` - the only scope
+    the old query had. They live in the shim, not in `_core`: §11.2 has no way
+    to publish a row with no activity, and the read dies with the module.
 
 ## Carried risks the review did not fix
 
