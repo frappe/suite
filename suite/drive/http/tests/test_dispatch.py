@@ -958,11 +958,13 @@ class TestUploads(DriveHTTPCase):
         frappe.db.set_value("Drive Root", self.root.name, "quota_bytes", 0, update_modified=False)
         frappe.db.commit()
 
-    def test_a_head_replacement_swaps_the_bytes_and_moves_the_charge(self):
+    def test_a_head_replacement_swaps_the_bytes_and_keeps_the_old_charge(self):
         # §11.2 routes a head replacement through PUT /nodes/<id>/content, and
         # §8.4 makes a finished session the only proof the caller produced the
-        # bytes. The node id survives. The blob, the size, and the root charge
-        # all move to the new head.
+        # bytes. The node id survives and the blob, the size, and the MIME move
+        # to the new head. The charge does not move: §8.2 adds the new head in
+        # full and §7.3 keeps the old head charged, because §9.1 preserves it
+        # as an auto version and charges every version to the root.
         first = self.upload(b"first bytes", "replaceable.bin")
         self.addCleanup(self.drop_node, first["name"])
         self.reread()
@@ -992,9 +994,20 @@ class TestUploads(DriveHTTPCase):
         self.assertEqual(answer["size"], len(payload))
         replaced = frappe.db.get_value("Drive Node", first["name"], "blob")
         self.assertNotEqual(replaced, original)
-        self.addCleanup(frappe.db.delete, "File Blob", {"name": replaced})
         after = int(frappe.db.get_value("Drive Root", self.root.name, "used_bytes") or 0)
-        self.assertEqual(after - before, len(payload) - first["size"])
+        self.assertEqual(after - before, len(payload))
+        kept = frappe.db.get_value(
+            "Drive Node Version",
+            {"node": first["name"], "blob": original},
+            ["seq", "kind", "size"],
+            as_dict=True,
+        )
+        # The retained bytes are a row, not a leak: the old head is auto
+        # version 1, and its size is the charge the root still carries.
+        self.assertIsNotNone(kept)
+        self.assertEqual(kept.seq, 1)
+        self.assertEqual(kept.kind, "auto")
+        self.assertEqual(kept.size, first["size"])
 
     def test_a_replacement_target_that_is_not_a_file_is_refused(self):
         # §11.2 declares 403 on this row. A folder holds no head, so EDIT on it
@@ -1081,9 +1094,13 @@ class TestUploads(DriveHTTPCase):
 
     def drop_node(self, node):
         frappe.db.rollback()
-        blob = frappe.db.get_value("Drive Node", node, "blob")
+        # A replaced head lives on as a version blob. `drop_node_rows` removes
+        # the version row, so the blob behind it has to go here or it outlives
+        # the fixture.
+        blobs = frappe.get_all("Drive Node Version", filters={"node": node}, pluck="blob")
+        blobs.append(frappe.db.get_value("Drive Node", node, "blob"))
         drop_node_rows([node])
-        if blob:
+        for blob in filter(None, blobs):
             frappe.db.delete("File Blob", {"name": blob})
         frappe.db.commit()
 
