@@ -37,6 +37,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import IO
+from uuid import uuid4
 
 import frappe
 from frappe import _
@@ -47,7 +48,7 @@ from frappe.utils import get_attr, now_datetime
 from suite.drive._core.access import add_creator_grant, require
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, READ
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 
 # §6.8 and §10.6: one Read check on the document, then signed `/f/` URLs that
 # live 15 minutes. The page re-requests at two thirds of the TTL.
@@ -86,6 +87,22 @@ DOCUMENT_NODE_FIELDS = (
     "content_docname",
 )
 MEDIA_ROW_FIELDS = ("name", "title", "kind", "blob", "size", "mime", "creation", "content_modified")
+# What `adopt_media` reads about a media node it is asked to bring across.
+# `parent`, `root`, and `path` are what `access.chain_ids` walks, so the READ
+# check below costs one read and no extra tree query.
+MEDIA_SOURCE_FIELDS = (
+    "name",
+    "parent",
+    "root",
+    "path",
+    "title",
+    "kind",
+    "state",
+    "blob",
+    "size",
+    "mime",
+    "content_modified",
+)
 
 
 @dataclass(frozen=True)
@@ -835,6 +852,111 @@ def copy_document_media(
         by_blob[row.blob] = copied.name
         remapped[row.name] = copied.name
     return remapped
+
+
+def reuse_media(document_node: str, blob: str, *, for_update: bool = False) -> str | None:
+    """Answer the media node already holding one blob under a document (§8.9).
+
+    "Inside one document, one media node per blob" is the rule the copy path has
+    always kept. Upload and cross-deck paste land on the same document, so they
+    answer through here rather than adding a second node and a second charge for
+    bytes the deck already pays for.
+    """
+    for row in media_rows(document_node, for_update=for_update):
+        if row.blob == blob:
+            return row.name
+    return None
+
+
+def adopt_media(principals: Principals, document_node: str, media_nodes: Iterable[str]) -> dict[str, str]:
+    """Bring media from other content documents under this one (§8.9).
+
+    This is the workflow `nodes._validate_generic_destination` names when it
+    refuses an ordinary copy of media below a content document: pasting a slide
+    from another deck has to carry that slide's pictures, and an ordinary copy
+    would put them somewhere no document owns.
+
+    Blobs are shared and no byte is copied. Every reference still pays (§7.1),
+    so the destination root is charged once per blob it did not already hold.
+    Inside the destination, one media node per blob: pasting the same picture
+    twice reuses the node.
+
+    Answers `{source_node: node_under_this_document}` for every id it resolved,
+    including an identity mapping for a source that already lives here. Two ids
+    are left out of the answer rather than refusing the whole paste:
+
+    - one that names no node, because an app body holds colours and legacy URLs
+      beside node ids and a paste must not die on one;
+    - one the caller cannot read, because §8.9 skips unreadable children.
+
+    An id that names a node which is not active media below a content document
+    is a caller error, not a body value, and is refused.
+    """
+    from suite.drive._core.nodes import _insert_node, _rollback_savepoint, _validate_stored_position
+    from suite.drive._core.previews import copy_preview
+    from suite.drive._core.quota import admit
+
+    requested = tuple(dict.fromkeys(node for node in media_nodes if isinstance(node, str) and node))
+    if not requested:
+        return {}
+
+    savepoint = f"drive_adopt_media_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        target = _document_node(document_node, for_update=True)
+        via_link = require(target, UPLOAD, principals)
+        _refuse_trashed_write(target, UPLOAD)
+        _validate_stored_position(target, for_update=True)
+
+        by_blob = {row.blob: row.name for row in media_rows(target.name, for_update=True)}
+        remapped: dict[str, str] = {}
+        for node in requested:
+            source = frappe.db.get_value("Drive Node", node, MEDIA_SOURCE_FIELDS, as_dict=True)
+            if not source:
+                continue
+            _validate_adoptable_media(source)
+            if source.state != "Active":
+                continue
+            try:
+                require(source, READ, principals)
+            except DriveNotFound:
+                continue
+            reused = by_blob.get(source.blob)
+            if reused is not None:
+                remapped[node] = reused
+                continue
+            admit(target.root, int(source.size or 0))
+            copied = _insert_node(
+                principals,
+                target,
+                title=source.title,
+                kind="file",
+                blob=source.blob,
+                size=int(source.size or 0),
+                mime=source.mime,
+                content_modified=source.content_modified,
+            )
+            add_creator_grant(copied, target, principals, via_link=via_link)
+            copy_preview(source.name, copied.name)
+            by_blob[source.blob] = copied.name
+            remapped[node] = copied.name
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return remapped
+
+
+def _validate_adoptable_media(source: Mapping) -> None:
+    """Refuse an id that names a node no document may adopt.
+
+    A missing id is a body value, not an error, and is skipped by the caller. An
+    id that resolves to a folder, a document, or a file with no blob is a caller
+    error: node names are opaque hashes, so a colour or a URL never reaches here.
+    """
+    if source.get("kind") != "file" or not source.get("blob"):
+        raise DriveConflict(_("Only media below a Drive content document can be adopted"))
 
 
 def copyable_media_bytes(document_nodes: Iterable[str]) -> int:

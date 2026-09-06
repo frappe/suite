@@ -16,18 +16,20 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The six calls an app makes are `check`, `touch`, `take_version`,
-`create_document`, `copy`, and `push_preview`. Nothing lower flows from an app
-to Drive. The `ContentTypeSpec` callbacks flow the other way, when Drive asks
-an app to work with its own document body. Each one imports its workflow
-inside the call, so importing `suite.drive` for byte accounting alone does not
-load the node, preview, and imaging modules.
+The seven calls an app makes are `check`, `touch`, `take_version`,
+`create_document`, `copy`, `adopt_media`, and `push_preview`. Nothing lower
+flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
+way, when Drive asks an app to work with its own document body. Each one
+imports its workflow inside the call, so importing `suite.drive` for byte
+accounting alone does not load the node, preview, and imaging modules.
 
 `create_document` writes the node and the document in one transaction and
 links them reciprocally. Both sides are set once and never change, so a
 document with no node cannot exist. `copy` runs the app's `duplicate` factory,
 copies the document's media one node per blob, and hands the app the old-to-new
-node map through `remap_media`.
+node map through `remap_media`. `adopt_media` is the same media step for a
+paste: it brings named media under one document, sharing blobs, and answers the
+id remapping the app applies to its own body.
 
 ## Errors
 
@@ -73,10 +75,10 @@ check the session user and they do not require one: `create_storage_reservation`
 and its siblings run under whatever user the caller has set, including a
 background job. The caller owns the decision that the reservation may be made.
 
-The content workflows do check. `check`, `create_document`, `copy`, `touch`,
-`take_version`, and `push_preview` build the caller's principals from the
-current Frappe session and this request's `X-Drive-Links` header, then run the
-same point check every other Drive workflow runs. A caller never constructs
+The content workflows do check. `check`, `create_document`, `copy`,
+`adopt_media`, `touch`, `take_version`, and `push_preview` build the caller's
+principals from the current Frappe session and this request's `X-Drive-Links`
+header, then run the same point check every other Drive workflow runs. A caller never constructs
 principals itself and never composes partial steps.
 
 `ensure_personal_root` refuses `Guest` and `Administrator` by returning `None`
@@ -160,6 +162,13 @@ def copy(node: str, parent: str, *, title: str | None = None) -> str:
     return _copy(_principals(), node, parent, title=title)
 
 
+def adopt_media(document_node: str, media_nodes) -> dict[str, str]:
+    """Bring named media under one content document and answer the id remapping."""
+    from suite.drive._core.content import adopt_media as _adopt_media
+
+    return _adopt_media(_principals(), document_node, media_nodes)
+
+
 def touch(doctype: str, docname: str) -> None:
     """Record that one content document's body changed now."""
     from suite.drive._core.content import touch as _touch
@@ -196,6 +205,7 @@ __all__ = (
     "ContentTypeSpec",
     "DriveContent",
     "Satellite",
+    "adopt_media",
     "bind_legacy_storage_reservation",
     "check",
     "copy",
