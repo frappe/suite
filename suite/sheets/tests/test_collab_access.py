@@ -154,6 +154,41 @@ class TheRoleLadder(_AccessCase):
         self.assertEqual([call.args for call in self.drive.check.call_args_list], [(NODE, READ)])
 
 
+class ATrashedSheet(unittest.TestCase):
+    """§8.8: a trashed document opens read-only, however high the grant.
+
+    `drive.check` is what applies it — an app-facing call refuses a write on a
+    node that is not Active — so at this seam a trashed sheet looks like an
+    EDIT that Drive declined. The connection stays open; only the writes stop.
+    """
+
+    def test_a_manage_holder_still_connects_read_only(self):
+        drive = mock.MagicMock()
+        drive.READ, drive.COMMENT, drive.UPLOAD, drive.EDIT, drive.MANAGE = (
+            READ,
+            COMMENT,
+            UPLOAD,
+            EDIT,
+            MANAGE,
+        )
+        drive.DriveError = _DriveError
+
+        def check(node, need):
+            if need > READ:
+                raise _DriveForbidden("Trashed Drive nodes are read-only")
+
+        drive.check.side_effect = check
+        _frappe, patcher = _patched_frappe()
+        self.addCleanup(patcher.stop)
+        with (
+            mock.patch.object(collab, "drive", drive),
+            mock.patch.object(collab, "_user_identity", return_value=_ALICE),
+        ):
+            answer = collab.check_collab_access(SHEET)
+        self.assertTrue(answer["canRead"])
+        self.assertFalse(answer["canWrite"])
+
+
 class WhyItWasRefused(_AccessCase):
     """A revoked grant, an expired link, and a locked link are told apart."""
 

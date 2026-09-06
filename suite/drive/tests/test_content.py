@@ -4,8 +4,10 @@ import io
 import json
 import types
 import typing
+import unittest
 from contextlib import contextmanager
 from datetime import timedelta
+from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -17,6 +19,7 @@ from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
+from suite import drive
 from suite.drive import framework
 from suite.drive._core import content, nodes, roots, versions
 from suite.drive._core.access import grant
@@ -1014,6 +1017,37 @@ class TestContentContract(UnitTestCase):
             self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
             db.exists.return_value = False
             framework.validate_content_registry()
+
+
+class TestTheAppFacingCheck(unittest.TestCase):
+    """`drive.check` carries §8.8, so every content app gets it for free.
+
+    `access.require` answers who the caller is, not what state the node is in,
+    because Drive's own restore and purge must still act on a trashed node.
+    The app-facing calls are the ones that refuse, and `check` is one: Sheets
+    asks EDIT through it once per collab connection and again every five
+    minutes, so without the state rule a trashed sheet stayed writable over the
+    websocket.
+    """
+
+    def _check(self, state: str, role: int):
+        row = frappe._dict(name="ND-1", kind="document", state=state, root="RT-1", path="/a")
+        with (
+            mock.patch("suite.drive._core.nodes._node", return_value=row),
+            mock.patch.object(drive, "_principals", return_value=None),
+            mock.patch("suite.drive._core.access.require", return_value=None),
+        ):
+            drive.check("ND-1", role)
+
+    def test_a_trashed_node_refuses_a_write(self):
+        with self.assertRaises(DriveForbidden):
+            self._check("Trashed", drive.EDIT)
+
+    def test_a_trashed_node_still_answers_a_read(self):
+        self._check("Trashed", drive.READ)
+
+    def test_an_active_node_answers_a_write(self):
+        self._check("Active", drive.EDIT)
 
 
 class TestContentWorkflows(IntegrationTestCase):
