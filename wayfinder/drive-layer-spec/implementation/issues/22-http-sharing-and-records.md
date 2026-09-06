@@ -413,3 +413,110 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_access
 bench --site slides.localhost run-tests --module suite.drive.tests.test_views
 bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
 ```
+
+## Site gate, module 1 of 7
+
+`suite.drive.http.tests.test_dispatch` now passes on `slides.localhost`. The
+other six modules are not run yet. Status stays `in-progress` and the boxes
+stay unchecked.
+
+### The one failure, and what it was
+
+First run, at commit `27f86ca89`:
+
+```
+bench --site slides.localhost run-tests --module suite.drive.http.tests.test_dispatch
+Ran 154 tests
+FAILED (failures=1)
+TestUploads.test_a_head_replacement_swaps_the_bytes_and_moves_the_charge
+AssertionError: 36 != 25
+before = 22, first["size"] = 11, len(payload) = 36, after = 58
+```
+
+The test was wrong. The accounting was right.
+
+The test asserted that a head replacement moves the charge, so the root gains
+`new - old`. The spec says the opposite. §7.3 line 1625: "A replace charges the
+new head size; the old head becomes a version and stays charged, unless it was
+size 0, which is never kept." §8.2 line 1809 states the same rule as `+new_size`
+in the workflow table. §9.1 line 2222 charges every version's size to the node's
+root, and frees the bytes only when the version is deleted.
+
+The code already does this. `nodes._replace_file` preserves a nonempty old head
+as one auto version (`nodes.py:1021-1023`), then calls `admit(root, new_size)`
+once (`nodes.py:1027`). `versions.preserve_file_head` inserts the version row and
+calls neither `admit` nor `release` (`versions.py:425-442`), because the old
+head's existing charge is now the version's charge. `quota.recompute_usage`
+holds the same invariant: `used_bytes = nodes + versions + reserved`. A release
+of the old head would show up as drift on the next nightly recompute.
+
+The `_core` suite already pinned the rule.
+`test_upload.py:290 test_replace_keeps_one_nonempty_head_and_charges_each_reference_once`
+asserts `used_bytes == old.file_size + new.file_size` after a replace. The
+dispatch test contradicted a passing test in the same repository.
+
+`before = 22` is the fixture, not residue. `DriveHTTPCase.setUpClass` charges 11
+bytes for `report.bin`, and the test's own upload charges 11 more. Each test
+class builds its own root.
+
+Agents traced the accounting path and the fixture. The diagnosis, the fix, and
+this section are mine.
+
+### Fix
+
+`suite/drive/http/tests/test_dispatch.py`, one test and one helper:
+
+- The test is renamed to `..._keeps_the_old_charge`, because the old name
+  asserted the defect.
+- The delta expectation is `len(payload)`, the new head in full.
+- The retained bytes are now pinned to a row, not left implicit. The test reads
+  the `Drive Node Version` that holds the superseded blob and asserts
+  `seq = 1`, `kind = "auto"`, and `size = 11`. A silent loss of the version
+  fails here, and a wrongly released charge fails on the delta.
+- `TestUploads.drop_node` deletes version blobs as well as the head blob.
+  `drop_node_rows` removes the version row, so the blob behind a replaced head
+  outlived the fixture.
+- One dead line is removed. The explicit `File Blob` cleanup ran before
+  `drop_node`'s own `rollback()`, so it never deleted anything.
+
+No production file changed. Ticket 29 dormancy is untouched: no
+`drive_content_types` entry, no hook activation, no `site_config` change.
+
+### The database-sensitive assumptions, settled
+
+The full module passes, so the five assumptions this ticket flagged all hold on
+`slides.localhost`: `revoke_below` reporting `rows: 2`, a restore answering
+`{"seq": 2}`, `{"cleared": 1}` on `DELETE /views/recents`, `preview: null` under
+`expand=preview`, and a default personal quota of 0 on a version take. The two
+the review added hold as well: the `Drive Activity` count in `TestBatch` and the
+`explain` lookup that could raise `StopIteration`.
+
+### Commands and results
+
+```
+bench --site slides.localhost run-tests --module suite.drive.http.tests.test_dispatch
+Ran 154 tests in 6.184s
+OK
+```
+
+```
+ruff 0.14.10 format --check suite/drive/http/tests/test_dispatch.py
+1 file already formatted
+ruff 0.14.10 check suite/drive/http/tests/test_dispatch.py
+All checks passed!
+```
+
+Ruff here is 0.14.10, not the 0.12.3 the sections above used.
+
+### Remaining gate
+
+Six modules, serialized, one command at a time:
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
+bench --site slides.localhost run-tests --module suite.drive.tests.test_comments
+bench --site slides.localhost run-tests --module suite.drive.tests.test_access
+bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
+```
