@@ -364,13 +364,14 @@ def _validate_root_descendants(root: str, descendants: list[frappe._dict]) -> No
 
 
 def _purge_root_rows(root: str, descendants: list[frappe._dict]) -> None:
+    from suite.drive._core import content
     from suite.drive._core.nodes import _content_purge_callbacks
 
     descendant_ids = tuple(row.name for row in descendants)
     callbacks = _content_purge_callbacks(descendants)
     _delete_node_references(descendant_ids)
     for callback, docname in callbacks:
-        callback(docname)
+        content.call_app(callback, docname)
     if descendant_ids:
         frappe.db.delete("Drive Node", {"name": ["in", descendant_ids]})
 

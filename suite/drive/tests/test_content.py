@@ -1,6 +1,8 @@
+import ast
 import inspect
 import io
 import json
+import types
 import typing
 from contextlib import contextmanager
 from datetime import timedelta
@@ -8,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 import frappe.share
+from frappe.database.database import Database
 from frappe.model.base_document import get_controller
 from frappe.model.document import Document
 from frappe.storage.blob import put_blob
@@ -15,7 +18,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
 from suite.drive import framework
-from suite.drive._core import content
+from suite.drive._core import content, nodes, roots, versions
 from suite.drive._core.access import grant
 from suite.drive._core.content import (
     MEDIA_REFRESH_SECONDS,
@@ -125,6 +128,28 @@ def spec(**overrides) -> ContentTypeSpec:
     }
     values.update(overrides)
     return ContentTypeSpec(**values)
+
+
+def transaction_spy():
+    """A `frappe.db` stand-in that runs the framework's own transaction guard.
+
+    `commit` and `rollback` are `frappe.database.Database`'s real methods bound
+    to a mock, so these tests prove the framework's behaviour instead of
+    restating it. Everything the guarded path would reach is recorded on the
+    mock rather than executed.
+    """
+    spy = MagicMock()
+    spy._disable_transaction_control = 0
+    spy.commit = types.MethodType(Database.commit, spy)
+    spy.rollback = types.MethodType(Database.rollback, spy)
+    spy.sql.return_value = []
+    return spy
+
+
+def issued(spy) -> list[str]:
+    """The transaction control the spy actually reached the server with."""
+    statements = (call.args[0].strip().lower() for call in spy.sql.call_args_list if call.args)
+    return [statement for statement in statements if statement.startswith(("commit", "rollback", "begin"))]
 
 
 @contextmanager
@@ -462,6 +487,140 @@ class TestContentContract(UnitTestCase):
             with self.assertRaises(ValueError), content.app_callback():
                 raise ValueError("the app factory failed")
             self.assertEqual(frappe.db._disable_transaction_control, 0, "restored on the failing path")
+
+    # §10.1: every call into app code runs guarded. The four tests below take
+    # one hostile callback per category through the real Drive call path.
+
+    def test_a_hostile_callback_cannot_commit_or_end_the_drive_transaction(self):
+        spy = transaction_spy()
+        with stub_db(spy):
+            with self.assertWarns(UserWarning):
+                content.call_app(lambda docname: frappe.db.commit(), "one")
+            with self.assertWarns(UserWarning):
+                content.call_app(lambda docname: frappe.db.rollback(), "one")
+        self.assertEqual(issued(spy), [], "a guarded callback reaches no COMMIT and no ROLLBACK")
+        self.assertEqual(spy._disable_transaction_control, 0)
+
+    def test_a_callback_can_still_roll_back_to_a_savepoint(self):
+        # Drive's own refusals are savepoint rollbacks, and an app is allowed
+        # its own. The guard has to leave that one arm working.
+        spy = transaction_spy()
+        with stub_db(spy):
+            content.call_app(lambda docname: frappe.db.rollback(save_point="app_sp"), "one")
+        self.assertEqual(issued(spy), ["rollback to savepoint app_sp"])
+
+    def test_every_callback_category_reaches_the_app_guarded(self):
+        # One hostile callback per category, each driven through the Drive
+        # function that calls it, so the guard is proven at the call site and
+        # not on the invoker alone.
+        seen = {}
+
+        def guarded(category, answer=None):
+            def callback(*args, **kwargs):
+                seen[category] = frappe.db._disable_transaction_control
+                frappe.db.commit()
+                return answer
+
+            return callback
+
+        spy = transaction_spy()
+        row = frappe._dict(name="node-a", content_doctype=CONTENT_DOCTYPE, content_docname="one")
+        declared = spec(
+            used_nodes=guarded("used_nodes", set()),
+            version_bytes=guarded("version_bytes", (io.BytesIO(b"{}"), "application/json")),
+            export=guarded("export", (io.BytesIO(b"<p/>"), "text/html")),
+            on_purge=guarded("on_purge"),
+            restore_version=guarded("restore_version"),
+        )
+        node = frappe._dict(
+            name="node-a",
+            kind="document",
+            content_doctype=CONTENT_DOCTYPE,
+            content_docname="one",
+        )
+        with registered(declared), stub_db(spy), self.assertWarns(UserWarning):
+            content._sweep_document(declared, row)
+            with patch("suite.drive._core.versions.put_blob") as put:
+                put.return_value = frappe._dict(name="blob-a", file_size=2)
+                versions._version_bytes(node, spec=declared)
+            content.call_app_stream(declared.export, "one", "html")
+            for callback, docname in nodes._content_purge_callbacks([node]):
+                content.call_app(callback, docname)
+            content.call_app(declared.restore_version, "one", io.BytesIO(b"{}"))
+
+        self.assertEqual(
+            seen,
+            dict.fromkeys(("used_nodes", "version_bytes", "export", "on_purge", "restore_version"), 1),
+            "every callback category runs with transaction control disabled",
+        )
+        self.assertEqual(issued(spy), [], "no hostile commit reached the server")
+        self.assertEqual(spy._disable_transaction_control, 0, "the guard is released every time")
+
+    def test_a_streamed_callback_stays_guarded_while_drive_reads_it(self):
+        # `version_bytes` and `export` hand back a stream Drive reads after the
+        # call returns. A lazy stream runs app code there, so wrapping the call
+        # alone would leave the read unguarded.
+        depths = []
+
+        class LazyStream(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def read(self, size=-1):
+                depths.append(frappe.db._disable_transaction_control)
+                frappe.db.commit()
+                return b""
+
+        def version_bytes_of(docname):
+            return LazyStream(), "application/json"
+
+        spy = transaction_spy()
+        with stub_db(spy), self.assertWarns(UserWarning):
+            stream, mime = content.call_app_stream(version_bytes_of, "one")
+            self.assertEqual(frappe.db._disable_transaction_control, 0, "the guard does not stay open")
+            self.assertEqual(stream.read(), b"")
+            stream.close()
+
+        self.assertEqual(depths, [1], "the guard travels with the stream")
+        self.assertEqual(mime, "application/json")
+        self.assertEqual(issued(spy), [])
+        self.assertEqual(spy._disable_transaction_control, 0)
+
+    def test_a_guarded_stream_delegates_instead_of_closing_early(self):
+        source = io.BytesIO(b"body-bytes")
+        stream = content.GuardedStream(source)
+        with stub_db(transaction_spy()):
+            self.assertEqual(stream.read(4), b"body")
+            self.assertEqual(stream.tell(), 4, "an undeclared attribute is delegated")
+            stream.seek(0)
+            self.assertEqual(stream.read(), b"body-bytes")
+            self.assertFalse(source.closed, "reading never closes the app's stream")
+            stream.seek(0)
+            self.assertEqual(list(stream), [b"body-bytes"], "iteration keeps the stream's own shape")
+            with stream:
+                pass
+        self.assertTrue(source.closed, "an explicit close still closes it")
+
+    def test_a_streamed_callback_that_answers_the_wrong_shape_is_refused(self):
+        for answer in (None, (io.BytesIO(b""),), ("not-a-stream", "text/html"), (io.BytesIO(b""), "")):
+            with self.subTest(answer=answer), stub_db(transaction_spy()):
+                with self.assertRaises(DriveConflict):
+                    content.call_app_stream(lambda docname: answer, "one")
+
+    def test_no_core_module_calls_a_spec_callback_outside_the_guard(self):
+        # A guarded call names the callback as an argument to `call_app` or
+        # `call_app_stream`, so it is an attribute, never a call. Any direct
+        # `<spec>.<callback>(...)` in `_core` is an unguarded boundary.
+        declared = set(content.REQUIRED_CALLBACKS + content.OPTIONAL_CALLBACKS)
+        unguarded = []
+        for module in (content, nodes, roots, versions):
+            tree = ast.parse(inspect.getsource(module))
+            for call in ast.walk(tree):
+                target = getattr(call, "func", None)
+                if isinstance(call, ast.Call) and isinstance(target, ast.Attribute):
+                    if target.attr in declared:
+                        unguarded.append(f"{module.__name__}:{target.lineno}")
+        self.assertEqual(unguarded, [])
 
     def test_a_missing_ptype_asks_for_read_and_never_for_edit(self):
         # `get_doc_permissions` calls the row hook with no ptype at all, so a
@@ -1076,6 +1235,80 @@ class TestContentWorkflows(IntegrationTestCase):
         self.assertEqual(frappe.db.count(CONTENT_DOCTYPE), documents_before)
 
     # purge and versions still reach the app through the one registry
+
+    def test_a_purge_survives_an_on_purge_that_commits(self):
+        # `on_purge` runs between Drive's reference deletes and the node
+        # delete. An unguarded commit there would make a half-purged tree
+        # permanent and destroy the caller's savepoint.
+        def commits_then_purges(docname):
+            frappe.db.commit()
+            on_purge(docname)
+
+        with registered(spec(on_purge=commits_then_purges)):
+            document = self._document("Deck")
+            docname = frappe.db.get_value("Drive Node", document, "content_docname")
+            self._media(document, "logo.png", b"logo-bytes")
+            with self.assertWarns(UserWarning):
+                purge(self.admin, document)
+        self.assertFalse(frappe.db.exists(CONTENT_DOCTYPE, docname))
+        self.assertFalse(frappe.db.exists("Drive Node", document))
+        self.assertEqual(self._used_bytes(), 0)
+
+    def test_a_restore_that_commits_leaves_the_body_and_the_charge_unchanged(self):
+        # `restore_version` runs inside the restore savepoint, after Drive has
+        # already captured and charged the current body. A commit there would
+        # strand that charge when the restore then fails.
+        def commits_then_fails(docname, stream):
+            restore_body(docname, stream)
+            frappe.db.commit()
+            raise ValueError("the app committed and then failed")
+
+        with registered(spec()):
+            document = self._document("Deck")
+            self._name_media(document, ["one"])
+            seq = take_version(self.admin, document, kind="milestone", label="One")
+            self._name_media(document, ["two"])
+            docname = frappe.db.get_value("Drive Node", document, "content_docname")
+            charged = self._used_bytes()
+            versions_before = frappe.db.count("Drive Node Version", {"node": document})
+
+        with (
+            registered(spec(restore_version=commits_then_fails)),
+            self.assertWarns(UserWarning),
+            self.assertRaises(ValueError),
+        ):
+            restore_version(self.admin, document, seq)
+
+        self.assertEqual(_body(docname), ["two"], "the failed restore rolled back to the savepoint")
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": document}), versions_before)
+        self.assertEqual(self._used_bytes(), charged)
+
+    def test_a_version_stream_that_commits_while_drive_reads_it_is_guarded(self):
+        # Drive reads the stream inside `put_blob`, after `version_bytes` has
+        # returned. A lazily produced body runs app code there.
+        class Lazy(io.RawIOBase):
+            def __init__(self, payload):
+                self.payload = payload
+
+            def readable(self):
+                return True
+
+            def read(self, size=-1):
+                frappe.db.commit()
+                chunk, self.payload = self.payload, b""
+                return chunk
+
+        with registered(spec(version_bytes=lambda docname: (Lazy(b'["one"]'), "application/json"))):
+            document = self._document("Deck")
+            self._name_media(document, ["one"])
+            with self.assertWarns(UserWarning):
+                seq = take_version(self.admin, document, kind="milestone", label="One")
+            self._name_media(document, ["two"])
+
+        with registered(spec()):
+            restore_version(self.admin, document, seq)
+            docname = frappe.db.get_value("Drive Node", document, "content_docname")
+        self.assertEqual(_body(docname), ["one"], "the guarded stream still reached the blob intact")
 
     def test_purge_calls_the_registered_on_purge_and_removes_the_media(self):
         with registered(spec()):

@@ -236,7 +236,7 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
             with get_driver(target_blob.driver).read(
                 target_blob.key, is_private=bool(target_blob.is_private)
             ) as stream:
-                content_spec.restore_version(current.content_docname, stream)
+                content.call_app(content_spec.restore_version, current.content_docname, stream)
             frappe.db.set_value("Drive Node", current.name, "content_modified", now_datetime())
 
         _record_activity(
@@ -376,12 +376,10 @@ def _version_bytes(node: frappe._dict, *, spec=None) -> tuple[str, int]:
     callback = getattr(spec, "version_bytes", None)
     if not callable(callback):
         raise DriveConflict(_("This Drive content type does not provide version bytes"))
-    result = callback(node.content_docname)
-    if not isinstance(result, tuple) or len(result) != 2:
-        raise DriveConflict(_("The Drive content version callback returned invalid bytes"))
-    stream, mime = result
-    if not hasattr(stream, "read") or not isinstance(mime, str) or not mime:
-        raise DriveConflict(_("The Drive content version callback returned invalid bytes"))
+    # `call_app_stream` runs the callback guarded and hands back a stream that
+    # stays guarded, because `put_blob` below reads it after the call returned
+    # and a lazily produced stream runs app code on every read (§10.1).
+    stream, _mime = content.call_app_stream(callback, node.content_docname)
     # The declared MIME is checked as a contract shape (§10.1) and then
     # dropped. Drive cannot keep it: `Drive Node Version` has no MIME column
     # (§3.4) and `put_blob` sniffs the bytes with no caller override, so a
