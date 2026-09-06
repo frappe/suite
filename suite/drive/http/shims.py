@@ -1280,6 +1280,129 @@ def _upload_key(principals, session: str) -> str:
     return f"{LEGACY_UPLOAD_PREFIX}:{principals.user}:{session}"
 
 
+def _unadopted_folder(name: str | None) -> bool:
+    """Whether this id names a `File` row that no `Drive Node` holds.
+
+    The same store decision `_legacy_entity_with_permissions` makes, asked
+    about a destination rather than about a row to read. It is existence, not
+    a refusal: §5.2 answers `DriveNotFound` for a node the caller may not
+    reach, and retrying the legacy store on that answer would hand the old
+    rules a question the workflow had already refused.
+    """
+    if not name:
+        return False
+    return not frappe.db.exists("Drive Node", name) and bool(frappe.db.exists("File", name))
+
+
+def _legacy_upload(principals, *, parent, total_file_size, file_modified, embed):
+    """Write one chunked upload to the `File` store, for a parent no node holds.
+
+    `writer.api.embed.add` is the caller this exists for. It uploads a picture
+    into the document the editor has open, and a document
+    `writer.api.docs.create_document` wrote is a `File` with no node - §10.2
+    keeps a content type's legacy rows working while that type is in the
+    expand phase, and ticket 29 owns ending it. `upload_core.create_upload`
+    reads the parent as a node (`_core/upload.py:41`) and refuses, so a
+    picture could not be added to any document the product itself creates.
+
+    The body is the old one (`api/files.upload_file` at `e390a4487`), reached
+    through the helpers it used, which are all still here: the gate is
+    `user_has_permission(parent, "upload")`, the dedupe is
+    `get_new_file_name`, the accumulation is the same temp file, the charge is
+    `validate_quota` then `update_file_size`, and `embed=1` is a placement
+    again - `.embeds` beside the document, with no thumbnail - which is the
+    directory `create_document` makes on disk.
+
+    Two things are deliberately not the old body's:
+
+    - **`list-add` reaches the uploader alone**, as it does on the node branch.
+      §5 does not let a row travel to a session that was never authorized for
+      it, and the old broadcast went to every connected session.
+    - **The answer is the legacy column dict this name already returns**, not a
+      `Document`. §11.7 changed that shape once; changing it twice, by store,
+      would give one name two contracts.
+
+    This write dies with the shim. It is not in `_core` because §11.2 has no
+    route that writes into a tree with no nodes in it.
+    """
+    import mimemapper
+    from werkzeug.utils import secure_filename
+
+    from suite.drive.api.files import get_upload_path
+    from suite.drive.api.permissions import user_has_permission
+    from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
+    from suite.drive.utils import (
+        FILE_FIELDS,
+        create_drive_file,
+        get_file_type,
+        get_new_file_name,
+        hide_storage_key,
+        update_file_size,
+    )
+    from suite.drive.utils.api import prettify_file
+    from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
+
+    if not user_has_permission(parent, "upload"):
+        frappe.throw(_("Ask the folder owner for upload access."), frappe.PermissionError)
+
+    upload = frappe.request.files["file"]
+    if frappe.form_dict.chunk_index:
+        index = int(frappe.form_dict.chunk_index)
+        total_chunks = int(frappe.form_dict.total_chunk_count)
+        offset = int(frappe.form_dict.chunk_byte_offset)
+    else:
+        index, total_chunks, offset = 0, 1, 0
+
+    file_name = get_new_file_name(upload.filename, parent)
+    session = frappe.form_dict.uuid
+    if not session and total_chunks == 1:
+        session = frappe.generate_hash(12)
+    if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", session):
+        frappe.throw(_("Invalid upload session."), frappe.ValidationError)
+
+    temp_path = get_upload_path(f"{session}_{secure_filename(file_name)}")
+    with temp_path.open("ab") as staged:
+        staged.seek(offset)
+        staged.write(upload.stream.read())
+        if not staged.tell() >= int(total_file_size or 0) or index != total_chunks - 1:
+            return None
+
+    file_size = temp_path.stat().st_size
+    acquire_owner_storage_lock(frappe.session.user)
+    try:
+        validate_quota(incoming_size=file_size)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+    mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
+    manager = FileManager()
+    row = create_drive_file(
+        file_name,
+        parent,
+        get_file_type(mime_type),
+        lambda file: "/" + str(manager.get_disk_path(file, embed)),
+        mime_type,
+        file_size,
+        int(file_modified) / 1000 if file_modified else None,
+    )
+    manager.upload_file(temp_path, row, not embed)
+    if manager.s3_enabled:
+        row.file_url = get_s3_url(get_s3_key(row.file_url))
+        row.save()
+    try:
+        update_file_size(parent, file_size)
+    except Exception:
+        # The old body swallowed this too: several uploads landing at once
+        # race on the folder's stored size, and losing the sum is not losing
+        # the file.
+        pass
+
+    frappe.publish_realtime("list-add", {"file": prettify_file(row.as_dict())}, user=principals.user)
+    answer = frappe.get_all("File", filters={"name": row.name}, fields=FILE_FIELDS, limit=1)[0]
+    return hide_storage_key(answer)
+
+
 @_legacy
 def upload_file(
     total_file_size: int = 0,
@@ -1304,9 +1427,31 @@ def upload_file(
     user to pick another title; this caller has no dialog to ask with and its
     contract was to rename around a clash, so `available_title` answers §8.6's
     own suffix rule for it. The route still refuses.
+
+    A parent no node holds is written to the `File` store instead. See
+    `_legacy_upload`: the store is chosen by which one holds the id, and
+    `writer.api.embed.add` names a document `create_document` wrote.
     """
     principals = _principals()
     parent = parent or _home(principals)
+    if _unadopted_folder(parent):
+        if fullpath:
+            # A directory upload names folders to create, and creating one
+            # here would mean a second legacy folder writer beside
+            # `create_folder`, which is a forwarder and refuses this parent
+            # too. Named rather than answered with the workflow's "node was
+            # not found", which tells the user nothing they can act on.
+            frappe.throw(
+                _("Drive cannot upload a folder into this location yet. Upload the files instead."),
+                frappe.ValidationError,
+            )
+        return _legacy_upload(
+            principals,
+            parent=parent,
+            total_file_size=total_file_size,
+            file_modified=file_modified,
+            embed=embed,
+        )
     if fullpath:
         parent = _ensure_path(principals, fullpath, parent)
 
