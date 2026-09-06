@@ -28,7 +28,7 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.principals import Principals
 from suite.drive.http import routes
-from suite.drive.http.tests import ensure_local_context
+from suite.drive.http.tests import ensure_local_context, local_attribute
 from suite.www import drive_link
 
 SOMEONE = Principals(user="a@example.com", own=("a@example.com",), open=("$PUBLIC",), is_admin=False)
@@ -128,10 +128,7 @@ class TestRefusalMapping(BoundaryCase):
 class TestBatchIsolation(BoundaryCase):
     def setUp(self):
         super().setUp()
-        self.db = MagicMock()
-        self.database = patch.object(frappe.local, "db", self.db, create=True)
-        self.database.start()
-        self.addCleanup(self.database.stop)
+        self.db = self.enterContext(local_attribute("db", MagicMock()))
 
     def test_a_refused_node_rolls_back_alone_and_the_rest_stand(self):
         outcomes = {"a": None, "b": DriveForbidden("no"), "c": None}
