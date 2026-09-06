@@ -36,7 +36,7 @@ import dataclasses
 import io
 import json
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 import frappe.share
@@ -378,6 +378,68 @@ class TestSlidesDeclaration(UnitTestCase):
     def test_a_rewrite_reports_no_change_when_it_maps_nothing(self):
         element = {"src": "one"}
         self.assertFalse(slides._remap_element(element, {"other": "x"}))
+
+    # the refusal contract the staged guards depend on
+
+    def test_the_drive_refusal_is_not_a_frappe_permission_error(self):
+        """Both staged guards refuse through `DriveForbidden`, and a caller
+        that expects `frappe.PermissionError` never sees it.
+
+        `frappe.ValidationError` and `frappe.PermissionError` are unrelated
+        classes (`frappe/exceptions.py:23,40`). This is pinned because a test
+        written against the wrong one passes silently only while the guard is
+        broken: it fails the moment the guard starts refusing.
+        """
+        self.assertTrue(issubclass(DriveForbidden, frappe.ValidationError))
+        self.assertFalse(issubclass(DriveForbidden, frappe.PermissionError))
+        self.assertEqual(DriveForbidden.http_status_code, 403)
+
+    def test_both_staged_guards_refuse_a_share_with_the_same_error(self):
+        """The row guard and the list guard have to agree. Frappe reads a
+        `False` row answer as "no role permission" and then asks
+        `false_if_not_shared` (`frappe/permissions.py:214-216`), and
+        `frappe.db.query` ORs the shared names around the list predicate
+        (`frappe/database/query.py:1739-1742`). Only a raise closes either.
+        """
+        from suite.drive import framework
+
+        with self._fake_db(get_value="deck-1"), patch("frappe.share.get_shared", return_value=["deck-1"]):
+            with self.assertRaises(DriveForbidden):
+                framework.refuse_shared_row(DOCTYPE, "deck-1", "read", OTHER)
+            with self.assertRaises(DriveForbidden):
+                framework.refuse_shared_linked_rows(DOCTYPE, "node", OTHER)
+
+    def test_the_staged_list_guard_refuses_only_a_row_that_carries_a_node(self):
+        """A legacy row is still the app's to share. Before Build no row carries
+        a node, so a site with Desk assignments lists what it always listed."""
+        from suite.drive import framework
+
+        with self._fake_db(get_value=None) as db, patch("frappe.share.get_shared", return_value=["deck-1"]):
+            framework.refuse_shared_linked_rows(DOCTYPE, "node", OTHER)
+            self.assertEqual(
+                db.get_value.call_args.args[1], {"name": ("in", ["deck-1"]), "node": ("is", "set")}
+            )
+
+    def test_the_staged_list_guard_never_refuses_an_administrator(self):
+        """The predicate disappears for an admin, so there is nothing for the
+        engine to OR a share around. Refusing would lock out the only person
+        who can remove the row."""
+        from suite.drive import framework
+
+        with self._fake_db(get_value="deck-1"), patch("frappe.share.get_shared", return_value=["deck-1"]):
+            framework.refuse_shared_linked_rows(DOCTYPE, "node", "Administrator")
+
+    @contextmanager
+    def _fake_db(self, *, get_value):
+        """Answer `frappe.db` without a connection, so a guard runs for real."""
+        db = MagicMock()
+        db.get_value.return_value = get_value
+        previous = getattr(frappe.local, "db", None)
+        frappe.local.db = db
+        try:
+            yield db
+        finally:
+            frappe.local.db = previous
 
 
 class TestSlidesBeforeActivation(IntegrationTestCase):
@@ -1299,9 +1361,14 @@ class TestSlidesInDrive(IntegrationTestCase):
         frappe.db.commit()
 
         deck = frappe.get_doc(DOCTYPE, docname)
+        # Both guards raise the same `DriveForbidden`. It is a
+        # `frappe.ValidationError` with a 403 status, not a
+        # `frappe.PermissionError`: the two are unrelated classes
+        # (`frappe/exceptions.py:23,40`), so a `PermissionError` expectation
+        # here would never match what Drive raises.
         with self.assertRaises(DriveForbidden):
             api.has_permission(deck, "read", OTHER)
-        with self.assertRaises(frappe.PermissionError):
+        with self.assertRaises(DriveForbidden):
             api.get_permission_query_conditions(OTHER)
 
     def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
