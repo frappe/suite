@@ -420,6 +420,18 @@ class DriveContent:
             raise DriveConflict(_("A Drive content document has no node"))
         return node
 
+    @node.setter
+    def node(self, value: str) -> None:
+        """Accept the write-back Frappe does for every Link field.
+
+        `_validate_links` assigns each Link field the name it just read
+        (`frappe/model/base_document.py:1159`). A read-only property there
+        makes every insert and save of a content doctype whose node field is
+        called `node` die with an AttributeError. `refuse_node_change` is what
+        holds the node still, not a missing setter.
+        """
+        self.set(spec_for(self.doctype).node_field, value)
+
     @property
     def node_title(self) -> str:
         """Read the title from the node. There is no mirror in either direction."""
@@ -553,7 +565,7 @@ def media_rows(node: str, *, for_update: bool = False) -> list[frappe._dict]:
         f"""
         SELECT {", ".join(f"`{field}`" for field in MEDIA_ROW_FIELDS)}
         FROM `tabDrive Node`
-        WHERE parent = %(node)s AND state = 'Active' AND kind = 'file' AND blob IS NOT NULL
+        WHERE parent = %(node)s AND state = 'Active' AND kind = 'file' AND `blob` IS NOT NULL
         ORDER BY creation, name
         {"FOR UPDATE" if for_update else ""}
         """,
