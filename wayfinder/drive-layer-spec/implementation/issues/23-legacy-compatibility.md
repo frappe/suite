@@ -1069,3 +1069,170 @@ formatted.
 ### What the gate still owes
 
 Modules 6 to 17 have not been run.
+
+## Site gate evidence: module 14
+
+Module 14 of 17 is `suite.writer.tests.test_drive_adoption`. Work on
+`forge/drive-23-site-gate-writer-adoption`, branched from `72a25e918`.
+Modules 6 to 13 were reported green ahead of it and needed no change; they
+were not re-run here.
+
+### What module 14 reported
+
+`bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption`
+ran 44 tests and errored on one:
+`TestWriterBeforeActivation.test_a_document_the_api_creates_is_reachable_by_the_legacy_read_path`
+called `docs.create_document`, then `docs.get_document`, and got
+`DriveNotFound: Drive node 080dbceaa1 was not found` out of
+`shims.get_entity_with_permissions`.
+
+It is a production defect, not a test defect. The class it sits in is named
+for the site every reader is running: `drive_content_types` is `[]`, so
+nothing is Drive-native and every Writer document is a legacy `File`.
+
+### The production defect
+
+**A document the product creates cannot be opened.**
+`writer.api.docs.create_document` calls `create_drive_file`
+(`drive/utils/__init__.py:607`), which writes a `File` and nothing else, and a
+`Writer Document` with no `node`. That is the only row it can write.
+`content.require_node` (`_core/content.py:757-780`) says why, and says it is
+correct: while a type is in the expand phase "its legacy rows carry no node and
+keep working, and Build (§14) is what links them". Ticket 29 owns the
+activation that ends the phase, and until then `governs("Writer Document")` is
+false.
+
+Ticket 23 pointed `get_entity_with_permissions` at `nodes.get`, which answers
+`DriveNotFound` for an id no node holds. Two callers read that answer:
+`writer/api/docs.py:92`, which is the test's path, and
+`writer/composables/useDocument.ts:19`, which is the Writer page's. So on this
+branch a user creates a document and cannot open it.
+
+The module header's position - "before Build there is no node for a legacy id
+... the forwarders and Build ship in one release" - covers a row Build will
+link. It does not cover a row the product writes after that, and this endpoint
+writes one on every save until ticket 29 replaces it. This is the same shape as
+module 5's pointerless notification: a live writer filling a store the node
+surface cannot express.
+
+### What changed
+
+- **`http/shims.py`.** `_legacy_entity_with_permissions` reads the `File`
+  store for an id no `Drive Node` holds. The filter is the old query's
+  (`status: STATUS_ACTIVE`), the gate is the old body's
+  (`get_user_access_for_user`, `frappe.PermissionError` for a caller without
+  read), and the payload is the old body's: the fourteen `FILE_FIELDS`
+  columns, the five bits, the owner's display fields, `get_valid_breadcrumbs`,
+  the `Drive Favourite` mark, the -2/-1/0 general marker, `entity_kind`, and
+  `hide_storage_key`. Nothing is decided that the old body did not decide.
+- **The store is chosen by what holds the id, never by a refusal.** §5.2 makes
+  `DriveNotFound` the answer for a node the caller may not read. Catching it
+  and retrying the `File` store would hand the legacy rules a question the
+  workflow had already refused, which is a permission bypass rather than a
+  compatibility read. `frappe.db.exists("Drive Node", id)` decides, before the
+  workflow is called at all.
+- **The read lives in the shim, not in `_core`.** §11.2 has no route that
+  answers about a row with no node, and widening `_core` would put the legacy
+  `File` join on the route surface. This read dies with the shim.
+- **The imports are function-local.** `api/permissions.py` imports `shims`, and
+  `drive/utils` builds a query-builder DocType at import time.
+- **`api/permissions.py`.** The forwarder's docstring names the second store.
+  The body is unchanged.
+- **`http/tests/test_shims.py`.** `ShimCase.stub_unadopted_file` names an empty
+  `File` store for the cases that are about the node path, so module 1 still
+  runs with no database. 185 cases to 194: `TestUnadoptedFileRead` covers the
+  store decision, the filter, the payload, the blanked `file_url`, the old
+  gate, the three general markers, the forwarder that answers without reading a
+  node, and the refusal that is never retried.
+- **`writer/tests/test_drive_adoption.py`.** 44 cases to 47, all in
+  `TestWriterBeforeActivation`: the whole page payload the editor reads, a
+  stranger refused by the rule that wrote the row, and a row moved out of
+  `Active` answering not found. The stranger case clears `frappe.response`
+  first, because it outlives one test.
+
+### Gate commands and results
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.writer.tests.test_drive_adoption" /dev/null
+before: Ran 44 tests in 3.332s / FAILED (errors=1)
+after:  Ran 47 tests in 3.311s / OK
+```
+
+Site-free, `python -m unittest` over `test_shims`, `test_routes`, `test_shapes`,
+`test_translator`, and `test_architecture`: `Ran 367 tests in 2.784s / OK`, up
+from 358. `test_shims` alone: `Ran 194 tests in 1.225s / OK`, up from 185.
+
+Eight mutations, each reverted in place. Every one was killed:
+
+| Mutation | Killed by |
+|---|---|
+| Drop the fallback from `get_entity_with_permissions` | module 14's three site cases and the original one; site-free `test_the_forwarder_answers_the_file_row_without_reading_a_node` |
+| Drop `frappe.db.exists("Drive Node", ...)` and always read `File` | `test_an_id_a_node_holds_is_not_read_off_the_file_store` |
+| Choose the store with `node_core.stored` inside a `try` | the same case |
+| Catch `DriveNotFound` from the workflow and retry the `File` store | `test_a_refusal_from_the_workflow_is_never_retried_on_the_file_store` |
+| Drop the read gate | `test_the_old_gate_refuses_a_caller_who_cannot_read_the_row`, and the site's stranger case |
+| Drop `status: STATUS_ACTIVE` | `test_the_file_read_asks_for_the_active_row_under_the_old_columns`, and the site's removed-row case |
+| Drop `hide_storage_key` | `test_a_managed_file_url_is_still_blanked`, and the site's payload case |
+| Drop `frappe.response["data"]` | `test_the_payload_is_the_one_the_old_body_published`. Site-free only: `writer.api.docs.get_document` fills the same envelope itself before module 14 reads it |
+
+**Formatting and lint.** `uvx ruff@0.12.3 check` answers the same one `B007` on
+`shims.py:2040` as at `72a25e918`. `format --check` wants the same three hunks
+on `shims.py` and `test_shims.py` before and after this work; both were
+compared against `HEAD` and neither is a line this work touched.
+`test_drive_adoption.py` and `api/permissions.py` are clean on both commands.
+
+### The rest of the boundary, diagnosed and not fixed
+
+The complete pre-activation boundary was mapped before the fix was written.
+Every legacy name answers about `Drive Node`, so every one of them refuses an
+id no node holds. The list below is what a node-less `File` meets today.
+`get_entity_with_permissions` was the narrow fix because it is the name module
+14 fails on, the name the Writer page opens a document with, and the payload
+§11.7 makes permanent by reference. The rest are recorded, with the module
+that owns each.
+
+| Path | Now | Owner |
+|---|---|---|
+| `writer/api/general.py:100` `get_document_list` | Each row is filtered on `get_user_access(...)["read"]`, which answers zeros for a node-less id, so the list comes back empty | module 16 |
+| `writer/api/general.py:124` `get_versions` | Same read, so `frappe.PermissionError` "You don't have write access." | module 16 |
+| `writer/api/general.py:148` `search` | Same read, so every result is dropped and `total_matches` is recomputed to 0 | module 16 |
+| `writer/api/embed.py:8` `add` | `upload_file(parent=<File id>)` reaches `upload_core.create_upload` and refuses the parent | module 16 |
+| `drive/api/list.py:222` `files` | `node_core.children` refuses the folder, so the Drive folder page is empty | module 3, ported |
+| `api.files.track_visit`, `get_thumbnail`, `get_file_content`, `set_favourite`, `rename`, `move`, `get_entity_type` | All refuse a node-less id | modules 3 and 4, ported |
+| `overrides/file.py:621` `get_file_for_doc` | Answers again, because its body calls the name fixed here | fixed here |
+
+`get_user_access` is the one to look at first. It answers
+`{**NO_ACCESS, "type": "guest"}` for an id `nodes.stored` cannot find
+(`shims.py:441-462`), and the three Writer reads above are built on it. For a
+node-less `File` the caller owns, legacy answered every bit set - the owner
+rule in `get_user_access_for_user` - so the zeros are a deny this ticket's
+acceptance criteria say may not be synthesized. It is not touched here:
+`writer.api.tests.test_general` is the suite that proves it and it is module
+16, outside the one command this module was allowed to run.
+
+### Carried risks: module 14
+
+1. **A `File` whose node is purged after Build would be answered again.** The
+   store decision reads existence, so a legacy row left behind by a purge would
+   answer this name after the node it was copied to is gone. It cannot happen
+   before Build, because no node exists at all, and Build is not written yet.
+   Tickets 27 and 29 own keeping the two stores in step, or gating the copy.
+   Recorded, not guessed at here.
+2. **The fallback outlives its reason if ticket 29 does not replace
+   `create_document`.** Once `drive_content_types` names Writer,
+   `content.require_node` refuses a `Writer Document` with no node, so this
+   endpoint stops working rather than silently writing more legacy rows. That
+   is the loud failure, and ticket 29 or 34 owns the replacement. Cleanup
+   deletes this read with the rest of the shim.
+3. **A node-less `File` carries no `Drive Node` check.** It is answered by
+   `generate_upward_path` over `Drive Permission`, as the old body answered it.
+   Tightening it would be a deny this ticket may not synthesize.
+4. **The Drive folder page is still empty for a node-less tree.**
+   `list.files` was not widened. A Writer document created today opens by its
+   own address and does not appear in the Drive listing until Build runs.
+   Recorded above with the rest of the boundary.
+
+### What the gate still owes
+
+Modules 15 to 17 have not been run.

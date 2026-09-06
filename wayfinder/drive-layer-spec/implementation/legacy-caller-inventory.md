@@ -82,7 +82,7 @@ Playwright (`e2e/drive-backed-apps/`).
 |---|---|---|---|---|
 | `get_user_access` | forwarder | yes | none. `suite/writer/api/general.py:100,124,148` (py) | `access.effective_role` → the five bits. Zeros for an unseen node |
 | `get_general_access` | forwarder | yes | `ShareDialog.vue:190`, `InfoDialog.vue:145` | `$PUBLIC` then `$GENERAL` → `public` / `site` / `restricted` |
-| `get_entity_with_permissions` | forwarder | yes | `pages/Folder.vue:57`, `pages/File.vue:125`, `MoveDialog.vue:235`, `writer/composables/useDocument.ts:19`; `overrides/file.py:621`, `suite/writer/api/docs.py:89` (py) | `nodes.get` + `breadcrumbs` + `access` + `personal_marks`. Keeps `frappe.response["data"]` |
+| `get_entity_with_permissions` | forwarder | yes | `pages/Folder.vue:57`, `pages/File.vue:125`, `MoveDialog.vue:235`, `writer/composables/useDocument.ts:19`; `overrides/file.py:621`, `suite/writer/api/docs.py:89` (py) | `nodes.get` + `breadcrumbs` + `access` + `personal_marks`. Keeps `frappe.response["data"]`. Reads the `File` store for an id no node holds (§10.2 expand phase) |
 | `get_shared_with_list` | forwarder | no | `resources/permissions.js:7`, `ui/drive/js/resources.js:28` ← `ShareDialog.vue:137`, `InfoDialog.vue:151` | `access.grants_for` (MANAGE), owner row first, links and denies hidden |
 
 ## `activity` (1), `notifications` (3), `storage` (2), `scripts` (2), `embed` (1), `s3` (1)
@@ -472,6 +472,36 @@ no-op is a no-op.
     `_mark_legacy_read` answer for them, scoped to `to_user` - the only scope
     the old query had. They live in the shim, not in `_core`: §11.2 has no way
     to publish a row with no activity, and the read dies with the module.
+
+Fourteenth module of the serialized gate,
+`bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption`,
+on `forge/drive-23-site-gate-writer-adoption`. It ran 44 tests and errored on
+one: `create_document` wrote a document and `get_document` could not open it.
+One production defect, no test defect.
+
+39. **A document the product creates cannot be opened.**
+    `writer.api.docs.create_document` writes a `File` and a `Writer Document`
+    with no node, and that is the only row it can write while
+    `drive_content_types` is empty. §10.2 keeps a type's legacy rows working
+    through its expand phase (`_core/content.py:757-780`), and ticket 29 owns
+    the activation that ends it. `get_entity_with_permissions` answered
+    `DriveNotFound` for that id, which broke `writer/api/docs.py:92` and
+    `writer/composables/useDocument.ts:19`.
+    `shims._legacy_entity_with_permissions` reads the `File` store for an id no
+    node holds, with the old query's status filter, the old gate
+    (`get_user_access_for_user`, `frappe.PermissionError`), and the old
+    payload. The store is chosen by which one holds the id and never by a
+    refusal: §5.2 makes `DriveNotFound` the answer for a node the caller may
+    not read, so retrying on the exception would be a bypass rather than a
+    compatibility read. It lives in the shim and dies with it.
+
+    The rest of the boundary was mapped and left alone. Every other legacy
+    name still refuses a node-less id, and `get_user_access` answers zeros for
+    one - which the three Writer reads in `writer/api/general.py` filter on, so
+    the document list, the version list, and search all come back empty. That
+    is `writer.api.tests.test_general`, module 16 of the gate, and it is
+    outside the one command module 14 was allowed to run. Ticket 23 evidence,
+    "The rest of the boundary, diagnosed and not fixed", lists every path.
 
 ## Carried risks the review did not fix
 
