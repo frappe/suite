@@ -25,6 +25,8 @@ from datetime import timedelta
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from suite.sheets.drive import refuse_drive_native
+
 DEFAULT_RETENTION_DAYS = 30
 MIN_RETENTION_DAYS = 1
 
@@ -43,7 +45,12 @@ def hard_delete_sheet(name: str) -> None:
     the head pointer is cleared first and the child tables are dropped directly
     before the parent doc. This is the original `delete_sheet` cascade, moved
     here so the "delete forever" endpoint and the purge job stay in lockstep.
+
+    Legacy only. Drive purges a linked sheet through `drive.SPEC.on_purge`,
+    which also clears `Sheet Collab State` and the dead `Sheet Cell` rows this
+    cascade never reached. Two cascades over one sheet is one too many.
     """
+    refuse_drive_native(name, "the Drive trash")
     frappe.db.set_value("Sheet", name, "head_snapshot", None, update_modified=False)
     frappe.db.delete("Sheet Snapshot", {"sheet": name})
     frappe.db.delete("Sheet Op Log", {"sheet": name})
@@ -60,7 +67,10 @@ def purge_trashed_sheets() -> dict:
     cutoff = now_datetime() - timedelta(days=retention_days())
     expired = frappe.get_all(
         "Sheet",
-        filters={"trashed": 1, "trashed_on": ["<", cutoff]},
+        # A linked sheet is Drive's to purge (§8.8) and its `trashed` column is
+        # frozen, so it can never match. The filter says so rather than relying
+        # on that: `hard_delete_sheet` would refuse it and stop the whole pass.
+        filters={"trashed": 1, "trashed_on": ["<", cutoff], "node": ["is", "not set"]},
         pluck="name",
     )
     purged = 0

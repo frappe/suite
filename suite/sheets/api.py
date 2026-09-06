@@ -4,6 +4,7 @@ import frappe
 
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
+from suite.sheets.drive import refuse_drive_native
 from suite.sheets.versioning import save as save_mod
 
 MAX_TITLE_LEN = 280
@@ -132,7 +133,12 @@ _YJS_WRITE_EVENTS = frozenset({"yjs_update", "yjs_state"})
 
 @frappe.whitelist()
 def get_sheet_shares(name: str) -> list:
-    """Return users who have explicit share access to this sheet."""
+    """Return users who have explicit share access to this sheet.
+
+    Legacy only. A linked sheet has grants, not shares (§6.5), and answering
+    from `DocShare` would show the wrong list and invite the wrong write.
+    """
+    refuse_drive_native(name, "Drive sharing")
     frappe.has_permission("Sheet", doc=name, throw=True)
     rows = frappe.get_all(
         "DocShare",
@@ -153,6 +159,9 @@ def get_sheet_shares(name: str) -> list:
 
 @frappe.whitelist()
 def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) -> dict:
+    # Legacy only. `Drive Grant` is the one authority over a linked sheet (§1),
+    # so a `DocShare` on one is refused rather than written and then ignored.
+    refuse_drive_native(name, "Drive sharing")
     # `ptype="share"` — only users who themselves hold the share right
     # may grant access to others. Default `read` was too permissive
     # (any viewer could re-share a sheet to anyone).
@@ -260,6 +269,7 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
 
 @frappe.whitelist()
 def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
+    refuse_drive_native(name, "Drive sharing")
     frappe.has_permission("Sheet", doc=name, ptype="share", throw=True)
     if int(everyone or 0):
         # frappe.share.remove() looks up by user; for the everyone row we
@@ -450,6 +460,10 @@ def delete_sheet(name: str) -> str:
     # collaborator can't trash someone else's sheet. Versioning tables are left
     # fully intact — a restore is a perfect restore, not a last-save recovery.
     # The nightly purge (suite.sheets.trash.purge_trashed_sheets) does the real erase.
+    #
+    # Legacy only. Drive owns a linked sheet's trash state on its node, with no
+    # mirror in either direction (§8.7), and `trashed` is frozen there.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Flip the flag through the ORM so on_update fires and Drive drops the backing
     # File from the listing in lockstep (see hooks.py) — no Sheets-specific Drive
@@ -465,6 +479,7 @@ def delete_sheet(name: str) -> str:
 @frappe.whitelist()
 def restore_sheet(name: str) -> str:
     # Same owner-only gate as trashing — restore is the inverse of delete.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Inverse of trashing: clear the flag through the ORM so on_update returns the
     # backing File to the Drive listing.
@@ -480,6 +495,8 @@ def restore_sheet(name: str) -> str:
 def delete_sheet_permanent(name: str) -> str:
     # Irreversible "delete forever" from the trash. Owner-only, same as trashing.
     # The cascade lives in suite.sheets.trash so it stays in lockstep with the purge.
+    # A linked sheet is purged by Drive (§8.8), which calls `on_purge`.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Only ever fire from the trash flow: a direct call on a live sheet must not
     # skip the recovery window and destroy it in one shot.
@@ -502,7 +519,9 @@ def list_trash() -> dict:
 
     sheets = frappe.get_list(
         "Sheet",
-        filters={"trashed": 1, "owner": frappe.session.user},
+        # A linked sheet is never here: Drive owns its trash and `trashed` is
+        # frozen. The filter says so rather than relying on that.
+        filters={"trashed": 1, "owner": frappe.session.user, "node": ["is", "not set"]},
         fields=["name", "title", "trashed_on"],
         order_by="trashed_on desc",
         limit=100,
@@ -516,6 +535,9 @@ def rename_sheet(name: str, title: str) -> str:
     # this module — `doc.save()` would ultimately enforce write perm too,
     # but defence-in-depth keeps the surface uniform if the controller ever
     # changes.
+    # Legacy only. Drive owns a linked sheet's title on its node (§10.2), and
+    # the `title` column is frozen once the declaration is registered.
+    refuse_drive_native(name, "Drive rename")
     frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
     title = _clean_title(title)
     if not title:
@@ -535,6 +557,10 @@ def duplicate_sheet(name: str) -> str:
     # Home page) only needs the new sheet name, so we unwrap here.
     # Read permission on the SOURCE is required — without this, anyone who
     # knows a sheet id could clone its contents into a sheet they own.
+    #
+    # Legacy only. A linked sheet is copied by `drive.copy`, which runs the
+    # `duplicate` factory and places the copy where the caller may upload (§8.9).
+    refuse_drive_native(name, "Drive copy")
     frappe.has_permission("Sheet", doc=name, throw=True)
     src = frappe.get_doc("Sheet", name)
     plain = decode_sheets_data(src.sheets_data)

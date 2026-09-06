@@ -128,8 +128,8 @@ ignore_file_permissions = True
 # in the same step, never before it.
 #
 # Writer declares `suite.writer.drive.SPEC` (ticket 17) and Slides declares
-# `suite.slides.drive.SPEC` (ticket 18); neither is listed here yet, and Sheets
-# declares its own at ticket 19. While the list is empty Drive governs no
+# `suite.slides.drive.SPEC` (ticket 18), and Sheets declares
+# `suite.sheets.drive.SPEC` (ticket 19); none of the three is listed here yet. While the list is empty Drive governs no
 # doctype: `refuse_governed_share` is a no-op, and `validate_content_registry`
 # inspects no `DocShare`, so a site with assigned Writer documents or shared
 # Presentations still migrates.
@@ -140,11 +140,17 @@ ignore_file_permissions = True
 # requires, and a `Guest` read row for link grants. Both are preserved as they
 # are; widening or narrowing one is an activation decision, not this one's.
 #
+# `Sheet` carried an `if_owner` `All` row instead, so ticket 19 widened it to the
+# open baseline §10.4 needs and put the owner rule into
+# `suite.sheets.permissions.sheet_has_permission`, where it can also read the
+# node column. Its `Guest` read row is there for the same link grants.
+#
 # `Presentation` still owns the legacy `title` column §14.7 read at Build and
 # §14.10 drops at Cleanup, one release after activation. `suite.slides.drive.SPEC`
 # declares it in `legacy_fields`, so activation exempts it from §10.2 and freezes
 # it instead: nothing reads it, nothing may write it, and the Build value stays
-# for the §14.11 rollback. Ticket 29 has no column to drop first.
+# for the §14.11 rollback. Ticket 29 has no column to drop first. `Sheet` does
+# the same for `title`, `trashed`, `trashed_on`, and `trashed_by`.
 drive_content_types = []
 
 # ============================================================================
@@ -169,6 +175,13 @@ permission_query_conditions = {
     "Writer Document": "suite.writer.overrides.document_query_conditions",
     "Writer Version": "suite.writer.overrides.version_query_conditions",
     # sheets
+    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
+    "Sheet": "suite.sheets.permissions.sheet_query_conditions",
+    # Staged: `Sheet Op Log` becomes `suite.drive.framework.satellite_query_conditions`
+    # at ticket 29. `Sheet Snapshot` keeps its own guard past activation: §14.6
+    # migrates its rows into `Drive Node Version`, so it is a Build source until
+    # Cleanup drops the doctype (§14.10), and a satellite declaration would
+    # freeze rows Build still has to read.
     "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
     # meet
@@ -201,6 +214,10 @@ has_permission = {
     "Writer Version": "suite.writer.overrides.version_has_permission",
     "Writer Template": "suite.writer.overrides.template_has_permission",
     # sheets
+    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29,
+    # with `suite.drive.framework.satellite_has_permission` added for the
+    # `Sheet Op Log` and `Sheet Collab State` satellites.
+    "Sheet": "suite.sheets.permissions.sheet_has_permission",
     "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
     # meet
