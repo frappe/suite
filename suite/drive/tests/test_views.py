@@ -21,6 +21,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, NONE, READ
 from suite.drive._core.roots import create_root
 from suite.drive.doctype.drive_node.drive_node import on_doctype_update
+from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
 
 VIEWER = "drive-views-viewer@example.com"
@@ -227,6 +228,8 @@ class TestDriveViews(IntegrationTestCase):
         super().setUpClass()
         ensure_user(VIEWER)
         ensure_user(OTHER)
+        drop_personal_root(VIEWER)
+        drop_personal_root(OTHER)
 
     def setUp(self):
         super().setUp()
