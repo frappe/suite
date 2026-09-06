@@ -5,12 +5,17 @@ itself (§12). There is no `Everyone` mount, no `Shared with me` collection,
 and no admin mount of somebody else's root; content shared from elsewhere is
 not reachable over this protocol.
 
-Below the mount the tree is walked one indexed point query per segment on the
-frozen `node_parent_page (parent, state, title)` index: exact (BINARY) match
-first, one case-insensitive fallback when it is unambiguous, oldest row winning
-an exact duplicate. Resolution answers about existence and shape only; the
-READ check belongs to the caller, which is what keeps an unreadable node a 404
-rather than a 403 (§12.1).
+Below the mount the tree is walked one query per segment against the frozen
+`node_parent_page (parent, state, title)` index: exact (BINARY) match first,
+one case-insensitive fallback when it is unambiguous, oldest row winning an
+exact duplicate. The `BINARY` comparison is a binary-collation one against a
+`utf8mb4_unicode_ci` column, so only the `(parent, state)` prefix is certain to
+be used; that already narrows the read to one folder's children, and the site
+gate carries an `EXPLAIN` to say whether `title` joins it.
+
+Resolution answers about existence and shape only; the READ check belongs to
+the caller, which is what keeps an unreadable node a 404 rather than a 403
+(§12.1).
 """
 
 from dataclasses import dataclass, field
@@ -94,12 +99,14 @@ def resolve(segments: list[str], user: str) -> ResolvedPath:
 
 
 def addressable(row: frappe._dict) -> bool:
-    """Whether a listed row can be named by a URL under this mount.
+    """Whether a row can be named by a URL under this mount.
 
-    A title holding a path separator, or one of the relative names, has no
-    spelling in a DAV URL: the client would build a href the server could not
-    parse back to this row. Drive itself accepts such titles, so a listing
-    drops them rather than publishing something unreachable.
+    `/` and a relative name have no spelling in a DAV URL at all. `\\` has one,
+    but a client that syncs to a Windows filesystem cannot make a file of it,
+    and the two remaining classes are titles the URL grammar rejects outright.
+    Drive itself accepts all of them, so DAV drops them - from the listing and
+    from the lookup alike, because a name that is not listed must not be
+    fetchable either.
     """
     title = row.get("title") or ""
     return bool(
@@ -114,10 +121,10 @@ def addressable(row: frappe._dict) -> bool:
 def visible(row: frappe._dict) -> bool:
     """Whether a node is reachable over DAV at all (§12.2).
 
-    The same test `_VISIBLE` makes in SQL, so a row filtered here and a row
-    filtered by a path lookup answer alike. Callers feed it rows that are
-    already Active, and it checks that anyway: the day one does not, a trashed
-    node must not appear in a listing.
+    `_VISIBLE` plus `addressable`, which is exactly what `_child` applies, so a
+    row dropped from a listing and a row a path lookup will not resolve are the
+    same set. Callers feed it rows that are already Active, and it checks that
+    anyway: the day one does not, a trashed node must not appear in a listing.
     """
     return (
         row.get("state") == "Active"
@@ -210,7 +217,9 @@ def _child(parent_name: str, segment: str) -> frappe._dict | None:
         if len(rows) != 1:
             rows = []
 
-    memo[key] = rows[0] if rows else None
+    # the naming policy is not expressible in SQL, and a row a listing will
+    # not publish must not resolve by hand either
+    memo[key] = rows[0] if rows and addressable(rows[0]) else None
     return memo[key]
 
 
