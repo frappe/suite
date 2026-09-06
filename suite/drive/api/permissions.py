@@ -40,6 +40,10 @@ def get_user_access(entity: str | Document | frappe._dict):
 
     §11.7 forwarder. The bits are derived from the caller's role on the node,
     which `_core.access` resolves; nothing is decided here.
+
+    It answers from either store: a `File` that no node holds is answered by
+    `get_user_access_for_user` below, because §10.2 keeps a content type's
+    legacy rows working while that type is in the expand phase.
     """
     return shims.get_user_access(entity)
 
