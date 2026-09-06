@@ -3,13 +3,16 @@
 import base64
 import binascii
 import collections
+import io
 import os
 from datetime import UTC, datetime
+from typing import IO
 from uuid import uuid4
 
 import frappe
 from frappe import _
 from frappe.storage.blob import revive_blob
+from frappe.storage.driver import get_driver
 from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core import content, previews
@@ -423,6 +426,128 @@ def create_document(
     else:
         frappe.db.release_savepoint(savepoint)
     return node.name
+
+
+def import_document(
+    principals: Principals,
+    parent: str,
+    title: str,
+    *,
+    content_doctype: str,
+    from_node: str,
+) -> str:
+    """Create one content document from an ordinary file's bytes (§10.1).
+
+    `create_document` covers new, duplicate, and new-from-template. This is the
+    fourth shape §10.1 names and the only one that reads a foreign body: an
+    xlsx becoming a sheet. The app's `import_from_file` factory receives both
+    node ids and reads the source bytes back through `read_file`, because only
+    the app can parse its own format and no app may read a `Drive Node` blob.
+
+    The source file is left exactly as it was. An import is not a move and not
+    a copy: nothing is trashed, no blob is shared, and the new document's body
+    is the app's own, charged by whatever the app stores.
+    """
+    _validate_title(title)
+    spec = content.spec_for(content_doctype)
+    if spec.import_from_file is None:
+        raise DriveConflict(_("A {0} cannot be imported from a file").format(content_doctype))
+    savepoint = f"drive_import_document_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        # `copy`'s lock order, so an import and a concurrent move of the same
+        # source cannot deadlock and the source bytes cannot be replaced,
+        # trashed, or purged between the check and the factory call.
+        source_row, parent_row, source_subtree = _lock_move_rows(from_node, parent)
+        _validate_subtree(source_row, source_subtree)
+        _importable_file_source(principals, source_row)
+        via_link = require(parent_row, UPLOAD, principals)
+        _validate_parent(parent_row, for_update=True, allow_document=False)
+        _refuse_sibling_collision(parent_row.name, title)
+        node = _insert_node(
+            principals,
+            parent_row,
+            title=title,
+            kind="document",
+            mime=spec.mime,
+            content_modified=now_datetime(),
+        )
+        docname = _import_factory(spec, source_row.name, node.name)
+        _link_document(node.name, spec, docname)
+        add_creator_grant(node, parent_row, principals, via_link=via_link)
+        _record_activity(
+            node.name,
+            "create",
+            principals,
+            {
+                "kind": "document",
+                "title": title,
+                "content_doctype": content_doctype,
+                "imported_from": source_row.name,
+            },
+            via_link=via_link,
+        )
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return node.name
+
+
+def _importable_file_source(principals: Principals, source: frappe._dict) -> None:
+    """Validate the locked file row an import names.
+
+    READ first, then state, then kind, so a caller with no grant learns that
+    the id names nothing rather than what it is (§5.4).
+    """
+    require(source, READ, principals)
+    if source.state != "Active":
+        raise DriveConflict(_("A Drive import source must be an active file"))
+    if source.kind != "file":
+        raise DriveConflict(_("A Drive document can only be imported from a file"))
+    if not source.blob:
+        raise DriveConflict(_("The Drive import source has no stored bytes"))
+
+
+def _import_factory(spec, file_node: str, node: str) -> str:
+    """Call the app's import factory with both node ids and validate the answer."""
+    docname = content.call_app(spec.import_from_file, file_node, node)
+    if not isinstance(docname, str) or not docname:
+        raise DriveConflict(_("The Drive content factory returned no document"))
+    return docname
+
+
+def read_file(principals: Principals, node: str) -> tuple[IO[bytes], str]:
+    """Answer one readable file node's bytes as a stream and its mime type.
+
+    One READ point check, then the driver's own stream. Python never holds the
+    whole body: the caller reads and closes it. This is what lets a content app
+    parse a foreign file it was handed by `import_document` without reaching
+    into `Drive Node` or `File Blob` itself (ARCHITECTURE.md, rule 2.2).
+
+    A trashed file still answers. §8.8 opens a trashed node read-only, and an
+    import out of the bin is a read.
+    """
+    row = _node(node)
+    require(row, READ, principals)
+    if row.kind != "file":
+        raise DriveConflict(_("Only a Drive file has bytes to read"))
+    mime = row.mime or "application/octet-stream"
+    if not row.blob:
+        # §8.4's empty head. A zero-byte file is a file, not a missing one.
+        return io.BytesIO(b""), mime
+    blob = frappe.db.get_value(
+        "File Blob",
+        row.blob,
+        ["name", "key", "file_size", "driver", "is_private", "status"],
+        as_dict=True,
+    )
+    if not blob or blob.status != "Ready" or not blob.is_private:
+        raise DriveConflict(_("The Drive file bytes are unavailable"))
+    if int(blob.file_size or 0) != int(row.size or 0):
+        raise DriveConflict(_("The Drive file bytes are inconsistent"))
+    return get_driver(blob.driver).read(blob.key, is_private=bool(blob.is_private)), mime
 
 
 def _copyable_document_source(
