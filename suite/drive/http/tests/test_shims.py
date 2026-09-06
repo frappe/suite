@@ -372,6 +372,18 @@ class ShimCase(UnitTestCase):
         self.addCleanup(write.stop)
         return read.start(), count.start(), write.start()
 
+    def stub_unadopted_access(self, answer=None):
+        """Say no `File` is waiting for this id, without a database.
+
+        `get_user_access` reads the `File` store for an id no node holds, for
+        the same reason `get_entity_with_permissions` does. A case about the
+        node path says so by naming nothing there; `_legacy_user_access` has
+        cases of its own below.
+        """
+        patcher = patch.object(shims, "_legacy_user_access", return_value=answer)
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
     def stub_unadopted_file(self, answer=None):
         """Say no `File` is waiting for this id, without a database.
 
@@ -729,6 +741,7 @@ class TestPermissionForwarders(ShimCase):
     def test_get_user_access_answers_the_caller_role(self):
         nodes = self.stub("node_core")
         access = self.stub("access")
+        self.stub_unadopted_access()
         nodes.stored.return_value = node_row(owner="b@example.com")
         access.effective_role.return_value = COMMENT
         answer = shims.get_user_access("n1")
@@ -739,6 +752,7 @@ class TestPermissionForwarders(ShimCase):
 
     def test_get_user_access_answers_zeros_for_a_node_the_caller_cannot_see(self):
         nodes = self.stub("node_core")
+        self.stub_unadopted_access()
         nodes.stored.side_effect = DriveNotFound("gone")
         self.assertEqual(
             shims.get_user_access("n1"),
@@ -748,6 +762,7 @@ class TestPermissionForwarders(ShimCase):
     def test_get_user_access_takes_a_row_as_well_as_an_id(self):
         nodes = self.stub("node_core")
         access = self.stub("access")
+        self.stub_unadopted_access()
         nodes.stored.return_value = node_row()
         access.effective_role.return_value = READ
         shims.get_user_access({"name": "n1"})
@@ -762,6 +777,7 @@ class TestPermissionForwarders(ShimCase):
         SPA hides its buttons on, so the label follows them."""
         nodes = self.stub("node_core")
         access = self.stub("access")
+        self.stub_unadopted_access()
         nodes.stored.return_value = node_row(owner=SOMEONE.user)
         for role, label in ((MANAGE, "admin"), (EDIT, "user"), (UPLOAD, "guest"), (READ, "guest")):
             with self.subTest(role=role):
@@ -917,6 +933,79 @@ class TestPermissionForwarders(ShimCase):
         access.grants_for.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
             shims.get_shared_with_list("n1")
+
+
+class TestUnadoptedAccessRead(ShimCase):
+    """`_legacy_user_access`: the `File` store, for an id no node holds.
+
+    The same second store `TestUnadoptedFileRead` covers below, reached by the
+    name three Writer reads are built on. Zeros for a row the caller owns is a
+    deny §11.7 may not synthesize, and it is what the node read answers for an
+    id it cannot find.
+    """
+
+    OWNS: ClassVar[dict] = {"read": 1, "write": 1, "comment": 1, "share": 1, "upload": 1, "type": "admin"}
+
+    def store(self, *, node=False, file=True, access=None):
+        """Name what each store holds, and answer the legacy access rule."""
+        from suite.drive.api import permissions
+
+        db = MagicMock()
+        db.exists.side_effect = lambda doctype, name: node if doctype == "Drive Node" else file
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        bits = MagicMock(return_value=dict(access or self.OWNS))
+        self.enterContext(patch.object(permissions, "get_user_access_for_user", bits))
+        return db, bits
+
+    def test_an_id_a_node_holds_is_not_read_off_the_file_store(self):
+        """The store is decided by which one holds the id. Asking the legacy
+        rule about a row that has a node would answer twice about one row."""
+        db, bits = self.store(node=True)
+        self.assertIsNone(shims._legacy_user_access("n1"))
+        bits.assert_not_called()
+        db.exists.assert_called_once_with("Drive Node", "n1")
+
+    def test_an_id_neither_store_holds_answers_nothing(self):
+        _, bits = self.store(file=False)
+        self.assertIsNone(shims._legacy_user_access("n1"))
+        bits.assert_not_called()
+
+    def test_the_owner_of_a_node_less_row_holds_every_bit_the_old_rule_gave_them(self):
+        """The defect this read exists for. `create_document` writes a `File`
+        with no node on every site running this commit, and the node read
+        answers all-zeros for it, which is a deny nobody wrote."""
+        _, bits = self.store()
+        self.assertEqual(shims._legacy_user_access("n1"), self.OWNS)
+        bits.assert_called_once_with("n1", frappe.session.user)
+
+    def test_a_row_is_passed_on_rather_than_read_again(self):
+        """The old body took the row `_visible_rows` had already selected."""
+        _, bits = self.store()
+        row = {"name": "n1", "owner": SOMEONE.user}
+        shims._legacy_user_access(row)
+        self.assertIs(bits.call_args.args[0], row)
+
+    def test_the_forwarder_answers_the_file_row_without_reading_a_node(self):
+        nodes = self.stub("node_core")
+        self.stub_unadopted_access(dict(self.OWNS))
+        self.assertEqual(shims.get_user_access("n1"), self.OWNS)
+        nodes.stored.assert_not_called()
+
+    def test_a_refusal_from_the_workflow_is_never_retried_on_the_file_store(self):
+        """§5.2 answers `DriveNotFound` for a node the caller may not read.
+        The zeros below it are the old body's answer to that question, not a
+        second question put to the legacy rules."""
+        nodes = self.stub("node_core")
+        nodes.stored.side_effect = DriveNotFound("not for you")
+        legacy = self.stub_unadopted_access()
+        self.assertEqual(shims.get_user_access("n1")["read"], 0)
+        legacy.assert_called_once_with("n1")
+
+    def test_a_name_less_entity_reads_neither_store(self):
+        _, bits = self.store()
+        self.assertIsNone(shims._legacy_user_access(None))
+        self.assertIsNone(shims._legacy_user_access({}))
+        bits.assert_not_called()
 
 
 class TestUnadoptedFileRead(ShimCase):
