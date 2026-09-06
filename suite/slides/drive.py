@@ -361,14 +361,29 @@ def composite_references(docname: str) -> list[dict]:
     answered = []
     for name in _reference_names(docname):
         node = frappe.db.get_value(DOCTYPE, name, NODE_FIELD)
+        readable = bool(node) and _readable(node)
         answered.append(
             {
                 "presentation": name,
-                "node": node,
-                "readable": bool(node) and _readable(node),
+                # Marked, never dropped (§6.6) — and never named. The node id is
+                # the handle every Drive route takes, so handing it out for a
+                # reference the caller cannot read would disclose the node §5.4
+                # says is never disclosed. `get_composite_presentation` is
+                # guest-reachable.
+                "node": node if readable else None,
+                "readable": readable,
             }
         )
     return answered
+
+
+def deck_is_readable(docname: str) -> bool:
+    """Answer one READ point check for a linked deck, without disclosing why not.
+
+    The composite read route is guest-reachable, so the caller gets one answer
+    for "no such deck", "no grant", and "a link that will not open" (§5.4).
+    """
+    return _readable(node_of(docname))
 
 
 def _readable(node: str) -> bool:

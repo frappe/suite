@@ -71,7 +71,7 @@ class Presentation(drive.DriveContent, Document):
 
         for ref in self.reference_presentations:
             ref_doc = frappe.get_cached_doc("Presentation", ref.presentation)
-            if not is_public_presentation(ref_doc.name):
+            if not _is_public(ref_doc.name):
                 frappe.throw(
                     f"Reference presentation '{ref_doc.title}' must be public to create a composite presentation."
                 )
@@ -284,7 +284,14 @@ def slug(text: str) -> str:
 # whitelist needed for drive integration
 @frappe.whitelist()
 def get_presentation_thumbnail(presentation_name: str, index: int | None = 1) -> str:
-    """Returns the thumbnail of a presentation."""
+    """Returns the thumbnail of a presentation. Legacy only.
+
+    A linked deck's preview is a `Drive Node Preview` row, read through Drive
+    after a READ check. The legacy column survives until §14.10 drops it, so
+    answering from it here would hand out a `/private/files/` URL for a deck the
+    caller holds no grant on. Ticket 34 moves the client to the Drive preview.
+    """
+    refuse_drive_native(presentation_name, "the Drive preview")
     return frappe.get_value("Presentation", presentation_name, "thumbnail") or ""
 
 
@@ -332,9 +339,11 @@ def update_slide_attachments(parent: str, slide: dict | str):
     if is_drive_native(parent):
         # Cross-deck paste. Drive adopts the pasted pictures under this deck,
         # sharing the blob and reusing a node the deck already holds for the
-        # same picture (§8.9). It checks UPLOAD at the deck node, so no separate
-        # `check_permission` runs here: a linked deck is never authorized
-        # against a `File`.
+        # same picture (§8.9). The gate is UPLOAD at the deck node, never a
+        # `File`, and it is taken here rather than left to `adopt_media`:
+        # `adopt_media` answers an empty map before any check when the slide
+        # names no media, which would let a stranger learn the deck exists.
+        drive.check(slides_drive.node_of(parent), drive.UPLOAD)
         elements = slides_drive.elements_of(slide)
         remap_element_ids(elements)
         slide["elements"] = elements
@@ -589,6 +598,10 @@ def attach_poster(presentation, element):
 @frappe.whitelist()
 def get_updated_json(presentation: str, elements: list[dict]):
     if is_drive_native(presentation):
+        # UPLOAD at the deck node, taken before the element list is read: an
+        # element list naming no media would otherwise reach `adopt_media`'s
+        # empty-map early return and answer a caller with no grant at all.
+        drive.check(slides_drive.node_of(presentation), drive.UPLOAD)
         return slides_drive.adopt_element_media(presentation, elements)
 
     frappe.get_doc("Presentation", presentation).check_permission("write")
@@ -629,6 +642,12 @@ def get_permission_query_conditions(user):
     lives on its node, so the node column is what excludes it until ticket 29
     replaces this whole predicate with the node-based one.
     """
+    user = user or frappe.session.user
+    # A shared linked deck cannot be excluded by any predicate this hook
+    # returns: `frappe.db.query` ORs the shared names around it
+    # (`frappe/database/query.py:1737-1741`). Drive refuses instead. Scoped to a
+    # deck that carries a node, so a legacy site lists what it always listed.
+    drive.refuse_shared_linked_rows("Presentation", NODE_FIELD, user)
     legacy = content_query_conditions("Presentation", user, extra="`tabPresentation`.is_template = 1")
     if not legacy:
         return legacy
@@ -637,9 +656,15 @@ def get_permission_query_conditions(user):
 
 def has_permission(doc, ptype="read", user=None, debug=False):
     """`has_permission` for `Presentation`, staged the same way."""
-    if doc.get(NODE_FIELD):
-        return False
     user = user or frappe.session.user
+    if doc.get(NODE_FIELD):
+        # Answering False is not a denial: Frappe reads it as "no role
+        # permission" and then asks `false_if_not_shared`
+        # (`frappe/permissions.py:214-216`), which a `DocShare` answers Yes.
+        # That would be a way around `Drive Grant` (§1) for the whole window
+        # between Build and ticket 29.
+        drive.refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
+        return False
     if doc.is_template and user != "Administrator":
         return ptype == "read" or doc.owner == user
     return content_has_permission(doc, ptype, user)
@@ -649,6 +674,19 @@ def has_permission(doc, ptype="read", user=None, debug=False):
 def is_public_presentation(name: str):
     """Legacy only. A linked deck has no "public" flag: it has grants (§6.5)."""
     refuse_drive_native(name, "the Drive sharing state")
+    return _is_public(name)
+
+
+def _is_public(name: str) -> bool:
+    """Answer the legacy public flag, False for a deck Drive owns.
+
+    A legacy composite names references Build may have linked already, and it
+    asks this about each one. Raising there would take the whole composite down
+    for a mixed deck; a linked reference is simply not public in the legacy
+    sense, and §6.6 is what answers for it once the composite itself is linked.
+    """
+    if is_drive_native(name):
+        return False
     file = DriveFile.get_for_doc("Presentation", name)
     if not file:
         return False
@@ -722,7 +760,11 @@ def get_composite_presentation(name: str):
         frappe.throw("Presentation is not public", frappe.PermissionError)
 
     if is_drive_native(name):
-        drive.check(slides_drive.node_of(name), drive.READ)
+        if not slides_drive.deck_is_readable(name):
+            # One answer for "not a composite", "no such deck", and "a composite
+            # you cannot read". This route is guest-reachable, so two different
+            # errors would tell a stranger which names are linked composites.
+            frappe.throw("Presentation is not public", frappe.PermissionError)
         doc = frappe.get_doc("Presentation", name)
         references = slides_drive.composite_references(name)
         composite_slides = []
@@ -743,8 +785,9 @@ def get_composite_presentation(name: str):
     composite_slides = []
 
     for reference in doc.reference_presentations:
-        # references are public when the composite is saved, but can be made private later
-        if not is_public_presentation(reference.presentation):
+        # references are public when the composite is saved, but can be made
+        # private later, and Build may have linked one already
+        if not _is_public(reference.presentation):
             continue
         ref_doc = frappe.get_cached_doc("Presentation", reference.presentation)
         for slide in ref_doc.slides:
