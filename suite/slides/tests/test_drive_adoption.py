@@ -47,7 +47,12 @@ from PIL import Image
 
 from suite import drive
 from suite.drive._core.access import grant
-from suite.drive._core.content import clear_registry_cache, governs, spec_for
+from suite.drive._core.content import (
+    _validate_forbidden_fields,
+    clear_registry_cache,
+    governs,
+    spec_for,
+)
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
@@ -525,14 +530,38 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         with activated():
             validate_content_registry()
 
-    def test_the_doctype_no_longer_names_the_legacy_column_as_its_display_title(self):
-        """The exemption covers the column, never `title_field`.
+    def test_the_display_title_still_resolves_to_the_frozen_legacy_column(self):
+        """Dropping `"title_field": "title"` from the JSON changed nothing.
 
-        §10.2 forbids a mirror "in either direction", and a `title_field`
-        pointing at the frozen column is the read direction. Dropping it moves
-        no data: §14.7 reads the column, not the meta.
+        Frappe resolves an absent `title_field` to a field literally called
+        `title` before it falls back to `name`
+        (`frappe/model/meta.py:373-384`), so the doctype still displays the
+        legacy column. What holds §10.2's "no mirror in either direction" is
+        the freeze, not the missing attribute: `refuse_legacy_field_write`
+        refuses every write, so the value cannot diverge from what Build left.
+        Setting `title_field` to `name` instead is not open either — it would
+        rename every legacy deck's backing `File` to its docname on the next
+        save (`suite/drive/overrides/file.py:607-613`).
         """
-        self.assertFalse(frappe.get_meta(DOCTYPE).get("title_field"))
+        meta = frappe.get_meta(DOCTYPE)
+        self.assertIsNone(meta.get("title_field"), "the JSON names none")
+        self.assertEqual(meta.get_title_field(), "title", "frappe supplies one anyway")
+        self.assertIn("title", slides.SPEC.legacy_fields, "so it has to be a declared exemption")
+
+    def test_activation_refuses_a_display_title_frappe_supplied_and_nobody_declared(self):
+        """The guard reads the resolved display title, not the raw attribute.
+
+        A doctype that owns a `title` column and declares no `title_field` is
+        the exact shape §10.2 forbids, and it is also the shape that reads as
+        "no title_field". Checking the attribute alone would wave it through.
+        """
+        undeclared = dataclasses.replace(slides.SPEC, legacy_fields=())
+        meta = frappe.get_meta(DOCTYPE)
+        self.assertIsNone(meta.get("title_field"))
+        with self.assertRaises(DriveConflict):
+            _validate_forbidden_fields(meta, undeclared)
+        # And the declared one is accepted, on the same resolved answer.
+        _validate_forbidden_fields(meta, slides.SPEC)
 
     def test_activation_still_refuses_a_title_column_nobody_declared(self):
         """The hatch is opt-in. An app that just grows a `title` is still refused."""
