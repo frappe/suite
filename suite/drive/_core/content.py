@@ -83,8 +83,13 @@ FORBIDDEN_FIELD_PREFIXES = ("share_", "shared_")
 # The node column a `DriveContent` controller uses unless it names another one.
 DEFAULT_NODE_FIELD = "node"
 
+# What every content workflow reads about the document node it acts on.
+# `parent` is here for `nodes._validate_stored_position`, which walks the stored
+# `parent` link upwards: a row read without it looks like a node with no parent,
+# which the validator has to refuse as an invalid tree position.
 DOCUMENT_NODE_FIELDS = (
     "name",
+    "parent",
     "kind",
     "root",
     "path",
