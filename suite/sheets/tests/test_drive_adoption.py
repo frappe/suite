@@ -691,6 +691,16 @@ class TestSheetsWorkbook(unittest.TestCase):
         self.assertEqual(list(merged), ["Beta"])
         self.assertEqual(merged["Beta"]["slaveMap"]["B1"], "A1")
 
+    def test_a_restore_drops_the_collaborative_document_it_replaces(self):
+        """A live Y.Doc outranks `sheets_data`, so a restore must clear it."""
+        patched = self._frappe(exists=True)
+        version = json.dumps(
+            {"schema": "sheet/1", "sheets_data": json.dumps({"sheet": {"v": 2}}), "head_seq": 3}
+        ).encode()
+        with mock.patch.object(sheets, "_append_op", return_value=9):
+            sheets.restore_version("SH-1", io.BytesIO(version))
+        patched.db.delete.assert_called_once_with("Sheet Collab State", {"sheet": "SH-1"})
+
     def test_a_workbook_that_declares_too_many_merge_ranges_is_refused(self):
         many = "".join(
             f'<mergeCell ref="A{r}:B{r}"/>' for r in range(1, 12)
