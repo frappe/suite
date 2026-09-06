@@ -37,7 +37,6 @@ from suite.drive._core.roles import READ
 from suite.drive.http.tests import ensure_local_context, local_attribute
 from suite.drive.webdav import (
     ALLOWED_METHODS,
-    RELINKED_METHODS,
     context,
     deadprops,
     dispatch,
@@ -220,57 +219,100 @@ class TestMethodAllowList(DavCase):
         with patch("frappe.get_cached_doc", return_value=frappe._dict(webdav_allowed_methods=raw)):
             return settings.allowed_webdav_methods()
 
-    def test_an_unconfigured_site_offers_only_the_relinked_verbs(self):
+    def test_an_unconfigured_site_offers_every_implemented_verb(self):
+        # ticket 25 relinked the write verbs, so an admin who narrows nothing
+        # gets the whole implemented surface, not a read-only subset
         for raw in (None, "", "   "):
             with self.subTest(raw=raw):
-                self.assertEqual(self.allowed(raw), RELINKED_METHODS)
-                self.assertEqual(self.allowed(raw), ("OPTIONS", "GET", "HEAD", "PROPFIND"))
-
-    def test_an_admin_list_naming_put_still_cannot_readmit_it(self):
-        offered = self.allowed("GET, PUT, PROPFIND, LOCK, MKCOL")
-        self.assertEqual(offered, RELINKED_METHODS)
+                self.assertEqual(self.allowed(raw), ALLOWED_METHODS)
         for method in WRITE_METHODS:
-            self.assertNotIn(method, offered)
+            self.assertIn(method, self.allowed(None))
 
-    def test_an_admin_list_still_narrows_the_relinked_surface(self):
+    def test_an_admin_list_naming_put_now_offers_it(self):
+        offered = self.allowed("GET, PUT, PROPFIND, LOCK, MKCOL")
+        self.assertEqual(offered, ("OPTIONS", "GET", "HEAD", "PUT", "PROPFIND", "MKCOL", "LOCK"))
+
+    def test_an_admin_list_still_narrows_the_surface(self):
         self.assertEqual(self.allowed("GET"), ("OPTIONS", "GET", "HEAD"))
         self.assertEqual(self.allowed("PROPFIND"), ("OPTIONS", "PROPFIND"))
 
     def test_a_garbage_setting_does_not_lock_the_site_to_options(self):
-        self.assertEqual(self.allowed("FLOOP, BLARG"), RELINKED_METHODS)
+        self.assertEqual(self.allowed("FLOOP, BLARG"), ALLOWED_METHODS)
         # a list with one real verb keeps that verb and drops the noise
         self.assertEqual(self.allowed("GET, FLOOP"), ("OPTIONS", "GET", "HEAD"))
 
-    def test_a_list_of_write_verbs_alone_leaves_nothing_but_the_handshake(self):
+    def test_a_list_of_write_verbs_alone_is_honoured_as_written(self):
         # the fallback only rescues an unparseable setting; a list of known
-        # verbs is honoured, and none of these is relinked yet
-        self.assertEqual(self.allowed("PUT, DELETE, MKCOL"), ("OPTIONS",))
+        # verbs is taken at its word, however unusual the mount it produces
+        self.assertEqual(self.allowed("PUT, DELETE, MKCOL"), ("OPTIONS", "PUT", "DELETE", "MKCOL"))
 
-    def test_every_write_verb_is_still_a_known_method_and_only_the_allow_list_refuses_it(self):
+    def test_the_allow_list_can_still_withdraw_a_relinked_write_verb(self):
+        """§12.1 keeps the admin switch: implemented is not the same as offered."""
+        offered = self.allowed("GET, PROPFIND")
         for method in WRITE_METHODS:
             with self.subTest(method=method):
                 self.assertIn(method, ALLOWED_METHODS)
-                self.assertNotIn(method, RELINKED_METHODS)
+                self.assertNotIn(method, offered)
 
 
 class TestDispatchTable(DavCase):
-    def test_the_handler_table_holds_exactly_propfind_get_and_head(self):
-        self.assertEqual(set(dispatch._HANDLERS), {"PROPFIND", "GET", "HEAD"})
+    def test_the_handler_table_covers_every_implemented_method(self):
+        """`ALLOWED_METHODS` is what OPTIONS advertises, so a verb in one list
+        and not the other is a 405 the site promised it would not send."""
+        dispatched = set(dispatch._HANDLERS) | {"OPTIONS"}
+        self.assertEqual(dispatched, set(ALLOWED_METHODS))
         self.assertEqual(dispatch._HANDLERS["PROPFIND"], ("propfind", "handle"))
         self.assertEqual(dispatch._HANDLERS["GET"], ("get", "handle"))
         self.assertEqual(dispatch._HANDLERS["HEAD"], ("get", "handle"))
+        self.assertEqual(dispatch._HANDLERS["PUT"], ("put", "handle"))
+        self.assertEqual(dispatch._HANDLERS["DELETE"], ("structure", "handle_delete"))
+        self.assertEqual(dispatch._HANDLERS["MKCOL"], ("structure", "handle_mkcol"))
+        self.assertEqual(dispatch._HANDLERS["MOVE"], ("structure", "handle_move"))
+        self.assertEqual(dispatch._HANDLERS["COPY"], ("copy", "handle"))
+        self.assertEqual(dispatch._HANDLERS["PROPPATCH"], ("proppatch", "handle"))
+        self.assertEqual(dispatch._HANDLERS["LOCK"], ("lock", "handle_lock"))
+        self.assertEqual(dispatch._HANDLERS["UNLOCK"], ("lock", "handle_unlock"))
 
     def test_the_read_verbs_resolve_to_the_relinked_handlers(self):
         self.assertIs(dispatch._handler_for("PROPFIND"), propfind.handle)
         self.assertIs(dispatch._handler_for("GET"), get.handle)
         self.assertIs(dispatch._handler_for("HEAD"), get.handle)
 
-    def test_a_write_verb_is_405_with_an_allow_naming_only_relinked_verbs(self):
-        for method in WRITE_METHODS:
-            with self.subTest(method=method), self.assertRaises(errors.MethodNotAllowed) as caught:
-                dispatch._handler_for(method)
+    def test_every_write_verb_resolves_to_a_handler(self):
+        from suite.drive.webdav import copy, lock, proppatch, put, structure
+
+        expected = {
+            "PUT": put.handle,
+            "DELETE": structure.handle_delete,
+            "MKCOL": structure.handle_mkcol,
+            "MOVE": structure.handle_move,
+            "COPY": copy.handle,
+            "PROPPATCH": proppatch.handle,
+            "LOCK": lock.handle_lock,
+            "UNLOCK": lock.handle_unlock,
+        }
+        self.assertEqual(set(expected), set(WRITE_METHODS))
+        for method, handler in expected.items():
+            with self.subTest(method=method):
+                self.assertIs(dispatch._handler_for(method), handler)
+
+    def test_an_unimplemented_method_is_405_naming_what_is_offered(self):
+        """`_handler_for` answers for the implemented set only.
+
+        The admin allow-list is enforced a step earlier, in `_dispatch`, so a
+        withdrawn verb never reaches here. What does reach here is a method DAV
+        does not implement at all, and its `Allow` has to name the offered list
+        rather than the implemented one.
+        """
+        narrowed = ("OPTIONS", "GET", "HEAD", "PROPFIND")
+        for method in ("PATCH", "REPORT", "BREW"):
+            with (
+                self.subTest(method=method),
+                self.assertRaises(errors.MethodNotAllowed) as caught,
+            ):
+                dispatch._handler_for(method, narrowed)
             self.assertEqual(caught.exception.status, 405)
-            self.assertEqual(caught.exception.headers["Allow"], ", ".join(RELINKED_METHODS))
+            self.assertEqual(caught.exception.headers["Allow"], ", ".join(narrowed))
 
 
 class TestOptionsAdvertisement(DavCase):
@@ -283,15 +325,18 @@ class TestOptionsAdvertisement(DavCase):
         response = options.handle(request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Allow"], ", ".join(settings.allowed_webdav_methods()))
-        self.assertEqual(response.headers["Allow"], ", ".join(RELINKED_METHODS))
+        self.assertEqual(response.headers["Allow"], ", ".join(ALLOWED_METHODS))
         for method in WRITE_METHODS:
-            self.assertNotIn(method, response.headers["Allow"])
+            self.assertIn(method, response.headers["Allow"])
 
-    def test_compliance_drops_class_2_while_lock_is_not_offered(self):
+    def test_an_unnarrowed_site_now_claims_class_2(self):
+        """Finder reads class 2 to decide whether a mount is read-write, and
+        ticket 25 relinked LOCK and UNLOCK, so the claim is true again."""
         request = Request(EnvironBuilder(method="OPTIONS", path="/dav/").get_environ())
-        self.assertEqual(options.handle(request).headers["DAV"], "1, 3")
-        self.assertEqual(settings.dav_compliance(RELINKED_METHODS), "1, 3")
+        self.assertEqual(options.handle(request).headers["DAV"], "1, 2, 3")
         self.assertEqual(settings.dav_compliance(ALLOWED_METHODS), "1, 2, 3")
+        # an admin who withdraws LOCK drops the class with it
+        self.assertEqual(settings.dav_compliance(("OPTIONS", "GET", "HEAD", "PROPFIND")), "1, 3")
 
     def test_an_allow_list_without_propfind_claims_no_class_at_all(self):
         """RFC 4918 §9.1: PROPFIND is what class 1 means. `DAV: 1` over an
@@ -1216,7 +1261,7 @@ class TestDavPrincipals(DavCase):
         with (
             patch.object(settings, "global_webdav_enabled", return_value=True),
             patch.object(settings, "user_webdav_enabled", return_value=True),
-            patch.object(settings, "allowed_webdav_methods", return_value=RELINKED_METHODS),
+            patch.object(settings, "allowed_webdav_methods", return_value=ALLOWED_METHODS),
             patch.object(auth, "authenticate", return_value=USER),
             patch.object(dispatch, "_handler_for", return_value=handler),
             patch.object(log, "configured_level", return_value=None),
