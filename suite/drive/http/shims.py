@@ -11,12 +11,16 @@ Four classes, and every name is in exactly one of them (`CLASSIFICATION`).
 - **Forwarder.** The call is translated into the same private workflow the
   §11.2 route calls, and the answer is translated back into the shape the old
   client reads. No policy is decided here.
-- **Permanent.** The name outlives Cleanup because it is written into data or
-  into a shipped artifact, so it is not touched at all: `suite.drive.api.s3.fetch`
-  sits inside stored `File.file_url` values, `get_file_for_doc` sits inside the
-  checked-in `sdk-o7hlQ1xj.js` bundle, and `/dav` sits inside third-party file
-  managers. The nineteen product methods stay on `/api/method/` as well: none
-  of them touches a node.
+- **Permanent.** The name, its signature, and its guest flag outlive Cleanup,
+  because the address is written into data or into a shipped artifact:
+  `suite.drive.api.s3.fetch` sits inside stored `File.file_url` values,
+  `get_file_for_doc` sits inside the checked-in `sdk-o7hlQ1xj.js` bundle, and
+  `/dav` sits inside third-party file managers. The nineteen product methods
+  stay on `/api/method/` as well: none of them touches a node. Twenty of the
+  twenty-one bodies are untouched too. The exception is `api.s3.fetch`, whose
+  `except` clause had to name the `_core` refusals once `get_file_content`
+  below it became a forwarder; the test compares all twenty-one against
+  `e390a4487` and carries that one exception by name.
 - **Retired.** §11.7 drops the behavior. The name still answers, and it answers
   a refusal that names its replacement. It never mints a capability and never
   reports a mutation it did not make.
