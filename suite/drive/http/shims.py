@@ -33,6 +33,13 @@ id an old client holds is the node id. A forwarder passes it through and lets
 the workflow answer. Before Build there is no node for a legacy id, and the
 workflow answers `DriveNotFound`: the forwarders and Build ship in one release.
 
+**Two names read a second store**, because a live writer still fills it and the
+node surface cannot express what it wrote: the legacy notification inbox, whose
+rows carry no §9.5 activity pointer, and `get_entity_with_permissions`, for a
+`File` that no node holds because its content type is still in the expand phase
+(§10.2). Both choose the store by which one holds the row, never by a refusal,
+and both die with this module.
+
 **A refusal is never invented.** Where the old body answered `None` for a row
 the caller may not see, the forwarder catches the workflow's `DriveNotFound`
 and answers `None` in the same place. It never writes a deny to express one
@@ -484,6 +491,94 @@ def get_general_access(entity) -> dict:
     return {**NO_ACCESS, "type": "restricted"}
 
 
+def _legacy_entity_with_permissions(entity_name: str) -> dict | None:
+    """Answer this name off the `File` store, for an id no node holds.
+
+    A product may still write a `File` with no node. §10.2 says so in as many
+    words: while a content type is in the expand phase "its legacy rows carry
+    no node and keep working, and Build (§14) is what links them"
+    (`_core/content.py:757-780`). `writer.api.docs.create_document` is that
+    path today - `drive_content_types` is empty, so `create_drive_file` writes
+    the row and `get_document` reads it straight back through this name. The
+    node store cannot express that row at all, so this read answers it, the
+    way the legacy inbox answers a notification with no activity pointer.
+
+    **The store is decided by which one holds the id, never by a refusal.**
+    §5.2 makes `DriveNotFound` the answer for a node the caller may not read,
+    so falling back on the exception would hand the legacy rules a question
+    the workflow had already refused. A node exists or it does not, and only
+    the second case reaches here.
+
+    The gate, the filter, and the payload are the old body's own.
+    `get_user_access_for_user` is the rule the retired `get_user_access` body
+    ran (`api/permissions.py:47`), `status: STATUS_ACTIVE` is the filter the
+    old query had, and a caller without `read` meets `frappe.PermissionError`
+    - the class `ErrorPage.vue` redirects a signed-out visitor on. Nothing is
+    decided here that the old body did not decide.
+
+    Answers `None` when a node holds the id, or when the `File` store has no
+    Active row for it either. The caller then reads the node, and a truly
+    unknown id keeps the refusal it answers today.
+
+    The imports are function-local: `api.permissions` imports this module, and
+    `drive.utils` builds a query-builder DocType at import time.
+    """
+    if frappe.db.exists("Drive Node", entity_name):
+        return None
+
+    from suite.drive.api.permissions import get_user_access_for_user
+    from suite.drive.utils import (
+        FILE_FIELDS,
+        GENERAL_USER,
+        STATUS_ACTIVE,
+        entity_kind,
+        generate_upward_path,
+        get_valid_breadcrumbs,
+        hide_storage_key,
+    )
+
+    rows = frappe.get_all(
+        "File",
+        filters={"name": entity_name, "status": STATUS_ACTIVE},
+        fields=FILE_FIELDS,
+        limit=1,
+    )
+    if not rows:
+        return None
+    entity = rows[0]
+
+    user_access = get_user_access_for_user(entity, frappe.session.user)
+    if not user_access.get("read"):
+        frappe.throw(_("You don't have access to this file."), frappe.PermissionError)
+
+    favourite = frappe.db.get_value(
+        "Drive Favourite",
+        {"entity": entity_name, "user": frappe.session.user},
+        "entity as is_favourite",
+    )
+    # The old general-access marker, read off the same store as the row:
+    # -2 published, -1 site, 0 restricted.
+    marker = 0
+    if get_user_access_for_user(entity, "Guest")["read"]:
+        marker = -2
+    elif generate_upward_path(entity_name, GENERAL_USER)[-1]["read"]:
+        marker = -1
+
+    answer = {
+        **entity,
+        **user_access,
+        **_user_info(entity.get("owner"), ["user_image", "full_name"]),
+        "breadcrumbs": get_valid_breadcrumbs(entity_name, user_access),
+        "is_favourite": favourite,
+        "share_count": marker,
+        "kind": entity_kind(entity),
+    }
+    hide_storage_key(answer)
+    # To work with modern frappe-ui composables, as the node branch does.
+    frappe.response["data"] = answer
+    return answer
+
+
 @_legacy
 def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     """`get_entity_with_permissions` -> `GET /nodes/<id>?expand=access,breadcrumbs`.
@@ -501,6 +596,12 @@ def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     if not entity_name:
         raise DriveNotFound(_("We couldn't find what you're looking for."))
     principals = _principals()
+    # A `File` no node holds is answered by the rules that wrote it. See
+    # `_legacy_entity_with_permissions`: the store is chosen by which one
+    # holds the id, so a refusal is never turned into a second question.
+    unadopted = _legacy_entity_with_permissions(entity_name)
+    if unadopted is not None:
+        return unadopted
     row = _page_read(principals, lambda: node_core.get(principals, entity_name))
     if row.state != "Active":
         # The old query filtered `status: STATUS_ACTIVE` and answered "We
