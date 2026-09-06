@@ -374,18 +374,32 @@ refactors the ticket into a deployable expand phase.
   `frappe.PermissionError`. The loop is gone with the Drive-native
   `create_document`.
 
+### Ticket 16 findings closed before integration, `c36991fb8` and `a5d3d44e8`
+
+Both were this ticket's findings against ticket 16's shared code, so the fixes
+and their evidence live in
+`wayfinder/drive-layer-spec/implementation/issues/16-content-contract.md`
+under "Contract corrections". In short:
+
+- **Medium.** Five of the eight `ContentTypeSpec` callbacks ran outside
+  `content.app_callback()`: `on_purge`, `restore_version`, `version_bytes`,
+  `export`, and `used_nodes`. Every call into app code now goes through
+  `content.call_app`, and the two stream callbacks through
+  `content.call_app_stream`, which keeps the guard on the stream Drive reads
+  after the callback returned. Writer's own callbacks commit nothing, so no
+  Writer code changes; only its module note does, below.
+- **Medium.** `doc_has_permission` asked the row's own node for `create`. It
+  now asks that node's parent for UPLOAD (§4.3) and fails closed when the
+  parent cannot be resolved. Still unreachable for Writer at this HEAD: the
+  registry is empty behind the Build stage gate, and `create_document` inserts
+  with `ignore_permissions`.
+
+`suite/writer/drive.py`'s module note said `app_callback()` wrapped three
+callbacks. It is corrected to name `call_app` and `call_app_stream`. Docstring
+only; no Writer behaviour changes.
+
 ### Findings recorded, not fixed
 
-- **Medium.** Five of the eight `ContentTypeSpec` callbacks run outside
-  `content.app_callback()`: `on_purge` (`nodes.py:1368`), `restore_version`
-  (`versions.py:239`), `version_bytes` (`versions.py:61`, `:191`), `export`,
-  and `used_nodes` (`content.py:699`). No callback commits today, so this is
-  an unguarded boundary rather than a live defect. Ticket 16's contract.
-- **Medium.** `framework._role_for_ptype` maps `create` to UPLOAD and then
-  resolves the node from the row being inserted. §4.3 says `create` "has no
-  meaning on the row being inserted, so it is answered against the parent".
-  Unreachable: no hook resolves a node until ticket 29, and `create_document`
-  inserts with `ignore_permissions`. Ticket 16's adapter.
 - **Medium.** `suite/drive/overrides/file.py:146-152` deletes the content
   document behind a deleted legacy `File`. Not reachable for Writer today: no
   row has both a `File` and a node. It becomes reachable when Build links
@@ -399,6 +413,7 @@ refactors the ticket into a deployable expand phase.
 
 ### Not verified
 
+Unchanged by `c36991fb8` and `a5d3d44e8`, whose own evidence is in ticket 16.
 No bench, no `migrate`, and no site command ran. Every integration class needs
 `slides.localhost`: `TestWriterInDrive` (33), `TestWriterBeforeActivation`
 (4), `IntegrationTestWriterDocument` (2), and `TestContentWorkflows`. Every

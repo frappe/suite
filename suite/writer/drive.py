@@ -52,11 +52,10 @@ so any refusal rolls the node, the document, and the copied media back
 together. A callback that cannot honour its contract raises rather than
 half-writing, and none of them commits.
 
-`content.app_callback()`, which enforces that last part, currently wraps only
-`create_empty`, `duplicate`, and `remap_media` (`nodes.py:446`, `:513`).
-`on_purge`, `restore_version`, `version_bytes`, `export`, and `used_nodes` run
-unguarded, so a commit added to one of them would destroy the caller's
-savepoint. Nothing here commits. Recorded for Drive, not worked around here.
+`content.call_app` enforces that last part. Every callback below reaches Drive
+through it, and the two that answer a stream through `content.call_app_stream`,
+so a commit added to one of them becomes a warning instead of destroying the
+caller's savepoint. Nothing here commits either way.
 """
 
 import base64
