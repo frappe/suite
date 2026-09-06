@@ -372,6 +372,18 @@ class ShimCase(UnitTestCase):
         self.addCleanup(write.stop)
         return read.start(), count.start(), write.start()
 
+    def stub_unadopted_children(self, answer=False):
+        """Say the folder holds no legacy row, without a database.
+
+        `list.files` answers a folder that still holds a `File` no node holds
+        off both stores, because `writer.api.docs.create_document` writes one.
+        A case about the node path says so here; `_merged_folder_page` has
+        cases of its own below.
+        """
+        patcher = patch.object(shims, "_unadopted_children", return_value=answer)
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
     def stub_unadopted_folder(self, answer=False):
         """Say the upload destination is a node, without a database.
 
@@ -944,6 +956,174 @@ class TestPermissionForwarders(ShimCase):
         access.grants_for.side_effect = DriveNotFound("gone")
         with self.assertRaises(DriveNotFound):
             shims.get_shared_with_list("n1")
+
+
+class TestUnadoptedFolderPage(ShimCase):
+    """`list.files` over both stores, for a folder that still holds a legacy row.
+
+    `writer.api.docs.create_document` writes a `File` with no node into the
+    caller's `Users/<email>` folder, and the trail
+    `get_entity_with_permissions` publishes for that document names the
+    folders it is in. Opening one met `node_core.children`, which refuses a
+    parent no node holds, and after Build it answers a page the new row is
+    not on.
+    """
+
+    @staticmethod
+    def shaped(name, file_name, size=0, modified="2026-01-01 00:00:00"):
+        return {"name": name, "file_name": file_name, "file_size": size, "modified": modified}
+
+    def merge(self, *, adopted, legacy, node_rows=(), over=False):
+        """Name what each store holds for one folder, without a database."""
+        db = MagicMock()
+        db.exists.return_value = adopted
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        self.enterContext(patch.object(shims, "_unadopted_children", return_value=True))
+        self.enterContext(patch.object(shims, "_legacy_children", return_value=(list(legacy), over)))
+        self.enterContext(patch.object(shims, "_legacy_list_rows", side_effect=lambda _, rows: list(rows)))
+        nodes = self.stub("node_core")
+        nodes.MAX_PAGE_SIZE = 100
+        nodes.children.return_value = {"rows": list(node_rows), "next_cursor": None}
+        return nodes
+
+    def test_a_column_sorts_by_the_name_the_client_is_shown(self):
+        """`_ordered` sorts §11.4's node columns. The merged page has one row
+        shape in common with itself and it is the answer's, so the sort reads
+        `file_name`, `file_size`, and `modified`."""
+        rows = [
+            self.shaped("n2", "beta", size=3, modified="2026-01-02 00:00:00"),
+            self.shaped("n1", "alpha", size=9, modified="2026-01-01 00:00:00"),
+        ]
+        by_name = [row["name"] for row in shims._ordered_legacy(rows, "file_name", True)]
+        self.assertEqual(by_name, ["n1", "n2"])
+        by_size = [row["name"] for row in shims._ordered_legacy(rows, "file_size", True)]
+        self.assertEqual(by_size, ["n2", "n1"])
+        by_time = [row["name"] for row in shims._ordered_legacy(rows, "modified", False)]
+        self.assertEqual(by_time, ["n2", "n1"])
+
+    def test_an_unknown_column_falls_back_to_the_one_the_row_publishes(self):
+        rows = [
+            self.shaped("n1", "alpha", modified="2026-01-02 00:00:00"),
+            self.shaped("n2", "beta", modified="2026-01-01 00:00:00"),
+        ]
+        self.assertEqual(
+            [row["name"] for row in shims._ordered_legacy(rows, "Owner", True)],
+            ["n2", "n1"],
+        )
+
+    def test_the_id_breaks_a_tie_the_title_cannot(self):
+        """Three levels, the old query's: the column, then `file_name` in the
+        same direction, then `name` ascending."""
+        rows = [self.shaped("n2", "same"), self.shaped("n1", "same")]
+        self.assertEqual(
+            [row["name"] for row in shims._ordered_legacy(rows, "file_name", True)],
+            ["n1", "n2"],
+        )
+
+    def test_a_folder_with_no_legacy_row_never_reads_the_file_store(self):
+        """The probe is what keeps an adopted tree on the SQL-sorted window
+        §11.4 measured."""
+        self.stub_unadopted_children(False)
+        nodes = self.stub("node_core")
+        self.stub("access")
+        self.stub("activity_core")
+        nodes.children.return_value = {"rows": [], "next_cursor": None}
+        with patch.object(shims, "_merged_folder_page") as merged:
+            shims.files("f1")
+        merged.assert_not_called()
+        nodes.children.assert_called()
+
+    def test_a_folder_no_node_holds_is_answered_off_the_file_store_alone(self):
+        nodes = self.merge(adopted=False, legacy=[self.shaped("l1", "Legacy")])
+        answer = shims.files("f1")
+        self.assertEqual([row["name"] for row in answer], ["l1"])
+        nodes.children.assert_not_called()
+
+    def test_a_folder_a_node_holds_still_shows_the_row_written_since(self):
+        """After Build the folder is a node and the documents written since
+        are the only rows the node half cannot see."""
+        self.merge(
+            adopted=True,
+            legacy=[self.shaped("l1", "beta")],
+            node_rows=[self.shaped("n1", "alpha")],
+        )
+        answer = shims.files("f1", order_by="file_name")
+        self.assertEqual([row["name"] for row in answer], ["n1", "l1"])
+
+    def test_the_merged_page_answers_the_old_envelope(self):
+        self.merge(
+            adopted=True,
+            legacy=[self.shaped("l1", "b"), self.shaped("l2", "d")],
+            node_rows=[self.shaped("n1", "a"), self.shaped("n2", "c")],
+        )
+        page = shims.files("f1", order_by="file_name", limit=2, paginated=True)
+        self.assertEqual([row["name"] for row in page["rows"]], ["n1", "l1"])
+        self.assertTrue(page["has_next"])
+        self.assertEqual(page["next_start"], 2)
+
+        rest = shims.files("f1", order_by="file_name", start=2, limit=2, paginated=True)
+        self.assertEqual([row["name"] for row in rest["rows"]], ["n2", "l2"])
+        self.assertFalse(rest["has_next"])
+
+    def test_a_page_that_stopped_at_a_bound_still_says_there_is_more(self):
+        """Past the bound neither half is the whole match set, so the page
+        length cannot say there is nothing after it."""
+        self.merge(adopted=False, legacy=[self.shaped("l1", "a")], over=True)
+        page = shims.files("f1", paginated=True)
+        self.assertTrue(page["has_next"])
+
+
+class TestUnadoptedFolderGate(ShimCase):
+    """`_legacy_children`: the old body's read, and the old body's gate."""
+
+    def store(self, *, readable=True, rows=()):
+        from suite.drive.api import list as legacy_list
+        from suite.drive.api import permissions
+
+        self.enterContext(patch.object(shims.frappe, "qb", MagicMock()))
+        self.enterContext(patch.object(legacy_list, "_get_basic_query", MagicMock()))
+        data = MagicMock(return_value=list(rows))
+        self.enterContext(patch.object(legacy_list, "get_query_data", data))
+        gate = MagicMock(return_value=readable)
+        self.enterContext(patch.object(permissions, "user_has_permission", gate))
+        return data, gate
+
+    def test_a_folder_on_this_store_alone_keeps_the_old_gate(self):
+        """`PermissionError` is the class `ErrorPage.vue` sends a signed-out
+        visitor to the login page on, and it is what the old body threw."""
+        _, gate = self.store(readable=False)
+        with self.assertRaises(frappe.PermissionError):
+            shims._legacy_children("f1", order_by="modified", ascending=True, file_kinds=None, adopted=False)
+        gate.assert_called_once_with("f1", "read")
+
+    def test_an_adopted_folder_is_gated_by_the_store_that_holds_it(self):
+        """`node_core.children` reads and authorizes the folder. Asking the
+        legacy rules a second time would let one store refuse a page the
+        other had already granted."""
+        _, gate = self.store(readable=False)
+        rows, _ = shims._legacy_children(
+            "f1", order_by="modified", ascending=True, file_kinds=None, adopted=True
+        )
+        gate.assert_not_called()
+        self.assertEqual(rows, [])
+
+    def test_the_read_is_the_old_query_run_whole_and_bounded(self):
+        data, _ = self.store(rows=[{"name": f"l{n}"} for n in range(3)])
+        shims._legacy_children("f1", order_by="file_name", ascending=False, file_kinds=["PDF"], adopted=False)
+        self.assertEqual(data.call_args.kwargs["entity_name"], "f1")
+        self.assertEqual(data.call_args.kwargs["order_by"], "file_name")
+        self.assertFalse(data.call_args.kwargs["ascending"])
+        self.assertEqual(data.call_args.kwargs["file_kinds"], ["PDF"])
+        self.assertFalse(data.call_args.kwargs["paginated"])
+        self.assertEqual(data.call_args.kwargs["limit"], shims.MAX_SORTABLE_ROWS + 1)
+
+    def test_a_read_that_reached_the_bound_says_so_and_is_cut_to_it(self):
+        self.store(rows=[{"name": f"l{n}"} for n in range(shims.MAX_SORTABLE_ROWS + 1)])
+        rows, over = shims._legacy_children(
+            "f1", order_by="modified", ascending=True, file_kinds=None, adopted=False
+        )
+        self.assertEqual(len(rows), shims.MAX_SORTABLE_ROWS)
+        self.assertTrue(over)
 
 
 class TestUnadoptedUploadTarget(ShimCase):
@@ -2200,6 +2380,7 @@ class ListCase(ShimCase):
         shares = patch.object(shims, "_share_counts", return_value={"n1": -1})
         shares.start()
         self.addCleanup(shares.stop)
+        self.stub_unadopted_children()
 
     def one_page(self, rows):
         self.nodes.children.return_value = {"rows": rows, "next_cursor": None}
@@ -2465,6 +2646,7 @@ class TestSignedOutVisitor(ShimCase):
 
     def test_a_listing_tells_a_signed_out_visitor_the_same_thing(self):
         self.as_guest()
+        self.stub_unadopted_children()
         nodes = self.stub("node_core")
         nodes.decode_cursor.return_value = 0
         nodes.children.side_effect = DriveNotFound("gone")

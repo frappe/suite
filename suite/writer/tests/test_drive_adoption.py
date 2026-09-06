@@ -52,6 +52,7 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
+from suite.drive.api import list as drive_list
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
@@ -513,6 +514,61 @@ class TestWriterBeforeActivation(IntegrationTestCase):
 
         with self.assertRaises(DriveNotFound):
             docs.get_document(entity.name)
+
+    def test_a_document_the_api_creates_appears_in_the_folder_that_holds_it(self):
+        """`create_document` writes into `Users/<email>`, and the trail
+        `get_entity_with_permissions` publishes for the document names that
+        folder. Opening it met `node_core.children`, which refuses a parent
+        no node holds, so the folder page was an error page."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = docs.create_document(title=f"Listed {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        self.assertFalse(frappe.db.exists("Drive Node", entity.folder), "no node before Build")
+
+        rows = {row["name"]: row for row in drive_list.files(entity_name=entity.folder)}
+
+        self.assertIn(entity.name, rows)
+        row = rows[entity.name]
+        self.assertEqual(row["file_name"], entity.file_name)
+        self.assertEqual(row["read"], 1)
+        self.assertEqual(row["file_type"], "Document")
+        self.assertEqual(row["content_doctype"], DOCTYPE)
+
+    def test_the_folder_page_pages_the_way_the_old_one_did(self):
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        made = []
+        for index in range(3):
+            entity = docs.create_document(title=f"Paged {index} {frappe.generate_hash(6)}")
+            made.append(entity.name)
+            self.addCleanup(
+                frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+            )
+
+        page = drive_list.files(entity_name=entity.folder, limit=2, paginated=True)
+
+        self.assertEqual(len(page["rows"]), 2)
+        self.assertEqual(page["next_start"], 2)
+        self.assertTrue(page["has_next"])
+        rest = drive_list.files(entity_name=entity.folder, start=2, limit=2, paginated=True)
+        seen = {row["name"] for row in page["rows"]} | {row["name"] for row in rest["rows"]}
+        self.assertTrue(set(made) <= seen, "every document is on one of the two pages")
+
+    def test_a_stranger_is_refused_the_folder_the_document_is_in(self):
+        """The gate is the old body's, on the store that holds the folder."""
+        frappe.set_user(USER)
+        entity = docs.create_document(title=f"Shut {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            drive_list.files(entity_name=entity.folder)
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
