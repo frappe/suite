@@ -495,3 +495,78 @@ per-segment walk would then be linear in the whole tree, and §12.5's budget
 would not hold on a real site however flat the query count is.
 
 This ticket stays open until the gate and the `EXPLAIN` both run.
+
+## Site gate: first run
+
+Modules 1 to 5 passed on `slides.localhost` after `migrate`:
+`test_webdav` 91, `test_pathmap` 20, `test_propfind` 22, `test_properties` 16,
+`test_put_get` 72 with 58 ticket-25 skips.
+
+Module 6, `test_dispatch`, ran 13 and failed three. All three were suite
+defects, not production defects. No production file changed.
+
+| Commit | Subject |
+|---|---|
+| `e8eab2012` | commit the DAV toggle the dispatcher rolls back |
+| `85bd2e345` | give the DAV dispatch and log suites a mount |
+| `a6c20c3cc` | stop expecting a class the allow-list cannot claim |
+
+### Defects found and fixed
+
+1. **The global toggle did not survive one test.** `setUp` set
+   `webdav_enabled` without committing. Every refusal in `_dispatch` calls
+   `db.rollback`, and `clear_document_cache` registers its redis clear on
+   `db.after_rollback`, so the rollback both discarded the write and dropped
+   the cached Single. The next request read the site as feature-off and raised
+   werkzeug `NotFound` from `dispatch.py:56`.
+   `test_gated_write_verbs_are_405_with_the_relinked_allow` sends eight verbs
+   in one loop and died on the second. The toggle is committed now, in both
+   directions, which is what `test_log` already did for this reason.
+2. **Neither `test_dispatch` nor `test_log` built a mount.** Both create their
+   user, enable the per-user toggle, and then expect 207 from `PROPFIND /dav/`.
+   The DAV namespace is the caller's Personal Root and nothing else, so
+   `pathmap.resolve` had no root to walk and answered 404. The bench WebDAV log
+   records it: `PROPFIND /dav/ -> 404 ... note="Resource not found."`, which is
+   `_collect_resources` on an unresolved path, not `require` on an unreadable
+   node. `test_log` would have failed the same way at module 9.
+3. **The narrowing case expected a class the site cannot claim.** With
+   "OPTIONS, GET, LOCK" the allow-list narrows to OPTIONS, GET, HEAD and holds
+   no PROPFIND, so `dav_compliance` returns "" and OPTIONS omits the header.
+   That is commit `03c82c063` working. The case still expected `DAV: 1, 3`.
+
+### Commands and real results
+
+Site-free, in this worktree. No `bench`, `migrate`, `install`, `restart`,
+`push`, or PR.
+
+```
+$ python -m compileall -q suite/drive
+COMPILEALL OK
+
+$ uvx ruff@0.12.3 format --check suite/drive/webdav
+41 files already formatted
+$ uvx ruff@0.12.3 check suite/drive/webdav
+All checks passed!
+
+$ cd sites && PYTHONPATH=<worktree>:<frappe> ../env/bin/python \
+    -m unittest suite.drive.tests.test_webdav
+Ran 91 tests in 0.162s
+OK
+
+$ ... unittest discovery across suite/drive/webdav/tests
+load errors: []
+TOTAL 260 live 145 skipped 115
+
+$ ... frappe.init(site=""); options.handle with a stubbed allow-list
+OPTIONS, GET, HEAD            -> no DAV header
+OPTIONS, GET, HEAD, PROPFIND  -> DAV: 1, 3
+```
+
+### Rerun
+
+```
+script -qec "bench --site slides.localhost run-tests --module suite.drive.webdav.tests.test_dispatch" /dev/null
+```
+
+No DocType JSON changed, so no `migrate`. Modules 7 to 17 and the `EXPLAIN`
+are still to run.
