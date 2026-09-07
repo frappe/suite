@@ -58,8 +58,8 @@ class TestWebDAVPathmap(IntegrationTestCase):
         self.assertTrue(mount.is_collection)
         self.assertEqual(mount.node.name, self.root)
         self.assertEqual(mount.node.kind, "root")
-        # `.entity` is the pre-relink spelling the parked write verbs still read
-        self.assertIs(mount.entity, mount.node)
+        # the pre-relink `.entity` spelling is gone; every verb reads `.node`
+        self.assertFalse(hasattr(mount, "entity"))
 
     def test_legacy_mount_aliases_are_gone(self):
         for alias in ("Home", "home", "Everyone", "everyone", "Shared"):

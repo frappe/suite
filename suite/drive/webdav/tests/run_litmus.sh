@@ -13,11 +13,12 @@
 # FAIL and on stale ledger lines that now pass. The ledger ships empty and may
 # only grow from real runs.
 #
-# THIS SUITE CANNOT PASS ON THE TICKET-24 RELEASE. Only OPTIONS, GET, HEAD and
-# PROPFIND are relinked to `Drive Node`; every write verb answers 405 until
-# ticket 25. litmus writes before it reads in every group, so basic, copymove,
-# props and locks all fail. Do not ledger those failures — see the note at the
-# top of litmus_expected.txt. Run this for real when ticket 25 lands.
+# Ticket 25 put every method litmus needs on the wire: PUT, MKCOL, DELETE,
+# MOVE, COPY, LOCK, UNLOCK and PROPPATCH all answer from `Drive Node`, and
+# OPTIONS advertises "DAV: 1, 2, 3". All five groups can therefore be
+# attempted. This suite has still not been run since the relink: it needs a
+# served site, and ticket 25 was built in a worktree with none. Run it on the
+# site gate and ledger what really fails there.
 
 set -euo pipefail
 
@@ -27,12 +28,6 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 LEDGER="$HERE/litmus_expected.txt"
 
 command -v "$LITMUS" >/dev/null || { echo "litmus binary not found: $LITMUS"; exit 2; }
-
-cat >&2 <<'BANNER'
-WARNING: WebDAV write verbs are gated to ticket 25 (PUT, MKCOL, DELETE, MOVE,
-COPY, LOCK, UNLOCK, PROPPATCH all answer 405). The basic, copymove, props and
-locks groups are expected to fail. Do not add those failures to the ledger.
-BANNER
 
 URL="$(bench --site "$SITE" execute suite.drive.webdav.tests.litmus_setup.prepare | tail -1 | tr -d '"')"
 echo "litmus target: $URL"

@@ -3,10 +3,9 @@
 bench --site <site> execute suite.drive.webdav.tests.litmus_setup.prepare
 bench --site <site> execute suite.drive.webdav.tests.litmus_setup.teardown
 
-litmus cannot pass on this release: it writes before it reads in every group
-and the write verbs answer 405 until ticket 25. The fixtures are kept current
-anyway so the read groups can be exercised and so the acceptance run is one
-command away when ticket 25 lands. See litmus_expected.txt.
+Ticket 25 relinked the write verbs, so all five litmus groups can now be
+attempted. The suite has not been run since: it needs a served site. See
+litmus_expected.txt for the ledger and for what a real run must add to it.
 """
 
 import frappe
