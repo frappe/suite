@@ -130,9 +130,13 @@ def _create(
         depth = "0"
 
     is_collection = row.kind in ("root", "folder")
+    # RFC 4918 §9.10.5's table refuses an exclusive lock against any lock and a
+    # shared one against an exclusive, whoever holds it: "It is illegal for a
+    # principal to request the same lock twice." Exempting a lock whose token
+    # the caller submitted minted a second token over the same resource, and
+    # `locks.enforce` then wanted both: the holder could write with neither
+    # until one expired, and UNLOCK of either did not free it.
     conflicts = locks.find_conflicts(row.name, scope=scope, depth=depth, is_collection=is_collection)
-    tokens = locks.parsed_if(ctx).all_tokens()
-    conflicts = [lock for lock in conflicts if not (lock.token in tokens and lock.owner_user == ctx.user)]
     if conflicts:
         raise Locked(
             "The resource is already locked.",
