@@ -9,6 +9,7 @@ from unittest import mock
 
 import frappe
 
+from suite.drive import framework
 from suite.writer import drive as writer
 from suite.writer import overrides
 
@@ -44,6 +45,36 @@ class WriterVersionPayloads(unittest.TestCase):
         for raw in (b'{"schema":"writer-document/2"}', b"\xff"):
             with self.subTest(raw=raw), self.assertRaises(frappe.ValidationError):
                 writer._version_payload(raw)
+
+    def test_a_json_object_is_an_envelope_and_owes_a_schema(self):
+        # The fork is the shape, not a key spelling. A truncated envelope, or
+        # one whose key is misspelled, must not restore its own source text as
+        # the document body.
+        self._errors()
+        for raw in (
+            b"{}",
+            b'{"shema": "writer-document/1", "content": "a", "html": ""}',
+            b'{"content": "a", "html": "<p>x</p>"}',
+        ):
+            with self.subTest(raw=raw), self.assertRaises(frappe.ValidationError):
+                writer._version_payload(raw)
+
+    def test_json_that_is_not_an_object_is_still_read_as_legacy_html(self):
+        # HTML never parses as a JSON object, but a snapshot may be any text.
+        for raw in (b"[]", b"null", b"123", b"", b"<p>x</p>"):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    writer._version_payload(raw),
+                    {"content": writer.EMPTY_BODY, "html": raw.decode(), "collab": 0},
+                )
+
+    def test_a_version_larger_than_the_bound_is_refused_before_it_is_held(self):
+        self._errors()
+        oversized = io.BytesIO(b"x" * (writer.MAX_VERSION_BYTES + 1))
+        with mock.patch.object(writer.frappe.db, "set_value") as write:
+            with self.assertRaises(frappe.ValidationError):
+                writer.restore_version("WR-1", oversized)
+        write.assert_not_called()
 
     def test_version_capture_includes_collaboration_mode(self):
         row = frappe._dict(content="body", html="<p>x</p>", collab=0)
@@ -116,20 +147,21 @@ class WriterVersionPermissions(unittest.TestCase):
             )
         refuse.assert_called_once_with("Writer Version", "VER-1", "write", "reader@example.com")
 
-    def test_list_refuses_a_shared_child_of_a_linked_parent(self):
-        frappe = self._frappe()
-        frappe.db.sql.return_value = [("VER-1",)]
+    def test_list_refuses_a_shared_child_of_a_linked_parent_through_drive(self):
+        self._frappe()
         with (
-            mock.patch("frappe.share.get_shared", return_value=["VER-1"]),
-            self.assertRaises(PermissionError),
+            mock.patch.object(overrides.drive, "refuse_shared_child_rows") as refuse,
+            mock.patch.object(overrides, "_document_predicate", return_value=""),
         ):
             overrides.version_query_conditions("reader@example.com")
+        refuse.assert_called_once_with(
+            "Writer Version", "Writer Document", "doc", "node", "reader@example.com"
+        )
 
     def test_list_keeps_the_legacy_parent_predicate_when_no_shared_child_is_linked(self):
         frappe = self._frappe()
-        frappe.db.sql.return_value = []
         with (
-            mock.patch("frappe.share.get_shared", return_value=["VER-1"]),
+            mock.patch.object(overrides.drive, "refuse_shared_child_rows"),
             mock.patch.object(overrides, "_document_predicate", return_value="legacy-parent") as parent,
         ):
             condition = overrides.version_query_conditions("reader@example.com")
@@ -137,6 +169,92 @@ class WriterVersionPermissions(unittest.TestCase):
         parent.assert_called_once_with("reader@example.com")
         frappe.db.set_value.assert_not_called()
         frappe.db.delete.assert_not_called()
+
+    def test_only_the_administrator_skips_the_version_guards(self):
+        # §4.9 grants no `System Manager` bypass. Drive Grant is the only
+        # authority for a linked row (§1), and a role bypass here would hand a
+        # System Manager every migrated document's history.
+        frappe = self._frappe()
+        frappe.get_roles.return_value = ["All", "System Manager", "Suite Admin"]
+        frappe.db.get_value.return_value = "NODE-1"
+        with (
+            mock.patch.object(overrides.drive, "refuse_shared_row") as refuse,
+            mock.patch.object(overrides.File, "get_for_doc") as legacy_file,
+        ):
+            self.assertFalse(
+                overrides.version_has_permission(
+                    {"doctype": "Writer Version", "name": "VER-1", "doc": "DOC-1"}, "read"
+                )
+            )
+        refuse.assert_called_once()
+        legacy_file.assert_not_called()
+
+        with (
+            mock.patch.object(overrides.drive, "refuse_shared_child_rows") as refuse_list,
+            mock.patch.object(overrides, "_document_predicate", return_value=""),
+        ):
+            overrides.version_query_conditions("reader@example.com")
+        refuse_list.assert_called_once()
+
+
+class SharedChildRefusal(unittest.TestCase):
+    """`suite.drive.framework.refuse_shared_child_rows`, the guard Writer calls."""
+
+    def _framework(self):
+        patcher = mock.patch.object(framework, "frappe")
+        patched = patcher.start()
+        self.addCleanup(patcher.stop)
+        patched.session.user = "reader@example.com"
+        return patched
+
+    def _refuse(self, user="reader@example.com"):
+        framework.refuse_shared_child_rows("Writer Version", "Writer Document", "doc", "node", user)
+
+    def test_a_share_reaching_a_linked_parent_raises_drive_forbidden(self):
+        # Not `frappe.PermissionError`: `frappe.desk.notifications` and
+        # `desktop` swallow that one, so the refusal would go silent there.
+        patched = self._framework()
+        patched.get_all.return_value = ["DOC-1"]
+        patched.db.get_value.return_value = "DOC-1"
+        with mock.patch("frappe.share.get_shared", return_value=["VER-1"]):
+            with self.assertRaises(framework.DriveForbidden):
+                self._refuse()
+
+    def test_the_parent_read_asks_is_set_so_an_empty_link_is_unlinked(self):
+        # Frappe stores an unset Link as `''`. `node IS NOT NULL` would read one
+        # as linked and 403 the caller out of their own legacy version list.
+        patched = self._framework()
+        patched.get_all.return_value = ["DOC-1"]
+        patched.db.get_value.return_value = None
+        with mock.patch("frappe.share.get_shared", return_value=["VER-1"]):
+            self._refuse()
+        self.assertEqual(
+            patched.db.get_value.call_args.args[1],
+            {"name": ("in", ["DOC-1"]), "node": ("is", "set")},
+        )
+
+    def test_no_share_asks_the_database_nothing(self):
+        patched = self._framework()
+        with mock.patch("frappe.share.get_shared", return_value=[]):
+            self._refuse()
+        patched.get_all.assert_not_called()
+        patched.db.get_value.assert_not_called()
+
+    def test_a_share_on_an_orphan_child_never_builds_an_empty_in_clause(self):
+        # `("in", [])` is a MariaDB syntax error, and a version row whose parent
+        # is gone plucks `None`.
+        patched = self._framework()
+        patched.get_all.return_value = [None]
+        with mock.patch("frappe.share.get_shared", return_value=["VER-1"]):
+            self._refuse()
+        patched.db.get_value.assert_not_called()
+
+    def test_the_administrator_is_skipped(self):
+        patched = self._framework()
+        with mock.patch("frappe.share.get_shared") as shared:
+            self._refuse("Administrator")
+        shared.assert_not_called()
+        patched.get_all.assert_not_called()
 
 
 if __name__ == "__main__":
