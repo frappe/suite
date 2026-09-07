@@ -35,7 +35,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_spam_status,
 )
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
-from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
+from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes, fetch_mailboxes
 from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
     set_mailbox_settings,
@@ -172,9 +172,17 @@ def get_mailboxes(account: str) -> list[dict]:
 
 
 def get_user_mailboxes(account: str) -> list[dict]:
-    """Returns the user's mailboxes."""
+    """Returns the user's mailboxes.
 
-    return frappe.get_all("Mailbox", filters={"account": account})
+    Straight to fetch_mailboxes rather than through frappe.get_all("Mailbox"): Mailbox is a virtual
+    doctype, so a list query is routed to Mailbox.get_list, and frappe fixes the page length there
+    at `page_length or limit or limit_page_length or 20`. get_all asks for everything by passing
+    limit_page_length=0, which is falsy and so loses to the 20 — accounts with more folders than
+    that silently lost the ones sorting last (the Screener among them, since it sorts after the
+    named folders).
+    """
+
+    return fetch_mailboxes(account)
 
 
 def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool = False) -> list[dict]:

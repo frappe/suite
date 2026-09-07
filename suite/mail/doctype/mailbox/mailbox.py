@@ -248,8 +248,13 @@ def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -
 
 
 @frappe.whitelist()
-def fetch_mailboxes(account: str, page: int = 1, limit: int = 10) -> list:
-    """Returns a list of mailboxes for the given account."""
+def fetch_mailboxes(account: str, page: int = 1, limit: int | None = None) -> list:
+    """Returns a list of mailboxes for the given account.
+
+    Unpaginated by default: an account's mailboxes are a list the caller almost always wants whole
+    (the client's folder list, a sieve rebuild, a link-field search), and a default page silently
+    dropped whatever sorted last. Only the desk list view pages, and it passes its own `limit`.
+    """
 
     service = get_mailbox_service(account)
     mailboxes = service.get()
@@ -258,6 +263,9 @@ def fetch_mailboxes(account: str, page: int = 1, limit: int = 10) -> list:
         formatted_mailboxes, key=lambda m: (m["sort_order"], get_sort_order(m["role"]), m["_name"], m["id"])
     )
     frappe.cache.set_value(_get_total_cache_key(account), len(mailboxes), expires_in_sec=600)
+
+    if limit is None:
+        return sorted_mailboxes
 
     start = (page - 1) * limit
     end = start + limit
