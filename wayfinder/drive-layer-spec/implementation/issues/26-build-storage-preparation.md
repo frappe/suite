@@ -4,7 +4,7 @@
 
 **Blocked by:** [25 — Write and lock files over the same Drive workflows](25-webdav-write.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress — code complete, awaiting the root site gate
 
 **Owner:** Suite migration
 
@@ -45,7 +45,8 @@ reviews raised, and made the commits.
 Base Suite `0aaa3ecda`, the commit that closed ticket 25, on
 `implement/drive-26-build-storage-preparation`. Frappe
 `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` on `forge/storage-v2`, read only
-and unchanged. No Frappe core file is touched.
+and unchanged in this pass. A later pass does change one Frappe core file:
+see **Large objects: what was built**. Read that before planning a migrate.
 
 | Commit | Subject |
 |---|---|
@@ -79,15 +80,15 @@ runs against `tests/fakes.py` with no site, no bucket, and no database.
 
 | Criterion | Where | Proof |
 |---|---|---|
-| Storage-enabled and S3 gates before mutation | `gate.py:26-71` | `test_gate` (10): storage off, an S3 Drive on a local driver, a driver with no bucket, an unnamed legacy bucket, two buckets, one name at two endpoints, and that a refused gate calls no backfill, commits nothing, and writes no record |
-| Idempotent framework local backfill | `legacy_bytes.py:32` | calls `frappe.storage.backfill.run()` unfiltered at the framework's own page size. `test_legacy_bytes.TestIdempotence`; on a site, `test_build_storage.test_a_second_run_links_nothing_new` |
+| Storage-enabled and S3 gates before mutation | `gate.py:32-85` | `test_gate` (15): storage off, an S3 Drive on a local driver, a driver with no bucket, an unnamed legacy bucket, two buckets, one name at two endpoints, and that a refused gate calls no backfill, commits nothing, and writes no record |
+| Idempotent framework local backfill | `legacy_bytes.py:43` | calls `frappe.storage.backfill.run()` unfiltered at the framework's own page size. `test_legacy_bytes.TestIdempotence`; on a site, `test_build_storage.test_a_second_run_links_nothing_new` |
 | Attachments outside reachable Drive trees preserved | `SiteFiles.link_blob`, framework `backfill.py:126-146` | the backfill links in place and never rewrites `file_url`. `test_the_legacy_s3_object_and_url_survive_the_copy`, `test_a_framework_attachment_outside_drive_is_left_alone`, and on a site `test_local_bytes_are_linked_in_place_and_left_untouched` |
 | Hash once | `s3_copy.py:_read_once` | one `get_object` per row, and `FakeBucket` hands back a single-use forward-only stream, so a second pass cannot pass the test. `test_the_object_is_read_exactly_once`, `test_the_body_is_never_rewound` |
-| Canonical-layout copy | `layout.py` | `test_layout` (7) pins the key against `frappe.storage.blob.make_key`, `sanitized_extension`, and `S3Driver.object_key`, not against a literal |
+| Canonical-layout copy | `layout.py` | `test_layout` (8) pins the key against `frappe.storage.blob.make_key`, `sanitized_extension`, and `S3Driver.object_key`, not against a literal |
 | `File.blob` linked | `SiteFiles.link_blob` | one column, no doc events, no `modified` bump. `test_ports.test_linking_writes_the_blob_column_and_nothing_else` |
 | Managed multipart copy above 5 GB | `s3_copy.copy_in_bucket` | the choice is pinned at the boundary by `TestCopyChoice` and `TestMultipartWiring`, and end to end by `TestObjectAboveFiveGB`. A 6 GB object reaches a `File Blob` row once the framework column is migrated. See **Large objects: what was built** |
-| Resume without recopying complete objects | `s3_copy.py:_copy_one` | three layers: a linked row leaves the query, a matching blob row skips the copy, a complete object at the destination skips it. `TestResume` (4) and `TestInterruptedRunResumes` (3) |
-| Durable missing-byte and S3-copy results | `state.py` | `TestMissingBytes` (6) and `TestDurableRecord` (5), including a record kept aside rather than overwritten |
+| Resume without recopying complete objects | `s3_copy.py:_copy_one` | three layers: a linked row leaves the query, a matching blob row skips the copy, a complete object at the destination skips it. `TestResume` (6) and `TestInterruptedRunResumes` (3) |
+| Durable missing-byte and S3-copy results | `state.py` | `TestMissingBytes` (5) and `TestDurableRecord` (5), including a record kept aside rather than overwritten |
 | Original local bytes and legacy S3 objects preserved | — | nothing in the package deletes, moves, or truncates. The `S3Bucket` seam has no delete, and `test_ports.test_it_never_writes_or_deletes_through_the_client` proves `BotoBucket` issues no write or delete against the client |
 | Build registration gated on ticket 30 | — | `test_dormancy` (7): `patches.txt`, `hooks.py`, and the fixtures name no `patches.build`; the package exports no `execute`; it ships no JSON; and parsing every module shows nothing runs at import time |
 
@@ -238,11 +239,15 @@ map builds a bare `Int` as `int(11)`. The ceiling was 2,147,483,647 bytes.
 `File.file_size` carries `length: 20` and is already a bigint, so the legacy
 table held files the blob table could not describe.
 
-Every object above 5 GB is therefore also above that ceiling. Under a strict
-`sql_mode` the insert raises and `migrate` dies after earlier batches have
-committed. Without strict mode the value is clamped, and `File Blob.file_size`
-then lies to the §14.2 step 12 `used_bytes` recompute, to
-`frappe.storage.serve`'s ranged downloads, and to §13 relocation.
+Every object above 5 GB is therefore also above that ceiling.
+`_validate_length` (`frappe/model/base_document.py:1326`) reads the same
+`length > 11` rule the schema does, so `blob.insert()` raised
+`CharacterLengthExceededError` before any SQL ran, in either `sql_mode`, and
+`migrate` died after earlier batches had committed. The clamp was reachable
+only through `db_insert` and `db.set_value`, which skip document validation;
+Build uses neither. A clamped `File Blob.file_size` would lie to the §14.2
+step 12 `used_bytes` recompute, to `frappe.storage.serve`'s ranged downloads,
+and to §13 relocation.
 
 The independent review made `_copy_one` refuse above the ceiling and report
 the row. That kept the failure visible and bounded, and left the criterion
@@ -279,7 +284,7 @@ tree, so no commit in the chain is red.
 |---|---|---|
 | High | A claimed blob was linked without heading its object. `frappe.storage.gc` deletes a blob's bytes first and its row second, and keeps the row when the delete raises; a bucket swap leaves every older blob the same way. The copy path verified twice, the reuse path not at all, so Cleanup would delete the legacy object and leave the `File` pointing at nothing | head the object at the claimed blob's own key and copy it there when it is gone |
 | High | Rows Build cannot reach were recorded nowhere. A bare bucket key, a fetch URL left by a prefix rename that never ran, and every fetch URL on a site whose Drive Disk Settings are off all got no blob, no counter, and no `missing_bytes` entry. §14.10 then deletes Drive's legacy prefix | a third read-only pass lists them, with rows that never had bytes left out |
-| High | `File Blob.file_size` is an `int(11)`. Any object above 2 GiB either aborted `migrate` or was silently clamped | refuse above the ceiling and report the row. Superseded: the column is now a bigint and the refusal is gone |
+| High | `File Blob.file_size` is an `int(11)`. Any object above 2 GiB aborted `migrate` | refuse above the ceiling and report the row. Superseded: the column is now a bigint and the refusal is gone |
 | High | The gate proved only that two strings agreed. The first bucket call happened in step 3, after the backfill had committed. Revoked credentials, a missing bucket, or a role without `s3:ListBucket` left a half-migrated site | head one key that cannot exist, before any mutation |
 | Medium | `begin_run` cleared `backfill_linked` and `backfill_blobs_created`, which the framework backfill cannot recompute. Every resumed run reported zero local rows linked | make both cumulative and add to them |
 | Medium | The unique index on `(checksum, is_private, driver)` carries no `status`, so a `Pending` row for the same content made `claim_blob` refuse and `insert_blob` raise. That aborted the run, and aborted it again on every rerun | report the conflict and carry on |
@@ -616,7 +621,7 @@ on the bench's own checkout: a site's schema does not come from a worktree.
 ```
 env -C /home/faris/benches/suite-bench/apps/frappe git status --short
 env -C /home/faris/benches/suite-bench/apps/frappe git log --oneline -1
-env -C /home/faris/benches/suite-bench/apps/frappe git merge --ff-only fix/drive-26-large-file-size
+env -C /home/faris/benches/suite-bench/apps/frappe git merge --ff-only review/drive-26-large-file-size
 
 env -C /home/faris/benches/suite-bench bench --site slides.localhost migrate
 
@@ -641,7 +646,9 @@ env -C /home/faris/benches/suite-bench \
 
 Read the first two commands before the third. `git merge --ff-only` needs
 `apps/frappe` clean and on `forge/storage-v2`. The branch is that commit
-plus one, so the merge fast-forwards.
+plus two, so the merge fast-forwards. It is `review/…`, not `fix/…`: the
+final review added a second commit on top. `fix/drive-26-large-file-size`
+still exists and is now one commit behind.
 
 `migrate` here applies the column. It still cannot reach a line of
 `suite/drive/patches/build/`, because `patches.txt` does not name it.
@@ -656,3 +663,165 @@ column for its twelfth case.
 The multipart criterion stays unticked until root migrates and both
 site-backed modules pass. It is no longer blocked: the implementation is
 complete.
+
+### Final independent review
+
+A fresh session reviewed both repositories from their bases, trusting none of
+the evidence above. Five agents ran bounded audits: the framework schema
+change and every consumer of a blob size, multipart copy correctness and
+recovery, `File Blob` linking and deduplication, the acceptance criteria and
+dormancy, and the tests. The reviewer confirmed each finding against the
+source before acting, ran the site-free suite and the lint checks, wrote the
+corrections and their tests, and made the commits.
+
+Base Suite `3fe18431f` on `review/drive-26-final`. Base Frappe `9fb933a4ee`
+on `review/drive-26-large-file-size`.
+
+| Repository | Commit | Subject |
+|---|---|---|
+| Frappe | `3357ad1605` | say what a narrow file_size really did |
+| Suite | `25797f586` | make Build's conflict recovery survive Postgres |
+| Suite | `a507f76c0` | close three gaps the Build storage tests left open |
+
+Two defects were found. Neither loses bytes.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| Medium | `BlobConflict` promised the run "carries on", and on Postgres it did not. A unique violation aborts the whole transaction there, so `blocked_by` and every later statement in the batch would raise `InFailedSqlTransaction` and the migration would die — the outcome the handler exists to prevent | take a savepoint around the insert and roll back to it before reporting. Two statements against a row that already paid for an S3 copy |
+| Low | Three test modules carried `if __name__ == "__main__"` in the middle of the file. `test_s3_copy` hid 16 cases below it, `test_legacy_bytes` 15, `test_ports` 5, including every `TestObjectAboveFiveGB` case | move the guard to the end of each file |
+
+Three test-effectiveness gaps were closed. Each was a surviving mutation.
+
+| Gap | Test added |
+|---|---|
+| `_place_object` skipped the copy on `== size`, and nothing proved it was not `>=`. A longer object at the destination would have been accepted and a blob linked over bytes whose checksum they do not have | `test_an_oversized_object_at_the_destination_is_copied_again` |
+| `FakeBucket` imported `MULTIPART_COPY_THRESHOLD`, so its 5 GiB refusal moved with the constant. A decimal `5 * 1000**3` was caught by one assertion | the fake carries its own literal `5_368_709_120`; `test_the_threshold_is_what_the_fake_bucket_refuses` pins the two against each other |
+| `SiteStorage.insert_blob` was only ever handed `size=12`, so a narrowing cast on the one port that writes `File Blob.file_size` was invisible | the existing port test now inserts 6 GB |
+
+`test_dormancy` now derives its module list from the package instead of a
+hand-kept tuple, so a new module that ships an `execute` cannot be missed.
+`environment` was not in the old tuple.
+
+Recorded claims that did not hold, now corrected above:
+
+- "Under a strict `sql_mode` the insert raises … without strict mode the
+  value is clamped." `_validate_length` reads the same `length > 11` rule the
+  schema does, so `blob.insert()` raised `CharacterLengthExceededError`
+  before any SQL ran, in either mode. The clamp needed `db_insert` or
+  `db.set_value`, which Build does not use. The fix was right; the mechanism
+  was not.
+- "No Frappe core file is touched." True of the first pass only. The large-
+  object pass changes `frappe/core/doctype/file_blob/file_blob.json`.
+- `test_gate` (10), `TestResume` (4), `TestMissingBytes` (6), `gate.py:26-71`
+  and `legacy_bytes.py:32` had all drifted. Corrected.
+- The root merge names `review/drive-26-large-file-size` now, not `fix/…`.
+
+Findings confirmed and deliberately left alone:
+
+- **The 5 GiB threshold and the `>` comparison are right.**
+  `s3transfer.utils.MAX_SINGLE_UPLOAD_SIZE` is `5 * 1024**3` and S3's
+  CopyObject limit is inclusive, so an object of exactly 5 GiB is a legal
+  single-part copy.
+- **The managed copy cannot exceed 10,000 parts.**
+  `s3transfer/copies.py:248` runs `ChunksizeAdjuster` before computing the
+  part count, so an 8 MiB default grows to 512 MiB for a 5 TB object. The
+  largest workable object is about 47.7 TiB, above S3's own 5 TB maximum.
+- **`File.blob` is in GC's reference discovery.** `get_link_fields` finds it,
+  and the orphan predicate emits `not exists (select 1 from tabFile …)`, so
+  a migrated blob is never collected. Re-verified from the source.
+- **The extension case in dedup is correct.** Two rows with one content and
+  different extensions link to one blob, because `_copy_one` heads the
+  claimed row's own key rather than one recomputed from its own filename.
+
+New risks, none of them resolved here:
+
+- **A permanently unreadable object stops every run, not just this one.**
+  `_copy_one` catches `FileNotFoundError` only. An object in GLACIER answers
+  `InvalidObjectState`, and a prefix-scoped bucket `Deny` answers
+  `AccessDenied`; both propagate, `migrate` rolls back, and the rerun dies on
+  the same row. Failing closed is right for a systemic fault — recording
+  every row as a missing byte would be worse — but a per-object permanent
+  error has no way past. Ticket 29 owns the report; a per-object skip list
+  belongs with it.
+- **An interrupted backfill loses its counters for good.**
+  `frappe.storage.backfill.run` commits every page but returns its totals
+  only at the end. A run killed mid-backfill leaves the rows linked and
+  `backfill_linked` never incremented, and the rerun's backfill skips those
+  rows and reports zero. The S3 step flushes its record per batch and is
+  bounded at one batch; the backfill step is bounded at the whole run.
+  Deriving the two numbers by query at report time would close it, and that
+  is §14.9's, not this ticket's.
+- **The gate probes the canonical namespace, not the legacy Drive prefix.**
+  `PROBE_KEY` is `private/.drive-build-gate-probe`. A driver credential
+  scoped to `private/*` and `public/*` passes the gate and then
+  `AccessDenied`s on the first legacy `bucket.open()`, after the backfill has
+  committed. A second probe under Drive's own prefix would close it.
+- **Pre-rename fetch URLs are recorded as unreachable although their bytes
+  are readable.** A row still carrying `drive.api.s3.fetch?path=` — one
+  `migrate_s3_url_prefix` never reached — fails the prefix match and lands in
+  `missing_bytes`. §14.2 step 3 names the `suite.` prefix, so this follows
+  the spec text; the report names the rows, and §14.10 must not run before
+  someone reads it.
+- **`frappe/storage/SPEC.md` calls `File Blob.key` unique.** It is
+  `search_index`; only `(checksum, is_private, driver)` carries a unique
+  index. Pre-existing, framework side, outside this ticket.
+
+### Commands and real results, final review
+
+Site-free, in both worktrees. No `bench`, `migrate`, `install`, `restart`, or
+`push` was run. `slides.localhost`, its queues, and its configuration were not
+touched.
+
+```
+$ python3 -m compileall -q suite/drive/patches/build suite/drive/tests/test_build_storage.py
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/patches/build suite/drive/tests/test_build_storage.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/patches/build suite/drive/tests/test_build_storage.py
+17 files already formatted
+
+$ python3 -m compileall -q frappe/core/doctype/file_blob
+COMPILED
+$ uvx ruff@0.12.3 check frappe/core/doctype/file_blob
+All checks passed!
+$ uvx ruff@0.12.3 format --check frappe/core/doctype/file_blob
+3 files already formatted
+
+$ cd sites && PYTHONPATH=<frappe worktree>:<suite worktree> ../env/bin/python <runner> \
+    suite.drive.patches.build.tests.{test_gate,test_layout,test_s3_copy,\
+    test_legacy_bytes,test_ports,test_dormancy} suite.tests.test_architecture
+Ran 140 tests in 1.504s
+OK
+```
+
+Per module: `test_gate` 15, `test_layout` 8, `test_s3_copy` 41,
+`test_legacy_bytes` 34, `test_ports` 28, `test_dormancy` 7, and
+`suite.tests.test_architecture` 7. Was 136; the review added 4.
+
+Both site-backed modules still collect and are still **not run**:
+`suite/drive/tests/test_build_storage.py` 12 cases,
+`frappe.core.doctype.file_blob.test_file_blob` 8.
+
+### Mutation check, final review
+
+Five mutations, applied to a copy under `/tmp` and run against the site-free
+suite. All five fail, and each on the test written for it.
+
+| Mutation | Caught by | Was |
+|---|---|---|
+| `_place_object` accepts an oversized destination object | `test_an_oversized_object_at_the_destination_is_copied_again` | survivor |
+| the threshold becomes a decimal `5 * 1000**3` | `test_the_threshold_is_what_the_fake_bucket_refuses`, plus the literal pin | 1 assertion only |
+| `insert_blob` masks the size to 32 bits | `test_the_inserted_blob_is_a_ready_private_s3_row` | survivor |
+| the conflict path skips the savepoint rollback | `test_a_conflict_rolls_back_to_the_savepoint_before_it_is_reported` | new |
+| no savepoint is taken at all | that test plus `test_the_insert_is_wrapped_in_a_savepoint` | new |
+
+### Dormancy, re-proved again
+
+`suite/patches.txt`, `suite/hooks.py`, `suite/modules.txt` and every file
+under `suite/fixtures/` name no `patches.build`. `after_migrate` resolves to
+`suite.composition.lifecycle.after_migrate`, which calls Mail's hook and
+Drive's content-registry check and nothing else. No `.json` exists anywhere
+under `suite/drive/patches/`. Nothing outside `suite/drive/tests/test_build_storage.py`
+imports the package. `test_dormancy` (7) passes. Tickets 29 and 30 are
+unchanged, still `ready-for-agent`, with every box unticked. The Frappe
+commits register no patch and no hook.
