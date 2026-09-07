@@ -101,6 +101,12 @@ def _refresh(ctx: DavContext, resolved: pathmap.ResolvedPath, timeout: int) -> R
     # been lowered keep the write lock alive for as long as they kept asking,
     # locking the owner out of their own file with a role that cannot write it.
     require(resolved.node, EDIT, ctx.principals)
+    # §10.4.1 applies to a refresh exactly as it does to the LOCK that minted
+    # the lock: `_create` gates on the conditions, and a refresh that skipped
+    # them kept a lock alive on an ETag that no longer held. `enforce` is still
+    # the wrong gate here for §9.10.5's reason, so this is the same
+    # conditions-only call `_create` makes.
+    locks.check_conditions(ctx)
 
     submitted = locks.parsed_if(ctx).all_tokens()
     if not submitted:
