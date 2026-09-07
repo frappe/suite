@@ -242,6 +242,63 @@ class TestWebDAVProppatch(IntegrationTestCase):
             self._proppatch(SET_CUSTOM, path=f"/dav/{self.folder_title}/ghost.txt")
 
     # ----------------------------------------------------------------------
+    # The per-entity property cap
+    # ----------------------------------------------------------------------
+
+    def _fill_to_cap(self) -> None:
+        """Store exactly MAX_PROPS_PER_ENTITY dead properties on the file."""
+        for index in range(deadprops.MAX_PROPS_PER_ENTITY):
+            deadprops.upsert(self.file.name, etree.Element(f"{{urn:z}}p{index}"))
+        self.assertEqual(deadprops.count(self.file.name), deadprops.MAX_PROPS_PER_ENTITY)
+
+    def test_the_cap_refuses_one_more_property_than_the_entity_may_hold(self):
+        """A genuine addition at the cap is 507, and nothing is applied."""
+        self._fill_to_cap()
+
+        parsed = multistatus(self._proppatch(SET_CUSTOM))
+        self.assertEqual(prop_statuses(parsed)[COLOR], "HTTP/1.1 507 Insufficient Storage")
+        self.assertNotIn(COLOR, deadprops.get_dead_props([self.file.name]).get(self.file.name, {}))
+        self.assertEqual(deadprops.count(self.file.name), deadprops.MAX_PROPS_PER_ENTITY)
+
+    def test_overwriting_a_property_the_entity_holds_is_not_an_addition(self):
+        """A `set` over a stored property replaces one row and asks for no
+        storage, so the cap has nothing to refuse. Counting it as an addition
+        made a client sitting at the cap unable to rewrite its own property."""
+        deadprops.upsert(self.file.name, etree.fromstring(b'<z:color xmlns:z="urn:z">green</z:color>'))
+        for index in range(deadprops.MAX_PROPS_PER_ENTITY - 1):
+            deadprops.upsert(self.file.name, etree.Element(f"{{urn:z}}p{index}"))
+        self.assertEqual(deadprops.count(self.file.name), deadprops.MAX_PROPS_PER_ENTITY)
+
+        parsed = multistatus(self._proppatch(SET_CUSTOM))
+        self.assertEqual(prop_statuses(parsed)[COLOR], "HTTP/1.1 200 OK")
+        stored = deadprops.get_dead_props([self.file.name])[self.file.name]
+        self.assertEqual(stored[COLOR].text, "indigo")
+        self.assertEqual(deadprops.count(self.file.name), deadprops.MAX_PROPS_PER_ENTITY)
+
+    def test_the_cap_counts_a_repeated_tag_once(self):
+        """Two sets of one tag in one body write one row, so they cost one."""
+        for index in range(deadprops.MAX_PROPS_PER_ENTITY - 1):
+            deadprops.upsert(self.file.name, etree.Element(f"{{urn:z}}p{index}"))
+
+        body = (
+            b'<?xml version="1.0"?><D:propertyupdate xmlns:D="DAV:" xmlns:z="urn:z">'
+            b"<D:set><D:prop><z:color>one</z:color></D:prop></D:set>"
+            b"<D:set><D:prop><z:color>two</z:color></D:prop></D:set></D:propertyupdate>"
+        )
+        parsed = multistatus(self._proppatch(body))
+        self.assertEqual(prop_statuses(parsed)[COLOR], "HTTP/1.1 200 OK")
+        self.assertEqual(deadprops.count(self.file.name), deadprops.MAX_PROPS_PER_ENTITY)
+
+    def test_a_same_named_property_in_another_namespace_is_a_real_addition(self):
+        """The cap keys on (namespace, name), so `urn:y`色 is not `urn:z`色."""
+        deadprops.upsert(self.file.name, etree.fromstring(b'<y:color xmlns:y="urn:y">green</y:color>'))
+        for index in range(deadprops.MAX_PROPS_PER_ENTITY - 1):
+            deadprops.upsert(self.file.name, etree.Element(f"{{urn:z}}p{index}"))
+
+        parsed = multistatus(self._proppatch(SET_CUSTOM))
+        self.assertEqual(prop_statuses(parsed)[COLOR], "HTTP/1.1 507 Insufficient Storage")
+
+    # ----------------------------------------------------------------------
     # §9.2 atomicity
     # ----------------------------------------------------------------------
 

@@ -105,7 +105,6 @@ def _parse_body(ctx: DavContext) -> list[Instruction]:
 
 
 def _validate(row: frappe._dict, instructions: list[Instruction]) -> None:
-    additions = 0
     for instruction in instructions:
         if instruction.tag in PROTECTED:
             instruction.status = 403
@@ -115,10 +114,15 @@ def _validate(row: frappe._dict, instructions: list[Instruction]) -> None:
                 instruction.status = 507
             elif instruction.tag == WIN32_MTIME and not parse_date(instruction.element.text or ""):
                 instruction.status = 409
-            else:
-                additions += 1
 
-    if additions and deadprops.count(row.name) + additions > deadprops.MAX_PROPS_PER_ENTITY:
+    # Only a property the entity does not already hold grows the count: a `set`
+    # over one it owns replaces a row. Counting those as additions answered 507
+    # to a client at the cap that was rewriting its own property and asking for
+    # no storage at all. A tag named twice in one body is still one row.
+    pending = {i.tag for i in instructions if i.action == "set" and i.status == 200}
+    additions = pending - deadprops.existing_tags(row.name, pending)
+
+    if additions and deadprops.count(row.name) + len(additions) > deadprops.MAX_PROPS_PER_ENTITY:
         for instruction in instructions:
             if instruction.action == "set" and instruction.status == 200:
                 instruction.status = 507
