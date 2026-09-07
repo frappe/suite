@@ -107,7 +107,7 @@ def _dispatch(request: Request) -> None:
     except Exception as e:
         _rollback()
         mapped = errors.map_exception(e)
-        log.note(f"{type(e).__name__}: {e}"[:200])
+        log.note(f"{type(e).__name__}: {e}")  # `log.note` bounds and cleans it
         if mapped.status >= 500:
             frappe.log_error(title=f"WebDAV {request.method} {request.path}"[:140])
             # frappe/app.py rolls back again after the carrier is raised; the
@@ -153,33 +153,57 @@ def _raise(response: Response) -> None:
     raise DAVResponseException(response=response)
 
 
+# RFC 9110 §5.5's field-vchar, plus SP and HTAB: everything a response header
+# value may legally hold. `_make_headers_sendable` percent-encodes the rest.
+_SENDABLE = frozenset("\t" + "".join(chr(code) for code in range(0x20, 0x7F)))
+
+
 def _make_headers_sendable(response: Response) -> None:
     """Percent-encode any header value the wire cannot carry (RFC 9110 §5.5).
 
-    An HTTP header value is latin-1 on the wire. A value holding a character
-    outside it raises `UnicodeEncodeError` inside the server's own
-    `send_header`, after the status line is already written: the client gets no
-    response at all and waits for one until it times out, while the DAV log
-    records the status the handler returned. Litmus's `put_get_utf8_segment`
-    found it on a node titled `res-€`.
+    §5.5 spells a field value `*( field-vchar / SP / HTAB )`, so the only
+    characters a header may hold are printable US-ASCII, space and tab.
+    `_SENDABLE` is that set, and everything outside it is percent-encoded. One
+    rule catches two distinct faults:
 
-    Every header this adapter names is already safe — `get.py` names a
-    download the way RFC 6266 does, `pathmap.href_for` percent-encodes every
-    URI, and the rest are constants or hashes. This is the net under them,
-    because the byte path is not all ours: on a non-local storage driver
-    `frappe.storage.serve._stream_driver_response` sets `Content-Disposition`
-    from the raw filename, and `get.py` only overwrites that on a 200 or a 206.
+    - Above US-ASCII the value cannot be put on the wire at all. A WSGI server
+      encodes a header latin-1, and a character outside latin-1 raises
+      `UnicodeEncodeError` inside the server's own `send_header`, after the
+      status line is already written: the client gets no response and waits
+      for one until it times out, while the DAV log records the status the
+      handler returned. Litmus's `put_get_utf8_segment` found it on a node
+      titled `res-€`. Latin-1 itself is `obs-text`, which §5.5 deprecates and
+      tells a recipient to treat as opaque data, so it is encoded rather than
+      passed through as a byte nobody can read back.
+    - Below US-ASCII a control character is forbidden in a field value, and it
+      is what a proxy or a client may resynchronize on. Werkzeug refuses CR
+      and LF where a header is set, so a response split cannot be built; NUL,
+      DEL and the rest of C0 it accepts, and this is where they stop.
+
+    Nothing reaches it today, and that is the intent. Every header this adapter
+    names is already safe: `get.py` names a download the way RFC 6266 does,
+    `pathmap.href_for` percent-encodes every URI, and the rest are constants or
+    hashes. The byte path below the adapter was audited too, and every branch
+    of `frappe.storage.serve` that sets `Content-Disposition` from a filename
+    is a 200 or a 206 that `get.py` then overwrites; its 304 and 416 set none.
+    So this is defence in depth, not live coverage, and a header that arrives
+    here is a defect to fix where it is set. That is why the rewrite is logged.
 
     Percent-encoding, not dropping: it is the correct encoding for a
     URI-valued header and a legal, lossy one for the rest, and a dropped
     `Content-Disposition` would serve user bytes without the attachment
-    disposition that keeps them inert. The rewrite is logged, so a header that
-    reaches here is still a defect to fix where it is set.
+    disposition that keeps them inert.
     """
     rewritten: list[tuple[str, str]] = []
     names: list[str] = []
     for key, value in response.headers.items():
-        safe = "".join(character if character.isascii() else quote(character, safe="") for character in value)
+        # `errors`: a lone surrogate would otherwise raise the very
+        # `UnicodeEncodeError` this function exists to prevent, out of a place
+        # no handler can answer from
+        safe = "".join(
+            character if character in _SENDABLE else quote(character, safe="", errors="replace")
+            for character in value
+        )
         if safe != value:
             names.append(key)
         rewritten.append((key, safe))
