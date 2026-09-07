@@ -106,6 +106,27 @@ class TestPreconditions(UnitTestCase):
         # garbage dates are ignored per RFC
         evaluate_preconditions(request_with(**{"If-Unmodified-Since": "not-a-date"}), row())
 
+    def test_if_match_is_evaluated_and_if_unmodified_since_is_not(self):
+        """RFC 7232 §6 step 2 runs "when If-Match is not present".
+
+        A validator the client supplied and the server matched is the stronger
+        statement about the same state. Evaluating a stale date beside it
+        turned a write the RFC accepts into a 412, and Office sends both
+        headers on the save that follows a lock.
+        """
+        etag = compute_etag(row())
+        stale = rfc1123(datetime(2020, 1, 1))
+        evaluate_preconditions(request_with(**{"If-Match": etag, "If-Unmodified-Since": stale}), row())
+
+        # with no If-Match the date is back in play
+        with self.assertRaises(PreconditionFailed):
+            evaluate_preconditions(request_with(**{"If-Unmodified-Since": stale}), row())
+        # and an If-Match that does not match still refuses
+        with self.assertRaises(PreconditionFailed):
+            evaluate_preconditions(
+                request_with(**{"If-Match": '"other"', "If-Unmodified-Since": stale}), row()
+            )
+
     def test_the_row_time_is_only_a_fallback(self):
         """§8.11: `content_modified` is the content's own time. The row time
         answers only while nothing has written the content yet."""
