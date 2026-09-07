@@ -1,7 +1,10 @@
+import uuid
+
 import frappe
 from frappe.tests import UnitTestCase
 
 from suite.drive.webdav.ifheader import EMPTY_IF, BadIfHeader, parse_if_header
+from suite.drive.webdav.properties import compute_etag
 
 TOKEN = "urn:uuid:11111111-2222-3333-4444-555555555555"
 
@@ -63,6 +66,36 @@ class TestIfHeaderParsing(UnitTestCase):
             with self.assertRaises(BadIfHeader, msg=bad):
                 parse_if_header(bad)
 
+    def test_a_resource_tag_with_no_state_list_is_refused(self):
+        """`Tagged-list = Resource-Tag 1*List` (§10.4.2). A tag standing alone
+        used to be dropped, and the lists around it were evaluated as if the
+        client had never named a resource."""
+        for bad in (
+            f'(<{TOKEN}> ["v1"]) </dav/other.txt>',
+            "</dav/a.txt> </dav/b.txt> (<tok>)",
+            f"</dav/a.txt> (<{TOKEN}>) </dav/b.txt>",
+        ):
+            with self.assertRaises(BadIfHeader, msg=bad):
+                parse_if_header(bad)
+
+    def test_a_repeated_not_is_refused_rather_than_absorbed(self):
+        """One `Not` per condition. A second used to be swallowed by the
+        first, so `Not Not <tok>` evaluated as `Not <tok>`."""
+        for bad in ("(Not Not <tok>)", '(Not Not ["v1"])', "(Not Not Not <tok>)"):
+            with self.assertRaises(BadIfHeader, msg=bad):
+                parse_if_header(bad)
+
+    def test_a_dangling_not_closes_nothing(self):
+        for bad in ('(<tok> ["v1"] Not)', "(Not)"):
+            with self.assertRaises(BadIfHeader, msg=bad):
+                parse_if_header(bad)
+
+    def test_not_is_matched_case_insensitively(self):
+        """The ABNF spells it `"Not"`, and RFC 5234 §2.3 makes a quoted string
+        case-insensitive. A client sending `not` means the same thing."""
+        parsed = parse_if_header("(not <DAV:no-lock>)")
+        self.assertTrue(parsed.tagged[0].lists[0].conditions[0].negated)
+
 
 class TestIfHeaderEvaluation(UnitTestCase):
     def test_token_match(self):
@@ -105,8 +138,12 @@ class TestLitmusComplexConditional(UnitTestCase):
     """
 
     ETAG = '"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117abcde"'
-    # litmus corrupts the third byte from the end, which is inside the tag
-    STALE = '"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117abdde"'
+    # `fail_complex_cond_put` corrupts the tag in place with
+    # `pnt = etag + strlen(etag) - 3; PRECOND(pnt > etag); (*pnt)++`, so it
+    # increments index 63 — the second hex digit from the end, inside the
+    # quotes. Derived rather than written out, so it stays the byte litmus
+    # really moves.
+    STALE = ETAG[:-3] + chr(ord(ETAG[-3]) + 1) + ETAG[-2:]
 
     def header(self, token: str, etag: str) -> str:
         return LITMUS_COMPLEX % (token, etag, etag)
@@ -131,6 +168,11 @@ class TestLitmusComplexConditional(UnitTestCase):
         """Both lists are false: the first on the ETag, the second because the
         entity-tag is ANDed with `Not <DAV:no-lock>` rather than replaced by
         it. This is the 412 half of the pair."""
+        # one byte apart, at the index litmus increments, and still a quoted tag
+        self.assertEqual(
+            [i for i, (a, b) in enumerate(zip(self.ETAG, self.STALE, strict=False)) if a != b], [63]
+        )
+        self.assertEqual(len(self.STALE), len(self.ETAG))
         self.assertFalse(evaluate(self.header(TOKEN, self.STALE), tokens=frozenset({TOKEN}), etag=self.ETAG))
 
     def test_the_lock_token_is_submitted_by_either_shape(self):
@@ -155,8 +197,13 @@ class TestLitmusComplexConditional(UnitTestCase):
         byte path publishes. Ledgered in litmus_expected.txt.
         """
         header = self.header(TOKEN, self.ETAG)
-        self.assertEqual(len(TOKEN), 45)
+        # the tag length is production's, not this file's: `compute_etag` on a
+        # blobless row is the empty-bytes SHA-256, quoted, and every tag §12.4
+        # publishes is that shape. Shorten it and the ledger line must go.
+        self.assertEqual(len(compute_etag(frappe._dict())), 66)
         self.assertEqual(len(self.ETAG), 66)
+        self.assertEqual(len(TOKEN), len(f"urn:uuid:{uuid.uuid4()}"))
+        self.assertEqual(len(TOKEN), 45)
         self.assertEqual(len(header), 207)
 
         sent = header[: LITMUS_BUFFER - 1]
@@ -165,8 +212,55 @@ class TestLitmusComplexConditional(UnitTestCase):
         with self.assertRaises(BadIfHeader):
             parse_if_header(sent)
 
+    def test_no_prefix_of_the_header_can_permit_what_the_whole_one_refuses(self):
+        """ "Refused, not guessed" at every cut, not only at litmus's.
+
+        A cut inside a production is refused, which is litmus's case. A cut
+        that lands exactly on a list boundary cannot be refused and must not
+        be: it is indistinguishable from a client that sent fewer lists. It is
+        safe for the same reason - the lists are ORed, so a prefix offers the
+        gate fewer ways to hold, never more. The property worth pinning is
+        that one: no prefix opens a write the whole header would refuse.
+
+        This is what makes the truncated-header ledger line a client defect
+        rather than a hole. Recovering the header, by contrast, would have to
+        invent a list the client never finished sending.
+        """
+        header = self.header(TOKEN, self.ETAG)
+        whole = parse_if_header(header)
+        parsed_prefixes = 0
+
+        for cut in range(1, len(header)):
+            try:
+                prefix = parse_if_header(header[:cut])
+            except BadIfHeader:
+                continue
+            parsed_prefixes += 1
+            # same untagged group, and a subset of its alternatives
+            self.assertEqual([group.resource_href for group in prefix.tagged], [None])
+            self.assertEqual(
+                list(prefix.tagged[0].lists),
+                list(whole.tagged[0].lists[: len(prefix.tagged[0].lists)]),
+            )
+            for tokens, etag in (
+                (frozenset({TOKEN}), self.ETAG),
+                (frozenset(), self.STALE),
+                (frozenset(), None),
+            ):
+                if evaluate(header[:cut], tokens=tokens, etag=etag):
+                    self.assertTrue(evaluate(header, tokens=tokens, etag=etag), header[:cut])
+
+        # the boundary cuts really exist, or the loop above proves nothing:
+        # the `)` that closes the first list, and the space after it
+        self.assertEqual(parsed_prefixes, 2)
+
     def test_an_untruncated_header_is_accepted_at_any_length(self):
         """The refusal above is the client's truncation, not a length limit of
-        our own: the same 207-byte header parses whole."""
+        our own: the same 207-byte header parses whole, and so does one an
+        order of magnitude longer."""
         header = self.header(TOKEN, self.ETAG)
         self.assertEqual(len(parse_if_header(header).tagged[0].lists), 2)
+
+        long_header = " ".join(f"</dav/{index}.txt> {header}" for index in range(30))
+        self.assertGreater(len(long_header), 6000)
+        self.assertEqual(len(parse_if_header(long_header).tagged), 30)
