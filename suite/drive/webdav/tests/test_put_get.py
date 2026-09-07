@@ -15,7 +15,8 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
+from werkzeug.datastructures import Headers
 
 from suite.drive._core import activity
 from suite.drive._core import nodes as node_core
@@ -57,6 +58,9 @@ from suite.drive.webdav.tests.utils import (
 OWNER = "webdav-content-owner@example.com"
 STRANGER = "webdav-content-stranger@example.com"
 PASSWORD = "webdav-content-pw"
+
+# RFC 8187 §3.2's `attr-char`, plus `%`: what an `ext-value` may carry unquoted
+ATTR_CHAR = frozenset("!#$&+-.^_`|~%0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 DATA = b"0123456789abcdefghij"
 PIXEL_PNG = bytes.fromhex(
@@ -164,21 +168,6 @@ class TestWebDAVContent(IntegrationTestCase):
             self.assertEqual(disposition, "attachment; filename=res-; filename*=UTF-8''res-%E2%82%AC")
         finally:
             drop_nodes([euro.name])
-
-    def test_disposition_names_encode_every_title_shape(self):
-        """The fallback is ASCII-folded, an all-non-ASCII title still gets a
-        `filename`, and a control character cannot split the response."""
-        self.assertEqual(get_module._disposition_names("data.bin"), {"filename": "data.bin"})
-        self.assertEqual(
-            get_module._disposition_names("€"),
-            {"filename": "download", "filename*": "UTF-8''%E2%82%AC"},
-        )
-        # NFKD folding keeps the ASCII skeleton of an accented name
-        self.assertEqual(
-            get_module._disposition_names("café.txt"),
-            {"filename": "cafe.txt", "filename*": "UTF-8''caf%C3%A9.txt"},
-        )
-        self.assertEqual(get_module._disposition_names("a\nb.txt"), {"filename": "ab.txt"})
 
     def test_content_type_is_the_blob_type(self):
         response = self._get(f"/dav/{self.folder_name}/pixel.png")
@@ -901,3 +890,63 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertEqual(set(frappe.get_all("File Blob", pluck="name")), blobs_before)
         self.assertIsNone(self._resolve(f"{self.base_name}/orphan.bin").node)
+
+
+class TestDispositionNames(UnitTestCase):
+    """`get._disposition_names` alone, site-free.
+
+    It is a pure function of one title, and it is the only thing standing
+    between a node title and a header the wire cannot carry, so its cases run
+    in a worktree rather than on the gate.
+    """
+
+    def names(self, title: str) -> str:
+        """What `_neutralize_active_content` would put on the response."""
+        headers = Headers()
+        headers.set("Content-Disposition", "attachment", **get_module._disposition_names(title))
+        return headers["Content-Disposition"]
+
+    def test_an_ascii_title_is_named_exactly_as_before(self):
+        self.assertEqual(get_module._disposition_names("data.bin"), {"filename": "data.bin"})
+        self.assertEqual(self.names("data.bin"), "attachment; filename=data.bin")
+
+    def test_non_ascii_travels_in_filename_star_with_an_ascii_fallback(self):
+        # NFKD folding keeps the ASCII skeleton of an accented name
+        self.assertEqual(
+            get_module._disposition_names("café.txt"),
+            {"filename": "cafe.txt", "filename*": "UTF-8''caf%C3%A9.txt"},
+        )
+        self.assertEqual(
+            self.names("café.txt"), "attachment; filename=cafe.txt; filename*=UTF-8''caf%C3%A9.txt"
+        )
+
+    def test_a_title_with_no_ascii_skeleton_still_gets_a_filename(self):
+        """RFC 6266 §4.3 wants the plain `filename` for clients that read only
+        that one. `werkzeug.send_file` emits `filename=""` here."""
+        self.assertEqual(
+            get_module._disposition_names("€"),
+            {"filename": "download", "filename*": "UTF-8''%E2%82%AC"},
+        )
+        self.assertEqual(
+            get_module._disposition_names("日本語"),
+            {"filename": "download", "filename*": "UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E"},
+        )
+
+    def test_a_control_character_is_dropped_rather_than_carried(self):
+        self.assertEqual(get_module._disposition_names("a\nb.txt"), {"filename": "ab.txt"})
+        self.assertEqual(get_module._disposition_names("\n\t"), {"filename": "download"})
+
+    def test_the_ext_value_is_attr_char_only_so_it_needs_no_quoting(self):
+        """RFC 8187 §3.2's `ext-value` is not a quoted-string. Werkzeug quotes
+        a parameter that leaves the token set, and a quoted `filename*` is not
+        the grammar, so every character outside `attr-char` has to be
+        percent-encoded before it gets there."""
+        for title in ("a'b€.txt", 'a"b€.txt', "a;b€.txt", "a b€.txt", "a%b€.txt", "a*b€.txt"):
+            star = get_module._disposition_names(title)["filename*"]
+            self.assertEqual(star, star.strip('"'), title)
+            self.assertNotIn("'", star[len("UTF-8''") :], title)
+            self.assertTrue(set(star[len("UTF-8''") :]) <= ATTR_CHAR, title)
+
+    def test_every_title_shape_produces_a_header_the_wire_can_carry(self):
+        for title in ("data.bin", "res-€", "€", "café.txt", "日本語.txt", "a\nb.txt", "Ⅻ.txt", "ß.txt"):
+            self.names(title).encode("latin-1")
