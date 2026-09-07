@@ -37,7 +37,6 @@ from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.layout import (
-    BLOB_SIZE_CEILING,
     blob_key,
     needs_multipart_copy,
     object_key,
@@ -96,19 +95,6 @@ def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
         digest = _read_once(bucket, legacy_key)
     except FileNotFoundError:
         return _missing(prep, row, f"no object at {legacy_key} in {bucket.bucket}")
-
-    if digest.size > BLOB_SIZE_CEILING:
-        # `File Blob.file_size` is an `int(11)`. A larger number is either
-        # refused by MariaDB, aborting the migration after earlier batches
-        # committed, or silently clamped, which makes every later byte count
-        # and every ranged download wrong. Neither is survivable, so the row
-        # is reported instead.
-        return _missing(
-            prep,
-            row,
-            f"{digest.size} bytes is above the {BLOB_SIZE_CEILING}-byte "
-            "`File Blob.file_size` ceiling in this framework build",
-        )
 
     claimed = env.storage.claim_blob(digest.checksum)
     if claimed:
