@@ -4,7 +4,7 @@
 
 **Blocked by:** [25 — Write and lock files over the same Drive workflows](25-webdav-write.md)
 
-**Status:** in-progress — code complete, awaiting the root site gate
+**Status:** done
 
 **Owner:** Suite migration
 
@@ -15,18 +15,29 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Implement the storage-enabled and S3-configuration gates before mutation.
-- [ ] Run idempotent framework local backfill. Preserve framework attachments outside reachable Drive trees.
-- [ ] For legacy S3 URLs, hash once, copy through the specified canonical layout, and link File.blob.
-- [ ] Use managed multipart copy above 5 GB. Resume from linked blobs without copying complete objects again.
-- [ ] Record missing-byte and S3-copy results for the final report. Preserve original local bytes and legacy S3 objects.
-- [ ] Keep Build registration gated on the later integration ticket so an ordinary migrate cannot run a partial patch.
+- [x] Implement the storage-enabled and S3-configuration gates before mutation.
+- [x] Run idempotent framework local backfill. Preserve framework attachments outside reachable Drive trees.
+- [x] For legacy S3 URLs, hash once, copy through the specified canonical layout, and link File.blob.
+- [x] Use managed multipart copy above 5 GB. Resume from linked blobs without copying complete objects again.
+- [x] Record missing-byte and S3-copy results for the final report. Preserve original local bytes and legacy S3 objects.
+- [x] Keep Build registration gated on the later integration ticket so an ordinary migrate cannot run a partial patch.
+
+Every box is built, ran on `slides.localhost` after root merged and migrated,
+and is audited against the code at HEAD. The audit of each box, and the gate
+results behind it, are in
+[Root site gate: final run and closeout](#root-site-gate-final-run-and-closeout)
+at the end of this ticket. That section supersedes every earlier status claim
+here.
 
 ## Verification
 
 Run fixture-backed migration tests for disabled storage, invalid S3 configuration, missing files, interrupted copy, and multipart selection.
 
 ## Completion evidence
+
+Historical. Written before the root site gate ran, and kept as written. Read
+[Root site gate: final run and closeout](#root-site-gate-final-run-and-closeout)
+for the current state.
 
 All six acceptance criteria are built and covered by tests that run without
 a site. The sixth, managed multipart copy above 5 GB, was blocked by the
@@ -825,3 +836,140 @@ under `suite/drive/patches/`. Nothing outside `suite/drive/tests/test_build_stor
 imports the package. `test_dormancy` (7) passes. Tickets 29 and 30 are
 unchanged, still `ready-for-agent`, with every box unticked. The Frappe
 commits register no patch and no hook.
+
+## Root site gate: final run and closeout
+
+Supersedes every earlier status claim in this ticket. The review sections
+above stay as written.
+
+Root merged both branches, migrated `slides.localhost`, and ran the whole gate
+serially. This closeout audited the six acceptance criteria against those
+results and against the code at HEAD, trusting none of the prose above. Agents
+ran three bounded read-only audits: the gates and the backfill; the
+hash-copy-link path and the multipart choice; the durable record,
+preservation, and dormancy. The auditor confirmed every result against the
+source and made this commit.
+
+This closeout ran no `bench`, no `migrate`, no test, and no server. It changed
+no production file and no test.
+
+### Revisions at closeout
+
+Suite `ca69ece4b` on `close/drive-26`, the last commit of the final
+independent review. Frappe `3357ad1605` on `forge/storage-v2`. Both working
+trees clean.
+
+### Migration and the live column
+
+`bench --site slides.localhost migrate` exited 0.
+
+`frappe.db.describe` on `File Blob` reports `file_size` as `bigint(20)`,
+`NOT NULL`, default `0`. That is the widened column, live on the site. It
+matches the declaration `"length": 20` on an `Int` field
+(`frappe/core/doctype/file_blob/file_blob.json:35-39`) and the promotion rule
+at `frappe/database/schema.py:437`. The predicted `ALTER` is what ran.
+
+Migrate ticks no box. The package stays unregistered, so migrate reaches no
+line of it.
+
+### Frappe modules
+
+Seven modules, one invocation each, serialized. All exited 0 and printed OK.
+
+| Module | Cases |
+|---|---|
+| `frappe.core.doctype.file_blob.test_file_blob` | 8 |
+| `frappe.storage.tests.test_blob` | 26 |
+| `frappe.storage.tests.test_gc_backfill` | 30 |
+| `frappe.storage.tests.test_relocate` | 9 |
+| `frappe.storage.tests.test_serve_upload` | 65 |
+| `frappe.storage.tests.test_file_integration` | 32 |
+| `frappe.tests.test_db_update` | 17, 2 skipped |
+| **Total** | **187** |
+
+The two skips are expected and belong to the framework, not to this ticket.
+`test_db_update` carries `@run_only_if(db_type_is.POSTGRES)` twice
+(`frappe/tests/test_db_update.py:138`, `:265`), and the site is MariaDB. The
+two MariaDB-only cases ran. `test_bigint_conversion` and
+`test_bigint_conversion_with_existing_data` carry no condition, so the
+mechanism the widening uses ran for real.
+
+### Suite modules
+
+Eight modules, one invocation each, serialized. All exited 0 and printed OK.
+
+| Module | Cases |
+|---|---|
+| `suite.drive.tests.test_build_storage` | 12 |
+| `suite.drive.patches.build.tests.test_s3_copy` | 41 |
+| `suite.drive.patches.build.tests.test_legacy_bytes` | 34 |
+| `suite.drive.patches.build.tests.test_ports` | 28 |
+| `suite.drive.patches.build.tests.test_gate` | 15 |
+| `suite.drive.patches.build.tests.test_layout` | 8 |
+| `suite.drive.patches.build.tests.test_dormancy` | 7 |
+| `suite.tests.test_architecture` | 7 |
+| **Total** | **152** |
+
+Every count matches a static count of `def test_` at HEAD, module by module.
+No `unittest.skip` and no `expectedFailure` exists in any of them, so the
+collected count is the run count. The 140 site-free cases are the same cases
+the final review ran; the site added `test_build_storage`'s 12.
+
+`test_build_storage` ran for the first time. It needed both the site and the
+migrated column.
+
+### The large object, live
+
+`test_an_object_above_five_gb_becomes_a_blob_that_carries_its_size` passed on
+the site. A declared object above 5 GB takes the managed multipart copy and
+creates a `File Blob` row carrying the exact full size. No payload was
+allocated. That closes the one criterion the framework schema had blocked.
+
+### Acceptance criteria
+
+Each box is audited against the code at HEAD and the gate results above, not
+against this ticket's prose.
+
+| # | Criterion | Verdict |
+|---|---|---|
+| 1 | Storage-enabled and S3 gates before mutation | Passes. `gate.py:34` refuses a site with storage v2 off, first and unconditional, so the S3 branch cannot short-circuit it. The S3 branch adds driver, bucket present, bucket identity, and endpoint identity (`gate.py:43-82`), then heads `private/.drive-build-gate-probe` (`gate.py:84-101`), which turns revoked credentials or a missing bucket into a refusal. `legacy_bytes.py:33` calls the gate before anything else; the backfill is `:43` and the first state write `:50`. Live in `test_gate` (15), including `test_a_bucket_it_cannot_read_refuses_before_the_backfill` and `test_a_refused_gate_mutates_nothing`. |
+| 2 | Idempotent local backfill; outside attachments preserved | Passes. `legacy_bytes.py:43` calls `frappe.storage.backfill.run()` unfiltered through `ports.py:124-127`. The framework skips already-linked rows (`frappe/storage/backfill.py:65`), writes only the `blob` column with `update_modified=False` (`:103`), keeps `file_url` as it was, and points the blob back at the legacy path (`:148`). Totals add instead of resetting (`legacy_bytes.py:46-47`). Live in `test_legacy_bytes` (34) and, on the site, `test_build_storage.test_local_bytes_are_linked_in_place_and_left_untouched` and `test_a_second_run_links_nothing_new`. |
+| 3 | Hash once, canonical layout, `File.blob` linked | Passes. `s3_copy.py:176-187` is one `bucket.open` per row in a single forward pass, bounded by `READ_CHUNK`, sniffing from a copy of the head, so the body is never rewound. `layout.py:17-22` calls `frappe.storage.blob.make_key` and `sanitized_extension`, and `layout.py:25` matches `S3Driver.object_key`, so the key is pinned to the framework and not to a literal. `ports.py:233` writes the `blob` column alone, no doc events, no `modified` bump. Live in `test_s3_copy` (41), `test_layout` (8), `test_ports` (28). |
+| 4 | Managed multipart above 5 GB; resume without recopying | Passes. `layout.py:14` fixes the threshold at `5 * 1024**3` and `layout.py:37` compares with `>`, so an object of exactly 5 GiB stays a legal single-part copy. `s3_copy.py:152-161` dispatches above it to `ports.py:283` `client.copy`, the boto3 managed copy. No size ceiling remains anywhere in either repository. Resume has three layers: `ports.py:198` drops linked rows from the query, `s3_copy.py:102-111` claims a matching blob, and `s3_copy.py:142` skips an object already complete at the destination and re-copies one of the wrong size. Live in `test_s3_copy` and, on the migrated column, `test_build_storage` case 12. |
+| 5 | Durable record; original bytes and legacy objects preserved | Passes. `state.py:105-109` writes `<site>/private/drive-build-state.json` through a pid-named temp, `fsync`, `os.replace`, and a directory fsync (`state.py:128-137`). Missing bytes keep a bounded sample and an exact count (`state.py:40`, `:67-75`). Five counters are cumulative (`state.py:27-35`). A corrupt record moves aside and a read error stops the run (`state.py:111-126`). For preservation, the `S3Bucket` seam declares only `open`, `size`, `copy_object`, and `managed_copy` (`ports.py:92-107`), so no rule in the package can reach a delete or an overwrite. The package holds no `delete_object`, `put_object`, `os.remove`, or `shutil` call, and the only boto3 methods it reaches are `get_object`, `head_object`, `copy_object`, and `copy`. Live in `test_legacy_bytes`, `test_ports.test_it_never_writes_or_deletes_through_the_client`, and `test_build_storage`. |
+| 6 | Registration gated on ticket 30 | Passes. `suite/patches.txt`, `suite/hooks.py`, `suite/modules.txt`, and every file under `suite/fixtures/` name no `patches.build`. `git diff --name-only 0aaa3ecda..HEAD` lists only the package, its tests, the site-backed test, and this ticket, so no patch, hook, or DocType JSON moved. The package defines no `execute`, ships no JSON, and exposes no whitelisted method or scheduler entry. `after_migrate` resolves to `suite.composition.lifecycle.after_migrate`, whose body calls Mail's hook and Drive's content-registry check and nothing else. Root's `migrate` exited 0 and ran no line of the package. Live in `test_dormancy` (7), whose module list comes from the package directory (`test_dormancy.py:78-79`), so a new module cannot be missed. |
+
+### What this closeout verified for itself
+
+- Every module count above matches a static count of `def test_` at HEAD, in
+  both repositories.
+- The two Frappe skips are the two Postgres-only cases, named above.
+- The merged Frappe commits register no patch and no hook. `9fb933a4ee`
+  touches the field JSON, its tests, and `frappe/storage/SPEC.md`;
+  `3357ad1605` touches the test docstrings only.
+- Tickets 27, 29, and 30 are unchanged. All three read `ready-for-agent` with
+  every box unticked, and the git range touches none of them.
+
+### One reported concern, dismissed
+
+The package uses self-referential return annotations with no
+`from __future__ import annotations`, so it needs PEP 649 and does not import
+below Python 3.14. Both `pyproject.toml` files require `>=3.14,<3.15`, so the
+path is unreachable. Recorded, not changed.
+
+### Risks that stand
+
+Every entry in **Known risks** and in the final review's **New risks** stays
+open. This closeout resolved none of them and found no new one. Three still
+need an owner before Build runs on real data: a per-object permanent read
+error has no skip list (ticket 29), `missing_bytes` must be intersected with a
+reachability walk before §14.9 prints `blobless_nodes` (ticket 27), and the
+bucket needs an `AbortIncompleteMultipartUpload` lifecycle rule before a
+multi-GB copy can be interrupted safely.
+
+### Site state after the run
+
+Root's gate is the only thing that touched `slides.localhost`. The Frappe
+merge and the `ALTER` on `tabFile Blob` stand. `bench run-tests` rolls back
+per class, so no fixture row survives. This closeout touched no site state,
+no queue, and no configuration.
