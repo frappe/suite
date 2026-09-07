@@ -19,9 +19,8 @@ directly at `https://<site>/dav/`.
    (off by default), then connect a client to `https://<site>/dav/` and sign
    in with the Frappe username and password.
 
-The shipped server currently shows two folders: **Home** (the user's personal
-files) and **Everyone** (the shared site tree). This is current behavior, not
-the rewrite target.
+`/dav/` mounts the caller's Personal Root directly. The **Home** and
+**Everyone** aliases are gone.
 
 ## Rewrite target
 
@@ -68,12 +67,12 @@ path fast; a password change invalidates instantly). Request bodies stream
 when frappe supports the `streaming_request_paths` hook, and fall back to
 frappe's buffered/capped body handling otherwise.
 
-Module map: `auth` (Basic + lockout tracking), `pathmap` (URL ↔ entity,
-naming policy), `perms` (batched Depth:1 permission resolution — constant
-query count per listing), `propfind`/`proppatch` (+ `deadprops` store),
-`get`/`put` (streamed content, Range, conditionals), `structure`
-(MKCOL/DELETE/MOVE), `copy` (recursive COPY with quota checks), `locks` +
-`ifheader` + `lock` (Class 2), `xmlutil` (hardened lxml + multistatus).
+Module map: `auth` (Basic + lockout tracking), `pathmap` (URL to `Drive Node`,
+naming policy), `propfind`/`proppatch` (+ `deadprops` store), `get`/`put`
+(streamed content, Range, conditionals), `structure` (MKCOL/DELETE/MOVE),
+`copy` (recursive COPY), `locks` + `ifheader` + `lock` (Class 2), `xmlutil`
+(hardened lxml + multistatus). Permission, quota, and node policy are the
+Drive engine's, reached through `suite/drive/_core/`; `perms.py` is gone.
 
 During the rewrite, protocol-focused modules remain under
 `suite/drive/webdav/`; policy and state transitions move behind the private
