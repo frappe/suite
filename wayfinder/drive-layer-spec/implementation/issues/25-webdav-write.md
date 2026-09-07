@@ -1623,3 +1623,252 @@ cases are still unrun: they need the site.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Independent review of gate run 7
+
+A separate reviewer read the whole of `21f78d952..244689311` against the
+standards it cites, the litmus binary it quotes, and the code around it.
+Subagents did the litmus disassembly, the response-header sweep and the If
+header audit; the reviewer verified every claim before acting on it, and wrote
+the corrections and their tests.
+
+#### The four contested points
+
+**1. `Content-Disposition` encoding.** Correct, and ASCII behaviour is
+unchanged. `_disposition_names` is `werkzeug.send_file`'s own logic plus an
+`isprintable` filter and two `"download"` fallbacks. Checked against werkzeug
+3.1.6 on 19 title shapes: every one encodes latin-1, the `filename*` value is
+`attr-char` only so werkzeug leaves it unquoted (a quoted `ext-value` is not
+RFC 8187 grammar), an ASCII title still emits bare `filename=data.bin`, and a
+`"` in an ASCII title is quoted and backslash-escaped. Two claims around it
+were wrong and are corrected: dropping control characters does not prevent a
+response split, because werkzeug refuses CR and LF where a header is set; and
+the two adapters do *not* name a file identically, because this side is handed
+`download_filename(title)` and the export side the title as stored.
+
+**2. The dispatch-level net.** Repeated headers, ordering and non-URI
+semantics all hold: `Headers.items()` yields every duplicate, `Headers(pairs)`
+rebuilds them in order, `Response.headers` is a plain attribute with no
+subclass anywhere in werkzeug, frappe or suite, and the rebuild only happens
+when something changed. `%` is never doubled. But the rule was wrong at both
+ends of the range, and the reason given for the net was not true of the code:
+
+- `isascii()` passed NUL, DEL and the rest of C0. RFC 9110 §5.5 forbids them in
+  a field value, werkzeug accepts them, and gunicorn 23.0.0 rejects them at
+  `HEADER_VALUE_RE`, so the response dies in production where the dev server
+  would have sent it. Now `_SENDABLE`: `field-vchar` plus SP and HTAB.
+- `quote()` raises `UnicodeEncodeError` on a lone surrogate, out of the
+  function whose purpose is to prevent that exception, in a place no handler
+  can answer from. Now `errors="replace"`.
+- The docstring said the net covers `frappe.storage.serve._stream_driver_response`
+  on a status `get.py` does not overwrite. It does not: `serve.py` sets
+  `Content-Disposition` only on the 200 and the 206, and its 304 and 416 set
+  none. The net is defence in depth, and now says so.
+
+It cannot hide a defect: the rewrite is logged, and `log.note` appends.
+
+**3. The litmus truncation.** Confirmed from the shipped binary, not from the
+report. `.rodata 0x89e8` holds `(<%s> [%s]) (Not <DAV:no-lock> [%s])`, and both
+callers load `mov $0xc8,%esi` into `ne_snprintf` against a stack buffer at
+`-0xe0(%rbp)`: 200 bytes, 199 characters kept. `ne_print_request_header` has an
+8192-byte buffer, so that is the only truncation. 30 literal + 45 + 66 + 66 =
+207, checked against `compute_etag` rather than a literal. No other litmus
+conditional exceeds 199; the pair would fit at a 62-character tag. Retaining
+the 400 is right: §10.4 defines a grammar and no recovery rule.
+
+One correction. "Refused, not guessed" was pinned at litmus's cut only. A cut
+that lands on a list boundary cannot be refused, because it is
+indistinguishable from a client that sent fewer lists. That is safe for a
+reason worth pinning rather than assuming: the lists are ORed, so a prefix
+offers the gate fewer ways to hold. Every prefix of the litmus header is now
+driven through the parser and the evaluator, and none opens a write the whole
+header refuses.
+
+**4. The ledger.** Both added lines are litmus-side and neither is reachable
+from here. `basic:delete_fragment` stands: werkzeug's `make_environ` builds
+`PATH_INFO` from `urlsplit(...).path`, so the fragment is gone before the app
+runs. The stale-entry test does what it claims. Two overstatements are fixed:
+the ledger said "no server-side change can reach", where the truth is that the
+only reachable value is the entity-tag and shortening it gives up §12.4; and
+`test_the_shipped_ledger_covers_gate_run_7` claimed to catch a test-name typo,
+which it cannot, because its transcript is written in the test rather than
+recorded. No litmus transcript is in the repository. The gate catches a typo
+instead, as `LEDGERED TEST DID NOT RUN`.
+
+#### Defects the review found and fixed
+
+| # | Where | Defect | Severity |
+|---|---|---|---|
+| 1 | `ifheader.py` `flush_group` | A Resource-Tag with no state list was dropped in silence. `(<token> [etag]) </dav/other>` read as the first list alone, and the write it guards happened on the half that arrived. `Tagged-list = Resource-Tag 1*List` (§10.4.2). Now 400 | high |
+| 2 | `lock.py` `_refresh` | A LOCK refresh never evaluated the If conditions it carries. `_create` does, citing §10.4.1; the refresh half was left out, so a lock stayed alive on an ETag that had stopped holding | medium |
+| 3 | `dispatch.py` `_make_headers_sendable` | NUL, DEL and C0 passed the net as "ascii". gunicorn refuses them and the response dies | medium |
+| 4 | `ifheader.py` `Not` | `Not Not <t>` parsed as `Not <t>`, the opposite of what it says, in the gate that admits a write. Now 400 | medium |
+| 5 | `log.py` `note` | The line writes the note inside `note="..."` and the writers hand it exception text. A database error quoting a multi-line statement forged whole records in the DAV log, and the `DAVError` writer was unbounded. Cleaned and bounded once, in `note` | low |
+| 6 | `dispatch.py` | `quote()` raises on a lone surrogate, from the one place that cannot answer | low |
+| 7 | `get.py`, `dispatch.py`, `litmus_expected.txt`, `test_webdav.py` | Four claims that are not true of the code or of what a test proves, listed above | low |
+
+Nothing in Frappe core was changed.
+
+#### Coverage the review found missing
+
+`log.note`'s change shipped with no test at all: reverting it to the replacing
+form left all 166 site-free cases green. `_make_headers_sendable` and
+`_disposition_names` are pure functions whose only cases needed the site, so
+neither could be checked in a worktree, which is where the gate-run-7 work was
+done. 27 cases added, 21 of them site-free.
+
+- `test_dispatch.TestSendableHeaders` (9, site-free): a value above US-ASCII,
+  latin-1, a control character, a lone surrogate, SP and HTAB kept, an
+  untouched response keeping its `Headers` object by identity, repeats kept in
+  order through a rewrite, the header names reported once, the handler's own
+  reason not erased, and every shape `_disposition_names` can emit passing
+  through untouched.
+- `test_put_get.TestDispositionNames` (6, site-free): ASCII unchanged, the
+  `filename*` pair, a title with no ASCII skeleton, a control character, the
+  `ext-value` needing no quoting, and every shape encoding latin-1. Moved out
+  of the integration class, which did not need a site for them.
+- `test_log.TestNoteAppends` (6, site-free): the first reason, the join, an
+  empty reason, logging off, a forged record, and the bound.
+- `test_ifheader` (4 site-free, plus the litmus class hardened): the
+  Resource-Tag rule, the repeated `Not`, a dangling `Not`, lowercase `not`, and
+  no prefix of the litmus header permitting what the whole one refuses.
+- `test_locks` (1, needs the site): a refresh carrying a stale ETag is 412 and
+  the lock survives. The 412 half of the litmus pair now also asserts the
+  node's bytes are unchanged.
+
+Test fidelity, corrected: `STALE` is derived by the increment litmus performs
+(`etag + strlen - 3`, index 63) rather than written out one byte off; the
+`test_locks` corruption is that same single byte rather than an all-zero tag;
+and the 66 in the arithmetic comes from `compute_etag`, so shortening the
+published tag fails the test rather than leaving a ledger line that no longer
+holds.
+
+#### Findings recorded, not fixed
+
+- **If is ignored on GET, HEAD, PROPFIND and UNLOCK.** §10.4 is
+  method-agnostic, so `If: (<DAV:no-lock>)` on a GET should be 412 and a
+  malformed one 400. Honouring it on four more verbs is a behaviour change
+  beyond this ticket and needs the site to prove.
+- **MKCOL skips `evaluate_preconditions`.** `If-Match` on an unmapped target
+  should fail (RFC 9110 §13.1.1). `conditional.py`'s docstring says it guards
+  every mutating verb; MKCOL, LOCK and UNLOCK are not guarded.
+- **No bound on the If header's state lists.** Each tagged group costs a path
+  resolution, a lock read and an ETag. An 8 KB header of false groups is
+  thousands of statements, and MOVE calls `enforce` three times. Not fixed for
+  the reason recovery was not: §10.4 gives no limit, and inventing one inside
+  the gate that admits a write is unspecified behaviour.
+- **`<>` and `[]` parse as empty conditions**, and a mixed no-tag and tagged
+  header parses. Both are leniency with no consequence: they evaluate false and
+  `all_tokens()` drops the empty string.
+- **A legal entity-tag holding `]` is a 400.** `etagc` allows it. No tag this
+  server publishes can hit it.
+- **A tagged href on a foreign host binds to our path.** `resolve_href` reads
+  only the path; `pathmap.parse_destination` compares the host. Lenient, not a
+  bypass.
+- **The If gate confirms another user's lock token**: 423 for a right guess,
+  412 for a wrong one, where `lockdiscovery` redacts. uuid4 makes it
+  unguessable.
+- **`conditional.is_not_modified` has no caller.** `get.py` delegates to
+  `frappe.storage.serve`, which does its own `If-None-Match`.
+- **`_validate_title` accepts control characters and `/`.** Every header path
+  cleans the title; the export `Content-Disposition` keeps a `/`.
+- **`suite/drive/utils/files.py:content_disposition`** is a third disposition
+  builder on the legacy stack with no `isprintable` filter and no fallback.
+
+#### Checks run
+
+Site-free, in the review worktree. No `bench`, `migrate`, `serve`, litmus,
+queue change, site write, `push` or PR. The litmus binaries were disassembled,
+never executed.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+41 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional suite.drive.webdav.tests.test_ifheader \
+    suite.drive.webdav.tests.test_xmlutil \
+    suite.drive.webdav.tests.test_dispatch.TestSendableHeaders \
+    suite.drive.webdav.tests.test_log.TestNoteAppends \
+    suite.drive.webdav.tests.test_put_get.TestDispositionNames
+Ran 193 tests in 1.469s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 342, ERRORS []   (315 before the review)
+```
+
+Mutations, each run against the 193 site-free cases and then reverted. Every
+one is caught unless marked:
+
+| Mutation | Result |
+|---|---|
+| `note` replaces instead of appending | 2 failures |
+| `note` neither cleaned nor bounded | 4 failures |
+| net back to `isascii()` | 1 failure |
+| net rebuilds an untouched response | 3 failures |
+| `quote` without `errors="replace"` | 1 error |
+| `_disposition_names` drops `filename*` | 2 failures, 1 error |
+| `_disposition_names` drops the `isprintable` filter | 1 failure, 2 errors |
+| `_disposition_names` widens the `ext-value` safe set | 1 failure |
+| `_disposition_names` drops the `"download"` fallback | 1 failure |
+| `flush_group` lenient again | 1 failure |
+| repeated `Not` allowed again | 1 failure |
+| dangling `Not` allowed | 1 failure |
+| `Not` matched case-sensitively | 1 error |
+| `any` for `all` inside a condition list | 2 failures |
+| `_refresh` skips `check_conditions` | **not caught: needs the site** |
+
+| Commit | Change |
+|---|---|
+| `889553f51` | bound and clean a DAV log note before the line quotes it |
+| `f6cba5f01` | percent-encode every response header byte RFC 9110 forbids |
+| `f500fed76` | refuse the two If header shapes the parser was rewriting |
+| `0ff2f4aea` | gate a LOCK refresh on the If conditions it carries |
+| `d0ae83ff9` | pin the disposition helper without a site |
+| `e3b7d9863` | say what the ledger and its test can prove |
+
+#### Rerun
+
+Five production files changed: `webdav/dispatch.py`, `webdav/get.py`,
+`webdav/log.py`, `webdav/ifheader.py` and `webdav/lock.py`. `ifheader` is on
+every conditional write and `dispatch` and `log` are on every response, so the
+same four dispatcher suites run, plus the two the If change reaches.
+Serialized, one module per invocation:
+
+```
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_put_get`
+3. `suite.drive.webdav.tests.test_locks`
+4. `suite.drive.webdav.tests.test_dispatch`
+5. `suite.drive.webdav.tests.test_log`
+6. `suite.drive.webdav.tests.test_ifheader`
+7. `suite.drive.webdav.tests.test_mkcol_delete`
+8. `suite.drive.webdav.tests.test_movecopy`
+9. `suite.drive.webdav.tests.test_proppatch`
+
+Then serve and run litmus, from a server started on this branch:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`basic` must be 16/16 and `locks` 39/41, and the runner must print
+`litmus: all groups clean`. The two ledgered conditionals must still fail: the
+parser is stricter than it was, and nothing in these changes shortens the
+entity-tag. No migrate: no DocType JSON, patch, hook or fixture changed.
+
+**Config restoration.** None is owed. Nothing was written to the site, the
+queue or any config file.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
