@@ -14,10 +14,14 @@ module proves the wiring, which is the part a fake cannot reach:
 - `Drive Grant` really carries the unique `(node, principal)` index the
   resume logic relies on.
 
-Nothing here touches the site's own `Drive` or `Users` rows. Every row this
-module makes carries a per-run prefix and is deleted again, and the root
-pair it works with is a synthetic one, so a run on a populated site cannot
-disturb a real namespace.
+Nothing here writes over the site's own `Drive` or `Users` rows. Every row
+this module makes carries a per-run prefix and is deleted again, and the
+root pair it works with is a synthetic one, so a run on a populated site
+cannot disturb a real namespace. `SiteTree(self.prefix)` keeps the reads on
+this run's rows too, with one exception it cannot narrow: the Sheet
+`DocShare` page reads the whole table, because a `DocShare` names a `Sheet`
+and a `Sheet` id carries no `File` id. Nothing is written from those rows;
+`sheet_entity` is narrowed, so a row from outside the prefix is dropped.
 """
 
 import frappe
@@ -65,17 +69,20 @@ class BuildTreeCase(IntegrationTestCase):
         return self.prefix + frappe.generate_hash(length=8)
 
     def pick_user(self):
-        """Any enabled User with an email address, or skip.
+        """Any enabled User with an email address.
 
         §14.5 takes a user principal only when it is a valid address, so
         `Administrator` cannot stand in. Nothing here inserts a `User`: on
         this bench that enqueues background work the test does not need.
+
+        A site with no usable address fails the run. Skipping instead would
+        report the whole module green while it covered nothing at all.
         """
         found = frappe.db.get_value(
             "User", {"enabled": 1, "name": ("like", "%@%")}, "name", order_by="creation asc"
         )
         if not found:
-            self.skipTest("no enabled email User on this site")
+            self.fail("no enabled email User on this site, so §14.5 cannot be exercised")
         return found
 
     def file_row(self, name=None, *, folder, file_name=None, is_folder=0, **columns):
@@ -357,9 +364,14 @@ class TestGrantWiring(BuildTreeCase):
         self.convert()
         row = grants_module._grant_row(self.env, self.node, self.owner, READ)
         frappe.db.savepoint("drive_build_duplicate_grant")
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception) as caught:
             self.env.drive.insert_grants([row])
         frappe.db.rollback(save_point="drive_build_duplicate_grant")
+        # `bulk_insert` is raw SQL, so the driver's own integrity error comes
+        # through unmapped; `frappe.UniqueValidationError` belongs to the ORM
+        # path. `is_unique_key_violation` is how frappe recognises it, and
+        # every shipped backend answers it.
+        self.assertTrue(frappe.db.is_unique_key_violation(caught.exception), caught.exception)
 
     def test_a_rerun_writes_nothing_twice(self):
         self.permission_row(self.node, "", read=1, write=1)
@@ -373,6 +385,23 @@ class TestGrantWiring(BuildTreeCase):
         self.assertEqual(second.grants_written, 0)
         self.assertEqual(self.roles(), before)
 
+    def test_the_permission_page_skips_another_runs_rows(self):
+        """The prefix narrows the compound keyset on `entity`.
+
+        Without it this run pages every `Drive Permission` row on the site
+        and can write grants its own cleanup will not delete.
+        """
+        mine = self.permission_row(self.node, self.owner, read=1)
+        outside_entity = "notbldtr" + frappe.generate_hash(length=8)
+        outside = self.permission_row(outside_entity, self.owner, read=1)
+        # `tearDown` deletes by `entity`, so this row needs its own cleanup.
+        self.addCleanup(frappe.db.delete, "Drive Permission", {"name": outside})
+
+        names = [row.name for row in SiteTree(self.prefix).permissions(("", "", ""), 1000)]
+
+        self.assertIn(mine, names)
+        self.assertNotIn(outside, names)
+
     def test_the_permission_rows_are_preserved(self):
         name = self.permission_row(self.node, self.owner, read=1)
         self.convert()
@@ -382,7 +411,13 @@ class TestGrantWiring(BuildTreeCase):
 class TestLookupWiring(BuildTreeCase):
     """The single-row reads `grants` depends on, compiled once each."""
 
-    def test_user_enabled_answers_three_ways(self):
+    def test_user_enabled_tells_a_missing_row_from_an_enabled_one(self):
+        """None drops a grant, True keeps it (§14.5).
+
+        The third answer, False for a disabled account, needs a `User` row
+        this module will not insert. `patches/build/tests/test_grants.py`
+        covers that branch against `FakeTree`.
+        """
         legacy = SiteTree()
         self.assertIsNone(legacy.user_enabled(self.prefix + "@nowhere.test"))
         self.assertIs(legacy.user_enabled("Administrator"), True)
@@ -397,4 +432,13 @@ class TestLookupWiring(BuildTreeCase):
         self.assertFalse(legacy.is_composite_deck(self.prefix + "-no-file"))
 
     def test_docshares_pages_on_the_sheet_doctype(self):
-        SiteTree().docshares("", 5)
+        """Sheet rows only, and never more than the page asked for.
+
+        This is the one read `SiteTree` cannot narrow to a run's own rows,
+        so it is also the one that has to prove its own filter.
+        """
+        page = SiteTree().docshares("", 5)
+        self.assertLessEqual(len(page), 5)
+        for row in page:
+            with self.subTest(share=row.name):
+                self.assertEqual(frappe.db.get_value("DocShare", row.name, "share_doctype"), "Sheet")

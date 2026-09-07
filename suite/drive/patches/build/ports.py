@@ -307,6 +307,11 @@ REMOVED = "Removed"
 DRIVE_ROOT_ROW = "Drive"
 USERS_ROW = "Users"
 
+# `Drive Root.kind` (§3.2). `root_pairs` names it too, but the Active-root
+# read below needs it here, and a port may not import the module that calls
+# it. `Drive Root.state` reuses ACTIVE above: both columns spell one word.
+PERSONAL = "Personal"
+
 # What Build reads off one legacy row. `frappe.get_all` returns `_dict`, so
 # the frozen shape below is what pins the column list in one place.
 TREE_COLUMNS = (
@@ -465,7 +470,18 @@ class DriveTarget(Protocol):
         """Existing `Drive Node` rows by id, for the resume check."""
 
     def root_metadata(self, node: str) -> dict | None:
-        """The `Drive Root` row whose `node` is this id, if there is one."""
+        """The `Drive Root` row named this id, or the one whose `node` is it."""
+
+    def active_root(self, kind: str, user: str | None) -> str | None:
+        """The node id of the Active root for this identity, or None.
+
+        `user` is None or "" for the Shared root, which names no user
+        (§3.2). Build needs this because it is not the only writer: a
+        `User` insert already provisions a Personal root at a fresh node
+        id (`suite/hooks.py` -> `suite.drive.install.after_user_insert`).
+        Writing a second Active one at the legacy `File` id would leave
+        both rows unsaveable, and `bulk_insert` bypasses the controller
+        check that would have refused it."""
 
     def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
         """Insert a node, its metadata, and its anchors as one unit.
@@ -570,10 +586,19 @@ ROOT_READ_COLUMNS = ("name", "node", "user", "kind", "state")
 class SiteTree:
     """`LegacyTree` over the real `File`, `Drive Permission`, and `DocShare`.
 
-    `name_prefix` narrows every `File` read to ids that start with it, so a
-    site-backed test can stay off rows it did not create. Production passes
-    none. One value rather than a filter list, because half these reads are
-    raw SQL and cannot take a `frappe.get_all` clause.
+    `name_prefix` narrows every `File` read to ids that start with it, and
+    every `Drive Permission` read to rows whose `entity` starts with it, so
+    a site-backed test can stay off rows it did not create. One value
+    rather than a filter list, because half these reads are raw SQL and
+    cannot take a `frappe.get_all` clause.
+
+    `docshares` is the one read the prefix does not narrow: a `DocShare`
+    names a `Sheet`, and a `Sheet` id carries no `File` id. Nothing is
+    written from one until `sheet_entity` maps it back to a `File`, and
+    that read is narrowed, so an unrelated row is read and then dropped.
+
+    Production passes no prefix and reads the whole table, so none of the
+    narrowing changes what a migration does.
     """
 
     def __init__(self, name_prefix: str | None = None):
@@ -589,16 +614,30 @@ class SiteTree:
         if not parents:
             return []
         folder, name = after
+        # One placeholder per parent, not a tuple bound to `IN %(parents)s`.
+        # frappe's SQLite backend does not bind a named parameter at all: it
+        # quotes each value and string-formats the query
+        # (`frappe/database/sqlite/database.py:execute_query`), so a tuple
+        # renders as `IN '('a', 'b')'` and the statement will not parse.
+        # MariaDB and Postgres see the same `IN (?, ?)` either way.
+        parent_values = {f"parent{index}": parent for index, parent in enumerate(parents)}
+        placeholders = ", ".join(f"%({key})s" for key in parent_values)
         # Keyset over the compound order. `frappe.get_all` cannot express
         # "(folder, name) > (?, ?)", and OFFSET on a table this size is what
         # turns a migration into an afternoon.
         rows = frappe.db.sql(
             f"""SELECT {", ".join(f"`{c}`" for c in TREE_COLUMNS)} FROM `tabFile`
-                WHERE `folder` IN %(parents)s
+                WHERE `folder` IN ({placeholders})
                   AND (`folder` > %(folder)s OR (`folder` = %(folder)s AND `name` > %(name)s))
                 {self._extra_sql()}
                 ORDER BY `folder`, `name` LIMIT %(limit)s""",
-            {"parents": parents, "folder": folder, "name": name, "limit": limit, **self._extra_values()},
+            {
+                "folder": folder,
+                "name": name,
+                "limit": limit,
+                **parent_values,
+                **self._extra_values(),
+            },
             as_dict=True,
         )
         return [TreeRow.of(row) for row in rows]
@@ -627,13 +666,15 @@ class SiteTree:
 
     def permissions(self, after: tuple[str, str, str], limit: int) -> list[PermissionRow]:
         entity, user, name = after
+        # `entity` links `File.name`, so the same prefix narrows this table.
         rows = frappe.db.sql(
-            """SELECT `name`, `entity`, `user`, `read`, `comment`, `share`, `write`,
+            f"""SELECT `name`, `entity`, `user`, `read`, `comment`, `share`, `write`,
                       `upload`, `deny`, `creation`
                FROM `tabDrive Permission`
                WHERE (`entity`, `user`, `name`) > (%(entity)s, %(user)s, %(name)s)
+               {self._extra_sql(column="entity")}
                ORDER BY `entity`, `user`, `name` LIMIT %(limit)s""",
-            {"entity": entity, "user": user, "name": name, "limit": limit},
+            {"entity": entity, "user": user, "name": name, "limit": limit, **self._extra_values()},
             as_dict=True,
         )
         return [
@@ -653,6 +694,10 @@ class SiteTree:
         ]
 
     def docshares(self, after: str, limit: int) -> list[DocShareRow]:
+        # Not narrowed, and it cannot be: `share_name` is a `Sheet` id, and
+        # a `Sheet` id says nothing about the `File` behind it. `sheet_entity`
+        # is where a row turns into a node id, and that read is narrowed, so
+        # a row from outside the prefix is read and then dropped.
         rows = frappe.get_all(
             "DocShare",
             filters=[["share_doctype", "=", "Sheet"], ["name", ">", after]],
@@ -681,24 +726,37 @@ class SiteTree:
         return bool(frappe.db.exists("User Group", name))
 
     def is_composite_deck(self, entity: str) -> bool:
-        content = frappe.db.get_value("File", entity, ["content_doctype", "content_docname"], as_dict=True)
+        content = frappe.db.get_value(
+            "File",
+            [["name", "=", entity], *self._clauses()],
+            ["content_doctype", "content_docname"],
+            as_dict=True,
+        )
         if not content or content.content_doctype != "Presentation" or not content.content_docname:
             return False
+        # `Presentation` is not a `File`, so the prefix has nothing to say here.
         return bool(frappe.db.get_value("Presentation", content.content_docname, "is_composite"))
 
     def sheet_entity(self, sheet: str) -> str | None:
-        return frappe.db.get_value("File", {"content_doctype": "Sheet", "content_docname": sheet}, "name")
+        return frappe.db.get_value(
+            "File",
+            [["content_doctype", "=", "Sheet"], ["content_docname", "=", sheet], *self._clauses()],
+            "name",
+        )
 
     def _clauses(self) -> list:
         """The narrowing filter as `frappe.get_all` takes it."""
         return [["name", "like", self.name_prefix + "%"]] if self.name_prefix else []
 
-    def _extra_sql(self, alias: str = "") -> str:
-        """The same narrowing filter, for the reads that are raw SQL."""
+    def _extra_sql(self, alias: str = "", column: str = "name") -> str:
+        """The same narrowing filter, for the reads that are raw SQL.
+
+        `column` is the one that links `File.name`: `name` on `tabFile`
+        itself, `entity` on `tabDrive Permission`."""
         if not self.name_prefix:
             return ""
-        column = f"{alias}.`name`" if alias else "`name`"
-        return f" AND {column} LIKE %(build_name_prefix)s"
+        target = f"{alias}.`{column}`" if alias else f"`{column}`"
+        return f" AND {target} LIKE %(build_name_prefix)s"
 
     def _extra_values(self) -> dict:
         if not self.name_prefix:
@@ -718,8 +776,26 @@ class SiteDrive:
         return {row.name: dict(row) for row in rows}
 
     def root_metadata(self, node: str) -> dict | None:
-        row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_READ_COLUMNS), as_dict=True)
+        # The primary key first. §3.2 gives `Drive Root` `autoname:
+        # field:node`, so `name` equals `node` on every row Build writes,
+        # and a row named this id whose `node` column points elsewhere is a
+        # row the `{"node": ...}` read cannot see. Missing it makes Build
+        # call the pair absent and die on a duplicate primary key, on this
+        # run and on every rerun after it.
+        row = frappe.db.get_value("Drive Root", node, list(ROOT_READ_COLUMNS), as_dict=True)
+        if not row:
+            row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_READ_COLUMNS), as_dict=True)
         return dict(row) if row else None
+
+    def active_root(self, kind: str, user: str | None) -> str | None:
+        # The same filter `_core/roots.py active_root_for` uses, down to
+        # leaving `user` out for the Shared root, which names none (§3.2).
+        # It answers with `name`; Build needs the `node` column, because the
+        # two disagree on exactly the row this read exists to find.
+        filters = {"kind": kind, "state": ACTIVE}
+        if kind == PERSONAL:
+            filters["user"] = user
+        return frappe.db.get_value("Drive Root", filters, "node")
 
     def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
         # §3.2: "Create the root node first, then its metadata and anchor

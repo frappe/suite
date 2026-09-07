@@ -16,6 +16,8 @@ reading the rows. Both are covered against the real thing in
 
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.ports import (
+    ACTIVE,
+    PERSONAL,
     BlobConflict,
     ChainRow,
     ClaimedBlob,
@@ -397,11 +399,14 @@ class FakeTree:
 class FakeDrive:
     """`DriveTarget` over dictionaries, committed into a snapshot.
 
-    Two real constraints are modelled, because both change what the code
-    under test has to do:
+    Three real constraints are modelled, because each one changes what the
+    code under test has to do:
 
     - `(node, principal)` is unique on `Drive Grant`, so a second insert
       for one pair raises instead of quietly making two rows;
+    - `Drive Root` is `autoname: field:node` with `unique: 1` on `node`
+      (§3.2), so a second metadata row for one name, or a second row
+      claiming one node, raises the way the two indexes would;
     - `write_root_pair` is one unit. `fail_pair` makes it raise part way
       through, and the rows it had already written are rolled back.
 
@@ -431,6 +436,20 @@ class FakeDrive:
                 return dict(row)
         return None
 
+    def active_root(self, kind, user):
+        """§3.2's "at most one Active root per identity", read off the rows.
+
+        A row with no `state` key counts as Active, the way the column's
+        own default does. `user` narrows a Personal root only.
+        """
+        for row in self.root_rows.values():
+            if row["kind"] != kind or (row.get("state") or ACTIVE) != ACTIVE:
+                continue
+            if kind == PERSONAL and (row.get("user") or None) != (user or None):
+                continue
+            return row["node"]
+        return None
+
     def grant_roles(self, node, principals):
         return {
             row["principal"]: row["role"]
@@ -456,11 +475,19 @@ class FakeDrive:
             if self.fail_pair is not None and self.fail_pair == wrote:
                 raise InterruptedRun("killed between the node and its metadata")
             if metadata:
-                self.root_rows[metadata["name"]] = dict(metadata)
+                self._insert_root(metadata)
             self.insert_grants(grants)
         except Exception:
             self.node_rows, self.root_rows, self.grant_rows = before
             raise
+
+    def _insert_root(self, row):
+        """The primary key and the unique `node` index, both of them."""
+        if row["name"] in self.root_rows:
+            raise ValueError(f"duplicate Drive Root {row['name']!r}")
+        if any(other["node"] == row["node"] for other in self.root_rows.values()):
+            raise ValueError(f"duplicate Drive Root node {row['node']!r}")
+        self.root_rows[row["name"]] = dict(row)
 
     def insert_nodes(self, rows):
         for row in rows:
