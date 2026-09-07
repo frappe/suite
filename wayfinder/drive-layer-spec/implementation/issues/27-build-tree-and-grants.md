@@ -29,17 +29,16 @@ Run mapping fixtures and interruption/rerun tests for complete, missing, and mis
 
 ## Completion evidence
 
-All seven acceptance criteria are built and covered by 270 tests that run
+All seven acceptance criteria are built and covered by 276 tests that run
 without a site. None is ticked: the site-backed module has not run, so
 nothing here is proved against the shipped schema. The root orchestrator
 owns that run; the commands are in **What the site gate must run**.
 
-Agents wrote three of the five test modules and audited the two hardest
-production modules against the specification and the shipped schemas. Their
-findings are listed under **Defects the audits found and fixed**; every one
-was fixed before the first commit landed. The orchestrator wrote the
-production code, wrote `test_tree`, `test_grants`, and the site-backed
-module, made the calls the audits raised, and made the commits.
+Agents wrote and reviewed the production modules, the five focused test
+modules, and the site-backed module. Their findings are listed under
+**Defects the audits found and fixed**. The final independent review found
+five more defects after the first review and corrected them on its own
+branch. The root orchestrator still owns the site gate and merge.
 
 ### Revisions
 
@@ -53,6 +52,9 @@ Base Suite `356d38782`, the commit that closed ticket 26, on
 | `0661dbe10` | prove the tree and grant wiring against the real tables |
 | `c82be8a49` | close the independent review's port defects and cover the adapters |
 | `229beaf5e` | close the four final root-pair, batch, and link-resume blockers |
+| `b16e134ae` | refuse conflicting Build roots and revalidate pairs before descent |
+| `0ed1b1770` | make the post-identity-lock conflict read current on MariaDB |
+| `1fcd4b640` | prove lock/read order and isolate the site-backed root fixtures |
 
 ### What was built
 
@@ -84,8 +86,8 @@ fixture's output is a fixed string rather than a wall clock.
 
 | Criterion | Where | Proof |
 |---|---|---|
-| Atomic root pair with the original File id | `root_pairs.py`, `SiteDrive.write_root_pair` | one savepoint holds the node, the metadata, and the Personal anchor. `TestPersonalRootPair`, `TestInterruption`: a kill between the halves leaves nothing, and the rerun completes the pair. `TestBatching.test_no_commit_falls_inside_a_pair` |
-| Validate incomplete pairs before descendants | `tree.refuse_incomplete`, `root_pairs._refuse_mismatch` | `PairTest` (4): a missing node, missing metadata, or a node that is not a root stops step 5 before one descendant is written. `TestMismatchRefusals` now checks every canonical node field, both metadata links, lifecycle, kind, and user identity |
+| Atomic root pair with the original File id | `root_pairs.py`, `SiteDrive.write_root_pair` | one savepoint holds the node, the metadata, and the Personal anchor. The identity lock matches the live root creator on MariaDB and Postgres. `TestPersonalRootPair`, `TestInterruption`: a kill between the halves leaves nothing, and the rerun completes the pair. `TestBatching.test_no_commit_falls_inside_a_pair` |
+| Validate incomplete pairs before descendants | `tree.refuse_incomplete`, `root_pairs._refuse_mismatch` | `PairTest` (6): a missing half, non-root node, noncanonical node, or metadata pointing elsewhere stops step 5 before one descendant is written. `TestMismatchRefusals` checks every canonical node field, both metadata links, lifecycle, kind, and user identity |
 | Walk reachable trees by depth | `tree._walk_root` | breadth-first, one level per pass, because a node's path and trash stamp both come from its parent. `PlaceTest` (5) |
 | Top-level `parent` is the root node | `tree._node_row` | `test_top_level_points_at_the_root_node`. §3.1, §14.3, and §14.4 all say so. The older "NULL directly under a root" in `tickets/011-migration-mapping.md:162` is superseded |
 | Root-relative paths within validated capacity | `tree._within_capacity` | the path is the engine's own `_validate_tree_position` formula, pinned by `test_path_holds_the_ancestors_and_not_the_node`. Depth past 40 and a path past `varchar(500)` skip the subtree and are counted. `max_depth`, `max_path_length`, and `max_id_length` are measured from the source rows, so a site that needed depth 44 reports 44 |
@@ -132,11 +134,13 @@ fixture's output is a fixed string rather than a wall clock.
 6. **A deny naming a Personal root's own user is dropped** anywhere inside
    that root, per §5.9 refusal 11. A `$GENERAL` deny in the Shared root
    stays legal.
-7. **A preprovisioned Personal root remains the Active one.** A
-   `User.after_insert` hook can create a fresh-id root before Build reaches
-   that user's legacy folder. Build still migrates the legacy pair at its
-   original `File` id, but archives its metadata so it neither discards the
-   old namespace nor violates §3.2 by publishing a second Active root.
+7. **A fresh Active root makes an unmigrated legacy root a refusal.** The
+   accepted source mapping wins: an enabled `Users/<email>` folder becomes
+   Active and keeps its `File` id (§14.3). Build locks the same stable
+   identity row as the live root creator, then refuses any other Active
+   root. It archives neither namespace. An already-Archived legacy pair is
+   different: offboarding and email reuse may validly leave it beside a
+   fresh Active root, so a rerun preserves that target lifecycle.
 
 ### Commands and real results
 
@@ -262,10 +266,11 @@ against `root_pairs.py`. All 58 were caught.
     clause and as a raw SQL prefix. Half its reads are SQL and cannot take a
     clause, so the filter form would have raised.
 13. **The Active-root port was dead code.** `User.after_insert` can already
-    have provisioned a Personal root at a fresh id. Step 4 now consults the
-    target table and archives the legacy-id pair while still returning it to
-    the descendant walk. Unit and real-table tests call
-    `convert_root_pairs`; neither tests the helper in isolation.
+    have provisioned a Personal root at a fresh id. The first correction
+    made step 4 consult the target table and archive the legacy-id pair while
+    still returning it to the descendant walk. Item 17 supersedes that
+    policy because it contradicted source precedence. Unit and real-table
+    tests call `convert_root_pairs`; neither tests the helper in isolation.
 14. **A row named after the legacy id could point at another node and pass.**
     Existing pairs are now checked against the same complete root-node shape
     as `validate_root_pair`: name, metadata node link, kind, parent, root,
@@ -280,12 +285,38 @@ against `root_pairs.py`. All 58 were caught.
     `record_link`. A write-ahead list of node ids is now saved before the DB
     batch, reconciled from `Drive Grant` on a rerun, and cleared only with the
     cumulative count after commit.
+17. **Build silently archived the normative legacy root when a fresh-id root
+    already existed.** That kept §3.2 uniqueness but contradicted §14.3,
+    which makes an enabled legacy folder Active at its original `File` id.
+    Build now takes the live creator's stable identity lock and refuses the
+    contradictory target state without changing either namespace. It still
+    accepts an already-Archived legacy pair beside a fresh root after valid
+    offboarding and email reuse.
+18. **Step 5 rechecked only pair existence and `kind=root`.** A pair could
+    become noncanonical after step 4's commit, or its metadata could point
+    elsewhere, and the tree walk would publish descendants below it. Step 5
+    now applies the full step 4 validator again before its first write.
+19. **A MariaDB deadlock could mask its own error.** InnoDB may remove every
+    savepoint when it chooses a deadlock victim. The pair rollback used to
+    raise the missing-savepoint error instead. It now uses the same fallback
+    as the live root workflow: narrow rollback on Postgres and ordinary
+    errors, full handle reset when MariaDB already rolled back the victim.
+20. **The Active-root conflict check was still a MariaDB snapshot read.**
+    Build took the correct stable identity lock, but an ordinary follow-up
+    read could retain a snapshot from before a concurrent root creator
+    committed. The query is now an explicit locking/current read, matching
+    the live root workflow on both supported databases.
+21. **The site-backed module used an existing User as a fixture.** That
+    violated the implementation rules and let the preprovisioning regression
+    create or depend on a non-prefixed live namespace. The module now inserts
+    a minimal prefixed User with `db_insert` (so no provisioning hook or queue
+    work runs) and deletes it with the rest of its isolated rows.
 
 ### Final blocker-correction verification
 
 No bench command or database-backed test was run in this correction
 worktree. The root orchestrator still owns the serialized site gate. The
-following site-free results are current at `229beaf5e`:
+following site-free results are current at the final review commits:
 
 ```
 $ python3 -m compileall -q suite/drive/patches/build suite/drive/tests/test_build_tree.py
@@ -296,17 +327,17 @@ All checks passed!
 $ uvx ruff@0.12.3 format --check suite/drive/patches/build suite/drive/tests/test_build_tree.py
 27 files already formatted
 
-$ PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27-fix \
+$ PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27-final-review-2 \
   ../env/bin/python <the documented frappe.init plus 12-module unittest runner>
-Ran 447 tests in 2.173s
+Ran 456 tests in 1.982s
 
 OK
 ```
 
 Current site-free module counts are: gate 15, layout 8, S3 copy 41,
-legacy bytes 34, ports 65, dormancy 7, mapping 52, titles 23, root pairs
-66, tree 59, grants 70, and architecture 7. The site-backed
-`suite.drive.tests.test_build_tree` module collects 32 cases and was not run
+legacy bytes 34, ports 68, dormancy 7, mapping 52, titles 23, root pairs
+68, tree 61, grants 72, and architecture 7. The site-backed
+`suite.drive.tests.test_build_tree` module collects 34 cases and was not run
 here.
 
 Five additional production mutations were applied one at a time and
@@ -319,6 +350,14 @@ reverted. All were killed:
 | count each root pair as one batch row | both target-row `TestBatching` assertions |
 | skip the root-node `root = NULL` invariant | the canonical-shape field matrix |
 | omit either write-ahead preparation or post-commit completion | `LinkInterruptionTest` and the ordinary anonymous-link case |
+
+The final independent review applied eight more mutations one at a time and
+reverted each one. All were killed: omit the Active-root conflict guard;
+omit the second canonical-pair validation; count a root pair as one row;
+omit link write-ahead preparation; omit post-commit link completion; and
+replace the deadlock-safe rollback with a direct savepoint rollback; make
+the post-identity-lock Active-root query a nonlocking snapshot read; move
+the identity lock after its conflict read.
 
 ### Known risks, none of them resolved here
 
@@ -357,27 +396,29 @@ reverted. All were killed:
 Nothing here has run against a database. On `slides.localhost`, serially:
 
 ```
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+TICKET_WORKTREE=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27-final-review-2
+
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.tests.test_build_tree
 
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_root_pairs
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_tree
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_grants
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_mapping
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_titles
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_ports
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.patches.build.tests.test_dormancy
 
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.drive.tests.test_build_storage
-env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27 \
+env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.tests.test_architecture
 ```
 
@@ -388,9 +429,9 @@ env -C /home/faris/benches/suite-bench PYTHONPATH=/home/faris/benches/suite-benc
 `test_build_tree` writes `File`, `Drive Permission`, `Drive Node`,
 `Drive Root`, and `Drive Grant` rows under a per-run prefix, cleaned up in
 `tearDown`. It never touches the site's own `Drive` or `Users` rows: the root
-pair it works with is synthetic. It inserts no `User`, because on this bench
-that enqueues background work; it picks an existing enabled email User and
-skips if the site has none.
+pair and enabled email User it works with are synthetic and prefixed. The
+User is inserted with `db_insert`, so the provisioning hook and background
+queue do not run.
 
 **A `bench migrate` proves nothing about this ticket and must not be used as
 its gate.** The package is still dormant: `patches.txt` does not name it,
