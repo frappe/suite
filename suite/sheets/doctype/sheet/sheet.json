@@ -47,7 +47,8 @@
    "fieldname": "head_snapshot",
    "fieldtype": "Link",
    "options": "Sheet Snapshot",
-   "label": "Latest snapshot"
+   "label": "Latest snapshot",
+   "description": "Legacy head pointer. \u00a710.7 retargets it to a Drive Node Version, but only \u00a714.10 may do it: an unlinked sheet keeps writing Sheet Snapshot names here until Cleanup drops that doctype, and Frappe validates the link on every Sheet.save()."
   },
   {
    "fieldname": "trashed",

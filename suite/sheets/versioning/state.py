@@ -58,6 +58,7 @@ def restore(snapshot_id: str) -> dict:
     """
     target = at(snapshot_id)  # validates read permission
     sheet_id = target["sheet"]
+    _refuse_linked_sheet(sheet_id)
     # Authoritative write-perm gate lives here, not at the call-site — so any
     # future caller (a fixture, a script, another whitelisted endpoint) that
     # forgets to gate cannot accidentally mutate the head.
@@ -94,6 +95,12 @@ def restore(snapshot_id: str) -> dict:
         label=_restore_label(target),
     )
     return {"snapshot": snap_name, "seq": restore_seq}
+
+
+def _refuse_linked_sheet(sheet: str) -> None:
+    from suite.sheets.drive import refuse_drive_native
+
+    refuse_drive_native(sheet, "Drive version history")
 
 
 def _restore_summary(target: dict) -> str:

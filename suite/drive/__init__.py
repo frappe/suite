@@ -245,6 +245,19 @@ def refuse_shared_linked_rows(doctype: str, node_field: str, user: str | None = 
     _refuse_shared_linked_rows(doctype, node_field, user)
 
 
+def refuse_shared_child_rows(
+    doctype: str,
+    parent_doctype: str,
+    parent_field: str,
+    node_field: str,
+    user: str | None = None,
+) -> None:
+    """Refuse a staged app's history list when a share reaches a linked parent."""
+    from suite.drive.framework import refuse_shared_child_rows as _refuse_shared_child_rows
+
+    _refuse_shared_child_rows(doctype, parent_doctype, parent_field, node_field, user)
+
+
 def touch(doctype: str, docname: str) -> None:
     """Record that one content document's body changed now."""
     from suite.drive._core.content import touch as _touch
@@ -297,6 +310,7 @@ __all__ = (
     "push_preview",
     "read_file",
     "reduce_storage_reservation",
+    "refuse_shared_child_rows",
     "refuse_shared_linked_rows",
     "refuse_shared_row",
     "release_storage_reservation",

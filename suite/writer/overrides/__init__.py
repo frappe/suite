@@ -8,6 +8,7 @@ READ_PTYPES = frozenset({"read", "report", "export", "email", "print", "select"}
 
 DOCTYPE = "Writer Document"
 NODE_FIELD = "node"
+VERSION_DOCTYPE = "Writer Version"
 
 # Adoption is staged (§10.3, README execution rules). `Writer Document` carries
 # a `node` Link from ticket 17, but `drive_content_types` stays empty and these
@@ -30,9 +31,10 @@ NODE_FIELD = "node"
 # the hook, so both guards call Drive to refuse, exactly as
 # `suite.drive.framework` refuses after activation.
 #
-# `Writer Template` and `Writer Version` rows are legacy only by construction:
-# nothing writes a version for a linked document, and templates are Drive nodes
-# from ticket 17 on.
+# `Writer Template` rows are legacy only by construction. Build preserves old
+# `Writer Version` rows after it links their parent documents, so the version
+# hooks below resolve authority through that parent and refuse a surviving
+# child-row share before Frappe can OR it around the answer.
 
 
 def filter_templates(user):
@@ -107,25 +109,20 @@ def version_has_permission(doc, ptype="read", user=None):
     """A Writer Version is readable/writable iff the backing Drive File of its
     parent document is.
 
-    Legacy only by construction today. Nothing writes a version for a linked
-    document: `WriterDocument.new_version` refuses a linked row, and the only
-    two writers of the node column insert a new document. §14.6 migrates these
-    rows into `Drive Node Version`.
-
-    Build ends that construction, and neither staged guard can answer for it.
-    Build links documents that already carry versions and keeps the backing
-    `File` until Cleanup, so this reads a Drive-owned document's history from
-    the legacy `File`, and a `DocShare` on the version row reopens it through
-    both compositions. `Writer Version` carries no node column for
-    `drive.refuse_shared_linked_rows` to scope on and no `Satellite`
-    declaration for activation to govern, so closing it is ticket 28's rewrite
-    or a ticket 29 declaration. Recorded in the ticket 17 evidence.
+    Build preserves legacy version rows after linking their parent. A linked
+    parent's history is Drive-owned, so this refuses any widening share on the
+    child and never consults the surviving legacy File. An unlinked parent
+    keeps the old File-backed behavior until Cleanup.
     """
     user = user or frappe.session.user
     if user == "Administrator":
         return True
     parent = doc.get("doc")
     if not parent:
+        drive.refuse_shared_row(VERSION_DOCTYPE, doc.get("name"), ptype, user)
+        return False
+    if frappe.db.get_value(DOCTYPE, parent, NODE_FIELD):
+        drive.refuse_shared_row(VERSION_DOCTYPE, doc.get("name"), ptype, user)
         return False
     file = File.get_for_doc(DOCTYPE, parent)
     if not file:
@@ -141,8 +138,10 @@ def version_query_conditions(user):
     agree on a linked document: both refuse it. Left apart, the row check
     denied every non-admin while the list still returned the owner's rows.
     """
+    user = user or frappe.session.user
     if user == "Administrator":
         return ""
+    drive.refuse_shared_child_rows(VERSION_DOCTYPE, DOCTYPE, "doc", NODE_FIELD, user)
     doc_predicate = _document_predicate(user)
     if not doc_predicate:
         return ""

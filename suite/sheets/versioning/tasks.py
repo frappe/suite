@@ -42,7 +42,7 @@ def rollup_snapshots() -> dict:
     deleted = 0
     scanned = 0
 
-    for sheet_name in _iter_sheets():
+    for sheet_name in _iter_sheets(legacy_only=True):
         snaps = frappe.get_all(
             "Sheet Snapshot",
             filters={"sheet": sheet_name, "kind": "auto", "pinned": 0},
@@ -79,7 +79,7 @@ def truncate_op_log() -> dict:
         min_keep_seq = int(oldest_snap[0]["seq"]) if oldest_snap else 0
         # Delete ops strictly older than the oldest retained snapshot AND
         # older than the absolute time backstop.
-        result = frappe.db.sql(
+        frappe.db.sql(
             "DELETE FROM `tabSheet Op Log` "
             "WHERE sheet = %(sheet)s "
             "  AND seq < %(min_seq)s "
@@ -99,13 +99,30 @@ def _tiers() -> tuple:
     return DEFAULT_TIERS
 
 
-def _iter_sheets():
-    """Iterate sheet names in modest pages — never load the full list at once."""
+def _iter_sheets(*, legacy_only: bool = False):
+    """Iterate sheet names in modest pages — never load the full list at once.
+
+    `legacy_only` drops the sheets Build has linked. A linked sheet's history is
+    Drive's (§14.6), and `Sheet Snapshot` rows stay frozen beneath it until
+    Cleanup, so `rollup_snapshots` must not reach them — its `delete_doc` runs
+    `SheetSnapshot.on_trash`, which refuses, and one refusal would end the whole
+    nightly pass.
+
+    `truncate_op_log` takes every sheet. `Sheet Op Log` is a satellite, not a
+    version: §10.7 leaves it app-owned, §14.6 does not migrate it, and Drive has
+    no job that prunes it. Skipping linked sheets there would let the op log of
+    every migrated sheet grow without a bound.
+
+    An unset Link is `NULL` or `''` — Frappe stores an empty Link as `''`
+    (`frappe/model/base_document.py:624-627`) — so both spellings count as
+    unlinked, the way `("is", "set")` reads it everywhere else in Drive.
+    """
+    unlinked = " AND (node IS NULL OR node = '')" if legacy_only else ""
     last_name = ""
     page = 200
     while True:
         rows = frappe.db.sql(
-            "SELECT name FROM `tabSheet` WHERE name > %s ORDER BY name LIMIT %s",
+            f"SELECT name FROM `tabSheet` WHERE name > %s{unlinked} ORDER BY name LIMIT %s",
             (last_name, page),
         )
         if not rows:
