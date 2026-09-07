@@ -1541,13 +1541,13 @@ class TestTheGateProbes(IntegrationTestCase):
         """`Sheet Snapshot` keeps its own guard past activation, and gets the
         same refusal for the same reason."""
         _node, docname = self._linked_sheet()
-        snapshot = (
-            frappe.get_doc(
-                {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
-            )
-            .insert(ignore_permissions=True)
-            .name
+        row = frappe.get_doc(
+            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
         )
+        # Stands in for a row Build preserved: it predates the link, so it never
+        # met `SheetSnapshot.validate`, which now refuses a linked parent.
+        row.flags.ignore_validate = True
+        snapshot = row.insert(ignore_permissions=True).name
         self._share("Sheet Snapshot", snapshot, GATE_VICTIM, read=1)
 
         self._as(GATE_VICTIM)

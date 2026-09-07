@@ -5,19 +5,56 @@ from __future__ import annotations
 import json
 import pathlib
 import unittest
+from contextlib import ExitStack
+from datetime import datetime
 from types import MethodType, SimpleNamespace
 from unittest import mock
 
+from suite.sheets import drive as sheets_drive
 from suite.sheets.doctype.sheet_snapshot.sheet_snapshot import SheetSnapshot
 from suite.sheets.versioning import labels, snapshots, state, tasks
 
 
 class HeadSchema(unittest.TestCase):
-    def test_head_snapshot_now_targets_the_same_named_drive_version(self):
+    """`Sheet.head_snapshot` must name the doctype the live writer stores in it.
+
+    §10.7 retargets the field to a `Drive Node Version`, and §14.10 is the only
+    place that may: an unlinked sheet keeps writing `Sheet Snapshot` names here
+    for the whole Build release, and `Document._validate_links` checks the value
+    on every `Sheet.save()`. Retargeting early makes trash, restore, rename, and
+    the rename-on-autosave throw `LinkValidationError` on any legacy sheet that
+    ever took a snapshot.
+    """
+
+    def _field(self, fieldname: str) -> dict:
         path = pathlib.Path(__file__).parents[2] / "doctype" / "sheet" / "sheet.json"
         meta = json.loads(path.read_text())
-        field = next(row for row in meta["fields"] if row["fieldname"] == "head_snapshot")
-        self.assertEqual(field["options"], "Drive Node Version")
+        return next(row for row in meta["fields"] if row["fieldname"] == fieldname)
+
+    def test_head_snapshot_targets_the_doctype_the_legacy_writer_stores(self):
+        self.assertEqual(self._field("head_snapshot")["options"], sheets_drive.SNAPSHOT_DOCTYPE)
+
+    def test_a_legacy_snapshot_write_would_survive_frappe_link_validation(self):
+        # The coupling this pair exists to hold: `snapshots.create` writes a
+        # `Sheet Snapshot` name, so the Link must accept one until Cleanup drops
+        # that doctype and rewrites the values in the same patch.
+        head = SimpleNamespace(sheets_data="{}", head_seq=4)
+        snapshot = mock.Mock()
+        snapshot.name = "SS-1"
+        snapshot.insert.return_value = snapshot
+        with (
+            mock.patch.object(snapshots, "_refuse_linked_sheet"),
+            mock.patch.object(snapshots, "_last_snapshot", return_value=None),
+            mock.patch.object(snapshots.frappe.db, "get_value", return_value=head),
+            mock.patch.object(snapshots.frappe, "get_doc", return_value=snapshot),
+            mock.patch.object(snapshots.frappe.db, "set_value") as set_value,
+            mock.patch.object(snapshots.frappe, "publish_realtime"),
+        ):
+            snapshots.create("SH-1")
+        stored = set_value.call_args.args
+        self.assertEqual(stored[:3], ("Sheet", "SH-1", "head_snapshot"))
+        self.assertEqual(snapshot.insert.call_args.kwargs, {"ignore_permissions": True})
+        self.assertEqual(self._field("head_snapshot")["options"], sheets_drive.SNAPSHOT_DOCTYPE)
 
 
 class LegacyMutationGuards(unittest.TestCase):
@@ -87,12 +124,39 @@ class LegacyMutationGuards(unittest.TestCase):
                     callback(row)
         self.assertEqual(refuse.call_count, 2)
 
-    def test_retention_iterates_only_unlinked_sheets(self):
+    def _job_frappe(self, stack, sql):
+        frappe = stack.enter_context(mock.patch.object(tasks, "frappe"))
+        stack.enter_context(mock.patch.object(tasks, "now_datetime", return_value=datetime(2026, 9, 8)))
+        frappe.conf.get.return_value = None
+        frappe.get_all.return_value = []
+        frappe.db.sql.side_effect = sql
+        return frappe
+
+    def test_snapshot_rollup_iterates_only_unlinked_sheets(self):
+        # `delete_doc` runs `SheetSnapshot.on_trash`, which refuses a linked
+        # parent, and one refusal would end the whole nightly pass.
+        with ExitStack() as stack:
+            frappe = self._job_frappe(stack, [[("SH-1",)], []])
+            tasks.rollup_snapshots()
+        self.assertIn("node IS NULL OR node = ''", frappe.db.sql.call_args_list[0].args[0])
+
+    def test_op_log_truncation_still_covers_a_linked_sheet(self):
+        # `Sheet Op Log` is a satellite, not a version. §14.6 does not migrate
+        # it and Drive prunes nothing, so skipping linked sheets here would let
+        # every migrated sheet's op log grow without a bound.
+        with ExitStack() as stack:
+            frappe = self._job_frappe(stack, [[("SH-1",)], None, [(0,)], []])
+            tasks.truncate_op_log()
+        self.assertNotIn("node", frappe.db.sql.call_args_list[0].args[0])
+
+    def test_the_legacy_filter_reads_an_empty_link_as_unlinked(self):
+        # Frappe stores an unset Link as `''`, not NULL
+        # (`frappe/model/base_document.py:624-627`), and `IS NULL` alone would
+        # skip that sheet's retention forever.
         with mock.patch.object(tasks, "frappe") as frappe:
-            frappe.db.sql.side_effect = [[("SH-1",)], []]
-            self.assertEqual(list(tasks._iter_sheets()), ["SH-1"])
-        query = frappe.db.sql.call_args_list[0].args[0]
-        self.assertIn("node IS NULL", query)
+            frappe.db.sql.side_effect = [[]]
+            list(tasks._iter_sheets(legacy_only=True))
+        self.assertIn("(node IS NULL OR node = '')", frappe.db.sql.call_args_list[0].args[0])
 
     def test_an_unlinked_sheet_still_creates_a_snapshot(self):
         head = SimpleNamespace(sheets_data="{}", head_seq=4)

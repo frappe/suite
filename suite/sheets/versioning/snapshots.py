@@ -140,7 +140,7 @@ def _conf_int(key: str, default: int) -> int:
     val = frappe.conf.get(key)
     try:
         return int(val) if val is not None else default
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
