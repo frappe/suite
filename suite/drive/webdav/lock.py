@@ -27,7 +27,14 @@ from suite.drive.webdav.errors import (
     NotFoundError,
     PreconditionFailed,
 )
-from suite.drive.webdav.xmlutil import XML_BODY_CAP, dav, dav_element, parse_xml, xml_response
+from suite.drive.webdav.xmlutil import (
+    XML_BODY_CAP,
+    MultistatusBuilder,
+    dav,
+    dav_element,
+    parse_xml,
+    xml_response,
+)
 
 # DAV:owner is informational (RFC 4918 §14.17); cap it like a dead property so a
 # LOCK cannot bloat the lock row or the PROPFIND lockdiscovery reflected to others
@@ -130,6 +137,9 @@ def _create(
         depth = "0"
 
     is_collection = row.kind in ("root", "folder")
+    if is_collection and depth == "infinity" and (member := _unlockable_member(ctx, row)) is not None:
+        return _hierarchy_refusal(ctx, row, member)
+
     # RFC 4918 §9.10.5's table refuses an exclusive lock against any lock and a
     # shared one against an exclusive, whoever holds it: "It is illegal for a
     # principal to request the same lock twice." Exempting a lock whose token
@@ -154,6 +164,69 @@ def _create(
         lock_root=pathmap.href_for(ctx.segments, is_collection),
     )
     return _lock_response(lock, status=201 if created else 200, with_token_header=True)
+
+
+def _unlockable_member(ctx: DavContext, collection: frappe._dict) -> frappe._dict | None:
+    """The first member of this collection the caller may not lock (§9.10.3).
+
+    RFC 4918 §9.10.3: "If the lock cannot be granted to all resources, the
+    server MUST return a Multi-Status response ... Either the entire hierarchy
+    is locked or no resources are locked."
+
+    A depth-infinity lock reaches every descendant - `locks._coverage` walks
+    the materialised ancestry - so EDIT on the collection alone hands out a
+    lock the server then refuses to honour: §5.1's nearest-wins lets a deeper
+    grant lower the caller inside their own root, and the PUT that submits the
+    token answers 403 on a resource the LOCK said it had taken.
+
+    Only a member carrying a `Drive Grant` row of its own can answer
+    differently from the collection. A member with no row of its own takes its
+    nearest granted ancestor's answer, and every granted node in the subtree is
+    checked here, so the ordinary subtree - no grants below the collection -
+    costs one indexed query and resolves nothing.
+    """
+    granted = frappe.db.sql(
+        """SELECT DISTINCT n.name
+        FROM `tabDrive Node` n
+        JOIN `tabDrive Grant` g ON g.node = n.name
+        WHERE n.state = 'Active' AND n.root = %(root)s AND n.path LIKE %(prefix)s""",
+        values={
+            "root": node_core.root_id(collection),
+            "prefix": node_core.child_path(collection) + "%",
+        },
+    )
+    for (name,) in granted:
+        member = pathmap.fetch(name)
+        if member is not None and effective_role(member, ctx.principals) < EDIT:
+            return member
+    return None
+
+
+def _hierarchy_refusal(ctx: DavContext, collection: frappe._dict, member: frappe._dict) -> Response:
+    """RFC 4918 §9.10.3's 207: the member that refused, then the Request-URI.
+
+    §9.10.9's example is this shape - 403 on the resource that prevented the
+    lock, 424 Failed Dependency on the URL the client asked to lock - and no
+    lock is created, because partial success is not an option for LOCK.
+    """
+    builder = MultistatusBuilder()
+    builder.add_response(_member_href(ctx, collection, member)).status(403)
+    builder.add_response(pathmap.href_for(ctx.segments, True)).status(424)
+    return builder.build()
+
+
+def _member_href(ctx: DavContext, collection: frappe._dict, member: frappe._dict) -> str:
+    """The member's own URL, built from the segments the client named."""
+    chain = chain_ids(member)
+    below = chain[chain.index(collection.name) + 1 :]
+    titles = {
+        row.name: row.title
+        for row in frappe.get_all("Drive Node", filters={"name": ["in", below]}, fields=["name", "title"])
+    }
+    return pathmap.href_for(
+        [*ctx.segments, *(titles.get(node, node) for node in below)],
+        member.kind in ("root", "folder"),
+    )
 
 
 def _parse_lockinfo(body: etree._Element) -> tuple[str, str | None]:
