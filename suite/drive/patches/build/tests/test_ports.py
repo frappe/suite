@@ -2,7 +2,9 @@
 
 The fakes elsewhere prove the rules; these prove the wiring, so a framework
 rename or a stray column write shows up as a failing test and not as a bad
-migration.
+migration. Where a fake copies a database constraint rather than a rule,
+the check that it still copies it belongs here too, beside the port it
+stands in for.
 """
 
 import unittest
@@ -11,8 +13,24 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from suite.drive._core.roles import MANAGE, NONE
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-from suite.drive.patches.build.ports import BlobConflict, BotoBucket, SiteFiles, SiteStorage
+from suite.drive.patches.build.ports import (
+    ACTIVE,
+    GRANT_COLUMNS,
+    NODE_COLUMNS,
+    NODE_READ_COLUMNS,
+    ROOT_COLUMNS,
+    ROOT_READ_COLUMNS,
+    BlobConflict,
+    BotoBucket,
+    SiteDrive,
+    SiteFiles,
+    SiteStorage,
+    SiteTree,
+    TreeRow,
+)
+from suite.drive.patches.build.tests.fakes import FakeDrive
 from suite.drive.utils.files import S3_URL_PREFIX
 
 
@@ -356,6 +374,398 @@ class TestTheSiteWiring(StubbedDatabase):
         with self.assertRaises(RuntimeError) as caught:
             env.bucket()
         self.assertIn("no S3 bucket", str(caught.exception))
+
+
+class TestTreeRow(unittest.TestCase):
+    def test_a_legacy_row_is_read_column_by_column(self):
+        row = frappe._dict(name="f1", file_name="a.txt", folder="F", status=None, unmapped="x")
+
+        made = TreeRow.of(row)
+
+        self.assertEqual((made.name, made.file_name, made.folder), ("f1", "a.txt", "F"))
+        # A NULL column keeps the dataclass default instead of becoming None,
+        # which is what makes `status` read as Active on an old row that has
+        # none. A column outside §14.4's map is not carried over at all.
+        self.assertEqual(made.status, ACTIVE)
+        self.assertFalse(hasattr(made, "unmapped"))
+
+
+class TestSiteTree(StubbedDatabase):
+    """The hand-written SQL, rendered and bound without a database.
+
+    Only a site proves it runs. These prove what it says, which is where
+    the tuple parameter and the missing prefix clauses were hiding.
+    """
+
+    def sql_call(self):
+        """The `frappe.db.sql` call as `(one-line query, values)`."""
+        query, values = self.db.sql.call_args.args[:2]
+        return " ".join(query.split()), values
+
+    def test_the_child_page_binds_one_placeholder_per_parent(self):
+        self.db.sql.return_value = []
+        SiteTree().children(("a", "b", "c"), ("", ""), 100)
+
+        query, values = self.sql_call()
+        self.assertIn("`folder` IN (%(parent0)s, %(parent1)s, %(parent2)s)", query)
+        self.assertEqual(
+            values,
+            {"folder": "", "name": "", "limit": 100, "parent0": "a", "parent1": "b", "parent2": "c"},
+        )
+        # A tuple bound to one placeholder is what frappe's SQLite backend
+        # string-formats into `IN '('a', 'b')'`, which will not parse.
+        for key, value in values.items():
+            with self.subTest(key=key):
+                self.assertNotIsInstance(value, tuple)
+
+    def test_no_parents_asks_nothing(self):
+        self.assertEqual(SiteTree().children((), ("", ""), 10), [])
+        self.db.sql.assert_not_called()
+
+    def test_the_child_page_keysets_on_folder_then_name(self):
+        self.db.sql.return_value = []
+        SiteTree().children(("a",), ("F", "n1"), 10)
+
+        query, values = self.sql_call()
+        self.assertIn(
+            "(`folder` > %(folder)s OR (`folder` = %(folder)s AND `name` > %(name)s))",
+            query,
+        )
+        self.assertIn("ORDER BY `folder`, `name` LIMIT %(limit)s", query)
+        self.assertEqual((values["folder"], values["name"]), ("F", "n1"))
+
+    def test_a_prefix_narrows_the_child_page(self):
+        self.db.sql.return_value = []
+        SiteTree("bld").children(("a",), ("", ""), 10)
+
+        query, values = self.sql_call()
+        self.assertIn("AND `name` LIKE %(build_name_prefix)s", query)
+        self.assertEqual(values["build_name_prefix"], "bld%")
+
+    def test_the_unreached_join_finds_files_with_no_node(self):
+        self.db.sql.return_value = []
+        SiteTree("bld").unreached("after-me", 50)
+
+        query, values = self.sql_call()
+        self.assertIn("LEFT JOIN `tabDrive Node` n ON n.`name` = f.`name`", query)
+        self.assertIn("WHERE n.`name` IS NULL AND f.`name` > %(after)s", query)
+        self.assertIn("AND f.`name` LIKE %(build_name_prefix)s", query)
+        self.assertEqual(values, {"after": "after-me", "limit": 50, "build_name_prefix": "bld%"})
+
+    def test_the_permission_page_keysets_on_the_compound_key(self):
+        self.db.sql.return_value = []
+        SiteTree().permissions(("e1", "u1", "n1"), 500)
+
+        query, values = self.sql_call()
+        self.assertIn("(`entity`, `user`, `name`) > (%(entity)s, %(user)s, %(name)s)", query)
+        self.assertIn("ORDER BY `entity`, `user`, `name` LIMIT %(limit)s", query)
+        # Production passes no prefix, so the read stays exactly what it was.
+        self.assertNotIn("LIKE", query)
+        self.assertEqual(values, {"entity": "e1", "user": "u1", "name": "n1", "limit": 500})
+
+    def test_a_prefix_narrows_the_permission_page_on_entity(self):
+        # `entity` links `File.name`, so this is the same prefix the `File`
+        # reads use. Without it a site-backed run pages every permission row
+        # on the site and writes grants outside its own cleanup net.
+        self.db.sql.return_value = []
+        SiteTree("bld").permissions(("", "", ""), 10)
+
+        query, values = self.sql_call()
+        self.assertIn("AND `entity` LIKE %(build_name_prefix)s", query)
+        self.assertEqual(values["build_name_prefix"], "bld%")
+
+    def test_a_permission_row_reads_its_flags_as_integers(self):
+        self.db.sql.return_value = [
+            frappe._dict(name="p1", entity="f1", user=None, read=1, comment=None, share=0, creation=None)
+        ]
+        (row,) = SiteTree().permissions(("", "", ""), 10)
+
+        self.assertEqual((row.user, row.read, row.comment, row.creation), ("", 1, 0, ""))
+
+    def test_the_prefix_narrows_the_sheet_lookup(self):
+        self.db.get_value.return_value = None
+        SiteTree("bld").sheet_entity("sheet-1")
+
+        self.assertEqual(
+            self.db.get_value.call_args.args[1],
+            [
+                ["content_doctype", "=", "Sheet"],
+                ["content_docname", "=", "sheet-1"],
+                ["name", "like", "bld%"],
+            ],
+        )
+
+    def test_the_prefix_narrows_the_composite_deck_lookup(self):
+        self.db.get_value.return_value = None
+        self.assertFalse(SiteTree("bld").is_composite_deck("f1"))
+
+        self.assertEqual(self.db.get_value.call_args.args[1], [["name", "=", "f1"], ["name", "like", "bld%"]])
+
+    def test_production_reads_both_lookups_unnarrowed(self):
+        self.db.get_value.return_value = None
+        SiteTree().sheet_entity("sheet-1")
+        self.assertEqual(
+            self.db.get_value.call_args.args[1],
+            [["content_doctype", "=", "Sheet"], ["content_docname", "=", "sheet-1"]],
+        )
+
+        SiteTree().is_composite_deck("f1")
+        self.assertEqual(self.db.get_value.call_args.args[1], [["name", "=", "f1"]])
+
+    def test_the_docshare_page_reads_sheet_shares_in_name_order(self):
+        with patch.object(frappe, "get_all", return_value=[]) as get_all:
+            SiteTree("bld").docshares("after-me", 25)
+
+        # No prefix clause: a `DocShare` names a `Sheet`, not a `File`.
+        self.assertEqual(
+            get_all.call_args.kwargs["filters"],
+            [["share_doctype", "=", "Sheet"], ["name", ">", "after-me"]],
+        )
+        self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
+        self.assertEqual(get_all.call_args.kwargs["limit"], 25)
+
+
+# One root pair, in the shape `root_pairs` hands it over: only the columns
+# that row decides. Everything else is `_values`' job to default.
+PAIR_NODE = {"name": "n1", "title": "Report", "kind": "root", "owner": "a@b.co"}
+PAIR_METADATA = {"name": "n1", "node": "n1", "kind": "Personal", "user": "a@b.co", "state": ACTIVE}
+PAIR_GRANT = {"name": "g1", "node": "n1", "principal": "a@b.co", "role": MANAGE}
+
+
+class TestSiteDrive(StubbedDatabase):
+    """The three bulk inserts and the reads that resume them."""
+
+    def setUp(self):
+        super().setUp()
+        self.drive = SiteDrive()
+
+    def inserted(self):
+        """`(doctype, fields, values)` for each `bulk_insert` call, in order."""
+        return [
+            (call.args[0], call.kwargs["fields"], call.kwargs["values"])
+            for call in self.db.bulk_insert.call_args_list
+        ]
+
+    # -- the pair, and its savepoint
+
+    def test_a_root_pair_goes_in_node_then_metadata_then_anchors(self):
+        self.drive.write_root_pair(PAIR_NODE, PAIR_METADATA, [PAIR_GRANT])
+
+        self.assertEqual([row[0] for row in self.inserted()], ["Drive Node", "Drive Root", "Drive Grant"])
+
+    def test_a_clean_pair_releases_its_savepoint(self):
+        self.drive.write_root_pair(PAIR_NODE, PAIR_METADATA, [PAIR_GRANT])
+
+        # Released, not rolled back: the batch's own transaction is not this
+        # method's to undo.
+        self.db.savepoint.assert_called_once_with("drive_build_root_pair")
+        self.db.release_savepoint.assert_called_once_with("drive_build_root_pair")
+        self.db.rollback.assert_not_called()
+
+    def test_a_failed_metadata_insert_rolls_the_whole_pair_back(self):
+        # §3.2: "Publish no partial pair." The node half is already in when
+        # the metadata insert dies, so the rollback is the only thing between
+        # a killed run and a root node no metadata describes.
+        def fail_on_metadata(doctype, **kwargs):
+            if doctype == "Drive Root":
+                raise ValueError("duplicate primary key")
+
+        self.db.bulk_insert.side_effect = fail_on_metadata
+        with self.assertRaises(ValueError):
+            self.drive.write_root_pair(PAIR_NODE, PAIR_METADATA, [PAIR_GRANT])
+
+        self.db.rollback.assert_called_once_with(save_point="drive_build_root_pair")
+        self.db.release_savepoint.assert_not_called()
+
+    def test_a_repaired_pair_writes_only_its_missing_half(self):
+        self.drive.write_root_pair(None, PAIR_METADATA, [])
+
+        self.assertEqual([row[0] for row in self.inserted()], ["Drive Root"])
+
+    def test_the_metadata_row_fills_every_root_column(self):
+        self.drive.write_root_pair(None, PAIR_METADATA, [])
+
+        (_, fields, values) = self.inserted()[0]
+        self.assertEqual(fields, list(ROOT_COLUMNS))
+        (row,) = values
+        self.assertEqual(row[ROOT_COLUMNS.index("name")], "n1")
+        self.assertEqual(row[ROOT_COLUMNS.index("user")], "a@b.co")
+        self.assertIsNone(row[ROOT_COLUMNS.index("used_bytes")])
+
+    # -- the bulk inserts
+
+    def test_the_node_insert_names_every_column_and_orders_the_row(self):
+        self.drive.insert_nodes([dict(PAIR_NODE)])
+
+        (doctype, fields, values) = self.inserted()[0]
+        self.assertEqual(doctype, "Drive Node")
+        self.assertEqual(fields, list(NODE_COLUMNS))
+        (row,) = values
+        self.assertEqual(len(row), len(NODE_COLUMNS))
+        self.assertEqual(row[NODE_COLUMNS.index("title")], "Report")
+        self.assertEqual(row[NODE_COLUMNS.index("owner")], "a@b.co")
+        # A column the caller does not name goes in as NULL, not as its
+        # neighbour's value shifted one place along.
+        self.assertIsNone(row[NODE_COLUMNS.index("parent")])
+
+    def test_the_grant_insert_names_every_column_and_orders_the_row(self):
+        self.drive.insert_grants([dict(PAIR_GRANT)])
+
+        (doctype, fields, values) = self.inserted()[0]
+        self.assertEqual(doctype, "Drive Grant")
+        self.assertEqual(fields, list(GRANT_COLUMNS))
+        (row,) = values
+        self.assertEqual(len(row), len(GRANT_COLUMNS))
+        self.assertEqual(row[GRANT_COLUMNS.index("principal")], "a@b.co")
+        self.assertEqual(row[GRANT_COLUMNS.index("role")], MANAGE)
+        self.assertIsNone(row[GRANT_COLUMNS.index("expires_on")])
+
+    def test_an_empty_batch_writes_nothing(self):
+        self.drive.insert_nodes([])
+        self.drive.insert_grants([])
+
+        self.db.bulk_insert.assert_not_called()
+
+    # -- the reads a rerun depends on
+
+    def test_the_resume_read_asks_only_for_the_columns_it_uses(self):
+        with patch.object(frappe, "get_all", return_value=[frappe._dict(name="n1", title="t")]) as get_all:
+            self.assertEqual(self.drive.nodes(("n1",)), {"n1": {"name": "n1", "title": "t"}})
+
+        self.assertEqual(get_all.call_args.kwargs["fields"], list(NODE_READ_COLUMNS))
+        self.assertEqual(get_all.call_args.kwargs["filters"], [["name", "in", ["n1"]]])
+
+    def test_the_metadata_read_asks_for_the_primary_key_first(self):
+        row = frappe._dict(name="n1", node="n1", user="a@b.co", kind="Personal", state=ACTIVE)
+        self.db.get_value.return_value = row
+
+        self.assertEqual(self.drive.root_metadata("n1"), dict(row))
+        self.db.get_value.assert_called_once_with("Drive Root", "n1", list(ROOT_READ_COLUMNS), as_dict=True)
+
+    def test_a_row_named_this_id_is_found_even_when_its_node_points_away(self):
+        # `autoname: field:node` (§3.2) makes `name` the id Build is about to
+        # write. A row named it whose `node` column points elsewhere is
+        # invisible to the `node` read, and the insert then dies on a
+        # duplicate primary key on this run and on every rerun after it.
+        squatter = frappe._dict(name="n1", node="elsewhere", user=None, kind="Shared", state=ACTIVE)
+        self.db.get_value.side_effect = [None, squatter]
+
+        self.assertEqual(self.drive.root_metadata("n1"), dict(squatter))
+        self.assertEqual(self.db.get_value.call_args_list[1].args[1], {"node": "n1"})
+
+    def test_no_metadata_either_way_reads_as_none(self):
+        self.db.get_value.return_value = None
+
+        self.assertIsNone(self.drive.root_metadata("n1"))
+        self.assertEqual(self.db.get_value.call_count, 2)
+
+    def test_the_active_personal_root_is_read_by_user_kind_and_state(self):
+        # The same filter `_core/roots.py active_root_for` uses. A `User`
+        # insert already provisions a Personal root at a fresh node id, so
+        # Build has to be able to see one before it writes a second.
+        self.db.get_value.return_value = "other-node"
+
+        self.assertEqual(self.drive.active_root("Personal", "a@b.co"), "other-node")
+        self.db.get_value.assert_called_once_with(
+            "Drive Root", {"kind": "Personal", "state": ACTIVE, "user": "a@b.co"}, "node"
+        )
+
+    def test_the_active_shared_root_names_no_user(self):
+        self.db.get_value.return_value = None
+
+        self.assertIsNone(self.drive.active_root("Shared", None))
+        self.db.get_value.assert_called_once_with("Drive Root", {"kind": "Shared", "state": ACTIVE}, "node")
+
+    def test_the_stored_roles_come_back_as_integers(self):
+        rows = [frappe._dict(principal="a@b.co", role="30")]
+        with patch.object(frappe, "get_all", return_value=rows) as get_all:
+            self.assertEqual(self.drive.grant_roles("n1", ("a@b.co",)), {"a@b.co": 30})
+
+        self.assertEqual(
+            get_all.call_args.kwargs["filters"],
+            [["node", "=", "n1"], ["principal", "in", ["a@b.co"]]],
+        )
+
+    def test_the_link_grant_probe_is_a_prefix_match_above_none(self):
+        # Link minting resumes on this. A probe that also matched a stored
+        # deny would hand out a second token for a row that already has one.
+        self.db.exists.return_value = "g1"
+
+        self.assertTrue(self.drive.has_link_grant("n1"))
+        self.db.exists.assert_called_once_with(
+            "Drive Grant", {"node": "n1", "principal": ["like", "$LINK:%"], "role": [">", NONE]}
+        )
+
+    def test_raising_a_grant_moves_the_role_and_not_the_stamp(self):
+        self.db.get_value.return_value = "g1"
+
+        self.drive.raise_grant("n1", "a@b.co", MANAGE)
+
+        self.db.get_value.assert_called_once_with(
+            "Drive Grant", {"node": "n1", "principal": "a@b.co"}, "name"
+        )
+        self.db.set_value.assert_called_once_with("Drive Grant", "g1", "role", MANAGE, update_modified=False)
+
+    def test_raising_a_grant_that_is_not_there_writes_nothing(self):
+        self.db.get_value.return_value = None
+
+        self.drive.raise_grant("n1", "a@b.co", MANAGE)
+
+        self.db.set_value.assert_not_called()
+
+    def test_a_batch_commits_only_outside_a_test_run(self):
+        previous = frappe.flags.in_test
+        self.addCleanup(setattr, frappe.flags, "in_test", previous)
+        for in_test, expected in ((False, 1), (True, 0)):
+            with self.subTest(in_test=in_test):
+                self.db.commit.reset_mock()
+                frappe.flags.in_test = in_test
+                self.drive.commit()
+                self.assertEqual(self.db.commit.call_count, expected)
+
+
+class TestFakeDriveKeys(unittest.TestCase):
+    """The `Drive Root` keys `FakeDrive` copies off the real table.
+
+    A double that lets two metadata rows share one name, or one node, hides
+    the bug it exists to catch: `bulk_insert` bypasses every controller, so
+    the two indexes are all that is left (§3.2).
+    """
+
+    def setUp(self):
+        self.drive = FakeDrive()
+        self.drive.write_root_pair({"name": "n1", "title": "Mine", "kind": "root"}, dict(PAIR_METADATA), [])
+
+    def test_a_second_row_for_one_name_raises(self):
+        with self.assertRaises(ValueError):
+            self.drive.write_root_pair(None, dict(PAIR_METADATA), [])
+
+    def test_a_second_row_claiming_one_node_raises(self):
+        # `unique: 1` on `node`. A different name is not a different row.
+        with self.assertRaises(ValueError):
+            self.drive.write_root_pair(None, {**PAIR_METADATA, "name": "other"}, [])
+
+    def test_a_refused_metadata_row_takes_its_node_half_with_it(self):
+        with self.assertRaises(ValueError):
+            self.drive.write_root_pair(
+                {"name": "n2", "title": "Theirs", "kind": "root"}, {**PAIR_METADATA, "name": "n2"}, []
+            )
+
+        self.assertEqual(self.drive.node_ids(), {"n1"})
+
+    def test_the_active_root_read_answers_per_identity(self):
+        self.assertEqual(self.drive.active_root("Personal", "a@b.co"), "n1")
+        self.assertIsNone(self.drive.active_root("Personal", "nobody@example.com"))
+        self.assertIsNone(self.drive.active_root("Shared", None))
+
+    def test_an_archived_row_is_not_an_active_root(self):
+        self.drive.write_root_pair(
+            {"name": "n2", "title": "Old", "kind": "root"},
+            {"name": "n2", "node": "n2", "kind": "Shared", "user": None, "state": "Archived"},
+            [],
+        )
+
+        self.assertIsNone(self.drive.active_root("Shared", None))
 
 
 if __name__ == "__main__":
