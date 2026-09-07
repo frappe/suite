@@ -644,6 +644,10 @@ class FakeContent:
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
 
+    def presentation_is_template(self, deck):
+        row = self.document_rows.get(("Presentation", deck))
+        return bool(row and row.is_template)
+
     def content_shares(self, after, limit):
         return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
 

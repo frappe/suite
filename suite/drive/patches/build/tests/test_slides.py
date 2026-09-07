@@ -27,10 +27,10 @@ def deck(name="deck-1", **values):
     return ContentRow("Presentation", name, **values)
 
 
-def media(name, *, blob=None, url=None, field=None):
+def media(name, *, deck_name="deck-1", blob=None, url=None, field=None):
     return MediaFileRow(
         name=name,
-        deck="deck-1",
+        deck=deck_name,
         file_name=f"{name}.png",
         file_url=url or f"/files/{name}.png",
         blob=blob,
@@ -63,17 +63,23 @@ class SlidesTest(unittest.TestCase):
             content_target=target,
             content_ready=True,
         )
-        target.node_rows["deck-node"] = {
-            "name": "deck-node",
-            "title": "Deck",
+        self.document_node(target, "deck-node", "deck-1", "Deck")
+        return env, target
+
+    def document_node(self, target, node, docname, title):
+        target.node_rows[node] = {
+            "name": node,
+            "title": title,
             "parent": "root",
             "root": "root",
             "path": "",
             "kind": "document",
             "content_doctype": "Presentation",
-            "content_docname": "deck-1",
+            "content_docname": docname,
         }
-        return env, target
+
+    def media_children(self, target, node):
+        return [row for row in target.child_nodes(node) if row.get("kind") == "file"]
 
     def test_same_blob_media_collapses_and_all_exact_aliases_rewrite(self):
         source = FakeContent(
@@ -162,6 +168,208 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(target.node_rows["media-a"]["blob"], "blob-1")
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements)[0]["src"], "media-a")
         self.assertEqual(result.blobless_nodes, 0)
+
+    def test_src_wins_an_attachment_disagreement_and_the_issue_is_recorded(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "/private/files/a.png", "attachmentName": "media-b"}]),
+                )
+            ],
+            media=[
+                media("media-a", blob="blob-a", url="/private/files/a.png"),
+                media("media-b", blob="blob-b", url="/private/files/b.png"),
+            ],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-b", b"b", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "media-a"}])
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(result.issues[0].source, "Slide:slide-1")
+        self.assertIn("src won", result.issues[0].reason)
+
+    def test_same_deck_attachment_repairs_only_an_unresolved_local_legacy_url(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps(
+                        [
+                            {"src": "/private/files/old-name.png", "attachmentName": "media-a"},
+                            {"src": "https://remote.example/a.png", "attachmentName": "media-a"},
+                            {"src": "/assets/suite/a.png", "attachmentName": "media-a"},
+                            {"type": "image", "attachmentName": "media-a"},
+                        ]
+                    ),
+                )
+            ],
+            media=[media("media-a", blob="blob-a", url="/private/files/current.png")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual(
+            json.loads(source.slide_rows["slide-1"].elements),
+            [
+                {"src": "media-a"},
+                {"src": "https://remote.example/a.png"},
+                {"src": "/assets/suite/a.png"},
+                {"type": "image"},
+            ],
+        )
+
+    def test_encoded_and_decoded_s3_fetch_urls_are_the_same_alias(self):
+        encoded = "/api/method/suite.drive.api.s3.fetch?path=team%2Flogo.webp"
+        decoded = "/api/method/suite.drive.api.s3.fetch?path=team/logo.webp"
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": decoded}]))],
+            media=[media("media-a", blob="blob-a", url=encoded)],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/webp")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "media-a"}])
+
+    def test_a_remote_file_url_never_resolves_a_body_reference(self):
+        remote = "https://cdn.example/logo.png"
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": remote}]))],
+            media=[media("media-a", blob="blob-a", url=remote)],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": remote}])
+        self.assertEqual(target.node_rows["media-a"]["blob"], "blob-a")
+
+    def test_one_template_file_is_borrowed_into_each_consuming_deck(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        first = deck("consumer-a", node="consumer-a-node", title="A")
+        second = deck("consumer-b", node="consumer-b-node", title="B")
+        template_url = "/private/files/template-logo.png"
+        source = FakeContent(
+            documents=[template, first, second],
+            slides=[
+                SlideRow("slide-a", first.name, 1, json.dumps([{"src": template_url}])),
+                SlideRow("slide-b", second.name, 1, json.dumps([{"src": template_url}])),
+            ],
+            media=[media("template-file", deck_name=template.name, blob="blob-a", url=template_url)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, first.node, first.name, first.title)
+        self.document_node(target, second.node, second.name, second.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        borrowed = [self.media_children(target, node) for node in (first.node, second.node)]
+        self.assertEqual([len(rows) for rows in borrowed], [1, 1])
+        self.assertNotEqual(borrowed[0][0]["name"], borrowed[1][0]["name"])
+        self.assertNotIn("template-file", {rows[0]["name"] for rows in borrowed})
+        self.assertEqual(
+            [json.loads(source.slide_rows[slide].elements)[0]["src"] for slide in ("slide-a", "slide-b")],
+            [borrowed[0][0]["name"], borrowed[1][0]["name"]],
+        )
+        for rows, consumer in zip(borrowed, (first, second), strict=True):
+            self.assertEqual(rows[0]["owner"], consumer.owner)
+            self.assertEqual(rows[0]["title"], "template-file.png")
+
+        convert_slides_and_templates(env)
+        self.assertEqual([self.media_children(target, node) for node in (first.node, second.node)], borrowed)
+
+    def test_a_borrowed_reference_reuses_the_consuming_deck_blob_node(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        template_url = "/private/files/template-logo.png"
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": template_url}]))],
+            media=[
+                media("template-file", deck_name=template.name, blob="blob-a", url=template_url),
+                media("own-file", deck_name=consumer.name, blob="blob-a", url="/private/files/own.png"),
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual([row["name"] for row in self.media_children(target, consumer.node)], ["own-file"])
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": "own-file"}])
+
+    def test_two_template_blobs_for_one_url_refuse_the_deck(self):
+        first = deck("template-a", node=None, title="Template A", is_template=1)
+        second = deck("template-b", node=None, title="Template B", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        shared_url = "/private/files/logo.png"
+        source = FakeContent(
+            documents=[first, second, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": shared_url}]))],
+            media=[
+                media("file-a", deck_name=first.name, blob="blob-a", url=shared_url),
+                media("file-b", deck_name=second.name, blob="blob-b", url=shared_url),
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-b", b"b", mime_type="image/png")
+
+        with self.assertRaises(BuildSlidesError):
+            convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": shared_url}])
+
+    def test_a_non_template_borrowed_file_stays_unresolved_and_is_reported(self):
+        other = deck("other", node="other-node", title="Other")
+        shared_url = "/private/files/pasted.png"
+        source = FakeContent(
+            documents=[deck(), other],
+            slides=[
+                SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": shared_url}])),
+                SlideRow("slide-2", other.name, 1, json.dumps([])),
+            ],
+            media=[media("other-file", deck_name=other.name, blob="blob-a", url=shared_url)],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, other.node, other.name, other.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": shared_url}])
+        self.assertEqual(self.media_children(target, "deck-node"), [])
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(result.issues[0].source, "Presentation:deck-1")
+        self.assertIn("non-template", result.issues[0].reason)
 
     def test_private_small_webp_thumbnail_becomes_the_deck_preview(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.webp", field="thumbnail")
