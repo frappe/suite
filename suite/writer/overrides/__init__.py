@@ -10,8 +10,6 @@ DOCTYPE = "Writer Document"
 NODE_FIELD = "node"
 VERSION_DOCTYPE = "Writer Version"
 
-_PRIVILEGED_ROLES = frozenset({"Administrator", "System Manager"})
-
 # Adoption is staged (§10.3, README execution rules). `Writer Document` carries
 # a `node` Link from ticket 17, but `drive_content_types` stays empty and these
 # two hooks stay here until ticket 29 has Build's links. So every guard below
@@ -117,7 +115,7 @@ def version_has_permission(doc, ptype="read", user=None):
     keeps the old File-backed behavior until Cleanup.
     """
     user = user or frappe.session.user
-    if _is_privileged(user):
+    if user == "Administrator":
         return True
     parent = doc.get("doc")
     if not parent:
@@ -141,39 +139,12 @@ def version_query_conditions(user):
     denied every non-admin while the list still returned the owner's rows.
     """
     user = user or frappe.session.user
-    if _is_privileged(user):
+    if user == "Administrator":
         return ""
-    _refuse_shared_linked_versions(user)
+    drive.refuse_shared_child_rows(VERSION_DOCTYPE, DOCTYPE, "doc", NODE_FIELD, user)
     doc_predicate = _document_predicate(user)
     if not doc_predicate:
         return ""
     return (
         f"`tabWriter Version`.doc IN (SELECT `tab{DOCTYPE}`.name FROM `tab{DOCTYPE}` WHERE {doc_predicate})"
     )
-
-
-def _refuse_shared_linked_versions(user: str) -> None:
-    """Fail a version list closed when one child share reaches linked history."""
-    from frappe.share import get_shared
-
-    shared = get_shared(VERSION_DOCTYPE, user)
-    if not shared:
-        return
-    linked = frappe.db.sql(
-        f"""SELECT version.name FROM `tab{VERSION_DOCTYPE}` version
-            JOIN `tab{DOCTYPE}` parent ON parent.name = version.doc
-            WHERE version.name IN %(shared)s AND parent.`{NODE_FIELD}` IS NOT NULL
-            LIMIT 1""",
-        {"shared": tuple(shared)},
-    )
-    if linked:
-        frappe.throw(
-            "Drive decides who reads Writer Version. A share cannot grant it.",
-            frappe.PermissionError,
-        )
-
-
-def _is_privileged(user: str) -> bool:
-    if user == "Administrator":
-        return True
-    return bool(_PRIVILEGED_ROLES.intersection(frappe.get_roles(user)))
