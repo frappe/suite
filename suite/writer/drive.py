@@ -38,12 +38,12 @@ cleanly and panics on the first child read.
 
 ## Versions
 
-`version_bytes` writes one `writer-document/1` JSON envelope carrying both the
-Yjs body and its HTML. `restore_version` reads the same envelope back. A bare
-HTML payload is refused: a Yjs body cannot be rebuilt from HTML outside the
-editor, so restoring one would leave the collaborative body and the rendered
-HTML disagreeing. §14.6 migrates `Writer Version` rows as snapshot HTML, so
-that Build (ticket 28) owes the envelope; see the ticket 17 handoffs.
+`version_bytes` writes one `writer-document/1` JSON envelope carrying the Yjs
+body, its HTML mirror, and the collaboration mode. `restore_version` also
+accepts the exact UTF-8 HTML bytes Build copies from a legacy `Writer Version`.
+That legacy form becomes a non-collaborative body: Writer cannot reconstruct a
+historical Yjs document from HTML, and leaving the current Yjs state behind
+would make the two editors disagree.
 
 ## Transactions
 
@@ -157,13 +157,14 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     """Return the bytes Drive stores as one immutable version."""
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html"), as_dict=True)
+    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
     payload = {
         "schema": VERSION_SCHEMA,
         "content": row.content or EMPTY_BODY,
         "html": row.html or "",
+        "collab": int(bool(row.collab)),
     }
     return io.BytesIO(json.dumps(payload).encode("utf-8")), VERSION_MIME
 
@@ -172,14 +173,18 @@ def restore_version(docname: str, stream) -> None:
     """Put one stored version back into the body.
 
     Drive has already taken a version of the current state, so this is not
-    destructive. A payload that is not a `writer-document/1` envelope is
-    refused rather than half-applied.
+    destructive. Native envelopes restore every body field. Exact legacy HTML
+    bytes restore as a non-collaborative document with an empty Yjs body.
     """
     payload = _version_payload(stream.read())
     frappe.db.set_value(
         DOCTYPE,
         docname,
-        {"content": payload["content"], "html": payload["html"]},
+        {
+            "content": payload["content"],
+            "html": payload["html"],
+            "collab": payload["collab"],
+        },
     )
 
 
@@ -252,19 +257,34 @@ SPEC = drive.ContentTypeSpec(
 
 def _version_payload(raw: bytes) -> dict:
     try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        frappe.throw(_("This Writer version is not valid UTF-8"), frappe.ValidationError)
+
+    try:
+        payload = json.loads(text)
+    except ValueError:
         payload = None
-    if not isinstance(payload, dict) or payload.get("schema") != VERSION_SCHEMA:
+
+    if not isinstance(payload, dict) or "schema" not in payload:
+        return {"content": EMPTY_BODY, "html": text, "collab": 0}
+    if payload.get("schema") != VERSION_SCHEMA:
         frappe.throw(
-            _("This Writer version predates Drive history and cannot be restored"),
+            _("This Writer version declares an unknown schema"),
             frappe.ValidationError,
         )
     content = payload.get("content")
     html = payload.get("html")
-    if not isinstance(content, str) or not content or not isinstance(html, str):
+    collab = payload.get("collab", 1)
+    if (
+        not isinstance(content, str)
+        or not content
+        or not isinstance(html, str)
+        or type(collab) not in (bool, int)
+        or collab not in (0, 1)
+    ):
         frappe.throw(_("This Writer version cannot be read"), frappe.ValidationError)
-    return {"content": content, "html": html}
+    return {"content": content, "html": html, "collab": int(collab)}
 
 
 def _ids_in(text: str) -> set[str]:
@@ -382,7 +402,7 @@ def _raw_text(content: str | None) -> str:
         return ""
     try:
         decoded = base64.b64decode(content, validate=True).decode("utf-8", "ignore")
-    except (ValueError, binascii.Error):
+    except ValueError, binascii.Error:
         return content
     return f"{content}{decoded}"
 
@@ -403,7 +423,7 @@ def _readable_body():
     """
     try:
         yield
-    except (KeyboardInterrupt, SystemExit, UnreadableBody):
+    except KeyboardInterrupt, SystemExit, UnreadableBody:
         raise
     except BaseException as unreadable:
         raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable

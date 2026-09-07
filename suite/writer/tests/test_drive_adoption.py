@@ -256,27 +256,63 @@ class TestWriterDeclaration(UnitTestCase):
 
     # the version envelope
 
-    def test_a_version_envelope_round_trips_the_body_and_its_html(self):
-        payload = {"schema": writer.VERSION_SCHEMA, "content": body_with("m1"), "html": "<p>x</p>"}
+    def test_a_version_envelope_round_trips_the_body_html_and_mode(self):
+        payload = {
+            "schema": writer.VERSION_SCHEMA,
+            "content": body_with("m1"),
+            "html": "<p>x</p>",
+            "collab": 0,
+        }
         read = writer._version_payload(json.dumps(payload).encode("utf-8"))
-        self.assertEqual(read, {"content": payload["content"], "html": payload["html"]})
+        self.assertEqual(
+            read,
+            {"content": payload["content"], "html": payload["html"], "collab": 0},
+        )
 
-    def test_a_legacy_html_snapshot_is_refused_rather_than_half_restored(self):
-        # §14.6 migrates `Writer Version` rows as snapshot HTML. A Yjs body
-        # cannot be rebuilt from HTML outside the editor, so restoring one
-        # would leave the collaborative body and the HTML disagreeing.
-        with self.assertRaises(frappe.ValidationError):
-            writer._version_payload(b"<p>an old snapshot</p>")
+    def test_a_legacy_html_snapshot_becomes_an_exact_non_collaborative_body(self):
+        html = "<p>an old snapshot π</p>"
+        self.assertEqual(
+            writer._version_payload(html.encode("utf-8")),
+            {"content": writer.EMPTY_BODY, "html": html, "collab": 0},
+        )
 
-    def test_an_envelope_of_another_schema_or_shape_is_refused(self):
+    def test_an_old_envelope_defaults_to_collaborative(self):
+        payload = {"schema": writer.VERSION_SCHEMA, "content": body_with("m1"), "html": "<p>x</p>"}
+        self.assertEqual(writer._version_payload(json.dumps(payload).encode())["collab"], 1)
+
+    def test_an_envelope_of_another_schema_or_invalid_known_shape_is_refused(self):
         for raw in (
-            b"{}",
             json.dumps({"schema": "writer-document/2", "content": "a", "html": ""}).encode(),
             json.dumps({"schema": writer.VERSION_SCHEMA, "content": "", "html": ""}).encode(),
             json.dumps({"schema": writer.VERSION_SCHEMA, "content": "a", "html": None}).encode(),
+            json.dumps({"schema": writer.VERSION_SCHEMA, "content": "a", "html": "", "collab": "1"}).encode(),
+            b"\xff",
         ):
             with self.subTest(raw=raw), self.assertRaises(frappe.ValidationError):
                 writer._version_payload(raw)
+
+    def test_version_bytes_captures_collaboration_mode(self):
+        row = frappe._dict(content="body", html="<p>x</p>", collab=0)
+        with patch.object(writer.frappe.db, "get_value", return_value=row):
+            stream, mime = writer.version_bytes("WR-1")
+        self.assertEqual(mime, writer.VERSION_MIME)
+        self.assertEqual(json.loads(stream.read())["collab"], 0)
+
+    def test_restore_writes_every_body_field_atomically(self):
+        html = "<p>legacy</p>"
+        with patch.object(writer.frappe.db, "set_value") as write:
+            writer.restore_version("WR-1", io.BytesIO(html.encode()))
+        write.assert_called_once_with(
+            DOCTYPE,
+            "WR-1",
+            {"content": writer.EMPTY_BODY, "html": html, "collab": 0},
+        )
+
+    def test_invalid_version_bytes_fail_before_a_body_write(self):
+        with patch.object(writer.frappe.db, "set_value") as write:
+            with self.assertRaises(frappe.ValidationError):
+                writer.restore_version("WR-1", io.BytesIO(b"\xff"))
+        write.assert_not_called()
 
     # used-node discovery
 
@@ -1332,6 +1368,57 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(body_ids(row.content), {"first"})
         self.assertEqual(row.html, "<p>first</p>")
 
+    def test_a_native_non_collaborative_version_round_trips_its_mode(self):
+        node = self._document(title="Non-collaborative")
+        docname = self._docname(node)
+        frappe.db.set_value(
+            DOCTYPE,
+            docname,
+            {"content": writer.EMPTY_BODY, "html": "<p>first</p>", "collab": 0},
+            update_modified=False,
+        )
+        seq = drive.take_version(node)
+        frappe.db.set_value(DOCTYPE, docname, "collab", 1, update_modified=False)
+
+        restore_version(self.admin, node, seq)
+
+        row = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
+        self.assertEqual((row.content, row.html, row.collab), (writer.EMPTY_BODY, "<p>first</p>", 0))
+
+    def test_a_migrated_html_version_restores_atomically_and_its_capture_restores_collab(self):
+        node = self._document(title="Migrated history")
+        docname = self._docname(node)
+        current_body = body_with("current")
+        frappe.db.set_value(
+            DOCTYPE,
+            docname,
+            {"content": current_body, "html": "<p>current</p>", "collab": 1},
+            update_modified=False,
+        )
+        blob = put_blob(io.BytesIO("<p>legacy π</p>".encode()), is_private=True)
+        migrated = frappe.get_doc(
+            {
+                "doctype": "Drive Node Version",
+                "node": node,
+                "seq": 1,
+                "kind": "auto",
+                "actor": USER,
+                "blob": blob.name,
+                "size": blob.file_size,
+            }
+        ).insert(ignore_permissions=True)
+
+        captured = restore_version(self.admin, node, migrated.seq)
+        restored = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
+        self.assertEqual(
+            (restored.content, restored.html, restored.collab),
+            (writer.EMPTY_BODY, "<p>legacy π</p>", 0),
+        )
+
+        restore_version(self.admin, node, captured)
+        current = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
+        self.assertEqual((current.content, current.html, current.collab), (current_body, "<p>current</p>", 1))
+
     def test_a_restore_keeps_the_state_it_replaced_as_history(self):
         node = self._document(title="Kept")
         docname = self._docname(node)
@@ -1636,6 +1723,49 @@ class TestWriterInDrive(IntegrationTestCase):
 
         predicate = overrides.version_query_conditions(OTHER)
         self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
+
+    def test_a_direct_version_share_cannot_reopen_linked_history(self):
+        docname = self._docname(self._document(title="Preserved history share"))
+        version = frappe.get_doc(
+            {"doctype": "Writer Version", "doc": docname, "snapshot": "<p>old</p>", "title": "old"}
+        ).insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc,
+            "Writer Version",
+            version.name,
+            force=1,
+            ignore_permissions=True,
+            ignore_missing=True,
+        )
+        share = frappe.get_doc(
+            {
+                "doctype": "DocShare",
+                "share_doctype": "Writer Version",
+                "share_name": version.name,
+                "user": OTHER,
+                "read": 1,
+            }
+        )
+        share.flags.ignore_validate = True
+        share.insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc,
+            "DocShare",
+            share.name,
+            force=1,
+            ignore_permissions=True,
+            ignore_missing=True,
+        )
+        frappe.db.commit()
+
+        self._as(OTHER)
+        with self.assertRaises(DriveForbidden):
+            frappe.has_permission("Writer Version", doc=version.name, ptype="read")
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_list("Writer Version", pluck="name")
+        frappe.set_user("Administrator")
+        self.assertTrue(frappe.db.exists("Writer Version", version.name))
+        self.assertTrue(frappe.db.exists("DocShare", share.name))
 
     def test_a_linked_row_refuses_every_legacy_method(self):
         """§14.6 and §8.11 put history and comments on the node. A linked row
