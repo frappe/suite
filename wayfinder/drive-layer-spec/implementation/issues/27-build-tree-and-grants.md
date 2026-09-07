@@ -29,7 +29,7 @@ Run mapping fixtures and interruption/rerun tests for complete, missing, and mis
 
 ## Completion evidence
 
-All seven acceptance criteria are built and covered by 261 tests that run
+All seven acceptance criteria are built and covered by 270 tests that run
 without a site. None is ticked: the site-backed module has not run, so
 nothing here is proved against the shipped schema. The root orchestrator
 owns that run; the commands are in **What the site gate must run**.
@@ -51,6 +51,8 @@ Base Suite `356d38782`, the commit that closed ticket 26, on
 | `630ff6f44` | build the node trees and the grants (§14.2 steps 4 to 6) |
 | `5395a6e43` | cover the tree and grant conversion without a site |
 | `0661dbe10` | prove the tree and grant wiring against the real tables |
+| `c82be8a49` | close the independent review's port defects and cover the adapters |
+| `229beaf5e` | close the four final root-pair, batch, and link-resume blockers |
 
 ### What was built
 
@@ -83,7 +85,7 @@ fixture's output is a fixed string rather than a wall clock.
 | Criterion | Where | Proof |
 |---|---|---|
 | Atomic root pair with the original File id | `root_pairs.py`, `SiteDrive.write_root_pair` | one savepoint holds the node, the metadata, and the Personal anchor. `TestPersonalRootPair`, `TestInterruption`: a kill between the halves leaves nothing, and the rerun completes the pair. `TestBatching.test_no_commit_falls_inside_a_pair` |
-| Validate incomplete pairs before descendants | `tree.refuse_incomplete`, `root_pairs._refuse_mismatch` | `PairTest` (4): a missing node, missing metadata, or a node that is not a root stops step 5 before one descendant is written. `TestMismatchRefusals` (5) covers the contradictions a rerun cannot resolve |
+| Validate incomplete pairs before descendants | `tree.refuse_incomplete`, `root_pairs._refuse_mismatch` | `PairTest` (4): a missing node, missing metadata, or a node that is not a root stops step 5 before one descendant is written. `TestMismatchRefusals` now checks every canonical node field, both metadata links, lifecycle, kind, and user identity |
 | Walk reachable trees by depth | `tree._walk_root` | breadth-first, one level per pass, because a node's path and trash stamp both come from its parent. `PlaceTest` (5) |
 | Top-level `parent` is the root node | `tree._node_row` | `test_top_level_points_at_the_root_node`. §3.1, §14.3, and §14.4 all say so. The older "NULL directly under a root" in `tickets/011-migration-mapping.md:162` is superseded |
 | Root-relative paths within validated capacity | `tree._within_capacity` | the path is the engine's own `_validate_tree_position` formula, pinned by `test_path_holds_the_ancestors_and_not_the_node`. Depth past 40 and a path past `varchar(500)` skip the subtree and are counted. `max_depth`, `max_path_length`, and `max_id_length` are measured from the source rows, so a site that needed depth 44 reports 44 |
@@ -95,11 +97,11 @@ fixture's output is a fixed string rather than a wall clock.
 | Denies, stale principals, duplicates | `mapping.collapse`, `grants._principal_for` | duplicates collapse the way `dedupe_drive_permissions.py` does, before mapping, because `read + share` unioned with `write` is MANAGE and mapping first gives EDIT. `CollapseTest` (3), `PrincipalTest` (10) |
 | Sheet `DocShare` | `grants._convert_docshare` | `DocShareTest` (10), including the `everyone` row, a missing user, and two sources meeting on one `(node, principal)` |
 | Migrated anchors | `root_pairs._anchor_grants`, `grants._shared_floor` | the Personal MANAGE anchor lands with the pair; the Shared root keeps whatever its legacy `$GENERAL` row mapped to and gets a READ floor only when nothing produced one. `SharedFloorTest` (5) |
-| Mint required links | `grants._convert_anonymous` | a `user = ""` row above read becomes `$PUBLIC` READ plus one `$LINK:<22 base62>` at the mapped level. `AnonymousTest` (10). A rerun mints nothing more |
+| Mint required links | `grants._convert_anonymous` | a `user = ""` row above read becomes `$PUBLIC` READ plus one `$LINK:<22 base62>` at the mapped level. `AnonymousTest` (10). `LinkInterruptionTest` proves kills immediately before and after the database commit neither duplicate the link nor lose `links_minted` |
 | Drop root public and link violations | `grants._convert_anonymous`, `_convert_pair` | §5.9 refusals 7, 8, and 11 applied by hand, because bulk SQL fires no refusal. `GuardrailTest` (6) |
 | Drop forced-public composite rows | `grants._convert_anonymous` | only the shape `presentation.py:102-113` writes: a plain read grant. `test_a_public_deny_on_a_composite_deck_is_kept` |
 | Collect every specified count | `state.TreeConversion`, `state.GrantConversion` | every §14.9 key this ticket owns, decided from the source rows so a rerun over a finished site reports the same numbers. `test_a_rerun_reports_the_same_source_counters` |
-| Resumable batches of 1000, never splitting a pair | all three steps | commit, then write the state record. A kill between the two loses a batch of counters and never a row. `BatchTest` (5), `RerunTest` (8) |
+| Resumable batches of 1000, never splitting a pair | all three steps | root batches count target node, metadata, and optional anchor rows while keeping a pair atomic. Link batches use a state-file write-ahead ledger around the database commit. `TestBatching`, `RerunTest`, and `LinkInterruptionTest` cover both interruption boundaries |
 | Preserve migration source tables | `LegacyTree` | no write method exists on the protocol. `SourceTest` in both modules, and `test_the_read_port_has_no_write_method` |
 
 ### Decisions taken where the spec leaves a choice
@@ -130,6 +132,11 @@ fixture's output is a fixed string rather than a wall clock.
 6. **A deny naming a Personal root's own user is dropped** anywhere inside
    that root, per §5.9 refusal 11. A `$GENERAL` deny in the Shared root
    stays legal.
+7. **A preprovisioned Personal root remains the Active one.** A
+   `User.after_insert` hook can create a fresh-id root before Build reaches
+   that user's legacy folder. Build still migrates the legacy pair at its
+   original `File` id, but archives its metadata so it neither discards the
+   old namespace nor violates §3.2 by publishing a second Active root.
 
 ### Commands and real results
 
@@ -254,6 +261,64 @@ against `root_pairs.py`. All 58 were caught.
 12. **`SiteTree` took its test narrowing two ways**, as a `frappe.get_all`
     clause and as a raw SQL prefix. Half its reads are SQL and cannot take a
     clause, so the filter form would have raised.
+13. **The Active-root port was dead code.** `User.after_insert` can already
+    have provisioned a Personal root at a fresh id. Step 4 now consults the
+    target table and archives the legacy-id pair while still returning it to
+    the descendant walk. Unit and real-table tests call
+    `convert_root_pairs`; neither tests the helper in isolation.
+14. **A row named after the legacy id could point at another node and pass.**
+    Existing pairs are now checked against the same complete root-node shape
+    as `validate_root_pair`: name, metadata node link, kind, parent, root,
+    path, node state, empty content fields, metadata lifecycle, and Personal
+    or Shared identity all have to agree before descendants are exposed.
+15. **The root batch limit counted pairs rather than target rows.** A Personal
+    pair can write a node, metadata, and an anchor, so the old 1000-pair batch
+    could publish nearly 3000 rows. Boundaries now account for every row and
+    move before, never through, an atomic pair.
+16. **An exact grant auto-flush could permanently undercount a minted link.**
+    `_Batch.add(link=True)` used to commit and save state before
+    `record_link`. A write-ahead list of node ids is now saved before the DB
+    batch, reconciled from `Drive Grant` on a rerun, and cleared only with the
+    cumulative count after commit.
+
+### Final blocker-correction verification
+
+No bench command or database-backed test was run in this correction
+worktree. The root orchestrator still owns the serialized site gate. The
+following site-free results are current at `229beaf5e`:
+
+```
+$ python3 -m compileall -q suite/drive/patches/build suite/drive/tests/test_build_tree.py
+COMPILED
+
+$ uvx ruff@0.12.3 check suite/drive/patches/build suite/drive/tests/test_build_tree.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/patches/build suite/drive/tests/test_build_tree.py
+27 files already formatted
+
+$ PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27-fix \
+  ../env/bin/python <the documented frappe.init plus 12-module unittest runner>
+Ran 447 tests in 2.173s
+
+OK
+```
+
+Current site-free module counts are: gate 15, layout 8, S3 copy 41,
+legacy bytes 34, ports 65, dormancy 7, mapping 52, titles 23, root pairs
+66, tree 59, grants 70, and architecture 7. The site-backed
+`suite.drive.tests.test_build_tree` module collects 32 cases and was not run
+here.
+
+Five additional production mutations were applied one at a time and
+reverted. All were killed:
+
+| Mutation | Catching proof |
+|---|---|
+| ignore `DriveTarget.active_root` | all three `TestPreprovisionedPersonalRoot` cases |
+| accept a metadata row whose `node` points elsewhere | the exact metadata-link mismatch case |
+| count each root pair as one batch row | both target-row `TestBatching` assertions |
+| skip the root-node `root = NULL` invariant | the canonical-shape field matrix |
+| omit either write-ahead preparation or post-commit completion | `LinkInterruptionTest` and the ordinary anonymous-link case |
 
 ### Known risks, none of them resolved here
 
