@@ -90,11 +90,19 @@ def _disposition_names(filename: str) -> dict[str, str]:
     that one. Control characters are dropped, so a title holding a newline
     cannot split the response either.
 
-    `http/routes.py:_disposition_names` is the same function for the same
-    reason. It is repeated rather than imported: HTTP and WebDAV are sibling
-    adapters and neither may depend on the other (ARCHITECTURE.md, "Ownership
-    and placement"). Both mirror what `werkzeug.send_file` does, so a DAV byte
-    path and an export name a file identically.
+    `http/routes.py:_disposition_names` is byte for byte this function, for
+    this reason. It is repeated rather than imported: HTTP and WebDAV are
+    sibling adapters and neither may depend on the other (ARCHITECTURE.md,
+    "Ownership and placement"), and a `Content-Disposition` parameter is a
+    transport shape that has no home in `_core` (§3.5). Both mirror what
+    `werkzeug.send_file` does, and both are stricter than it: it emits
+    `filename=""` for a title with no ASCII skeleton at all.
+
+    The two adapters still name a file differently, because they are handed
+    different strings. This side gets `download_filename(title)`, which has
+    already dropped `/` and `\\`; the export side gets the title as stored. A
+    title holding `/` is `filename=ab.html` here and `filename="a/b.html"`
+    there.
     """
     cleaned = "".join(character for character in filename if character.isprintable()) or "download"
     try:
