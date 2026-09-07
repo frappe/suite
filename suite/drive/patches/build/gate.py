@@ -6,12 +6,23 @@ copy needs both keys reachable from one client. Without that check a
 mismatched site does not fail, it succeeds with every Drive file recorded
 as missing bytes.
 
+The last check is a single read against the bucket. Comparing strings
+proves the two settings agree, not that the credentials still work: the
+first bucket call otherwise happens in step 3, after the framework backfill
+has linked and committed thousands of rows, which is the half-migrated site
+§14.1 exists to prevent.
+
 Every check reads only. They raise instead of calling `frappe.throw`: a
 migration failure needs the message intact in the traceback, and
 `frappe.throw` rewrites it depending on whether stdin is a terminal.
 """
 
 import frappe
+
+# A key no blob can occupy: canonical keys are `private/<ab>/<cd>/<sha256>`.
+# Heading it answers "missing" on a healthy bucket and raises on an
+# unreachable one.
+PROBE_KEY = "private/.drive-build-gate-probe"
 
 
 class BuildGateError(frappe.ValidationError):
@@ -69,6 +80,25 @@ def check_gate(env) -> None:
             f"site_config at {driver_endpoint or 'the AWS default endpoint'}. "
             "Those are two different buckets, and Build would copy nothing."
         )
+
+    _probe_bucket(env, bucket)
+
+
+def _probe_bucket(env, bucket: str) -> None:
+    """One `head_object` against a key that cannot exist.
+
+    It catches revoked credentials, a bucket that is gone, and the case
+    where the role has no `s3:ListBucket`: S3 then answers `403` instead of
+    `404` for a missing key, and every `size()` in the copy step raises."""
+    try:
+        env.bucket().size(PROBE_KEY)
+    except Exception as e:
+        raise BuildGateError(
+            f"Build cannot read the bucket {bucket!r} that both Drive Disk Settings "
+            f"and site_config name: {type(e).__name__}: {e}. The S3 copy step would "
+            "fail after the local backfill had already committed, leaving a "
+            "half-migrated site. Fix the credentials or the bucket and migrate again."
+        ) from e
 
 
 def _endpoint(value) -> str:

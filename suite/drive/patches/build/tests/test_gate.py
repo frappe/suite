@@ -6,7 +6,13 @@ from tempfile import TemporaryDirectory
 
 from suite.drive.patches.build import BuildGateError, check_gate, prepare_legacy_bytes
 from suite.drive.patches.build.environment import LegacyS3Config
-from suite.drive.patches.build.tests.fakes import FakeFiles, FakeStorage, build_environment
+from suite.drive.patches.build.gate import PROBE_KEY
+from suite.drive.patches.build.tests.fakes import (
+    FakeBucket,
+    FakeFiles,
+    FakeStorage,
+    build_environment,
+)
 
 
 class TestBuildGate(unittest.TestCase):
@@ -20,6 +26,18 @@ class TestBuildGate(unittest.TestCase):
 
     def test_storage_v2_off_refuses(self):
         env = self.env(storage=FakeStorage(enabled=False))
+        with self.assertRaises(BuildGateError) as caught:
+            check_gate(env)
+        self.assertIn("storage_v2", str(caught.exception))
+
+    def test_a_local_site_without_storage_v2_is_still_refused(self):
+        # The common case. Every other gate case has legacy S3 on, so a
+        # reordering that put the S3 branch first would let a local site
+        # through and start mutating it.
+        env = self.env(
+            storage=FakeStorage(enabled=False, driver="local", config={}),
+            legacy_s3=LegacyS3Config(enabled=False),
+        )
         with self.assertRaises(BuildGateError) as caught:
             check_gate(env)
         self.assertIn("storage_v2", str(caught.exception))
@@ -92,6 +110,48 @@ class TestBuildGate(unittest.TestCase):
             legacy_s3=LegacyS3Config(enabled=True, bucket="drive", endpoint_url="https://minio.internal"),
         )
         check_gate(env)
+
+    def test_a_bucket_it_cannot_read_refuses_before_the_backfill(self):
+        # Comparing two strings proves the settings agree, not that the
+        # credentials still work. Without a read, the first bucket call
+        # happens in step 3, after the backfill has committed.
+        class Unreachable(FakeBucket):
+            def size(self, key):
+                raise PermissionError("AccessDenied")
+
+        storage = FakeStorage()
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        env = self.env(storage=storage, files=files, bucket=Unreachable())
+
+        with self.assertRaises(BuildGateError) as caught:
+            prepare_legacy_bytes(env)
+
+        self.assertIn("cannot read the bucket", str(caught.exception))
+        self.assertIn("AccessDenied", str(caught.exception))
+        self.assertEqual(storage.backfill_calls, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_a_missing_key_is_what_a_healthy_bucket_answers(self):
+        # The probe key cannot exist, so `size` returning None is the pass.
+        bucket = FakeBucket()
+        check_gate(self.env(bucket=bucket))
+        self.assertIsNone(bucket.size(PROBE_KEY))
+
+    def test_a_site_with_no_way_to_open_a_bucket_refuses(self):
+        env = self.env()
+        env.open_bucket = None
+
+        with self.assertRaises(BuildGateError):
+            check_gate(env)
+
+    def test_a_local_site_never_probes_a_bucket(self):
+        opened = []
+        env = self.env(legacy_s3=LegacyS3Config(enabled=False))
+        env.open_bucket = lambda: opened.append(1)
+
+        check_gate(env)
+
+        self.assertEqual(opened, [])
 
     def test_a_refused_gate_mutates_nothing(self):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
