@@ -56,7 +56,23 @@ class TreeCase(unittest.TestCase):
         # The root pair is step 4's output. Step 5 starts from it, so the
         # node has to be there or the census would call the root itself
         # unreached.
-        self.drive.node_rows[ROOT] = {"name": ROOT, "kind": "root", "root": ROOT, "path": ""}
+        self.drive.node_rows[ROOT] = {
+            "name": ROOT,
+            "kind": "root",
+            "parent": None,
+            "root": None,
+            "path": "",
+            "state": ACTIVE,
+            "blob": None,
+            "size": 0,
+            "mime": None,
+            "url": None,
+            "content_doctype": None,
+            "content_docname": None,
+            "trashed_at": None,
+            "trash_root": None,
+            "is_template": 0,
+        }
         self.drive.root_rows[ROOT] = {
             "name": ROOT,
             "node": ROOT,
@@ -104,6 +120,24 @@ class PairTest(TreeCase):
         self.drive.node_rows[ROOT]["kind"] = "folder"
         with self.assertRaises(BuildPairError):
             self.run_walk()
+
+    def test_a_complete_but_noncanonical_node_stops_the_walk(self):
+        self.drive.node_rows[ROOT]["root"] = ROOT
+        self.add(row("child00001", ROOT))
+
+        with self.assertRaisesRegex(BuildPairError, "canonical root node"):
+            self.run_walk()
+
+        self.assertNotIn("child00001", self.drive.node_rows)
+
+    def test_metadata_pointing_at_another_node_stops_the_walk(self):
+        self.drive.root_rows[ROOT]["node"] = "other-root"
+        self.add(row("child00001", ROOT))
+
+        with self.assertRaisesRegex(BuildPairError, "points at node 'other-root'"):
+            self.run_walk()
+
+        self.assertNotIn("child00001", self.drive.node_rows)
 
     def test_the_check_reads_through_the_port(self):
         """It runs with no site bound, which is the point of the seam."""

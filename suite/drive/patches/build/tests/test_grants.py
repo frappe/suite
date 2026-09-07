@@ -680,6 +680,22 @@ class LinkInterruptionTest(GrantCase):
 
         self.assert_one_accounted_link(self.resume_from_disk())
 
+    def test_a_failed_write_ahead_save_publishes_nothing_and_retries_once(self):
+        class FailingState(BuildState):
+            def put_grants(self, grants):
+                raise InterruptedRun("the link intent was not durable")
+
+        self.source()
+        env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        env.state = FailingState(self.path / "drive-build-state.json")
+
+        with self.assertRaisesRegex(InterruptedRun, "not durable"):
+            grants_module.convert_grants(env, self.report, [], batch_size=2)
+
+        self.assertEqual(self.roles("doc0000001"), {})
+        self.assertEqual(BuildState(self.path / "drive-build-state.json").grants().links_minted, 0)
+        self.assert_one_accounted_link(self.resume_from_disk())
+
     def test_a_kill_after_insert_but_before_counter_finish_recovers_from_target(self):
         class FailingState(BuildState):
             def __init__(self, path):
@@ -703,6 +719,32 @@ class LinkInterruptionTest(GrantCase):
         self.assertEqual(stored.links_minted, 0)
         self.assertEqual(len([p for p in self.roles("doc0000001") if p.startswith("$LINK:")]), 1)
 
+        self.assert_one_accounted_link(self.resume_from_disk())
+
+    def test_a_failed_recovery_save_leaves_the_intent_for_the_next_rerun(self):
+        class FailingState(BuildState):
+            def put_grants(self, grants):
+                raise InterruptedRun("the recovered count was not durable")
+
+        self.source()
+        state = BuildState(self.path / "drive-build-state.json")
+        state.put_grants(GrantConversion(pending_link_nodes=["doc0000001"]))
+        self.drive.grant_rows["link-row"] = {
+            "name": "link-row",
+            "node": "doc0000001",
+            "principal": "$LINK:already-committed",
+            "role": EDIT,
+        }
+        self.report = state.grants()
+        env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        env.state = FailingState(state.path)
+
+        with self.assertRaisesRegex(InterruptedRun, "recovered count"):
+            grants_module.convert_grants(env, self.report, [], batch_size=2)
+
+        stored = state.grants()
+        self.assertEqual(stored.links_minted, 0)
+        self.assertEqual(stored.pending_link_nodes, ["doc0000001"])
         self.assert_one_accounted_link(self.resume_from_disk())
 
 

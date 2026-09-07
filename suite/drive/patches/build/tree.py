@@ -563,7 +563,7 @@ def refuse_incomplete(env, plans) -> None:
     engine's own check reads `frappe.db`, which would put a site inside the
     one module that is supposed to run without one.
     """
-    from suite.drive.patches.build.root_pairs import BuildPairError
+    from suite.drive.patches.build.root_pairs import BuildPairError, _refuse_mismatch
 
     for plan in plans:
         node = env.drive.nodes((plan.node,)).get(plan.node)
@@ -574,5 +574,14 @@ def refuse_incomplete(env, plans) -> None:
                 f"Drive root pair {plan.node!r} has no {missing} row. "
                 "Build must not migrate descendants of an incomplete pair (§14.2)."
             )
-        if node.get("kind") != "root":
-            raise BuildPairError(f"Drive Node {plan.node!r} is a {node.get('kind')!r}, not a root node.")
+        # Step 4 validated this pair before its last batch commit. Step 5
+        # must validate it again after that commit, because a complete pair
+        # can still contradict the canonical root shape or point its
+        # metadata at another node. §14.2 says mismatches stop before any
+        # descendant is migrated, not only while the pair is first built.
+        _refuse_mismatch(
+            plan.node,
+            node,
+            metadata,
+            {"kind": plan.kind, "user": plan.user},
+        )

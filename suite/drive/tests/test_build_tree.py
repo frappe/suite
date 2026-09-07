@@ -217,22 +217,20 @@ class TestRootConversionRegressions(BuildTreeCase):
         plans = root_pairs.convert_root_pairs(env or self.environment(), report, batch_size=batch_size)
         return report, plans
 
-    def test_a_preprovisioned_user_root_archives_the_legacy_pair(self):
-        """User.after_insert may run before Build; it must remain the sole Active root."""
+    def test_a_preprovisioned_user_root_refuses_the_legacy_pair(self):
+        """§14.3 does not permit Build to archive an enabled legacy root."""
         from suite.drive._core.roots import provision_personal_root
 
         active = provision_personal_root(self.owner)
         legacy = self.legacy_personal_root()
 
-        report, plans = self.convert()
+        with self.assertRaises(root_pairs.BuildPairError) as caught:
+            self.convert()
 
-        self.assertEqual(
-            frappe.db.get_value("Drive Root", legacy, ["node", "user", "state"], as_dict=True),
-            {"node": legacy, "user": self.owner, "state": root_pairs.ARCHIVED},
-        )
+        self.assertIn("must become the Active Personal root", str(caught.exception))
+        self.assertFalse(frappe.db.exists("Drive Root", legacy))
+        self.assertFalse(frappe.db.exists("Drive Node", legacy))
         self.assertEqual(frappe.db.get_value("Drive Root", active, "state"), ACTIVE)
-        self.assertEqual([(plan.node, plan.state) for plan in plans], [(legacy, root_pairs.ARCHIVED)])
-        self.assertEqual(report.roots_archived, 1)
 
     def test_metadata_named_like_the_legacy_id_but_linking_elsewhere_is_refused(self):
         legacy = self.legacy_personal_root(name=self.root)
@@ -324,6 +322,25 @@ class TestTreeWiring(BuildTreeCase):
         self.assertEqual(stored.owner, before.owner)
         self.assertEqual(stored.parent, self.root)
         self.assertEqual(stored.path, "")
+
+    def test_step_five_refuses_a_noncanonical_pair_before_one_descendant(self):
+        child = self.file_row(folder=self.root, file_name="must-not-migrate.txt")
+        frappe.db.set_value("Drive Node", self.root, "root", self.root, update_modified=False)
+
+        with self.assertRaisesRegex(root_pairs.BuildPairError, "canonical root node"):
+            self.walk()
+
+        self.assertFalse(frappe.db.exists("Drive Node", child))
+
+    def test_step_five_refuses_metadata_pointing_at_another_node(self):
+        child = self.file_row(folder=self.root, file_name="must-not-migrate.txt")
+        other = self.name()
+        frappe.db.set_value("Drive Root", self.root, "node", other, update_modified=False)
+
+        with self.assertRaisesRegex(root_pairs.BuildPairError, "points at node"):
+            self.walk()
+
+        self.assertFalse(frappe.db.exists("Drive Node", child))
 
     def test_a_bulk_inserted_node_satisfies_its_controller(self):
         """Build bypasses `validate`, so the columns have to satisfy it anyway.

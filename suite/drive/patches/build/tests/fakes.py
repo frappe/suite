@@ -421,6 +421,7 @@ class FakeDrive:
         self.committed = ({}, {}, {})
         self.commits = 0
         self.fail_pair = None
+        self.locked_root_identities = []
 
     # -- reads
 
@@ -438,19 +439,23 @@ class FakeDrive:
                 return dict(row)
         return None
 
-    def active_root(self, kind, user):
-        """§3.2's "at most one Active root per identity", read off the rows.
+    def lock_root_identity(self, kind, user):
+        self.locked_root_identities.append((kind, user))
+
+    def active_roots(self, kind, user):
+        """§3.2's Active roots for one identity, read off the rows.
 
         A row with no `state` key counts as Active, the way the column's
         own default does. `user` narrows a Personal root only.
         """
+        found = []
         for row in self.root_rows.values():
             if row["kind"] != kind or (row.get("state") or ACTIVE) != ACTIVE:
                 continue
             if kind == PERSONAL and (row.get("user") or None) != (user or None):
                 continue
-            return row["node"]
-        return None
+            found.append(row["node"])
+        return tuple(sorted(found))
 
     def grant_roles(self, node, principals):
         return {

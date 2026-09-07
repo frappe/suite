@@ -472,16 +472,19 @@ class DriveTarget(Protocol):
     def root_metadata(self, node: str) -> dict | None:
         """The `Drive Root` row named this id, or the one whose `node` is it."""
 
-    def active_root(self, kind: str, user: str | None) -> str | None:
-        """The node id of the Active root for this identity, or None.
+    def lock_root_identity(self, kind: str, user: str | None) -> None:
+        """Serialize root creation for one identity on a stable row."""
+
+    def active_roots(self, kind: str, user: str | None) -> tuple[str, ...]:
+        """Every Active root node id for this identity.
 
         `user` is None or "" for the Shared root, which names no user
         (§3.2). Build needs this because it is not the only writer: a
         `User` insert already provisions a Personal root at a fresh node
         id (`suite/hooks.py` -> `suite.drive.install.after_user_insert`).
-        Writing a second Active one at the legacy `File` id would leave
-        both rows unsaveable, and `bulk_insert` bypasses the controller
-        check that would have refused it."""
+        The complete set matters because bulk SQL can already have left
+        more than one row, and returning one arbitrary row could hide the
+        conflict Build must refuse."""
 
     def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
         """Insert a node, its metadata, and its anchors as one unit.
@@ -805,15 +808,22 @@ class SiteDrive:
             row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_READ_COLUMNS), as_dict=True)
         return dict(row) if row else None
 
-    def active_root(self, kind: str, user: str | None) -> str | None:
-        # The same filter `_core/roots.py active_root_for` uses, down to
-        # leaving `user` out for the Shared root, which names none (§3.2).
-        # It answers with `name`; Build needs the `node` column, because the
-        # two disagree on exactly the row this read exists to find.
+    def lock_root_identity(self, kind: str, user: str | None) -> None:
+        # Match `_core/roots.py._lock_identity`. Locking an existing root is
+        # insufficient: Postgres cannot lock a row that does not exist, so
+        # both creators use the stable User or DocType row instead.
+        if kind == PERSONAL:
+            frappe.db.get_value("User", user, "name", for_update=True)
+        else:
+            frappe.db.get_value("DocType", "Drive Root", "name", for_update=True)
+
+    def active_roots(self, kind: str, user: str | None) -> tuple[str, ...]:
+        # The same identity filter `_core/roots.py active_root_for` uses,
+        # down to leaving `user` out for Shared roots, which name none.
         filters = {"kind": kind, "state": ACTIVE}
         if kind == PERSONAL:
             filters["user"] = user
-        return frappe.db.get_value("Drive Root", filters, "node")
+        return tuple(frappe.get_all("Drive Root", filters=filters, pluck="node", order_by="node asc"))
 
     def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
         # §3.2: "Create the root node first, then its metadata and anchor
@@ -830,8 +840,14 @@ class SiteDrive:
                     "Drive Root", fields=list(ROOT_COLUMNS), values=[_values(ROOT_COLUMNS, metadata)]
                 )
             self.insert_grants(grants)
-        except Exception:
-            frappe.db.rollback(save_point=savepoint)
+        except Exception as exc:
+            # InnoDB can roll back the whole deadlock victim transaction,
+            # including this savepoint. The shared helper preserves that
+            # original error and resets the handle with a full rollback;
+            # Postgres and ordinary errors keep the narrow rollback.
+            from suite.drive._core.nodes import _rollback_savepoint
+
+            _rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
 
