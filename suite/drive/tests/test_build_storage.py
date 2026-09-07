@@ -114,6 +114,22 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.bucket.put(key, content)
         return self.insert_row(get_s3_url(key), file_name)
 
+    def drop_blob_later(self, blob_name):
+        """Clean up only the blob this run created, named by its own File row.
+
+        Never select by checksum: on a shared site that could match a row the
+        test did not create, and `force=1` skips the link checks.
+        """
+        self.assertTrue(blob_name)
+        self.addCleanup(
+            frappe.delete_doc,
+            "File Blob",
+            blob_name,
+            force=1,
+            ignore_permissions=True,
+            ignore_missing=True,
+        )
+
     def row(self, name):
         return frappe.db.get_value("File", name, ["name", "blob", "file_url", "file_name"], as_dict=True)
 
@@ -165,8 +181,18 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertIsNone(self.row(missing).blob)
         self.assertTrue(self.row(present).blob)
         reported = {row.file: row.reason for row in prep.missing_bytes}
-        self.assertIn(missing, reported)
+        self.assertEqual(list(reported), [missing])
         self.assertIn("cannot read", reported[missing])
+
+    def test_a_row_that_never_named_local_bytes_is_not_a_missing_byte(self):
+        # The backfill skips these too, but a Link node's url never named
+        # bytes and an S3 fetch url is step 3's job (§14.4, §14.2 step 3).
+        self.insert_row("https://example.test/page", "a link")
+        self.insert_row(get_s3_url("team/elsewhere"), "elsewhere.bin")
+
+        prep = self.prepare_local()
+
+        self.assertEqual(prep.missing_bytes, [])
 
     def test_a_second_run_links_nothing_new(self):
         self.local_file(b"idempotent bytes")
@@ -193,9 +219,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         row = self.row(name)
         self.assertTrue(row.blob)
         blob = frappe.get_doc("File Blob", row.blob)
-        self.addCleanup(
-            frappe.delete_doc, "File Blob", blob.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
+        self.drop_blob_later(blob.name)
         self.assertEqual(blob.key, blob_key(checksum, "report.PDF"))
         self.assertEqual(blob.checksum, checksum)
         self.assertEqual(blob.file_size, len(content))

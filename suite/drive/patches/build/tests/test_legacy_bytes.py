@@ -1,14 +1,14 @@
 """§14.2 steps 1 to 3 end to end: gate, backfill, copy, durable record."""
 
 import hashlib
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from suite.drive.patches.build import prepare_legacy_bytes
 from suite.drive.patches.build.environment import BACKFILL_BATCH_SIZE, LegacyS3Config
-from suite.drive.patches.build.legacy_bytes import BARE_S3_KEY_REASON, NO_BLOB_REASON
-from suite.drive.patches.build.state import BuildState
+from suite.drive.patches.build.state import STATE_FILENAME, BuildState
 from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeFiles,
@@ -22,6 +22,10 @@ BYTES = b"drive bytes" * 40
 SHA = hashlib.sha256(BYTES).hexdigest()
 
 
+def skipped(name, file_url, reason):
+    return {"name": name, "file_url": file_url, "reason": reason}
+
+
 class PrepareCase(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
@@ -32,7 +36,7 @@ class PrepareCase(unittest.TestCase):
         return build_environment(self.path, **kwargs)
 
     def saved_storage(self):
-        return BuildState(self.path / "drive-build-state.json").storage()
+        return BuildState(self.path / STATE_FILENAME).storage()
 
 
 class TestOrder(PrepareCase):
@@ -57,6 +61,20 @@ class TestOrder(PrepareCase):
 
         self.assertTrue(prep.completed)
         self.assertEqual(prep.s3_rows_seen, 0)
+
+    def test_the_backfill_result_is_saved_before_the_copy_starts(self):
+        # A run killed inside the S3 step still leaves the backfill's answer.
+        storage = FakeStorage(backfill={"linked": 4, "blobs_created": 2})
+        bucket = FakeBucket().put("team/f1", BYTES)
+        bucket.fail_copy_at = 1
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+
+        with self.assertRaises(InterruptedRun):
+            prepare_legacy_bytes(self.env(storage=storage, files=files, bucket=bucket))
+
+        saved = self.saved_storage()
+        self.assertEqual(saved.backfill_linked, 4)
+        self.assertFalse(saved.completed)
 
 
 class TestPreservation(PrepareCase):
@@ -84,37 +102,45 @@ class TestPreservation(PrepareCase):
 
 
 class TestMissingBytes(PrepareCase):
-    def test_a_row_the_backfill_could_not_read_keeps_its_reason(self):
-        files = FakeFiles().add("f1", "/private/files/gone.pdf", "gone.pdf")
-        storage = FakeStorage(
-            backfill={
-                "linked": 0,
-                "blobs_created": 0,
-                "skipped": [{"name": "f1", "file_url": "/private/files/gone.pdf", "reason": "cannot read"}],
-            }
-        )
+    def local_only(self, *skips):
+        storage = FakeStorage(backfill={"linked": 0, "blobs_created": 0, "skipped": list(skips)})
+        return prepare_legacy_bytes(self.env(storage=storage, legacy_s3=LegacyS3Config(enabled=False)))
 
-        prep = prepare_legacy_bytes(
-            self.env(files=files, storage=storage, legacy_s3=LegacyS3Config(enabled=False))
-        )
+    def test_a_local_row_the_backfill_could_not_read_keeps_its_reason(self):
+        prep = self.local_only(skipped("f1", "/private/files/gone.pdf", "cannot read /x: [Errno 2]"))
 
         (missing,) = prep.missing_bytes
         self.assertEqual(missing.file, "f1")
-        self.assertEqual(missing.reason, "cannot read")
+        self.assertEqual(missing.file_url, "/private/files/gone.pdf")
+        self.assertIn("cannot read", missing.reason)
 
-    def test_a_blobless_row_no_step_touched_gets_the_default_reason(self):
-        files = FakeFiles().add("f1", "https://example.test/remote.pdf", "remote.pdf")
+    def test_a_public_local_row_counts_too(self):
+        prep = self.local_only(skipped("f1", "/files/logo.png", "cannot read"))
+        self.assertEqual([m.file for m in prep.missing_bytes], ["f1"])
 
-        prep = prepare_legacy_bytes(self.env(files=files, legacy_s3=LegacyS3Config(enabled=False)))
+    def test_rows_that_never_named_local_bytes_are_not_missing_bytes(self):
+        # A Link node's file_url is an external URL (§14.4); a fetch URL is
+        # step 3's job; an asset was never Drive's. None lost bytes.
+        prep = self.local_only(
+            skipped("link", "https://example.test/page", "file_url is not a local files path"),
+            skipped("fetch", get_s3_url("team/f1"), "file_url is not a local files path"),
+            skipped("asset", "/assets/suite/logo.png", "file_url is not a local files path"),
+            skipped("blank", "", "file_url is not a local files path"),
+        )
+        self.assertEqual(prep.missing_bytes, [])
 
-        self.assertEqual(prep.missing_bytes[0].reason, NO_BLOB_REASON)
+    def test_a_missing_s3_object_reaches_the_durable_record_with_its_reason(self):
+        files = FakeFiles.with_s3_files(("f1", "gone/f1", "a.txt"))
 
-    def test_a_bare_bucket_key_on_an_s3_site_is_named_as_such(self):
-        files = FakeFiles().add("f1", "team/f1", "a.txt")
+        prep = prepare_legacy_bytes(self.env(files=files, bucket=FakeBucket()))
 
-        prep = prepare_legacy_bytes(self.env(files=files))
-
-        self.assertEqual(prep.missing_bytes[0].reason, BARE_S3_KEY_REASON)
+        saved = self.saved_storage()
+        for record in (prep, saved):
+            (missing,) = record.missing_bytes
+            self.assertEqual(missing.file, "f1")
+            self.assertIn("no object at gone/f1", missing.reason)
+            self.assertIn("drive-bucket", missing.reason)
+        self.assertEqual(saved.s3_objects_missing, 1)
 
     def test_bytes_that_came_back_stop_being_reported(self):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
@@ -128,6 +154,7 @@ class TestMissingBytes(PrepareCase):
         second = prepare_legacy_bytes(env)
 
         self.assertEqual(second.missing_bytes, [])
+        self.assertEqual(second.s3_objects_missing, 0)
         self.assertEqual(self.saved_storage().missing_bytes, [])
         self.assertIsNotNone(files.blob_of("f1"))
 
@@ -164,20 +191,20 @@ class TestInterruptedRunResumes(PrepareCase):
         for _, key, _ in specs:
             self.bucket.put(key, key.encode() * 8)
         self.storage = FakeStorage()
-        self.env = self.env_for()
 
-    def env_for(self):
+    def fresh_env(self):
         return build_environment(self.path, files=self.files, bucket=self.bucket, storage=self.storage)
 
     def test_a_kill_mid_batch_loses_only_the_uncommitted_rows(self):
         self.bucket.fail_copy_at = 3
         with self.assertRaises(InterruptedRun):
-            prepare_legacy_bytes(self.env, batch_size=2)
+            prepare_legacy_bytes(self.fresh_env(), batch_size=2)
 
         # The killed transaction rolls back; the first committed batch stands.
         self.files.rollback()
         self.assertEqual(
-            [self.files.blob_of(f"f{i}") is not None for i in range(4)], [True, True, False, False]
+            [self.files.blob_of(f"f{i}") is not None for i in range(4)],
+            [True, True, False, False],
         )
         saved = self.saved_storage()
         self.assertEqual(saved.s3_objects_copied, 2)
@@ -186,12 +213,12 @@ class TestInterruptedRunResumes(PrepareCase):
     def test_the_rerun_finishes_without_copying_a_complete_object_again(self):
         self.bucket.fail_copy_at = 3
         with self.assertRaises(InterruptedRun):
-            prepare_legacy_bytes(self.env, batch_size=2)
+            prepare_legacy_bytes(self.fresh_env(), batch_size=2)
         self.files.rollback()
         copies_before = len(self.bucket.copies)
 
         self.bucket.fail_copy_at = None
-        prep = prepare_legacy_bytes(self.env_for(), batch_size=2)
+        prep = prepare_legacy_bytes(self.fresh_env(), batch_size=2)
 
         self.assertTrue(all(self.files.blob_of(f"f{i}") for i in range(4)))
         self.assertTrue(prep.completed)
@@ -218,10 +245,13 @@ class TestInterruptedRunResumes(PrepareCase):
 
 
 class TestDurableRecord(PrepareCase):
-    def test_the_record_survives_a_new_process(self):
+    def run_one_copy(self):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES)
-        prepare_legacy_bytes(self.env(files=files, bucket=bucket))
+        return prepare_legacy_bytes(self.env(files=files, bucket=bucket))
+
+    def test_the_record_survives_a_new_process(self):
+        self.run_one_copy()
 
         saved = self.saved_storage()
 
@@ -230,10 +260,40 @@ class TestDurableRecord(PrepareCase):
         self.assertEqual(saved.s3_bytes_copied, len(BYTES))
         self.assertEqual(saved.missing_bytes, [])
 
-    def test_a_truncated_record_does_not_stop_a_rerun(self):
-        (self.path / "drive-build-state.json").write_text("{not json")
+    def test_the_write_leaves_no_half_written_file_behind(self):
+        self.run_one_copy()
+
+        self.assertEqual([p.name for p in self.path.glob("*.tmp")], [])
+        json.loads((self.path / STATE_FILENAME).read_text())
+
+    def test_an_unreadable_record_is_kept_aside_not_overwritten(self):
+        # The cumulative copy totals live only in this file, so losing it
+        # silently would make the report understate a migration that ran.
+        for content in ("{not json", "[]", "3"):
+            with self.subTest(content=content):
+                for stale in self.path.glob("*.corrupt-*"):
+                    stale.unlink()
+                (self.path / STATE_FILENAME).write_text(content)
+
+                prep = prepare_legacy_bytes(self.env(legacy_s3=LegacyS3Config(enabled=False)))
+
+                self.assertTrue(prep.completed)
+                kept = list(self.path.glob(f"{STATE_FILENAME}.corrupt-*"))
+                self.assertEqual(len(kept), 1)
+                self.assertEqual(kept[0].read_text(), content)
+
+    def test_a_storage_section_of_the_wrong_shape_reads_as_empty(self):
+        (self.path / STATE_FILENAME).write_text('{"storage": [], "version": 1}')
+
         prep = prepare_legacy_bytes(self.env(legacy_s3=LegacyS3Config(enabled=False)))
+
         self.assertTrue(prep.completed)
+        self.assertEqual(prep.s3_objects_copied, 0)
+
+    def test_a_valid_record_is_never_quarantined(self):
+        self.run_one_copy()
+        prepare_legacy_bytes(self.env(legacy_s3=LegacyS3Config(enabled=False)))
+        self.assertEqual(list(self.path.glob("*.corrupt-*")), [])
 
 
 if __name__ == "__main__":

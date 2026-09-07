@@ -6,6 +6,7 @@ Build either ran whole or not at all. These checks fail the moment someone
 wires the package up early.
 """
 
+import ast
 import json
 import unittest
 from pathlib import Path
@@ -42,14 +43,36 @@ class TestBuildIsDormant(unittest.TestCase):
             with self.subTest(fixture=fixture.name):
                 self.assertNotIn("patches.build", json.dumps(json.loads(fixture.read_text())))
 
-    def test_importing_it_touches_no_site(self):
-        # Every module is import-clean: no whitelisted endpoint, no scheduler
-        # entry, no database read at import time.
-        for module in ("gate", "legacy_bytes", "s3_copy", "state", "ports", "layout", "environment"):
-            source = (Path(build.__file__).parent / f"{module}.py").read_text()
-            with self.subTest(module=module):
+    def test_it_exposes_no_endpoint_and_no_scheduled_work(self):
+        for path in self.modules():
+            with self.subTest(module=path.name):
+                source = path.read_text()
                 self.assertNotIn("frappe.whitelist", source)
                 self.assertNotIn("scheduler_events", source)
+
+    def test_nothing_runs_at_import_time(self):
+        # A module-level call would fire on any import of the package, which
+        # includes the hook loader and the architecture sweep.
+        allowed = (
+            ast.Import,
+            ast.ImportFrom,
+            ast.ClassDef,
+            ast.FunctionDef,
+            ast.Assign,
+            ast.AnnAssign,
+        )
+        for path in self.modules():
+            for node in ast.parse(path.read_text()).body:
+                with self.subTest(module=path.name, line=node.lineno):
+                    if isinstance(node, ast.Expr):
+                        # a docstring, and nothing else
+                        self.assertIsInstance(node.value, ast.Constant)
+                        self.assertIsInstance(node.value.value, str)
+                    else:
+                        self.assertIsInstance(node, allowed)
+
+    def modules(self):
+        return sorted(p for p in Path(build.__file__).parent.glob("*.py"))
 
 
 if __name__ == "__main__":

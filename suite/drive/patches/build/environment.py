@@ -24,13 +24,18 @@ class LegacyS3Config:
 
     enabled: bool = False
     bucket: str = ""
+    endpoint_url: str = ""
 
     @classmethod
     def for_site(cls) -> LegacyS3Config:
         import frappe
 
         settings = frappe.get_single("Drive Disk Settings")
-        return cls(enabled=bool(settings.enabled), bucket=settings.bucket or "")
+        return cls(
+            enabled=bool(settings.enabled),
+            bucket=settings.bucket or "",
+            endpoint_url=settings.endpoint_url or "",
+        )
 
 
 @dataclass

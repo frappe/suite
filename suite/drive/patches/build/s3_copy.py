@@ -50,10 +50,18 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
     """
     bucket = env.bucket()
     after = ""
+    previous_page = None
     while True:
         rows = env.files.s3_rows_without_blob(after, batch_size)
         if not rows:
             return
+        # Rows that could not be linked stay in the query, so the cursor is
+        # the only thing that ends the loop. Two identical pages mean it
+        # stopped moving, and a migration that hangs is worse than one that
+        # stops.
+        if rows[0].name == previous_page:
+            raise RuntimeError(f"the File cursor stalled at {rows[0].name!r}; refusing to loop")
+        previous_page = rows[0].name
         for row in rows:
             _copy_one(env, bucket, prep, row)
         after = rows[-1].name
