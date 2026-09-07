@@ -17,6 +17,9 @@ from werkzeug.wrappers import Request, Response
 
 LOGGER_MODULE = "suite.drive.webdav"
 DEFAULT_LEVEL = logging.INFO
+# one reason's worth of a log line. Two writers can reach the field, so the
+# ceiling on the whole of it is twice this.
+NOTE_LIMIT = 200
 
 LEVELS = {
     "error": logging.ERROR,
@@ -69,9 +72,18 @@ def note(reason: str) -> None:
     Appending rather than replacing: a refusal names itself first, and the
     response net that runs after it must not erase that name to report its
     own repair.
+
+    The reason is cleaned here rather than at each writer. `log_response`
+    writes it inside `note="..."`, and the writers hand it exception text: a
+    database error quoting a multi-line statement would otherwise forge whole
+    records in the DAV log, and an unbounded message would carry a title into
+    a line nothing else bounds.
     """
     if context := getattr(frappe.local, "_webdav_log", None):
-        context["note"] = f"{context['note']}; {reason}" if context["note"] else reason
+        cleaned = " ".join(reason.replace('"', "'").split())[:NOTE_LIMIT]
+        if not cleaned:
+            return
+        context["note"] = f"{context['note']}; {cleaned}" if context["note"] else cleaned
 
 
 def log_response(request: Request, response: Response) -> None:
