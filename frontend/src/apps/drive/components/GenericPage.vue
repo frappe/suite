@@ -223,6 +223,12 @@ const isTyping = (e) =>
   e.target.tagName === 'INPUT' ||
   e.target.tagName === 'TEXTAREA'
 
+// Links keep their own confirm flow and virtual nodes have no standalone
+// page, so neither can be opened in a new tab. Shared by the context-menu
+// action and the mod+Enter shortcut.
+const canOpenInNewTab = (entity) =>
+  !isVirtual(entity) && entity.file_type !== 'Link'
+
 onKeyDown('a', (e) => {
   if (isTyping(e)) return
   if (e.metaKey || e.ctrlKey) {
@@ -243,8 +249,10 @@ onKeyDown('Enter', (e) => {
   if (document.querySelector('.dialog-content[data-state="open"]')) return
   if (route.name === 'drive-Trash' || !isModKey(e)) return
   if (selectedEntitities.value.length !== 1) return
+  const [entity] = selectedEntitities.value
+  if (!canOpenInNewTab(entity)) return
   e.preventDefault()
-  openEntity(selectedEntitities.value[0], true)
+  openEntity(entity, true)
 })
 onKeyDown('Escape', (e) => {
   if (isTyping(e)) return
@@ -544,7 +552,7 @@ const actionItems = computed(() => {
         label: __('Open in new tab'),
         icon: LucideSquareArrowOutUpRight,
         action: ([entity]) => openEntity(entity, true),
-        isEnabled: (e) => !isVirtual(e) && e.file_type !== 'Link',
+        isEnabled: canOpenInNewTab,
       },
       {
         label: __('Show Info'),
