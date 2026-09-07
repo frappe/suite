@@ -13,7 +13,8 @@ blob reference commit or roll back together.
 
 Quota is preflighted from `Content-Length`, and the same number bounds the
 spool when the header is absent (§7.3), so a client can never spool far past
-what the root could ever hold. The admission `UPDATE` itself runs inside
+what the root could ever hold. The site's `drive_webdav_max_upload_size` caps
+the body on top of that. The admission `UPDATE` itself runs inside
 `create_file` / `update`, at commit.
 
 `X-OC-Mtime` is honoured so rclone's nextcloud vendor round-trips modification
@@ -22,6 +23,7 @@ times (§8.11).
 
 from datetime import UTC, datetime
 
+import frappe
 from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
@@ -124,18 +126,30 @@ def handle(ctx: DavContext) -> Response:
 
 
 def _free_bytes(root: str) -> int | None:
-    """The bytes this root can still take, or None when it is unlimited.
+    """The bytes this PUT may write, or None when nothing bounds it.
 
     One number does both jobs §7.3 gives it: the `Content-Length` preflight and
     the spool bound when no length was declared. `effective_quota` 0 is
     unlimited (RFC 4331 §4 has the same rule for the property), and a root
     already over its quota gets 0 rather than a negative ceiling.
+
+    `drive_webdav_max_upload_size` is the site's own absolute body cap, and it
+    is the lower of the two that wins. Without it an unlimited root would leave
+    a chunked PUT with no bound at all, which is the one case where the quota
+    number cannot stop a client from spooling forever.
     """
+    ceilings = []
+
     usage = quota_core.get_storage_usage(root)
     limit = int(usage.effective_quota or 0)
-    if not limit:
-        return None
-    return max(limit - int(usage.used_bytes or 0), 0)
+    if limit:
+        ceilings.append(max(limit - int(usage.used_bytes or 0), 0))
+
+    hard = frappe.conf.get("drive_webdav_max_upload_size")
+    if hard:
+        ceilings.append(int(hard))
+
+    return min(ceilings) if ceilings else None
 
 
 class _BoundedBody:

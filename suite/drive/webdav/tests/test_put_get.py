@@ -401,6 +401,15 @@ class TestWebDAVPut(IntegrationTestCase):
         frappe.db.set_single_value("Drive Disk Settings", "default_personal_quota", quota_bytes)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
 
+    def _set_conf(self, key: str, value) -> None:
+        missing = object()
+        previous = frappe.conf.get(key, missing)
+        if previous is missing:
+            self.addCleanup(frappe.conf.pop, key, None)
+        else:
+            self.addCleanup(frappe.conf.__setitem__, key, previous)
+        frappe.conf[key] = value
+
     def _versions(self, node: str) -> list[frappe._dict]:
         return frappe.get_all(
             "Drive Node Version",
@@ -535,6 +544,41 @@ class TestWebDAVPut(IntegrationTestCase):
         self._set_site_quota(0)
         self.assertEqual(int(quota_core.get_storage_usage(self.root).effective_quota), 0)
         response = self._put_without_length(self._url("free.bin"), b"z" * 5000)
+        self.assertEqual(response.status_code, 201)
+
+    def test_the_site_cap_bounds_a_declared_body(self):
+        """`drive_webdav_max_upload_size` is the site's own absolute ceiling.
+
+        It is documented on the settings table in webdav/README.md and it is
+        the lower of the two bounds that wins, so it must refuse a body the
+        quota alone would have let through.
+        """
+        self._set_site_quota(0)
+        self._set_conf("drive_webdav_max_upload_size", 512)
+        blobs_before = frappe.db.count("File Blob")
+
+        with self.assertRaises(InsufficientStorage):
+            self._put(self._url("capped.bin"), b"z" * 4096)
+
+        self.assertIsNone(self._resolve(f"{self.base_name}/capped.bin").node)
+        self.assertEqual(frappe.db.count("File Blob"), blobs_before)
+
+    def test_the_site_cap_bounds_an_undeclared_body_in_an_unlimited_root(self):
+        """The one case the quota number cannot bound on its own.
+
+        An unlimited root gives no free-bytes figure, so a chunked PUT would
+        spool without any stop. The site cap is what supplies one.
+        """
+        self._set_site_quota(0)
+        self._set_conf("drive_webdav_max_upload_size", 512)
+        self.assertEqual(int(quota_core.get_storage_usage(self.root).effective_quota), 0)
+
+        with self.assertRaises(InsufficientStorage):
+            self._put_without_length(self._url("capped-chunked.bin"), b"z" * 4096)
+
+        self.assertIsNone(self._resolve(f"{self.base_name}/capped-chunked.bin").node)
+
+        response = self._put_without_length(self._url("under-cap.bin"), b"z" * 100)
         self.assertEqual(response.status_code, 201)
 
     def test_a_replace_is_charged_the_whole_new_head(self):
