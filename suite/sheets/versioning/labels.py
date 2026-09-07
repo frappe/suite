@@ -15,6 +15,7 @@ def set_label(snapshot_id: str, label: str | None, pinned: bool | None = None) -
     pinned was explicitly set).
     """
     snap = frappe.get_doc("Sheet Snapshot", snapshot_id)
+    _refuse_linked_sheet(snap.sheet)
     frappe.has_permission("Sheet", doc=snap.sheet, ptype="write", throw=True)
 
     if label is not None:
@@ -41,6 +42,7 @@ def delete(snapshot_id: str) -> dict:
     snap = frappe.db.get_value("Sheet Snapshot", snapshot_id, ["sheet", "pinned"], as_dict=True)
     if not snap:
         frappe.throw(f"Snapshot {snapshot_id} not found")
+    _refuse_linked_sheet(snap.sheet)
     frappe.has_permission("Sheet", doc=snap.sheet, ptype="write", throw=True)
     if snap.pinned:
         frappe.throw("Cannot delete a pinned snapshot — unpin it first")
@@ -64,3 +66,9 @@ def delete(snapshot_id: str) -> dict:
             update_modified=False,
         )
     return {"deleted": snapshot_id}
+
+
+def _refuse_linked_sheet(sheet: str) -> None:
+    from suite.sheets.drive import refuse_drive_native
+
+    refuse_drive_native(sheet, "Drive version history")

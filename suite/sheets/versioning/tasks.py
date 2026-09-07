@@ -79,7 +79,7 @@ def truncate_op_log() -> dict:
         min_keep_seq = int(oldest_snap[0]["seq"]) if oldest_snap else 0
         # Delete ops strictly older than the oldest retained snapshot AND
         # older than the absolute time backstop.
-        result = frappe.db.sql(
+        frappe.db.sql(
             "DELETE FROM `tabSheet Op Log` "
             "WHERE sheet = %(sheet)s "
             "  AND seq < %(min_seq)s "
@@ -100,12 +100,17 @@ def _tiers() -> tuple:
 
 
 def _iter_sheets():
-    """Iterate sheet names in modest pages — never load the full list at once."""
+    """Iterate legacy sheet names in modest pages.
+
+    A linked sheet's versions and retention belong to Drive. Filtering at the
+    source keeps both snapshot and op-log pruning from mutating preserved
+    legacy rows beneath a migrated document.
+    """
     last_name = ""
     page = 200
     while True:
         rows = frappe.db.sql(
-            "SELECT name FROM `tabSheet` WHERE name > %s ORDER BY name LIMIT %s",
+            "SELECT name FROM `tabSheet` WHERE name > %s AND node IS NULL ORDER BY name LIMIT %s",
             (last_name, page),
         )
         if not rows:
