@@ -15,6 +15,7 @@ branch. `inline_user_jobs` is the one exception, and it covers one statement.
 from contextlib import contextmanager
 
 import frappe
+from frappe.model.meta import clear_meta_cache
 from frappe.utils.password import update_password
 
 from suite.drive._core.roots import personal_root_for, provision_personal_root
@@ -44,13 +45,20 @@ def inline_user_jobs():
     back to whatever it held, not to a hard-coded false, even when the insert
     raises.
 
-    Its one other effect on this path is `DrivePermission.after_insert`, which
-    skips the share notice for the home folder the hook grants. §9.5 promises no
-    delivery for that notice, and the only recipient is the throwaway CI user
-    who is already the grantee. Nothing the compliance run reads is written
-    differently under the flag: not the Personal Root, the node tree, the
-    grants, the password, or the per-user opt-in. The served site is a separate
-    process and never sees the flag at all.
+    Its one effect on the rows this writes is `DrivePermission.after_insert`,
+    which skips the share notice for the home folder the hook grants. §9.5
+    promises no delivery for that notice, and the only recipient is the
+    throwaway CI user who is already the grantee. Nothing the compliance run
+    reads is written differently: not the Personal Root, the node tree, the
+    grants, the password, or the per-user opt-in.
+
+    The flag does reach one thing outside this process. `frappe.get_meta` caches
+    every `Meta` it builds into `frappe.client_cache`, which is redis-backed and
+    shared with the web workers, and `Meta.set_custom_permissions` returns early
+    under `in_install`. A doctype first met inside this block would therefore be
+    published to the served site with its `Custom DocPerm` rows missing. So the
+    block drops the cached metas on the way out, before litmus connects. They
+    rebuild on first use, with the site's own permissions.
     """
     previous = frappe.flags.in_install
     frappe.flags.in_install = True
@@ -58,6 +66,7 @@ def inline_user_jobs():
         yield
     finally:
         frappe.flags.in_install = previous
+        clear_meta_cache()
 
 
 def prepare() -> str:

@@ -1407,14 +1407,13 @@ class TestLitmusHarness(DavCase):
 
     def setUp(self):
         super().setUp()
-        held = frappe.flags.in_install
-        self.addCleanup(lambda: frappe.flags.__setitem__("in_install", held))
-
-    @property
-    def harness(self):
         from suite.drive.webdav.tests import litmus_setup
 
-        return litmus_setup
+        self.harness = litmus_setup
+        held = frappe.flags.in_install
+        self.addCleanup(lambda: frappe.flags.__setitem__("in_install", held))
+        # the real one reaches the shared redis cache; no unit case may write it
+        self.clear_meta = self.start(patch.object(litmus_setup, "clear_meta_cache"))
 
     def test_the_block_makes_the_user_controller_run_its_job_inline(self):
         # the expression core computes, with the test runner's flag taken away
@@ -1481,3 +1480,17 @@ class TestLitmusHarness(DavCase):
         with self.assertRaises(frappe.QueueOverloaded):
             self.prepare(insert)
         self.assertFalse(frappe.flags.in_install)
+
+    def test_the_block_drops_the_metas_it_may_have_poisoned(self):
+        """`Meta.set_custom_permissions` returns early under `in_install`, and
+        `get_meta` publishes what it built to the redis cache the web workers
+        read. A meta first built inside the block must not outlive it."""
+        with self.harness.inline_user_jobs():
+            self.clear_meta.assert_not_called()
+        self.clear_meta.assert_called_once_with()
+
+    def test_the_metas_are_dropped_when_the_block_raises(self):
+        with self.assertRaises(frappe.QueueOverloaded):
+            with self.harness.inline_user_jobs():
+                raise frappe.QueueOverloaded("Too many queued background jobs")
+        self.clear_meta.assert_called_once_with()
