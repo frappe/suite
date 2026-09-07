@@ -1,0 +1,342 @@
+"""Link content documents, adopt orphans, and map preserved shares."""
+
+from suite.drive._core.roles import MANAGE
+from suite.drive.patches.build.content_mapping import (
+    InvalidLegacyContent,
+    docshare_role,
+    exact_fields,
+    expected_node,
+)
+from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
+from suite.drive.patches.build.mapping import GENERAL, merged_role
+from suite.drive.patches.build.ports import ACTIVE, PERSONAL, REMOVED, TRASHED
+from suite.drive.patches.build.titles import SiblingTitles
+
+MIMES = {
+    "Writer Document": "frappe/writer",
+    "Presentation": "frappe/slides",
+    "Sheet": "frappe/sheet",
+}
+
+
+class BuildContentError(RuntimeError):
+    """A source document cannot be linked without inventing identity."""
+
+
+def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
+    """Implement §14.2 step 10, then drain deferred history."""
+    if not env.state.tree().completed or not env.state.grants().completed:
+        raise BuildContentError("ticket 27 tree and grants must complete first")
+    source, target = _ports(env)
+    result = env.state.content()
+    result.links_completed = False
+    result.documents_seen = 0
+    result.trash_disagreements = 0
+    result.orphan_content_docs_adopted = 0
+    result.docshare_rows_dropped = 0
+    link_renames = 0
+    writes = 0
+
+    for doctype in MIMES:
+        after = ""
+        while True:
+            rows = source.documents(doctype, after, batch_size)
+            if not rows:
+                break
+            for row in rows:
+                result.documents_seen += 1
+                try:
+                    changed, adopted, renamed, disagreement = _link_one(env, row)
+                except InvalidLegacyContent as error:
+                    _fail(env, result, f"{doctype}:{row.name}", str(error))
+                writes += changed
+                result.orphan_content_docs_adopted += int(adopted)
+                link_renames += int(renamed)
+                result.trash_disagreements += int(disagreement)
+                if writes >= max(1, batch_size - 1):
+                    target.commit()
+                    env.state.put_content(result)
+                    writes = 0
+            after = rows[-1].name
+            if len(rows) < batch_size:
+                break
+    if writes:
+        target.commit()
+
+    result.link_title_renames = link_renames
+    result.title_renames = result.template_title_renames + result.link_title_renames
+    result.links_completed = True
+    env.state.put_content(result)
+
+    if not result.slides_completed or result.slides_deferred:
+        from suite.drive.patches.build.slides import convert_slides_and_templates
+
+        result = convert_slides_and_templates(env, batch_size=batch_size)
+    result.link_title_renames = link_renames
+    result.title_renames = result.template_title_renames + result.link_title_renames
+    _convert_content_shares(env, result, batch_size)
+    env.state.put_content(result)
+
+    from suite.drive.patches.build.history import convert_history_and_comments
+
+    result = convert_history_and_comments(env, batch_size=batch_size, allow_deferred=False)
+    result.links_completed = True
+    result.completed = result.history_completed and result.slides_completed and result.links_completed
+    env.state.put_content(result)
+    return result
+
+
+def _link_one(env, row) -> tuple[int, bool, bool, bool]:
+    target = env.content_target
+    files = env.content.files_for_content(row.doctype, row.name)
+    nodes = target.content_nodes(row.doctype, row.name)
+
+    if files:
+        if len(files) != 1:
+            raise InvalidLegacyContent("more than one File claims this content document")
+        file = files[0]
+        if file.status == REMOVED:
+            raise InvalidLegacyContent("a Removed File still claims this content document")
+        stored = target.nodes((file.name,)).get(file.name)
+        if not stored:
+            raise InvalidLegacyContent("the content File did not produce a Drive Node")
+        _validate_content_node(stored, row, file.name)
+        if len(nodes) != 1 or nodes[0]["name"] != file.name:
+            raise InvalidLegacyContent("the content pair is absent or claimed by multiple nodes")
+        if row.doctype == "Sheet":
+            expected_trash = (file.status or ACTIVE) == TRASHED
+            disagreement = bool(row.trashed) != expected_trash
+        else:
+            disagreement = False
+        if row.node and row.node != file.name:
+            raise InvalidLegacyContent("the document points at another Drive Node")
+        if row.node:
+            return 0, False, False, disagreement
+        target.write_content_link(row.doctype, row.name, file.name)
+        return 1, False, False, disagreement
+
+    if row.doctype == "Presentation" and row.is_template:
+        if not row.node:
+            raise InvalidLegacyContent("a Presentation template has no template node")
+        if len(nodes) != 1 or nodes[0]["name"] != row.node:
+            raise InvalidLegacyContent("a Presentation template has a broken reciprocal link")
+        return 0, False, False, False
+
+    if len(nodes) > 1:
+        raise InvalidLegacyContent("multiple Drive Nodes claim this orphan")
+    if nodes:
+        node = nodes[0]
+        _validate_content_node(node, row, node["name"])
+        if row.node and row.node != node["name"]:
+            raise InvalidLegacyContent("the orphan points at another Drive Node")
+        if not row.node:
+            target.write_content_link(row.doctype, row.name, node["name"])
+            return 1, True, False, False
+        return 0, True, False, False
+
+    if row.node:
+        raise InvalidLegacyContent("the orphan names a missing Drive Node")
+    if not row.owner:
+        raise InvalidLegacyContent("the orphan has no owner for a Personal Root")
+
+    root = _ensure_personal_root(env, row.owner)
+    siblings = target.child_nodes(root)
+    titles = SiblingTitles({child["title"] for child in siblings if child.get("state") == ACTIVE})
+    source_title = row.title or ("Untitled Document" if row.doctype == "Writer Document" else row.name)
+    title = titles.claim(source_title)
+    state = TRASHED if row.doctype == "Sheet" and row.trashed else ACTIVE
+    trashed_at = (row.trashed_on or row.modified or row.creation) if state == TRASHED else None
+    node = expected_node(
+        row,
+        name=row.name,
+        title=title,
+        parent=root,
+        root=root,
+        path="",
+        mime=MIMES[row.doctype],
+        state=state,
+        trashed_at=trashed_at,
+        trash_root=row.name if state == TRASHED else None,
+    )
+    target.write_orphan(node, row.doctype, row.name)
+    return 2, True, title != source_title, False
+
+
+def _ensure_personal_root(env, user: str) -> str:
+    target = env.content_target
+    found = target.active_roots(user)
+    if len(found) > 1:
+        raise InvalidLegacyContent(f"user {user} has multiple Active Personal Roots")
+    if found:
+        node = target.nodes((found[0],)).get(found[0])
+        metadata = target.root_metadata(found[0])
+        expected = {
+            "name": found[0],
+            "node": found[0],
+            "user": user,
+            "kind": PERSONAL,
+            "state": ACTIVE,
+        }
+        if not node or not metadata or node.get("kind") != "root":
+            raise InvalidLegacyContent(f"user {user} has an incomplete Personal Root")
+        exact_fields(metadata, expected, tuple(expected), f"Personal Root {found[0]}")
+        return found[0]
+
+    existing = target.personal_roots(user)
+    if len(existing) > 1:
+        raise InvalidLegacyContent(f"user {user} has multiple Personal Roots")
+    if existing:
+        node = target.nodes(existing).get(existing[0])
+        metadata = target.root_metadata(existing[0])
+        if not node or not metadata or node.get("kind") != "root":
+            raise InvalidLegacyContent(f"user {user} has an incomplete Personal Root")
+        enabled = env.content.user_enabled(user)
+        expected = {
+            "name": existing[0],
+            "node": existing[0],
+            "user": user,
+            "kind": PERSONAL,
+            "state": ACTIVE if enabled else "Archived",
+        }
+        exact_fields(metadata, expected, tuple(expected), f"Personal Root {existing[0]}")
+        return existing[0]
+
+    stamp = env.now()
+    name = env.new_id()
+    enabled = env.content.user_enabled(user)
+    node = {
+        "name": name,
+        "title": user,
+        "parent": None,
+        "root": None,
+        "path": "",
+        "kind": "root",
+        "blob": None,
+        "size": 0,
+        "mime": None,
+        "url": None,
+        "content_doctype": None,
+        "content_docname": None,
+        "state": ACTIVE,
+        "trashed_at": None,
+        "trash_root": None,
+        "content_modified": stamp,
+        "is_template": 0,
+        "owner": user,
+        "creation": stamp,
+        "modified": stamp,
+        "modified_by": user,
+        "docstatus": 0,
+        "idx": 0,
+    }
+    metadata = {
+        "name": name,
+        "node": name,
+        "user": user,
+        "kind": PERSONAL,
+        "state": ACTIVE if enabled else "Archived",
+        "quota_bytes": 0,
+        "used_bytes": 0,
+        "acl_generation": 0,
+        "owner": user,
+        "creation": stamp,
+        "modified": stamp,
+        "modified_by": user,
+        "docstatus": 0,
+        "idx": 0,
+    }
+    grants = [_grant_row(env, name, user, MANAGE)] if enabled is not None else []
+    target.write_root_pair(node, metadata, grants)
+    return name
+
+
+def _convert_content_shares(env, result, batch_size):
+    target = env.content_target
+    pending = {}
+    after = ""
+    while True:
+        rows = env.content.content_shares(after, batch_size)
+        if not rows:
+            break
+        for row in rows:
+            if row.share_doctype not in ("Writer Document", "Presentation"):
+                result.docshare_rows_dropped += 1
+                continue
+            nodes = target.content_nodes(row.share_doctype, row.share_name)
+            if len(nodes) != 1:
+                result.docshare_rows_dropped += 1
+                continue
+            role = docshare_role(row)
+            if role is None:
+                result.docshare_rows_dropped += 1
+                continue
+            principal = GENERAL if row.everyone else row.user
+            if not principal or (not row.everyone and env.content.user_enabled(principal) is None):
+                result.docshare_rows_dropped += 1
+                continue
+            key = (nodes[0]["name"], principal)
+            pending[key] = merged_role(pending.get(key), role)
+            if len(pending) >= batch_size:
+                _flush_grants(env, pending)
+                pending = {}
+                env.state.put_content(result)
+        after = rows[-1].name
+        if len(rows) < batch_size:
+            break
+    _flush_grants(env, pending)
+
+
+def _flush_grants(env, pending):
+    target = env.content_target
+    fresh = []
+    for (node, principal), role in pending.items():
+        stored = target.grant_roles(node, (principal,))
+        if principal not in stored:
+            fresh.append(_grant_row(env, node, principal, role))
+            continue
+        wanted = merged_role(stored[principal], role)
+        if wanted != stored[principal]:
+            target.set_grant_role(node, principal, wanted)
+    target.insert_grants(fresh)
+    if pending:
+        target.commit()
+
+
+def _grant_row(env, node, principal, role):
+    stamp = env.now()
+    return {
+        "name": env.new_id(),
+        "node": node,
+        "principal": principal,
+        "role": role,
+        "expires_on": None,
+        "password_hash": None,
+        "owner": "Administrator",
+        "creation": stamp,
+        "modified": stamp,
+        "modified_by": "Administrator",
+        "docstatus": 0,
+        "idx": 0,
+    }
+
+
+def _validate_content_node(node, row, name):
+    expected = {
+        "name": name,
+        "kind": "document",
+        "content_doctype": row.doctype,
+        "content_docname": row.name,
+    }
+    exact_fields(node, expected, tuple(expected), f"content node {name}")
+
+
+def _ports(env):
+    if env.content is None or env.content_target is None:
+        raise RuntimeError("Build content ports are not configured")
+    return env.content, env.content_target
+
+
+def _fail(env, result, source, reason):
+    result.record_issue(source, reason)
+    env.state.put_content(result)
+    raise BuildContentError(f"{source}: {reason}")
