@@ -1813,3 +1813,47 @@ class TestLitmusVerdict(UnitTestCase):
 
         self.assertEqual(status, 1)
         self.assertIn("UNLEDGERED FAIL: basic:delete_fragment", out)
+
+    # --- the shipped ledger, against the run it was written from ---
+
+    def shipped_ledger(self) -> str:
+        from suite.drive.webdav.tests import litmus_setup
+
+        path = os.path.join(os.path.dirname(litmus_setup.__file__), "litmus_expected.txt")
+        with open(path) as ledger:
+            return ledger.read()
+
+    def gate_run_7(self, complex_verdict="FAIL (400 Bad Request)") -> str:
+        """Gate run 7's shape: every group runs, and the two litmus 0.13
+        conditionals fail in `locks`."""
+        lines = []
+        for group in self.GROUPS:
+            lines.append(f"-> running `{group}':")
+            lines.append(" 0. init.................. pass")
+            lines.append(" 1. begin................. pass")
+            if group == "basic":
+                lines.append(" 9. delete_fragment....... WARNING (unreported)")
+            if group == "locks":
+                lines.append(f"27. complex_cond_put...... {complex_verdict}")
+                lines.append(f"28. fail_complex_cond_put. {complex_verdict}")
+            lines.append(" 2. finish................ pass")
+        return "\n".join(lines) + "\n"
+
+    def test_the_shipped_ledger_covers_gate_run_7(self):
+        """The ledger has to name the tests litmus really prints. A typo in a
+        test name reads as a tolerance for a test that never ran, and the run
+        stays red for a reason nobody can find in the transcript.
+        """
+        status, out = self.rule(self.gate_run_7(), ledger=self.shipped_ledger())
+
+        self.assertEqual(status, 0, out)
+        self.assertIn("litmus: all groups clean", out)
+
+    def test_the_two_conditional_lines_go_when_litmus_can_send_the_header(self):
+        """The ledger tolerates a client defect, so it must come out by itself
+        the moment litmus stops truncating the header."""
+        status, out = self.rule(self.gate_run_7(complex_verdict="pass"), ledger=self.shipped_ledger())
+
+        self.assertEqual(status, 1)
+        self.assertIn("STALE LEDGER LINE (now passes): locks:complex_cond_put:FAIL", out)
+        self.assertIn("STALE LEDGER LINE (now passes): locks:fail_complex_cond_put:FAIL", out)

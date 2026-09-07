@@ -6,8 +6,11 @@
 # `Drive Node`, and OPTIONS advertises "DAV: 1, 2, 3" again, so the http, basic,
 # copymove, props, and locks groups can all be attempted.
 #
-# This ledger still holds one entry. Ticket 25 made no litmus run: litmus needs
-# a served site, and the ticket-25 work was done in a worktree with no site of
-# its own. The ledger may only grow from a real run, so nothing was added on
-# expectation. Run the suite on the site gate and ledger what fails there.
+# Gate run 7 is the first run in which all five groups ran: basic 15/16,
+# copymove 13/13, props 30/30, locks 39/41, http 4/4. It found three
+# unledgered failures. `basic:put_get_utf8_segment` was ours and is fixed, so
+# it is not here. The two below are defects in litmus 0.13 that no server-side
+# change can reach; every line here comes from that real run.
 basic:delete_fragment:WARNING werkzeug strips URI fragments before the app sees them, so a fragment-bearing DELETE cannot be told apart from a normal one
+locks:complex_cond_put:FAIL litmus 0.13 formats "(<%s> [%s]) (Not <DAV:no-lock> [%s])" into a 200-byte buffer; a 45-byte urn:uuid token and §12.4's 66-byte SHA-256 entity-tag make it 207, so the If header arrives cut off mid-tag and is refused 400
+locks:fail_complex_cond_put:FAIL the same truncation as complex_cond_put; the header litmus sends is not RFC 4918 §10.4 grammar, so the 412 it wants cannot be reached
