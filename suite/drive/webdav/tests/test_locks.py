@@ -585,7 +585,10 @@ class TestWebDAVLocks(IntegrationTestCase):
         """
         token = self._token(self._lock(self.doc_path))
         etag = compute_etag(node_core.stored(self.doc))
-        stale = f'"{"0" * (len(etag) - 2)}"'
+        # litmus corrupts the tag the way `fail_complex_cond_put` does:
+        # `pnt = etag + strlen(etag) - 3; (*pnt)++`. One byte, inside the
+        # quotes. An all-zero tag would be a far easier thing to tell apart.
+        stale = etag[:-3] + chr(ord(etag[-3]) + 1) + etag[-2:]
         complex_if = "(<%s> [%s]) (Not <DAV:no-lock> [%s])"
 
         response = put.handle(
@@ -599,6 +602,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         )
         self.assertEqual(response.status_code, 204)
 
+        landed = node_core.stored(self.doc).blob
         with self.assertRaises(PreconditionFailed):
             put.handle(
                 make_ctx(
@@ -609,6 +613,7 @@ class TestWebDAVLocks(IntegrationTestCase):
                     headers={"If": complex_if % (token, stale, stale)},
                 )
             )
+        self.assertEqual(node_core.stored(self.doc).blob, landed)
 
     def test_a_truncated_complex_conditional_is_refused_not_guessed(self):
         """A conditional cut off mid entity-tag is not §10.4 grammar, and the
@@ -721,6 +726,28 @@ class TestWebDAVLocks(IntegrationTestCase):
 
         with self.assertRaises(DriveForbidden):
             self._refresh(self.doc_path, token)
+
+    def test_a_refresh_evaluates_the_if_conditions_it_carries(self):
+        """RFC 4918 §10.4.1 gates a refresh exactly as it gates the LOCK that
+        minted the lock.
+
+        `_create` evaluated the conditions and `_refresh` did not, so a client
+        could keep a lock alive on an ETag that had stopped holding: the very
+        state it was submitting the header to assert. The plain
+        `(<token>)` refresh above is unaffected, because the token is active.
+        """
+        token = self._token(self._lock(self.doc_path))
+        etag = compute_etag(node_core.stored(self.doc))
+        stale = etag[:-3] + chr(ord(etag[-3]) + 1) + etag[-2:]
+
+        self.assertEqual(
+            self._refresh(self.doc_path, token, **{"If": f"(<{token}> [{etag}])"}).status_code, 200
+        )
+
+        with self.assertRaises(PreconditionFailed):
+            self._refresh(self.doc_path, token, **{"If": f"(<{token}> [{stale}])"})
+        # the lock the refresh was asking about is still there and unextended
+        self.assertIsNotNone(locks.find_lock(token))
 
     def test_a_refresh_ignores_the_depth_header(self):
         """RFC 4918 §9.10.2: "A server MUST ignore the Depth header on a LOCK
