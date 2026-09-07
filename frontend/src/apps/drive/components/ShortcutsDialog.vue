@@ -72,6 +72,7 @@ const shortcutGroups = [
       [getLabel('s'), 'Share selected file(s)'],
       [getLabel('m'), 'Move selected file(s)'],
       [[metaKey.value, 'Delete'], 'Delete selected file(s)'],
+      [[findFilesKey.value, 'Enter'], 'Open selected file in new tab'],
       [getLabel('u'), 'Upload a file'],
       [getLabel('n'), 'Create a folder'],
     ],

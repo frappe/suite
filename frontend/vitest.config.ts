@@ -14,6 +14,7 @@ export default defineConfig({
 			"~icons/lucide/clock": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/download": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/external-link": path.resolve(__dirname, "src/test/icon-stub.ts"),
+			"~icons/lucide/square-arrow-out-up-right": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/eye": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/info": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/link-2": path.resolve(__dirname, "src/test/icon-stub.ts"),

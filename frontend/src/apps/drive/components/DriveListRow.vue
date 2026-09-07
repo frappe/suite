@@ -45,7 +45,7 @@
         :data-testid="`drive-entity-${row.name}`"
         :data-selected="selections.has(row.name) || undefined"
         @contextmenu="(e) => !selections.size && contextMenu(e, row)"
-        @click="isModKey($event) ? props.toggleSelection(row, $event) : !selections.size && open(row)"
+        @click="onRowClick($event, row)"
         @dragstart="onDragStart($event, row)"
         @dragend="draggedItem = null"
         @dragover="
@@ -226,8 +226,8 @@ const onDragStart = (e, row) => {
 // Used as right-click doesn't trigger active in frappe-ui
 const selectedName = computed(() => activeEntity.value?.name)
 // Folders get a real `:to` route below — RouterLink handles the navigation
-// (and gives cmd/ctrl-click-to-open-in-new-tab, right-click-copy-link for
-// free) — so this only drives non-folder clicks. Suppressed during an active
+// (and gives right-click-copy-link and middle-click-new-tab for free) — so
+// this only drives non-folder clicks. Suppressed during an active
 // selection so clicking elsewhere in the row doesn't navigate away (matches
 // the existing !selections.size click guard).
 // `!renamingEntity`: the rename input sits inside the row's <button>, so a
@@ -239,6 +239,16 @@ const open = (row) =>
   openEntity(row)
 const routeFor = (row) =>
   row.is_folder && !props.selections.size ? folderRoute(row) : undefined
+// ⌘/Ctrl+click selects (file-manager convention, same as grid tiles).
+// preventDefault keeps folder rows — real links — from also opening a tab.
+const onRowClick = (e, row) => {
+  if (isModKey(e)) {
+    e.preventDefault()
+    props.toggleSelection(row, e)
+    return
+  }
+  if (!props.selections.size) open(row)
+}
 
 // Virtual nodes have no Drive children to fetch — expanding one would ask for
 // the contents of a File that doesn't exist.
