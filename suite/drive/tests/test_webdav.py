@@ -1437,13 +1437,12 @@ class TestLitmusHarness(DavCase):
                 raise frappe.QueueOverloaded("Too many queued background jobs")
         self.assertFalse(frappe.flags.in_install)
 
-    def prepare(self, insert):
+    def prepare(self, insert, refusal=None):
         """Run `prepare` site-free, recording the flag at each step."""
         seen = {}
 
-        def provision(user):
-            seen["provision"] = frappe.flags.in_install
-            return "root-1"
+        def ensure(user):
+            seen["ensure_mount"] = frappe.flags.in_install
 
         self.db.exists.return_value = False
         with (
@@ -1452,7 +1451,8 @@ class TestLitmusHarness(DavCase):
             patch("frappe.utils.get_url", return_value="http://site.test/dav/"),
             patch.object(self.harness, "update_password"),
             patch.object(self.harness, "enable_user_webdav"),
-            patch.object(self.harness, "provision_personal_root", side_effect=provision),
+            patch.object(self.harness, "ensure_mount", side_effect=ensure),
+            patch.object(self.harness, "mount_refusal", return_value=refusal),
         ):
             seen["url"] = self.harness.prepare()
         return seen
@@ -1469,7 +1469,7 @@ class TestLitmusHarness(DavCase):
         self.assertTrue(seen["insert"])
         self.assertEqual(seen["url"], "http://site.test/dav/")
         # and no wider: the rest of prepare runs on the site's own flags
-        self.assertFalse(seen["provision"])
+        self.assertFalse(seen["ensure_mount"])
         self.assertFalse(frappe.flags.in_install)
 
     def test_prepare_puts_the_flag_back_when_the_insert_raises(self):
@@ -1494,3 +1494,141 @@ class TestLitmusHarness(DavCase):
             with self.harness.inline_user_jobs():
                 raise frappe.QueueOverloaded("Too many queued background jobs")
         self.clear_meta.assert_called_once_with()
+
+    # ----------------------------------------------------------------------
+    # the mount postcondition
+    # ----------------------------------------------------------------------
+
+    def mount(self, *, root="root-1", pair=None, parent="root-1", upload=None):
+        """Patch the four site reads `mount_refusal` makes; return the mocks.
+
+        Each argument stands for one half of the gate `handle_mkcol` applies:
+        the root row, the pair it names, what `/dav/` resolves to, and §12.1's
+        UPLOAD on it. `None` means the read is sound.
+        """
+        from suite.drive.webdav import pathmap
+
+        resolved = frappe._dict(parent=parent, node=None, missing_intermediate=parent is None)
+        mocks = frappe._dict(
+            personal_root_for=self.start(patch.object(self.harness, "personal_root_for", return_value=root)),
+            validate_root_pair=self.start(patch.object(self.harness, "validate_root_pair", side_effect=pair)),
+            resolve=self.start(patch.object(pathmap, "resolve", return_value=resolved)),
+            require=self.start(patch.object(self.harness, "require", side_effect=upload)),
+            principals_for=self.start(
+                patch.object(self.harness.framework, "principals_for", return_value="principals")
+            ),
+        )
+        self.start(patch.object(pathmap, "reset_memo"))
+        return mocks
+
+    def test_a_sound_mount_is_not_refused(self):
+        self.mount()
+        self.assertIsNone(self.harness.mount_refusal("litmus@example.com"))
+
+    def test_no_personal_root_is_refused(self):
+        mocks = self.mount(root=None)
+        refusal = self.harness.mount_refusal("litmus@example.com")
+
+        self.assertIn("no Active Personal Root", refusal)
+        self.assertIn("litmus@example.com", refusal)
+        # and the reads below it are never made: there is nothing to read
+        mocks.validate_root_pair.assert_not_called()
+        mocks.resolve.assert_not_called()
+
+    def test_a_root_pair_that_does_not_validate_is_refused(self):
+        mocks = self.mount(pair=frappe.ValidationError("Root node is not a root."))
+        refusal = self.harness.mount_refusal("litmus@example.com")
+
+        self.assertIn("root-1", refusal)
+        self.assertIn("Root node is not a root.", refusal)
+        mocks.resolve.assert_not_called()
+
+    def test_a_namespace_with_no_mount_is_refused(self):
+        """What `pathmap` answers when the caller has no root to mount: the
+        parent of the one collection litmus makes is None, and `handle_mkcol`
+        turns that into the 409 that stopped all five groups."""
+        self.mount(parent=None)
+        refusal = self.harness.mount_refusal("litmus@example.com")
+
+        self.assertIn("does not resolve", refusal)
+
+    def test_a_root_the_user_cannot_write_into_is_refused(self):
+        from suite.drive._core.errors import DriveNotFound
+
+        self.mount(upload=DriveNotFound("Resource not found."))
+        refusal = self.harness.mount_refusal("litmus@example.com")
+
+        self.assertIn("UPLOAD", refusal)
+
+    def test_the_mount_is_read_as_the_litmus_user_not_as_the_caller(self):
+        """`bench execute` runs as Administrator, and `require` answers MANAGE
+        to an admin on any node. Asking with the caller's identity would pass
+        on a mount litmus cannot use."""
+        from suite.drive._core.roles import UPLOAD
+
+        mocks = self.mount()
+        self.harness.mount_refusal("litmus@example.com")
+
+        mocks.principals_for.assert_called_once_with("litmus@example.com")
+        mocks.resolve.assert_called_once_with(["litmus"], "litmus@example.com")
+        mocks.require.assert_called_once_with("root-1", UPLOAD, "principals")
+
+    def ensure(self, refusal, root="root-1"):
+        """Run `ensure_mount` with a stubbed refusal; return the two writers."""
+        with (
+            patch.object(self.harness, "personal_root_for", return_value=root),
+            patch.object(self.harness, "mount_refusal", return_value=refusal),
+            patch.object(self.harness, "drop_personal_root") as drop,
+            patch.object(self.harness, "provision_personal_root") as provision,
+        ):
+            self.harness.ensure_mount("litmus@example.com")
+        return drop, provision
+
+    def test_a_root_that_will_not_serve_is_replaced(self):
+        drop, provision = self.ensure("the Personal Root pair root-1 is not valid: gone")
+
+        drop.assert_called_once_with("litmus@example.com")
+        provision.assert_called_once_with("litmus@example.com")
+
+    def test_a_sound_root_is_left_alone(self):
+        """`provision_personal_root` returns early on an existing row, so the
+        call is the no-op; the drop is what must not happen."""
+        drop, provision = self.ensure(None)
+
+        drop.assert_not_called()
+        provision.assert_called_once_with("litmus@example.com")
+
+    def test_a_user_with_no_root_is_provisioned_without_a_drop(self):
+        drop, provision = self.ensure("no Active Personal Root", root=None)
+
+        drop.assert_not_called()
+        provision.assert_called_once_with("litmus@example.com")
+
+    def test_prepare_refuses_to_print_a_url_for_a_mount_that_is_not_there(self):
+        """The gate this whole postcondition exists for. Without it `prepare`
+        prints the URL, litmus MKCOLs its one collection, and every group stops
+        in `begin` on a 409 that reads as a protocol defect."""
+        with self.assertRaises(self.harness.LitmusFixtureError) as caught:
+            self.prepare(lambda **kwargs: None, refusal="root-1 has no anchor grant")
+
+        self.assertIn("root-1 has no anchor grant", str(caught.exception))
+
+    def test_prepare_proves_the_mount_after_the_commit(self):
+        """The committed rows are what the served site reads, so the proof has
+        to come after the commit, not before it."""
+        order = []
+        self.db.commit.side_effect = lambda: order.append("commit")
+
+        with (
+            patch("frappe.get_doc", return_value=frappe._dict(insert=lambda **kwargs: None)),
+            patch("frappe.clear_document_cache"),
+            patch("frappe.utils.get_url", return_value="http://site.test/dav/"),
+            patch.object(self.harness, "update_password"),
+            patch.object(self.harness, "enable_user_webdav"),
+            patch.object(self.harness, "ensure_mount"),
+            patch.object(self.harness, "mount_refusal", side_effect=lambda user: order.append("proof")),
+        ):
+            self.db.exists.return_value = False
+            self.harness.prepare()
+
+        self.assertEqual(order, ["commit", "proof"])
