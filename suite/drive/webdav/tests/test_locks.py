@@ -533,14 +533,17 @@ class TestWebDAVLocks(IntegrationTestCase):
         token or ETag the client asserted and the server cannot match is 412,
         and a true one leaves the lock granted.
         """
+        # `compute_etag` returns the entity-tag already quoted, and that is the
+        # form the client reads off `getetag` and writes back between brackets
         etag = compute_etag(node_core.stored(self.doc))
 
         with self.assertRaises(PreconditionFailed):
             self._lock(self.doc_path, **{"If": '(["not-the-etag"])'})
         self.assertEqual(frappe.db.count("Drive DAV Lock", {"entity": self.doc}), 0)
 
-        response = self._lock(self.doc_path, **{"If": f'(["{etag}"])'})
+        response = self._lock(self.doc_path, **{"If": f"([{etag}])"})
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(frappe.db.count("Drive DAV Lock", {"entity": self.doc}), 1)
 
     def test_depth_zero_collection_lock_protects_membership_only(self):
         """RFC 4918 §7.4: a depth-0 collection lock protects the member list,
