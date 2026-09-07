@@ -1,8 +1,10 @@
+import logging
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite.drive.webdav import log
 from suite.drive.webdav.tests.utils import (
     dispatch,
     drop_dav_root,
@@ -128,3 +130,62 @@ class TestWebDAVLogging(IntegrationTestCase):
         self.assertEqual(len(logs.records), 1)
         self.assertIn("-> 500", logs.output[0])
         self.assertIn("ModuleNotFoundError", logs.output[0])
+
+
+class TestNoteAppends(UnitTestCase):
+    """`log.note`, site-free: the module reads one dict off `frappe.local`.
+
+    The contract is its own test because two writers now share the line. A
+    handler names its refusal, and `dispatch._make_headers_sendable` runs
+    afterwards on the same request and may name a repair. Replacing rather
+    than appending loses the first one, and the log then reports a repair as
+    the whole reason for a 400.
+    """
+
+    def setUp(self):
+        super().setUp()
+        frappe.local._webdav_log = {"level": logging.INFO, "start": 0.0, "user": None, "note": None}
+
+    def tearDown(self):
+        frappe.local._webdav_log = None
+        super().tearDown()
+
+    def note(self) -> str | None:
+        return frappe.local._webdav_log["note"]
+
+    def test_the_first_reason_is_the_line(self):
+        log.note("Unparsable If header")
+        self.assertEqual(self.note(), "Unparsable If header")
+
+    def test_a_second_reason_joins_the_first_rather_than_erasing_it(self):
+        log.note("Unparsable If header")
+        log.note("percent-encoded unsendable header: Content-Disposition")
+        self.assertEqual(
+            self.note(),
+            "Unparsable If header; percent-encoded unsendable header: Content-Disposition",
+        )
+
+    def test_an_empty_reason_does_not_open_the_line_with_a_separator(self):
+        log.note("")
+        log.note("   ")
+        log.note("the real reason")
+        self.assertEqual(self.note(), "the real reason")
+
+    def test_a_reason_cannot_forge_a_second_log_record(self):
+        """`log_response` writes the note inside `note="..."`. The writers hand
+        it exception text, and a database error quotes its statement whole."""
+        log.note("(1064, 'You have an error near\n  SELECT 1\n')")
+
+        self.assertEqual(self.note(), "(1064, 'You have an error near SELECT 1 ')")
+        self.assertNotIn("\n", self.note())
+        self.assertNotIn('"', self.note())
+
+    def test_a_reason_is_bounded(self):
+        log.note("x" * 500)
+        self.assertEqual(self.note(), "x" * log.NOTE_LIMIT)
+
+    def test_a_note_with_logging_off_is_dropped_rather_than_raising(self):
+        """`start_request` sets the context to None at level "off"."""
+        frappe.local._webdav_log = None
+        log.note("no context to write to")
+        self.assertIsNone(frappe.local._webdav_log)
