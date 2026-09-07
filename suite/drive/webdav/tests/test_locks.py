@@ -619,6 +619,13 @@ class TestWebDAVLocks(IntegrationTestCase):
         with self.assertRaises(DriveForbidden):
             self._refresh(self.doc_path, token)
 
+    def test_a_refresh_ignores_the_depth_header(self):
+        """RFC 4918 §9.10.2: "A server MUST ignore the Depth header on a LOCK
+        refresh." A client that stamps `Depth: 1` on everything it sends would
+        otherwise lose the lock it is asking to keep."""
+        token = self._token(self._lock(self.doc_path))
+        self.assertEqual(self._refresh(self.doc_path, token, Depth="1").status_code, 200)
+
     def test_refresh_by_a_non_owner_is_403(self):
         """§12.1: only the lock's owner may extend its lifetime."""
         token = self._foreign_lock(self.other, self.other_path)
