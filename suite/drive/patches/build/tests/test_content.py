@@ -54,14 +54,42 @@ def add_document_node(target, name, row, **values):
     }
 
 
+class CountingTarget(FakeContentTarget):
+    """Count the target rows each Build transaction carries."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.pending_rows = 0
+        self.batches = []
+
+    def write_content_link(self, doctype, docname, node):
+        super().write_content_link(doctype, docname, node)
+        self.pending_rows += 1
+
+    def write_root_pair(self, node, metadata, grants):
+        super().write_root_pair(node, metadata, grants)
+        self.pending_rows += 2 + len(grants)
+
+    def write_orphan(self, node, doctype, docname):
+        before = self.pending_rows
+        super().write_orphan(node, doctype, docname)
+        self.pending_rows = before + 2
+
+    def commit(self):
+        super().commit()
+        if self.pending_rows:
+            self.batches.append(self.pending_rows)
+            self.pending_rows = 0
+
+
 class ContentTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
 
-    def environment(self, source):
-        target = FakeContentTarget(content=source)
+    def environment(self, source, target=None):
+        target = target if target is not None else FakeContentTarget(content=source)
         env = build_environment(
             self.path,
             content=source,
@@ -88,6 +116,34 @@ class ContentTest(unittest.TestCase):
 
         link_content_documents(env)
         self.assertEqual(len(target.content_nodes(row.doctype, row.name)), 1)
+
+    def test_link_commits_split_at_1000_target_rows_not_999(self):
+        rows = [document("Writer Document", f"writer-{index:04}") for index in range(1001)]
+        source = FakeContent(documents=rows, files=[file_for(row, f"file-{row.name}") for row in rows])
+        env, target = self.environment(source, CountingTarget(content=source))
+        for row in rows:
+            add_document_node(target, f"file-{row.name}", row)
+
+        link_content_documents(env, batch_size=1000)
+
+        self.assertEqual(target.batches, [1000, 1])
+
+    def test_a_new_root_pair_counts_against_the_batch_and_is_never_split(self):
+        linked = [document("Writer Document", f"writer-{index}") for index in range(8)]
+        orphan = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(
+            documents=[*linked, orphan],
+            files=[file_for(row, f"file-{row.name}") for row in linked],
+            users={OWNER: True},
+        )
+        env, target = self.environment(source, CountingTarget(content=source))
+        for row in linked:
+            add_document_node(target, f"file-{row.name}", row)
+
+        link_content_documents(env, batch_size=10)
+
+        # 8 links, then the root node, its metadata, its grant, and the orphan pair together.
+        self.assertEqual(target.batches, [8, 5])
 
     def test_true_orphan_gets_a_personal_root_and_a_deduped_title(self):
         row = document("Sheet", "sheet-1", title="Budget", trashed=1, trashed_on="2024-02-01")

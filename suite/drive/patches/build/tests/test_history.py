@@ -87,6 +87,58 @@ class HistoryTest(unittest.TestCase):
         convert_history_and_comments(env, batch_size=1)
         self.assertEqual(target.version_rows, before)
 
+    def test_equal_writer_timestamps_use_source_ids_as_the_stable_sequence_tie_break(self):
+        document = content_row("Writer Document", "writer-1", "node-1")
+        versions = [
+            WriterVersionRow(
+                name,
+                "writer-1",
+                name,
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+            )
+            for name in ("version-z", "version-a")
+        ]
+        source = FakeContent(documents=[document], writer_versions=versions)
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Writer Document", "writer-1")
+
+        convert_history_and_comments(env)
+
+        self.assertEqual(target.version_rows["version-a"]["seq"], 1)
+        self.assertEqual(target.version_rows["version-z"]["seq"], 2)
+
+    def test_thinning_projection_uses_one_persisted_report_timestamp(self):
+        source = FakeContent()
+
+        class Target(FakeContentTarget):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.report_times = []
+
+            def versions_to_thin(self, report_at):
+                self.report_times.append(report_at)
+                return 7
+
+        times = iter(("2024-04-01 00:00:00", "2024-04-02 00:00:00"))
+        target = Target(content=source)
+        env = build_environment(
+            self.path,
+            content=source,
+            content_target=target,
+            content_ready=True,
+            clock=lambda: next(times),
+        )
+
+        first = convert_history_and_comments(env)
+        second = convert_history_and_comments(env)
+
+        self.assertEqual(first.report_at, "2024-04-01 00:00:00")
+        self.assertEqual(second.report_at, first.report_at)
+        self.assertEqual(target.report_times, [first.report_at, first.report_at])
+        self.assertEqual(second.versions_to_thin, 7)
+
     def test_sheet_sequences_and_runtime_envelopes_keep_valid_gaps(self):
         document = ContentRow(
             **{
