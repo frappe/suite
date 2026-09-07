@@ -569,6 +569,64 @@ class TestWebDAVLocks(IntegrationTestCase):
         with self.assertRaises(BadRequest):
             put.handle(make_ctx("PUT", self.doc_path, OWNER, data=b"x", headers={"If": "(corrupt"}))
 
+    def test_the_litmus_complex_conditional_writes_and_refuses(self):
+        """litmus `locks:complex_cond_put` and `locks:fail_complex_cond_put`.
+
+        Both send `(<token> [etag]) (Not <DAV:no-lock> [etag])`, the exact
+        format string in the shipped litmus 0.13 `locks` binary. The pair
+        differs only in the ETag: the real one must let the PUT happen, and a
+        corrupted one must be 412 on both alternatives, because
+        `Not <DAV:no-lock>` is ANDed with the entity-tag rather than standing
+        in for the whole list.
+
+        litmus itself cannot get either header to us intact — it formats them
+        into a 200-byte buffer and §12.4's SHA-256 tag makes the header 207.
+        See `TestLitmusComplexConditional` and litmus_expected.txt.
+        """
+        token = self._token(self._lock(self.doc_path))
+        etag = compute_etag(node_core.stored(self.doc))
+        stale = f'"{"0" * (len(etag) - 2)}"'
+        complex_if = "(<%s> [%s]) (Not <DAV:no-lock> [%s])"
+
+        response = put.handle(
+            make_ctx(
+                "PUT",
+                self.doc_path,
+                OWNER,
+                data=b"written under the complex conditional",
+                headers={"If": complex_if % (token, etag, etag)},
+            )
+        )
+        self.assertEqual(response.status_code, 204)
+
+        with self.assertRaises(PreconditionFailed):
+            put.handle(
+                make_ctx(
+                    "PUT",
+                    self.doc_path,
+                    OWNER,
+                    data=b"must not land",
+                    headers={"If": complex_if % (token, stale, stale)},
+                )
+            )
+
+    def test_a_truncated_complex_conditional_is_refused_not_guessed(self):
+        """A conditional cut off mid entity-tag is not §10.4 grammar, and the
+        write it guards must not happen on the half that arrived."""
+        token = self._token(self._lock(self.doc_path))
+        etag = compute_etag(node_core.stored(self.doc))
+        header = f"(<{token}> [{etag}]) (Not <DAV:no-lock> [{etag}])"
+        # the header litmus wants to send, against the buffer it has: 30
+        # literal characters, a 45-character `urn:uuid` token and §12.4's
+        # 66-character quoted SHA-256 tag twice. A shorter tag would end the
+        # ledger line, so pin the arithmetic here rather than let it drift.
+        self.assertEqual(len(header), 207)
+        before = node_core.stored(self.doc).blob
+
+        with self.assertRaises(BadRequest):
+            put.handle(make_ctx("PUT", self.doc_path, OWNER, data=b"x", headers={"If": header[:199]}))
+        self.assertEqual(node_core.stored(self.doc).blob, before)
+
     def test_if_header_cannot_probe_an_unreadable_resource(self):
         """§12.1: a tagged condition on an unreadable URL evaluates as unmapped.
 
