@@ -604,6 +604,21 @@ class TestWebDAVLocks(IntegrationTestCase):
         self.assertNotIn("Lock-Token", response.headers)
         self.assertGreater(locks.find_lock(token).remaining, 600)
 
+    def test_refresh_takes_the_same_edit_the_lock_took(self):
+        """§12.1 gives LOCK on an existing node EDIT, and a refresh is that
+        same LOCK.
+
+        On READ alone a holder whose grant had since been lowered could keep
+        the write lock alive for as long as they kept asking, and
+        `locks.enforce` refuses every non-owner, so the owner stayed locked
+        out of their own file by a role that cannot write it.
+        """
+        token = self._token(self._lock(self.doc_path))
+        grant(self._node_at(self.doc_path).name, "$GENERAL", READ, node_principals(OWNER))
+
+        with self.assertRaises(DriveForbidden):
+            self._refresh(self.doc_path, token)
+
     def test_refresh_by_a_non_owner_is_403(self):
         """§12.1: only the lock's owner may extend its lifetime."""
         token = self._foreign_lock(self.other, self.other_path)

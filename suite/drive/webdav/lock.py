@@ -92,6 +92,11 @@ def _refresh(ctx: DavContext, resolved: pathmap.ResolvedPath, timeout: int) -> R
     # a hidden resource and its lock to anyone holding a leaked token
     if not resolved.exists or effective_role(resolved.node, ctx.principals) < READ:
         raise PreconditionFailed("Nothing to refresh at this URL.")
+    # §12.1 gives LOCK on an existing node EDIT, and a refresh is that same
+    # LOCK. Gating a refresh on READ alone let a holder whose grant had since
+    # been lowered keep the write lock alive for as long as they kept asking,
+    # locking the owner out of their own file with a role that cannot write it.
+    require(resolved.node, EDIT, ctx.principals)
 
     submitted = locks.parsed_if(ctx).all_tokens()
     if not submitted:
