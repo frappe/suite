@@ -15,7 +15,13 @@ reading the rows. Both are covered against the real thing in
 """
 
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-from suite.drive.patches.build.ports import BlobConflict, ClaimedBlob, LegacyRow
+from suite.drive.patches.build.ports import (
+    BlobConflict,
+    ChainRow,
+    ClaimedBlob,
+    LegacyRow,
+    TreeRow,
+)
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
@@ -25,6 +31,10 @@ from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 # move with a mutation of it, and this boundary is the one thing the fake
 # exists to police. `test_layout` pins the two against each other.
 S3_COPY_OBJECT_MAX_BYTES = 5_368_709_120
+
+# The stamp a faked run writes on rows it authored. `creation` on a copied
+# row comes from the source and must never be this.
+BUILD_STAMP = "2026-01-01 00:00:00.000000"
 
 
 class FakeStorage:
@@ -249,15 +259,237 @@ class FakeBucket:
         self.sizes[destination_key] = self.sizes[source_key]
 
 
-def build_environment(tmp_path, *, storage=None, files=None, bucket=None, legacy_s3=None):
+class Counter:
+    """Ids and tokens a test can predict: `<prefix>1`, `<prefix>2`, and on.
+
+    A real run mints from `secrets`. Nothing Build decides depends on the
+    value, so a counter is the same run with readable assertions, and a
+    token that repeats across two nodes is a case a test can now write.
+    """
+
+    def __init__(self, prefix):
+        self.prefix = prefix
+        self.count = 0
+
+    def __call__(self):
+        self.count += 1
+        return f"{self.prefix}{self.count}"
+
+
+def build_environment(
+    tmp_path,
+    *,
+    storage=None,
+    files=None,
+    bucket=None,
+    legacy_s3=None,
+    tree=None,
+    drive=None,
+    clock=None,
+    make_id=None,
+    make_token=None,
+):
     """A `BuildEnvironment` wired to fakes, with its state file in `tmp_path`."""
     bucket = bucket if bucket is not None else FakeBucket()
     if legacy_s3 is None:
         legacy_s3 = LegacyS3Config(enabled=True, bucket=bucket.bucket)
+    if drive is None:
+        drive = FakeDrive()
+    if tree is None:
+        tree = FakeTree(drive=drive)
+    elif tree.drive is None:
+        tree.drive = drive
     return BuildEnvironment(
         storage=storage if storage is not None else FakeStorage(),
         files=files if files is not None else FakeFiles(),
         state=BuildState(tmp_path / "drive-build-state.json"),
         legacy_s3=legacy_s3,
         open_bucket=lambda: bucket,
+        tree=tree,
+        drive=drive,
+        clock=clock if clock is not None else (lambda: BUILD_STAMP),
+        make_id=make_id if make_id is not None else Counter("id"),
+        make_token=make_token if make_token is not None else Counter("tok"),
     )
+
+
+class FakeTree:
+    """`LegacyTree` over dictionaries of `File`, `Drive Permission`, `DocShare`.
+
+    Reads only, like the protocol. `unreached` needs to know which rows
+    already have a node, so it asks the `FakeDrive` it is paired with, the
+    way `SiteTree.unreached` asks the database with a LEFT JOIN.
+
+    The paging methods honour `after` and `limit` exactly. A fake that
+    ignored them would hide the one bug the stall guards exist for.
+    """
+
+    def __init__(self, rows=(), *, drive=None, permissions=(), docshares=(), users=None, groups=()):
+        self.rows = {row.name: row for row in rows}
+        self.drive = drive
+        self.permissions_rows = list(permissions)
+        self.docshare_rows = list(docshares)
+        # None for an address means no `User` row at all, which is the
+        # answer that drops a grant. False is a disabled account, which
+        # keeps it.
+        self.users = dict(users or {})
+        self.groups = set(groups)
+        self.composite_decks = set()
+        self.sheets = {}
+
+    def add(self, name, **columns):
+        self.rows[name] = TreeRow(name=name, **columns)
+        return self
+
+    def row(self, name):
+        return self.rows.get(name)
+
+    def children(self, parents, after, limit):
+        folder, name = after
+        found = [
+            row
+            for row in sorted(self.rows.values(), key=lambda row: (row.folder or "", row.name))
+            if row.folder in parents and (row.folder or "", row.name) > (folder, name)
+        ]
+        return found[:limit]
+
+    def unreached(self, after, limit):
+        migrated = self.drive.node_ids() if self.drive else set()
+        found = [
+            ChainRow(row.name, row.folder, row.status)
+            for row in sorted(self.rows.values(), key=lambda row: row.name)
+            if row.name > after and row.name not in migrated
+        ]
+        return found[:limit]
+
+    def chain(self, names):
+        return {
+            name: ChainRow(self.rows[name].name, self.rows[name].folder, self.rows[name].status)
+            for name in names
+            if name in self.rows
+        }
+
+    def permissions(self, after, limit):
+        found = [
+            row
+            for row in sorted(self.permissions_rows, key=lambda row: (row.entity, row.user, row.name))
+            if (row.entity, row.user, row.name) > after
+        ]
+        return found[:limit]
+
+    def docshares(self, after, limit):
+        found = [row for row in sorted(self.docshare_rows, key=lambda row: row.name) if row.name > after]
+        return found[:limit]
+
+    def user_enabled(self, email):
+        return self.users.get(email)
+
+    def group_exists(self, name):
+        return name in self.groups
+
+    def is_composite_deck(self, entity):
+        return entity in self.composite_decks
+
+    def sheet_entity(self, sheet):
+        return self.sheets.get(sheet)
+
+
+class FakeDrive:
+    """`DriveTarget` over dictionaries, committed into a snapshot.
+
+    Two real constraints are modelled, because both change what the code
+    under test has to do:
+
+    - `(node, principal)` is unique on `Drive Grant`, so a second insert
+      for one pair raises instead of quietly making two rows;
+    - `write_root_pair` is one unit. `fail_pair` makes it raise part way
+      through, and the rows it had already written are rolled back.
+
+    `rollback()` is what a killed run leaves behind: everything since the
+    last `commit` is gone.
+    """
+
+    def __init__(self):
+        self.node_rows = {}
+        self.root_rows = {}
+        self.grant_rows = {}
+        self.committed = ({}, {}, {})
+        self.commits = 0
+        self.fail_pair = None
+
+    # -- reads
+
+    def node_ids(self):
+        return set(self.node_rows)
+
+    def nodes(self, names):
+        return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
+
+    def root_metadata(self, node):
+        for row in self.root_rows.values():
+            if row["node"] == node:
+                return dict(row)
+        return None
+
+    def grant_roles(self, node, principals):
+        return {
+            row["principal"]: row["role"]
+            for row in self.grant_rows.values()
+            if row["node"] == node and row["principal"] in principals
+        }
+
+    def has_link_grant(self, node):
+        return any(
+            row["node"] == node and row["principal"].startswith("$LINK:") and row["role"] > 0
+            for row in self.grant_rows.values()
+        )
+
+    # -- writes
+
+    def write_root_pair(self, node, metadata, grants):
+        """One unit. `fail_pair` kills the run between the two halves."""
+        before = (dict(self.node_rows), dict(self.root_rows), dict(self.grant_rows))
+        try:
+            if node:
+                self.insert_nodes([node])
+            wrote = (node or {}).get("name") or (metadata or {}).get("node")
+            if self.fail_pair is not None and self.fail_pair == wrote:
+                raise InterruptedRun("killed between the node and its metadata")
+            if metadata:
+                self.root_rows[metadata["name"]] = dict(metadata)
+            self.insert_grants(grants)
+        except Exception:
+            self.node_rows, self.root_rows, self.grant_rows = before
+            raise
+
+    def insert_nodes(self, rows):
+        for row in rows:
+            if row["name"] in self.node_rows:
+                raise ValueError(f"duplicate Drive Node {row['name']!r}")
+            self.node_rows[row["name"]] = dict(row)
+
+    def insert_grants(self, rows):
+        for row in rows:
+            key = (row["node"], row["principal"])
+            if any((r["node"], r["principal"]) == key for r in self.grant_rows.values()):
+                raise ValueError(f"duplicate Drive Grant for {key!r}")
+            self.grant_rows[row["name"]] = dict(row)
+
+    def raise_grant(self, node, principal, role):
+        for row in self.grant_rows.values():
+            if (row["node"], row["principal"]) == (node, principal):
+                row["role"] = role
+                return
+        raise ValueError(f"no Drive Grant for {(node, principal)!r}")
+
+    def commit(self):
+        self.commits += 1
+        self.committed = (dict(self.node_rows), dict(self.root_rows), dict(self.grant_rows))
+
+    def rollback(self):
+        self.node_rows, self.root_rows, self.grant_rows = (dict(part) for part in self.committed)
+
+    # -- assertions
+
+    def principals(self, node):
+        return {row["principal"]: row["role"] for row in self.grant_rows.values() if row["node"] == node}
