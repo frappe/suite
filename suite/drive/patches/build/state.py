@@ -314,6 +314,68 @@ class GrantConversion:
         return grants
 
 
+@dataclass
+class ContentIssue:
+    """One bounded refusal or disagreement from ticket 28."""
+
+    source: str
+    reason: str
+
+
+@dataclass
+class ContentConversion:
+    """The durable outcome of §14.2 steps 7, 8, and 10."""
+
+    completed: bool = False
+    history_existing_complete: bool = False
+    history_completed: bool = False
+    history_deferred: int = 0
+    slides_completed: bool = False
+    slides_deferred: int = 0
+    links_completed: bool = False
+    documents_seen: int = 0
+    versions_seen: int = 0
+    comments_seen: int = 0
+    trash_disagreements: int = 0
+    orphan_content_docs_adopted: int = 0
+    versions_to_thin: int = 0
+    media_nodes_created: int = 0
+    media_duplicates_collapsed: int = 0
+    slide_elements_rewritten: int = 0
+    deck_previews_created: int = 0
+    template_nodes_created: int = 0
+    writer_templates_converted: int = 0
+    blobless_nodes: int = 0
+    title_renames: int = 0
+    template_title_renames: int = 0
+    link_title_renames: int = 0
+    docshare_rows_dropped: int = 0
+    report_at: str | None = None
+    issues: list[ContentIssue] = field(default_factory=list)
+    issues_total: int = 0
+
+    def record_issue(self, source: str, reason: str) -> None:
+        self.issues_total += 1
+        if len(self.issues) < SAMPLE_KEPT:
+            self.issues.append(ContentIssue(source, reason))
+
+    def begin_run(self) -> None:
+        report_at = self.report_at if self.completed else None
+        blank = ContentConversion(report_at=report_at)
+        for name in self.__dataclass_fields__:
+            setattr(self, name, getattr(blank, name))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ContentConversion:
+        known = {f for f in cls.__dataclass_fields__ if f != "issues"}
+        content = cls(**{k: v for k, v in data.items() if k in known})
+        content.issues = _rebuild(ContentIssue, data.get("issues"))
+        return content
+
+
 class BuildState:
     """The JSON document at `<site>/private/drive-build-state.json`."""
 
@@ -379,6 +441,13 @@ class BuildState:
 
     def put_grants(self, grants: GrantConversion) -> None:
         self.save({**self.load(), "grants": grants.as_dict()})
+
+    def content(self) -> ContentConversion:
+        stored = self.load().get("content")
+        return ContentConversion.from_dict(stored if isinstance(stored, dict) else {})
+
+    def put_content(self, content: ContentConversion) -> None:
+        self.save({**self.load(), "content": content.as_dict()})
 
     def _quarantine(self) -> None:
         """Move an unreadable record aside instead of overwriting it.

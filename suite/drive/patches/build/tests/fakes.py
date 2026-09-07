@@ -14,16 +14,28 @@ reading the rows. Both are covered against the real thing in
 `suite/drive/tests/test_build_storage.py`.
 """
 
+from copy import deepcopy
+from dataclasses import replace
+
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.ports import (
     ACTIVE,
     PERSONAL,
     BlobConflict,
+    BlobRow,
     ChainRow,
     ClaimedBlob,
+    ContentRow,
+    ContentShareRow,
     LegacyRow,
+    MediaFileRow,
+    SheetSnapshotRow,
+    SlideRow,
     TreeRow,
+    WriterTemplateRow,
+    WriterVersionRow,
 )
+from suite.drive.patches.build.slide_journal import SlideBody
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
@@ -287,6 +299,10 @@ def build_environment(
     legacy_s3=None,
     tree=None,
     drive=None,
+    content=None,
+    content_target=None,
+    slide_journal=None,
+    content_ready=False,
     clock=None,
     make_id=None,
     make_token=None,
@@ -301,7 +317,15 @@ def build_environment(
         tree = FakeTree(drive=drive)
     elif tree.drive is None:
         tree.drive = drive
-    return BuildEnvironment(
+    if content is None:
+        content = FakeContent()
+    if content_target is None:
+        content_target = FakeContentTarget(drive=drive, content=content)
+    else:
+        content_target.content = content
+    if slide_journal is None:
+        slide_journal = FakeSlideJournal()
+    environment = BuildEnvironment(
         storage=storage if storage is not None else FakeStorage(),
         files=files if files is not None else FakeFiles(),
         state=BuildState(tmp_path / "drive-build-state.json"),
@@ -309,10 +333,21 @@ def build_environment(
         open_bucket=lambda: bucket,
         tree=tree,
         drive=drive,
+        content=content,
+        content_target=content_target,
+        slide_journal=slide_journal,
         clock=clock if clock is not None else (lambda: BUILD_STAMP),
         make_id=make_id if make_id is not None else Counter("id"),
         make_token=make_token if make_token is not None else Counter("tok"),
     )
+    if content_ready:
+        tree_state = environment.state.tree()
+        tree_state.completed = True
+        environment.state.put_tree(tree_state)
+        grant_state = environment.state.grants()
+        grant_state.completed = True
+        environment.state.put_grants(grant_state)
+    return environment
 
 
 class FakeTree:
@@ -530,3 +565,399 @@ class FakeDrive:
 
     def principals(self, node):
         return {row["principal"]: row["role"] for row in self.grant_rows.values() if row["node"] == node}
+
+
+class FakeContent:
+    """`LegacyContent` over immutable source rows.
+
+    Target link and Slide writes update only fields that production updates.
+    Every other source field remains available for preservation assertions.
+    """
+
+    def __init__(
+        self,
+        *,
+        documents=(),
+        files=(),
+        writer_versions=(),
+        sheet_snapshots=(),
+        writer_templates=(),
+        slides=(),
+        media=(),
+        shares=(),
+        users=None,
+        timezone="UTC",
+    ):
+        self.document_rows = {(row.doctype, row.name): row for row in documents}
+        self.file_rows = list(files)
+        self.writer_version_rows = list(writer_versions)
+        self.sheet_snapshot_rows = list(sheet_snapshots)
+        self.writer_template_rows = list(writer_templates)
+        self.slide_rows = {row.name: row for row in slides}
+        self.media_rows = list(media)
+        self.share_rows = list(shares)
+        self.users = dict(users or {})
+        self.timezone = timezone
+        self.op_stamps = {}
+        self.residual_versions = []
+
+    def documents(self, doctype, after, limit):
+        rows = [
+            row
+            for (kind, name), row in sorted(self.document_rows.items())
+            if kind == doctype and name > after
+        ]
+        return rows[:limit]
+
+    def files_for_content(self, doctype, docname):
+        return [
+            row for row in self.file_rows if (row.content_doctype, row.content_docname) == (doctype, docname)
+        ]
+
+    def writer_versions(self, document):
+        return [row for row in self.writer_version_rows if row.doc == document]
+
+    def sheet_snapshots(self, sheet):
+        return [row for row in self.sheet_snapshot_rows if row.sheet == sheet]
+
+    def residual_writer_versions(self, limit):
+        return sorted(self.residual_versions)[:limit]
+
+    def sheet_op_stamp(self, sheet, seq):
+        return self.op_stamps.get((sheet, seq))
+
+    def writer_templates(self, after, limit):
+        return [
+            row for row in sorted(self.writer_template_rows, key=lambda row: row.name) if row.name > after
+        ][:limit]
+
+    def slides(self, deck):
+        return sorted(
+            [row for row in self.slide_rows.values() if row.parent == deck],
+            key=lambda row: (row.idx, row.name),
+        )
+
+    def media_files(self, deck):
+        return [row for row in self.media_rows if row.deck == deck]
+
+    def media_files_by_urls(self, urls):
+        wanted = set(urls)
+        return [row for row in self.media_rows if row.file_url in wanted]
+
+    def content_shares(self, after, limit):
+        return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
+
+    def user_enabled(self, user):
+        return self.users.get(user)
+
+    def site_timezone(self):
+        return self.timezone
+
+    def link_document(self, doctype, docname, node):
+        key = (doctype, docname)
+        row = self.document_rows[key]
+        self.document_rows[key] = replace(row, node=node)
+
+    def update_slides(self, rows):
+        for row in rows:
+            source = self.slide_rows[row["name"]]
+            self.slide_rows[row["name"]] = replace(
+                source,
+                elements=row["elements"],
+                background=row["background"],
+            )
+
+
+class FakeContentTarget:
+    """`ContentTarget` over dictionaries shared with `FakeDrive`."""
+
+    def __init__(self, *, drive=None, content=None):
+        self.drive = drive if drive is not None else FakeDrive()
+        self.content = content
+        self.node_rows = self.drive.node_rows
+        self.root_rows = self.drive.root_rows
+        self.grant_rows = self.drive.grant_rows
+        self.version_rows = {}
+        self.thread_rows = {}
+        self.comment_rows = {}
+        self.writer_rows = {}
+        self.preview_rows = {}
+        self.blob_rows = {}
+        self.blob_bytes = {}
+        self.commits = 0
+        self.thin_count = 0
+        self.fail_unit = None
+
+    def nodes(self, names):
+        return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
+
+    def content_nodes(self, doctype, docname):
+        return [
+            dict(row)
+            for row in self.node_rows.values()
+            if (row.get("content_doctype"), row.get("content_docname")) == (doctype, docname)
+        ]
+
+    def child_nodes(self, parent):
+        return [dict(row) for row in self.node_rows.values() if row.get("parent") == parent]
+
+    def root_metadata(self, node):
+        return self.drive.root_metadata(node)
+
+    def active_roots(self, user):
+        return tuple(
+            sorted(
+                row["node"]
+                for row in self.root_rows.values()
+                if row.get("kind") == PERSONAL
+                and row.get("user") == user
+                and (row.get("state") or ACTIVE) == ACTIVE
+            )
+        )
+
+    def personal_roots(self, user):
+        return tuple(
+            sorted(
+                row["node"]
+                for row in self.root_rows.values()
+                if row.get("kind") == PERSONAL and row.get("user") == user
+            )
+        )
+
+    def versions(self, node):
+        return [dict(row) for row in self.version_rows.values() if row["node"] == node]
+
+    def version_names(self, names):
+        return {name: dict(self.version_rows[name]) for name in names if name in self.version_rows}
+
+    def threads(self, node):
+        return [dict(row) for row in self.thread_rows.values() if row["node"] == node]
+
+    def thread_names(self, names):
+        return {name: dict(self.thread_rows[name]) for name in names if name in self.thread_rows}
+
+    def comments(self, thread):
+        return [dict(row) for row in self.comment_rows.values() if row["thread"] == thread]
+
+    def comment_names(self, names):
+        return {name: dict(self.comment_rows[name]) for name in names if name in self.comment_rows}
+
+    def writer_document(self, name):
+        row = self.writer_rows.get(name)
+        return dict(row) if row else None
+
+    def preview(self, node):
+        row = self.preview_rows.get(node)
+        return dict(row) if row else None
+
+    def blob(self, name):
+        return self.blob_rows.get(name)
+
+    def read_blob(self, name):
+        return self.blob_bytes[name]
+
+    def add_blob(
+        self,
+        name,
+        data,
+        *,
+        mime_type="application/octet-stream",
+        driver="local",
+        is_private=1,
+        status="Ready",
+    ):
+        self.blob_rows[name] = BlobRow(
+            name=name,
+            file_size=len(data),
+            mime_type=mime_type,
+            driver=driver,
+            is_private=is_private,
+            status=status,
+            key=f"private/{name}",
+        )
+        self.blob_bytes[name] = data
+        return self.blob_rows[name]
+
+    def put_private_blob(self, data, filename):
+        for name, body in self.blob_bytes.items():
+            row = self.blob_rows[name]
+            if body == data and row.is_private and row.status == "Ready":
+                return row
+        name = f"content-blob-{len(self.blob_rows) + 1}"
+        suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        mime = {"html": "text/html", "json": "application/json", "webp": "image/webp"}.get(
+            suffix, "application/octet-stream"
+        )
+        return self.add_blob(name, data, mime_type=mime)
+
+    def write_root_pair(self, node, metadata, grants):
+        self._unit(
+            (node or metadata or {}).get("name"),
+            lambda: self.drive.write_root_pair(node, metadata, grants),
+        )
+
+    def insert_nodes(self, rows):
+        self.drive.insert_nodes(rows)
+
+    def insert_grants(self, rows):
+        self.drive.insert_grants(rows)
+
+    def grant_roles(self, node, principals):
+        return self.drive.grant_roles(node, principals)
+
+    def set_grant_role(self, node, principal, role):
+        self.drive.raise_grant(node, principal, role)
+
+    def insert_versions(self, rows):
+        self._insert_unique(self.version_rows, rows, "Drive Node Version")
+
+    def insert_threads(self, rows):
+        self._insert_unique(self.thread_rows, rows, "Drive Comment Thread")
+
+    def insert_comments(self, rows):
+        self._insert_unique(self.comment_rows, rows, "Drive Comment")
+
+    def write_thread(self, thread, comments):
+        def write():
+            self.insert_threads([thread])
+            if self.fail_unit == thread["name"]:
+                raise InterruptedRun("killed between thread and comments")
+            self.insert_comments(comments)
+
+        self._unit(thread["name"], write)
+
+    def insert_previews(self, rows):
+        for row in rows:
+            if row["node"] in self.preview_rows:
+                raise ValueError(f"duplicate Drive Node Preview for {row['node']!r}")
+            self.preview_rows[row["node"]] = dict(row)
+
+    def write_content_link(self, doctype, docname, node):
+        self.content.link_document(doctype, docname, node)
+
+    def write_orphan(self, node, doctype, docname):
+        def write():
+            self.insert_nodes([node])
+            if self.fail_unit == node["name"]:
+                raise InterruptedRun("killed between orphan node and content link")
+            self.write_content_link(doctype, docname, node["name"])
+
+        self._unit(node["name"], write)
+
+    def write_writer_template(self, document, node, grants):
+        if document is None and node is None and not grants:
+            return
+        name = (document or node)["name"]
+
+        def write():
+            if document:
+                if name in self.writer_rows:
+                    raise ValueError(f"duplicate Writer Document {name!r}")
+                self.writer_rows[name] = dict(document)
+            if self.fail_unit == name:
+                raise InterruptedRun("killed while writing Writer template")
+            if node:
+                self.insert_nodes([node])
+            self.insert_grants(grants)
+
+        self._unit(name, write)
+
+    def write_presentation_template(self, deck, node, grants):
+        def write():
+            if node:
+                self.insert_nodes([node])
+            if self.fail_unit == deck:
+                raise InterruptedRun("killed while writing Presentation template")
+            self.content.link_document("Presentation", deck, deck)
+            self.insert_grants(grants)
+
+        self._unit(deck, write)
+
+    def update_media_node(self, name, blob, size, mime):
+        self.node_rows[name].update({"blob": blob, "size": size, "mime": mime})
+
+    def update_slides(self, rows):
+        self.content.update_slides(rows)
+
+    def versions_to_thin(self, report_at):
+        return self.thin_count
+
+    def commit(self):
+        self.commits += 1
+        self.drive.commit()
+
+    def _insert_unique(self, destination, rows, label):
+        for row in rows:
+            if row["name"] in destination:
+                raise ValueError(f"duplicate {label} {row['name']!r}")
+            destination[row["name"]] = dict(row)
+
+    def _unit(self, name, write):
+        before = (
+            deepcopy(self.node_rows),
+            deepcopy(self.root_rows),
+            deepcopy(self.grant_rows),
+            deepcopy(self.version_rows),
+            deepcopy(self.thread_rows),
+            deepcopy(self.comment_rows),
+            deepcopy(self.writer_rows),
+            deepcopy(self.preview_rows),
+            deepcopy(self.content.document_rows) if self.content else {},
+        )
+        try:
+            write()
+        except Exception:
+            (
+                nodes,
+                roots,
+                grants,
+                versions,
+                threads,
+                comments,
+                writers,
+                previews,
+                documents,
+            ) = before
+            self.node_rows.clear()
+            self.node_rows.update(nodes)
+            self.root_rows.clear()
+            self.root_rows.update(roots)
+            self.grant_rows.clear()
+            self.grant_rows.update(grants)
+            self.version_rows = versions
+            self.thread_rows = threads
+            self.comment_rows = comments
+            self.writer_rows = writers
+            self.preview_rows = previews
+            if self.content:
+                self.content.document_rows = documents
+            raise
+
+
+class FakeSlideJournal:
+    """A write-ahead Slide journal with exact in-memory body boundaries."""
+
+    def __init__(self):
+        self.records = []
+
+    def append(self, *, presentation, slide, before, after, changed_elements, created_at):
+        same = [row for row in self.records if row[0] == presentation and row[1] == slide]
+        if same and same[-1][3] != before:
+            raise ValueError(f"Slide {slide} journal chain is discontinuous")
+        record = (presentation, slide, before, after, changed_elements, created_at)
+        if record not in self.records:
+            self.records.append(record)
+        return record
+
+    def recover_changed_elements(self, presentation, current_bodies):
+        total = 0
+        slides = {row[1] for row in self.records if row[0] == presentation}
+        for slide in slides:
+            chain = [row for row in self.records if row[0] == presentation and row[1] == slide]
+            boundaries = [chain[0][2], *(row[3] for row in chain)]
+            current = current_bodies.get(slide)
+            matches = [index for index, body in enumerate(boundaries) if body == current]
+            if len(matches) != 1:
+                raise ValueError(f"Slide {slide} does not match one journal boundary")
+            total += sum(row[4] for row in chain[: matches[0]])
+        return total

@@ -519,6 +519,242 @@ class DriveTarget(Protocol):
         """End the current batch."""
 
 
+# --- §14.2 steps 7, 8, and 10: content application data -----------------
+
+
+@dataclass(frozen=True)
+class ContentRow:
+    """One Writer, Sheets, or Slides content document."""
+
+    doctype: str
+    name: str
+    node: str | None = None
+    title: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+    trashed: int = 0
+    trashed_on: str | None = None
+    ycomments: str | None = None
+    sheets_data: str | None = None
+    head_seq: int = 0
+    head_snapshot: str | None = None
+    thumbnail: str | None = None
+    is_template: int = 0
+    is_composite: int = 0
+
+
+@dataclass(frozen=True)
+class WriterVersionRow:
+    """One legacy Writer version whose payload is exact HTML."""
+
+    name: str
+    doc: str
+    snapshot: str
+    title: str | None = None
+    manual: int = 0
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+
+@dataclass(frozen=True)
+class SheetSnapshotRow:
+    """One legacy Sheet snapshot."""
+
+    name: str
+    sheet: str
+    seq: int
+    kind: str
+    sheets_data: str
+    label: str | None = None
+    pinned: int = 0
+    actor: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+
+@dataclass(frozen=True)
+class WriterTemplateRow:
+    """One legacy Writer Template row."""
+
+    name: str
+    title: str
+    content: str
+    keymap: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+
+@dataclass(frozen=True)
+class SlideRow:
+    """The two destructive Slide fields and their stable source order."""
+
+    name: str
+    parent: str
+    idx: int
+    elements: str | None
+    background: str | None = None
+
+
+@dataclass(frozen=True)
+class MediaFileRow:
+    """One File attached to a legacy Presentation."""
+
+    name: str
+    deck: str
+    file_name: str
+    file_url: str
+    blob: str | None = None
+    attached_to_field: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+    file_modified: str | None = None
+
+
+@dataclass(frozen=True)
+class BlobRow:
+    """The File Blob facts required by versions, media, and previews."""
+
+    name: str
+    file_size: int
+    mime_type: str
+    driver: str
+    is_private: int
+    status: str
+    key: str | None = None
+
+
+@dataclass(frozen=True)
+class ContentShareRow:
+    """One preserved DocShare row on governed content or history."""
+
+    name: str
+    share_doctype: str
+    share_name: str
+    user: str | None = None
+    read: int = 0
+    write: int = 0
+    share: int = 0
+    submit: int = 0
+    everyone: int = 0
+    creation: str | None = None
+
+
+class LegacyContent(Protocol):
+    """Read-only access to legacy content application rows."""
+
+    def documents(self, doctype: str, after: str, limit: int) -> list[ContentRow]: ...
+
+    def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]: ...
+
+    def writer_versions(self, document: str) -> list[WriterVersionRow]: ...
+
+    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]: ...
+
+    def residual_writer_versions(self, limit: int) -> list[str]: ...
+
+    def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None: ...
+
+    def writer_templates(self, after: str, limit: int) -> list[WriterTemplateRow]: ...
+
+    def slides(self, deck: str) -> list[SlideRow]: ...
+
+    def media_files(self, deck: str) -> list[MediaFileRow]: ...
+
+    def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
+
+    def presentation_is_template(self, deck: str) -> bool: ...
+
+    def content_shares(self, after: str, limit: int) -> list[ContentShareRow]: ...
+
+    def user_enabled(self, user: str) -> bool | None: ...
+
+    def site_timezone(self) -> str: ...
+
+
+class ContentTarget(Protocol):
+    """Drive and app target writes for ticket 28."""
+
+    def nodes(self, names: tuple[str, ...]) -> dict[str, dict]: ...
+
+    def content_nodes(self, doctype: str, docname: str) -> list[dict]: ...
+
+    def child_nodes(self, parent: str) -> list[dict]: ...
+
+    def root_metadata(self, node: str) -> dict | None: ...
+
+    def active_roots(self, user: str) -> tuple[str, ...]: ...
+
+    def personal_roots(self, user: str) -> tuple[str, ...]: ...
+
+    def versions(self, node: str) -> list[dict]: ...
+
+    def version_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
+
+    def threads(self, node: str) -> list[dict]: ...
+
+    def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
+
+    def comments(self, thread: str) -> list[dict]: ...
+
+    def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
+
+    def writer_document(self, name: str) -> dict | None: ...
+
+    def preview(self, node: str) -> dict | None: ...
+
+    def blob(self, name: str) -> BlobRow | None: ...
+
+    def read_blob(self, name: str) -> bytes: ...
+
+    def put_private_blob(self, data: bytes, filename: str) -> BlobRow: ...
+
+    def write_root_pair(self, node: dict, metadata: dict, grants: list[dict]) -> None: ...
+
+    def insert_nodes(self, rows: list[dict]) -> None: ...
+
+    def insert_grants(self, rows: list[dict]) -> None: ...
+
+    def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]: ...
+
+    def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
+
+    def insert_versions(self, rows: list[dict]) -> None: ...
+
+    def insert_threads(self, rows: list[dict]) -> None: ...
+
+    def insert_comments(self, rows: list[dict]) -> None: ...
+
+    def write_thread(self, thread: dict, comments: list[dict]) -> None: ...
+
+    def insert_previews(self, rows: list[dict]) -> None: ...
+
+    def write_content_link(self, doctype: str, docname: str, node: str) -> None: ...
+
+    def write_orphan(self, node: dict, doctype: str, docname: str) -> None: ...
+
+    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None: ...
+
+    def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None: ...
+
+    def update_media_node(self, name: str, blob: str, size: int, mime: str) -> None: ...
+
+    def update_slides(self, rows: list[dict]) -> None: ...
+
+    def versions_to_thin(self, report_at: str) -> int: ...
+
+    def commit(self) -> None: ...
+
+
 # The columns a bulk insert has to fill by hand. `docstatus` and `idx` carry
 # database defaults; the other five do not, and `Document.insert` is what
 # normally supplies them.
@@ -908,3 +1144,531 @@ class SiteDrive:
 def _values(columns: tuple[str, ...], row: dict) -> tuple:
     """Order one row's values to match the column list, defaulting the rest."""
     return tuple(row.get(column) for column in columns)
+
+
+class SiteContentSource:
+    """`LegacyContent` over Writer, Sheets, Slides, File, and DocShare."""
+
+    def __init__(self, name_prefix: str | None = None):
+        self.name_prefix = name_prefix or ""
+
+    def documents(self, doctype: str, after: str, limit: int) -> list[ContentRow]:
+        fields = {
+            "Writer Document": ["node", "ycomments"],
+            "Sheet": ["node", "title", "sheets_data", "head_seq", "head_snapshot", "trashed", "trashed_on"],
+            "Presentation": ["node", "title", "thumbnail", "is_template", "is_composite"],
+        }[doctype]
+        rows = frappe.get_all(
+            doctype,
+            filters=self._name_filters(after),
+            fields=["name", *fields, "owner", "creation", "modified", "modified_by"],
+            order_by="name asc",
+            limit=limit,
+        )
+        return [ContentRow(doctype=doctype, **dict(row)) for row in rows]
+
+    def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]:
+        rows = frappe.get_all(
+            "File",
+            filters=[
+                ["content_doctype", "=", doctype],
+                ["content_docname", "=", docname],
+                *self._prefix_filters(),
+            ],
+            fields=list(TREE_COLUMNS),
+            order_by="creation asc, name asc",
+        )
+        return [TreeRow.of(row) for row in rows]
+
+    def writer_versions(self, document: str) -> list[WriterVersionRow]:
+        rows = frappe.get_all(
+            "Writer Version",
+            filters={"doc": document},
+            fields=[
+                "name",
+                "doc",
+                "snapshot",
+                "title",
+                "manual",
+                "owner",
+                "creation",
+                "modified",
+                "modified_by",
+            ],
+            order_by="creation asc, name asc",
+        )
+        return [WriterVersionRow(**dict(row)) for row in rows]
+
+    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]:
+        rows = frappe.get_all(
+            "Sheet Snapshot",
+            filters={"sheet": sheet},
+            fields=[
+                "name",
+                "sheet",
+                "seq",
+                "kind",
+                "label",
+                "pinned",
+                "actor",
+                "sheets_data",
+                "owner",
+                "creation",
+                "modified",
+                "modified_by",
+            ],
+            order_by="seq asc, name asc",
+        )
+        return [SheetSnapshotRow(**dict(row)) for row in rows]
+
+    def residual_writer_versions(self, limit: int) -> list[str]:
+        filters = [["parent", "like", self.name_prefix + "%"]] if self.name_prefix else []
+        return frappe.get_all("Writer Doc Version", filters=filters, pluck="name", limit=limit)
+
+    def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None:
+        row = frappe.db.get_value(
+            "Sheet Op Log", {"sheet": sheet, "seq": seq}, ["actor", "creation"], as_dict=True
+        )
+        return (row.actor, str(row.creation)) if row and row.actor and row.creation else None
+
+    def writer_templates(self, after: str, limit: int) -> list[WriterTemplateRow]:
+        rows = frappe.get_all(
+            "Writer Template",
+            filters=self._name_filters(after),
+            fields=["name", "title", "content", "keymap", "owner", "creation", "modified", "modified_by"],
+            order_by="name asc",
+            limit=limit,
+        )
+        return [WriterTemplateRow(**dict(row)) for row in rows]
+
+    def slides(self, deck: str) -> list[SlideRow]:
+        rows = frappe.get_all(
+            "Slide",
+            filters={"parent": deck, "parenttype": "Presentation"},
+            fields=["name", "parent", "idx", "elements", "background"],
+            order_by="idx asc, name asc",
+        )
+        return [SlideRow(**dict(row)) for row in rows]
+
+    def media_files(self, deck: str) -> list[MediaFileRow]:
+        rows = frappe.get_all(
+            "File",
+            filters={"attached_to_doctype": "Presentation", "attached_to_name": deck},
+            fields=[
+                "name",
+                "attached_to_name as deck",
+                "file_name",
+                "file_url",
+                "blob",
+                "attached_to_field",
+                "owner",
+                "creation",
+                "modified",
+                "modified_by",
+                "file_modified",
+            ],
+            order_by="creation asc, name asc",
+        )
+        return [MediaFileRow(**dict(row)) for row in rows]
+
+    def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]:
+        if not urls:
+            return []
+        rows = frappe.get_all(
+            "File",
+            filters=[
+                ["file_url", "in", list(urls)],
+                ["attached_to_doctype", "=", "Presentation"],
+            ],
+            fields=[
+                "name",
+                "attached_to_name as deck",
+                "file_name",
+                "file_url",
+                "blob",
+                "attached_to_field",
+                "owner",
+                "creation",
+                "modified",
+                "modified_by",
+                "file_modified",
+            ],
+            order_by="creation asc, name asc",
+        )
+        return [MediaFileRow(**dict(row)) for row in rows]
+
+    def presentation_is_template(self, deck: str) -> bool:
+        return bool(frappe.db.get_value("Presentation", deck, "is_template"))
+
+    def content_shares(self, after: str, limit: int) -> list[ContentShareRow]:
+        doctypes = (
+            "Writer Document",
+            "Presentation",
+            "Writer Version",
+            "Sheet Snapshot",
+            "Slide",
+            "Sheet Op Log",
+        )
+        rows = frappe.get_all(
+            "DocShare",
+            filters=[["share_doctype", "in", doctypes], ["name", ">", after]],
+            fields=[
+                "name",
+                "share_doctype",
+                "share_name",
+                "user",
+                "read",
+                "write",
+                "share",
+                "submit",
+                "everyone",
+                "creation",
+            ],
+            order_by="name asc",
+            limit=limit,
+        )
+        return [ContentShareRow(**dict(row)) for row in rows]
+
+    def user_enabled(self, user: str) -> bool | None:
+        found = frappe.db.get_value("User", user, ["name", "enabled"], as_dict=True)
+        return bool(found.enabled) if found else None
+
+    def site_timezone(self) -> str:
+        from frappe.utils import get_system_timezone
+
+        return get_system_timezone()
+
+    def _name_filters(self, after: str) -> list:
+        return [["name", ">", after], *self._prefix_filters()]
+
+    def _prefix_filters(self) -> list:
+        return [["name", "like", self.name_prefix + "%"]] if self.name_prefix else []
+
+
+VERSION_COLUMNS = (
+    "name",
+    "node",
+    "seq",
+    "kind",
+    "label",
+    "pinned",
+    "actor",
+    "size",
+    "blob",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+THREAD_COLUMNS = (
+    "name",
+    "node",
+    "anchor",
+    "resolved",
+    "resolved_by",
+    "resolved_at",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+COMMENT_COLUMNS = (
+    "name",
+    "thread",
+    "node",
+    "content",
+    "author",
+    "author_name",
+    "mentions",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+PREVIEW_COLUMNS = (
+    "name",
+    "node",
+    "source_blob",
+    "blob",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+WRITER_DOCUMENT_COLUMNS = (
+    "name",
+    "node",
+    "content",
+    "html",
+    "settings",
+    "collab",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+
+class SiteContentTarget:
+    """`ContentTarget` over the real target and content tables."""
+
+    def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = frappe.get_all("Drive Node", filters=[["name", "in", list(names)]], fields=list(NODE_COLUMNS))
+        return {row.name: dict(row) for row in rows}
+
+    def content_nodes(self, doctype: str, docname: str) -> list[dict]:
+        rows = frappe.get_all(
+            "Drive Node",
+            filters={"content_doctype": doctype, "content_docname": docname},
+            fields=list(NODE_COLUMNS),
+            order_by="name asc",
+        )
+        return [dict(row) for row in rows]
+
+    def child_nodes(self, parent: str) -> list[dict]:
+        return [
+            dict(row)
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"parent": parent},
+                fields=list(NODE_COLUMNS),
+                order_by="creation asc, name asc",
+            )
+        ]
+
+    def root_metadata(self, node: str) -> dict | None:
+        row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_COLUMNS), as_dict=True)
+        return dict(row) if row else None
+
+    def active_roots(self, user: str) -> tuple[str, ...]:
+        rows = frappe.get_all(
+            "Drive Root",
+            filters={"kind": PERSONAL, "user": user, "state": ACTIVE},
+            pluck="node",
+            order_by="name asc",
+        )
+        return tuple(rows)
+
+    def personal_roots(self, user: str) -> tuple[str, ...]:
+        return tuple(
+            frappe.get_all(
+                "Drive Root",
+                filters={"kind": PERSONAL, "user": user},
+                pluck="node",
+                order_by="name asc",
+            )
+        )
+
+    def versions(self, node: str) -> list[dict]:
+        return [
+            dict(row)
+            for row in frappe.get_all(
+                "Drive Node Version", filters={"node": node}, fields=list(VERSION_COLUMNS), order_by="seq asc"
+            )
+        ]
+
+    def version_names(self, names: tuple[str, ...]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = frappe.get_all(
+            "Drive Node Version", filters=[["name", "in", list(names)]], fields=list(VERSION_COLUMNS)
+        )
+        return {row.name: dict(row) for row in rows}
+
+    def threads(self, node: str) -> list[dict]:
+        return [
+            dict(row)
+            for row in frappe.get_all(
+                "Drive Comment Thread",
+                filters={"node": node},
+                fields=list(THREAD_COLUMNS),
+                order_by="name asc",
+            )
+        ]
+
+    def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = frappe.get_all(
+            "Drive Comment Thread", filters=[["name", "in", list(names)]], fields=list(THREAD_COLUMNS)
+        )
+        return {row.name: dict(row) for row in rows}
+
+    def comments(self, thread: str) -> list[dict]:
+        return [
+            dict(row)
+            for row in frappe.get_all(
+                "Drive Comment",
+                filters={"thread": thread},
+                fields=list(COMMENT_COLUMNS),
+                order_by="idx asc, name asc",
+            )
+        ]
+
+    def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = frappe.get_all(
+            "Drive Comment", filters=[["name", "in", list(names)]], fields=list(COMMENT_COLUMNS)
+        )
+        return {row.name: dict(row) for row in rows}
+
+    def writer_document(self, name: str) -> dict | None:
+        row = frappe.db.get_value("Writer Document", name, list(WRITER_DOCUMENT_COLUMNS), as_dict=True)
+        return dict(row) if row else None
+
+    def preview(self, node: str) -> dict | None:
+        row = frappe.db.get_value("Drive Node Preview", {"node": node}, list(PREVIEW_COLUMNS), as_dict=True)
+        return dict(row) if row else None
+
+    def blob(self, name: str) -> BlobRow | None:
+        row = frappe.db.get_value(
+            "File Blob",
+            name,
+            ["name", "file_size", "mime_type", "driver", "is_private", "status", "key"],
+            as_dict=True,
+        )
+        return BlobRow(**dict(row)) if row else None
+
+    def read_blob(self, name: str) -> bytes:
+        from frappe.storage.driver import get_driver
+
+        row = self.blob(name)
+        if not row or not row.key:
+            raise FileNotFoundError(name)
+        with get_driver(row.driver).read(row.key, is_private=bool(row.is_private)) as stream:
+            return stream.read()
+
+    def put_private_blob(self, data: bytes, filename: str) -> BlobRow:
+        import io
+
+        from frappe.storage.blob import put_blob
+
+        blob = put_blob(io.BytesIO(data), is_private=True, filename=filename)
+        return self.blob(blob.name)
+
+    def write_root_pair(self, node: dict, metadata: dict, grants: list[dict]) -> None:
+        SiteDrive().write_root_pair(node, metadata, grants)
+
+    def insert_nodes(self, rows: list[dict]) -> None:
+        SiteDrive().insert_nodes(rows)
+
+    def insert_grants(self, rows: list[dict]) -> None:
+        SiteDrive().insert_grants(rows)
+
+    def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
+        return SiteDrive().grant_roles(node, principals)
+
+    def set_grant_role(self, node: str, principal: str, role: int) -> None:
+        SiteDrive().raise_grant(node, principal, role)
+
+    def insert_versions(self, rows: list[dict]) -> None:
+        self._bulk("Drive Node Version", VERSION_COLUMNS, rows)
+
+    def insert_threads(self, rows: list[dict]) -> None:
+        self._bulk("Drive Comment Thread", THREAD_COLUMNS, rows)
+
+    def insert_comments(self, rows: list[dict]) -> None:
+        self._bulk("Drive Comment", COMMENT_COLUMNS, rows)
+
+    def write_thread(self, thread: dict, comments: list[dict]) -> None:
+        self._unit(
+            "drive_build_comment_thread",
+            lambda: (self.insert_threads([thread]), self.insert_comments(comments)),
+        )
+
+    def insert_previews(self, rows: list[dict]) -> None:
+        self._bulk("Drive Node Preview", PREVIEW_COLUMNS, rows)
+
+    def write_content_link(self, doctype: str, docname: str, node: str) -> None:
+        frappe.db.set_value(doctype, docname, "node", node, update_modified=False)
+
+    def write_orphan(self, node: dict, doctype: str, docname: str) -> None:
+        self._unit(
+            "drive_build_orphan",
+            lambda: (self.insert_nodes([node]), self.write_content_link(doctype, docname, node["name"])),
+        )
+
+    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None:
+        def write():
+            self._bulk("Writer Document", WRITER_DOCUMENT_COLUMNS, [document] if document else [])
+            self.insert_nodes([node] if node else [])
+            self.insert_grants(grants)
+
+        self._unit("drive_build_writer_template", write)
+
+    def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None:
+        def write():
+            self.insert_nodes([node] if node else [])
+            self.insert_grants(grants)
+            self.write_content_link("Presentation", deck, node["name"] if node else deck)
+
+        self._unit("drive_build_presentation_template", write)
+
+    def update_media_node(self, name: str, blob: str, size: int, mime: str) -> None:
+        frappe.db.set_value(
+            "Drive Node", name, {"blob": blob, "size": size, "mime": mime}, update_modified=False
+        )
+
+    def update_slides(self, rows: list[dict]) -> None:
+        for row in rows:
+            frappe.db.set_value(
+                "Slide",
+                row["name"],
+                {"elements": row["elements"], "background": row["background"]},
+                update_modified=False,
+            )
+
+    def versions_to_thin(self, report_at: str) -> int:
+        from frappe.utils import get_datetime
+
+        from suite.drive._core.versions import _normalized_ladder, _pick_deletions
+
+        total = 0
+        nodes = frappe.get_all(
+            "Drive Node Version", filters={"kind": "auto", "pinned": 0}, distinct=True, pluck="node"
+        )
+        for node in nodes:
+            rows = frappe.get_all(
+                "Drive Node Version",
+                filters={"node": node, "kind": "auto", "pinned": 0},
+                fields=["name", "seq", "creation", "size"],
+                order_by="creation desc, seq desc",
+            )
+            total += len(_pick_deletions(rows, get_datetime(report_at), _normalized_ladder(None)))
+        return total
+
+    def commit(self) -> None:
+        if not frappe.flags.in_test:
+            frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
+
+    def _bulk(self, doctype: str, columns: tuple[str, ...], rows: list[dict]) -> None:
+        if rows:
+            frappe.db.bulk_insert(
+                doctype, fields=list(columns), values=[_values(columns, row) for row in rows]
+            )
+
+    def _unit(self, savepoint: str, callback) -> None:
+        frappe.db.savepoint(savepoint)
+        try:
+            callback()
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            raise
+        frappe.db.release_savepoint(savepoint)
