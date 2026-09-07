@@ -707,12 +707,53 @@ class TestWebDAVPut(IntegrationTestCase):
         # have been distinguishable
         self.assertEqual(self._put(f"/dav/{self.base_name}/Open", b"x").status_code, 201)
 
+    def test_an_unreadable_intermediate_answers_exactly_like_an_absent_one(self):
+        """§12.1: the 404-vs-409 pair was an oracle of its own.
+
+        `PUT /dav/<denied folder>/x.txt` answered 404 through the parent's read
+        gate while `PUT /dav/<absent>/x.txt` answered 409, so the pair still
+        named every folder inside a caller's own root that had been taken away
+        from them - the 405 oracle above with two other numbers. RFC 4918
+        §9.7.1 fixes the absent parent at 409, so the unreadable parent joins
+        it: a parent the caller cannot see is a parent that is not there.
+        """
+        folder = node_core.create_folder(node_principals(OWNER), self.base, "Sealed")
+        grant(folder, "$GENERAL", NONE, node_principals(OWNER))
+
+        with self.assertRaises(Conflict) as unreadable:
+            self._put(f"/dav/{self.base_name}/Sealed/x.txt", b"x")
+        with self.assertRaises(Conflict) as absent:
+            self._put(f"/dav/{self.base_name}/NeverThere/x.txt", b"x")
+        self.assertEqual(str(unreadable.exception), str(absent.exception))
+
+        # a parent the caller can see but not write still says so
+        readable = node_core.create_folder(node_principals(OWNER), self.base, "Shown")
+        grant(readable, "$GENERAL", READ, node_principals(OWNER))
+        with self.assertRaises(DriveForbidden):
+            self._put(f"/dav/{self.base_name}/Shown/x.txt", b"x")
+
     def test_there_is_no_mount_of_another_users_root(self):
         self._put(self._url("mine.txt"), b"mine")
         # the stranger's `/dav/` is their own Personal Root, so this path names
         # nothing they can reach and the parent segment is simply absent
         with self.assertRaises(Conflict):
             self._put(self._url("mine.txt"), b"theirs", user=STRANGER)
+
+    def test_a_caller_with_no_personal_root_is_refused_not_a_500(self):
+        """`/dav` itself resolves to no node and no parent for a user who has
+        no Active Personal Root - `Administrator`, which
+        `provision_personal_root` skips, and anyone whose root was archived.
+
+        Reading `segments[-1]` past that raised IndexError and `require(None)`
+        raised AttributeError, which the mapper answers 500 and which commits
+        one Error Log row per attempt. The refusal is the one an absent parent
+        already gets.
+        """
+        from suite.drive.webdav import pathmap
+
+        with patch.object(pathmap, "personal_root_for", return_value=None):
+            with self.assertRaises(Conflict):
+                self._put("/dav", b"x")
 
     def test_a_hidden_content_document_is_closed_to_put(self):
         """§12.2: a document node is out of the namespace for writes too."""

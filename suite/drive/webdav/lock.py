@@ -15,7 +15,7 @@ from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
 from suite.drive._core.access import chain_ids, effective_role, require
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import EDIT, READ
 from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
@@ -186,11 +186,12 @@ def _create_empty_resource(ctx: DavContext, resolved: pathmap.ResolvedPath) -> f
     charged; if the lock expires with no PUT, the empty node stays [009 §6].
     """
     if resolved.missing_intermediate or resolved.parent is None:
-        raise Conflict("Intermediate collections do not exist.")
+        raise Conflict(pathmap.MISSING_PARENT)
     parent, name = resolved.parent, ctx.segments[-1]
     # §12.1: UPLOAD on the parent for a LOCK at an unmapped URL. Below READ
-    # this raises DriveNotFound, so an invisible parent answers 404.
-    require(parent, UPLOAD, ctx.principals)
+    # this is 409, the answer an absent parent already gets (RFC 4918 §9.10.6),
+    # so a lock request cannot name a folder the caller cannot see.
+    pathmap.require_create_parent(parent, ctx.principals)
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
 

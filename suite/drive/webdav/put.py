@@ -32,7 +32,7 @@ from werkzeug.wrappers import Response
 from suite.drive._core import nodes as node_core
 from suite.drive._core import quota as quota_core
 from suite.drive._core.access import require
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import EDIT, READ
 from suite.drive.webdav import pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -58,7 +58,7 @@ def handle(ctx: DavContext) -> Response:
     if resolved.is_mount:
         raise MethodNotAllowed(_COLLECTION_REFUSAL, headers={"Allow": allow_header_without("PUT")})
     if resolved.missing_intermediate:
-        raise Conflict("Intermediate collections do not exist.")
+        raise Conflict(pathmap.MISSING_PARENT)
     if ctx.request.headers.get("Content-Range"):
         raise BadRequest("Partial PUT is not supported.")
 
@@ -75,7 +75,10 @@ def handle(ctx: DavContext) -> Response:
         if ctx.had_trailing_slash:
             raise Conflict("Cannot PUT to a collection URL.")
         parent = resolved.parent
-        require(parent, UPLOAD, ctx.principals)
+        # 409, not 404, when the parent is below READ: an unreadable parent and
+        # an absent one answer alike (§12.1, RFC 4918 §9.7.1). It also runs
+        # before `segments[-1]`, which is empty on `/dav` itself.
+        pathmap.require_create_parent(parent, ctx.principals)
         pathmap.validate_dav_name(ctx.segments[-1], parent)
         accounting_root = node_core.root_id(parent)
     else:

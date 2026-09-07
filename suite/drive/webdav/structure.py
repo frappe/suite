@@ -21,7 +21,7 @@ from werkzeug.wrappers import Response
 from suite.drive._core import nodes as node_core
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import EDIT, READ
 from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -58,13 +58,15 @@ def handle_mkcol(ctx: DavContext) -> Response:
             headers={"Allow": allow_header_without("MKCOL")},
         )
     if resolved.missing_intermediate:
-        raise Conflict("Intermediate collections do not exist.")
+        raise Conflict(pathmap.MISSING_PARENT)
 
-    parent, name = resolved.parent, ctx.segments[-1]
-    # UPLOAD on the parent, §12.1's role for MKCOL. Below READ this raises
-    # DriveNotFound, so an invisible parent answers 404 rather than telling a
-    # stranger that a folder they cannot see is there.
-    require(parent, UPLOAD, ctx.principals)
+    parent = resolved.parent
+    # UPLOAD on the parent, §12.1's role for MKCOL. Below READ this is 409, the
+    # same answer an absent parent gets (RFC 4918 §9.3.1), so the pair cannot
+    # tell a caller which of their own folders were taken away from them. It
+    # runs before `segments[-1]`, which has no last element on `/dav` itself.
+    pathmap.require_create_parent(parent, ctx.principals)
+    name = ctx.segments[-1]
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
 
@@ -121,7 +123,7 @@ def handle_move(ctx: DavContext) -> Response:
 
     destination, dest_parent, dest_name = resolve_destination(ctx, source)
     evaluate_preconditions(ctx.request, row)
-    require(dest_parent, UPLOAD, ctx.principals)
+    pathmap.require_create_parent(dest_parent, ctx.principals)
     pathmap.validate_dav_name(dest_name, dest_parent)
 
     locks.enforce(
@@ -215,13 +217,13 @@ def resolve_destination(ctx: DavContext, source: pathmap.ResolvedPath):
 
     destination = pathmap.resolve(segments, ctx.user)
     if destination.missing_intermediate:
-        raise Conflict("Destination's parent collection does not exist.")
+        raise Conflict(pathmap.MISSING_PARENT)
 
     parent = destination.parent
     if parent is None:
         # the destination resolved to the mount itself, which `segments`
         # already ruled out, so there is no parentless case left
-        raise Conflict("Destination's parent collection does not exist.")
+        raise Conflict(pathmap.MISSING_PARENT)
 
     if destination.node is not None and destination.node.name == source.node.name:
         if segments[-1] == source.node.title:

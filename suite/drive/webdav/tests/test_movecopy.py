@@ -250,6 +250,22 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         response = self._move(self._path("sub"), self._path("moved"), Depth="infinity")
         self.assertEqual(response.status_code, 201)
 
+    def test_an_unreadable_destination_parent_answers_like_an_absent_one(self):
+        """§12.1 and RFC 4918 §9.9.4: 409 for both, or the pair is an oracle.
+
+        A destination parent below READ answered 404 through its read gate
+        while a parent that was never there answered 409, so a caller could
+        still map which folders inside their own root had been taken from
+        them, one Destination header at a time.
+        """
+        sealed = folder_node(OWNER, self.base, "Sealed")
+        grant(sealed, "$GENERAL", NONE, node_principals(OWNER))
+
+        for verb in (self._move, self._copy):
+            unreadable = self.assert_refused(409, verb, self._path("b.txt"), self._path("Sealed", "x.txt"))
+            absent = self.assert_refused(409, verb, self._path("b.txt"), self._path("NeverThere", "x.txt"))
+            self.assertEqual(unreadable.message, absent.message)
+
     # -- §12.1's method-role table ---------------------------------------
 
     def test_move_needs_edit_on_the_source(self):
