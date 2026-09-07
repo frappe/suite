@@ -26,7 +26,7 @@ Historical design tickets remain unchanged. This backlog contains implementation
 1. Start only when implementation execution is authorized. Creating this backlog does not start an AFK run.
 2. Read this guide and the chosen ticket's source sections. Check applicable repository instructions.
 3. Verify the current branches and preserve existing work. Checkpoint accepted inputs before branching for implementation.
-4. Suite implementation uses `forge/drive-layer`, based on `forge/wayfinder-drive-layer`.
+4. Suite implementation uses `forge/drive-layer`, based on `forge/wayfinder-drive-layer`. Follow [Branches and merges](#branches-and-merges).
 5. Framework implementation uses the existing `forge/storage-v2` branch in the adjacent Frappe repository.
 6. Choose the lowest-numbered `ready-for-agent` ticket whose blockers are `done` and whose execution gate is satisfied.
 7. Mark it `in-progress`, with owner, starting revisions, and claimed files. One owner may edit a file at a time.
@@ -37,6 +37,27 @@ Historical design tickets remain unchanged. This backlog contains implementation
 Unblocked initial tickets: architecture boundaries, GC reference discovery, trusted uploads, and blob egress.
 Default execution is serial. Graph independence does not authorize simultaneous edits or shared-site tests.
 No runner, scheduler, or `/implement-spec` installation is created by these documents.
+
+### Branches and merges
+
+`forge/drive-layer` is the sole base branch and the sole merge target for this
+implementation program.
+
+- Fork every ticket branch from `forge/drive-layer`, or from the current tip of
+  that ticket's integration branch. This covers implementation, review, site
+  gate, and closeout branches.
+- Merge every ticket branch back into `forge/drive-layer`.
+- Never merge this ticket work into `main`. `main` receives the program only
+  through a separate, authorized release step.
+- The orchestrator runs `git branch --show-current` before every merge and
+  confirms the output is the intended target branch. Do not merge on an
+  unverified branch.
+- Each ticket branch gets its own isolated worktree. Do not share a worktree
+  between tickets.
+- `git worktree add` does not move the shell. `git worktree add ... && git
+  merge ...` in one chain runs the merge in the original working directory, on
+  the original branch. Run the merge as a separate command, after you change
+  the working directory or with `git -C <worktree-path>`.
 
 ### Integration and verification
 
