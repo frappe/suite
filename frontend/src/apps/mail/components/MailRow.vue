@@ -11,6 +11,9 @@
 		@touchcancel="clearTouchTimer"
 		@contextmenu="onContextMenu"
 		@click.capture="onRowClick"
+		:draggable="draggable || undefined"
+		@dragstart="onDragStart"
+		@dragend="emit('dragEnd')"
 	>
 		<!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
 		     bulk selection. Long-pressing the row anywhere selects it on touch. -->
@@ -179,9 +182,16 @@ const {
 	selectionMode?: boolean
 	// Which account received the mail (merged lists), shown beside the sender.
 	accountLabel?: string
+	// Whether the row can be dragged onto a folder. Off on touch, where the browser
+	// gives HTML5 drag no events at all and a long press already means selection.
+	draggable?: boolean
 }>()
 
-const emit = defineEmits<{ setSelected: [selected: boolean] }>()
+const emit = defineEmits<{
+	setSelected: [selected: boolean]
+	dragStart: [event: DragEvent]
+	dragEnd: []
+}>()
 
 const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
@@ -193,6 +203,18 @@ const showLeading = computed(
 )
 
 const isHovered = ref(false)
+
+/**
+ * A row is a RouterLink, and dragging one of those hands the browser the URL as
+ * text — a link dropped into the composer, or onto the desktop, rather than a
+ * thread moved. Naming the payload ourselves replaces that; the id is set as
+ * plain text so a drop anywhere else is harmless rather than a stray link.
+ */
+const onDragStart = (e: DragEvent) => {
+	e.dataTransfer?.setData('text/plain', '')
+	if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+	emit('dragStart', e)
+}
 
 // In selection mode a row tap toggles membership; capture-phase so the
 // RouterLink navigation never fires. Real buttons inside the row (the trailing

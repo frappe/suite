@@ -426,6 +426,21 @@ export const getIcon = (mailbox: MailboxData) => {
 	return 'folder'
 }
 
+/**
+ * Whether a mailbox can be moved into. The "Move to" menu and the folders that
+ * take a dragged thread are the same question asked twice, so they ask it here:
+ * a thread cannot be moved to where it already is, and Sent, Drafts and the
+ * Screener hold mail that is defined by how it got there rather than by a folder
+ * anyone files into.
+ */
+export const canMoveToMailbox = (
+	mailboxId: string | undefined,
+	current: string | undefined,
+	mailboxIds: { sent?: string; drafts?: string; screener?: string },
+): boolean =>
+	!!mailboxId &&
+	![current, mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)
+
 // The Screening folder is surfaced to users as the "Screener".
 export const getMailboxName = (mailbox: MailboxData) =>
 	mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name

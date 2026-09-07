@@ -297,8 +297,11 @@
 										:selection-mode="mobileSelectionMode"
 										:is-selected="selections.includes(row.thread.thread_id)"
 										:hide-sender="row.inStack"
+										:draggable="!isMobile"
 										:class="rowClasses(row)"
 										:data-row-key="row.key"
+										@drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
+										@drag-end="threadDrag.end()"
 										@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
 										@archive-thread="rowArchive(row.thread)"
 										@trash-thread="rowTrash(row.thread)"
@@ -510,6 +513,7 @@ import {
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
+import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import {
@@ -1441,6 +1445,27 @@ const {
 	goToMailbox,
 	goToNextThreadOrMailbox,
 })
+
+// ── Dragging threads onto a folder ────────────────────────────────────────────────────────────────
+// A drop is the same act as picking a folder from the "Move to" menu, so it runs the same handler —
+// undo snapshot, Junk diversion and toast included. The sidebar owns the drop; it borrows the move
+// from here, since only the view knows how to perform one.
+const threadDrag = useThreadDrag()
+
+onMounted(() => threadDrag.setMoveHandler(handleMoveThreads))
+onUnmounted(() => threadDrag.setMoveHandler(null))
+
+/**
+ * What the drag carries. Dragging a row that is part of the selection takes the
+ * whole selection with it; dragging one outside it takes that row alone and
+ * leaves the selection untouched — the same reading every file manager gives
+ * the gesture, and the alternative (always the selection) silently moves mail
+ * the reader never pointed at.
+ */
+const startThreadDrag = (thread: Thread, e: DragEvent) => {
+	const id = thread.thread_id
+	threadDrag.start(selections.value.includes(id) ? [...selections.value] : [id], e)
+}
 
 // ── Cross-account search row actions ──────────────────────────────────────────────────────────────
 // In an all-accounts search the merged rows can belong to any account, so the shared handlers above

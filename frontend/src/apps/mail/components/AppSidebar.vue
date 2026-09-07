@@ -43,6 +43,13 @@
 								:label="item.label"
 								:icon="item.icon"
 								:to="item.to"
+								:class="
+									threadDrag.overMailbox.value === item.mailboxId &&
+									'ring-2 ring-outline-gray-3 ring-inset'
+								"
+								@dragover="onFolderDragOver($event, item)"
+								@dragleave="onFolderDragLeave(item)"
+								@drop="onFolderDrop($event, item)"
 								:active="
 									item.activeFor?.includes(
 										['mail-mailbox', 'mail-mail'].includes(route.name as string)
@@ -131,8 +138,9 @@ import {
 import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
+import { canMoveToMailbox, getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
 import { useAccountSwitch, useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
+import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
@@ -197,6 +205,41 @@ const isSectionCollapsed = (section: { key?: string }) =>
 const { logout, branding } = sessionStore()
 const store = userStore()
 const { mailboxes, allInboxesUnread } = store
+
+// ── Threads dropped onto a folder ─────────────────────────────────────────────────────────────────
+// The rows are dragged in the view; the folders that take them are here. The move itself belongs to
+// the view too — the sidebar only says which folder the cursor is over, and hands the drop back.
+const threadDrag = useThreadDrag()
+
+/**
+ * Folders that can take a drop: exactly the ones the "Move to" menu offers, read from the same
+ * predicate so the two lists cannot drift. That rules out the mailbox the thread is already in,
+ * along with Sent, Drafts and the Screener; Junk and Trash stay in, since handleMoveThreads reads
+ * those as "mark as spam" and "delete", which is what dropping there means. Sidebar entries that
+ * are not real mailboxes — Starred, All Inboxes, Outbox — have no id and fall out on their own.
+ */
+const canDrop = (item: { mailboxId?: string }) =>
+	threadDrag.isDragging.value &&
+	!!mailboxes.data?.some((m: MailboxData) => m.id === item.mailboxId) &&
+	canMoveToMailbox(item.mailboxId, route.params.mailbox as string, store.mailboxIds)
+
+const onFolderDragOver = (e: DragEvent, item: { mailboxId?: string }) => {
+	if (!canDrop(item)) return
+	// Without preventDefault the browser refuses the drop and shows the "no" cursor.
+	e.preventDefault()
+	if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+	threadDrag.overMailbox.value = item.mailboxId!
+}
+
+const onFolderDragLeave = (item: { mailboxId?: string }) => {
+	if (threadDrag.overMailbox.value === item.mailboxId) threadDrag.overMailbox.value = ''
+}
+
+const onFolderDrop = (e: DragEvent, item: { mailboxId?: string }) => {
+	if (!canDrop(item)) return
+	e.preventDefault()
+	threadDrag.drop(item.mailboxId!)
+}
 
 const user = inject('$user')
 

@@ -13,7 +13,10 @@
 		:subject-italic="!mail.subject"
 		:preview-italic="!mail.preview"
 		:account-label="accountLabel"
+		:draggable
 		@set-selected="(selected: boolean) => emit('setSelected', selected)"
+		@drag-start="(e: DragEvent) => emit('dragStart', e)"
+		@drag-end="emit('dragEnd')"
 	>
 		<template #sender><span v-html="highlight(header)" /></template>
 
@@ -192,6 +195,9 @@ const {
 	selectable?: boolean
 	// Set on the members of an expanded stack, whose stack row already names the sender.
 	hideSender?: boolean
+	// Whether the row can be dragged onto a folder; the view decides, since only it
+	// knows whether a selection is riding along.
+	draggable?: boolean
 	// Mobile selection mode — forwarded to MailRow.
 	selectionMode?: boolean
 	// Which route the row links to. All Inboxes points at its own thread route so opening a
@@ -208,6 +214,8 @@ const emit = defineEmits([
 	'deleteThread',
 	'setFlagged',
 	'setSelected',
+	'dragStart',
+	'dragEnd',
 ])
 
 const route = useRoute()

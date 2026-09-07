@@ -3,7 +3,13 @@ import { Icon } from 'frappe-ui/experimental'
 import { createResource } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { getIcon, raiseOptimisticToast, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
+import {
+	canMoveToMailbox,
+	getIcon,
+	raiseOptimisticToast,
+	raisePromiseToast,
+	raiseToast,
+} from '@/apps/mail/utils'
 import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds } from '@/apps/mail/utils/mailCopies'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
@@ -163,15 +169,7 @@ export function useThreadActions(deps: {
 
 	const moveToOptions = computed(() =>
 		mailboxes.data
-			?.filter(
-				(m) =>
-					![
-						mailbox.value,
-						mailboxIds.sent,
-						mailboxIds.drafts,
-						mailboxIds.screener,
-					].includes(m.id),
-			)
+			?.filter((m) => canMoveToMailbox(m.id, mailbox.value, mailboxIds))
 			.map((m) => ({
 				label: m._name,
 				icon: h(Icon, { name: getIcon(m), class: FOLDER_ICON_COLOR_MAP[m.color] }),
