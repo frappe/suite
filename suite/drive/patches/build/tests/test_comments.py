@@ -223,6 +223,68 @@ class CommentTest(unittest.TestCase):
             convert_document_comments(env, document, "node-1", batch_size=1000)
         self.assertFalse(target.thread_rows)
 
+    def test_colliding_reply_ids_refuse_before_an_earlier_thread_is_committed(self):
+        ycomments = writer_update(
+            {
+                "first": {
+                    "id": "first",
+                    "text": "First",
+                    "owner": OWNER,
+                    "creation": 1,
+                    "replies": [{"id": "same", "text": "One", "owner": OWNER, "creation": 2}],
+                },
+                "second": {
+                    "id": "second",
+                    "text": "Second",
+                    "owner": OWNER,
+                    "creation": 3,
+                    "replies": [{"id": "same", "text": "Two", "owner": OWNER, "creation": 4}],
+                },
+            }
+        )
+        document = ContentRow(
+            "Writer Document",
+            "writer-1",
+            ycomments=ycomments,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(documents=[document])
+        env, target = self.environment(source)
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "comment ids collide"):
+            convert_document_comments(env, document, "node-1", batch_size=1000)
+        self.assertFalse(target.thread_rows)
+        self.assertFalse(target.comment_rows)
+
+    def test_unusable_reply_id_is_a_content_refusal_not_a_type_error(self):
+        for reply_id in ("x" * 141, 7):
+            with self.subTest(reply_id=reply_id):
+                ycomments = writer_update(
+                    {
+                        "top": {
+                            "id": "top",
+                            "text": "First",
+                            "owner": OWNER,
+                            "creation": 1,
+                            "replies": [{"id": reply_id, "text": "Reply", "owner": OWNER, "creation": 2}],
+                        }
+                    }
+                )
+                document = ContentRow(
+                    "Writer Document",
+                    "writer-1",
+                    ycomments=ycomments,
+                    modified=STAMP,
+                    modified_by=OWNER,
+                )
+                source = FakeContent(documents=[document])
+                env, target = self.environment(source)
+
+                with self.assertRaisesRegex(InvalidLegacyContent, "ids are missing or too long"):
+                    convert_document_comments(env, document, "node-1", batch_size=1000)
+                self.assertFalse(target.thread_rows)
+
 
 if __name__ == "__main__":
     unittest.main()

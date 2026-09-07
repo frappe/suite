@@ -37,6 +37,14 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     link_renames = 0
     writes = 0
 
+    def reserve(target_rows):
+        nonlocal writes
+        if writes and writes + target_rows > batch_size:
+            target.commit()
+            env.state.put_content(result)
+            writes = 0
+        writes += target_rows
+
     for doctype in MIMES:
         after = ""
         while True:
@@ -46,14 +54,13 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
             for row in rows:
                 result.documents_seen += 1
                 try:
-                    changed, adopted, renamed, disagreement = _link_one(env, row)
+                    adopted, renamed, disagreement = _link_one(env, row, reserve)
                 except InvalidLegacyContent as error:
                     _fail(env, result, f"{doctype}:{row.name}", str(error))
-                writes += changed
                 result.orphan_content_docs_adopted += int(adopted)
                 link_renames += int(renamed)
                 result.trash_disagreements += int(disagreement)
-                if writes >= max(1, batch_size - 1):
+                if writes >= batch_size:
                     target.commit()
                     env.state.put_content(result)
                     writes = 0
@@ -86,7 +93,7 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     return result
 
 
-def _link_one(env, row) -> tuple[int, bool, bool, bool]:
+def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     target = env.content_target
     files = env.content.files_for_content(row.doctype, row.name)
     nodes = target.content_nodes(row.doctype, row.name)
@@ -110,17 +117,17 @@ def _link_one(env, row) -> tuple[int, bool, bool, bool]:
             disagreement = False
         if row.node and row.node != file.name:
             raise InvalidLegacyContent("the document points at another Drive Node")
-        if row.node:
-            return 0, False, False, disagreement
-        target.write_content_link(row.doctype, row.name, file.name)
-        return 1, False, False, disagreement
+        if not row.node:
+            reserve(1)
+            target.write_content_link(row.doctype, row.name, file.name)
+        return False, False, disagreement
 
     if row.doctype == "Presentation" and row.is_template:
         if not row.node:
             raise InvalidLegacyContent("a Presentation template has no template node")
         if len(nodes) != 1 or nodes[0]["name"] != row.node:
             raise InvalidLegacyContent("a Presentation template has a broken reciprocal link")
-        return 0, False, False, False
+        return False, False, False
 
     if len(nodes) > 1:
         raise InvalidLegacyContent("multiple Drive Nodes claim this orphan")
@@ -130,16 +137,16 @@ def _link_one(env, row) -> tuple[int, bool, bool, bool]:
         if row.node and row.node != node["name"]:
             raise InvalidLegacyContent("the orphan points at another Drive Node")
         if not row.node:
+            reserve(1)
             target.write_content_link(row.doctype, row.name, node["name"])
-            return 1, True, False, False
-        return 0, True, False, False
+        return True, False, False
 
     if row.node:
         raise InvalidLegacyContent("the orphan names a missing Drive Node")
     if not row.owner:
         raise InvalidLegacyContent("the orphan has no owner for a Personal Root")
 
-    root = _ensure_personal_root(env, row.owner)
+    root = _ensure_personal_root(env, row.owner, reserve)
     siblings = target.child_nodes(root)
     titles = SiblingTitles({child["title"] for child in siblings if child.get("state") == ACTIVE})
     source_title = row.title or ("Untitled Document" if row.doctype == "Writer Document" else row.name)
@@ -158,11 +165,12 @@ def _link_one(env, row) -> tuple[int, bool, bool, bool]:
         trashed_at=trashed_at,
         trash_root=row.name if state == TRASHED else None,
     )
+    reserve(2)
     target.write_orphan(node, row.doctype, row.name)
-    return 2, True, title != source_title, False
+    return True, title != source_title, False
 
 
-def _ensure_personal_root(env, user: str) -> str:
+def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
     target = env.content_target
     found = target.active_roots(user)
     if len(found) > 1:
@@ -246,6 +254,7 @@ def _ensure_personal_root(env, user: str) -> str:
         "idx": 0,
     }
     grants = [_grant_row(env, name, user, MANAGE)] if enabled is not None else []
+    reserve(2 + len(grants))
     target.write_root_pair(node, metadata, grants)
     return name
 
