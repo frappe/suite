@@ -10,6 +10,7 @@ whole requests through the dispatcher against a live site.
 import hashlib
 import io
 import os
+import subprocess
 import tempfile
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -1632,3 +1633,183 @@ class TestLitmusHarness(DavCase):
             self.harness.prepare()
 
         self.assertEqual(order, ["commit", "proof"])
+
+
+class TestLitmusVerdict(UnitTestCase):
+    """`litmus_verdict.sh` reads a litmus transcript and rules on it.
+
+    Gate run 6 is why this suite exists. All five groups stopped in `begin` on
+    a 409, no case ran at all, and the runner's only complaint was:
+
+        STALE LEDGER LINE (now passes): basic:delete_fragment:WARNING
+
+    Two faults made that the report. The stale check read the ledger's whole
+    third field as the kind, reason prose included, so it matched no transcript
+    line and called the entry stale on every run. And it ruled on the absence
+    of a non-pass line, which makes "ran and passed" and "never ran" the same
+    state. Nothing in the runner noticed the abort message itself.
+
+    A recorded transcript is all this needs, so it runs here rather than on the
+    site gate: no served site, no litmus binary.
+    """
+
+    LEDGER = (
+        "# tolerated non-passes\n"
+        "basic:delete_fragment:WARNING werkzeug strips URI fragments before the app sees"
+        " them, so a fragment-bearing DELETE cannot be told apart from a normal one\n"
+    )
+    GROUPS = ("http", "basic", "copymove", "props", "locks")
+
+    def setUp(self):
+        from suite.drive.webdav.tests import litmus_setup
+
+        self.script = os.path.join(os.path.dirname(litmus_setup.__file__), "litmus_verdict.sh")
+
+    def rule(self, transcript, ledger=None):
+        """Run the script on a transcript; return (exit status, its output)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger_path = os.path.join(tmp, "litmus_expected.txt")
+            output_path = os.path.join(tmp, "output.txt")
+            with open(ledger_path, "w") as f:
+                f.write(self.LEDGER if ledger is None else ledger)
+            with open(output_path, "w") as f:
+                f.write(transcript)
+            done = subprocess.run(
+                ["bash", self.script, ledger_path, output_path],
+                capture_output=True,
+                text=True,
+            )
+        return done.returncode, done.stdout + done.stderr
+
+    def transcript(self, *, fragment="WARNING (unreported)", groups=GROUPS):
+        """A full run of every group, with `basic:delete_fragment` as given."""
+        lines = []
+        for group in groups:
+            lines.append(f"-> running `{group}':")
+            lines.append(" 0. init.................. pass")
+            lines.append(" 1. begin................. pass")
+            if group == "basic":
+                lines.append(f" 9. delete_fragment....... {fragment}")
+            lines.append(" 2. finish................ pass")
+            lines.append(f"<- summary for `{group}': of 3 tests run: 3 passed, 0 failed. 100.0%")
+        return "\n".join(lines) + "\n"
+
+    def aborted(self):
+        """Gate run 6, as litmus printed it.
+
+        litmus MKCOLs its own `litmus/` collection in every group's `begin`,
+        before a single case. A 409 there makes it print this line and abandon
+        the group, so there is no verdict line to read.
+        """
+        lines = []
+        for group in self.GROUPS:
+            lines.append(f"-> running `{group}':")
+            lines.append(" 0. init.................. pass")
+            lines.append("Could not create new collection `/dav/litmus/' for tests: 409 CONFLICT")
+        return "\n".join(lines) + "\n"
+
+    # --- the gate run 6 report ---
+
+    def test_a_run_that_aborts_in_begin_is_named_as_an_abort(self):
+        status, out = self.rule(self.aborted())
+
+        self.assertEqual(status, 1)
+        self.assertIn("ABORTED: Could not create new collection", out)
+        for group in self.GROUPS:
+            self.assertIn(f"GROUP DID NOT START: {group}", out)
+
+    def test_an_abort_does_not_call_the_ledger_stale(self):
+        """The bug this file was written for. A group that never ran proves
+        nothing about the tests inside it, so its ledger lines stand."""
+        status, out = self.rule(self.aborted())
+
+        self.assertEqual(status, 1)
+        self.assertNotIn("STALE", out)
+        self.assertIn("LEDGERED TEST DID NOT RUN: basic:delete_fragment:WARNING", out)
+
+    def test_a_group_that_never_started_is_named(self):
+        status, out = self.rule(self.transcript(groups=("http", "basic")))
+
+        self.assertEqual(status, 1)
+        self.assertIn("GROUP DID NOT RUN: locks", out)
+        self.assertNotIn("GROUP DID NOT RUN: http", out)
+
+    def test_an_empty_transcript_fails(self):
+        """litmus crashed, or never connected. Silence is not a pass."""
+        status, out = self.rule("")
+
+        self.assertEqual(status, 1)
+        self.assertNotIn("all groups clean", out)
+
+    # --- the ledger ---
+
+    def test_a_ledgered_warning_that_still_warns_is_clean(self):
+        """The reason prose after the kind is prose. Reading it as part of the
+        kind is what reported this entry stale on every run."""
+        status, out = self.rule(self.transcript())
+
+        self.assertEqual(status, 0)
+        self.assertIn("litmus: all groups clean", out)
+        self.assertNotIn("STALE", out)
+
+    def test_a_ledgered_test_that_now_passes_is_stale(self):
+        status, out = self.rule(self.transcript(fragment="pass"))
+
+        self.assertEqual(status, 1)
+        self.assertIn("STALE LEDGER LINE (now passes): basic:delete_fragment:WARNING", out)
+
+    def test_a_ledgered_warning_that_became_a_failure_is_reported(self):
+        status, out = self.rule(self.transcript(fragment="FAIL (deleted the wrong node)"))
+
+        self.assertEqual(status, 1)
+        self.assertIn("UNLEDGERED FAIL: basic:delete_fragment", out)
+
+    def test_an_unledgered_failure_fails_the_run(self):
+        status, out = self.rule(self.transcript(fragment="FAIL (deleted the wrong node)"), ledger="")
+
+        self.assertEqual(status, 1)
+        self.assertIn("UNLEDGERED FAIL: basic:delete_fragment", out)
+
+    def test_an_unledgered_warning_alone_does_not_fail_the_run(self):
+        """A WARNING is litmus reporting a tolerated deviation. Only a FAIL
+        turns the gate red; the WARNING is printed so it can be ledgered."""
+        transcript = self.transcript(groups=("http", "copymove", "props", "locks"))
+        transcript += "-> running `basic':\n 1. begin................. pass\n"
+        transcript += " 9. delete_fragment....... WARNING (unreported)\n"
+        status, out = self.rule(transcript, ledger="")
+
+        self.assertEqual(status, 0)
+        self.assertIn("UNLEDGERED WARNING: basic:delete_fragment", out)
+
+    def test_a_ledger_line_is_read_with_its_group(self):
+        """`init`, `begin` and `finish` exist in all five groups. A tolerance
+        ledgered for one of them must not excuse another."""
+        transcript = self.transcript()
+        transcript = transcript.replace(
+            "-> running `locks':\n 0. init.................. pass",
+            "-> running `locks':\n 0. init.................. FAIL (no lock support)",
+        )
+        status, out = self.rule(transcript, ledger="http:init:FAIL tolerated in http only\n")
+
+        self.assertEqual(status, 1)
+        self.assertIn("UNLEDGERED FAIL: locks:init", out)
+
+    # --- lines that are not verdicts ---
+
+    def test_prose_that_mentions_a_verdict_is_not_read_as_one(self):
+        """`tr '\\r' '\\n'` in run_litmus.sh splits any CR inside an echoed
+        response body into fresh lines, so arbitrary text reaches this parser."""
+        transcript = self.transcript()
+        transcript += 'File "/apps/suite/drive/webdav/dav.py", line 91. WARNING\n'
+        transcript += "the server said: FAIL\n"
+        status, out = self.rule(transcript)
+
+        self.assertEqual(status, 0)
+        self.assertIn("litmus: all groups clean", out)
+
+    def test_a_server_message_naming_warning_does_not_hide_a_failure(self):
+        """The verdict is the field after the dots, not any word on the line."""
+        status, out = self.rule(self.transcript(fragment="FAIL (server said WARNING: no)"))
+
+        self.assertEqual(status, 1)
+        self.assertIn("UNLEDGERED FAIL: basic:delete_fragment", out)
