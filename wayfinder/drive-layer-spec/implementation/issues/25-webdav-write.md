@@ -935,3 +935,224 @@ site. Site-free checks cannot run it.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 5: a full job queue discarded the litmus user
+
+All 23 modules passed, and so did the two regression suites the earlier gate
+stops added: `suite.drive.tests.test_previews` and
+`suite.drive.doctype.drive_permission.test_drive_permission`. The module gate is
+green.
+
+litmus is not. `run_litmus.sh` exits inside `prepare`, before it prints the URL
+it points litmus at. `bench --site slides.localhost execute
+suite.drive.webdav.tests.litmus_setup.prepare` cannot insert
+`litmus@example.com`.
+
+**Cause.** The harness, not production. `User.on_update`
+(`frappe/core/doctype/user/user.py:330`) computes
+`now = frappe.in_test or frappe.flags.in_install` and enqueues `create_contact`
+with it (`:332`). `frappe.enqueue` short-circuits on `now` at
+`background_jobs.py:162` and calls the method inline, so under the test runner
+the contact is written without a queue ever being measured. That is why every
+one of the 23 gate modules provisions users on a site at its cap.
+
+`bench execute` sets neither flag. It calls `frappe.init` and `frappe.connect`
+and nothing else (`frappe/commands/execute.py:12`), so `frappe.in_test` keeps
+its module default of `False` (`frappe/__init__.py:223`). `frappe.enqueue`
+therefore reaches `_check_queue_size` (`background_jobs.py:175`) and raises
+`QueueOverloaded` at `:748`, before it registers the `enqueue_after_commit`
+callback at `:216`. Same shape as gate runs 3 and 4: the flag holds the refusal
+back from nothing. The refusal escaped the `User` insert, the user rolled back,
+and prepare died.
+
+Gate run 4's audit recorded this enqueue as "safe: `now=frappe.in_test`
+short-circuits before the depth check". That reading was correct for the setup
+of the 23 modules, which is all it looked at. It is wrong for the one entry
+point that runs outside the test runner.
+
+**Fix.** `litmus_setup.inline_user_jobs` sets `frappe.flags.in_install` for the
+`User` insert statement alone and puts back what the flag held, in a `finally`,
+so a raising insert restores it too. Inside the block the controller takes the
+branch the test runner takes: `create_contact` runs inline and no queue is
+measured.
+
+No Frappe file is touched and no enqueue failure is swallowed. The rest of
+`prepare` runs on the site's own flags, so the Personal Root, the node tree, the
+grants, the password and the per-user opt-in are written the way production
+writes them, and the compliance run measures the real DAV surface.
+
+**Why a flag here and a `try`/`except` in gate runs 3 and 4.** Those two were
+production paths, where the caller's write had to survive a refused queue and
+the queued work is a courtesy: §9.2 repairs a missed preview, and §9.5 promises
+no delivery for a share notice. This one is a test harness, and the fix must not
+change what production does. A harness may take the branch the test runner
+already takes. It may not teach production to ignore a refusal. Setting
+`frappe.in_test` instead would reach far past this one insert, and swallowing
+the enqueue would leave the user with no `Contact` and no sweep to repair it.
+
+**The flag's one effect on the rows prepare writes** is
+`DrivePermission.after_insert` (`drive_permission.py:15`), which skips the share
+notice for the home folder `get_user_folder` grants. The grantee is the
+throwaway CI user itself. It is the only `in_install` branch anywhere under
+`suite/`.
+
+**The flag's one effect outside this process, found by the audit and fixed.**
+`frappe.get_meta` caches every `Meta` it builds into `frappe.client_cache`
+(`frappe/model/meta.py:84-91`), which is redis-backed and shared with the web
+workers, and `Meta.set_custom_permissions` returns early under `in_install`
+(`meta.py:650`). A doctype first met inside the block would have been published
+to the served site with its `Custom DocPerm` rows missing, and litmus would have
+run against it. The block therefore drops the cached metas in the same `finally`
+that restores the flag. They rebuild on first use with the site's own
+permissions.
+
+`slides.localhost` holds no `Custom DocPerm` row, so on this site the eviction
+changes nothing. It is a property of the flag, not of one site, and the harness
+is checked in for every site that runs the gate.
+
+**Audit of prepare and teardown.** An agent traced every call that can produce a
+background job or measure the queue, on both call graphs, under `bench execute`.
+
+| Site | Reached | State |
+|---|---|---|
+| `frappe` `user.py:332` (`create_contact`) | yes, the `User` insert | unguarded, now inline under the flag |
+| `drive_permission.py:31` (`notify_share`) | yes, via `get_user_folder` | guarded in gate run 4, and skipped under the flag |
+| `frappe` `webhook/__init__.py:113` (`enqueue_webhook`) | only if a `Webhook` doc matches; the site has 0 rows | `now=frappe.in_test`, fires from `db.after_commit`, unguarded |
+| `frappe` `share.py:289` (`make_notification_logs`) | no, `notify_assignment` returns at `share.py:267` | n/a |
+| `utils/files.py:80,92` (`upload_thumbnail`) | no, `upload_file` only, and `get_user_folder` calls `create_folder` | safe anyway: passes `now=True` |
+| `_core/previews.py:105` (`render`) | no, the file paths only | guarded in gate run 3 |
+| `api/files.py:380` (`build_download_archive`) | no, API only | out of scope |
+| `api/notifications.py:125` (`sendmail`) | no, inside the `notify_share` job | out of scope |
+| `frappe` `user.py:591` (`send_login_mail`) | no, `send_welcome_email: 0` skips it | n/a |
+
+`update_password`, `provision_personal_root`, `enable_user_webdav`,
+`frappe.db.set_single_value` and `clear_document_cache` reach no queue.
+`suite/hooks.py:326` registers one `before_insert`, one `after_insert` and four
+`on_update` handlers for `User`; none enqueues, and the four mail handlers all
+return at their first `doc.flags.in_insert` check. `Contact` and
+`frappe/utils/password.py` contain no `frappe.enqueue` and no `frappe.sendmail`.
+
+Ordering note: the guarded `Drive Permission` enqueue runs in `after_insert`
+(`document.py:756`), before `on_update` (`:764`). On a full queue it is logged
+and swallowed first, and `create_contact` is what actually aborted the insert.
+
+The webhook row is the one conditional site left. It fires from
+`frappe.db.after_commit`, so `prepare`'s own commit would carry it, and
+`enable_user_webdav` writes outside the flag block. `frappe.db.count("Webhook")`
+on `slides.localhost` is 0, so nothing registers a callback and nothing is
+queued. It is recorded, not guarded: guarding a framework hook the site does not
+use would be production surface this ticket has no reason to add.
+
+`teardown` needs no flag and got none. `drop_personal_root` is `db.delete` only
+(`tests/fixtures.py:11`), and `provision_personal_root` writes a `Drive Root`
+and one folder node, whose controllers have `validate` and `before_insert` only.
+Only the file paths call `previews.enqueue_render`. Teardown therefore behaves
+the same on a full queue as on an empty one, which is what the `EXIT` trap in
+`run_litmus.sh` depends on.
+
+**Coverage.** Seven site-free cases in
+`suite.drive.tests.test_webdav.TestLitmusHarness`, each red under a mutation of
+the line it covers.
+
+- `test_the_block_makes_the_user_controller_run_its_job_inline` — with
+  `frappe.in_test` patched false, the expression `user.py:330` computes is false
+  outside the block and true inside it.
+- `test_the_flag_is_put_back_to_what_it_held` — unset, false and true are each
+  restored, not overwritten with a hard-coded false.
+- `test_the_flag_is_put_back_when_the_block_raises` — a `QueueOverloaded` out of
+  the block propagates and the flag is restored.
+- `test_prepare_inserts_the_user_inside_the_isolation` — the insert sees the
+  flag set, `provision_personal_root` does not, and `prepare` returns the DAV
+  URL.
+- `test_prepare_puts_the_flag_back_when_the_insert_raises` — a refused insert
+  propagates out of `prepare` and leaves the flag as it found it.
+- `test_the_block_drops_the_metas_it_may_have_poisoned` — nothing is evicted
+  inside the block and the metas are dropped once on the way out.
+- `test_the_metas_are_dropped_when_the_block_raises` — the eviction is in the
+  same `finally` as the restore.
+
+The class patches the real `clear_meta_cache` out, so no unit case writes the
+shared redis cache.
+
+**Rerun.** No module needs rerunning. The 23-module gate and the two regression
+suites are green, and these two commits change no production file. Serve the
+site and run litmus:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`prepare` returns `http://slides.localhost:8010/dav/`: both
+`sites/common_site_config.json` and the site config carry `webserver_port` 8010.
+All five groups (http, basic, copymove, props, locks) must be attempted. Ledger
+what really fails; add nothing on expectation.
+
+No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. `site_config.json` and
+`common_site_config.json` were read and not written. `Drive Disk Settings`, the
+`Custom DocPerm` table and the job queue were read and not written. The 550
+queued jobs were left where they were, and `litmus@example.com` still does not
+exist on the site.
+
+**Recorded, not fixed.** `run_litmus.sh`'s `EXIT` trap runs `bench ... teardown`
+and `rm -f "$OUTPUT"` as one `;`-joined command under `set -e`, so a teardown
+that fails skips the temp-file removal. Teardown cannot fail on queue depth any
+more, and the file is one `mktemp` in `/tmp`.
+
+**Checks run.** Site-free, in the worktree, plus three read-only `SELECT`s
+against the site. No `bench`, `migrate`, `install`, `restart`, `serve`, litmus,
+queue deletion, `push`, or PR. No external Redis state was touched and nothing
+was written to the database.
+
+```
+$ python3 -m compileall -q <the two changed files>
+COMPILED
+$ uvx ruff@0.12.3 check <the two changed files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the two changed files>
+2 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional \
+    suite.drive.webdav.tests.test_ifheader suite.drive.webdav.tests.test_xmlutil
+Ran 135 tests in 1.226s
+OK
+
+$ ... TestLitmusHarness against `git show fc7cde2b7~1:...litmus_setup.py`
+Ran 5 tests -- FAILED (failures=1, errors=5)
+$ ... with the `finally` mutated away
+Ran 5 tests -- FAILED (failures=2)
+$ ... with `previous` mutated to a hard-coded false
+Ran 5 tests -- FAILED (failures=2)
+$ ... with `clear_meta_cache()` mutated away
+Ran 7 tests -- FAILED (failures=2)
+$ ... at HEAD
+Ran 7 tests -- OK
+
+$ ... frappe.init, no connect: frappe.enqueue with user.py:332's own arguments,
+  _check_queue_size patched to raise as a full queue does
+bench execute, flag unset : now = None -> QueueOverloaded
+bench execute, inside block: now = True -> no raise, frappe.call ran inline
+flag after block: None
+
+$ ... read-only against slides.localhost
+Webhook rows: 0
+Custom DocPerm rows: 0
+litmus user exists: False
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+litmus itself is still unrun. It needs the served site.
+
+| Commit | Change |
+|---|---|
+| `fc7cde2b7` | let the litmus harness provision its user on a full queue |
+| `58bc9e7f0` | stop the litmus flag publishing a meta with no custom permissions |
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
