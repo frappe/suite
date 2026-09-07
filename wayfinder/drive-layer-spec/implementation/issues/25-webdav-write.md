@@ -281,9 +281,11 @@ ticket 24 installed is untouched.
 - **litmus has never been run on this branch.** Every method it needs is now on
   the wire and the ledger says so, but no entry was added on expectation. The
   ledger may only grow from a real run.
-- `_core.nodes.create_file` enqueues a preview render. This bench has no RQ
+- ~~`_core.nodes.create_file` enqueues a preview render. This bench has no RQ
   worker and its short queue saturates, so the write suites may raise
-  `QueueOverloaded` in `setUp` rather than fail on a DAV assertion.
+  `QueueOverloaded` in `setUp` rather than fail on a DAV assertion.~~ Happened
+  on gate run 3. It was a production defect, and it is fixed. See
+  [Gate run 3](#gate-run-3-a-full-job-queue-discarded-the-upload).
 - Real title collation in `pathmap._child` needs MariaDB and is untested.
 - The 413-vs-507 split is new behaviour for any site that had
   `drive_webdav_max_upload_size` set. A client that had learned to treat the
@@ -672,6 +674,127 @@ OK
 $ ... collection across every module in suite/drive/webdav/tests
 TOTAL 303, ERRORS []
 ```
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 3: a full job queue discarded the upload
+
+Module 8 (`suite.drive.webdav.tests.test_locks`) passed its 4 unit cases and
+errored all 39 integration cases in `setUp`. The trace named `PermissionError`
+raised while Frappe built the `QueueOverloaded` message, so it read as an
+access fault rather than a queue depth.
+
+**Cause.** Production, not the test. `previews.enqueue_render` is the last
+statement inside the savepoint in `_core.nodes.create_file` (`:1126`) and
+`_core.nodes.update` (`:1271`), and both savepoints re-raise. `frappe.enqueue`
+measures the queue depth inline in `_check_queue_size` and raises
+`QueueOverloaded` there, before it registers the post-commit callback. A site
+whose short queue is at its cap therefore refused every Drive upload and every
+replace, and rolled back bytes the caller had already stored and already paid
+quota for, to save a thumbnail. `_core.versions.restore_version` (`:307`) and
+`previews.sweep_missing`'s own loop (`:233`) had the same exposure through the
+same entry point.
+
+The bench queue is at its 550 cap because it runs no RQ worker and every test
+run leaves its jobs behind. That is the environment. The refusal reaching the
+caller is the defect.
+
+**Fix.** Queuing is best-effort. §9.2 already names the daily gap sweep as the
+repair for a failed render, so a node that misses its render gets a preview
+within a day; an upload that is refused is gone. `enqueue_render` now logs the
+miss to the Error Log and returns, and the byte write stands. The guard sits in
+`enqueue_render` alone, which §9.2 names as the one render entry point, so it
+covers all four writers. The idiom is the one
+`suite/sheets/versioning/save.py:74` and `suite/drive/jobs.py:20` already use.
+
+Nothing else changed. `render`, `push_preview`, `sweep_missing`, the enqueue
+arguments, and the `Drive Node Preview` schema are untouched, so ticket 13's
+contract still holds and its `test_enqueue_uses_the_post_commit_short_queue`
+still passes unchanged.
+
+**Fixtures.** `webdav/tests/utils.file_node` builds every fixture file through
+`create_file`. The DAV suites arrange about 140 files in `setUp` alone and
+commit, so each run left that many `previews.render` jobs on the site's short
+queue: a suite changing the site it measures, and the reason the cap was
+reached. The fixture now suppresses the enqueue, the same way
+`test_previews._file` and the three `test_drive_adoption` suites already do. It
+still writes through `create_file`, so no row and no node field changes and no
+DAV assertion reads a different shape. A verb handler under test still enqueues
+for real.
+
+**Audit.** An agent inventoried every shared Drive test helper that creates a
+file node and every `frappe.enqueue` site under `suite/`.
+
+| Creator | Reaches `create_file` | Suppressed before |
+|---|---|---|
+| `webdav/tests/utils.py:file_node` | yes | no, now yes |
+| `webdav/tests/utils.py:raw_child_node` | no, raw insert | n/a |
+| `drive/tests/fixtures.py` | no creators, drops only | n/a |
+| `suite/tests/utils.py:ensure_user` | root only | n/a |
+| `slides/tests/utils.py:make_private_image` | no Drive Node | n/a |
+
+Per-suite creators with the same shape, all now covered by the production fix
+and left as they are: `drive/tests/test_nodes.py:_file`,
+`test_versions.py:_file`, 21 `create_file` sites in `test_upload.py`,
+`api/tests/test_files.py:make_file`, `api/tests/test_list.py:make_file`,
+`http/tests/test_dispatch.py:make_file`. Already suppressed:
+`test_previews.py:_file`, `test_content.py:_media`, and the Writer, Slides, and
+Sheets adoption suites. No test module anywhere deletes a queued job; cleanup
+is DB rows only.
+
+Of the ~30 `frappe.enqueue` sites under `suite/`, none was guarded and no
+`QueueOverloaded` reference existed. Only Drive's render entry point is guarded
+here; the rest are outside this ticket.
+
+| Commit | Change |
+|---|---|
+| `d2e0cab50` | let a full job queue cost the preview, not the upload |
+| `8f4639861` | stop the DAV file fixture queuing a render per case |
+
+**Coverage.** Three cases, each failing under a mutation of the line it covers.
+
+- `test_previews.TestPreviewContract.test_a_refused_queue_is_logged_and_not_raised`
+  — a `QueueOverloaded` from `frappe.enqueue` is logged, not raised.
+- `test_previews.TestPreviews.test_a_refused_queue_still_stores_the_file_and_its_bytes`
+  — `create_file` still writes the node and its head blob when the queue
+  refuses.
+- `test_webdav.TestDavFixtureQueueHygiene.test_the_file_fixture_builds_its_node_without_queuing_a_render`
+  — the DAV fixture reaches no queue, and the suppression does not outlive it.
+
+**Rerun.** `suite.drive.webdav.tests.test_locks`, then modules 9 to 23 in
+order. Modules 17 to 23 now also carry the preview guard, so the regression
+half of the gate covers it. Module 4 (`test_properties`) still carries gate run
+2's new case. Add `suite.drive.tests.test_previews` after module 23: it owns
+the changed function and its 27 cases are the ticket 13 contract. No migrate:
+no DocType JSON, patch, hook, or fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, queue deletion, `push`, or PR. No external Redis state was touched.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check <the four changed files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the four changed files>
+4 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+Ran 100 tests in 1.356s
+OK
+
+$ ... TestPreviewContract, the two enqueue cases
+Ran 2 tests in 0.004s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+The 39 `test_locks` integration cases are still unrun. Site-free checks cannot
+run them.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
