@@ -297,7 +297,7 @@
 										:selection-mode="mobileSelectionMode"
 										:is-selected="selections.includes(row.thread.thread_id)"
 										:hide-sender="row.inStack"
-										:draggable="!isMobile"
+										:draggable="!isMobile && !isAllAccountsSearch"
 										:class="rowClasses(row)"
 										:data-row-key="row.key"
 										@drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
@@ -1461,6 +1461,13 @@ onUnmounted(() => threadDrag.setMoveHandler(null))
  * leaves the selection untouched — the same reading every file manager gives
  * the gesture, and the alternative (always the selection) silently moves mail
  * the reader never pointed at.
+ *
+ * Rows are undraggable in an all-accounts search, alongside `selectable`, and
+ * for the same reason: the move below runs against the active account, while
+ * those rows can belong to any. There is no cross-account handler to route to
+ * either — the ones above work by reading a role off the row's own account
+ * (`mail.archive`, `mail.trash`), and the folder being dropped on is one of
+ * *this* account's, which another account has no counterpart for.
  */
 const startThreadDrag = (thread: Thread, e: DragEvent) => {
 	const id = thread.thread_id
