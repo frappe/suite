@@ -235,7 +235,7 @@ def threads(
         "Drive Comment Thread",
         filters=filters,
         fields=["name", "node", "anchor", "resolved", "resolved_by", "resolved_at", "creation"],
-        order_by="creation asc",
+        order_by="creation asc, name asc",
     )
     by_thread = {row.name: row for row in rows}
     for row in rows:
@@ -257,7 +257,7 @@ def threads(
             "creation",
             "modified",
         ],
-        order_by="creation asc",
+        order_by="creation asc, idx asc, name asc",
     )
     for comment in comments:
         comment.mentions = _json_value(comment.mentions, [])
