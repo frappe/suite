@@ -11,6 +11,7 @@ from suite.drive.patches.build.layout import (
     needs_multipart_copy,
     object_key,
 )
+from suite.drive.patches.build.tests.fakes import S3_COPY_OBJECT_MAX_BYTES
 
 SHA = "0123456789abcdef" * 4
 
@@ -49,6 +50,13 @@ class TestCanonicalLayout(unittest.TestCase):
 class TestMultipartThreshold(unittest.TestCase):
     def test_the_threshold_is_the_s3_copy_object_ceiling(self):
         self.assertEqual(MULTIPART_COPY_THRESHOLD, 5 * 1024**3)
+
+    def test_the_threshold_is_what_the_fake_bucket_refuses(self):
+        # The other boundary tests express themselves in terms of the
+        # constant, so they move with it. This is the one assertion that
+        # would fail if the threshold became a decimal 5 GB, and the fake's
+        # own literal is the independent side of it.
+        self.assertEqual(MULTIPART_COPY_THRESHOLD, S3_COPY_OBJECT_MAX_BYTES)
 
     def test_only_above_the_threshold(self):
         self.assertFalse(needs_multipart_copy(0))
