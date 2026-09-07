@@ -1,5 +1,6 @@
 """Drive-root quota calculation and atomic byte admission."""
 
+import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from uuid import uuid4
@@ -24,6 +25,28 @@ WHERE name = %(root)s
 """
 
 
+# `Drive Disk Settings` is a Single, so every field is stored in `tabSingles.value`,
+# a longtext column. Frappe casts a Single's `Int` and `Check` fields back to numbers
+# but not its `Long Int` fields, so the byte quotas arrive as text.
+_INTEGER_TEXT = re.compile(r"[+-]?[0-9]+\Z")
+
+
+def site_quota_bytes(value, label: str) -> int:
+    """Read a byte quota that a Single stores as text. Zero is unlimited.
+
+    A plain integer string is accepted. Anything else is refused, so a malformed
+    site setting never reads as an unlimited quota.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0
+        if not _INTEGER_TEXT.match(text):
+            frappe.throw(_("{0} must be a nonnegative integer").format(label), frappe.ValidationError)
+        value = int(text)
+    return _nonnegative_bytes(value or 0, label)
+
+
 def effective_quota(root: Mapping) -> int:
     """Return the root override or its current site default. Zero is unlimited."""
     kind = root.get("kind")
@@ -35,7 +58,7 @@ def effective_quota(root: Mapping) -> int:
 
     settings = frappe.get_cached_doc("Drive Disk Settings")
     field = "shared_quota" if kind == "Shared" else "default_personal_quota"
-    return _nonnegative_bytes(settings.get(field) or 0, _("Drive site quota"))
+    return site_quota_bytes(settings.get(field), _("Drive site quota"))
 
 
 def root_for_node(node: Mapping, *, for_update: bool = False) -> frappe._dict:

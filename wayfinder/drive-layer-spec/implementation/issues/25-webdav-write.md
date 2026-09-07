@@ -345,6 +345,78 @@ Ledger what really fails; add nothing on expectation.
 
 This ticket stays open until that gate runs.
 
+### Gate run 1: the site quota defaults were text
+
+`bench --site slides.localhost migrate` succeeded. Module 1
+(`suite.drive.tests.test_webdav`) passed 92. Module 2
+(`suite.drive.webdav.tests.test_pathmap`) errored in `setUpClass`, creating a
+six-byte file: `Drive site quota must be a nonnegative integer`.
+
+**Cause.** `Drive Disk Settings` is a Single, so every field lives in
+`tabSingles.value`, a longtext column. Frappe casts a Single's `Int` and
+`Check` fields back to numbers on load, but not its `Long Int` fields:
+`cast_fieldtype` has no `Long Int` branch and neither does
+`BaseDocument._fix_numeric_types`. `default_personal_quota` and `shared_quota`
+are `Long Int`, so `effective_quota` read the installed default `0` as the
+string `"0"` and `_nonnegative_bytes` refused it. The root's own
+`quota_bytes` is `Long Int` on an ordinary table, where SQL returns an int, so
+the override path was never affected.
+
+The schema is right — `Int` is 32-bit and caps a quota at 2.1 GB — and the
+fixtures are innocent: no suite writes these fields, so the value refused was
+the one the install wrote. The fault was in production normalization, which
+assumed a representation the framework does not deliver.
+
+**Fix.** `_core.quota.site_quota_bytes` reads a byte quota that a Single stores
+as text. A plain integer string is accepted; `"5GB"`, `"1.5"`, `"0x10"`,
+`"1_000"`, a float, a bool and a negative are all still refused, so a malformed
+site setting never reads as unlimited. An unset field is still 0, and 0 still
+means unlimited. `_nonnegative_bytes` is unchanged: a string reaching `admit`,
+`preflight` or a reservation is a caller bug and stays refused.
+
+**Audit.** `Drive Disk Settings` is the only Single in the app with a `Long Int`
+field. `preview_size` and `quota` are `Int`, which Frappe does cast.
+`drive_webdav_max_upload_size` is site config read through `cint`. The doctype's
+own `_validate_drive_quotas` had the same assumption, so
+`frappe.get_doc("Drive Disk Settings").save()` threw on a reloaded doc; it now
+normalizes through the same helper and stores the integer. The auto-generated
+type block claimed `DF.Int` for both quotas and now says `DF.LongInt`.
+
+| Commit | Change |
+|---|---|
+| `<pending>` | read the site quota defaults a Single stores as text |
+
+**Rerun.** `suite.drive.webdav.tests.test_pathmap`, then modules 3 to 23 in
+order. No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Coverage.** `suite.drive.tests.test_quota` gains 4 unit cases and a
+`TestSiteDefaultQuota` integration class of 4. Module 19 of the gate now proves
+the stored form end to end: a zero default admits bytes, a real default still
+bounds a root with no override, a malformed default refuses the write, and
+saving the settings normalizes both quotas.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED OK
+
+$ uvx ruff@0.12.3 check --select=I <the three changed files>   -> All checks passed!
+$ uvx ruff@0.12.3 check <the three changed files>              -> All checks passed!
+$ uvx ruff@0.12.3 format --check <the three changed files>     -> 3 files already formatted
+
+$ site-free: test_webdav, test_architecture, test_conditional, test_ifheader,
+  test_xmlutil, test_quota.TestQuotaContract
+Ran 142 tests -- OK
+
+$ the two new unit cases against the pre-fix quota.py -> 2 errors (red)
+$ collection across every module in suite/drive/webdav/tests -> TOTAL 302, ERRORS []
+```
+
+Ticket 29 stays dormant: `git log bc461122a..HEAD --name-only -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` still returns nothing.
+
 ## Independent review
 
 An independent reviewer read the ticket, §12, RFC 4918, and the whole diff
