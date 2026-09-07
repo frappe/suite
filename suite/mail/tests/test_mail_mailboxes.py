@@ -12,6 +12,7 @@ from suite.mail.api.mail import (
     move_mails,
     update_mailbox,
 )
+from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes, fetch_mailboxes
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -104,6 +105,34 @@ class TestMailMailboxes(StalwartIntegrationTestCase):
             update_mailbox_position(self.account, first_id, prior_mailbox_id=second_id)
         self.assertIsNotNone(self._mailbox_by_name(first))
         self.assertIsNotNone(self._mailbox_by_name(second))
+
+    def test_listing_holds_more_than_a_page_of_mailboxes(self):
+        """Every folder reaches the client, however many the account has.
+
+        Mailbox is a virtual doctype, so a list query is served by Mailbox.get_list, where frappe
+        fixes the page length at twenty however loudly the caller asks for everything. An account
+        with more folders than that used to lose the ones sorting last, silently.
+        """
+
+        # Two past the page whatever the account already holds, so the tail is always the part
+        # a page would cut.
+        existing = self._mailboxes()
+        names = [unique_name("page") for _ in range(max(2, 22 - len(existing)))]
+
+        ids = []
+        with self.set_user(self.member.email):
+            for name in names:
+                ids.append(add_mailbox(self.account, name))
+
+            try:
+                listed = self._mailboxes()
+                self.assertGreater(len(listed), 20)
+                self.assertLessEqual(set(names), {m["_name"] for m in listed})
+
+                # A caller that does ask for a page still gets one.
+                self.assertEqual(len(fetch_mailboxes(self.account, limit=20)), 20)
+            finally:
+                delete_mailboxes(self.account, ids)
 
     def test_empty_trash(self):
         thread = self.deliver_mail(self.other, self.member)

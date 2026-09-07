@@ -57,7 +57,9 @@ def get_account_mailboxes(
         return []
 
     result = []
-    if mailboxes := fetch_mailboxes(account):
+    # The whole list rather than fetch_mailboxes' first page: a parent picker that only offers
+    # the folders sorting first is one you cannot reach the rest of the account with.
+    if mailboxes := fetch_mailboxes(account, limit=None):
         for mailbox in mailboxes:
             if txt and txt.lower() not in mailbox["name"].lower():
                 continue

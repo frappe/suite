@@ -182,7 +182,7 @@ def get_user_mailboxes(account: str) -> list[dict]:
     named folders).
     """
 
-    return fetch_mailboxes(account)
+    return fetch_mailboxes(account, limit=None)
 
 
 def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool = False) -> list[dict]:
