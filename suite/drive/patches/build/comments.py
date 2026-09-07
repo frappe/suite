@@ -51,6 +51,7 @@ def convert_document_comments(env, document, node: str, *, batch_size: int) -> i
         plans = _writer_threads(env, document, node)
     else:
         plans = _sheet_threads(env, document, node)
+    _refuse_colliding_ids(plans)
     count = 0
     for thread, comments in plans:
         count += len(comments)
@@ -101,8 +102,10 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
         if any(not entry.get("id") for entry in entries):
             raise InvalidLegacyContent("Writer comment or reply has no id")
         ids = [entry["id"] for entry in entries]
-        if len(ids) != len(set(ids)) or any(len(name) > 140 for name in ids):
-            raise InvalidLegacyContent("Writer comment ids are duplicate or too long")
+        if any(not isinstance(name, str) or not name or len(name) > 140 for name in ids):
+            raise InvalidLegacyContent("Writer comment ids are missing or too long")
+        if len(ids) != len(set(ids)):
+            raise InvalidLegacyContent("Writer comment ids are duplicate")
         plans.append(_thread_plan(node, key, bool(value.get("resolved")), normalized, fallback))
     return plans
 
@@ -280,6 +283,16 @@ def _write_thread(env, planned, comments, batch_size):
     for offset in range(0, len(fresh), batch_size):
         target.insert_comments(fresh[offset : offset + batch_size])
         target.commit()
+
+
+def _refuse_colliding_ids(plans) -> None:
+    """Refuse a colliding id set before the first thread of the document commits."""
+    thread_names = [thread["name"] for thread, _comments in plans]
+    comment_names = [row["name"] for _thread, rows in plans for row in rows]
+    if len(thread_names) != len(set(thread_names)):
+        raise InvalidLegacyContent("comment thread ids collide")
+    if len(comment_names) != len(set(comment_names)):
+        raise InvalidLegacyContent("comment ids collide")
 
 
 def _container_fallback(document) -> tuple[str, str]:
