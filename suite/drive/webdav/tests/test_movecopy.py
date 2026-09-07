@@ -250,6 +250,18 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         response = self._move(self._path("sub"), self._path("moved"), Depth="infinity")
         self.assertEqual(response.status_code, 201)
 
+    def test_depth_on_a_file_move_is_meaningless_and_stays_legal(self):
+        """§9.9.3 is written for collections: "A client MUST NOT submit a Depth
+        header on a MOVE on a collection with any value but 'infinity'."
+
+        An ordinary file has no members, so the header says nothing about the
+        request and refusing it breaks a move a client is entitled to make.
+        DELETE already scopes the same rule this way (§9.6.1).
+        """
+        response = self._move(self._path("b.txt"), self._path("depth0.txt"), Depth="0")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(self._resolve(f"{self.base_name}/depth0.txt").exists)
+
     def test_an_unreadable_destination_parent_answers_like_an_absent_one(self):
         """§12.1 and RFC 4918 §9.9.4: 409 for both, or the pair is an oracle.
 

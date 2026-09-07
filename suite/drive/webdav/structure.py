@@ -105,13 +105,6 @@ def handle_delete(ctx: DavContext) -> Response:
 
 
 def handle_move(ctx: DavContext) -> Response:
-    # RFC 4918 §9.9.3: a MOVE carries Depth infinity and nothing else. A client
-    # sending `Depth: 0` on a collection means "move the collection alone",
-    # which this verb cannot do, so answering it with a whole-subtree move
-    # would silently do something other than what was asked.
-    if ctx.depth is not None and ctx.depth != "infinity":
-        raise BadRequest("MOVE accepts Depth infinity only.")
-
     source = pathmap.resolve(ctx.segments, ctx.user)
     if source.is_mount:
         raise Forbidden("Cannot move the WebDAV namespace root.")
@@ -120,6 +113,14 @@ def handle_move(ctx: DavContext) -> Response:
 
     row = source.node
     require(row, EDIT, ctx.principals)
+    # RFC 4918 §9.9.3 is written for collections: "A client MUST NOT submit a
+    # Depth header on a MOVE on a collection with any value but 'infinity'."
+    # A client sending `Depth: 0` on a collection means "move the collection
+    # alone", which this verb cannot do, so a whole-subtree move would silently
+    # do something other than what was asked. On an ordinary file Depth means
+    # nothing and the header stays legal, exactly as it does on DELETE.
+    if source.is_collection and ctx.depth is not None and ctx.depth != "infinity":
+        raise BadRequest("MOVE on a collection accepts Depth infinity only.")
 
     destination, dest_parent, dest_name = resolve_destination(ctx, source)
     evaluate_preconditions(ctx.request, row)
