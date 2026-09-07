@@ -136,7 +136,9 @@ class TestBuildStoragePreparation(IntegrationTestCase):
     def environment(self, legacy_s3):
         return BuildEnvironment(
             storage=ScopedStorage(self.prefix),
-            files=SiteFiles(S3_URL_PREFIX),
+            # Narrowed to this test's own rows, the way `ScopedStorage`
+            # narrows the backfill: the residue pass reads the whole table.
+            files=SiteFiles(S3_URL_PREFIX, [["name", "like", self.prefix + "%"]]),
             state=self.state,
             legacy_s3=legacy_s3,
             open_bucket=lambda: self.bucket,
@@ -184,11 +186,11 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertEqual(list(reported), [missing])
         self.assertIn("cannot read", reported[missing])
 
-    def test_a_row_that_never_named_local_bytes_is_not_a_missing_byte(self):
-        # The backfill skips these too, but a Link node's url never named
-        # bytes and an S3 fetch url is step 3's job (§14.4, §14.2 step 3).
+    def test_a_row_that_never_named_bytes_is_not_a_missing_byte(self):
+        # A Link node's url is an external address and never named bytes
+        # (§14.4); an asset url names a shipped file, not stored bytes.
         self.insert_row("https://example.test/page", "a link")
-        self.insert_row(get_s3_url("team/elsewhere"), "elsewhere.bin")
+        self.insert_row("/assets/suite/logo.png", "logo.png")
 
         prep = self.prepare_local()
 
@@ -202,8 +204,10 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         second = self.prepare_local()
 
         self.assertEqual(first.backfill_linked, 1)
-        self.assertEqual(second.backfill_linked, 0)
-        self.assertEqual(second.backfill_blobs_created, 0)
+        # Cumulative: the backfill skips linked rows, so a rerun links
+        # nothing and must not report the first run's work as zero.
+        self.assertEqual(second.backfill_linked, 1)
+        self.assertEqual(second.backfill_blobs_created, first.backfill_blobs_created)
         self.assertEqual(frappe.db.count("File Blob", {"key": ("like", f"../{self.prefix}%")}), blobs)
 
     # the legacy S3 copy
@@ -239,15 +243,12 @@ class TestBuildStoragePreparation(IntegrationTestCase):
     def test_a_rerun_reads_and_copies_nothing(self):
         content = b"resume me"
         key = f"{self.prefix}/team/resume.bin"
-        self.s3_file(key, content)
+        name = self.s3_file(key, content)
         self.prepare_s3()
-        blob_names = set(
-            frappe.get_all("File Blob", {"checksum": hashlib.sha256(content).hexdigest()}, pluck="name")
-        )
-        for blob in blob_names:
-            self.addCleanup(
-                frappe.delete_doc, "File Blob", blob, force=1, ignore_permissions=True, ignore_missing=True
-            )
+        # Named through this test's own File row. Selecting File Blob by
+        # checksum could match a row the test did not create, and `force=1`
+        # skips the link checks.
+        self.drop_blob_later(self.row(name).blob)
         self.bucket.opened.clear()
         self.bucket.copies.clear()
 
@@ -262,6 +263,29 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         prep = self.prepare_s3()
 
         self.assertIsNone(self.row(name).blob)
+        self.assertIn(name, {row.file for row in prep.missing_bytes})
+
+    def test_a_row_build_cannot_reach_is_recorded_against_the_real_table(self):
+        # A bare bucket key: what a half-finished upload leaves behind. It
+        # matches neither the backfill's local prefixes nor the fetch prefix,
+        # so only the residue pass can see it.
+        bare = self.insert_row(f"/{self.prefix}/team/orphan.bin", "orphan.bin")
+        link = self.insert_row("https://example.test/page", "a link")
+        frappe.db.set_value("File", link, "file_type", "Link", update_modified=False)
+
+        prep = self.prepare_s3()
+
+        reported = {row.file: row.reason for row in prep.missing_bytes}
+        self.assertIn(bare, reported)
+        self.assertIn("cannot reach", reported[bare])
+        self.assertNotIn(link, reported)
+        self.assertIsNone(self.row(bare).blob)
+
+    def test_a_fetch_url_with_s3_off_is_recorded_not_silently_skipped(self):
+        name = self.insert_row(get_s3_url(f"{self.prefix}/team/stranded.bin"), "stranded.bin")
+
+        prep = self.prepare_local()
+
         self.assertIn(name, {row.file for row in prep.missing_bytes})
 
     # where the record lives
