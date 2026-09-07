@@ -33,6 +33,7 @@ from suite.drive.webdav.errors import (
     InsufficientStorage,
     MethodNotAllowed,
     NotFoundError,
+    PayloadTooLarge,
     PreconditionFailed,
 )
 from suite.drive.webdav.properties import compute_etag, to_site_naive
@@ -49,6 +50,7 @@ from suite.drive.webdav.tests.utils import (
     personal_dav_root,
     raw_child_node,
     raw_document_node,
+    reset_dav_request,
 )
 
 OWNER = "webdav-content-owner@example.com"
@@ -115,6 +117,7 @@ class TestWebDAVContent(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        reset_dav_request()
         super().tearDown()
 
     def _get(self, path: str, user: str = OWNER, method: str = "GET", headers: dict | None = None):
@@ -336,6 +339,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        reset_dav_request()
         drop_nodes(nodes_in_root(self.root) - self.before | {self.base})
         frappe.db.commit()
         super().tearDown()
@@ -392,7 +396,10 @@ class TestWebDAVPut(IntegrationTestCase):
         self.addCleanup(frappe.db.set_value, "Drive Root", self.root, "quota_bytes", 0, update_modified=False)
 
     def _set_site_quota(self, quota_bytes: int) -> None:
-        previous = frappe.db.get_single_value("Drive Disk Settings", "default_personal_quota")
+        # `or 0`: the Single reads NULL on a site that never set it, and
+        # restoring None would leave the column holding NULL rather than the 0
+        # it started with
+        previous = frappe.db.get_single_value("Drive Disk Settings", "default_personal_quota") or 0
         self.addCleanup(self._write_site_quota, previous)
         self._write_site_quota(quota_bytes)
 
@@ -542,23 +549,29 @@ class TestWebDAVPut(IntegrationTestCase):
         rather than depending on what the site happens to hold.
         """
         self._set_site_quota(0)
+        # and no site body cap: `drive_webdav_max_upload_size` is the other
+        # bound, and a site that sets it would refuse this body for a reason
+        # the case is not about
+        self._set_conf("drive_webdav_max_upload_size", 0)
         self.assertEqual(int(quota_core.get_storage_usage(self.root).effective_quota), 0)
         response = self._put_without_length(self._url("free.bin"), b"z" * 5000)
         self.assertEqual(response.status_code, 201)
 
-    def test_the_site_cap_bounds_a_declared_body(self):
+    def test_the_site_cap_bounds_a_declared_body_and_answers_413(self):
         """`drive_webdav_max_upload_size` is the site's own absolute ceiling.
 
-        It is documented on the settings table in webdav/README.md and it is
-        the lower of the two bounds that wins, so it must refuse a body the
-        quota alone would have let through.
+        It is documented on the settings table in webdav/README.md, and it must
+        refuse a body the quota alone would have let through. The status is
+        413, not 507: RFC 7231 §6.5.11 is the server's own body limit, and
+        rclone abandons a whole sync on 507 while it skips one file on 413.
         """
         self._set_site_quota(0)
         self._set_conf("drive_webdav_max_upload_size", 512)
         blobs_before = frappe.db.count("File Blob")
 
-        with self.assertRaises(InsufficientStorage):
+        with self.assertRaises(PayloadTooLarge) as caught:
             self._put(self._url("capped.bin"), b"z" * 4096)
+        self.assertEqual(caught.exception.status, 413)
 
         self.assertIsNone(self._resolve(f"{self.base_name}/capped.bin").node)
         self.assertEqual(frappe.db.count("File Blob"), blobs_before)
@@ -573,13 +586,41 @@ class TestWebDAVPut(IntegrationTestCase):
         self._set_conf("drive_webdav_max_upload_size", 512)
         self.assertEqual(int(quota_core.get_storage_usage(self.root).effective_quota), 0)
 
-        with self.assertRaises(InsufficientStorage):
+        with self.assertRaises(PayloadTooLarge):
             self._put_without_length(self._url("capped-chunked.bin"), b"z" * 4096)
 
         self.assertIsNone(self._resolve(f"{self.base_name}/capped-chunked.bin").node)
 
         response = self._put_without_length(self._url("under-cap.bin"), b"z" * 100)
         self.assertEqual(response.status_code, 201)
+
+    def test_an_exhausted_quota_still_answers_507_beside_the_cap(self):
+        """The two bounds keep their own statuses; the cap does not swallow one.
+
+        A body inside the site cap but past the root's free bytes is a storage
+        problem, and a client that reads 413 there would delete nothing and
+        retry the same file forever.
+        """
+        self._set_conf("drive_webdav_max_upload_size", 1_000_000)
+        self._set_quota(int(quota_core.get_storage_usage(self.root).used_bytes) + 32)
+
+        with self.assertRaises(InsufficientStorage) as caught:
+            self._put(self._url("over-quota.bin"), b"z" * 4096)
+        self.assertEqual(caught.exception.status, 507)
+
+    def test_an_unparsable_site_cap_is_no_cap_rather_than_a_500(self):
+        """A site that wrote "5GB" into the key must not break every PUT.
+
+        `int("5GB")` raised `ValueError` out of the ceiling read, which the
+        mapper answers 500 and logs, on every upload the site takes. A cap
+        nobody can parse is the same as no cap.
+        """
+        self._set_site_quota(0)
+        self._set_conf("drive_webdav_max_upload_size", "5GB")
+
+        response = self._put(self._url("unparsable-cap.bin"), b"z" * 100)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self._row("unparsable-cap.bin").size, 100)
 
     def test_a_replace_is_charged_the_whole_new_head(self):
         """§7.6: the old head keeps its charge as a version, so a replace adds."""
@@ -648,6 +689,23 @@ class TestWebDAVPut(IntegrationTestCase):
             self._put(self._url("secret.txt"), b"x", headers={"If-None-Match": "*"})
         with self.assertRaises(DriveNotFound):
             self._put(self._url("secret.txt"), b"x")
+
+    def test_an_unreadable_collection_is_404_and_not_a_405(self):
+        """The collection refusal is a resource-level 405, so it is an oracle.
+
+        `pathmap` resolves without asking permission. Without a read gate ahead
+        of it, PUT at a folder the caller cannot see answers "cannot PUT to a
+        collection" while a name that was never there answers 201, and the pair
+        tells a stranger which of their own folders were taken away from them.
+        """
+        folder = node_core.create_folder(node_principals(OWNER), self.base, "Vault")
+        grant(folder, "$GENERAL", NONE, node_principals(OWNER))
+
+        with self.assertRaises(DriveNotFound):
+            self._put(f"/dav/{self.base_name}/Vault", b"x")
+        # and the free name beside it still creates, so the two really would
+        # have been distinguishable
+        self.assertEqual(self._put(f"/dav/{self.base_name}/Open", b"x").status_code, 201)
 
     def test_there_is_no_mount_of_another_users_root(self):
         self._put(self._url("mine.txt"), b"mine")

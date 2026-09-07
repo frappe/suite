@@ -32,6 +32,7 @@ from suite.drive.webdav.tests.utils import (
     node_principals,
     personal_dav_root,
     raw_document_node,
+    reset_dav_request,
 )
 
 OWNER = "webdav-movecopy-owner@example.com"
@@ -81,6 +82,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        reset_dav_request()
         super().tearDown()
 
     # -- harness ---------------------------------------------------------
@@ -231,6 +233,22 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assert_refused(502, self._move, self._path("b.txt"), "http://elsewhere.example/dav/x.txt")
         self.assert_refused(403, self._move, self._path("b.txt"), "/dav/")
         self.assert_refused(403, self._move, "/dav/", self._path("x.txt"))
+
+    def test_move_accepts_depth_infinity_only(self):
+        """RFC 4918 §9.9.3: MOVE carries Depth infinity, or no Depth at all.
+
+        A client sending `Depth: 0` on a collection means "move the collection
+        without its members", which this verb cannot do. Answering it with a
+        whole-subtree move does something other than what was asked, silently.
+        `Depth: 1` is not a MOVE value at all.
+        """
+        self.assert_refused(400, self._move, self._path("sub"), self._path("moved"), Depth="0")
+        self.assert_refused(400, self._move, self._path("sub"), self._path("moved"), Depth="1")
+        self.assertEqual(node_core.stored(self.sub).parent, self.base)
+
+        # the header is optional, and the explicit value is accepted
+        response = self._move(self._path("sub"), self._path("moved"), Depth="infinity")
+        self.assertEqual(response.status_code, 201)
 
     # -- §12.1's method-role table ---------------------------------------
 

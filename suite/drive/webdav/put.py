@@ -14,7 +14,8 @@ blob reference commit or roll back together.
 Quota is preflighted from `Content-Length`, and the same number bounds the
 spool when the header is absent (§7.3), so a client can never spool far past
 what the root could ever hold. The site's `drive_webdav_max_upload_size` caps
-the body on top of that. The admission `UPDATE` itself runs inside
+the body on top of that, and answers 413 rather than 507 because it is a server
+limit and not an exhausted quota. The admission `UPDATE` itself runs inside
 `create_file` / `update`, at commit.
 
 `X-OC-Mtime` is honoured so rclone's nextcloud vendor round-trips modification
@@ -22,14 +23,16 @@ times (§8.11).
 """
 
 from datetime import UTC, datetime
+from typing import NamedTuple
 
 import frappe
+from frappe.utils import cint
 from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
 from suite.drive._core import quota as quota_core
 from suite.drive._core.access import require
-from suite.drive._core.roles import EDIT, UPLOAD
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive.webdav import pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -38,6 +41,7 @@ from suite.drive.webdav.errors import (
     Conflict,
     InsufficientStorage,
     MethodNotAllowed,
+    PayloadTooLarge,
 )
 from suite.drive.webdav.properties import to_site_naive
 from suite.drive.webdav.settings import allow_header_without
@@ -75,6 +79,11 @@ def handle(ctx: DavContext) -> Response:
         pathmap.validate_dav_name(ctx.segments[-1], parent)
         accounting_root = node_core.root_id(parent)
     else:
+        # READ before the 405. `pathmap` resolves without asking permission, so
+        # a folder the caller cannot see would otherwise announce itself
+        # through "cannot PUT to a collection" while a name that was never
+        # there answers 201. Unreadable is 404 (§12.1), collection or not.
+        require(row, READ, ctx.principals)
         if resolved.is_collection:
             raise MethodNotAllowed(_COLLECTION_REFUSAL, headers={"Allow": allow_header_without("PUT")})
         require(row, EDIT, ctx.principals)
@@ -89,14 +98,14 @@ def handle(ctx: DavContext) -> Response:
     else:
         locks.enforce(ctx, membership_parent=resolved.parent.name)
 
-    ceiling = _free_bytes(accounting_root)
+    ceilings = _ceilings(accounting_root)
     length = ctx.request.content_length
-    if ceiling is not None and length is not None and length > ceiling:
+    if length is not None:
         # §7.3's preflight: a declared overshoot is refused before a byte lands
-        raise InsufficientStorage("Upload exceeds available storage.")
+        ceilings.check(length)
 
     title = row.title if row is not None else ctx.segments[-1]
-    blob = _spool(ctx, title, ceiling)
+    blob = _spool(ctx, title, ceilings)
     content_modified = _client_mtime(ctx)
 
     if row is None:
@@ -125,35 +134,57 @@ def handle(ctx: DavContext) -> Response:
     return _response(status, blob.checksum, content_modified)
 
 
-def _free_bytes(root: str) -> int | None:
-    """The bytes this PUT may write, or None when nothing bounds it.
+class _Ceilings(NamedTuple):
+    """The two bounds on a PUT body, kept apart because they answer differently.
 
-    One number does both jobs §7.3 gives it: the `Content-Length` preflight and
-    the spool bound when no length was declared. `effective_quota` 0 is
-    unlimited (RFC 4331 §4 has the same rule for the property), and a root
-    already over its quota gets 0 rather than a negative ceiling.
+    `quota` is the bytes the root can still take, or None when it is unlimited.
+    `hard` is `drive_webdav_max_upload_size`, the site's own absolute body cap,
+    or None when the site sets none.
 
-    `drive_webdav_max_upload_size` is the site's own absolute body cap, and it
-    is the lower of the two that wins. Without it an unlimited root would leave
-    a chunked PUT with no bound at all, which is the one case where the quota
-    number cannot stop a client from spooling forever.
+    They are not one number. An exhausted quota is 507 and tells a client to
+    free space; a server body limit is 413 (RFC 7231 §6.5.11) and tells it this
+    one file is too big. rclone abandons a whole sync on 507 and skips a single
+    file on 413, so collapsing the pair would stop a backup because one file
+    was oversized.
     """
-    ceilings = []
 
+    quota: int | None
+    hard: int | None
+
+    def check(self, size: int) -> None:
+        """Refuse `size` bytes with whichever bound it broke, hard cap first."""
+        if self.hard is not None and size > self.hard:
+            raise PayloadTooLarge("Upload exceeds this site's maximum WebDAV upload size.")
+        if self.quota is not None and size > self.quota:
+            raise InsufficientStorage("Upload exceeds available storage.")
+
+    @property
+    def bounded(self) -> bool:
+        return self.quota is not None or self.hard is not None
+
+
+def _ceilings(root: str) -> _Ceilings:
+    """Both bounds §7.3 gives a PUT: the preflight and the spool stop.
+
+    `effective_quota` 0 is unlimited (RFC 4331 §4 has the same rule for the
+    property), and a root already over its quota gets 0 rather than a negative
+    ceiling. The hard cap is what bounds a chunked PUT into an unlimited root,
+    the one case the quota number cannot bound at all.
+
+    `cint` rather than `int`: a site that wrote "5GB" into the key would
+    otherwise raise `ValueError` out of every single PUT, which the mapper
+    answers 500. A cap nobody can parse is the same as no cap.
+    """
     usage = quota_core.get_storage_usage(root)
     limit = int(usage.effective_quota or 0)
-    if limit:
-        ceilings.append(max(limit - int(usage.used_bytes or 0), 0))
+    quota = max(limit - int(usage.used_bytes or 0), 0) if limit else None
 
-    hard = frappe.conf.get("drive_webdav_max_upload_size")
-    if hard:
-        ceilings.append(int(hard))
-
-    return min(ceilings) if ceilings else None
+    hard = cint(frappe.conf.get("drive_webdav_max_upload_size"))
+    return _Ceilings(quota=quota, hard=hard or None)
 
 
 class _BoundedBody:
-    """The request body as a read()able stream, stopped at the spool ceiling.
+    """The request body as a read()able stream, stopped at the spool ceilings.
 
     `put_blob` copies through `stream.read(n)` into its own spooled tempfile,
     so the bound has to live here: by the time the blob exists the bytes are
@@ -161,11 +192,11 @@ class _BoundedBody:
     hook removes whatever it had written.
     """
 
-    def __init__(self, ctx: DavContext, ceiling: int | None):
+    def __init__(self, ctx: DavContext, ceilings: _Ceilings):
         self._chunks = ctx.body.stream()
         self._buffer = b""
         self._written = 0
-        self._ceiling = ceiling
+        self._ceilings = ceilings
 
     def read(self, size: int = -1) -> bytes:
         while size < 0 or len(self._buffer) < size:
@@ -173,8 +204,8 @@ class _BoundedBody:
             if not chunk:
                 break
             self._written += len(chunk)
-            if self._ceiling is not None and self._written > self._ceiling:
-                raise InsufficientStorage("Upload exceeds available storage.")
+            if self._ceilings.bounded:
+                self._ceilings.check(self._written)
             self._buffer += chunk
         if size < 0:
             data, self._buffer = self._buffer, b""
@@ -183,7 +214,7 @@ class _BoundedBody:
         return data
 
 
-def _spool(ctx: DavContext, title: str, ceiling: int | None):
+def _spool(ctx: DavContext, title: str, ceilings: _Ceilings):
     """Store the body once, privately, and answer with its `File Blob` row.
 
     The blob decides its own size and MIME: `put_blob` sniffs the content and
@@ -193,7 +224,7 @@ def _spool(ctx: DavContext, title: str, ceiling: int | None):
     """
     from frappe.storage.blob import put_blob
 
-    return put_blob(_BoundedBody(ctx, ceiling), is_private=True, filename=title)
+    return put_blob(_BoundedBody(ctx, ceilings), is_private=True, filename=title)
 
 
 def _client_mtime(ctx: DavContext) -> datetime | None:

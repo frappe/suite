@@ -26,6 +26,7 @@ from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
+    BadRequest,
     Conflict,
     Forbidden,
     MethodNotAllowed,
@@ -42,7 +43,16 @@ def handle_mkcol(ctx: DavContext) -> Response:
         raise UnsupportedMediaType("MKCOL request bodies are not supported.")
 
     resolved = pathmap.resolve(ctx.segments, ctx.user)
-    if resolved.is_mount or resolved.exists:
+    if resolved.is_mount:
+        raise MethodNotAllowed(
+            "A resource already exists at this URL.",
+            headers={"Allow": allow_header_without("MKCOL")},
+        )
+    if resolved.exists:
+        # READ before the 405. `pathmap` resolves without asking permission, so
+        # without this a node the caller cannot see would announce itself here
+        # while a free name answers 201. Unreadable is 404 (§12.1).
+        require(resolved.node, READ, ctx.principals)
         raise MethodNotAllowed(
             "A resource already exists at this URL.",
             headers={"Allow": allow_header_without("MKCOL")},
@@ -72,6 +82,11 @@ def handle_delete(ctx: DavContext) -> Response:
 
     row = resolved.node
     require(row, EDIT, ctx.principals)
+    # RFC 4918 §9.6.1: a DELETE on a collection carries Depth infinity and
+    # nothing else. Unlike MOVE the rule is written for collections only, so a
+    # `Depth: 0` on an ordinary file stays legal.
+    if resolved.is_collection and ctx.depth is not None and ctx.depth != "infinity":
+        raise BadRequest("DELETE on a collection accepts Depth infinity only.")
     evaluate_preconditions(ctx.request, row)
     locks.enforce(
         ctx,
@@ -88,6 +103,13 @@ def handle_delete(ctx: DavContext) -> Response:
 
 
 def handle_move(ctx: DavContext) -> Response:
+    # RFC 4918 §9.9.3: a MOVE carries Depth infinity and nothing else. A client
+    # sending `Depth: 0` on a collection means "move the collection alone",
+    # which this verb cannot do, so answering it with a whole-subtree move
+    # would silently do something other than what was asked.
+    if ctx.depth is not None and ctx.depth != "infinity":
+        raise BadRequest("MOVE accepts Depth infinity only.")
+
     source = pathmap.resolve(ctx.segments, ctx.user)
     if source.is_mount:
         raise Forbidden("Cannot move the WebDAV namespace root.")

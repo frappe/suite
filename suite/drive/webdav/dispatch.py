@@ -92,6 +92,10 @@ def _dispatch(request: Request) -> None:
         handler = _handler_for(request.method, allowed)
         ctx = context.build(request, user)
         response = handler(ctx)
+        # `_respond` commits. Inside the `try` so a commit that fails is still
+        # answered as a DAV response: from the `else:` clause it escaped both
+        # handlers and reached the client as a framework HTML 500.
+        _respond(response)
     except DAVResponseException:
         raise
     except errors.DAVError as e:
@@ -110,8 +114,6 @@ def _dispatch(request: Request) -> None:
             # 500 leaves no trace
             frappe.db.commit()
         _raise(errors.to_response(mapped))
-    else:
-        _respond(response)
 
 
 def _handler_for(method: str, allowed: tuple[str, ...] = ALLOWED_METHODS) -> Callable:

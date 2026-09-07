@@ -24,15 +24,29 @@ class TestWebDAVSettings(IntegrationTestCase):
         ensure_user(FRESH)
 
     def setUp(self):
+        super().setUp()
         self._set_global(0)
+        # `allowed_webdav_methods` reads this Single, and nothing else in the
+        # class establishes it. A site or an earlier module that left a list
+        # behind would silently change what every case here is measuring.
+        self._set_method_list("")
 
     def tearDown(self):
         self._set_global(0)
+        self._set_method_list("")
+        frappe.set_user("Administrator")
+        # the opt-in cases write `Drive Settings` for a real user, and
+        # `IntegrationTestCase` rolls back only once the class is finished
+        frappe.db.delete("Drive Settings", {"user": ["in", (USER, FRESH)]})
         frappe.set_user("Administrator")
         super().tearDown()
 
     def _set_global(self, value: int):
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+
+    def _set_method_list(self, value: str):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", value)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
 
     def test_config_is_empty_for_users_while_disabled(self):

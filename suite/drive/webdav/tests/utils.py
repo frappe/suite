@@ -43,6 +43,7 @@ __all__ = [
     "personal_dav_root",
     "raw_child_node",
     "raw_document_node",
+    "reset_dav_request",
     "set_dav_request",
 ]
 
@@ -97,8 +98,33 @@ def set_dav_request(
     return frappe.local.request
 
 
+def reset_dav_request() -> None:
+    """Drop the request-scoped state a DAV call leaves on `frappe.local`.
+
+    In production `frappe.destroy()` clears `frappe.local` between requests. A
+    test process has no such boundary, so both of these outlive the case that
+    set them:
+
+    - `frappe.local.request`, planted by `set_dav_request`. It carries an
+      `Authorization` header for a test user, and `framework._request_credentials`
+      reads it on every principal build.
+    - `frappe.local.drive_activity_client`, bound by `dispatch._dispatch` from
+      the User-Agent. `_core.nodes._record_activity` stamps it into
+      `Drive Activity.client` on every write, so one dispatched case would name
+      its client on every row the rest of the process writes.
+    """
+    frappe.local.request = None
+    frappe.local.drive_activity_client = None
+
+
 def dispatch(*args, **kwargs) -> Response | None:
     """Run the before_request hook; return the DAV response, or None on passthrough."""
+    from suite.drive.webdav import pathmap
+
+    # the same reset `make_ctx` does. The dispatcher clears the memo only after
+    # a mutating handler, so a raw fixture write before this call would
+    # otherwise be resolved from the previous request's map.
+    pathmap.reset_memo()
     set_dav_request(*args, **kwargs)
     try:
         handle_before_request()

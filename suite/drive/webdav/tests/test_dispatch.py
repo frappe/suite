@@ -10,15 +10,18 @@ from suite.drive.webdav import ALLOWED_METHODS
 from suite.drive.webdav.dispatch import handle_before_request
 from suite.drive.webdav.tests.utils import (
     dispatch,
+    drop_dav_root,
     drop_nodes,
     enable_user_webdav,
     ensure_user_with_password,
     personal_dav_root,
+    reset_dav_request,
     set_dav_request,
 )
 
 USER = "webdav-dispatch@example.com"
 PASSWORD = "webdav-dispatch-pw-9000"
+FRESH = "webdav-dispatch-fresh@example.com"
 
 # ticket 25 relinked the write verbs, so the whole implemented surface is on
 # the wire and the site can claim class 2 again
@@ -40,13 +43,35 @@ class TestWebDAVDispatch(IntegrationTestCase):
         cls.root = personal_dav_root(USER)
         frappe.db.commit()
 
+    @classmethod
+    def tearDownClass(cls):
+        frappe.set_user("Administrator")
+        # `setUpClass` and `test_user_access_is_opt_in_by_default` both commit,
+        # so `IntegrationTestCase`'s class rollback cannot reach any of this
+        for user in (USER, FRESH):
+            drop_dav_root(user)
+            frappe.db.delete("Drive Settings", {"user": user})
+        frappe.db.commit()
+        super().tearDownClass()
+
     def setUp(self):
+        super().setUp()
         self._set_global(1)
+        # `allowed_webdav_methods` reads this Single. Two cases here assert the
+        # unnarrowed list, and nothing else establishes that it is unnarrowed.
+        self._set_method_list("")
 
     def tearDown(self):
         self._set_global(0)
+        self._set_method_list("")
         frappe.set_user("Administrator")
+        reset_dav_request()
         super().tearDown()
+
+    def _set_method_list(self, value: str):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        frappe.db.commit()
 
     def _set_global(self, value: int):
         """Committed, because a refused dispatch rolls the transaction back.
@@ -161,12 +186,11 @@ class TestWebDAVDispatch(IntegrationTestCase):
 
     def test_user_access_is_opt_in_by_default(self):
         # a user who never touched their settings must be rejected
-        fresh = "webdav-dispatch-fresh@example.com"
-        ensure_user_with_password(fresh, PASSWORD)
-        frappe.db.set_value("Drive Settings", fresh, "webdav_enabled", 0, update_modified=False)
+        ensure_user_with_password(FRESH, PASSWORD)
+        frappe.db.set_value("Drive Settings", FRESH, "webdav_enabled", 0, update_modified=False)
         frappe.db.commit()
 
-        response = dispatch("PROPFIND", "/dav/", user=fresh, password=PASSWORD)
+        response = dispatch("PROPFIND", "/dav/", user=FRESH, password=PASSWORD)
         self.assertEqual(response.status_code, 403)
         self.assertIn("disabled for your account", response.get_data(as_text=True))
 

@@ -21,13 +21,15 @@ def drop_personal_root(user: str) -> None:
     root = personal_root_for(user)
     if not root:
         return
-    nodes = tuple({root, *frappe.get_all("Drive Node", filters={"root": root}, pluck="name")})
-    activity_ids = tuple(frappe.get_all("Drive Activity", filters={"node": ["in", nodes]}, pluck="name"))
-    if activity_ids:
-        frappe.db.delete("Drive Notification", {"activity": ["in", activity_ids]})
-    frappe.db.delete("Drive Grant", {"node": ["in", nodes]})
-    frappe.db.delete("Drive Activity", {"node": ["in", nodes]})
-    frappe.db.delete("Drive Node", {"name": ["in", nodes]})
+    nodes = sorted({root, *frappe.get_all("Drive Node", filters={"root": root}, pluck="name")})
+    # `Drive DAV Lock.entity` and `Drive DAV Property.entity` are Links to
+    # `Drive Node`, and a version row is written on every replacing PUT. A
+    # committed fixture that dropped only the grants and the activity left all
+    # three dangling on the site for good.
+    for table in ("Drive DAV Lock", "Drive DAV Property"):
+        frappe.db.delete(table, {"entity": ["in", nodes]})
+    drop_record_rows(nodes)
+    drop_node_rows(nodes)
     frappe.db.delete("Drive Root", {"name": root})
 
 

@@ -44,6 +44,7 @@ from suite.drive.webdav.tests.utils import (
     node_principals,
     personal_dav_root,
     raw_document_node,
+    reset_dav_request,
 )
 from suite.drive.webdav.xmlutil import dav
 from suite.tests.utils import ensure_user
@@ -79,6 +80,10 @@ class TestWebDAVLocks(IntegrationTestCase):
         frappe.set_user("Administrator")
         cls._drop_locks()
         drop_dav_root(OWNER)
+        # `ensure_user(STRANGER)` provisioned a root through `after_user_insert`
+        # and `setUpClass` committed it. Nothing else here addresses it, so it
+        # would otherwise stay on the site after the class is gone.
+        drop_dav_root(STRANGER)
         frappe.db.commit()
         super().tearDownClass()
 
@@ -99,6 +104,7 @@ class TestWebDAVLocks(IntegrationTestCase):
     def tearDown(self):
         self._drop_locks()
         frappe.set_user("Administrator")
+        reset_dav_request()
         super().tearDown()
 
     @classmethod
