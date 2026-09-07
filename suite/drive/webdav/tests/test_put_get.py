@@ -145,6 +145,41 @@ class TestWebDAVContent(IntegrationTestCase):
         self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=data.bin")
         self.assertEqual(response.headers["Cache-Control"], "private, no-cache")
 
+    def test_a_non_latin1_title_is_named_the_way_rfc_6266_does(self):
+        """litmus `basic:put_get_utf8_segment`.
+
+        `Headers.set` quotes a filename but does not encode one, so a title
+        holding `€` produced a header no server can put on the wire: the dev
+        server raised `UnicodeEncodeError` inside `send_header`, after the
+        status line, and the client got nothing and timed out. Non-ASCII
+        travels in `filename*` (RFC 8187), with an ASCII fallback beside it.
+        """
+        euro = file_node(OWNER, self.folder, "res-€", b"euro bytes")
+        try:
+            response = self._get(f"/dav/{self.folder_name}/res-€")
+            self.assertEqual(response.status_code, 200)
+            disposition = response.headers["Content-Disposition"]
+            # the header is sendable: this raised before the fix
+            disposition.encode("latin-1")
+            self.assertEqual(disposition, "attachment; filename=res-; filename*=UTF-8''res-%E2%82%AC")
+        finally:
+            drop_nodes([euro.name])
+
+    def test_disposition_names_encode_every_title_shape(self):
+        """The fallback is ASCII-folded, an all-non-ASCII title still gets a
+        `filename`, and a control character cannot split the response."""
+        self.assertEqual(get_module._disposition_names("data.bin"), {"filename": "data.bin"})
+        self.assertEqual(
+            get_module._disposition_names("€"),
+            {"filename": "download", "filename*": "UTF-8''%E2%82%AC"},
+        )
+        # NFKD folding keeps the ASCII skeleton of an accented name
+        self.assertEqual(
+            get_module._disposition_names("café.txt"),
+            {"filename": "cafe.txt", "filename*": "UTF-8''caf%C3%A9.txt"},
+        )
+        self.assertEqual(get_module._disposition_names("a\nb.txt"), {"filename": "ab.txt"})
+
     def test_content_type_is_the_blob_type(self):
         response = self._get(f"/dav/{self.folder_name}/pixel.png")
         self.assertEqual(response.headers["Content-Type"], "image/png")
