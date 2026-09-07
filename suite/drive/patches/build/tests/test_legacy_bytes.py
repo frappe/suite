@@ -2,13 +2,22 @@
 
 import hashlib
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from suite.drive.patches.build import prepare_legacy_bytes
 from suite.drive.patches.build.environment import BACKFILL_BATCH_SIZE, LegacyS3Config
-from suite.drive.patches.build.state import STATE_FILENAME, BuildState
+from suite.drive.patches.build.state import (
+    MISSING_BYTES_KEPT,
+    STATE_FILENAME,
+    STATE_VERSION,
+    BuildState,
+    MissingBytes,
+    StoragePreparation,
+)
 from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeFiles,
@@ -298,3 +307,189 @@ class TestDurableRecord(PrepareCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnreachableRows(PrepareCase):
+    """Rows neither step could read must still reach the record.
+
+    §14.10 Cleanup deletes Drive's legacy prefix from the bucket. A row
+    whose bytes Build never carried across, and never named, loses them
+    with nothing having said so.
+    """
+
+    def prepare(self, files, *, s3=True, bucket=None):
+        legacy = LegacyS3Config(enabled=s3, bucket="drive-bucket")
+        return prepare_legacy_bytes(self.env(files=files, bucket=bucket or FakeBucket(), legacy_s3=legacy))
+
+    def test_a_bare_bucket_key_is_recorded(self):
+        # What a half-finished upload leaves: create_drive_file writes the
+        # disk path first and only converts it to a fetch URL on a second save.
+        files = FakeFiles().add("f1", "/marketing/abc123", "deck.key")
+
+        prep = self.prepare(files)
+
+        (missing,) = prep.missing_bytes
+        self.assertEqual(missing.file, "f1")
+        self.assertEqual(missing.file_url, "/marketing/abc123")
+        self.assertIn("cannot reach", missing.reason)
+        self.assertEqual(prep.missing_bytes_total, 1)
+
+    def test_an_old_fetch_prefix_is_recorded(self):
+        # A site whose `migrate_s3_url_prefix` patch never ran.
+        files = FakeFiles().add("f1", "/api/method/drive.api.s3.fetch?path=team/x", "x.bin")
+
+        self.assertEqual([m.file for m in self.prepare(files).missing_bytes], ["f1"])
+
+    def test_a_fetch_url_on_a_site_with_s3_off_is_recorded(self):
+        # Step 3 never runs, so those bytes are unreachable, not handled.
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+
+        prep = self.prepare(files, s3=False)
+
+        self.assertEqual([m.file for m in prep.missing_bytes], ["f1"])
+
+    def test_a_fetch_url_on_a_site_with_s3_on_is_not_recorded_twice(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+
+        prep = self.prepare(files, bucket=bucket)
+
+        self.assertEqual(prep.missing_bytes, [])
+        self.assertIsNotNone(files.blob_of("f1"))
+
+    def test_rows_that_never_had_bytes_are_left_out(self):
+        files = FakeFiles()
+        files.add("link", "https://example.test/page", "a link", file_type="Link")
+        files.add("relative-link", "mailto:someone@example.test", "a link", file_type="Link")
+        files.add("blank", "", "a document")
+        files.add("local", "/private/files/x.png", "x.png")
+
+        self.assertEqual(self.prepare(files).missing_bytes, [])
+
+    def test_it_pages_past_rows_it_can_never_link_and_writes_nothing(self):
+        # Every row here stays in the query, so only the cursor ends the
+        # loop. A batch smaller than the row count is what proves it moves.
+        files = FakeFiles()
+        for i in range(5):
+            files.add(f"f{i}", f"/bare/{i}", f"{i}.bin")
+
+        prep = prepare_legacy_bytes(
+            self.env(files=files, bucket=FakeBucket(), legacy_s3=LegacyS3Config(enabled=False)),
+            batch_size=2,
+        )
+
+        self.assertEqual(sorted(m.file for m in prep.missing_bytes), [f"f{i}" for i in range(5)])
+        self.assertTrue(all(files.blob_of(f"f{i}") is None for i in range(5)))
+        self.assertEqual(self.saved_storage().missing_bytes_total, 5)
+
+    def test_a_cursor_that_stops_moving_stops_the_run(self):
+        class Stuck(FakeFiles):
+            def rows_outside(self, prefixes, after, limit):
+                return super().rows_outside(prefixes, "", limit)
+
+        files = Stuck()
+        for i in range(4):
+            files.add(f"f{i}", f"/bare/{i}", f"{i}.bin")
+
+        with self.assertRaises(RuntimeError) as caught:
+            prepare_legacy_bytes(
+                self.env(files=files, bucket=FakeBucket(), legacy_s3=LegacyS3Config(enabled=False)),
+                batch_size=2,
+            )
+
+        self.assertIn("stalled", str(caught.exception))
+
+    def test_a_row_that_gained_bytes_stops_being_reported(self):
+        files = FakeFiles().add("f1", "/bare/1", "a.bin")
+        env = self.env(files=files, bucket=FakeBucket())
+
+        self.assertEqual(prepare_legacy_bytes(env).missing_bytes_total, 1)
+        files.link_blob("f1", "blob-somewhere")
+
+        self.assertEqual(prepare_legacy_bytes(env).missing_bytes_total, 0)
+
+
+class TestBackfillTotalsSurviveARerun(PrepareCase):
+    """The framework backfill skips rows that already have a blob.
+
+    A rerun therefore links nothing. Reporting that as zero would tell the
+    operator no local bytes were ever carried across.
+    """
+
+    def test_a_rerun_keeps_the_first_runs_totals(self):
+        storage = FakeStorage(backfill={"linked": 120, "blobs_created": 90})
+        env = self.env(storage=storage, legacy_s3=LegacyS3Config(enabled=False))
+        first = prepare_legacy_bytes(env)
+
+        storage._backfill = {"linked": 0, "blobs_created": 0}
+        second = prepare_legacy_bytes(env)
+
+        self.assertEqual((first.backfill_linked, first.backfill_blobs_created), (120, 90))
+        self.assertEqual((second.backfill_linked, second.backfill_blobs_created), (120, 90))
+        self.assertEqual(self.saved_storage().backfill_linked, 120)
+
+    def test_a_second_run_that_links_more_adds_to_the_total(self):
+        storage = FakeStorage(backfill={"linked": 5, "blobs_created": 5})
+        env = self.env(storage=storage, legacy_s3=LegacyS3Config(enabled=False))
+        prepare_legacy_bytes(env)
+
+        storage._backfill = {"linked": 2, "blobs_created": 1}
+
+        self.assertEqual(prepare_legacy_bytes(env).backfill_linked, 7)
+
+
+class TestTheRecordCannotUnderstate(PrepareCase):
+    def test_the_kept_list_is_bounded_but_the_count_is_exact(self):
+        prep = StoragePreparation()
+        for i in range(MISSING_BYTES_KEPT + 25):
+            prep.record_missing(MissingBytes(file=f"f{i}", file_url="", reason="gone"))
+
+        self.assertEqual(len(prep.missing_bytes), MISSING_BYTES_KEPT)
+        self.assertEqual(prep.missing_bytes_total, MISSING_BYTES_KEPT + 25)
+
+    def test_a_read_error_stops_the_run_instead_of_resetting_the_totals(self):
+        # The cumulative totals live only here. Quarantining on a transient
+        # EIO would make the report say zero for a migration that copied
+        # everything.
+        state = BuildState(self.path / STATE_FILENAME)
+        state.save({"storage": StoragePreparation(s3_objects_copied=9).as_dict()})
+
+        with patch("builtins.open", side_effect=OSError("EIO")):
+            with self.assertRaises(OSError):
+                state.load()
+
+        self.assertTrue(state.path.exists())
+        self.assertEqual(state.storage().s3_objects_copied, 9)
+        self.assertEqual(list(self.path.glob("*.corrupt-*")), [])
+
+    def test_a_write_that_fails_leaves_the_previous_record_readable(self):
+        # The point of the temp file. Writing straight to the target would
+        # pass the "no .tmp left behind" check and still lose the totals.
+        state = BuildState(self.path / STATE_FILENAME)
+        state.save({"storage": StoragePreparation(s3_objects_copied=4).as_dict()})
+
+        with patch("json.dump", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                state.save({"storage": StoragePreparation(s3_objects_copied=99).as_dict()})
+
+        self.assertEqual(state.storage().s3_objects_copied, 4)
+
+    def test_the_record_keeps_its_version_and_its_other_sections(self):
+        # Tickets 27 to 29 write their own sections beside this one.
+        state = BuildState(self.path / STATE_FILENAME)
+        state.save({"tree": {"nodes": 3}})
+
+        state.put_storage(StoragePreparation(s3_objects_copied=1))
+
+        saved = json.loads(state.path.read_text())
+        self.assertEqual(saved["tree"], {"nodes": 3})
+        self.assertEqual(saved["version"], STATE_VERSION)
+
+    def test_the_write_leaves_no_temp_file_two_runs_could_share(self):
+        # A second process writing the same `.tmp` could interleave and have
+        # `os.replace` promote a half-written file.
+        state = BuildState(self.path / STATE_FILENAME)
+        state.save({"storage": StoragePreparation().as_dict()})
+
+        self.assertEqual([p.name for p in self.path.glob("*.tmp")], [])
+        self.assertIn(str(os.getpid()), state._temp_path().name)
