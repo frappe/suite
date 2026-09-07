@@ -230,6 +230,29 @@ class TestWebDAVLocks(IntegrationTestCase):
             with self.assertRaises(Locked):
                 self._lock(self.other_path, body=body)
 
+    def test_a_second_lock_on_a_resource_the_caller_already_locked_is_refused(self):
+        """RFC 4918 §9.10.5's table: exclusive conflicts with everything, and
+        "It is illegal for a principal to request the same lock twice."
+
+        Exempting a lock whose token the caller submitted minted a second
+        token over the same node. `locks.enforce` then wanted both, so the
+        holder could write with neither until one expired, and UNLOCK of
+        either did not free the file.
+        """
+        token = self._token(self._lock(self.doc_path))
+
+        with self.assertRaises(Locked):
+            self._lock(self.doc_path, **{"If": f"(<{token}>)"})
+        with self.assertRaises(Locked):
+            self._lock(self.doc_path, body=LOCKINFO_SHARED, **{"If": f"(<{token}>)"})
+
+        # exactly one lock, and the token the client holds still writes
+        self.assertEqual(len(locks.covering_locks(self._node_at(self.doc_path).name)), 1)
+        response = put.handle(
+            make_ctx("PUT", self.doc_path, OWNER, data=b"still mine", headers={"If": f"(<{token}>)"})
+        )
+        self.assertEqual(response.status_code, 204)
+
     def test_lock_depth_one_is_400(self):
         """RFC 4918 §9.10.3: a lock is depth 0 or infinity."""
         with self.assertRaises(BadRequest):
