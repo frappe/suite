@@ -338,6 +338,48 @@ def refuse_shared_linked_rows(doctype: str, node_field: str, user: str | None) -
         raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
 
 
+def refuse_shared_child_rows(
+    doctype: str,
+    parent_doctype: str,
+    parent_field: str,
+    node_field: str,
+    user: str | None,
+) -> None:
+    """Refuse a staged app's history list when a share reaches a linked parent.
+
+    `refuse_shared_linked_rows` scopes on a node column the shared row carries
+    itself. A history row carries none: its authority is the node on its parent
+    document. Build links documents that already carry history rows and keeps
+    those rows until Cleanup, so a `DocShare` on one of them is a way around
+    `Drive Grant` for exactly the window `refuse_shared_linked_rows` covers for
+    the parent.
+
+    Both reads ask `("is", "set")`, not `IS NOT NULL`: a Link written as the
+    empty string is unset, and treating one as linked would take a legacy
+    history list down for a row Drive does not own.
+
+    `Administrator` is skipped, for the reason `refuse_shared_linked_rows`
+    skips one.
+    """
+    from frappe.share import get_shared
+
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return
+    shared = get_shared(doctype, user)
+    if not shared:
+        return
+    parents = [
+        parent
+        for parent in frappe.get_all(doctype, filters={"name": ("in", shared)}, pluck=parent_field)
+        if parent
+    ]
+    if not parents:
+        return
+    if frappe.db.get_value(parent_doctype, {"name": ("in", parents), node_field: ("is", "set")}, "name"):
+        raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
+
+
 def _refuse_shared_list(doctype: str, user: str | None) -> None:
     """Refuse a list the framework would widen with `DocShare` rows.
 
