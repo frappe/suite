@@ -5,6 +5,13 @@ from suite.drive.webdav.ifheader import EMPTY_IF, BadIfHeader, parse_if_header
 
 TOKEN = "urn:uuid:11111111-2222-3333-4444-555555555555"
 
+# The exact conditional litmus 0.13 formats for `complex_cond_put` and
+# `fail_complex_cond_put`, read out of the shipped `litmus/libexec/locks`
+# binary rather than guessed: one `ne_snprintf` format string with three
+# arguments, `(token, etag, etag)`, into a 200-byte stack buffer.
+LITMUS_COMPLEX = "(<%s> [%s]) (Not <DAV:no-lock> [%s])"
+LITMUS_BUFFER = 200
+
 
 def evaluate(header, entity="target", tokens=frozenset(), etag=None, href_map=None):
     parsed = parse_if_header(header)
@@ -85,3 +92,81 @@ class TestIfHeaderEvaluation(UnitTestCase):
         self.assertFalse(evaluate(header, tokens=frozenset({TOKEN}), href_map={"/dav/other.txt": "other"}))
         # unresolvable tagged href evaluates false rather than erroring
         self.assertFalse(evaluate(header, href_map={}))
+
+
+class TestLitmusComplexConditional(UnitTestCase):
+    """RFC 4918 §10.4's complex production, in the two shapes litmus sends.
+
+    `complex_cond_put` submits the lock token and the resource's real ETag and
+    expects the write to happen. `fail_complex_cond_put` submits the same token
+    with the ETag corrupted in place and expects 412. The two differ only in
+    the ETag, so an evaluator that reads `Not <DAV:no-lock>` as a whole-list
+    tautology would perform both.
+    """
+
+    ETAG = '"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117abcde"'
+    # litmus corrupts the third byte from the end, which is inside the tag
+    STALE = '"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117abdde"'
+
+    def header(self, token: str, etag: str) -> str:
+        return LITMUS_COMPLEX % (token, etag, etag)
+
+    def test_the_complex_grammar_parses_into_two_alternatives(self):
+        parsed = parse_if_header(self.header(TOKEN, self.ETAG))
+        self.assertEqual(len(parsed.tagged), 1)
+        first, second = parsed.tagged[0].lists
+        self.assertEqual(
+            [(c.negated, c.token, c.etag) for c in first.conditions],
+            [(False, TOKEN, None), (False, None, self.ETAG)],
+        )
+        self.assertEqual(
+            [(c.negated, c.token, c.etag) for c in second.conditions],
+            [(True, "DAV:no-lock", None), (False, None, self.ETAG)],
+        )
+
+    def test_complex_cond_put_holds_on_the_lock_and_the_etag(self):
+        self.assertTrue(evaluate(self.header(TOKEN, self.ETAG), tokens=frozenset({TOKEN}), etag=self.ETAG))
+
+    def test_fail_complex_cond_put_does_not_hold_on_a_corrupted_etag(self):
+        """Both lists are false: the first on the ETag, the second because the
+        entity-tag is ANDed with `Not <DAV:no-lock>` rather than replaced by
+        it. This is the 412 half of the pair."""
+        self.assertFalse(evaluate(self.header(TOKEN, self.STALE), tokens=frozenset({TOKEN}), etag=self.ETAG))
+
+    def test_the_lock_token_is_submitted_by_either_shape(self):
+        """§10.4's lenient submission rule: the token counts as submitted even
+        in the shape that evaluates false, so the 412 is not also a 423.
+
+        `DAV:no-lock` rides along by the same rule and satisfies nothing: it is
+        never an active lock on any resource.
+        """
+        for etag in (self.ETAG, self.STALE):
+            self.assertEqual(parse_if_header(self.header(TOKEN, etag)).all_tokens(), {TOKEN, "DAV:no-lock"})
+
+    def test_litmus_truncates_the_header_a_sha256_etag_produces(self):
+        """Why both litmus cases fail here and pass against a short-ETag server.
+
+        litmus formats the conditional into `char buf[200]` with `ne_snprintf`,
+        which keeps 199 characters. §12.4 publishes the blob's SHA-256 as the
+        entity-tag, so the tag is 66 characters quoted and the header is 207:
+        the second tag loses its closing bracket and the header is no longer
+        RFC 4918 §10.4 grammar. Nothing on this side is wrong, and nothing on
+        this side can make it right - the value litmus truncates is the one the
+        byte path publishes. Ledgered in litmus_expected.txt.
+        """
+        header = self.header(TOKEN, self.ETAG)
+        self.assertEqual(len(TOKEN), 45)
+        self.assertEqual(len(self.ETAG), 66)
+        self.assertEqual(len(header), 207)
+
+        sent = header[: LITMUS_BUFFER - 1]
+        self.assertEqual(len(sent), 199)
+        self.assertTrue(sent.endswith(self.ETAG[:60]))
+        with self.assertRaises(BadIfHeader):
+            parse_if_header(sent)
+
+    def test_an_untruncated_header_is_accepted_at_any_length(self):
+        """The refusal above is the client's truncation, not a length limit of
+        our own: the same 207-byte header parses whole."""
+        header = self.header(TOKEN, self.ETAG)
+        self.assertEqual(len(parse_if_header(header).tagged[0].lists), 2)
