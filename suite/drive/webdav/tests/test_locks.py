@@ -500,6 +500,23 @@ class TestWebDAVLocks(IntegrationTestCase):
         for path in (f"{self.base}/NewDir", f"{self.base}/mv.txt", f"{self.base}/copied.txt"):
             self.assertIsNone(self._node_at(path), path)
 
+    def test_a_lock_request_evaluates_the_if_header_conditions(self):
+        """RFC 4918 §10.4.1: the If header is not method-specific.
+
+        LOCK cannot call `locks.enforce` - its own rule is §9.10.5's table, not
+        the write gate - so the conditions are evaluated on their own. A state
+        token or ETag the client asserted and the server cannot match is 412,
+        and a true one leaves the lock granted.
+        """
+        etag = compute_etag(node_core.stored(self.doc))
+
+        with self.assertRaises(PreconditionFailed):
+            self._lock(self.doc_path, **{"If": '(["not-the-etag"])'})
+        self.assertEqual(frappe.db.count("Drive DAV Lock", {"entity": self.doc}), 0)
+
+        response = self._lock(self.doc_path, **{"If": f'(["{etag}"])'})
+        self.assertEqual(response.status_code, 200)
+
     def test_depth_zero_collection_lock_protects_membership_only(self):
         """RFC 4918 §7.4: a depth-0 collection lock protects the member list,
         and nothing below it."""
