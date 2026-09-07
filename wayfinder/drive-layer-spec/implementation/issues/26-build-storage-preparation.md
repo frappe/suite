@@ -28,11 +28,12 @@ Run fixture-backed migration tests for disabled storage, invalid S3 configuratio
 
 ## Completion evidence
 
-Five of the six acceptance criteria are built and covered by tests that run
-without a site. The sixth, managed multipart copy above 5 GB, cannot pass on
-this framework build: see **Blocked criterion** below. None is ticked: the
-site gate has not run. The root orchestrator owns that run; the commands are
-at the end of this section.
+All six acceptance criteria are built and covered by tests that run without
+a site. The sixth, managed multipart copy above 5 GB, was blocked by the
+framework schema and is now implemented: see **Large objects: the blocker
+and its fix** and **Large objects: what was built**. None is ticked: neither
+the framework migrate nor the site gate has run. The root orchestrator owns
+both runs; the commands are at the end of this section.
 
 Agents audited the framework storage API and the legacy Drive S3 paths, then
 reviewed the finished code twice, once against the spec and once against the
@@ -84,7 +85,7 @@ runs against `tests/fakes.py` with no site, no bucket, and no database.
 | Hash once | `s3_copy.py:_read_once` | one `get_object` per row, and `FakeBucket` hands back a single-use forward-only stream, so a second pass cannot pass the test. `test_the_object_is_read_exactly_once`, `test_the_body_is_never_rewound` |
 | Canonical-layout copy | `layout.py` | `test_layout` (7) pins the key against `frappe.storage.blob.make_key`, `sanitized_extension`, and `S3Driver.object_key`, not against a literal |
 | `File.blob` linked | `SiteFiles.link_blob` | one column, no doc events, no `modified` bump. `test_ports.test_linking_writes_the_blob_column_and_nothing_else` |
-| Managed multipart copy above 5 GB | `s3_copy.copy_in_bucket` | **Blocked.** The choice is right and pinned at the boundary by `TestCopyChoice` and `TestMultipartWiring`, but no object above 5 GB can reach a `File Blob` row. See **Blocked criterion** |
+| Managed multipart copy above 5 GB | `s3_copy.copy_in_bucket` | the choice is pinned at the boundary by `TestCopyChoice` and `TestMultipartWiring`, and end to end by `TestObjectAboveFiveGB`. A 6 GB object reaches a `File Blob` row once the framework column is migrated. See **Large objects: what was built** |
 | Resume without recopying complete objects | `s3_copy.py:_copy_one` | three layers: a linked row leaves the query, a matching blob row skips the copy, a complete object at the destination skips it. `TestResume` (4) and `TestInterruptedRunResumes` (3) |
 | Durable missing-byte and S3-copy results | `state.py` | `TestMissingBytes` (6) and `TestDurableRecord` (5), including a record kept aside rather than overwritten |
 | Original local bytes and legacy S3 objects preserved | — | nothing in the package deletes, moves, or truncates. The `S3Bucket` seam has no delete, and `test_ports.test_it_never_writes_or_deletes_through_the_client` proves `BotoBucket` issues no write or delete against the client |
@@ -228,32 +229,25 @@ before the review fixes.
 - **Frappe Cloud must allowlist `storage_driver` and `storage_driver_config`**
   before `suite.frappe.io` migrates. Outside this spec (§14.1).
 
-### Blocked criterion: multipart copy above 5 GB
+### Large objects: the blocker and its fix
 
-`File Blob.file_size` is declared `Int` with no `length` in
-`frappe/core/doctype/file_blob/file_blob.json`. `frappe.database.schema` only
-promotes to `bigint` when `length > 11`, and the MariaDB type map builds
-`Int` as `int(11)`. The ceiling is 2,147,483,647 bytes. `File.file_size`
-carries `length: 20` and is a bigint, so the legacy table holds files the
-blob table cannot describe.
+`File Blob.file_size` was declared `Int` with no `length` in
+`frappe/core/doctype/file_blob/file_blob.json`. `frappe.database.schema`
+promotes an `Int` to a bigint only when `length > 11`, and the MariaDB type
+map builds a bare `Int` as `int(11)`. The ceiling was 2,147,483,647 bytes.
+`File.file_size` carries `length: 20` and is already a bigint, so the legacy
+table held files the blob table could not describe.
 
-Every object above 5 GB is therefore also above the blob column's ceiling.
-Under strict `sql_mode` the insert raises and `migrate` dies after earlier
-batches have committed. Without strict mode the value is clamped, and
-`File Blob.file_size` then lies to the §14.2 step 12 `used_bytes` recompute,
-to `frappe.storage.serve`'s ranged downloads, and to §13 relocation.
+Every object above 5 GB is therefore also above that ceiling. Under a strict
+`sql_mode` the insert raises and `migrate` dies after earlier batches have
+committed. Without strict mode the value is clamped, and `File Blob.file_size`
+then lies to the §14.2 step 12 `used_bytes` recompute, to
+`frappe.storage.serve`'s ranged downloads, and to §13 relocation.
 
-`_copy_one` now refuses above the ceiling and reports the row, so the failure
-is visible and bounded. The criterion stays unticked. It needs one framework
-change on `forge/storage-v2`, outside this ticket's scope:
-
-```
-"fieldname": "file_size", "fieldtype": "Int", "length": 20
-```
-
-Root should decide whether that change belongs to ticket 06 or to a new
-framework ticket. Until it lands, a Drive holding any file above 2 GiB
-migrates with those rows reported as missing bytes.
+The independent review made `_copy_one` refuse above the ceiling and report
+the row. That kept the failure visible and bounded, and left the criterion
+unmet. A third pass widened the framework column and removed the refusal:
+see **Large objects: what was built**.
 
 ### Independent review
 
@@ -285,7 +279,7 @@ tree, so no commit in the chain is red.
 |---|---|---|
 | High | A claimed blob was linked without heading its object. `frappe.storage.gc` deletes a blob's bytes first and its row second, and keeps the row when the delete raises; a bucket swap leaves every older blob the same way. The copy path verified twice, the reuse path not at all, so Cleanup would delete the legacy object and leave the `File` pointing at nothing | head the object at the claimed blob's own key and copy it there when it is gone |
 | High | Rows Build cannot reach were recorded nowhere. A bare bucket key, a fetch URL left by a prefix rename that never ran, and every fetch URL on a site whose Drive Disk Settings are off all got no blob, no counter, and no `missing_bytes` entry. §14.10 then deletes Drive's legacy prefix | a third read-only pass lists them, with rows that never had bytes left out |
-| High | `File Blob.file_size` is an `int(11)`. Any object above 2 GiB either aborted `migrate` or was silently clamped | refuse above the ceiling and report the row. See **Blocked criterion** |
+| High | `File Blob.file_size` is an `int(11)`. Any object above 2 GiB either aborted `migrate` or was silently clamped | refuse above the ceiling and report the row. Superseded: the column is now a bigint and the refusal is gone |
 | High | The gate proved only that two strings agreed. The first bucket call happened in step 3, after the backfill had committed. Revoked credentials, a missing bucket, or a role without `s3:ListBucket` left a half-migrated site | head one key that cannot exist, before any mutation |
 | Medium | `begin_run` cleared `backfill_linked` and `backfill_blobs_created`, which the framework backfill cannot recompute. Every resumed run reported zero local rows linked | make both cumulative and add to them |
 | Medium | The unique index on `(checksum, is_private, driver)` carries no `status`, so a `Pending` row for the same content made `claim_blob` refuse and `insert_blob` raise. That aborted the run, and aborted it again on every rerun | report the conflict and carry on |
@@ -301,7 +295,7 @@ Recorded claims that did not hold, now corrected above:
 
 - "Cleanup's bucket sweep is where such an object goes." §14.10 deletes
   Drive's legacy prefix. It never touches `private/<ab>/<cd>/`.
-- "Every acceptance box is built and covered by tests." The >5 GB box is not.
+- "Every acceptance box is built and covered by tests." The >5 GB box was not. It is now, on a widened framework column.
 - "Adding `status != "Removed"` is not safe here" because SQL drops NULLs.
   True of a SQL filter, but `status` can be selected and compared in Python.
   The outcome is still right; the reason was not.
@@ -437,3 +431,228 @@ keeps both the backfill and `SiteFiles.commit` from committing.
 its gate.** The package is dormant by design: `patches.txt` does not name it
 and it exports no `execute`, so `migrate` will not reach a line of it. That
 is the point of the last acceptance box. Registration is ticket 30's.
+
+### Large objects: what was built
+
+A third session resolved the blocked criterion. It widened one framework
+field, removed the Suite refusal that stood in for it, and replaced the
+ceiling tests with tests for a 6 GB object.
+
+Base Suite `3a96ea244`, the last commit of the independent review, on
+`review/drive-26-build-storage-preparation`. Base Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, on a new branch
+`fix/drive-26-large-file-size` taken from `forge/storage-v2`. This is the
+first Frappe change ticket 26 carries.
+
+| Repository | Commit | Subject |
+|---|---|---|
+| Frappe | `9fb933a4ee` | let a File Blob describe an object above 2 GiB |
+| Suite | `82faf8e8c` | let Build copy legacy objects above 5 GB |
+
+Two agents ran bounded read-only audits before any edit: one on the schema
+and the migration path, one on every consumer of a blob size. The
+orchestrator confirmed each finding against the source, wrote the change,
+and made the commits.
+
+#### The framework change
+
+`frappe/core/doctype/file_blob/file_blob.json`, field `file_size`, one line:
+
+```
+"length": 20
+```
+
+The fieldtype stays `Int`. `frappe/database/schema.py:437` then maps it to
+the `Long Int` column type. Measured in the worktree, with no database:
+
+```
+mariadb   Int: int(11)  Int length 20: bigint(20)  Long Int: bigint(20)
+postgres  Int: int      Int length 20: bigint      Long Int: bigint
+```
+
+The `Long Int` fieldtype builds the same column and loses more than it wins:
+
+- `NOT_NULL_TYPES` (`frappe/database/schema.py:182`) and the default branch
+  at `:233` name `Int`, not `Long Int`. On MariaDB the column would lose
+  `NOT NULL DEFAULT 0`. On Postgres it would keep `NOT NULL` and take
+  `DEFAULT NULL`, which then refuses an insert that omits the field.
+- `Long Int` is not an option in `DocField.fieldtype`, so `_validate_selects`
+  refuses it on any save that is not an import.
+- About 25 call sites name `Int` and not `Long Int`: Desk formatting and
+  filters, report and list rendering, CSV import coercion,
+  `get_valid_dict`'s int coercion, and the `unique` allowlist.
+- `File.file_size` already carries `Int` with `length: 20`. The framework's
+  own tests cover that mechanism: `test_db_update.test_bigint_conversion`,
+  `test_bigint_conversion_with_existing_data`, and
+  `test_no_unnecessary_migrates`.
+
+`frappe/storage/SPEC.md` now records the width in its data-model table.
+
+#### What the widening does not change
+
+The audit traced every consumer of a blob size. No Python code casts to 32
+bits. `blob.put_blob` accumulates the size as a Python int.
+`frappe.storage.serve` hands it to werkzeug's range helpers, which are
+exact. `relocate` sums sizes in Python. `gc` never reads a size. The
+framework holds no `used_bytes` column and runs no SQL `SUM` over a file
+size. The column was the only truncation point.
+
+Two limits stay, and neither belongs to this ticket:
+
+- `frappe.storage.upload.check_declared_size` refuses an upload above
+  `System Settings.max_file_size`, 25 MiB by default
+  (`frappe/core/api/file.py:82`). It is a policy gate on the upload route.
+  Build does not use that route.
+- A presigned POST caps one object at 5 GB, so the `direct` upload mode
+  cannot deliver a larger object. The chunked mode can.
+
+#### Migration impact
+
+`migrate` emits one statement on MariaDB:
+
+```
+ALTER TABLE `tabFile Blob` MODIFY `file_size` bigint(20) NOT NULL DEFAULT 0
+```
+
+Nullability and default are the same on both sides, and every `int` value
+fits a `bigint`, so no row converts and nothing truncates. InnoDB rebuilds
+the table for a width change, which costs time on a large table.
+
+No deployed site pays that cost. `File Blob` is new on `forge/storage-v2`
+(`b928dae007`, 2026-09-02) and ships in no release, so a real site creates
+the column at `bigint(20)` and never alters it. `slides.localhost` already
+holds the table and must run the `ALTER`.
+
+The change is reversible in the schema: dropping `length` regenerates
+`int(11)`. It is not reversible in the data. A stored value above
+2,147,483,647 would truncate, and `DBTable.validate` guards varchar
+narrowing only.
+
+#### The Suite change
+
+`BLOB_SIZE_CEILING` and the refusal in `_copy_one` are gone. Nothing else in
+the copy step moved. The choice between `copy_object` and `managed_copy` was
+already right.
+
+#### Commands and real results, large objects
+
+Site-free, in both worktrees. No `bench`, `migrate`, `install`, `restart`,
+or `push` was run. `slides.localhost`, its queues, and its configuration
+were not touched.
+
+```
+$ python3 -m compileall -q suite/drive/patches/build suite/drive/tests/test_build_storage.py
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/patches/build suite/drive/tests/test_build_storage.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/patches/build suite/drive/tests/test_build_storage.py
+17 files already formatted
+
+$ python3 -m compileall -q frappe/core/doctype/file_blob
+COMPILED
+$ uvx ruff@0.12.3 check frappe/core/doctype/file_blob
+All checks passed!
+$ uvx ruff@0.12.3 format --check frappe/core/doctype/file_blob
+3 files already formatted
+
+$ cd sites && PYTHONPATH=<frappe worktree>:<suite worktree> ../env/bin/python <runner> \
+    suite.drive.patches.build.tests.{test_gate,test_layout,test_s3_copy,\
+    test_legacy_bytes,test_ports,test_dormancy} suite.tests.test_architecture
+Ran 136 tests in 1.561s
+OK
+```
+
+`<runner>` is `frappe.init(site="slides.localhost")` with no `connect`, then
+`unittest`. Both worktrees are on `PYTHONPATH`, so the run uses the changed
+framework. Per module: `test_gate` 15, `test_layout` 7, `test_s3_copy` 40,
+`test_legacy_bytes` 34, `test_ports` 26, `test_dormancy` 7, and
+`suite.tests.test_architecture` 7. The total is unchanged: three ceiling
+tests left and three large-object tests arrived.
+
+`TestObjectAboveFiveGB` declares a 6 GB object. `_read_once` is the only
+step that must touch every byte, so it is the one thing stood in for; the
+size and the checksum it returns are what a 6 GB object would produce.
+Everything after it runs for real: the copy choice, the size verification,
+the blob row, and the link. `FakeBucket.copy_object` raises above 5 GB the
+way S3 does, so a regression to the single-part call fails there.
+
+Two site-backed modules were **not run**. Both need the migrated column, and
+before the `ALTER` they fail. That is the point of them.
+
+- Suite `suite/drive/tests/test_build_storage.py` collects 12 cases, up from
+  11. `test_an_object_above_five_gb_becomes_a_blob_that_carries_its_size`
+  inserts and links a 6 GB blob through the real `File` and `File Blob`
+  tables. The size is declared. No bytes are written.
+- Frappe `frappe.core.doctype.file_blob.test_file_blob` collects 8 cases, up
+  from 4. `TestFileBlobSize` asserts that the declaration builds the bigint
+  column type on the current backend, that 2**31 and 5 GB plus one round
+  trip through the database and through the document, and that 2**63 is
+  still a validation error.
+
+#### Mutation check, large objects
+
+Three mutations of the Suite production modules, applied to a copy under
+`/tmp` and run against the site-free suite. All three fail.
+
+| Mutation | Caught by |
+|---|---|
+| the copy is never multipart | `test_it_goes_through_the_managed_multipart_copy`, plus 4 errors raised by the fake's own 5 GB refusal |
+| the blob is told the old `int(11)` ceiling | `test_the_blob_row_carries_the_whole_size` |
+| rows above 2 GiB are refused again | `TestObjectAboveFiveGB`, 2 failures and 1 error |
+
+#### Dormancy, unchanged
+
+No Suite file outside `suite/drive/patches/build/` and its tests changed.
+`suite/patches.txt`, `suite/hooks.py`, and the fixtures still name no
+`patches.build`. `test_dormancy` (7) passes. Tickets 29 and 30 stay dormant.
+The Frappe commit registers no patch and no hook: it is one attribute on one
+field, applied by schema sync.
+
+### What root must run for large objects
+
+Serially, and before the site gate above. The framework change has to land
+on the bench's own checkout: a site's schema does not come from a worktree.
+
+```
+env -C /home/faris/benches/suite-bench/apps/frappe git status --short
+env -C /home/faris/benches/suite-bench/apps/frappe git log --oneline -1
+env -C /home/faris/benches/suite-bench/apps/frappe git merge --ff-only fix/drive-26-large-file-size
+
+env -C /home/faris/benches/suite-bench bench --site slides.localhost migrate
+
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost execute frappe.db.describe --args '["File Blob"]'
+
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.core.doctype.file_blob.test_file_blob
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.storage.tests.test_blob
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.storage.tests.test_gc_backfill
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.storage.tests.test_relocate
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.storage.tests.test_serve_upload
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.storage.tests.test_file_integration
+env -C /home/faris/benches/suite-bench \
+  bench --site slides.localhost run-tests --module frappe.tests.test_db_update
+```
+
+Read the first two commands before the third. `git merge --ff-only` needs
+`apps/frappe` clean and on `forge/storage-v2`. The branch is that commit
+plus one, so the merge fast-forwards.
+
+`migrate` here applies the column. It still cannot reach a line of
+`suite/drive/patches/build/`, because `patches.txt` does not name it.
+Migrate is not this ticket's gate and running it ticks no box.
+
+`bench execute frappe.db.describe` is the schema check. It is written from
+the source and was not run here. Expect `file_size` as `bigint(20)`.
+
+Then run the site gate above. Its `test_build_storage` needs the migrated
+column for its twelfth case.
+
+The multipart criterion stays unticked until root migrates and both
+site-backed modules pass. It is no longer blocked: the implementation is
+complete.
