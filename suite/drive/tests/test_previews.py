@@ -217,6 +217,25 @@ class TestPreviewContract(UnitTestCase):
             node="node",
         )
 
+    @patch("suite.drive._core.previews.frappe.log_error")
+    @patch("suite.drive._core.previews.frappe.enqueue")
+    def test_a_refused_queue_is_logged_and_not_raised(self, enqueue, log_error):
+        """A saturated short queue must not reach the caller.
+
+        `frappe.enqueue` measures the depth inline, so `QueueOverloaded` lands
+        inside `nodes.create_file`'s savepoint and would roll back a stored
+        upload. §9.2's daily gap sweep covers the render that never ran.
+        """
+        from suite.drive._core.previews import enqueue_render
+
+        enqueue.side_effect = frappe.QueueOverloaded("Too many queued background jobs (550).")
+
+        enqueue_render("node")
+
+        enqueue.assert_called_once()
+        log_error.assert_called_once()
+        self.assertIn("preview render", log_error.call_args.args[0])
+
     def test_sweep_is_registered_once_as_a_daily_scheduler_event(self):
         registered = []
         for events in scheduler_events.values():
@@ -725,3 +744,24 @@ class TestPreviews(IntegrationTestCase):
                 mime=blob.mime_type,
             )
         enqueue.assert_called_once_with(node)
+
+    def test_a_refused_queue_still_stores_the_file_and_its_bytes(self):
+        """The upload survives a full short queue; only the thumbnail waits."""
+        blob = self._blob(_png())
+        with (
+            patch(
+                "suite.drive._core.previews.frappe.enqueue",
+                side_effect=frappe.QueueOverloaded("Too many queued background jobs (550)."),
+            ),
+            patch("suite.drive._core.previews.frappe.log_error") as log_error,
+        ):
+            node = create_file(
+                self.admin,
+                self.root.name,
+                "queue-full.png",
+                blob=blob.name,
+                size=blob.file_size,
+                mime=blob.mime_type,
+            )
+        self.assertEqual(frappe.db.get_value("Drive Node", node, "blob"), blob.name)
+        log_error.assert_called_once()
