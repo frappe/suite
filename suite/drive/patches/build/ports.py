@@ -570,17 +570,18 @@ ROOT_READ_COLUMNS = ("name", "node", "user", "kind", "state")
 class SiteTree:
     """`LegacyTree` over the real `File`, `Drive Permission`, and `DocShare`.
 
-    `filters` narrows every `File` read the way `SiteFiles` does, so a
+    `name_prefix` narrows every `File` read to ids that start with it, so a
     site-backed test can stay off rows it did not create. Production passes
-    none.
+    none. One value rather than a filter list, because half these reads are
+    raw SQL and cannot take a `frappe.get_all` clause.
     """
 
-    def __init__(self, filters: list | None = None):
-        self.filters = list(filters or [])
+    def __init__(self, name_prefix: str | None = None):
+        self.name_prefix = name_prefix or ""
 
     def row(self, name: str) -> TreeRow | None:
         rows = frappe.get_all(
-            "File", filters=[["name", "=", name], *self.filters], fields=list(TREE_COLUMNS), limit=1
+            "File", filters=[["name", "=", name], *self._clauses()], fields=list(TREE_COLUMNS), limit=1
         )
         return TreeRow.of(rows[0]) if rows else None
 
@@ -618,7 +619,9 @@ class SiteTree:
         if not names:
             return {}
         rows = frappe.get_all(
-            "File", filters=[["name", "in", list(names)]], fields=["name", "folder", "status"]
+            "File",
+            filters=[["name", "in", list(names)], *self._clauses()],
+            fields=["name", "folder", "status"],
         )
         return {row.name: ChainRow(row.name, row.folder, row.status or ACTIVE) for row in rows}
 
@@ -686,17 +689,21 @@ class SiteTree:
     def sheet_entity(self, sheet: str) -> str | None:
         return frappe.db.get_value("File", {"content_doctype": "Sheet", "content_docname": sheet}, "name")
 
+    def _clauses(self) -> list:
+        """The narrowing filter as `frappe.get_all` takes it."""
+        return [["name", "like", self.name_prefix + "%"]] if self.name_prefix else []
+
     def _extra_sql(self, alias: str = "") -> str:
-        """Render the test-only narrowing filter, if there is one."""
-        if not self.filters:
+        """The same narrowing filter, for the reads that are raw SQL."""
+        if not self.name_prefix:
             return ""
         column = f"{alias}.`name`" if alias else "`name`"
         return f" AND {column} LIKE %(build_name_prefix)s"
 
     def _extra_values(self) -> dict:
-        if not self.filters:
+        if not self.name_prefix:
             return {}
-        return {"build_name_prefix": self.filters[0]}
+        return {"build_name_prefix": self.name_prefix + "%"}
 
 
 class SiteDrive:
