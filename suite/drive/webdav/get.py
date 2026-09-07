@@ -15,6 +15,9 @@ the node's `content_modified`, the same time `getlastmodified` publishes.
 Collections have no bytes, so a browser landing on one is sent to the Drive UI.
 """
 
+import unicodedata
+from urllib.parse import quote
+
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 
@@ -72,4 +75,34 @@ def _neutralize_active_content(headers, filename: str) -> None:
     DAV clients name files from the URL and ignore all three headers."""
     headers["X-Content-Type-Options"] = "nosniff"
     headers["Content-Security-Policy"] = "sandbox"
-    headers.set("Content-Disposition", "attachment", filename=filename)
+    headers.set("Content-Disposition", "attachment", **_disposition_names(filename))
+
+
+def _disposition_names(filename: str) -> dict[str, str]:
+    """Name a download the way RFC 6266 and RFC 8187 do, for any title (§12.4).
+
+    A WSGI header value is latin-1 (RFC 9110 §5.5). `Headers.set` quotes a
+    filename but does not encode one, so a title carrying `€`, Cyrillic or
+    Chinese produced a header no server can put on the wire: the dev server
+    raised `UnicodeEncodeError` inside `send_header`, after the status line, and
+    the client got no response at all and timed out. Non-ASCII therefore travels
+    in `filename*`, with an ASCII-folded `filename` for clients that read only
+    that one. Control characters are dropped, so a title holding a newline
+    cannot split the response either.
+
+    `http/routes.py:_disposition_names` is the same function for the same
+    reason. It is repeated rather than imported: HTTP and WebDAV are sibling
+    adapters and neither may depend on the other (ARCHITECTURE.md, "Ownership
+    and placement"). Both mirror what `werkzeug.send_file` does, so a DAV byte
+    path and an export name a file identically.
+    """
+    cleaned = "".join(character for character in filename if character.isprintable()) or "download"
+    try:
+        cleaned.encode("ascii")
+    except UnicodeEncodeError:
+        simple = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii")
+        return {
+            "filename": simple or "download",
+            "filename*": f"UTF-8''{quote(cleaned, safe='!#$&+-.^_`|~')}",
+        }
+    return {"filename": cleaned}
