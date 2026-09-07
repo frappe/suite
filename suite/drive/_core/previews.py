@@ -91,13 +91,25 @@ def enqueue_render(node: str) -> None:
     Callers reach this through the module (`previews.enqueue_render(node)`),
     never through a `from ... import` alias. §9.2 names this function as the
     one render entry point, so one patch point has to cover every writer.
+
+    Queuing is best-effort. `frappe.enqueue` measures the queue depth inline,
+    before it registers the post-commit callback, and raises `QueueOverloaded`
+    from the call below. Both node writers call this as the last statement
+    inside their savepoint (`nodes.create_file`, `nodes.update`), so a raised
+    refusal would discard bytes the caller already stored and already paid
+    quota for, to save a thumbnail. A preview is a free derived artifact and
+    §9.2's daily gap sweep exists to cover failed renders, so the byte write
+    wins and the miss is logged for triage.
     """
-    frappe.enqueue(
-        "suite.drive._core.previews.render",
-        queue="short",
-        enqueue_after_commit=True,
-        node=node,
-    )
+    try:
+        frappe.enqueue(
+            "suite.drive._core.previews.render",
+            queue="short",
+            enqueue_after_commit=True,
+            node=node,
+        )
+    except Exception:
+        frappe.log_error("Drive: could not queue a preview render", frappe.get_traceback())
 
 
 def render(node: str) -> None:
