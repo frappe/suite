@@ -1156,3 +1156,226 @@ litmus itself is still unrun. It needs the served site.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 6: an orphan root row, and a runner that could not tell
+
+The 23 modules and the two regression suites are green. litmus reached the
+endpoint for the first time. All five groups then stopped in `begin`:
+
+```
+Could not create new collection `/dav/litmus/' for tests: 409 CONFLICT
+```
+
+`sites/slides.localhost/logs/suite.drive.webdav.log:186-200` holds the same
+triple five times, between 07:19:54,082 and 07:19:54,375:
+
+```
+DELETE /dav/litmus/ -> 401  client="litmus/0.13 neon/0.33.0"  note="Authentication required."
+DELETE /dav/litmus/ -> 404  user=litmus@example.com           note="Resource not found."
+MKCOL  /dav/litmus/ -> 409  user=litmus@example.com           note="Intermediate collections do not exist."
+```
+
+litmus creates that one collection below the URL it is given, in every group's
+`begin`, before a single case. A 409 there stops the group.
+
+The runner's only complaint was:
+
+```
+STALE LEDGER LINE (now passes): basic:delete_fragment:WARNING
+```
+
+That report is false. `delete_fragment` never ran.
+
+**Two defects, both in the harness. Production is correct.**
+
+#### 1. `prepare` handed litmus a namespace with no usable mount
+
+The 409 note is `pathmap.MISSING_PARENT`. `structure.handle_mkcol` answers it
+when the caller's Personal Root does not resolve, or when §12.1's UPLOAD does
+not hold on it.
+
+`provision_personal_root` (`_core/roots.py:65-72`) returns as soon as
+`personal_root_for` finds a row. That lookup is a `db.get_value` on
+kind/state/user (`:53-57`). It never calls `validate_root_pair` and never reads
+`tabDrive Grant`. A `Drive Root` row whose `Drive Node` is gone therefore
+survives every provision call untouched, and `prepare` printed the DAV URL
+anyway. It proved nothing before it printed.
+
+Reproduced on the live site, in a transaction that was rolled back. The node
+half of `litmus@example.com`'s pair was deleted and the root row left:
+
+```
+personal_root_for            : skt9hfsrv5
+missing_intermediate         : True   parent: None
+require_create_parent        : Conflict -> Intermediate collections do not exist.
+provision_personal_root      : skt9hfsrv5   (returns the same broken row)
+mount_refusal                : the Personal Root pair skt9hfsrv5 is not valid:
+                               Drive root node skt9hfsrv5 was not found
+mount_refusal after ensure_mount : None
+```
+
+The refusal text is the gate's own, word for word.
+
+**What the artifacts prove, and what they do not.** They prove `prepare`
+reached its commit: the served worker authenticated `litmus@example.com`, read
+`Drive Settings.webdav_enabled` and the `Drive Disk Settings` toggle, and
+refused only on the root. All three were written by the same `prepare`
+transaction, so the worker was not reading a stale snapshot. They prove both
+provision calls returned early, because a `create_root` that ran would have
+written a node, a root and an anchor grant, and `create_root` re-raises rather
+than swallowing (`roots.py:45-47`).
+
+They do not prove where the orphan row came from. `bench.log:1226-1227` shows
+`prepare` at 07:19:52,983 and `teardown` at 07:19:54,489, and `teardown` drops
+the whole pair, so the pre-teardown row was deleted before it could be read.
+The binlog and the general log are off, and no traceback was written. The three
+`prepare` attempts at 07:04:40, 07:05:08 and 07:05:26 rolled back whole. Their
+only surviving trace is three `Error Log` rows, which are MyISAM and outlive a
+rollback. **The provenance of the row is unverified.** The mechanism from the
+row to the 409 is verified, above.
+
+**Fix.** `litmus_setup.mount_refusal` reads the mount back the way the served
+site reads it: the root row, `validate_root_pair`, what `/dav/` resolves to,
+and UPLOAD on it. It asks with the litmus user's own principals, because `bench
+execute` runs as Administrator and `require` answers MANAGE to an admin on any
+node, so the caller's identity would pass on a mount litmus cannot use.
+
+`ensure_mount` replaces a root that will not serve. The litmus user is a
+throwaway and the root is the mount, so rebuilding it is the whole repair, the
+same replacement `teardown` already performs.
+
+`prepare` proves the mount after the commit, because the committed rows are
+what the served site reads, and raises `LitmusFixtureError` instead of printing
+a URL. Its own class, so a reader of the traceback can tell a harness refusal
+from one the product made.
+
+No production file changed. The gate that `handle_mkcol` applies is unchanged
+and correct: replayed against the live site, a full dispatched
+`MKCOL /dav/litmus/` on a sound mount answers 201.
+
+#### 2. The runner could not tell a dead group from a clean one
+
+`run_litmus.sh`'s stale-ledger loop split each ledger line on `:` into three
+fields and read the third whole. The third field is
+`WARNING werkzeug strips URI fragments ...`, reason prose included. It then
+searched the transcript for that whole sentence, which no litmus line can hold.
+**The one ledger entry was reported stale on every run**, including a run where
+`delete_fragment` really warns.
+
+The check also ruled on the absence of a non-pass line. "Ran and passed",
+"never ran", "group aborted" and "litmus crashed" were one state. It ignored
+the group name, so a tolerance ledgered for `http:init:FAIL` excused
+`locks:init:FAIL`. Nothing read litmus's own abort message, which carries no
+verdict token and matched neither `case` arm, so five dead groups added nothing
+to the exit status.
+
+**Fix.** The comparison moved to `litmus_verdict.sh`, because a recorded
+transcript is all it needs: no served site and no litmus binary. It records
+every verdict, `pass` included, keyed by group, with an anchored match on the
+verdict field rather than any word on the line. A ledger line is stale only
+when the named test ran and passed. A ledgered test with no verdict gets its
+own message. The abort line, a group that never ran, and a group whose `begin`
+did not pass each fail the run.
+
+Also in the runner: the `EXIT` trap moved above `prepare`, so a `prepare` that
+raises part-way no longer leaves the user, the password, the root and the
+opt-in on the site with no teardown. It is a function body, because `set -e`
+skips the rest of `;`-joined trap commands, which gate run 5 recorded and did
+not fix. litmus's exit status is captured instead of discarded by `|| true`,
+and a `prepare` that prints something other than a URL stops the run.
+
+#### The ledger line stays
+
+`basic:delete_fragment:WARNING` is not stale. The `basic` group stopped in
+`begin`, so `delete_fragment` never ran and the run says nothing about it. The
+runner now says so in those words. Removing it on the strength of an aborted
+group would drop a real tolerance.
+
+**Coverage.** 30 site-free cases in `suite.drive.tests.test_webdav`: 18 in
+`TestLitmusHarness` and 12 in `TestLitmusVerdict`.
+
+`TestLitmusHarness` adds 11 to gate run 5's seven.
+
+- `test_a_sound_mount_is_not_refused` and the four refusal cases: no root, a
+  pair that does not validate, a namespace that resolves to no parent, and a
+  root the user cannot write into. Each names its own half.
+- `test_the_mount_is_read_as_the_litmus_user_not_as_the_caller` pins the
+  principals, the path and the role the check asks with.
+- Three `ensure_mount` cases: a root that will not serve is replaced, a sound
+  one is left alone, and a user with no root is provisioned without a drop.
+- `test_prepare_refuses_to_print_a_url_for_a_mount_that_is_not_there` and
+  `test_prepare_proves_the_mount_after_the_commit`.
+
+`TestLitmusVerdict` drives `litmus_verdict.sh` with recorded transcripts,
+including gate run 6's own, and asserts the exit status and the message. It
+covers the abort report, a ledger that is not called stale by an abort, a group
+that never started, an empty transcript, a ledgered WARNING that still warns, a
+ledgered test that now passes, one that became a failure, an unledgered
+failure, an unledgered WARNING alone, a tolerance that must not cross groups,
+and two lines that look like verdicts and are not.
+
+**Rerun.** No production file changed, so no module needs rerunning. Rerun the
+site-free suite, then serve and run litmus:
+
+```
+cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+All five groups must be attempted, and `begin` must pass in each. Ledger what
+really fails; add nothing on expectation.
+
+No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. No site config, `Drive Disk Settings`
+value, or queued job was written. Every live probe ran inside a transaction
+that was rolled back, and each one checked afterwards that nothing persisted:
+`litmus@example.com` still holds root `skt9hfsrv5`, its node row is present and
+its anchor grant count is 1.
+
+**Checks run.** Site-free in the worktree, plus read-only reads and rolled-back
+probes against the site. No `bench`, `migrate`, `serve`, litmus, queue change,
+`push`, or PR.
+
+```
+$ uvx ruff@0.12.3 check <the changed python files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the changed python files>
+2 files already formatted
+$ bash -n && shellcheck run_litmus.sh litmus_verdict.sh
+(no output)
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+Ran 130 tests in 1.311s
+OK
+
+$ ... TestLitmusHarness against `git show 3a685474b:...litmus_setup.py`
+Ran 18 tests -- FAILED (errors=13)
+$ ... with `mount_refusal` mutated to return None always
+Ran 18 tests -- FAILED (failures=1, errors=4)
+
+$ ... rolled back against slides.localhost: a fresh User inserted inside
+  `inline_user_jobs()`
+root after insert under in_install : mfrkbe6p3l
+mount_refusal                     : None
+PERSISTED USER AFTER ROLLBACK     : None
+
+$ ... rolled back against slides.localhost: the orphan-row shape
+(the block quoted above)
+node row still there : True
+anchor grants        : 1
+```
+
+litmus itself is still unrun on this fix. It needs the served site.
+
+| Commit | Change |
+|---|---|
+| `7ac0f987e` | prove the litmus DAV mount before prepare prints its URL |
+| `dcc91d422` | make the litmus runner rule on what actually ran |
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
