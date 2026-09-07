@@ -14,6 +14,7 @@ from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
 from suite.drive.patches.build.slide_journal import SlideBody
 from suite.drive.patches.build.templates import convert_templates
+from suite.drive.utils.files import S3_URL_PREFIX
 
 MAX_IMAGE_PIXELS = 25_000_000
 MEDIA_KEYS = ("src", "poster")
@@ -69,7 +70,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
                     result.slides_deferred += 1
                     continue
                 deck = replace(deck, node=node)
-                counts = _convert_deck(env, deck, batch_size)
+                counts = _convert_deck(env, deck, batch_size, result)
                 result.media_nodes_created += counts[0]
                 result.media_duplicates_collapsed += counts[1]
                 result.deck_previews_created += counts[2]
@@ -89,7 +90,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
         raise BuildSlidesError(str(error)) from error
 
 
-def _convert_deck(env, deck, batch_size):
+def _convert_deck(env, deck, batch_size, result):
     target = env.content_target
     deck_node = target.nodes((deck.node,)).get(deck.node)
     if not deck_node or deck_node.get("kind") != "document":
@@ -100,7 +101,8 @@ def _convert_deck(env, deck, batch_size):
     thumbnail, excluded = _thumbnail_file(deck, files)
     media = [row for row in files if row.name not in excluded]
     mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media)
-    borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping)
+    local_mapping = dict(mapping)
+    borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping, result)
     mapping.update(borrowed)
     created += borrowed_created
     preview_created = _preview(env, deck, thumbnail)
@@ -112,9 +114,14 @@ def _convert_deck(env, deck, batch_size):
     updates = []
     for slide in slides:
         before = SlideBody(slide.elements, slide.background)
-        elements, changed = _rewrite_elements(parsed[slide.name], mapping)
+        elements, changed, disagreements = _rewrite_elements(parsed[slide.name], mapping, local_mapping)
         background, _ = _rewrite_value(slide.background, mapping)
         after = SlideBody(_dump(elements), background)
+        if disagreements:
+            result.record_issue(
+                f"Slide:{slide.name}",
+                f"{disagreements} attachmentName value(s) disagreed with src; src won",
+            )
         if after == before:
             continue
         env.slide_journal.append(
@@ -143,7 +150,7 @@ def _convert_deck(env, deck, batch_size):
     # The target port mutates fakes and SQL immediately. Rebuild planned values
     # so recovery also covers a crash after SQL and before the state write.
     for row in slides:
-        elements, _ = _rewrite_elements(parsed[row.name], mapping)
+        elements, _, _ = _rewrite_elements(parsed[row.name], mapping, local_mapping)
         background, _ = _rewrite_value(row.background, mapping)
         current[row.name] = SlideBody(_dump(elements), background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
@@ -214,7 +221,7 @@ def _media_mapping(env, deck, parent, files):
     return mapping, created, collapsed, blobless
 
 
-def _borrowed_mapping(env, deck, parent, parsed, local):
+def _borrowed_mapping(env, deck, parent, parsed, local, result):
     references = set()
     for elements in parsed.values():
         for element in elements:
@@ -237,9 +244,16 @@ def _borrowed_mapping(env, deck, parent, parsed, local):
     children = env.content_target.child_nodes(parent["name"])
     for value in unresolved:
         rows = by_url.get(value, [])
-        blobs = {row.blob for row in rows if row.blob and env.content_target.blob(row.blob)}
         if not rows:
+            # A non-template global File cannot be adopted: Build cannot
+            # reconstruct the original paste actor's access.
+            if any(row.deck != deck.name and value in _aliases(row) for row in candidates):
+                result.record_issue(
+                    f"Presentation:{deck.name}",
+                    f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
+                )
             continue
+        blobs = {row.blob for row in rows if row.blob and env.content_target.blob(row.blob)}
         if len(blobs) != 1:
             raise InvalidLegacyContent(f"borrowed media {value!r} is ambiguous")
         blob_name = next(iter(blobs))
@@ -290,7 +304,7 @@ def _media_node(row, parent, name, blob):
 
 def _thumbnail_file(deck, files):
     value = deck.thumbnail
-    if not value or _external(value):
+    if not value or _never_media(value):
         return None, set()
     exact = [row for row in files if row.file_url == value]
     canonical = [row for row in files if _canonical(row.file_url) == _canonical(value)]
@@ -401,13 +415,15 @@ def _canonical(value):
     return unquote(parsed.path or value or "")
 
 
-def _external(value):
+def _never_media(value):
+    """A colour, data URL, bundled asset, or remote URL is never deck media."""
     text = str(value or "")
     return text.startswith(("data:", "/assets/", "#")) or bool(urlsplit(text).netloc)
 
 
-def _never_media(value):
-    return str(value or "").startswith(("data:", "/assets/", "#"))
+def _local_legacy_url(value):
+    text = str(value or "")
+    return not urlsplit(text).netloc and text.startswith(("/files/", "/private/files/", S3_URL_PREFIX))
 
 
 def _bind(mapping, alias, node):
@@ -416,9 +432,10 @@ def _bind(mapping, alias, node):
     mapping[alias] = node
 
 
-def _rewrite_elements(elements, mapping):
+def _rewrite_elements(elements, mapping, local_mapping):
     output = []
     changed = 0
+    disagreements = 0
     for source in elements:
         item = deepcopy(source)
         item_changed = "attachmentName" in item
@@ -427,18 +444,24 @@ def _rewrite_elements(elements, mapping):
             if key in item:
                 item[key], nested = _rewrite_value(item[key], mapping)
                 item_changed |= nested
-        if isinstance(item.get("src"), str) and item["src"] == source.get("src"):
-            fallback = mapping.get(attachment) if isinstance(attachment, str) else None
-            if fallback and not _external(item["src"]):
+        source_src = source.get("src")
+        if isinstance(source_src, str) and isinstance(attachment, str):
+            resolved = None if _never_media(source_src) else mapping.get(source_src)
+            fallback = local_mapping.get(attachment)
+            if resolved and fallback and resolved != fallback:
+                disagreements += 1
+            elif not resolved and fallback and _local_legacy_url(source_src):
                 item["src"] = fallback
                 item_changed = True
         changed += int(item_changed)
         output.append(item)
-    return output, changed
+    return output, changed, disagreements
 
 
 def _rewrite_value(value, mapping):
     if isinstance(value, str):
+        if _never_media(value):
+            return value, False
         return (mapping[value], True) if value in mapping else (value, False)
     changed = False
     if isinstance(value, dict):
