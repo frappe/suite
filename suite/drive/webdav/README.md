@@ -128,10 +128,11 @@ Explorer's `Win32LastModifiedTime` PROPPATCH is honored too.
 ## Compliance testing
 
 `tests/run_litmus.sh <site>` runs the full litmus suite (http, basic,
-copymove, props, locks) against a throwaway user's Home and compares the
-outcome with `tests/litmus_expected.txt` — CI fails on unledgered failures
-and on stale ledger lines. Current status: **all 110 tests pass**; one
-advisory warning is ledgered.
+copymove, props, locks) against a throwaway user's Personal Root at `/dav/`
+and compares the outcome with `tests/litmus_expected.txt`. CI fails on
+unledgered failures and on stale ledger lines. Current status: **not run
+since the Drive Node relink**; the ledger holds one advisory warning and may
+only grow from a real run.
 
 Python integration tests live beside the code:
 `bench --site <site> run-tests --module suite.drive.webdav.tests.<module>`.

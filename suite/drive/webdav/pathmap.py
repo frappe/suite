@@ -65,11 +65,6 @@ class ResolvedPath:
     def is_collection(self) -> bool:
         return bool(self.node is not None and self.node.kind in ("root", "folder"))
 
-    @property
-    def entity(self) -> frappe._dict | None:
-        """The leaf row under its pre-relink name, for the verbs ticket 25 owns."""
-        return self.node
-
 
 def resolve(segments: list[str], user: str) -> ResolvedPath:
     """Walk one DAV path inside the caller's Personal Root.
