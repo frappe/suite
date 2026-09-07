@@ -488,6 +488,10 @@ class TestPreprovisionedPersonalRoot(RootPairCase):
             self.run_roots(self.env)
 
         self.assertEqual(self.env.drive.locked_root_identities, [(PERSONAL, ALICE)])
+        self.assertEqual(
+            self.env.drive.root_identity_events,
+            [("lock", PERSONAL, ALICE), ("read", PERSONAL, ALICE)],
+        )
 
     def test_a_previously_archived_legacy_pair_allows_a_fresh_active_root(self):
         """Offboarding and email reuse after a partial Build are valid §3.2 state."""

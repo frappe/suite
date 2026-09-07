@@ -422,6 +422,7 @@ class FakeDrive:
         self.commits = 0
         self.fail_pair = None
         self.locked_root_identities = []
+        self.root_identity_events = []
 
     # -- reads
 
@@ -441,6 +442,7 @@ class FakeDrive:
 
     def lock_root_identity(self, kind, user):
         self.locked_root_identities.append((kind, user))
+        self.root_identity_events.append(("lock", kind, user))
 
     def active_roots(self, kind, user):
         """§3.2's Active roots for one identity, read off the rows.
@@ -448,6 +450,7 @@ class FakeDrive:
         A row with no `state` key counts as Active, the way the column's
         own default does. `user` narrows a Personal root only.
         """
+        self.root_identity_events.append(("read", kind, user))
         found = []
         for row in self.root_rows.values():
             if row["kind"] != kind or (row.get("state") or ACTIVE) != ACTIVE:
