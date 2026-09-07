@@ -1394,3 +1394,90 @@ class TestDavFixtureQueueHygiene(DavCase):
         enqueue.assert_not_called()
         # the suppression is scoped to the fixture, not left on the module
         self.assertIs(previews.enqueue_render, before)
+
+
+class TestLitmusHarness(DavCase):
+    """`litmus_setup.prepare` provisions its user outside the test runner.
+
+    `User.on_update` computes `now = frappe.in_test or frappe.flags.in_install`
+    and enqueues `create_contact` with it. Under `bench execute` both are false,
+    so the enqueue measures the queue depth and a site at its cap refuses the
+    insert, rolling the litmus user back before the DAV URL is printed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        held = frappe.flags.in_install
+        self.addCleanup(lambda: frappe.flags.__setitem__("in_install", held))
+
+    @property
+    def harness(self):
+        from suite.drive.webdav.tests import litmus_setup
+
+        return litmus_setup
+
+    def test_the_block_makes_the_user_controller_run_its_job_inline(self):
+        # the expression core computes, with the test runner's flag taken away
+        with patch("frappe.in_test", False):
+            self.assertFalse(frappe.in_test or frappe.flags.in_install)
+            with self.harness.inline_user_jobs():
+                self.assertTrue(frappe.in_test or frappe.flags.in_install)
+
+    def test_the_flag_is_put_back_to_what_it_held(self):
+        for held in (None, False, True):
+            with self.subTest(held=held):
+                frappe.flags.in_install = held
+                with self.harness.inline_user_jobs():
+                    self.assertTrue(frappe.flags.in_install)
+                self.assertEqual(frappe.flags.in_install, held)
+
+    def test_the_flag_is_put_back_when_the_block_raises(self):
+        frappe.flags.in_install = False
+        with self.assertRaises(frappe.QueueOverloaded):
+            with self.harness.inline_user_jobs():
+                raise frappe.QueueOverloaded("Too many queued background jobs")
+        self.assertFalse(frappe.flags.in_install)
+
+    def prepare(self, insert):
+        """Run `prepare` site-free, recording the flag at each step."""
+        seen = {}
+
+        def provision(user):
+            seen["provision"] = frappe.flags.in_install
+            return "root-1"
+
+        self.db.exists.return_value = False
+        with (
+            patch("frappe.get_doc", return_value=frappe._dict(insert=insert)),
+            patch("frappe.clear_document_cache"),
+            patch("frappe.utils.get_url", return_value="http://site.test/dav/"),
+            patch.object(self.harness, "update_password"),
+            patch.object(self.harness, "enable_user_webdav"),
+            patch.object(self.harness, "provision_personal_root", side_effect=provision),
+        ):
+            seen["url"] = self.harness.prepare()
+        return seen
+
+    def test_prepare_inserts_the_user_inside_the_isolation(self):
+        seen = {}
+
+        def insert(**kwargs):
+            seen["insert"] = frappe.flags.in_install
+
+        frappe.flags.in_install = False
+        seen.update(self.prepare(insert))
+
+        self.assertTrue(seen["insert"])
+        self.assertEqual(seen["url"], "http://site.test/dav/")
+        # and no wider: the rest of prepare runs on the site's own flags
+        self.assertFalse(seen["provision"])
+        self.assertFalse(frappe.flags.in_install)
+
+    def test_prepare_puts_the_flag_back_when_the_insert_raises(self):
+        def insert(**kwargs):
+            raise frappe.QueueOverloaded("Too many queued background jobs")
+
+        frappe.flags.in_install = False
+        with self.assertRaises(frappe.QueueOverloaded):
+            self.prepare(insert)
+        self.assertFalse(frappe.flags.in_install)
