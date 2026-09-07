@@ -14,9 +14,11 @@ Both are shapes `pathmap` still has to answer for.
 
 import base64
 import io
+from contextlib import contextmanager
 
 import frappe
 from frappe.storage.blob import put_blob
+from frappe.utils import cint
 from frappe.utils.password import update_password
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request, Response
@@ -38,6 +40,7 @@ __all__ = [
     "ensure_user_with_password",
     "file_node",
     "folder_node",
+    "global_webdav_enabled",
     "make_ctx",
     "node_principals",
     "personal_dav_root",
@@ -45,6 +48,7 @@ __all__ = [
     "raw_document_node",
     "reset_dav_request",
     "set_dav_request",
+    "set_global_webdav",
 ]
 
 
@@ -74,6 +78,35 @@ def enable_user_webdav(user: str, commit: bool = False) -> None:
     frappe.db.set_value("Drive Settings", user, "webdav_enabled", 1, update_modified=False)
     if commit:
         frappe.db.commit()
+
+
+def set_global_webdav(value) -> None:
+    """Write the site-wide WebDAV switch and commit it.
+
+    Committed, because every refusal path in the dispatcher calls `db.rollback`
+    and `clear_document_cache` re-clears the cached Single on rollback. An
+    uncommitted toggle is therefore discarded by the first 401/403/405 of a
+    case, and the next request reads the site as feature-off.
+    """
+    frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", cint(value))
+    frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+    frappe.db.commit()
+
+
+@contextmanager
+def global_webdav_enabled():
+    """Turn the site switch on for the block, then put back what it held.
+
+    Restoring a hard-coded 0 is not a restore. These suites commit, so on a
+    site where an admin had WebDAV on, one test run turned the feature off for
+    every real client and left it off - a test changing the site it measures.
+    """
+    previous = frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled")
+    set_global_webdav(1)
+    try:
+        yield
+    finally:
+        set_global_webdav(previous)
 
 
 def basic_header(user: str, password: str) -> str:
