@@ -64,8 +64,14 @@ def note_user(user: str) -> None:
 
 
 def note(reason: str) -> None:
+    """Add one reason to this request's log line; several are joined.
+
+    Appending rather than replacing: a refusal names itself first, and the
+    response net that runs after it must not erase that name to report its
+    own repair.
+    """
     if context := getattr(frappe.local, "_webdav_log", None):
-        context["note"] = reason
+        context["note"] = f"{context['note']}; {reason}" if context["note"] else reason
 
 
 def log_response(request: Request, response: Response) -> None:
