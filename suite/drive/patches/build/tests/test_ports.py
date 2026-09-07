@@ -577,6 +577,18 @@ class TestSiteDrive(StubbedDatabase):
         self.db.rollback.assert_called_once_with(save_point="drive_build_root_pair")
         self.db.release_savepoint.assert_not_called()
 
+    def test_a_mariadb_deadlock_keeps_the_original_error_when_the_savepoint_is_gone(self):
+        deadlock = frappe.QueryDeadlockError("deadlock victim")
+        self.db.bulk_insert.side_effect = deadlock
+        self.db.rollback.side_effect = [RuntimeError("savepoint was rolled back"), None]
+
+        with self.assertRaises(frappe.QueryDeadlockError) as caught:
+            self.drive.write_root_pair(PAIR_NODE, PAIR_METADATA, [PAIR_GRANT])
+
+        self.assertIs(caught.exception, deadlock)
+        self.assertEqual(self.db.rollback.call_args_list[0].kwargs, {"save_point": "drive_build_root_pair"})
+        self.assertEqual(self.db.rollback.call_args_list[1].args, ())
+
     def test_a_repaired_pair_writes_only_its_missing_half(self):
         self.drive.write_root_pair(None, PAIR_METADATA, [])
 
@@ -659,22 +671,43 @@ class TestSiteDrive(StubbedDatabase):
         self.assertIsNone(self.drive.root_metadata("n1"))
         self.assertEqual(self.db.get_value.call_count, 2)
 
-    def test_the_active_personal_root_is_read_by_user_kind_and_state(self):
+    def test_the_active_personal_roots_are_read_by_user_kind_and_state(self):
         # The same filter `_core/roots.py active_root_for` uses. A `User`
         # insert already provisions a Personal root at a fresh node id, so
         # Build has to be able to see one before it writes a second.
-        self.db.get_value.return_value = "other-node"
+        with patch.object(frappe, "get_all", return_value=["other-node", "second-node"]) as get_all:
+            self.assertEqual(
+                self.drive.active_roots("Personal", "a@b.co"),
+                ("other-node", "second-node"),
+            )
 
-        self.assertEqual(self.drive.active_root("Personal", "a@b.co"), "other-node")
-        self.db.get_value.assert_called_once_with(
-            "Drive Root", {"kind": "Personal", "state": ACTIVE, "user": "a@b.co"}, "node"
+        get_all.assert_called_once_with(
+            "Drive Root",
+            filters={"kind": "Personal", "state": ACTIVE, "user": "a@b.co"},
+            pluck="node",
+            order_by="node asc",
         )
 
-    def test_the_active_shared_root_names_no_user(self):
-        self.db.get_value.return_value = None
+    def test_the_active_shared_root_query_names_no_user(self):
+        with patch.object(frappe, "get_all", return_value=[]) as get_all:
+            self.assertEqual(self.drive.active_roots("Shared", None), ())
 
-        self.assertIsNone(self.drive.active_root("Shared", None))
-        self.db.get_value.assert_called_once_with("Drive Root", {"kind": "Shared", "state": ACTIVE}, "node")
+        get_all.assert_called_once_with(
+            "Drive Root",
+            filters={"kind": "Shared", "state": ACTIVE},
+            pluck="node",
+            order_by="node asc",
+        )
+
+    def test_a_personal_identity_locks_the_stable_user_row(self):
+        self.drive.lock_root_identity("Personal", "a@b.co")
+
+        self.db.get_value.assert_called_once_with("User", "a@b.co", "name", for_update=True)
+
+    def test_a_shared_identity_locks_the_stable_doctype_row(self):
+        self.drive.lock_root_identity("Shared", None)
+
+        self.db.get_value.assert_called_once_with("DocType", "Drive Root", "name", for_update=True)
 
     def test_the_stored_roles_come_back_as_integers(self):
         rows = [frappe._dict(principal="a@b.co", role="30")]
@@ -754,9 +787,9 @@ class TestFakeDriveKeys(unittest.TestCase):
         self.assertEqual(self.drive.node_ids(), {"n1"})
 
     def test_the_active_root_read_answers_per_identity(self):
-        self.assertEqual(self.drive.active_root("Personal", "a@b.co"), "n1")
-        self.assertIsNone(self.drive.active_root("Personal", "nobody@example.com"))
-        self.assertIsNone(self.drive.active_root("Shared", None))
+        self.assertEqual(self.drive.active_roots("Personal", "a@b.co"), ("n1",))
+        self.assertEqual(self.drive.active_roots("Personal", "nobody@example.com"), ())
+        self.assertEqual(self.drive.active_roots("Shared", None), ())
 
     def test_an_archived_row_is_not_an_active_root(self):
         self.drive.write_root_pair(
@@ -765,7 +798,7 @@ class TestFakeDriveKeys(unittest.TestCase):
             [],
         )
 
-        self.assertIsNone(self.drive.active_root("Shared", None))
+        self.assertEqual(self.drive.active_roots("Shared", None), ())
 
 
 if __name__ == "__main__":

@@ -466,28 +466,57 @@ class TestPreprovisionedPersonalRoot(RootPairCase):
         fresh = personal_row("fresh-root", ALICE)
         self.env.drive.insert_nodes([_node_row(fresh, PERSONAL)])
         self.env.drive._insert_root(_metadata_row(fresh, PERSONAL, ALICE, ACTIVE))
-        self.tree, self.plans = self.run_roots(self.env)
+        self.before = self.snapshot(self.env.drive)
 
-    def test_the_legacy_pair_is_archived_instead_of_making_a_second_active_root(self):
-        """§3.2 permits only one Active Personal root for one user."""
+    def test_the_conflict_is_refused_instead_of_archiving_the_legacy_root(self):
+        """§14.3 makes an enabled legacy folder Active at its source id."""
+        with self.assertRaises(BuildPairError) as caught:
+            self.run_roots(self.env)
+
+        self.assertIn("must become the Active Personal root", str(caught.exception))
         self.assertEqual(self.env.drive.root_rows["fresh-root"]["state"], ACTIVE)
+        self.assertNotIn("u-alice", self.env.drive.root_rows)
+
+    def test_the_refusal_leaves_both_namespaces_unchanged(self):
+        with self.assertRaises(BuildPairError):
+            self.run_roots(self.env)
+
+        self.assertEqual(self.snapshot(self.env.drive), self.before)
+
+    def test_the_identity_is_locked_before_the_conflict_read(self):
+        with self.assertRaises(BuildPairError):
+            self.run_roots(self.env)
+
+        self.assertEqual(self.env.drive.locked_root_identities, [(PERSONAL, ALICE)])
+
+    def test_a_previously_archived_legacy_pair_allows_a_fresh_active_root(self):
+        """Offboarding and email reuse after a partial Build are valid §3.2 state."""
+        legacy = personal_row("u-alice", ALICE)
+        self.env.drive.insert_nodes([_node_row(legacy, PERSONAL)])
+        self.env.drive._insert_root(_metadata_row(legacy, PERSONAL, ALICE, ARCHIVED))
+
+        report, plans = self.run_roots(self.env)
+
         self.assertEqual(self.env.drive.root_rows["u-alice"]["state"], ARCHIVED)
-        active = [
-            row
-            for row in self.env.drive.root_rows.values()
-            if row["kind"] == PERSONAL and row["user"] == ALICE and row["state"] == ACTIVE
-        ]
-        self.assertEqual([row["node"] for row in active], ["fresh-root"])
-
-    def test_descendants_still_receive_the_original_legacy_root_id(self):
-        """Archiving metadata does not discard the namespace or invent an id map."""
-        self.assertEqual([(plan.node, plan.state) for plan in self.plans], [("u-alice", ARCHIVED)])
-
-    def test_a_rerun_keeps_the_same_root_active(self):
-        """The target-table check is stable after the archived pair exists."""
-        second, plans = self.run_roots(self.env)
-        self.assertEqual(second.roots_already_complete, 1)
+        self.assertEqual(self.env.drive.root_rows["fresh-root"]["state"], ACTIVE)
         self.assertEqual([(plan.node, plan.state) for plan in plans], [("u-alice", ARCHIVED)])
+        self.assertEqual(report.roots_archived, 1)
+
+
+class TestPreprovisionedSharedRoot(RootPairCase):
+    """The same uniqueness rule applies to the one Active Shared root."""
+
+    def test_an_existing_fresh_shared_root_stops_the_legacy_pair(self):
+        env = self.build(drive_row())
+        fresh = drive_row(name="fresh-shared")
+        env.drive.insert_nodes([_node_row(fresh, SHARED)])
+        env.drive._insert_root(_metadata_row(fresh, SHARED, None, ACTIVE))
+
+        with self.assertRaisesRegex(BuildPairError, "Active Shared root"):
+            self.run_roots(env)
+
+        self.assertNotIn(DRIVE_ROOT_ROW, env.drive.node_rows)
+        self.assertEqual(env.drive.locked_root_identities, [(SHARED, None)])
 
 
 class TestRerun(RootPairCase):

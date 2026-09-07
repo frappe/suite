@@ -106,6 +106,7 @@ def convert_root_pairs(env, tree: TreeConversion, *, batch_size: int = BUILD_BAT
             env.drive.commit()
             env.state.put_tree(tree)
             written = 0
+        _lock_and_refuse_active_conflict(env, plan)
         if pair_rows:
             env.drive.write_root_pair(node, metadata, anchors)
             if node and metadata:
@@ -168,16 +169,23 @@ def _reconcile(env, tree: TreeConversion, row: TreeRow, claimed_users: set[str])
         tree.record_skip(SkippedRow(row.name, "a Users/<email> folder names no user"))
         return None
 
-    state = _metadata_state(env, row, kind, user, claimed_users)
-    if state == ARCHIVED:
-        tree.roots_archived += 1
+    mapped_state = _metadata_state(env, row, kind, user, claimed_users)
 
     node = _node_row(row, kind)
-    metadata = _metadata_row(row, kind, user, state)
+    metadata = _metadata_row(row, kind, user, mapped_state)
 
     existing_node = env.drive.nodes((row.name,)).get(row.name)
     existing_metadata = env.drive.root_metadata(row.name)
     _refuse_mismatch(row.name, existing_node, existing_metadata, metadata)
+
+    # Once a pair exists, its lifecycle is target state. A user can be
+    # offboarded after an interrupted Build and later return with a fresh
+    # Active root. A rerun must not revive the archived legacy namespace or
+    # refuse that valid §3.2 shape. Source mapping decides lifecycle only
+    # when Build creates the metadata row for the first time.
+    state = existing_metadata.get("state") if existing_metadata else mapped_state
+    if state == ARCHIVED:
+        tree.roots_archived += 1
 
     tree.max_id_length = max(tree.max_id_length, len(row.name))
     missing_node = None if existing_node else node
@@ -215,16 +223,30 @@ def _metadata_state(env, row: TreeRow, kind: str, user: str | None, claimed: set
         return ACTIVE
     if user in claimed:
         return ARCHIVED
-    # Build is not the only writer. User.after_insert can already have
-    # provisioned an Active Personal root at a fresh id before this legacy
-    # folder is reached. Keep that live namespace and archive the legacy
-    # pair; descendants still migrate under the original File id, while
-    # §3.2's one-Active-root invariant remains true. An Active root at this
-    # same id is the pair being resumed, not a conflict.
-    active = env.drive.active_root(PERSONAL, user)
-    if active and active != row.name:
-        return ARCHIVED
     return ACTIVE if env.tree.user_enabled(user) else ARCHIVED
+
+
+def _lock_and_refuse_active_conflict(env, plan: RootPlan) -> None:
+    """Hold §3.2 uniqueness while an Active source pair is published.
+
+    The accepted migration mapping is authoritative: an enabled
+    `Users/<email>` folder becomes the Active Personal root and keeps its
+    `File` id (§14.3). A fresh-id root created before Build is contradictory
+    target state. Silently archiving the legacy pair would keep uniqueness
+    while violating both mapping rules and hiding that user's old namespace.
+    Build therefore refuses and leaves both namespaces unchanged.
+    """
+    if plan.state != ACTIVE:
+        return
+    env.drive.lock_root_identity(plan.kind, plan.user)
+    conflicts = [node for node in env.drive.active_roots(plan.kind, plan.user) if node != plan.node]
+    if conflicts:
+        identity = plan.user if plan.kind == PERSONAL else SHARED
+        raise BuildPairError(
+            f"Drive root {plan.node!r} must become the Active {plan.kind} root for {identity!r} "
+            f"(§14.3), but Active root(s) {', '.join(repr(node) for node in conflicts)} already exist. "
+            "Reconcile that target state before Build; the migration will not archive either namespace."
+        )
 
 
 def _node_row(row: TreeRow, kind: str) -> dict:
