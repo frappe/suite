@@ -52,9 +52,6 @@ class LegacyFiles(Protocol):
     def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
         """Blobless rows whose `file_url` is a Drive S3 fetch URL, `name` ascending."""
 
-    def rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
-        """Every blobless non-folder row, `name` ascending."""
-
     def link_blob(self, file_name: str, blob_name: str) -> None:
         """Set `File.blob` without doc events or a `modified` bump."""
 
@@ -102,7 +99,13 @@ class SiteStorage:
     def claim_blob(self, checksum: str) -> str | None:
         from frappe.storage.blob import revive_blob
 
-        existing = frappe.db.get_value("File Blob", {"checksum": checksum, "is_private": 1, "driver": "s3"})
+        existing = frappe.db.get_value(
+            "File Blob",
+            # `status` matters: a Pending row is an upload still in flight, so
+            # its object may not be there. Linking to one would leave the File
+            # pointing at nothing once Cleanup deletes Drive's legacy prefix.
+            {"checksum": checksum, "is_private": 1, "driver": "s3", "status": "Ready"},
+        )
         # revive_blob locks the row and pushes it out of the GC orphan window.
         # It answers False when a concurrent GC pass already deleted it, and
         # then the object has to be copied again.
@@ -134,17 +137,16 @@ class SiteFiles:
         self.s3_url_prefix = s3_url_prefix
 
     def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
-        return self._page({"file_url": ("like", self.s3_url_prefix.replace("_", r"\_") + "%")}, after, limit)
-
-    def rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
-        return self._page({}, after, limit)
-
-    def _page(self, extra: dict, after: str, limit: int) -> list[LegacyRow]:
-        filters = {"blob": ("is", "not set"), "is_folder": 0, "name": (">", after)}
-        filters.update(extra)
         rows = frappe.get_all(
             "File",
-            filters=filters,
+            filters={
+                "blob": ("is", "not set"),
+                "is_folder": 0,
+                "name": (">", after),
+                # The prefix carries no LIKE wildcard of its own; `test_ports`
+                # fails if that stops being true and the pattern over-matches.
+                "file_url": ("like", self.s3_url_prefix + "%"),
+            },
             fields=["name", "file_url", "file_name"],
             order_by="name asc",
             limit=limit,

@@ -3,11 +3,17 @@
 They are the fixtures the §14.2 step 1 to 3 tests run against: no site, no
 bucket, no database, so every rule is exercised directly and an interrupted
 run is reproduced by raising where a real one would be killed.
+
+Where they copy a real constraint they copy it exactly: a body is read once
+and cannot be rewound, and `copy_object` refuses a source above 5 GB, the
+way S3 does. Two limits they do not model: `FakeStorage` has no transaction,
+so a rollback in `FakeFiles` leaves its blobs behind; and `run_backfill`
+answers with a fixed dict rather than reading the rows. Both are covered
+against the real thing in `suite/drive/tests/test_build_storage.py`.
 """
 
-import io
-
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD
 from suite.drive.patches.build.ports import LegacyRow
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
@@ -39,7 +45,7 @@ class FakeStorage:
 
     def claim_blob(self, checksum):
         for name, blob in self.blobs.items():
-            if blob["checksum"] == checksum:
+            if blob["checksum"] == checksum and blob.get("status") == "Ready":
                 return name
         return None
 
@@ -83,9 +89,6 @@ class FakeFiles:
     def s3_rows_without_blob(self, after, limit):
         return self._page(after, limit, lambda row: row["file_url"].startswith(S3_URL_PREFIX))
 
-    def rows_without_blob(self, after, limit):
-        return self._page(after, limit, lambda row: True)
-
     def _page(self, after, limit, matches):
         found = [
             LegacyRow(row["name"], row["file_url"], row["file_name"])
@@ -113,6 +116,26 @@ class InterruptedRun(Exception):
     """Stands in for the run being killed part way through."""
 
 
+class SingleUseBody:
+    """What `get_object` returns: a stream you may read once, forwards only.
+
+    A `BytesIO` would let a second read pass succeed here and fail on a
+    site, which is exactly what "read the object once" has to rule out.
+    """
+
+    def __init__(self, content, chunk_size):
+        self.chunks = [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)]
+        self.closed = False
+
+    def read(self, size=-1):
+        if self.closed:
+            raise ValueError("read from a closed S3 body")
+        return self.chunks.pop(0) if self.chunks else b""
+
+    def close(self):
+        self.closed = True
+
+
 class FakeBucket:
     """`S3Bucket` over a dict of objects, recording every call."""
 
@@ -123,6 +146,9 @@ class FakeBucket:
         self.opened = []
         self.copies = []
         self.fail_copy_at = None
+        # Small enough that an ordinary fixture still crosses the read loop
+        # more than once, so the chunk arithmetic is exercised.
+        self.read_chunk = 64
 
     def declare(self, key, size):
         """An object with a size but no bytes, for the copy-choice tests."""
@@ -138,12 +164,15 @@ class FakeBucket:
         if key not in self.objects:
             raise FileNotFoundError(key)
         self.opened.append(key)
-        return io.BytesIO(self.objects[key])
+        return SingleUseBody(self.objects[key], self.read_chunk)
 
     def size(self, key):
         return self.sizes.get(key)
 
     def copy_object(self, source_key, destination_key):
+        if self.sizes.get(source_key, 0) > MULTIPART_COPY_THRESHOLD:
+            # What S3 answers: CopyObject has a hard 5 GB source ceiling.
+            raise ValueError(f"copy_object source {source_key} is above the 5 GB ceiling")
         self._copy("copy_object", source_key, destination_key)
 
     def managed_copy(self, source_key, destination_key):

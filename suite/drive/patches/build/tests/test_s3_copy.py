@@ -5,9 +5,11 @@ import io
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from frappe.storage.blob import sniff_mime
 
+from suite.drive.patches.build import layout
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD, blob_key, object_key
 from suite.drive.patches.build.s3_copy import copy_in_bucket, copy_legacy_s3_objects
 from suite.drive.patches.build.tests.fakes import (
@@ -116,7 +118,7 @@ class TestResume(S3CopyCase):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES)
         storage = FakeStorage()
-        storage.blobs["blob-existing"] = {"checksum": SHA}
+        storage.blobs["blob-existing"] = {"checksum": SHA, "status": "Ready"}
 
         _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
 
@@ -124,6 +126,19 @@ class TestResume(S3CopyCase):
         self.assertEqual(files.blob_of("f1"), "blob-existing")
         self.assertEqual(prep.s3_objects_reused, 1)
         self.assertEqual(prep.s3_objects_copied, 0)
+
+    def test_a_blob_still_uploading_is_not_claimed(self):
+        # A Pending row is an upload in flight; its object may not be there.
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        storage = FakeStorage()
+        storage.blobs["blob-pending"] = {"checksum": SHA, "status": "Pending"}
+
+        _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
+
+        self.assertNotEqual(files.blob_of("f1"), "blob-pending")
+        self.assertEqual(len(bucket.copies), 1)
+        self.assertEqual(prep.s3_objects_reused, 0)
 
     def test_a_complete_object_at_the_destination_is_not_copied_again(self):
         # What an interrupted run leaves: the object copied, no blob row.
@@ -227,15 +242,67 @@ class TestBatching(S3CopyCase):
         self.assertEqual(files.commits, 2)
 
 
-class TestSeamCannotDelete(unittest.TestCase):
-    def test_the_bucket_port_exposes_no_deletion(self):
-        # Build must not be able to remove a legacy object even by mistake.
-        from suite.drive.patches.build.ports import S3Bucket
+class TestTermination(S3CopyCase):
+    def test_rows_that_can_never_be_linked_do_not_stall_the_cursor(self):
+        # Every one of these stays blobless, so a cursor that did not advance
+        # would hand back the same page forever.
+        specs = [(f"f{i}", f"gone/f{i}", "a.txt") for i in range(3)]
+        files = FakeFiles.with_s3_files(*specs)
 
-        self.assertEqual(
-            [name for name in ("delete", "delete_object", "remove") if hasattr(S3Bucket, name)],
-            [],
-        )
+        _, prep = self.run_copy(files=files, bucket=FakeBucket(), batch_size=2)
+
+        self.assertEqual(prep.s3_rows_seen, 3)
+        self.assertEqual([m.file for m in prep.missing_bytes], ["f0", "f1", "f2"])
+        self.assertEqual(files.commits, 2)
+
+
+class TestMultipartWiring(S3CopyCase):
+    """The choice as the copy step actually makes it, not as a pure call.
+
+    The threshold is read at call time, so a small fixture proves the wiring
+    without a 5 GB object.
+    """
+
+    def copy_with_threshold(self, threshold):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        with patch.object(layout, "MULTIPART_COPY_THRESHOLD", threshold):
+            self.run_copy(files=files, bucket=bucket)
+        return bucket.copies[0][0]
+
+    def test_a_large_object_goes_through_the_managed_copy(self):
+        self.assertEqual(self.copy_with_threshold(len(BYTES) - 1), "managed_copy")
+
+    def test_a_small_object_goes_through_copy_object(self):
+        self.assertEqual(self.copy_with_threshold(len(BYTES)), "copy_object")
+
+
+class TestStreamingAcrossChunks(S3CopyCase):
+    """A body arrives in pieces, so the size, hash, and sniff must accumulate."""
+
+    def test_the_head_is_the_first_bytes_and_the_size_is_all_of_them(self):
+        content = b"<svg xmlns='http://www.w3.org/2000/svg'>" + b"y" * 20000
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.bin"))
+        bucket = FakeBucket().put("team/f1", content)
+        storage = FakeStorage()
+
+        self.run_copy(files=files, bucket=bucket, storage=storage)
+
+        (blob,) = storage.blobs.values()
+        self.assertEqual(blob["file_size"], len(content))
+        self.assertEqual(blob["checksum"], hashlib.sha256(content).hexdigest())
+        self.assertEqual(blob["mime_type"], "image/svg+xml")
+        # Sniffing the tail instead would answer something else entirely.
+        self.assertNotEqual(blob["mime_type"], sniff_mime(io.BytesIO(content[-64:])))
+
+    def test_the_body_is_never_rewound(self):
+        # `FakeBucket.open` hands back a single-use stream, like botocore's.
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+
+        self.run_copy(files=files, bucket=bucket)
+
+        self.assertEqual(bucket.opened, ["team/f1"])
 
 
 if __name__ == "__main__":

@@ -59,24 +59,47 @@ class TestSiteFiles(StubbedDatabase):
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
         self.assertEqual(get_all.call_args.kwargs["limit"], 1000)
 
-    def test_the_blobless_scan_has_no_url_filter(self):
-        with patch.object(frappe, "get_all", return_value=[]) as get_all:
-            self.files.rows_without_blob("", 10)
-
-        self.assertNotIn("file_url", get_all.call_args.kwargs["filters"])
+    def test_the_fetch_url_prefix_carries_no_like_wildcard(self):
+        # `s3_rows_without_blob` appends "%" to this prefix unescaped.
+        self.assertNotIn("%", S3_URL_PREFIX)
+        self.assertNotIn("_", S3_URL_PREFIX)
 
     def test_a_row_with_no_file_url_reads_as_an_empty_string(self):
         rows = [frappe._dict(name="f1", file_url=None, file_name=None)]
         with patch.object(frappe, "get_all", return_value=rows):
-            (row,) = self.files.rows_without_blob("", 10)
+            (row,) = self.files.s3_rows_without_blob("", 10)
 
         self.assertEqual(row.file_url, "")
+
+    def test_a_batch_commits_only_outside_a_test_run(self):
+        # Every resume claim rests on this call. Under the framework test
+        # runner it must stay silent, or the class rollback loses its grip.
+        previous = frappe.flags.in_test
+        self.addCleanup(setattr, frappe.flags, "in_test", previous)
+        for in_test, expected in ((False, 1), (True, 0)):
+            with self.subTest(in_test=in_test):
+                self.db.commit.reset_mock()
+                frappe.flags.in_test = in_test
+                self.files.commit()
+                self.assertEqual(self.db.commit.call_count, expected)
 
 
 class TestSiteStorage(StubbedDatabase):
     def setUp(self):
         super().setUp()
         self.storage = SiteStorage()
+
+    def test_the_driver_name_and_config_are_the_site_config_keys(self):
+        # The gate reads both; a wrong key name would refuse every S3 site.
+        with patch.object(
+            frappe, "conf", frappe._dict(storage_driver="s3", storage_driver_config={"bucket": "b"})
+        ):
+            self.assertEqual(self.storage.driver_name(), "s3")
+            self.assertEqual(self.storage.driver_config(), {"bucket": "b"})
+
+        with patch.object(frappe, "conf", frappe._dict()):
+            self.assertEqual(self.storage.driver_name(), "")
+            self.assertEqual(self.storage.driver_config(), {})
 
     def test_enabled_is_the_framework_switch(self):
         for value in (True, False):
@@ -95,7 +118,8 @@ class TestSiteStorage(StubbedDatabase):
             self.assertEqual(self.storage.claim_blob("abc"), "blob-1")
 
         self.db.get_value.assert_called_once_with(
-            "File Blob", {"checksum": "abc", "is_private": 1, "driver": "s3"}
+            "File Blob",
+            {"checksum": "abc", "is_private": 1, "driver": "s3", "status": "Ready"},
         )
         revive.assert_called_once_with("blob-1")
 
@@ -164,6 +188,24 @@ class TestBotoBucket(unittest.TestCase):
     def test_size_is_the_content_length(self):
         self.client.head_object.return_value = {"ContentLength": 42}
         self.assertEqual(self.bucket.size("k"), 42)
+
+    def test_it_never_writes_or_deletes_through_the_client(self):
+        # The whole copy path, then a check that only reads and copies ran.
+        self.client.get_object.return_value = {"Body": "stream"}
+        self.client.head_object.return_value = {"ContentLength": 3}
+        self.bucket.open("src")
+        self.bucket.size("src")
+        self.bucket.copy_object("src", "dst")
+        self.bucket.managed_copy("src", "dst")
+
+        for forbidden in (
+            "delete_object",
+            "delete_objects",
+            "put_object",
+            "upload_file",
+            "upload_fileobj",
+        ):
+            self.assertEqual(getattr(self.client, forbidden).call_count, 0, forbidden)
 
     def test_both_copies_stay_inside_one_bucket(self):
         self.bucket.copy_object("src", "dst")

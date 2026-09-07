@@ -64,12 +64,32 @@ class TestBuildGate(unittest.TestCase):
         )
         check_gate(env)
 
-    def test_an_unnamed_legacy_bucket_is_not_compared(self):
-        # A site that never filled in Drive Disk Settings.bucket cannot be
-        # checked; the driver's bucket is the only one there is.
+    def test_an_unnamed_legacy_bucket_refuses(self):
+        # Without it there is nothing to compare, and "the same bucket" is
+        # exactly the assumption the copy step cannot check for itself.
         env = self.env(
             storage=FakeStorage(config={"bucket": "drive-bucket"}),
             legacy_s3=LegacyS3Config(enabled=True, bucket=""),
+        )
+        with self.assertRaises(BuildGateError) as caught:
+            check_gate(env)
+        self.assertIn("Drive Disk Settings.bucket", str(caught.exception))
+
+    def test_one_bucket_name_reached_at_two_endpoints_refuses(self):
+        # A MinIO bucket and an AWS bucket can share a name. The copy would
+        # then read nothing and report every Drive file as missing bytes.
+        env = self.env(
+            storage=FakeStorage(config={"bucket": "drive", "endpoint_url": None}),
+            legacy_s3=LegacyS3Config(enabled=True, bucket="drive", endpoint_url="https://minio.internal"),
+        )
+        with self.assertRaises(BuildGateError) as caught:
+            check_gate(env)
+        self.assertIn("two different buckets", str(caught.exception))
+
+    def test_one_endpoint_spelled_two_ways_passes(self):
+        env = self.env(
+            storage=FakeStorage(config={"bucket": "drive", "endpoint_url": "https://minio.internal/"}),
+            legacy_s3=LegacyS3Config(enabled=True, bucket="drive", endpoint_url="https://minio.internal"),
         )
         check_gate(env)
 

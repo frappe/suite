@@ -9,21 +9,14 @@ What it never does: move or delete local bytes, delete a legacy S3 object,
 or write any `File` column except `blob`.
 """
 
+from frappe.storage.backfill import PRIVATE_PREFIX, PUBLIC_PREFIX
+
 from suite.drive.patches.build.environment import BACKFILL_BATCH_SIZE, BUILD_BATCH_SIZE
 from suite.drive.patches.build.gate import check_gate
 from suite.drive.patches.build.s3_copy import copy_legacy_s3_objects
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
-from suite.drive.utils.files import S3_URL_PREFIX
 
-NO_BLOB_REASON = "no blob after the framework backfill and the S3 copy step"
-
-# What the framework backfill accepts. Anything else on an S3 site is a bare
-# bucket key, which §14.2 step 3 does not cover: it names fetch URLs only.
-LOCAL_PREFIXES = ("/files/", "/private/files/")
-BARE_S3_KEY_REASON = (
-    "file_url is neither a local files path nor a Drive S3 fetch URL, so no step "
-    "claimed it; check the bucket for this key by hand"
-)
+LOCAL_PREFIXES = (PUBLIC_PREFIX, PRIVATE_PREFIX)
 
 
 def prepare_legacy_bytes(env, *, batch_size: int = BUILD_BATCH_SIZE) -> StoragePreparation:
@@ -39,51 +32,33 @@ def prepare_legacy_bytes(env, *, batch_size: int = BUILD_BATCH_SIZE) -> StorageP
     stats = env.storage.run_backfill(BACKFILL_BATCH_SIZE) or {}
     prep.backfill_linked = stats.get("linked", 0)
     prep.backfill_blobs_created = stats.get("blobs_created", 0)
-    reasons = {row["name"]: row.get("reason", "") for row in stats.get("skipped") or []}
+    prep.missing_bytes = unreadable_local_rows(stats)
     env.state.put_storage(prep)
 
     if env.legacy_s3.enabled:
         copy_legacy_s3_objects(env, prep, batch_size=batch_size)
 
-    reasons.update({row.file: row.reason for row in prep.missing_bytes})
-    prep.missing_bytes = _blobless_rows(env, reasons, batch_size)
     prep.completed = True
     env.state.put_storage(prep)
     return prep
 
 
-def _blobless_rows(env, reasons: dict, batch_size: int) -> list[MissingBytes]:
-    """Every non-folder `File` row still without a blob, with why it failed.
+def unreadable_local_rows(backfill_stats: dict) -> list[MissingBytes]:
+    """The local rows the backfill looked at and could not read.
 
-    This is a fresh scan rather than the running tally, so bytes restored
-    between two runs stop being reported and a row that only failed on an
-    earlier run is not carried forward."""
-    missing: list[MissingBytes] = []
-    after = ""
-    while True:
-        rows = env.files.rows_without_blob(after, batch_size)
-        if not rows:
-            return missing
-        for row in rows:
-            missing.append(
-                MissingBytes(
-                    file=row.name,
-                    file_url=row.file_url,
-                    reason=reasons.get(row.name) or _default_reason(env, row.file_url),
-                )
-            )
-        after = rows[-1].name
-        if len(rows) < batch_size:
-            return missing
-
-
-def _default_reason(env, file_url: str) -> str:
-    """Why a row has no blob when no step recorded a reason of its own."""
-    if (
-        env.legacy_s3.enabled
-        and file_url
-        and not file_url.startswith(S3_URL_PREFIX)
-        and not file_url.startswith(LOCAL_PREFIXES)
-    ):
-        return BARE_S3_KEY_REASON
-    return NO_BLOB_REASON
+    §14.1 lists "a local row still without a blob after that (bytes missing
+    on disk)". The backfill also skips rows whose `file_url` is not a local
+    path at all: on an S3 site that is every fetch URL, which step 3 then
+    handles, and on any site it is every Link node, whose `file_url` is an
+    external URL and never named bytes (§14.4). Neither is a missing byte,
+    so only rows under the framework's own local prefixes are listed here.
+    """
+    return [
+        MissingBytes(
+            file=row["name"],
+            file_url=row.get("file_url") or "",
+            reason=row.get("reason") or "",
+        )
+        for row in backfill_stats.get("skipped") or []
+        if (row.get("file_url") or "").startswith(LOCAL_PREFIXES)
+    ]

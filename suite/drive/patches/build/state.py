@@ -7,22 +7,24 @@ leaves the previous version readable.
 
 Two kinds of number live in `StoragePreparation`:
 
-- **cumulative** — `s3_objects_copied`, `s3_bytes_copied`,
-  `s3_objects_reused`. Each object is copied once ever, so a resumed run
-  adds to the total instead of restarting it.
+- **cumulative** — `CUMULATIVE_FIELDS`. Each object is copied once ever, so
+  a resumed run adds to the total instead of restarting it. These totals
+  exist nowhere else, which is why an unreadable record is quarantined
+  rather than overwritten.
 - **per run** — everything else. A rerun recomputes them, so bytes that
   came back between two runs stop being reported as missing.
 """
 
 import json
 import os
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 STATE_FILENAME = "drive-build-state.json"
 STATE_VERSION = 1
 
-CUMULATIVE_FIELDS = ("s3_objects_copied", "s3_bytes_copied", "s3_objects_reused")
+CUMULATIVE_FIELDS = frozenset({"s3_objects_copied", "s3_bytes_copied", "s3_objects_reused"})
 
 
 @dataclass
@@ -50,12 +52,10 @@ class StoragePreparation:
 
     def begin_run(self) -> None:
         """Clear the per-run numbers; keep the cumulative ones."""
-        self.completed = False
-        self.backfill_linked = 0
-        self.backfill_blobs_created = 0
-        self.s3_rows_seen = 0
-        self.s3_objects_missing = 0
-        self.missing_bytes = []
+        blank = StoragePreparation()
+        for name in self.__dataclass_fields__:
+            if name not in CUMULATIVE_FIELDS:
+                setattr(self, name, getattr(blank, name))
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -67,6 +67,7 @@ class StoragePreparation:
         prep.missing_bytes = [
             MissingBytes(**{k: v for k, v in row.items() if k in MissingBytes.__dataclass_fields__})
             for row in data.get("missing_bytes") or []
+            if isinstance(row, dict)
         ]
         return prep
 
@@ -87,11 +88,14 @@ class BuildState:
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # A first run has no file; a truncated file is not worth keeping,
-            # because every per-run number is recomputed anyway.
+        except FileNotFoundError:
             return {"version": STATE_VERSION}
-        return data if isinstance(data, dict) else {"version": STATE_VERSION}
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            data = None
+        if not isinstance(data, dict):
+            self._quarantine()
+            return {"version": STATE_VERSION}
+        return data
 
     def save(self, data: dict) -> None:
         data = {**data, "version": STATE_VERSION}
@@ -102,9 +106,36 @@ class BuildState:
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, self.path)
+        self._sync_directory()
 
     def storage(self) -> StoragePreparation:
-        return StoragePreparation.from_dict(self.load().get("storage") or {})
+        stored = self.load().get("storage")
+        return StoragePreparation.from_dict(stored if isinstance(stored, dict) else {})
 
     def put_storage(self, prep: StoragePreparation) -> None:
         self.save({**self.load(), "storage": prep.as_dict()})
+
+    def _quarantine(self) -> None:
+        """Move an unreadable record aside instead of overwriting it.
+
+        The cumulative copy totals live only here, so a silent reset would
+        make the report understate a migration that really did run."""
+        if not self.path.exists():
+            return
+        spoiled = self.path.with_name(f"{self.path.name}.corrupt-{int(time.time())}")
+        try:
+            os.replace(self.path, spoiled)
+            self._sync_directory()
+        except OSError:
+            pass
+
+    def _sync_directory(self) -> None:
+        """fsync the directory, so the rename itself survives a power loss."""
+        try:
+            fd = os.open(self.path.parent, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
