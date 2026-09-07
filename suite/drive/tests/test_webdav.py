@@ -1840,9 +1840,14 @@ class TestLitmusVerdict(UnitTestCase):
         return "\n".join(lines) + "\n"
 
     def test_the_shipped_ledger_covers_gate_run_7(self):
-        """The ledger has to name the tests litmus really prints. A typo in a
-        test name reads as a tolerance for a test that never ran, and the run
-        stays red for a reason nobody can find in the transcript.
+        """The shipped ledger, through the real matcher, on the run it was
+        written from: it parses, and every line in it clears.
+
+        What this cannot prove is that the ledger spells the test names litmus
+        spells, because `gate_run_7` is written here rather than recorded. No
+        litmus transcript is in the repository. A typo is caught on the gate
+        instead, where the script prints `LEDGERED TEST DID NOT RUN` beside the
+        `UNLEDGERED FAIL` for the real name.
         """
         status, out = self.rule(self.gate_run_7(), ledger=self.shipped_ledger())
 
