@@ -253,6 +253,46 @@ class TestWebDAVLocks(IntegrationTestCase):
         )
         self.assertEqual(response.status_code, 204)
 
+    def test_a_depth_infinity_lock_refuses_a_member_it_cannot_lock(self):
+        """RFC 4918 §9.10.3: "If the lock cannot be granted to all resources,
+        the server MUST return a Multi-Status response ... Either the entire
+        hierarchy is locked or no resources are locked."
+
+        §5.1's nearest-wins lets a deeper `$GENERAL` row lower the caller
+        inside their own root, so EDIT on the collection alone handed out a
+        lock over a member the very next PUT would refuse.
+        """
+        collection = self._node_at(self.base).name
+        member = folder_node(OWNER, collection, "ReadOnly")
+        grant(member, "$GENERAL", READ, node_principals(OWNER))
+
+        response = self._lock(self.base, Depth="infinity")
+        self.assertEqual(response.status_code, 207)
+        self.assertNotIn("Lock-Token", response.headers)
+
+        parsed = etree.fromstring(response.get_data())
+        answers = {
+            entry.find(dav("href")).text: entry.find(dav("status")).text
+            for entry in parsed.findall(dav("response"))
+        }
+        self.assertEqual(answers[f"{self.base}/ReadOnly/"], "HTTP/1.1 403 Forbidden")
+        self.assertEqual(answers[f"{self.base}/"], "HTTP/1.1 424 Failed Dependency")
+
+        # no resource is locked, so the collection still takes an ordinary write
+        self.assertEqual(locks.covering_locks(collection), [])
+        self.assertEqual(
+            structure.handle_mkcol(make_ctx("MKCOL", f"{self.base}/After", OWNER)).status_code, 201
+        )
+
+    def test_a_depth_infinity_lock_is_granted_when_every_member_is_editable(self):
+        """The check costs one query and refuses nothing on an ordinary tree."""
+        collection = self._node_at(self.base).name
+        folder_node(OWNER, collection, "Ordinary")
+
+        response = self._lock(self.base, Depth="infinity")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Lock-Token", response.headers)
+
     def test_lock_depth_one_is_400(self):
         """RFC 4918 §9.10.3: a lock is depth 0 or infinity."""
         with self.assertRaises(BadRequest):
