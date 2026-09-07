@@ -122,11 +122,20 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         self.assertEqual(created.node.parent, self.base)
 
     def test_mkcol_on_an_existing_resource_or_the_mount_is_405(self):
-        """RFC 4918 §9.3: MKCOL never replaces what is already mapped."""
+        """RFC 4918 §9.3: MKCOL never replaces what is already mapped.
+
+        Each refusal carries `Allow` (RFC 7231 §6.5.5). Without it the client
+        is told the request failed but not what to send instead, and the
+        Windows mini-redirector retries the same verb.
+        """
         file_node(OWNER, self.base, "taken.txt", b"x")
         for path in (f"/dav/{self.base_name}", f"/dav/{self.base_name}/taken.txt", "/dav/", "/dav"):
-            with self.subTest(path=path), self.assertRaises(MethodNotAllowed):
-                self._mkcol(path)
+            with self.subTest(path=path):
+                with self.assertRaises(MethodNotAllowed) as caught:
+                    self._mkcol(path)
+                allow = caught.exception.headers["Allow"]
+                self.assertNotIn("MKCOL", allow)
+                self.assertIn("PROPFIND", allow)
 
     def test_mkcol_needs_its_intermediate_collections(self):
         """RFC 4918 §9.3: a gap in the path is 409, not an implicit create."""

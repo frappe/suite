@@ -15,7 +15,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 from lxml import etree
 
 from suite.drive._core import nodes as node_core
@@ -46,7 +46,7 @@ from suite.drive.webdav.tests.utils import (
     raw_document_node,
     reset_dav_request,
 )
-from suite.drive.webdav.xmlutil import dav
+from suite.drive.webdav.xmlutil import dav, parse_xml
 from suite.tests.utils import ensure_user
 
 OWNER = "webdav-locks-owner@example.com"
@@ -500,6 +500,31 @@ class TestWebDAVLocks(IntegrationTestCase):
         for path in (f"{self.base}/NewDir", f"{self.base}/mv.txt", f"{self.base}/copied.txt"):
             self.assertIsNone(self._node_at(path), path)
 
+    def test_a_lock_below_a_collection_refuses_deleting_or_moving_it(self):
+        """RFC 4918 §9.6.1: DELETE of a collection fails if any member is
+        locked, "even if the resource was not locked itself".
+
+        This is the descendant direction of the subtree walk, the one an
+        ancestor lock cannot stand in for: the lock is strictly below the URL
+        the client named, so nothing on the target's own ancestry carries it.
+        MOVE removes the collection from its parent too, so it answers alike.
+        """
+        self._foreign_lock(self.doc, self.doc_path)
+
+        with self.assertRaises(Locked):
+            structure.handle_delete(make_ctx("DELETE", self.base, OWNER))
+        with self.assertRaises(Locked):
+            structure.handle_move(
+                make_ctx(
+                    "MOVE",
+                    self.base,
+                    OWNER,
+                    headers={"Destination": f"/dav/{self.folder_name}-moved", "Depth": "infinity"},
+                )
+            )
+        # the collection is still there, with its member
+        self.assertIsNotNone(self._node_at(self.doc_path))
+
     def test_a_lock_request_evaluates_the_if_header_conditions(self):
         """RFC 4918 §10.4.1: the If header is not method-specific.
 
@@ -761,3 +786,71 @@ class TestWebDAVLocks(IntegrationTestCase):
             self.assertIsNone(active.find(dav("locktoken")))
             self.assertNotIn(OWNER_HREF, etree.tostring(active, encoding="unicode"))
         self.assertTrue(checked, "doc.docx was not in the listing")
+
+
+class TestLockRequestParsing(UnitTestCase):
+    """The two request parsers, on their own.
+
+    Site-free: `Timeout` and the `DAV:lockinfo` body are read before anything
+    is resolved or written, so neither parser touches the database. Every
+    refusal below is reachable from the wire, and none of them was exercised
+    by a case that also needed a mount.
+    """
+
+    def _scope(self, body: bytes):
+        return lock_module._parse_lockinfo(parse_xml(body))
+
+    def test_timeout_header_choices(self):
+        for header, expected in (
+            (None, locks.DEFAULT_LOCK_TIMEOUT),
+            ("", locks.DEFAULT_LOCK_TIMEOUT),
+            ("Second-3600", 3600),  # Office sends this on every open
+            ("Infinite", locks.MAX_LOCK_TIMEOUT),
+            ("infinite, Second-30", locks.MAX_LOCK_TIMEOUT),
+            # the first *supported* entry wins, not the first entry
+            ("Bogus-9, Second-30", 30),
+            ("Second-0", 1),
+            ("Second-99999999", locks.MAX_LOCK_TIMEOUT),
+            # unparseable is the default, never a crash out of every LOCK
+            ("Second-", locks.DEFAULT_LOCK_TIMEOUT),
+            ("Second-2.5", locks.DEFAULT_LOCK_TIMEOUT),
+            ("Second--5", locks.DEFAULT_LOCK_TIMEOUT),
+            ("garbage", locks.DEFAULT_LOCK_TIMEOUT),
+        ):
+            with self.subTest(header=header):
+                self.assertEqual(locks.parse_timeout_header(header), expected)
+
+    def test_lockinfo_scopes_and_owner(self):
+        self.assertEqual(self._scope(LOCKINFO_EXCLUSIVE)[0], "Exclusive")
+        self.assertEqual(self._scope(LOCKINFO_SHARED)[0], "Shared")
+        self.assertIn(OWNER_HREF, self._scope(LOCKINFO_EXCLUSIVE)[1])
+        # no DAV:owner at all is legal; the column simply stays empty
+        bare = (
+            b'<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>'
+            b"<D:locktype><D:write/></D:locktype></D:lockinfo>"
+        )
+        self.assertEqual(self._scope(bare), ("Exclusive", None))
+
+    def test_lockinfo_refusals(self):
+        wrong_root = b'<D:prop xmlns:D="DAV:"/>'
+        no_scope = b'<D:lockinfo xmlns:D="DAV:"><D:locktype><D:write/></D:locktype></D:lockinfo>'
+        unknown_scope = LOCKINFO_EXCLUSIVE.replace(b"<D:exclusive/>", b"<D:local/>")
+        for body in (wrong_root, no_scope, unknown_scope):
+            with self.subTest(body=body), self.assertRaises(BadRequest):
+                self._scope(body)
+
+        # RFC 4918 §9.10.6 names DAV:lockinfo\'s own preconditions: a locktype
+        # the server does not support is 412, not 400
+        no_locktype = LOCKINFO_EXCLUSIVE.replace(
+            b"<D:locktype><D:write/></D:locktype>", b"<D:locktype><D:read/></D:locktype>"
+        )
+        for body in (no_locktype, LOCKINFO_EXCLUSIVE.replace(b"<D:locktype><D:write/></D:locktype>", b"")):
+            with self.subTest(body=body), self.assertRaises(PreconditionFailed):
+                self._scope(body)
+
+    def test_an_oversized_owner_element_is_refused(self):
+        """DAV:owner is echoed into every lockdiscovery another reader sees, so
+        it is capped like a dead property rather than stored as sent."""
+        padding = b"x" * (lock_module.MAX_OWNER_XML_BYTES + 1)
+        with self.assertRaises(BadRequest):
+            self._scope(LOCKINFO_EXCLUSIVE.replace(b"mailto:owner@example.com", padding))
