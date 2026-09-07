@@ -603,3 +603,75 @@ Ticket 29 stays dormant after the review: `git log bc461122a..HEAD --name-only
 still returns nothing.
 
 The acceptance boxes stay unticked. The site gate has not run.
+
+### Gate run 2: a test quoted an already-quoted ETag
+
+Modules 2 to 7 passed. Module 8
+(`suite.drive.webdav.tests.test_locks`) ran 4 unit and 39 integration cases,
+and exactly one errored:
+`test_a_lock_request_evaluates_the_if_header_conditions`.
+
+**Cause.** The test, not production. `properties.compute_etag` returns the
+entity-tag already quoted — `"<checksum>"` — because that is the form
+`getetag` publishes and the form a client writes back. The case read that
+value and then quoted it a second time, building
+`If: (["" <checksum> ""])`. The parser keeps a `[...]` token verbatim, so
+`locks._conditional_gate` compared a doubled token to the single-quoted tag
+`get_etag` returns, found no match, and answered 412. The gate was right; the
+assertion was wrong.
+
+**Fix.** The case interpolates the published tag between the brackets
+unchanged. The negative half is untouched: `(["not-the-etag"])` is still a
+well-formed tag the server cannot match, so the 412 that proves the gate runs
+is unchanged. The positive half now also asserts the lock row exists, which is
+what the docstring already claimed and nothing checked.
+
+Neither `ifheader.parse_if_header` nor `IfHeader.evaluate` changed. Nothing in
+the conditional gate changed.
+
+**Audit.** An agent read every site in the repo that builds or compares an
+`If` entity-tag, `If-Match`, `If-None-Match`, `ETag`, or `getetag`, and
+classified each by whether the interpolated value is a raw checksum or an
+already-quoted tag. One defect, the one above. Every other site is correct:
+raw checksums are quoted once (`f'"{checksum}"'`), and `compute_etag` output
+is used bare. No frontend code builds any of these headers.
+
+| Commit | Change |
+|---|---|
+| `e17c24090` | quote the published ETag once in the LOCK If condition |
+
+**Coverage.** `test_properties` gains one case,
+`test_the_published_etag_is_an_if_header_entity_tag_verbatim`: the tag
+`compute_etag` publishes parses back out of `([...])` equal to itself, and the
+doubled form does not. It pins the contract the failing case broke, beside
+`compute_etag` rather than beside one caller. DAV collection is now 303 cases
+across 15 modules, no collection errors.
+
+**Rerun.** `suite.drive.webdav.tests.test_locks`, then modules 9 to 23 in
+order. Module 4 (`test_properties`) carries the new case and can be rerun with
+it or left to the next full pass. No migrate: no DocType JSON, patch, hook, or
+fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/
+40 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_ifheader
+Ran 110 tests in 1.575s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
