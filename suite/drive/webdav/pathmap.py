@@ -24,11 +24,15 @@ from urllib.parse import quote, unquote, urlsplit
 import frappe
 from werkzeug.wrappers import Request
 
+from suite.drive._core.access import require
+from suite.drive._core.errors import DriveNotFound
 from suite.drive._core.nodes import NODE_FIELDS
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import UPLOAD
 from suite.drive._core.roots import personal_root_for
 from suite.drive.webdav import DAV_PREFIX
 from suite.drive.webdav.context import validate_segments
-from suite.drive.webdav.errors import BadGateway, BadRequest, Forbidden
+from suite.drive.webdav.errors import BadGateway, BadRequest, Conflict, Forbidden
 
 MAX_NAME_LENGTH = 140
 
@@ -127,6 +131,32 @@ def visible(row: frappe._dict) -> bool:
         and not row.get("is_template")
         and addressable(row)
     )
+
+
+MISSING_PARENT = "Intermediate collections do not exist."
+
+
+def require_create_parent(parent: frappe._dict, principals: Principals) -> None:
+    """UPLOAD on the collection a create verb is about to write into (§12.1).
+
+    Below READ this answers 409, not 404. RFC 4918 §9.7.1 fixes the absent
+    parent at 409, and a parent the caller cannot see is, to them, a parent
+    that is not there: the two must give one answer or the pair is an oracle
+    for which of a caller's own folders were taken away from them. The message
+    is the absent one, word for word, for the same reason.
+
+    A parent the caller can read but may not write is unchanged: that is a 403
+    about a folder they can already see.
+    """
+    if parent is None:
+        # a caller with no Active Personal Root has no mount, so `/dav` itself
+        # resolves to no node and no parent. Reading `segments[-1]` past this
+        # raised IndexError out of PUT and MKCOL, which the mapper answers 500.
+        raise Conflict(MISSING_PARENT)
+    try:
+        require(parent, UPLOAD, principals)
+    except DriveNotFound as e:
+        raise Conflict(MISSING_PARENT) from e
 
 
 def validate_dav_name(name: str, parent: frappe._dict) -> None:

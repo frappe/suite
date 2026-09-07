@@ -15,7 +15,7 @@ from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
 from suite.drive._core.access import require
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import EDIT, READ
 from suite.drive.webdav import deadprops, locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -45,7 +45,7 @@ def handle(ctx: DavContext) -> Response:
 
     destination, dest_parent, dest_name = resolve_destination(ctx, source)
     evaluate_preconditions(ctx.request, row)
-    require(dest_parent, UPLOAD, ctx.principals)
+    pathmap.require_create_parent(dest_parent, ctx.principals)
     pathmap.validate_dav_name(dest_name, dest_parent)
     locks.enforce(ctx, membership_parent=dest_parent.name)
 

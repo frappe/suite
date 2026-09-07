@@ -11,6 +11,8 @@ DELETE is a trash, not a purge. The row survives, the URL stops resolving, and
 the bytes stay charged to the root until somebody purges the node.
 """
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -163,8 +165,8 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
             with self.subTest(spelling=spelling), self.assertRaises(MethodNotAllowed):
                 self._mkcol(f"/dav/{self.base_name}/{spelling}")
 
-    def test_mkcol_below_read_only_is_403_and_below_unreadable_is_404(self):
-        """§12.1: MKCOL needs UPLOAD on the parent, and below READ it is 404.
+    def test_mkcol_below_read_only_is_403_and_below_unreadable_is_409(self):
+        """§12.1: MKCOL needs UPLOAD on the parent, and below READ it is 409.
 
         The mount is the caller's own Personal Root, and §11.2 refuses a deny
         that names that root's own user inside it. Both grants therefore name
@@ -173,18 +175,34 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         mount above them is unchanged. They are separate folders because a
         second grant on a node the first one lowered would need MANAGE the
         caller no longer has there.
+
+        A parent the caller can see but not write is 403 - it is a refusal
+        about a folder they already know is there. A parent below READ is not
+        there as far as they are concerned, and RFC 4918 §9.3.1 already fixes
+        that answer at 409, so the two cases below must be one answer or the
+        pair names which of their own folders were taken away from them.
         """
         read_only = folder_node(OWNER, self.base, "ReadOnly")
         grant(read_only, "$GENERAL", READ, node_principals(OWNER))
         with self.assertRaises(DriveForbidden):
             self._mkcol(f"/dav/{self.base_name}/ReadOnly/Intruder")
 
-        # below READ the parent must look absent, so MKCOL is not an existence
-        # oracle for a folder the caller cannot see
         hidden = folder_node(OWNER, self.base, "Hidden")
         grant(hidden, "$GENERAL", NONE, node_principals(OWNER))
-        with self.assertRaises(DriveNotFound):
+        with self.assertRaises(Conflict) as unreadable:
             self._mkcol(f"/dav/{self.base_name}/Hidden/Intruder")
+        # and a parent that was never there says exactly the same thing
+        with self.assertRaises(Conflict) as absent:
+            self._mkcol(f"/dav/{self.base_name}/NeverThere/Intruder")
+        self.assertEqual(str(unreadable.exception), str(absent.exception))
+
+    def test_mkcol_by_a_caller_with_no_personal_root_is_refused_not_a_500(self):
+        """`/dav` resolves to no node and no parent for a user with no Active
+        Personal Root, and `segments[-1]` has no last element there. The
+        IndexError reached the client as a 500 with an Error Log row."""
+        with patch.object(pathmap, "personal_root_for", return_value=None):
+            with self.assertRaises(Conflict):
+                self._mkcol(DAV_PREFIX)
 
     def test_mkcol_at_an_unreadable_name_is_404_and_not_a_405(self):
         """The "already exists" 405 is an oracle without a read gate in front.
