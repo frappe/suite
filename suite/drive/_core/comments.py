@@ -235,6 +235,13 @@ def threads(
         "Drive Comment Thread",
         filters=filters,
         fields=["name", "node", "anchor", "resolved", "resolved_by", "resolved_at", "creation"],
+        # `creation` alone is not a total order. §14.6 copies `ycomments` and the
+        # Sheets cell threads in one pass, so a migrated node can hold many rows
+        # at one timestamp and MariaDB may return them in any order between two
+        # reads of the same page. `name` breaks the tie so a reader sees one
+        # order twice. It is a stable order, not a chronological one: both
+        # doctypes are `autoname: hash`, so Build owes any thread order it wants
+        # preserved to `creation` itself.
         order_by="creation asc, name asc",
     )
     by_thread = {row.name: row for row in rows}
@@ -257,7 +264,12 @@ def threads(
             "creation",
             "modified",
         ],
-        order_by="creation asc, idx asc, name asc",
+        # The same tie-break, and only that one. `idx` is not a third key here:
+        # neither doctype is a child table, so `frappe.model.base_document`
+        # forces every row's `idx` to 0 and nothing in Build or at runtime ever
+        # writes it. Sorting on it breaks no tie and drops the read off
+        # `comment_thread (thread, creation)` into a filesort.
+        order_by="creation asc, name asc",
     )
     for comment in comments:
         comment.mentions = _json_value(comment.mentions, [])
