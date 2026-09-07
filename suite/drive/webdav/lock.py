@@ -46,14 +46,18 @@ def handle_lock(ctx: DavContext) -> Response:
     if resolved.is_mount:
         raise Forbidden("Cannot lock the WebDAV namespace root.")
 
-    depth = ctx.depth if ctx.depth is not None else "infinity"
-    if depth == "1":
-        raise BadRequest("LOCK accepts Depth 0 or infinity only.")
     timeout = locks.parse_timeout_header(ctx.request.headers.get("Timeout"))
 
     body = parse_xml(ctx.body.read_all(XML_BODY_CAP))
     if body is None:
+        # RFC 4918 §9.10.2: "A server MUST ignore the Depth header on a LOCK
+        # refresh." A client that puts `Depth: 1` on every request it sends
+        # would otherwise lose the lock it is trying to keep.
         return _refresh(ctx, resolved, timeout)
+
+    depth = ctx.depth if ctx.depth is not None else "infinity"
+    if depth == "1":
+        raise BadRequest("LOCK accepts Depth 0 or infinity only.")
     return _create(ctx, resolved, body, depth, timeout)
 
 
