@@ -4,7 +4,7 @@
 
 **Blocked by:** [26 — Prepare legacy bytes for an additive Build](26-build-storage-preparation.md)
 
-**Status:** in-progress, awaiting the root site gate
+**Status:** done
 
 **Owner:** Suite migration
 
@@ -15,13 +15,13 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Create each root node and metadata pair atomically with the original File id. Validate incomplete pairs before descendants.
-- [ ] Walk reachable trees by depth. Keep top-level parent=root-node and root-relative paths within validated capacity.
-- [ ] Preserve identities and timestamps; deduplicate Active titles deterministically. Report broken chains and skipped Removed subtrees.
-- [ ] Propagate trash from the nearest independently trashed ancestor and preserve earlier trash stamps.
-- [ ] Map Drive Permission and Sheet DocShare exactly, including denies, stale principals, migrated anchors, and duplicate rows.
-- [ ] Mint required links, drop root-public/link violations and forced-public composite rows, and collect every specified count.
-- [ ] Commit resumable batches of 1000 without splitting a root pair. Preserve migration source tables.
+- [x] Create each root node and metadata pair atomically with the original File id. Validate incomplete pairs before descendants.
+- [x] Walk reachable trees by depth. Keep top-level parent=root-node and root-relative paths within validated capacity.
+- [x] Preserve identities and timestamps; deduplicate Active titles deterministically. Report broken chains and skipped Removed subtrees.
+- [x] Propagate trash from the nearest independently trashed ancestor and preserve earlier trash stamps.
+- [x] Map Drive Permission and Sheet DocShare exactly, including denies, stale principals, migrated anchors, and duplicate rows.
+- [x] Mint required links, drop root-public/link violations and forced-public composite rows, and collect every specified count.
+- [x] Commit resumable batches of 1000 without splitting a root pair. Preserve migration source tables.
 
 ## Verification
 
@@ -29,16 +29,21 @@ Run mapping fixtures and interruption/rerun tests for complete, missing, and mis
 
 ## Completion evidence
 
-All seven acceptance criteria are built and covered by 276 tests that run
-without a site. None is ticked: the site-backed module has not run, so
-nothing here is proved against the shipped schema. The root orchestrator
-owns that run; the commands are in **What the site gate must run**.
+All seven acceptance criteria are built, independently reviewed, and proved.
+The five focused modules contain 276 site-free cases; the final 12-module
+site-free gate passed all 456 cases. The root orchestrator then ran the ten
+required modules serially on `slides.localhost` at reviewed revision
+`c2773ec2c`: all 404 cases passed, every command exited 0, and every module
+printed `OK`. The exact module counts are recorded under **Independent
+closeout and live site gate**.
 
 Agents wrote and reviewed the production modules, the five focused test
 modules, and the site-backed module. Their findings are listed under
 **Defects the audits found and fixed**. The final independent review found
 five more defects after the first review and corrected them on its own
-branch. The root orchestrator still owns the site gate and merge.
+branch. A second independent review closed the concurrency and fixture gaps,
+and the root orchestrator completed the serialized site gate before this
+closeout.
 
 ### Revisions
 
@@ -55,6 +60,7 @@ Base Suite `356d38782`, the commit that closed ticket 26, on
 | `b16e134ae` | refuse conflicting Build roots and revalidate pairs before descent |
 | `0ed1b1770` | make the post-identity-lock conflict read current on MariaDB |
 | `1fcd4b640` | prove lock/read order and isolate the site-backed root fixtures |
+| `c2773ec2c` | record the final independent review before the root site gate |
 
 ### What was built
 
@@ -144,9 +150,10 @@ fixture's output is a fixed string rather than a wall clock.
 
 ### Commands and real results
 
-All site-free, in the worktree. No `bench`, `migrate`, `install`, `restart`,
-or `push` was run. `slides.localhost`, its queues, and its configuration were
-not touched.
+This is the historical first implementation pass, before the final review
+and root site gate. It ran site-free in the worktree. No `bench`, `migrate`,
+`install`, `restart`, or `push` was run in that pass; `slides.localhost`, its
+queues, and its configuration were not touched.
 
 ```
 $ cd /home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27
@@ -314,9 +321,9 @@ against `root_pairs.py`. All 58 were caught.
 
 ### Final blocker-correction verification
 
-No bench command or database-backed test was run in this correction
-worktree. The root orchestrator still owns the serialized site gate. The
-following site-free results are current at the final review commits:
+This is the final review worktree's record before the root site gate. No
+bench command or database-backed test was run in that correction worktree.
+The following site-free results are current at the final review commits:
 
 ```
 $ python3 -m compileall -q suite/drive/patches/build suite/drive/tests/test_build_tree.py
@@ -359,14 +366,55 @@ replace the deadlock-safe rollback with a direct savepoint rollback; make
 the post-identity-lock Active-root query a nonlocking snapshot read; move
 the identity lock after its conflict read.
 
-### Known risks, none of them resolved here
+### Independent closeout and live site gate
 
-- **Nothing is proved against the shipped schema.** Every claim above rests
-  on reading `drive_node.json`, `drive_root.json`, `drive_grant.json`, and
-  the controllers. `test_build_tree` exists to close that and has not run.
-  The columns most likely to surprise are `title` and `path` lengths, the
-  compound keyset SQL on MariaDB, and whether `bulk_insert` accepts the
-  column tuples as written.
+The closeout auditor independently read the accepted migration behavior,
+the ticket, and every implementation and final-review commit through
+`c2773ec2c`. It reran the 12-module site-free command from the preceding
+section against that exact tip:
+
+```
+Ran 456 tests in 2.393s
+
+OK
+```
+
+It also reran the four original blocker reproductions directly against the
+reviewed production paths. The preprovisioned-root case raised
+`BuildPairError` before writing the legacy pair; a metadata row named after
+the legacy id but linked elsewhere was refused; a 700-Personal-root fixture
+kept every committed target-row delta at or below 999 while every pair stayed
+atomic; and an anonymous above-read row at the exact two-row auto-flush
+boundary persisted `links_minted = 1` with an empty write-ahead ledger.
+
+The root orchestrator then ran the database-backed gate serially on
+`slides.localhost` at `c2773ec2c`. No test was skipped. Every command exited
+0 and printed `OK`:
+
+| Module | Cases | Result |
+|---|---:|---|
+| `suite.drive.tests.test_build_tree` | 34 | `OK` |
+| `suite.drive.patches.build.tests.test_root_pairs` | 68 | `OK` |
+| `suite.drive.patches.build.tests.test_tree` | 61 | `OK` |
+| `suite.drive.patches.build.tests.test_grants` | 72 | `OK` |
+| `suite.drive.patches.build.tests.test_mapping` | 52 | `OK` |
+| `suite.drive.patches.build.tests.test_titles` | 23 | `OK` |
+| `suite.drive.patches.build.tests.test_ports` | 68 | `OK` |
+| `suite.drive.patches.build.tests.test_dormancy` | 7 | `OK` |
+| `suite.drive.tests.test_build_storage` | 12 | `OK` |
+| `suite.tests.test_architecture` | 7 | `OK` |
+| **Total** | **404** | **all passed** |
+
+The 34 integration cases exercise the real MariaDB tables and indexes, the
+bulk-insert column tuples, savepoint rollback, identity lock/current-read
+path, compound keyset pagination, canonical pair validation, source-row
+preservation, grant uniqueness, and both sides of link write-ahead recovery.
+Together with the exhaustive mapping fixtures, interruption/rerun tests,
+eight final-review mutation kills, and dormant-package checks, this evidence
+proves each checked acceptance criterion without activating Build.
+
+### Known residual risks after the site gate
+
 - **`_Batch.flush` reads `grant_roles` once per node.** A batch of 1000
   grants spread over 1000 nodes is 1000 queries. Batching it needs a
   protocol change on `DriveTarget`, which ticket 28 or 29 can make once the
@@ -391,9 +439,10 @@ the identity lock after its conflict read.
   composite, is indistinguishable from the forced row. §14.5 drops it and
   `composite_rows_dropped` counts it.
 
-### What the site gate must run
+### Site gate command set (completed)
 
-Nothing here has run against a database. On `slides.localhost`, serially:
+The root orchestrator ran this command set serially on `slides.localhost`;
+the results are recorded above:
 
 ```
 TICKET_WORKTREE=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-27-final-review-2
@@ -422,9 +471,8 @@ env -C /home/faris/benches/suite-bench PYTHONPATH="$TICKET_WORKTREE" \
   bench --site slides.localhost run-tests --module suite.tests.test_architecture
 ```
 
-`bench run-tests` exits 1 on this bench even when every test passes; read the
-`OK` or `FAILED` line, not the exit code. Read a failure block with
-`sed -e 's/\x1b\[[0-9;]*m//g'`.
+Every final gate command exited 0 and printed `OK`. The output was also read
+for `OK` or `FAILED` rather than inferred from process status alone.
 
 `test_build_tree` writes `File`, `Drive Permission`, `Drive Node`,
 `Drive Root`, and `Drive Grant` rows under a per-run prefix, cleaned up in
