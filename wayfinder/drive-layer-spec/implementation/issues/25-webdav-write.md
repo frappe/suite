@@ -384,7 +384,7 @@ type block claimed `DF.Int` for both quotas and now says `DF.LongInt`.
 
 | Commit | Change |
 |---|---|
-| `<pending>` | read the site quota defaults a Single stores as text |
+| `f94ce652b` | read the site quota defaults a Single stores as text |
 
 **Rerun.** `suite.drive.webdav.tests.test_pathmap`, then modules 3 to 23 in
 order. No migrate: no DocType JSON, patch, hook, or fixture changed.
