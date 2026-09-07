@@ -819,11 +819,24 @@ class SiteDrive:
 
     def active_roots(self, kind: str, user: str | None) -> tuple[str, ...]:
         # The same identity filter `_core/roots.py active_root_for` uses,
-        # down to leaving `user` out for Shared roots, which name none.
+        # down to leaving `user` out for Shared roots, which name none. This
+        # must be a locking/current read after the stable identity lock:
+        # MariaDB's ordinary consistent read could otherwise keep an older
+        # transaction snapshot and miss the root a concurrent creator just
+        # committed before Build acquired that lock.
         filters = {"kind": kind, "state": ACTIVE}
         if kind == PERSONAL:
             filters["user"] = user
-        return tuple(frappe.get_all("Drive Root", filters=filters, pluck="node", order_by="node asc"))
+        return tuple(
+            frappe.db.get_values(
+                "Drive Root",
+                filters,
+                "node",
+                order_by="node asc",
+                for_update=True,
+                pluck=True,
+            )
+        )
 
     def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
         # §3.2: "Create the root node first, then its metadata and anchor

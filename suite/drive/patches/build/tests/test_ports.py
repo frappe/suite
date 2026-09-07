@@ -675,28 +675,34 @@ class TestSiteDrive(StubbedDatabase):
         # The same filter `_core/roots.py active_root_for` uses. A `User`
         # insert already provisions a Personal root at a fresh node id, so
         # Build has to be able to see one before it writes a second.
-        with patch.object(frappe, "get_all", return_value=["other-node", "second-node"]) as get_all:
-            self.assertEqual(
-                self.drive.active_roots("Personal", "a@b.co"),
-                ("other-node", "second-node"),
-            )
+        self.db.get_values.return_value = ["other-node", "second-node"]
 
-        get_all.assert_called_once_with(
+        self.assertEqual(
+            self.drive.active_roots("Personal", "a@b.co"),
+            ("other-node", "second-node"),
+        )
+
+        self.db.get_values.assert_called_once_with(
             "Drive Root",
-            filters={"kind": "Personal", "state": ACTIVE, "user": "a@b.co"},
-            pluck="node",
+            {"kind": "Personal", "state": ACTIVE, "user": "a@b.co"},
+            "node",
             order_by="node asc",
+            for_update=True,
+            pluck=True,
         )
 
     def test_the_active_shared_root_query_names_no_user(self):
-        with patch.object(frappe, "get_all", return_value=[]) as get_all:
-            self.assertEqual(self.drive.active_roots("Shared", None), ())
+        self.db.get_values.return_value = []
 
-        get_all.assert_called_once_with(
+        self.assertEqual(self.drive.active_roots("Shared", None), ())
+
+        self.db.get_values.assert_called_once_with(
             "Drive Root",
-            filters={"kind": "Shared", "state": ACTIVE},
-            pluck="node",
+            {"kind": "Shared", "state": ACTIVE},
+            "node",
             order_by="node asc",
+            for_update=True,
+            pluck=True,
         )
 
     def test_a_personal_identity_locks_the_stable_user_row(self):
