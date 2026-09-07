@@ -257,6 +257,32 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertEqual(self.bucket.opened, [])
         self.assertEqual(self.bucket.copies, [])
 
+    def test_an_object_above_five_gb_becomes_a_blob_that_carries_its_size(self):
+        """§14.2 step 3's multipart branch needs a row that can describe it.
+
+        The size is declared, so the test allocates no bytes, reads none,
+        and copies none. What only a database can prove is that
+        `File Blob.file_size` holds the number: the column is `Int` with
+        `length: 20`, which schema sync builds as a bigint. Before that
+        widening migrates, MariaDB refuses the value under a strict
+        `sql_mode` and clamps it without one, and this test fails.
+        """
+        size = 6 * 1024**3  # above the 5 GB single-part copy limit
+        checksum = hashlib.sha256(self.prefix.encode()).hexdigest()
+        name = self.insert_row(get_s3_url(f"{self.prefix}/team/movie.mov"), "movie.mov")
+
+        blob = SiteStorage().insert_blob(
+            key=blob_key(checksum, "movie.mov"),
+            checksum=checksum,
+            size=size,
+            mime_type="video/quicktime",
+        )
+        self.drop_blob_later(blob)
+        SiteFiles(S3_URL_PREFIX).link_blob(name, blob)
+
+        self.assertEqual(frappe.db.get_value("File Blob", blob, "file_size"), size)
+        self.assertEqual(self.row(name).blob, blob)
+
     def test_a_missing_s3_object_leaves_the_row_blobless_and_reported(self):
         name = self.insert_row(get_s3_url(f"{self.prefix}/team/gone.bin"), "gone.bin")
 

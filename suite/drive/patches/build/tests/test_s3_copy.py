@@ -10,7 +10,7 @@ from unittest.mock import patch
 from frappe.storage import blob
 from frappe.storage.blob import sniff_mime
 
-from suite.drive.patches.build import layout
+from suite.drive.patches.build import layout, s3_copy
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD, blob_key, object_key
 from suite.drive.patches.build.s3_copy import (
     READ_CHUNK,
@@ -374,39 +374,52 @@ class TestReuseVerifiesTheObject(S3CopyCase):
         self.assertEqual(bucket.objects[self.destination], BYTES)
 
 
-class TestBlobSizeCeiling(S3CopyCase):
-    """`File Blob.file_size` is an `int(11)`; a bigger number cannot be stored."""
+class TestObjectAboveFiveGB(S3CopyCase):
+    """A 6 GB object, declared rather than allocated.
 
-    def run_with_size(self, size):
-        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
-        bucket = FakeBucket().put("team/f1", BYTES)
+    `_read_once` is the only step that has to touch every byte, so it is the
+    one thing stood in for; the size and checksum it hands back are what a
+    6 GB object would produce. Everything after it runs for real: the copy
+    choice, the size verification, the blob row, and the link.
+
+    `FakeBucket.copy_object` raises above 5 GB the way S3 does, so a
+    regression to the single-part copy fails here rather than in production.
+    """
+
+    SIZE = 6 * 1024**3
+    CHECKSUM = "5f" * 32
+
+    def run_it(self):
+        files = FakeFiles.with_s3_files(("f1", "team/big", "movie.mov"))
+        bucket = FakeBucket().declare("team/big", self.SIZE)
         storage = FakeStorage()
-        with (
-            patch.object(layout, "BLOB_SIZE_CEILING", size),
-            patch("suite.drive.patches.build.s3_copy.BLOB_SIZE_CEILING", size),
-        ):
+        digest = s3_copy._Digest(self.CHECKSUM, self.SIZE, "video/quicktime")
+        with patch.object(s3_copy, "_read_once", return_value=digest):
             _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
         return files, bucket, storage, prep
 
-    def test_an_object_over_the_ceiling_is_reported_and_never_copied(self):
-        files, bucket, storage, prep = self.run_with_size(len(BYTES) - 1)
+    def test_it_goes_through_the_managed_multipart_copy(self):
+        _, bucket, _, _ = self.run_it()
 
-        self.assertEqual(bucket.copies, [])
-        self.assertEqual(storage.blobs, {})
-        self.assertIsNone(files.blob_of("f1"))
-        (missing,) = prep.missing_bytes
-        self.assertEqual(missing.file, "f1")
-        self.assertIn("File Blob.file_size", missing.reason)
-        self.assertEqual(prep.s3_objects_missing, 1)
+        destination = object_key(self.CHECKSUM, "movie.mov")
+        self.assertEqual(bucket.copies, [("managed_copy", "team/big", destination)])
 
-    def test_an_object_at_the_ceiling_still_goes_through(self):
-        files, _, _, prep = self.run_with_size(len(BYTES))
+    def test_the_blob_row_carries_the_whole_size(self):
+        files, _, storage, prep = self.run_it()
 
-        self.assertIsNotNone(files.blob_of("f1"))
+        (name,) = storage.blobs
+        blob = storage.blobs[name]
+        self.assertEqual(blob["file_size"], self.SIZE)
+        self.assertEqual(blob["key"], blob_key(self.CHECKSUM, "movie.mov"))
+        self.assertEqual(files.blob_of("f1"), name)
+
+    def test_it_is_counted_as_a_copy_and_not_as_a_missing_byte(self):
+        _, _, _, prep = self.run_it()
+
         self.assertEqual(prep.s3_objects_copied, 1)
-
-    def test_the_shipped_ceiling_is_the_signed_int_limit(self):
-        self.assertEqual(layout.BLOB_SIZE_CEILING, 2**31 - 1)
+        self.assertEqual(prep.s3_bytes_copied, self.SIZE)
+        self.assertEqual(prep.s3_objects_missing, 0)
+        self.assertEqual(prep.missing_bytes, [])
 
 
 class TestBlockedByAnotherBlob(S3CopyCase):
