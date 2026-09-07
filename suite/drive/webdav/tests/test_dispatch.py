@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from werkzeug.datastructures import Headers
 from werkzeug.exceptions import NotFound
+from werkzeug.wrappers import Response
 
 from suite.drive.tests.fixtures import nodes_in_root
 from suite.drive.webdav import ALLOWED_METHODS
@@ -220,6 +221,48 @@ class TestWebDAVDispatch(IntegrationTestCase):
 
         self.assertEqual(response.status_code, 200)
         commit.assert_called()
+
+    def test_a_response_header_the_wire_cannot_carry_is_percent_encoded(self):
+        """RFC 9110 §5.5: a header value is latin-1 on the wire.
+
+        A value outside it raised `UnicodeEncodeError` inside the server's own
+        `send_header`, after the status line, so the client got no response and
+        timed out while the log recorded the handler's status. litmus's
+        `put_get_utf8_segment` found it on a node titled `res-€`.
+        """
+        from suite.drive.webdav import dispatch as dispatch_module
+
+        def handler(ctx):
+            answer = Response(status=200)
+            answer.headers["Content-Disposition"] = 'attachment; filename="res-€"'
+            answer.headers["X-Plain"] = "already ascii"
+            return answer
+
+        with patch.object(dispatch_module, "_handler_for", return_value=handler):
+            response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="res-%E2%82%AC"')
+        # the value is now sendable, which is the whole point
+        response.headers["Content-Disposition"].encode("latin-1")
+        # a header that was already sendable is left exactly as it was
+        self.assertEqual(response.headers["X-Plain"], "already ascii")
+
+    def test_a_sendable_response_keeps_every_header_it_had(self):
+        """The net must not rewrite, reorder or de-duplicate an ordinary
+        response: it runs on every DAV response there is."""
+        from suite.drive.webdav import dispatch as dispatch_module
+
+        def handler(ctx):
+            answer = Response(status=207)
+            answer.headers.add("X-Repeated", "one")
+            answer.headers.add("X-Repeated", "two")
+            return answer
+
+        with patch.object(dispatch_module, "_handler_for", return_value=handler):
+            response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
+
+        self.assertEqual(response.headers.getlist("X-Repeated"), ["one", "two"])
 
     def test_unexpected_handler_error_maps_to_500_and_logs_durably(self):
         from suite.drive.webdav import dispatch as dispatch_module

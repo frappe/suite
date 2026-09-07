@@ -9,8 +9,10 @@ frappe/app.py:150). Everything else pays two string comparisons.
 
 import importlib
 from collections.abc import Callable
+from urllib.parse import quote
 
 import frappe
+from werkzeug.datastructures import Headers
 from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.wrappers import Request, Response
 
@@ -141,6 +143,7 @@ def _raise(response: Response) -> None:
     from suite.drive.webdav import log
 
     # every response leaves through here — the one choke point worth logging
+    _make_headers_sendable(response)
     log.log_response(frappe.local.request, response)
     # frappe's process_response replaces WWW-Authenticate on 401/403 with an
     # OAuth Bearer challenge; frappe.local.response_headers is merged after
@@ -148,6 +151,43 @@ def _raise(response: Response) -> None:
     if "WWW-Authenticate" in response.headers:
         frappe.local.response_headers["WWW-Authenticate"] = response.headers["WWW-Authenticate"]
     raise DAVResponseException(response=response)
+
+
+def _make_headers_sendable(response: Response) -> None:
+    """Percent-encode any header value the wire cannot carry (RFC 9110 §5.5).
+
+    An HTTP header value is latin-1 on the wire. A value holding a character
+    outside it raises `UnicodeEncodeError` inside the server's own
+    `send_header`, after the status line is already written: the client gets no
+    response at all and waits for one until it times out, while the DAV log
+    records the status the handler returned. Litmus's `put_get_utf8_segment`
+    found it on a node titled `res-€`.
+
+    Every header this adapter names is already safe — `get.py` names a
+    download the way RFC 6266 does, `pathmap.href_for` percent-encodes every
+    URI, and the rest are constants or hashes. This is the net under them,
+    because the byte path is not all ours: on a non-local storage driver
+    `frappe.storage.serve._stream_driver_response` sets `Content-Disposition`
+    from the raw filename, and `get.py` only overwrites that on a 200 or a 206.
+
+    Percent-encoding, not dropping: it is the correct encoding for a
+    URI-valued header and a legal, lossy one for the rest, and a dropped
+    `Content-Disposition` would serve user bytes without the attachment
+    disposition that keeps them inert. The rewrite is logged, so a header that
+    reaches here is still a defect to fix where it is set.
+    """
+    rewritten: list[tuple[str, str]] = []
+    names: list[str] = []
+    for key, value in response.headers.items():
+        safe = "".join(character if character.isascii() else quote(character, safe="") for character in value)
+        if safe != value:
+            names.append(key)
+        rewritten.append((key, safe))
+    if names:
+        from suite.drive.webdav import log
+
+        response.headers = Headers(rewritten)
+        log.note(f"percent-encoded unsendable header: {', '.join(sorted(set(names)))}")
 
 
 def _rollback() -> None:
