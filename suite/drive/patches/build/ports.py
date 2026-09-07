@@ -20,6 +20,25 @@ class LegacyRow:
     name: str
     file_url: str
     file_name: str | None = None
+    file_type: str | None = None
+
+
+@dataclass(frozen=True)
+class ClaimedBlob:
+    """An existing blob Build may link to, and the key its object sits at."""
+
+    name: str
+    key: str
+
+
+class BlobConflict(Exception):
+    """Another `File Blob` already holds this content's unique triple.
+
+    `File Blob` carries a unique index on `(checksum, is_private, driver)`
+    (`frappe/core/doctype/file_blob/file_blob.py`). A row that `claim_blob`
+    would not take — one still `Pending` — therefore blocks the insert.
+    Build reports that row and carries on; it must not abort a migration
+    and then fail the same way on every rerun."""
 
 
 class StorageGateway(Protocol):
@@ -37,13 +56,20 @@ class StorageGateway(Protocol):
     def run_backfill(self, batch_size: int) -> dict:
         """`frappe.storage.backfill.run()`. Idempotent; links local bytes in place."""
 
-    def claim_blob(self, checksum: str) -> str | None:
-        """Name of a ready private S3 blob for this content, held against GC.
+    def claim_blob(self, checksum: str) -> ClaimedBlob | None:
+        """A ready private S3 blob for this content, held against GC.
 
-        None when no such row exists, so the caller must copy the object."""
+        None when no such row exists, so the caller must copy the object.
+        The key comes back with it: a row is not proof that its object
+        survives, and only the caller can head it."""
+
+    def blocked_by(self, checksum: str) -> str | None:
+        """Status of the row that holds this content's unique triple, if any."""
 
     def insert_blob(self, *, key: str, checksum: str, size: int, mime_type: str) -> str:
-        """Insert one private S3 `File Blob` and return its name."""
+        """Insert one private S3 `File Blob` and return its name.
+
+        Raises `BlobConflict` when the unique triple is already taken."""
 
 
 class LegacyFiles(Protocol):
@@ -51,6 +77,9 @@ class LegacyFiles(Protocol):
 
     def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
         """Blobless rows whose `file_url` is a Drive S3 fetch URL, `name` ascending."""
+
+    def rows_outside(self, prefixes: tuple[str, ...], after: str, limit: int) -> list[LegacyRow]:
+        """Blobless rows whose `file_url` starts with none of these, `name` ascending."""
 
     def link_blob(self, file_name: str, blob_name: str) -> None:
         """Set `File.blob` without doc events or a `modified` bump."""
@@ -96,7 +125,7 @@ class SiteStorage:
 
         return backfill.run(batch_size=batch_size)
 
-    def claim_blob(self, checksum: str) -> str | None:
+    def claim_blob(self, checksum: str) -> ClaimedBlob | None:
         from frappe.storage.blob import revive_blob
 
         existing = frappe.db.get_value(
@@ -105,18 +134,28 @@ class SiteStorage:
             # its object may not be there. Linking to one would leave the File
             # pointing at nothing once Cleanup deletes Drive's legacy prefix.
             {"checksum": checksum, "is_private": 1, "driver": "s3", "status": "Ready"},
+            ["name", "key"],
+            as_dict=True,
         )
         # revive_blob locks the row and pushes it out of the GC orphan window.
         # It answers False when a concurrent GC pass already deleted it, and
         # then the object has to be copied again.
-        if existing and revive_blob(existing):
-            return existing
+        if existing and revive_blob(existing.name):
+            return ClaimedBlob(existing.name, existing.key)
         return None
+
+    def blocked_by(self, checksum: str) -> str | None:
+        return frappe.db.get_value(
+            "File Blob", {"checksum": checksum, "is_private": 1, "driver": "s3"}, "status"
+        )
 
     def insert_blob(self, *, key: str, checksum: str, size: int, mime_type: str) -> str:
         blob = frappe.new_doc("File Blob")
         blob.update(
             {
+                # Legacy Drive objects were only ever served through Drive's
+                # own authenticated fetch API, so every one of them is private
+                # whatever the legacy `File.is_private` says.
                 "key": key,
                 "checksum": checksum,
                 "file_size": size,
@@ -126,32 +165,57 @@ class SiteStorage:
                 "status": "Ready",
             }
         )
-        blob.insert(ignore_permissions=True)
+        try:
+            blob.insert(ignore_permissions=True)
+        except frappe.UniqueValidationError as e:
+            raise BlobConflict(checksum) from e
         return blob.name
 
 
 class SiteFiles:
-    """`LegacyFiles` over the real `File` table."""
+    """`LegacyFiles` over the real `File` table.
 
-    def __init__(self, s3_url_prefix: str):
+    `filters` narrows both queries, the way `frappe.storage.backfill.run`
+    takes one: a site-backed test uses it to stay off rows it did not
+    create. Production passes none and reads the whole table.
+    """
+
+    def __init__(self, s3_url_prefix: str, filters: list | None = None):
         self.s3_url_prefix = s3_url_prefix
+        self.filters = list(filters or [])
 
-    def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
+    def _page(self, filters: list, after: str, limit: int) -> list[LegacyRow]:
         rows = frappe.get_all(
             "File",
-            filters={
-                "blob": ("is", "not set"),
-                "is_folder": 0,
-                "name": (">", after),
-                # The prefix carries no LIKE wildcard of its own; `test_ports`
-                # fails if that stops being true and the pattern over-matches.
-                "file_url": ("like", self.s3_url_prefix + "%"),
-            },
-            fields=["name", "file_url", "file_name"],
+            filters=[
+                ["blob", "is", "not set"],
+                ["is_folder", "=", 0],
+                ["name", ">", after],
+                *filters,
+                *self.filters,
+            ],
+            fields=["name", "file_url", "file_name", "file_type"],
             order_by="name asc",
             limit=limit,
         )
-        return [LegacyRow(r.name, r.file_url or "", r.file_name) for r in rows]
+        return [LegacyRow(r.name, r.file_url or "", r.file_name, r.file_type) for r in rows]
+
+    def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
+        # The prefix carries no LIKE wildcard of its own; `test_ports` fails
+        # if that stops being true and the pattern over-matches.
+        return self._page([["file_url", "like", self.s3_url_prefix + "%"]], after, limit)
+
+    def rows_outside(self, prefixes: tuple[str, ...], after: str, limit: int) -> list[LegacyRow]:
+        """Blobless rows neither step reached, so the report can name them.
+
+        Everything Build knows how to read starts with one of `prefixes`.
+        Anything else keeps no reachable bytes: a fetch URL on a site whose
+        S3 settings are off, a bare bucket key left by a half-finished
+        upload, a URL from a prefix rename that never ran. None of them can
+        be copied here, and all of them must reach the record, or §14.9
+        would report a clean run over rows whose bytes Cleanup then deletes.
+        """
+        return self._page([["file_url", "not like", prefix + "%"] for prefix in prefixes], after, limit)
 
     def link_blob(self, file_name: str, blob_name: str) -> None:
         frappe.db.set_value("File", file_name, "blob", blob_name, update_modified=False)

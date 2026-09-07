@@ -7,6 +7,8 @@ For each Drive `File` row whose `file_url` is a
    bytes to sniff a MIME type.
 2. Reuse an existing private S3 blob for that content if there is one, so
    two Drive files with the same bytes end as one object and one blob row.
+   A `Ready` row is not proof that its object is still there, so the object
+   is headed first and re-copied when it is gone.
 3. Otherwise server-side copy it to `private/<ab>/<cd>/<sha256>[.ext]` in
    the same bucket, single-part below 5 GB and boto3's managed multipart
    copy above it.
@@ -20,6 +22,11 @@ Resumability has three layers, cheapest first: a linked `File.blob` keeps
 the row out of the query; a matching blob row skips the copy; an object
 already complete at the destination key skips the copy too, which is what
 saves an interrupted run from sending the same 5 GB twice.
+
+The loop ends on an empty or short page. Rows that cannot be linked stay in
+the query, so the keyset cursor is what carries the loop past them; the
+stall guard below is a belt on those braces, for a `LegacyFiles` that
+ignores `after`.
 """
 
 import hashlib
@@ -29,7 +36,14 @@ from contextlib import closing
 from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
-from suite.drive.patches.build.layout import blob_key, needs_multipart_copy, object_key
+from suite.drive.patches.build.layout import (
+    BLOB_SIZE_CEILING,
+    blob_key,
+    needs_multipart_copy,
+    object_key,
+    private_key,
+)
+from suite.drive.patches.build.ports import BlobConflict
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
 from suite.drive.utils.files import S3_URL_PREFIX, storage_key
 
@@ -55,10 +69,8 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
         rows = env.files.s3_rows_without_blob(after, batch_size)
         if not rows:
             return
-        # Rows that could not be linked stay in the query, so the cursor is
-        # the only thing that ends the loop. Two identical pages mean it
-        # stopped moving, and a migration that hangs is worse than one that
-        # stops.
+        # Two identical pages mean the cursor stopped moving, and a
+        # migration that hangs is worse than one that stops.
         if rows[0].name == previous_page:
             raise RuntimeError(f"the File cursor stalled at {rows[0].name!r}; refusing to loop")
         previous_page = rows[0].name
@@ -85,32 +97,70 @@ def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
     except FileNotFoundError:
         return _missing(prep, row, f"no object at {legacy_key} in {bucket.bucket}")
 
-    existing = env.storage.claim_blob(digest.checksum)
-    if existing:
-        env.files.link_blob(row.name, existing)
+    if digest.size > BLOB_SIZE_CEILING:
+        # `File Blob.file_size` is an `int(11)`. A larger number is either
+        # refused by MariaDB, aborting the migration after earlier batches
+        # committed, or silently clamped, which makes every later byte count
+        # and every ranged download wrong. Neither is survivable, so the row
+        # is reported instead.
+        return _missing(
+            prep,
+            row,
+            f"{digest.size} bytes is above the {BLOB_SIZE_CEILING}-byte "
+            "`File Blob.file_size` ceiling in this framework build",
+        )
+
+    claimed = env.storage.claim_blob(digest.checksum)
+    if claimed:
+        # The row survives the object: GC deletes the bytes first and the row
+        # second (`frappe/storage/gc.py`), and a failed row delete leaves a
+        # Ready blob with nothing behind it. Linking to that would hand
+        # Cleanup a File pointing at no bytes at all.
+        _place_object(bucket, legacy_key, private_key(claimed.key), digest.size)
+        env.files.link_blob(row.name, claimed.name)
         prep.s3_objects_reused += 1
         return
 
     destination = object_key(digest.checksum, row.file_name)
-    # An interrupted run can leave the object copied and the blob row
-    # uninserted. A complete object at the destination is that object.
-    if bucket.size(destination) != digest.size:
-        copy_in_bucket(bucket, legacy_key, destination, digest.size)
-        # Verify by size, the way `remove_teams._copy` does. A Ready blob over
-        # a truncated object is worse than a stopped Build: nothing downstream
-        # would ever look at those bytes again.
-        if bucket.size(destination) != digest.size:
-            raise OSError(f"copy of {legacy_key} to {destination} did not verify")
+    _place_object(bucket, legacy_key, destination, digest.size)
 
-    blob = env.storage.insert_blob(
-        key=blob_key(digest.checksum, row.file_name),
-        checksum=digest.checksum,
-        size=digest.size,
-        mime_type=digest.mime_type,
-    )
+    try:
+        blob = env.storage.insert_blob(
+            key=blob_key(digest.checksum, row.file_name),
+            checksum=digest.checksum,
+            size=digest.size,
+            mime_type=digest.mime_type,
+        )
+    except BlobConflict:
+        # Something else holds the unique triple and `claim_blob` would not
+        # take it. Report the row and carry on: aborting here would stop the
+        # migration and stop it again on every rerun.
+        status = env.storage.blocked_by(digest.checksum) or "unknown"
+        return _missing(
+            prep,
+            row,
+            f"a File Blob for this content already exists with status {status!r}",
+        )
+
     env.files.link_blob(row.name, blob)
     prep.s3_objects_copied += 1
     prep.s3_bytes_copied += digest.size
+
+
+def _place_object(bucket, legacy_key: str, destination: str, size: int) -> None:
+    """Make sure the destination key holds the whole object, copying if not.
+
+    An interrupted run can leave the object copied and the blob row
+    uninserted, so a complete object at the destination is skipped. That is
+    what saves a resumed run from sending the same 5 GB twice."""
+    if bucket.size(destination) == size:
+        return
+    copy_in_bucket(bucket, legacy_key, destination, size)
+    # Verify by size, the way `remove_teams._copy` does. A Ready blob over a
+    # truncated object is worse than a stopped Build: nothing downstream
+    # would ever look at those bytes again.
+    if bucket.size(destination) != size:
+        raise OSError(f"copy of {legacy_key} to {destination} did not verify")
 
 
 def copy_in_bucket(bucket, source_key: str, destination_key: str, size: int) -> None:
@@ -150,4 +200,4 @@ def _read_once(bucket, key: str) -> _Digest:
 
 def _missing(prep: StoragePreparation, row, reason: str) -> None:
     prep.s3_objects_missing += 1
-    prep.missing_bytes.append(MissingBytes(file=row.name, file_url=row.file_url, reason=reason))
+    prep.record_missing(MissingBytes(file=row.name, file_url=row.file_url, reason=reason))

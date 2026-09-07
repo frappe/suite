@@ -5,16 +5,18 @@ bucket, no database, so every rule is exercised directly and an interrupted
 run is reproduced by raising where a real one would be killed.
 
 Where they copy a real constraint they copy it exactly: a body is read once
-and cannot be rewound, and `copy_object` refuses a source above 5 GB, the
-way S3 does. Two limits they do not model: `FakeStorage` has no transaction,
-so a rollback in `FakeFiles` leaves its blobs behind; and `run_backfill`
-answers with a fixed dict rather than reading the rows. Both are covered
-against the real thing in `suite/drive/tests/test_build_storage.py`.
+and cannot be rewound, `copy_object` refuses a source above 5 GB the way S3
+does, and `FakeStorage` enforces `File Blob`'s unique index on
+`(checksum, is_private, driver)`. Two limits they do not model:
+`FakeStorage` has no transaction, so a rollback in `FakeFiles` leaves its
+blobs behind; and `run_backfill` answers with a fixed dict rather than
+reading the rows. Both are covered against the real thing in
+`suite/drive/tests/test_build_storage.py`.
 """
 
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD
-from suite.drive.patches.build.ports import LegacyRow
+from suite.drive.patches.build.ports import BlobConflict, ClaimedBlob, LegacyRow
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
@@ -43,13 +45,40 @@ class FakeStorage:
         self.backfill_calls.append(batch_size)
         return self._backfill
 
-    def claim_blob(self, checksum):
+    def add_blob(self, name, *, key, checksum, status="Ready", driver="s3", is_private=1):
+        """A blob row that some other writer left behind."""
+        self.blobs[name] = {
+            "key": key,
+            "checksum": checksum,
+            "file_size": 0,
+            "mime_type": "application/octet-stream",
+            "driver": driver,
+            "is_private": is_private,
+            "status": status,
+        }
+        return self
+
+    def _holder(self, checksum):
+        """The row holding the unique triple, the way the index defines it."""
         for name, blob in self.blobs.items():
-            if blob["checksum"] == checksum and blob.get("status") == "Ready":
-                return name
+            if blob["checksum"] == checksum and blob["driver"] == "s3" and blob["is_private"] == 1:
+                return name, blob
+        return None, None
+
+    def claim_blob(self, checksum):
+        name, blob = self._holder(checksum)
+        if blob and blob["status"] == "Ready":
+            return ClaimedBlob(name, blob["key"])
         return None
 
+    def blocked_by(self, checksum):
+        _, blob = self._holder(checksum)
+        return blob["status"] if blob else None
+
     def insert_blob(self, *, key, checksum, size, mime_type):
+        # `File Blob` carries a unique index on (checksum, is_private, driver).
+        if self._holder(checksum)[0]:
+            raise BlobConflict(checksum)
         name = f"blob{len(self.blobs) + 1}"
         self.blobs[name] = {
             "key": key,
@@ -67,7 +96,7 @@ class FakeFiles:
     """`LegacyFiles` over a list of rows, committed into a snapshot."""
 
     def __init__(self, rows=()):
-        self.rows = {row["name"]: dict(row) for row in rows}
+        self.rows = {row["name"]: {"file_type": None, **row} for row in rows}
         self.committed = {name: dict(row) for name, row in self.rows.items()}
         self.commits = 0
 
@@ -81,17 +110,26 @@ class FakeFiles:
             ]
         )
 
-    def add(self, name, file_url, file_name=None, blob=None):
-        self.rows[name] = {"name": name, "file_url": file_url, "file_name": file_name, "blob": blob}
+    def add(self, name, file_url, file_name=None, blob=None, file_type=None):
+        self.rows[name] = {
+            "name": name,
+            "file_url": file_url,
+            "file_name": file_name,
+            "blob": blob,
+            "file_type": file_type,
+        }
         self.committed[name] = dict(self.rows[name])
         return self
 
     def s3_rows_without_blob(self, after, limit):
         return self._page(after, limit, lambda row: row["file_url"].startswith(S3_URL_PREFIX))
 
+    def rows_outside(self, prefixes, after, limit):
+        return self._page(after, limit, lambda row: not row["file_url"].startswith(tuple(prefixes)))
+
     def _page(self, after, limit, matches):
         found = [
-            LegacyRow(row["name"], row["file_url"], row["file_name"])
+            LegacyRow(row["name"], row["file_url"], row["file_name"], row.get("file_type"))
             for name, row in sorted(self.rows.items())
             if name > after and not row["blob"] and matches(row)
         ]
@@ -121,16 +159,31 @@ class SingleUseBody:
 
     A `BytesIO` would let a second read pass succeed here and fail on a
     site, which is exactly what "read the object once" has to rule out.
+
+    `read(size)` honours its argument the way botocore's `StreamingBody`
+    does, including the part that matters for a multi-GB object: a negative
+    or absent size hands back the whole remainder in one allocation. It
+    still short-reads below that, because a real socket does.
     """
 
     def __init__(self, content, chunk_size):
-        self.chunks = [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)]
+        self.content = content
+        self.position = 0
+        self.chunk_size = chunk_size
         self.closed = False
+        self.requested = []
 
     def read(self, size=-1):
         if self.closed:
             raise ValueError("read from a closed S3 body")
-        return self.chunks.pop(0) if self.chunks else b""
+        self.requested.append(size)
+        if size is None or size < 0:
+            take = len(self.content) - self.position
+        else:
+            take = min(size, self.chunk_size)
+        chunk = self.content[self.position : self.position + take]
+        self.position += len(chunk)
+        return chunk
 
     def close(self):
         self.closed = True
@@ -144,6 +197,7 @@ class FakeBucket:
         self.objects = dict(objects or {})
         self.sizes = {key: len(body) for key, body in self.objects.items()}
         self.opened = []
+        self.bodies = []
         self.copies = []
         self.fail_copy_at = None
         # Small enough that an ordinary fixture still crosses the read loop
@@ -164,7 +218,9 @@ class FakeBucket:
         if key not in self.objects:
             raise FileNotFoundError(key)
         self.opened.append(key)
-        return SingleUseBody(self.objects[key], self.read_chunk)
+        body = SingleUseBody(self.objects[key], self.read_chunk)
+        self.bodies.append(body)
+        return body
 
     def size(self, key):
         return self.sizes.get(key)
