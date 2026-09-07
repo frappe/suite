@@ -13,6 +13,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM
+from suite.drive.webdav.ifheader import parse_if_header
 from suite.drive.webdav.properties import (
     checksums_for,
     compute_etag,
@@ -68,6 +69,20 @@ class TestWebDAVProperties(IntegrationTestCase):
             self.assertIsNone(compute_etag(row()))
         # and the same when the batch already looked and found nothing
         self.assertIsNone(compute_etag(row(), None))
+
+    def test_the_published_etag_is_an_if_header_entity_tag_verbatim(self):
+        """What `getetag` publishes goes between the brackets unchanged.
+
+        `compute_etag` returns the tag already quoted, and `locks._conditional_gate`
+        compares that same string to what the If parser hands back. A caller that
+        quotes it a second time builds a condition no resource can ever satisfy.
+        """
+        etag = compute_etag(row(), CHECKSUM)
+        parsed = parse_if_header(f"([{etag}])")
+        self.assertEqual(parsed.tagged[0].lists[0].conditions[0].etag, etag)
+
+        doubled = parse_if_header(f'(["{etag}"])')
+        self.assertNotEqual(doubled.tagged[0].lists[0].conditions[0].etag, etag)
 
     def test_a_passed_checksum_is_never_re_read(self):
         """`None` from a batched caller means "looked, and there was none" —
