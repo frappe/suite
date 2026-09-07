@@ -13,6 +13,13 @@ from frappe.storage.blob import make_key, sanitized_extension
 # through the boto3 managed multipart copy (§14.2 step 3, "5 GB").
 MULTIPART_COPY_THRESHOLD = 5 * 1024**3
 
+# `File Blob.file_size` is declared `Int` with no `length`, which MariaDB
+# builds as a signed `int(11)` (`frappe/database/mariadb/database.py`,
+# `"Int": ("int", "11")`); `File.file_size` carries `length: 20` and is a
+# bigint. Until the framework widens the blob column, an object larger than
+# this cannot be recorded, so Build reports it instead of copying it.
+BLOB_SIZE_CEILING = 2**31 - 1
+
 
 def blob_key(checksum: str, filename: str | None = None) -> str:
     """`File Blob.key` for content: `<ab>/<cd>/<sha256>[.ext]`."""
@@ -22,9 +29,14 @@ def blob_key(checksum: str, filename: str | None = None) -> str:
     return key
 
 
+def private_key(key: str) -> str:
+    """The bucket key a private blob's `key` occupies: `S3Driver.object_key`."""
+    return f"private/{key}"
+
+
 def object_key(checksum: str, filename: str | None = None) -> str:
     """The bucket key a private blob occupies: `private/<ab>/<cd>/<sha256>[.ext]`."""
-    return f"private/{blob_key(checksum, filename)}"
+    return private_key(blob_key(checksum, filename))
 
 
 def needs_multipart_copy(size: int) -> bool:

@@ -7,11 +7,17 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from frappe.storage import blob
 from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build import layout
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD, blob_key, object_key
-from suite.drive.patches.build.s3_copy import copy_in_bucket, copy_legacy_s3_objects
+from suite.drive.patches.build.s3_copy import (
+    READ_CHUNK,
+    SNIFF_BYTES,
+    copy_in_bucket,
+    copy_legacy_s3_objects,
+)
 from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeFiles,
@@ -116,9 +122,9 @@ class TestResume(S3CopyCase):
 
     def test_an_existing_blob_row_skips_the_copy(self):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
-        bucket = FakeBucket().put("team/f1", BYTES)
-        storage = FakeStorage()
-        storage.blobs["blob-existing"] = {"checksum": SHA, "status": "Ready"}
+        destination = object_key(SHA, "a.txt")
+        bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES)
+        storage = FakeStorage().add_blob("blob-existing", key=blob_key(SHA, "a.txt"), checksum=SHA)
 
         _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
 
@@ -131,14 +137,15 @@ class TestResume(S3CopyCase):
         # A Pending row is an upload in flight; its object may not be there.
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES)
-        storage = FakeStorage()
-        storage.blobs["blob-pending"] = {"checksum": SHA, "status": "Pending"}
+        storage = FakeStorage().add_blob(
+            "blob-pending", key=blob_key(SHA, "a.txt"), checksum=SHA, status="Pending"
+        )
 
         _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
 
-        self.assertNotEqual(files.blob_of("f1"), "blob-pending")
-        self.assertEqual(len(bucket.copies), 1)
+        self.assertIsNone(files.blob_of("f1"))
         self.assertEqual(prep.s3_objects_reused, 0)
+        self.assertEqual(prep.s3_objects_copied, 0)
 
     def test_a_complete_object_at_the_destination_is_not_copied_again(self):
         # What an interrupted run leaves: the object copied, no blob row.
@@ -307,3 +314,209 @@ class TestStreamingAcrossChunks(S3CopyCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReuseVerifiesTheObject(S3CopyCase):
+    """A `Ready` row is not proof that its object survives.
+
+    `frappe/storage/gc.py` deletes a blob's bytes first and its row second,
+    and it keeps the row when the delete raises. A bucket swap in
+    `storage_driver_config` leaves the same state for every older blob.
+    Linking to one of those without looking would hand Cleanup a `File`
+    pointing at no bytes at all.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.blob_key = blob_key(SHA, "a.txt")
+        self.destination = object_key(SHA, "a.txt")
+
+    def storage_holding(self, key):
+        return FakeStorage().add_blob("blob-existing", key=key, checksum=SHA)
+
+    def test_a_claimed_blob_with_no_object_gets_one_before_the_link(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+
+        _, prep = self.run_copy(files=files, bucket=bucket, storage=self.storage_holding(self.blob_key))
+
+        self.assertEqual(bucket.copies, [("copy_object", "team/f1", self.destination)])
+        self.assertEqual(bucket.objects[self.destination], BYTES)
+        self.assertEqual(files.blob_of("f1"), "blob-existing")
+        self.assertEqual(prep.s3_objects_reused, 1)
+
+    def test_the_object_is_healed_at_the_blobs_own_key_not_ours(self):
+        # The existing row may carry a different extension, so its key is
+        # not the one this row's file_name would produce.
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        theirs = blob_key(SHA, "a.pdf")
+
+        self.run_copy(files=files, bucket=bucket, storage=self.storage_holding(theirs))
+
+        self.assertEqual(bucket.copies, [("copy_object", "team/f1", f"private/{theirs}")])
+
+    def test_a_claimed_blob_whose_object_is_there_is_not_copied_again(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put(self.destination, BYTES)
+
+        _, prep = self.run_copy(files=files, bucket=bucket, storage=self.storage_holding(self.blob_key))
+
+        self.assertEqual(bucket.copies, [])
+        self.assertEqual(prep.s3_objects_reused, 1)
+
+    def test_a_truncated_object_under_a_claimed_blob_is_recopied(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put(self.destination, BYTES[:5])
+
+        self.run_copy(files=files, bucket=bucket, storage=self.storage_holding(self.blob_key))
+
+        self.assertEqual(bucket.objects[self.destination], BYTES)
+
+
+class TestBlobSizeCeiling(S3CopyCase):
+    """`File Blob.file_size` is an `int(11)`; a bigger number cannot be stored."""
+
+    def run_with_size(self, size):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        storage = FakeStorage()
+        with (
+            patch.object(layout, "BLOB_SIZE_CEILING", size),
+            patch("suite.drive.patches.build.s3_copy.BLOB_SIZE_CEILING", size),
+        ):
+            _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
+        return files, bucket, storage, prep
+
+    def test_an_object_over_the_ceiling_is_reported_and_never_copied(self):
+        files, bucket, storage, prep = self.run_with_size(len(BYTES) - 1)
+
+        self.assertEqual(bucket.copies, [])
+        self.assertEqual(storage.blobs, {})
+        self.assertIsNone(files.blob_of("f1"))
+        (missing,) = prep.missing_bytes
+        self.assertEqual(missing.file, "f1")
+        self.assertIn("File Blob.file_size", missing.reason)
+        self.assertEqual(prep.s3_objects_missing, 1)
+
+    def test_an_object_at_the_ceiling_still_goes_through(self):
+        files, _, _, prep = self.run_with_size(len(BYTES))
+
+        self.assertIsNotNone(files.blob_of("f1"))
+        self.assertEqual(prep.s3_objects_copied, 1)
+
+    def test_the_shipped_ceiling_is_the_signed_int_limit(self):
+        self.assertEqual(layout.BLOB_SIZE_CEILING, 2**31 - 1)
+
+
+class TestBlockedByAnotherBlob(S3CopyCase):
+    """The unique index is `(checksum, is_private, driver)`, without `status`."""
+
+    def test_a_pending_row_is_reported_and_the_run_carries_on(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", OTHER)
+        storage = FakeStorage().add_blob(
+            "blob-pending", key=blob_key(SHA, "a.txt"), checksum=SHA, status="Pending"
+        )
+
+        _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
+
+        # f1 cannot be linked, but a migration must not stop on it and stop
+        # again on every rerun.
+        self.assertIsNone(files.blob_of("f1"))
+        (missing,) = prep.missing_bytes
+        self.assertEqual(missing.file, "f1")
+        self.assertIn("Pending", missing.reason)
+        self.assertIsNotNone(files.blob_of("f2"))
+        self.assertEqual(prep.s3_objects_copied, 1)
+
+
+class TestTheReadIsBounded(S3CopyCase):
+    """A multi-GB object must never be held in memory during `bench migrate`."""
+
+    def read_one(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        self.run_copy(files=files, bucket=bucket)
+        return bucket
+
+    def test_every_read_asks_for_a_bounded_number_of_bytes(self):
+        # botocore hands back the whole remainder for a negative or absent
+        # size, so an unbounded read is a whole object in RAM.
+        (body,) = self.read_one().bodies
+        self.assertTrue(body.requested)
+        for size in body.requested:
+            self.assertIsNotNone(size)
+            self.assertGreater(size, 0)
+
+    def test_the_read_size_is_the_declared_chunk(self):
+        (body,) = self.read_one().bodies
+        self.assertEqual(set(body.requested), {READ_CHUNK})
+
+    def test_the_body_is_closed_after_the_hash(self):
+        # One leaked connection per object exhausts botocore's pool part way
+        # through a large migration.
+        (body,) = self.read_one().bodies
+        self.assertTrue(body.closed)
+
+    def test_the_sniff_buffer_never_grows_past_the_frameworks_window(self):
+        big = b"\x00" * (SNIFF_BYTES * 4)
+        files = FakeFiles.with_s3_files(("f1", "team/big", "a.bin"))
+        bucket = FakeBucket().put("team/big", big)
+        seen = []
+
+        with patch(
+            "suite.drive.patches.build.s3_copy.sniff_mime",
+            side_effect=lambda s: seen.append(s.getvalue()) or "application/octet-stream",
+        ):
+            self.run_copy(files=files, bucket=bucket)
+
+        (head,) = seen
+        self.assertEqual(len(head), SNIFF_BYTES)
+        self.assertEqual(head, big[:SNIFF_BYTES])
+
+    def test_the_sniff_window_is_the_frameworks_own(self):
+        # A smaller window answers a different MIME type from `put_blob`.
+        self.assertEqual(SNIFF_BYTES, blob.SNIFF_BYTES)
+
+
+class TestByteAccounting(S3CopyCase):
+    def test_reused_content_is_not_counted_twice(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES)
+
+        _, prep = self.run_copy(files=files, bucket=bucket)
+
+        self.assertEqual(prep.s3_objects_copied, 1)
+        self.assertEqual(prep.s3_objects_reused, 1)
+        # §14.9 prints this. One object was moved, so one object's bytes were.
+        self.assertEqual(prep.s3_bytes_copied, len(BYTES))
+
+
+class TestTermination2(S3CopyCase):
+    def test_a_cursor_that_stops_moving_stops_the_run(self):
+        class Stuck(FakeFiles):
+            def s3_rows_without_blob(self, after, limit):
+                return super().s3_rows_without_blob("", limit)
+
+        files = Stuck.with_s3_files(*[(f"f{i}", f"gone/f{i}", f"{i}.bin") for i in range(4)])
+
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_copy(files=files, bucket=FakeBucket(), batch_size=2)
+
+        self.assertIn("stalled", str(caught.exception))
+
+
+class TestBatchBoundaries(S3CopyCase):
+    def test_every_row_is_processed_before_its_batch_commits(self):
+        files = FakeFiles.with_s3_files(*[(f"f{i}", f"team/f{i}", f"{i}.txt") for i in range(5)])
+        bucket = FakeBucket()
+        for i in range(5):
+            bucket.put(f"team/f{i}", f"body {i}".encode())
+
+        self.run_copy(files=files, bucket=bucket, batch_size=2)
+
+        # A commit taken before the loop would leave the last rows linked in
+        # memory only, while the durable record already claimed the copies.
+        self.assertEqual(files.committed, files.rows)
+        self.assertTrue(all(files.blob_of(f"f{i}") for i in range(5)))

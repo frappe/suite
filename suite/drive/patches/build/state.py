@@ -24,7 +24,20 @@ from pathlib import Path
 STATE_FILENAME = "drive-build-state.json"
 STATE_VERSION = 1
 
-CUMULATIVE_FIELDS = frozenset({"s3_objects_copied", "s3_bytes_copied", "s3_objects_reused"})
+CUMULATIVE_FIELDS = frozenset(
+    {
+        "backfill_linked",
+        "backfill_blobs_created",
+        "s3_objects_copied",
+        "s3_bytes_copied",
+        "s3_objects_reused",
+    }
+)
+
+# `missing_bytes` is held whole in memory and rewritten after every batch, so
+# a site with a broken bucket must not turn the record into a multi-GB file.
+# Past this many entries only the count keeps rising.
+MISSING_BYTES_KEPT = 10000
 
 
 @dataclass
@@ -49,6 +62,17 @@ class StoragePreparation:
     s3_objects_reused: int = 0
     s3_objects_missing: int = 0
     missing_bytes: list[MissingBytes] = field(default_factory=list)
+    missing_bytes_total: int = 0
+
+    def record_missing(self, entry: MissingBytes) -> None:
+        """Count every row with no reachable bytes; keep a bounded sample.
+
+        The count is the number the report must not understate. The list is
+        the operator's evidence, and past `MISSING_BYTES_KEPT` it stops
+        growing so one broken bucket cannot make the record unwritable."""
+        self.missing_bytes_total += 1
+        if len(self.missing_bytes) < MISSING_BYTES_KEPT:
+            self.missing_bytes.append(entry)
 
     def begin_run(self) -> None:
         """Clear the per-run numbers; keep the cumulative ones."""
@@ -90,7 +114,11 @@ class BuildState:
                 data = json.load(f)
         except FileNotFoundError:
             return {"version": STATE_VERSION}
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Unreadable content. A read error (EIO, EACCES) is not: losing
+            # the cumulative totals to a transient fault would make the
+            # report understate a migration that really did run, so it
+            # propagates and the run stops instead.
             data = None
         if not isinstance(data, dict):
             self._quarantine()
@@ -100,13 +128,18 @@ class BuildState:
     def save(self, data: dict) -> None:
         data = {**data, "version": STATE_VERSION}
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix(self.path.suffix + ".tmp")
+        temp = self._temp_path()
         with open(temp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, sort_keys=True)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, self.path)
         self._sync_directory()
+
+    def _temp_path(self) -> Path:
+        """Per process: a second run writing the same `.tmp` could interleave
+        and have `os.replace` promote a half-written file."""
+        return self.path.with_suffix(f"{self.path.suffix}.{os.getpid()}.tmp")
 
     def storage(self) -> StoragePreparation:
         stored = self.load().get("storage")
@@ -122,7 +155,8 @@ class BuildState:
         make the report understate a migration that really did run."""
         if not self.path.exists():
             return
-        spoiled = self.path.with_name(f"{self.path.name}.corrupt-{int(time.time())}")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        spoiled = self.path.with_name(f"{self.path.name}.corrupt-{stamp}-{os.getpid()}")
         try:
             os.replace(self.path, spoiled)
             self._sync_directory()
