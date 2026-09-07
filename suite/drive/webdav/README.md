@@ -28,8 +28,9 @@ directly at `https://<site>/dav/`.
   Shared Root or a “shared with me” mount.
 - The same Drive roles apply in WebDAV and the web app. A DAV session never
   carries a Share Link principal.
-- Content Documents appear as read-only exports when their Content Type has a
-  default export; they remain leaves and their media children are not listed.
+- Content documents (Writer, Slides, Sheets) are hidden outright. §12.2
+  drops them from listings and from path lookup, and an available export
+  function does not make one reachable. Their media children go with them.
 - HTTP and WebDAV call the same private Drive workflows in
   `suite/drive/_core/`. WebDAV owns protocol translation, not permission,
   quota, activity, or node policy.
