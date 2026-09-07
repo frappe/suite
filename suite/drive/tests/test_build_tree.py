@@ -61,6 +61,7 @@ class BuildTreeCase(IntegrationTestCase):
         frappe.db.delete("Drive Node", {"name": ("like", like)})
         frappe.db.delete("Drive Permission", {"entity": ("like", like)})
         frappe.db.delete("File", {"name": ("like", like)})
+        frappe.db.delete("User", {"name": ("like", like)})
         super().tearDown()
 
     # fixtures
@@ -69,21 +70,15 @@ class BuildTreeCase(IntegrationTestCase):
         return self.prefix + frappe.generate_hash(length=8)
 
     def pick_user(self):
-        """Any enabled User with an email address.
-
-        §14.5 takes a user principal only when it is a valid address, so
-        `Administrator` cannot stand in. Nothing here inserts a `User`: on
-        this bench that enqueues background work the test does not need.
-
-        A site with no usable address fails the run. Skipping instead would
-        report the whole module green while it covered nothing at all.
-        """
-        found = frappe.db.get_value(
-            "User", {"enabled": 1, "name": ("like", "%@%")}, "name", order_by="creation asc"
-        )
-        if not found:
-            self.fail("no enabled email User on this site, so §14.5 cannot be exercised")
-        return found
+        """One isolated enabled User, inserted without hooks or queue work."""
+        email = f"{self.prefix}@example.invalid"
+        user = frappe.new_doc("User")
+        user.update({"email": email, "first_name": "Drive Build Test", "enabled": 1})
+        # The test needs only `SiteTree.user_enabled` and Link validity.
+        # `db_insert` supplies that row without firing Suite's provisioning
+        # hook, which would enqueue work and create another root fixture.
+        user.db_insert()
+        return user.name
 
     def file_row(self, name=None, *, folder, file_name=None, is_folder=0, **columns):
         """One legacy Drive `File` row, written straight to the table.
@@ -219,9 +214,8 @@ class TestRootConversionRegressions(BuildTreeCase):
 
     def test_a_preprovisioned_user_root_refuses_the_legacy_pair(self):
         """§14.3 does not permit Build to archive an enabled legacy root."""
-        from suite.drive._core.roots import provision_personal_root
-
-        active = provision_personal_root(self.owner)
+        self.write_root(user=self.owner)
+        active = self.root
         legacy = self.legacy_personal_root()
 
         with self.assertRaises(root_pairs.BuildPairError) as caught:
