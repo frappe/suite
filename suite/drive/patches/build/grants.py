@@ -389,8 +389,8 @@ class _NodeFacts:
     def root_of(self, node: dict) -> dict | None:
         """The `Drive Root` metadata for the root this node sits in.
 
-        A root node's own `root` column points at itself (§3.1), so the
-        lookup is the same one either way.
+        A root node's own `root` column is NULL (§3.1), so its name is the
+        effective root id; descendants carry that id in `root`.
         """
         root = node.get("root") or node.get("name")
         if root not in self.roots:
