@@ -105,6 +105,14 @@ def get_mailboxes(account: str) -> list[dict]:
     if not is_jmap_configured(user):
         return []
 
+    # Whose account it is, not merely whether the caller has one of their own. Everything
+    # below reads the local tables through frappe.get_all, which bypasses permissions by
+    # design, and nothing here goes near a JMAP service — so unlike the endpoints that do,
+    # there is no ownership check further down to fall back on. Without this an account id
+    # was enough to read another user's mailbox names, counts and automation rules, and
+    # those rules carry the addresses and subjects they filter on.
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
+
     mailboxes = get_user_mailboxes(account)
     if not mailboxes:
         return []

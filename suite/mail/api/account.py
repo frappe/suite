@@ -12,6 +12,7 @@ from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_account_request.mail_account_request import otp_cache_key
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.stalwart import get_domains
 from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
@@ -625,6 +626,12 @@ def is_push_notification_relay_enabled() -> bool:
 @frappe.whitelist()
 def get_quota(account: str) -> dict:
     """Return quota usage for the user"""
+
+    # The Quota rows are read straight out of the local table, which bypasses permissions,
+    # and this endpoint never reaches a JMAP service that would resolve ownership on the
+    # way — so the account has to be established as the caller's here. Same omission as
+    # get_mailboxes had.
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
 
     result = {
         "disk_quota": 0,
