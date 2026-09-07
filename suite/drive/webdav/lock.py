@@ -136,6 +136,9 @@ def _create(
         # §12.1: EDIT on an existing node. Below READ this raises
         # DriveNotFound, so an unreadable target is 404 (anti-enumeration).
         require(row, EDIT, ctx.principals)
+        # the conflict check below is §9.10.5's table, not `locks.enforce`, so
+        # the If header's conditions have to be evaluated here (§10.4.1)
+        locks.check_conditions(ctx)
         if not resolved.is_collection:
             depth = "0"  # depth is meaningless on a non-collection
     else:

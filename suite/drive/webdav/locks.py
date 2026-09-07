@@ -84,6 +84,20 @@ def enforce(
         raise Locked("The resource is locked.", lock_root=shared[0].lock_root)
 
 
+def check_conditions(ctx: DavContext) -> None:
+    """The If header's conditions alone, with no lock gate (RFC 4918 §10.4.1).
+
+    LOCK is the one mutating verb that cannot call `enforce`: its own lock rule
+    is §9.10.5's compatibility table, under which a second *shared* lock over a
+    shared-locked resource is legal where a write would be 423. Skipping
+    `enforce` skipped the conditions with it, so a LOCK carrying a state token
+    or an ETag that no longer holds was granted anyway.
+    """
+    submitted = parsed_if(ctx)
+    if submitted is not EMPTY_IF:
+        _conditional_gate(ctx, submitted)
+
+
 def parsed_if(ctx: DavContext) -> IfHeader:
     if "ifheader" not in ctx.extras:
         try:
