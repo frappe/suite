@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-from suite.drive.patches.build.ports import BotoBucket, SiteFiles, SiteStorage
+from suite.drive.patches.build.ports import BlobConflict, BotoBucket, SiteFiles, SiteStorage
 from suite.drive.utils.files import S3_URL_PREFIX
 
 
@@ -177,12 +177,19 @@ class TestSiteStorage(StubbedDatabase):
             "File Blob", {"checksum": "abc", "is_private": 1, "driver": "s3"}, "status"
         )
 
+    # Above the signed `int(11)` ceiling the column used to carry, and above
+    # the 5 GB single-part copy limit. This port is the only thing that
+    # writes `File Blob.file_size`, so a narrowing cast belongs here.
+    LARGE_SIZE = 6 * 1024**3
+
     def test_the_inserted_blob_is_a_ready_private_s3_row(self):
         blob = MagicMock()
         blob.name = "blob-9"
         with patch.object(frappe, "new_doc", return_value=blob):
             self.assertEqual(
-                self.storage.insert_blob(key="ab/cd/x", checksum="x", size=12, mime_type="text/plain"),
+                self.storage.insert_blob(
+                    key="ab/cd/x", checksum="x", size=self.LARGE_SIZE, mime_type="text/plain"
+                ),
                 "blob-9",
             )
 
@@ -190,7 +197,7 @@ class TestSiteStorage(StubbedDatabase):
             {
                 "key": "ab/cd/x",
                 "checksum": "x",
-                "file_size": 12,
+                "file_size": self.LARGE_SIZE,
                 "mime_type": "text/plain",
                 "driver": "s3",
                 "is_private": 1,
@@ -198,6 +205,31 @@ class TestSiteStorage(StubbedDatabase):
             }
         )
         blob.insert.assert_called_once_with(ignore_permissions=True)
+
+    def test_the_insert_is_wrapped_in_a_savepoint(self):
+        blob = MagicMock()
+        blob.name = "blob-9"
+        with patch.object(frappe, "new_doc", return_value=blob):
+            self.storage.insert_blob(key="ab/cd/x", checksum="x", size=12, mime_type="text/plain")
+
+        # Released, not rolled back: a clean insert must leave the batch's
+        # own transaction alone.
+        self.db.savepoint.assert_called_once_with("drive_build_insert_blob")
+        self.db.release_savepoint.assert_called_once_with("drive_build_insert_blob")
+        self.db.rollback.assert_not_called()
+
+    def test_a_conflict_rolls_back_to_the_savepoint_before_it_is_reported(self):
+        # Postgres aborts the whole transaction on a unique violation, so
+        # without this rollback the next statement in the batch dies and
+        # `BlobConflict` never gets to mean "carry on".
+        blob = MagicMock()
+        blob.insert.side_effect = frappe.UniqueValidationError("File Blob")
+        with patch.object(frappe, "new_doc", return_value=blob):
+            with self.assertRaises(BlobConflict):
+                self.storage.insert_blob(key="ab/cd/x", checksum="x", size=12, mime_type="text/plain")
+
+        self.db.rollback.assert_called_once_with(save_point="drive_build_insert_blob")
+        self.db.release_savepoint.assert_not_called()
 
 
 class StubClientError(Exception):
@@ -268,10 +300,6 @@ class TestBotoBucket(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestTheSiteWiring(StubbedDatabase):
     """`for_site` and `from_site` are the lines a framework rename breaks.
 
@@ -328,3 +356,7 @@ class TestTheSiteWiring(StubbedDatabase):
         with self.assertRaises(RuntimeError) as caught:
             env.bucket()
         self.assertIn("no S3 bucket", str(caught.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
