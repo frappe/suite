@@ -579,7 +579,25 @@ GRANT_COLUMNS = (
 
 # What a bulk-inserted row reads back as. `owner`/`modified_by` are Drive's
 # own bookkeeping, not access: §3.1 says `owner` "Grants no access".
-NODE_READ_COLUMNS = ("name", "title", "parent", "root", "path", "kind", "state", "owner")
+NODE_READ_COLUMNS = (
+    "name",
+    "title",
+    "parent",
+    "root",
+    "path",
+    "kind",
+    "blob",
+    "size",
+    "mime",
+    "url",
+    "content_doctype",
+    "content_docname",
+    "state",
+    "trashed_at",
+    "trash_root",
+    "is_template",
+    "owner",
+)
 ROOT_READ_COLUMNS = ("name", "node", "user", "kind", "state")
 
 

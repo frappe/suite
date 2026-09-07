@@ -5,7 +5,7 @@ live in memory. Every step writes its result here, and the report step
 reads it back. The file is rewritten atomically, so a run killed mid-write
 leaves the previous version readable.
 
-Two kinds of number live in `StoragePreparation`:
+Two kinds of field live in the conversion records:
 
 - **cumulative** — `CUMULATIVE_FIELDS`. Each object is copied once ever, so
   a resumed run adds to the total instead of restarting it. These totals
@@ -36,6 +36,10 @@ CUMULATIVE_FIELDS = frozenset(
         # the number owners must be told about, so it may not reset to zero
         # on the rerun that finishes an interrupted migration.
         "links_minted",
+        # Write-ahead intents for a grant batch. They survive begin_run so a
+        # kill on either side of the database commit can be reconciled from
+        # the target table without counting a link twice or losing it.
+        "pending_link_nodes",
     }
 )
 
@@ -226,8 +230,9 @@ def _blank_drops() -> dict:
 class GrantConversion:
     """The result of §14.2 step 6: `Drive Permission` and Sheet `DocShare`.
 
-    `links_minted` is the one cumulative number. Everything else is decided
-    from the source rows and recomputed by a rerun.
+    `links_minted` is cumulative. `pending_link_nodes` is its write-ahead
+    ledger across an interrupted database commit. Everything else is
+    decided from the source rows and recomputed by a rerun.
     """
 
     completed: bool = False
@@ -253,6 +258,10 @@ class GrantConversion:
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.
     link_nodes: list[str] = field(default_factory=list)
+    # A short write-ahead ledger, at most one grant batch. It is persisted
+    # before that batch is inserted, then cleared only after the database
+    # commit and the cumulative counter advance are durably recorded.
+    pending_link_nodes: list[str] = field(default_factory=list)
 
     def drop(self, reason: str) -> None:
         self.grant_rows_dropped[reason] = self.grant_rows_dropped.get(reason, 0) + 1
@@ -266,6 +275,22 @@ class GrantConversion:
         if len(self.link_nodes) < SAMPLE_KEPT:
             self.link_nodes.append(node)
 
+    def prepare_links(self, nodes) -> None:
+        """Describe links the next database commit intends to publish."""
+        known = set(self.pending_link_nodes)
+        for node in nodes:
+            if node not in known:
+                self.pending_link_nodes.append(node)
+                known.add(node)
+
+    def finish_links(self, nodes) -> None:
+        """Count committed intents exactly once, then remove their ledger rows."""
+        finishing = set(nodes)
+        pending = set(self.pending_link_nodes)
+        for node in sorted(finishing & pending):
+            self.record_link(node)
+        self.pending_link_nodes = [node for node in self.pending_link_nodes if node not in finishing]
+
     def begin_run(self) -> None:
         blank = GrantConversion()
         for name in self.__dataclass_fields__:
@@ -277,9 +302,13 @@ class GrantConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> GrantConversion:
-        known = {f for f in cls.__dataclass_fields__ if f != "link_nodes"}
+        lists = {"link_nodes", "pending_link_nodes"}
+        known = {f for f in cls.__dataclass_fields__ if f not in lists}
         grants = cls(**{k: v for k, v in data.items() if k in known})
         grants.link_nodes = [row for row in data.get("link_nodes") or [] if isinstance(row, str)]
+        grants.pending_link_nodes = [
+            row for row in data.get("pending_link_nodes") or [] if isinstance(row, str)
+        ]
         grants.grant_rows_dropped = {**_blank_drops(), **(grants.grant_rows_dropped or {})}
         grants.docshare_dropped_by_reason = {**_blank_drops(), **(grants.docshare_dropped_by_reason or {})}
         return grants
