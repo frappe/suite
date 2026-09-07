@@ -38,7 +38,8 @@ class BlobConflict(Exception):
     (`frappe/core/doctype/file_blob/file_blob.py`). A row that `claim_blob`
     would not take — one still `Pending` — therefore blocks the insert.
     Build reports that row and carries on; it must not abort a migration
-    and then fail the same way on every rerun."""
+    and then fail the same way on every rerun. `SiteStorage.insert_blob`
+    takes a savepoint so "carries on" holds on Postgres too."""
 
 
 class StorageGateway(Protocol):
@@ -165,10 +166,21 @@ class SiteStorage:
                 "status": "Ready",
             }
         )
+        # The insert runs inside a savepoint so the caller can really carry
+        # on after a conflict. Postgres aborts the whole transaction on a
+        # unique violation, so without the rollback the next statement in the
+        # batch raises `InFailedSqlTransaction` and the migration dies anyway
+        # — the outcome `BlobConflict` exists to avoid. MariaDB does not need
+        # it. Two extra statements against a row that already paid for an S3
+        # copy is not a cost worth branching on.
+        savepoint = "drive_build_insert_blob"
+        frappe.db.savepoint(savepoint)
         try:
             blob.insert(ignore_permissions=True)
         except frappe.UniqueValidationError as e:
+            frappe.db.rollback(save_point=savepoint)
             raise BlobConflict(checksum) from e
+        frappe.db.release_savepoint(savepoint)
         return blob.name
 
 
