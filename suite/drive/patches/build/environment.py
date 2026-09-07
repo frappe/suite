@@ -8,7 +8,13 @@ talking to a bucket or to a dictionary.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from suite.drive.patches.build.ports import LegacyFiles, S3Bucket, StorageGateway
+from suite.drive.patches.build.ports import (
+    DriveTarget,
+    LegacyFiles,
+    LegacyTree,
+    S3Bucket,
+    StorageGateway,
+)
 from suite.drive.patches.build.state import BuildState
 
 # §14.2: Build commits per batch of 1000 rows.
@@ -45,10 +51,20 @@ class BuildEnvironment:
     state: BuildState
     legacy_s3: LegacyS3Config = field(default_factory=LegacyS3Config)
     open_bucket: Callable[[], S3Bucket] | None = None
+    # Steps 4 to 6. Left optional so the storage step, and every test of it,
+    # keeps building the same environment it always did.
+    tree: LegacyTree | None = None
+    drive: DriveTarget | None = None
+    # Two values every written row needs and no rule should invent: the id a
+    # hash-named row gets, and the moment Build wrote it. A test supplies
+    # both, so a fixture's output is a fixed string rather than a clock.
+    clock: Callable[[], str] | None = None
+    make_id: Callable[[], str] | None = None
+    make_token: Callable[[], str] | None = None
 
     @classmethod
     def for_site(cls) -> BuildEnvironment:
-        from suite.drive.patches.build.ports import BotoBucket, SiteFiles, SiteStorage
+        from suite.drive.patches.build.ports import BotoBucket, SiteDrive, SiteFiles, SiteStorage, SiteTree
         from suite.drive.utils.files import S3_URL_PREFIX
 
         return cls(
@@ -59,9 +75,45 @@ class BuildEnvironment:
             # Deferred: building the driver constructs a boto3 client, and the
             # gate must be able to refuse a misconfigured site first.
             open_bucket=BotoBucket.from_site,
+            tree=SiteTree(),
+            drive=SiteDrive(),
         )
 
     def bucket(self) -> S3Bucket:
         if self.open_bucket is None:
             raise RuntimeError("Build has no S3 bucket, but the legacy S3 copy step needs one")
         return self.open_bucket()
+
+    def now(self) -> str:
+        """The stamp Build puts on a row it authored, not one it copied."""
+        if self.clock is not None:
+            return self.clock()
+        from frappe.utils import now
+
+        return now()
+
+    def new_id(self) -> str:
+        """A fresh 10-char id, the shape `autoname: hash` produces."""
+        if self.make_id is not None:
+            return self.make_id()
+        import frappe
+
+        return frappe.generate_hash(length=10)
+
+    def new_token(self) -> str:
+        """A fresh 22-char base62 link token (§3.3, §14.5).
+
+        `access._mint_link_principal` retries on a `Drive Grant` collision.
+        Build does not read back: it runs before the site holds any link
+        grant, and 22 base62 characters carry about 128 bits, so the
+        collision it would be checking for is not a thing that happens.
+        `grants` still refuses to mint twice for one node, which is the
+        case a rerun can actually produce.
+        """
+        if self.make_token is not None:
+            return self.make_token()
+        import secrets
+
+        from suite.drive._core.access import BASE62
+
+        return "".join(secrets.choice(BASE62) for _ in range(22))

@@ -1,9 +1,14 @@
-"""The three seams Build reaches the outside world through.
+"""The seams Build reaches the outside world through.
 
-Every rule in `gate`, `legacy_bytes`, and `s3_copy` runs against these
-protocols, so the whole step is exercised with no site, no bucket, and no
-database. `tests/fakes.py` holds the doubles; the classes below are the
-only code in the package that touches `frappe.db`, `frappe.conf`, or boto3.
+Every rule in `gate`, `legacy_bytes`, `s3_copy`, `root_pairs`, `tree`, and
+`grants` runs against these protocols, so the whole patch is exercised with
+no site, no bucket, and no database. `tests/fakes.py` holds the doubles; the
+classes below are the only code in the package that touches `frappe.db`,
+`frappe.conf`, or boto3.
+
+Five seams: `StorageGateway`, `LegacyFiles`, and `S3Bucket` for §14.2 steps 1
+to 3, then `LegacyTree` for everything Build reads out of the legacy tables
+and `DriveTarget` for everything it writes into Drive's own.
 """
 
 from dataclasses import dataclass
@@ -11,6 +16,8 @@ from typing import IO, Protocol
 
 import frappe
 from frappe.utils import cint
+
+from suite.drive._core.roles import NONE
 
 
 @dataclass(frozen=True)
@@ -286,3 +293,488 @@ class BotoBucket:
         from frappe.storage.s3_driver import MISSING_KEY_CODES
 
         return error.response.get("Error", {}).get("Code") in MISSING_KEY_CODES
+
+
+# --- §14.2 steps 4 to 6: the legacy tree, and Drive's own tables -----------
+
+# `File.status`, from the Drive custom field (`suite/fixtures/custom_field.json`).
+ACTIVE = "Active"
+TRASHED = "Trashed"
+REMOVED = "Removed"
+
+# The two pinned roots. They are `File` rows whose `name` is literally these
+# strings and whose `folder` is NULL (`suite/drive/utils/__init__.py:200-232`).
+DRIVE_ROOT_ROW = "Drive"
+USERS_ROW = "Users"
+
+# What Build reads off one legacy row. `frappe.get_all` returns `_dict`, so
+# the frozen shape below is what pins the column list in one place.
+TREE_COLUMNS = (
+    "name",
+    "file_name",
+    "folder",
+    "is_folder",
+    "file_url",
+    "file_size",
+    "file_type",
+    "mime_type",
+    "status",
+    "file_modified",
+    "content_doctype",
+    "content_docname",
+    "blob",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+)
+
+
+@dataclass(frozen=True)
+class TreeRow:
+    """One legacy Drive `File` row, as §14.4's column map reads it."""
+
+    name: str
+    file_name: str | None = None
+    folder: str | None = None
+    is_folder: int = 0
+    file_url: str | None = None
+    file_size: int = 0
+    file_type: str | None = None
+    mime_type: str | None = None
+    status: str = ACTIVE
+    file_modified: str | None = None
+    content_doctype: str | None = None
+    content_docname: str | None = None
+    blob: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+    @classmethod
+    def of(cls, row) -> TreeRow:
+        return cls(**{column: row.get(column) for column in TREE_COLUMNS if row.get(column) is not None})
+
+
+@dataclass(frozen=True)
+class ChainRow:
+    """The two columns the upward reachability walk needs, and nothing else."""
+
+    name: str
+    folder: str | None
+    status: str
+
+
+@dataclass(frozen=True)
+class PermissionRow:
+    """One `Drive Permission` row, before duplicates are collapsed."""
+
+    name: str
+    entity: str
+    user: str
+    read: int = 0
+    comment: int = 0
+    share: int = 0
+    write: int = 0
+    upload: int = 0
+    deny: int = 0
+    creation: str | None = None
+
+    def flags(self) -> dict:
+        return {
+            "read": self.read,
+            "comment": self.comment,
+            "share": self.share,
+            "write": self.write,
+            "upload": self.upload,
+            "deny": self.deny,
+            "name": self.name,
+            "creation": self.creation,
+        }
+
+
+@dataclass(frozen=True)
+class DocShareRow:
+    """One Sheet `DocShare` row (§14.5)."""
+
+    name: str
+    share_name: str
+    user: str | None = None
+    read: int = 0
+    write: int = 0
+    everyone: int = 0
+    creation: str | None = None
+
+
+class LegacyTree(Protocol):
+    """Everything Build reads out of the legacy tables. Reads only.
+
+    Nothing on this protocol writes, so "Preserve migration source tables"
+    is a property of the seam rather than a rule somebody has to remember:
+    there is no method here that could delete a `File`, a
+    `Drive Permission`, or a `DocShare` row.
+    """
+
+    def row(self, name: str) -> TreeRow | None:
+        """One `File` row by id, or None when it is gone."""
+
+    def children(self, parents: tuple[str, ...], after: tuple[str, str], limit: int) -> list[TreeRow]:
+        """Rows whose `folder` is one of `parents`, ordered by `(folder, name)`.
+
+        `after` is the last `(folder, name)` of the previous page, so a whole
+        sibling group arrives together and in one order on every run."""
+
+    def unreached(self, after: str, limit: int) -> list[ChainRow]:
+        """`File` rows that have no `Drive Node`, `name` ascending."""
+
+    def chain(self, names: tuple[str, ...]) -> dict[str, ChainRow]:
+        """`folder` and `status` for these ids; ids that are gone are absent."""
+
+    def permissions(self, after: tuple[str, str, str], limit: int) -> list[PermissionRow]:
+        """`Drive Permission` rows ordered by `(entity, user, name)`."""
+
+    def docshares(self, after: str, limit: int) -> list[DocShareRow]:
+        """Sheet `DocShare` rows, `name` ascending."""
+
+    def user_enabled(self, email: str) -> bool | None:
+        """True, False, or None when no `User` row holds that address."""
+
+    def group_exists(self, name: str) -> bool:
+        """Whether a `User Group` by that name still exists."""
+
+    def is_composite_deck(self, entity: str) -> bool:
+        """Whether this `File` backs a composite `Presentation` (§14.5)."""
+
+    def sheet_entity(self, sheet: str) -> str | None:
+        """The `File` id backing one `Sheet`, which is also its node id."""
+
+
+class DriveTarget(Protocol):
+    """Everything Build writes into Drive's own tables.
+
+    Rows go in through bulk SQL, not the ORM (§14.2): `set_new_name` throws
+    a caller-supplied name away for any `autoname: hash` doctype
+    (`frappe/model/naming.py:160-162`), and §14.3 needs `Drive Node.name` to
+    be the `File` name it came from. Every controller `validate` is
+    therefore bypassed, and the rules Build must reproduce by hand are
+    written out in `tree` and `root_pairs`.
+    """
+
+    def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
+        """Existing `Drive Node` rows by id, for the resume check."""
+
+    def root_metadata(self, node: str) -> dict | None:
+        """The `Drive Root` row whose `node` is this id, if there is one."""
+
+    def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
+        """Insert a node, its metadata, and its anchors as one unit.
+
+        Either half may be None when a rerun is repairing a pair whose other
+        half already exists. Nothing is published unless all of it lands."""
+
+    def insert_nodes(self, rows: list[dict]) -> None:
+        """Bulk-insert node rows that do not exist yet."""
+
+    def insert_grants(self, rows: list[dict]) -> None:
+        """Bulk-insert grant rows for pairs that do not exist yet."""
+
+    def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
+        """The roles already stored for these principals on this node."""
+
+    def raise_grant(self, node: str, principal: str, role: int) -> None:
+        """Move one existing grant to the merged role.
+
+        Usually upward, to finish a row a killed run wrote low. A deny
+        arriving from a second source moves it to NONE instead, because
+        §14.5 makes a deny win over whatever else names the pair."""
+
+    def has_link_grant(self, node: str) -> bool:
+        """Whether any `$LINK:` grant already names this node.
+
+        This is how link minting resumes. Before Build no link grant exists
+        on the site, so one on the node means a previous run minted it and
+        a second token must not be handed out for the same row."""
+
+    def commit(self) -> None:
+        """End the current batch."""
+
+
+# The columns a bulk insert has to fill by hand. `docstatus` and `idx` carry
+# database defaults; the other five do not, and `Document.insert` is what
+# normally supplies them.
+NODE_COLUMNS = (
+    "name",
+    "title",
+    "parent",
+    "root",
+    "path",
+    "kind",
+    "blob",
+    "size",
+    "mime",
+    "url",
+    "content_doctype",
+    "content_docname",
+    "state",
+    "trashed_at",
+    "trash_root",
+    "content_modified",
+    "is_template",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+ROOT_COLUMNS = (
+    "name",
+    "node",
+    "user",
+    "kind",
+    "state",
+    "quota_bytes",
+    "used_bytes",
+    "acl_generation",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+GRANT_COLUMNS = (
+    "name",
+    "node",
+    "principal",
+    "role",
+    "expires_on",
+    "password_hash",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
+# What a bulk-inserted row reads back as. `owner`/`modified_by` are Drive's
+# own bookkeeping, not access: §3.1 says `owner` "Grants no access".
+NODE_READ_COLUMNS = ("name", "title", "parent", "root", "path", "kind", "state", "owner")
+ROOT_READ_COLUMNS = ("name", "node", "user", "kind", "state")
+
+
+class SiteTree:
+    """`LegacyTree` over the real `File`, `Drive Permission`, and `DocShare`.
+
+    `filters` narrows every `File` read the way `SiteFiles` does, so a
+    site-backed test can stay off rows it did not create. Production passes
+    none.
+    """
+
+    def __init__(self, filters: list | None = None):
+        self.filters = list(filters or [])
+
+    def row(self, name: str) -> TreeRow | None:
+        rows = frappe.get_all(
+            "File", filters=[["name", "=", name], *self.filters], fields=list(TREE_COLUMNS), limit=1
+        )
+        return TreeRow.of(rows[0]) if rows else None
+
+    def children(self, parents: tuple[str, ...], after: tuple[str, str], limit: int) -> list[TreeRow]:
+        if not parents:
+            return []
+        folder, name = after
+        # Keyset over the compound order. `frappe.get_all` cannot express
+        # "(folder, name) > (?, ?)", and OFFSET on a table this size is what
+        # turns a migration into an afternoon.
+        rows = frappe.db.sql(
+            f"""SELECT {", ".join(f"`{c}`" for c in TREE_COLUMNS)} FROM `tabFile`
+                WHERE `folder` IN %(parents)s
+                  AND (`folder` > %(folder)s OR (`folder` = %(folder)s AND `name` > %(name)s))
+                {self._extra_sql()}
+                ORDER BY `folder`, `name` LIMIT %(limit)s""",
+            {"parents": parents, "folder": folder, "name": name, "limit": limit, **self._extra_values()},
+            as_dict=True,
+        )
+        return [TreeRow.of(row) for row in rows]
+
+    def unreached(self, after: str, limit: int) -> list[ChainRow]:
+        rows = frappe.db.sql(
+            f"""SELECT f.`name`, f.`folder`, f.`status` FROM `tabFile` f
+                LEFT JOIN `tabDrive Node` n ON n.`name` = f.`name`
+                WHERE n.`name` IS NULL AND f.`name` > %(after)s
+                {self._extra_sql("f")}
+                ORDER BY f.`name` LIMIT %(limit)s""",
+            {"after": after, "limit": limit, **self._extra_values()},
+            as_dict=True,
+        )
+        return [ChainRow(row.name, row.folder, row.status or ACTIVE) for row in rows]
+
+    def chain(self, names: tuple[str, ...]) -> dict[str, ChainRow]:
+        if not names:
+            return {}
+        rows = frappe.get_all(
+            "File", filters=[["name", "in", list(names)]], fields=["name", "folder", "status"]
+        )
+        return {row.name: ChainRow(row.name, row.folder, row.status or ACTIVE) for row in rows}
+
+    def permissions(self, after: tuple[str, str, str], limit: int) -> list[PermissionRow]:
+        entity, user, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `entity`, `user`, `read`, `comment`, `share`, `write`,
+                      `upload`, `deny`, `creation`
+               FROM `tabDrive Permission`
+               WHERE (`entity`, `user`, `name`) > (%(entity)s, %(user)s, %(name)s)
+               ORDER BY `entity`, `user`, `name` LIMIT %(limit)s""",
+            {"entity": entity, "user": user, "name": name, "limit": limit},
+            as_dict=True,
+        )
+        return [
+            PermissionRow(
+                name=row.name,
+                entity=row.entity,
+                user=row.user or "",
+                read=cint(row.read),
+                comment=cint(row.comment),
+                share=cint(row.share),
+                write=cint(row.write),
+                upload=cint(row.upload),
+                deny=cint(row.deny),
+                creation=str(row.creation or ""),
+            )
+            for row in rows
+        ]
+
+    def docshares(self, after: str, limit: int) -> list[DocShareRow]:
+        rows = frappe.get_all(
+            "DocShare",
+            filters=[["share_doctype", "=", "Sheet"], ["name", ">", after]],
+            fields=["name", "share_name", "user", "read", "write", "everyone", "creation"],
+            order_by="name asc",
+            limit=limit,
+        )
+        return [
+            DocShareRow(
+                name=row.name,
+                share_name=row.share_name,
+                user=row.user or "",
+                read=cint(row.read),
+                write=cint(row.write),
+                everyone=cint(row.everyone),
+                creation=str(row.creation or ""),
+            )
+            for row in rows
+        ]
+
+    def user_enabled(self, email: str) -> bool | None:
+        found = frappe.db.get_value("User", email, ["name", "enabled"], as_dict=True)
+        return bool(found.enabled) if found else None
+
+    def group_exists(self, name: str) -> bool:
+        return bool(frappe.db.exists("User Group", name))
+
+    def is_composite_deck(self, entity: str) -> bool:
+        content = frappe.db.get_value("File", entity, ["content_doctype", "content_docname"], as_dict=True)
+        if not content or content.content_doctype != "Presentation" or not content.content_docname:
+            return False
+        return bool(frappe.db.get_value("Presentation", content.content_docname, "is_composite"))
+
+    def sheet_entity(self, sheet: str) -> str | None:
+        return frappe.db.get_value("File", {"content_doctype": "Sheet", "content_docname": sheet}, "name")
+
+    def _extra_sql(self, alias: str = "") -> str:
+        """Render the test-only narrowing filter, if there is one."""
+        if not self.filters:
+            return ""
+        column = f"{alias}.`name`" if alias else "`name`"
+        return f" AND {column} LIKE %(build_name_prefix)s"
+
+    def _extra_values(self) -> dict:
+        if not self.filters:
+            return {}
+        return {"build_name_prefix": self.filters[0]}
+
+
+class SiteDrive:
+    """`DriveTarget` over the real `Drive Node`, `Drive Root`, and `Drive Grant`."""
+
+    def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = frappe.get_all(
+            "Drive Node", filters=[["name", "in", list(names)]], fields=list(NODE_READ_COLUMNS)
+        )
+        return {row.name: dict(row) for row in rows}
+
+    def root_metadata(self, node: str) -> dict | None:
+        row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_READ_COLUMNS), as_dict=True)
+        return dict(row) if row else None
+
+    def write_root_pair(self, node: dict | None, metadata: dict | None, grants: list[dict]) -> None:
+        # §3.2: "Create the root node first, then its metadata and anchor
+        # grants in one transaction. Publish no partial pair." A savepoint
+        # is what makes that true inside a batch that has already inserted
+        # other rows, and it behaves the same on both backends.
+        savepoint = "drive_build_root_pair"
+        frappe.db.savepoint(savepoint)
+        try:
+            if node:
+                self.insert_nodes([node])
+            if metadata:
+                frappe.db.bulk_insert(
+                    "Drive Root", fields=list(ROOT_COLUMNS), values=[_values(ROOT_COLUMNS, metadata)]
+                )
+            self.insert_grants(grants)
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            raise
+        frappe.db.release_savepoint(savepoint)
+
+    def insert_nodes(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        frappe.db.bulk_insert(
+            "Drive Node", fields=list(NODE_COLUMNS), values=[_values(NODE_COLUMNS, row) for row in rows]
+        )
+
+    def insert_grants(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        frappe.db.bulk_insert(
+            "Drive Grant", fields=list(GRANT_COLUMNS), values=[_values(GRANT_COLUMNS, row) for row in rows]
+        )
+
+    def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
+        if not principals:
+            return {}
+        rows = frappe.get_all(
+            "Drive Grant",
+            filters=[["node", "=", node], ["principal", "in", list(principals)]],
+            fields=["principal", "role"],
+        )
+        return {row.principal: cint(row.role) for row in rows}
+
+    def raise_grant(self, node: str, principal: str, role: int) -> None:
+        name = frappe.db.get_value("Drive Grant", {"node": node, "principal": principal}, "name")
+        if name:
+            frappe.db.set_value("Drive Grant", name, "role", role, update_modified=False)
+
+    def has_link_grant(self, node: str) -> bool:
+        return bool(
+            frappe.db.exists(
+                "Drive Grant", {"node": node, "principal": ["like", "$LINK:%"], "role": [">", NONE]}
+            )
+        )
+
+    def commit(self) -> None:
+        if not frappe.flags.in_test:
+            frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
+
+
+def _values(columns: tuple[str, ...], row: dict) -> tuple:
+    """Order one row's values to match the column list, defaulting the rest."""
+    return tuple(row.get(column) for column in columns)
