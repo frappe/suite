@@ -1379,3 +1379,247 @@ litmus itself is still unrun on this fix. It needs the served site.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 7: a header the wire could not carry, and a client that truncates
+
+All five groups ran, for the first time, and every group's `begin` passed:
+`http` 4/4, `basic` 15/16, `copymove` 13/13, `props` 30/30, `locks` 39/41. Three
+failures were unledgered.
+
+**The run needed a fresh server.** Port 8014 was serving a process started
+before ticket 25's code existed, so it answered `MKCOL /dav/litmus/` 409 and
+every group stopped in `begin` — gate run 6's symptom, from a different cause.
+A disposable server on port 8015 from current `main` answered that MKCOL 201
+and ran all five groups. A litmus run proves nothing about a branch unless the
+process serving it was started from that branch.
+
+#### 1. `basic:put_get_utf8_segment` — ours, fixed
+
+`GET /dav/litmus/res-%e2%82%ac` timed out. The DAV log records
+`GET /dav/litmus/res-€ -> 200`, and the client got nothing: the crash is
+downstream of the log line. The traceback is werkzeug's `serving.py`
+`send_header` into `http.server`'s, raising `UnicodeEncodeError` because a
+response header held a raw `U+20AC`. The status line was already written, so
+the connection carried half a response and litmus waited out its timeout.
+
+**Cause.** `get.py:_neutralize_active_content` called
+`headers.set("Content-Disposition", "attachment", filename=<title>)`.
+`Headers.set` quotes a filename but does not encode one, so the header value
+was `attachment; filename="res-€"`. An HTTP header value is latin-1 on the wire
+(RFC 9110 §5.5), and `€` is not in it.
+
+**Fix.** Non-ASCII travels in `filename*` (RFC 6266, RFC 8187), with an
+NFKD-folded ASCII `filename` beside it for clients that read only that one.
+Control characters are dropped, so a title holding a newline cannot split the
+response either. `http/routes.py:_disposition_names` is the same function for
+the same reason and is repeated rather than imported: HTTP and WebDAV are
+sibling adapters and neither may depend on the other. Both mirror what
+`werkzeug.send_file` does, so a DAV byte path and a document export name a file
+identically.
+
+**Audit.** An agent read every response header in `suite/` that can be built
+from request path text, a node title, an href, a `Destination`, or a lock root.
+
+| Site | Header | Verdict |
+|---|---|---|
+| `webdav/get.py:75` | `Content-Disposition` | the defect, fixed |
+| `frappe/storage/serve.py:247` | `Content-Disposition` | same shape, frappe core. Reached from a DAV GET on any non-local storage driver; `get.py` overwrites it on the 200 and the 206, which is every status that branch returns |
+| `webdav/get.py:64` | `Location` | `/drive/d/<node id>`. `Drive Node` is `"autoname": "hash"`, so it is hex and never the title |
+| `webdav/lock.py:305` | `Lock-Token` | `urn:uuid:<uuid4>` |
+| `webdav/put.py:263,265` | `ETag`, `X-OC-Mtime` | sha256 hex, and the literal `accepted` |
+| `webdav/put.py`, `structure.py`, `dispatch.py`, `options.py` | `Allow`, `DAV`, `MS-Author-Via` | joined from the `ALLOWED_METHODS` constant |
+| `webdav/auth.py:132`, `errors.py:49` | `WWW-Authenticate` | module constants |
+| `webdav/errors.py:120` | any | `error.headers`; no producer passes a title or a path |
+| `http/routes.py:364,854`, `http/shims.py` | `Location` | signed `/f/` URLs, percent-encoded where they are minted |
+
+No `Content-Location`, `Link` or `Destination` response header exists anywhere
+in `suite/`; `Destination` is only ever read. `pathmap.href_for` quotes every
+segment with `safe=""`, and every href built from path segments goes through
+it, so no DAV URI reaches a header or a body unencoded. A `DAVError` message
+can quote a title, and it goes in the body as UTF-8; no message reaches a
+header.
+
+**The net.** `dispatch._raise` is the one point every DAV response leaves
+through, and it now percent-encodes any header value outside latin-1 and logs
+that it did. The byte path is not all ours: the frappe-core row above sets the
+same broken header from the same title, and `get.py` only replaces it on a 200
+or a 206. Percent-encoding rather than dropping, because it is the correct
+encoding for a URI-valued header and a legal, lossy one for the rest, and a
+dropped `Content-Disposition` would serve user bytes with no attachment
+disposition. `log.note` appends rather than replaces, so the net cannot erase
+the refusal a handler already named.
+
+**Canonical path semantics are unchanged.** Nothing about how a URL is decoded,
+resolved, compared or stored was touched. Only what a response header may carry.
+
+#### 2 and 3. `locks:complex_cond_put` and `locks:fail_complex_cond_put` — litmus, ledgered
+
+Both answered 400. The DAV log gives the reason, identically for both:
+
+```
+PUT /dav/litmus/lockme -> 400 note="Unparsable If header at:
+  ' [\"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117'"
+```
+
+**The grammar, from the binary rather than from memory.** The shipped
+`litmus/0.13` `locks` program holds one format string for both tests, at
+`.rodata` `0x89e8`:
+
+```
+(<%s> [%s]) (Not <DAV:no-lock> [%s])
+```
+
+The disassembly of the two callers shows the arguments. `complex_cond_put`
+formats `(token, etag, etag)` with the resource's real ETag and expects the
+write. `fail_complex_cond_put` increments the third byte from the end of the
+same ETag in place and formats `(token, corrupted, corrupted)`, expecting 412.
+Both call `ne_snprintf(buf, 0xc8, ...)` — a 200-byte stack buffer, so 199
+characters are kept.
+
+**The arithmetic.** The format string is 30 literal characters. A lock token is
+`urn:uuid:` plus a UUID, 45. §12.4's entity-tag is the blob's SHA-256, quoted:
+66. `30 + 45 + 66 + 66 = 207`. litmus keeps 199 and drops the last 8: the
+closing `"])` and five hex digits of the second tag. What arrives ends
+`... (Not <DAV:no-lock> ["a6fe…c5a117` with no closing bracket, which is not
+RFC 4918 §10.4 grammar, and `parse_if_header` refuses it. Reproduced exactly,
+message and all, from a 45-character token and a 66-character tag.
+
+The two log lines are identical because the byte litmus corrupts sits at index
+63 of the tag, inside the eight characters truncation removes. The headers
+themselves differ: the *first* tag is complete in both and carries the
+difference.
+
+**Nothing on this side is wrong, and nothing on this side can make it right.**
+`ifheader` and `locks` are unchanged. The well-formed header evaluates exactly
+as litmus expects in both shapes, and there is now a test for each: the real
+tag lets the PUT through, and the corrupted tag is 412 on both alternatives,
+because `Not <DAV:no-lock>` is ANDed with the entity-tag rather than standing in
+for the whole list. The only server-side value that could make the header fit is
+the entity-tag, and it is the one the byte path publishes — shortening it
+re-opens the defect ticket 25 fixed, where an `If-Match` built from a PUT
+response could never match `getetag`. litmus passes these two tests against
+servers whose ETags are short enough; ours cannot be.
+
+**Rejected: recovering from the truncation.** Discarding a trailing incomplete
+production and evaluating the complete lists would turn both red cases green,
+and it is provably never more permissive, because the surviving lists are a
+prefix of an OR. It was not done. RFC 4918 §10.4 defines a grammar and gives no
+recovery rule; inventing one inside the lock and conditional gate is new,
+unspecified behaviour in the path that decides whether a write happens, and its
+safety rests on an invariant of the current tokenizer rather than on anything
+the spec says. A 400 tells the client the truth about what it sent.
+
+**Ledgered, with the reason.** `litmus_expected.txt` gains
+`locks:complex_cond_put:FAIL` and `locks:fail_complex_cond_put:FAIL`. Both
+report themselves stale the moment litmus stops truncating, and
+`TestLitmusVerdict` now drives the shipped ledger against a gate-run-7
+transcript, so a typo in a test name is a failing test rather than a silent
+tolerance for a test that never runs.
+
+**Coverage.** 14 cases. DAV collection is 315 across 15 modules, no collection
+errors.
+
+- `test_put_get`: a node titled `res-€` answers a `Content-Disposition` that
+  encodes as latin-1 and names the title in `filename*`; and the helper's
+  four title shapes — ASCII, all-non-ASCII, accented, and one holding a
+  newline.
+- `test_dispatch`: a handler returning a header outside latin-1 leaves the
+  dispatcher sendable and percent-encoded; and an ordinary response keeps every
+  header it had, repeats included.
+- `test_ifheader.TestLitmusComplexConditional`: six cases on the grammar above
+  — its parse, both litmus evaluations, the token submission both shapes make,
+  the 207-vs-200 arithmetic, and that the same header parses whole.
+- `test_locks`: the two litmus conditionals end to end through PUT, and a
+  truncated one refused 400 with the node's bytes unchanged.
+- `test_webdav.TestLitmusVerdict`: the shipped ledger against a gate-run-7
+  transcript, clean; and both lines reported stale when the tests pass.
+
+Mutations run, site-free: `all` to `any` inside a condition list makes
+`fail_complex_cond_put` hold, and the case fails; deleting the two ledger lines
+fails both `TestLitmusVerdict` cases; the pre-fix `headers.set(...,
+filename=...)` call raises `UnicodeEncodeError` on the title the case uses. The
+`test_put_get`, `test_dispatch` and `test_locks` cases need the site and are
+unrun.
+
+| Commit | Change |
+|---|---|
+| `3bff5a0b2` | name a DAV download the way a header can carry it |
+| `bab0cc0a4` | percent-encode a DAV header the wire cannot carry |
+| `a5adef5af` | pin the complex If conditional litmus 0.13 sends |
+| `2a76d9c4f` | ledger the two conditionals litmus truncates itself |
+
+**Rerun.** Three production files changed: `webdav/get.py`, `webdav/dispatch.py`
+and `webdav/log.py`. `dispatch._raise` and `log.note` are on every dispatched
+response, and the four suites that drive the dispatcher are modules 1, 5, 10 and
+13. Serialized, one module per invocation:
+
+```
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_put_get`
+3. `suite.drive.webdav.tests.test_locks`
+4. `suite.drive.webdav.tests.test_dispatch`
+5. `suite.drive.webdav.tests.test_log`
+6. `suite.drive.webdav.tests.test_ifheader`
+
+Then serve and run litmus, from a server started on this branch:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`basic` must be 16/16 this time. `locks` stays 39/41 and the runner must print
+`litmus: all groups clean`, because the two conditionals are now ledgered. No
+other module needs rerunning: nothing else changed. No migrate: no DocType JSON,
+patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. Nothing was written to the site, the queue
+or any config file. The site's logs were read.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `serve`,
+litmus, queue change, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+41 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional \
+    suite.drive.webdav.tests.test_ifheader suite.drive.webdav.tests.test_xmlutil
+Ran 166 tests in 1.414s
+OK
+
+$ ... the pre-fix header, and the fix, side by side
+PRE-FIX  attachment; filename="res-€"   -> UnicodeEncodeError on latin-1
+POST-FIX attachment; filename=res-; filename*=UTF-8''res-%E2%82%AC -> sendable
+
+$ ... the net on a response carrying the pre-fix header
+Content-Disposition: attachment; filename="res-%E2%82%AC"
+repeated headers kept: ['one', 'two']
+note: earlier refusal; percent-encoded unsendable header: Content-Disposition
+
+$ ... litmus's own header, rebuilt from the format string in its binary
+token 45  etag 66  header 207  buffer 200  sent 199
+BadIfHeader: Unparsable If header at: ' ["a6fe…c5a117'   (the log's text)
+
+$ ... collection across every module in suite/drive/webdav/tests
+test_auth 17   test_conditional 8    test_dispatch 15   test_ifheader 17
+test_locks 45  test_log 7            test_mkcol_delete 20  test_movecopy 39
+test_pathmap 20  test_properties 17  test_propfind 22   test_proppatch 19
+test_put_get 51  test_settings 9     test_xmlutil 9
+TOTAL 315, ERRORS []
+```
+
+The `test_locks`, `test_put_get`, `test_dispatch` and `test_log` integration
+cases are still unrun: they need the site.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
