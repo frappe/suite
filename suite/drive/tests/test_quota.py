@@ -24,6 +24,7 @@ from suite.drive._core.quota import (
     release,
     release_storage_reservation,
     root_for_node,
+    site_quota_bytes,
 )
 from suite.drive._core.roots import create_root, personal_root_for
 from suite.drive.jobs import recompute_root_usage
@@ -49,6 +50,45 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 50}), 50)
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 100)
         self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 200)
+
+    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    def test_effective_quota_reads_a_site_default_a_single_stores_as_text(self, get_settings):
+        """`Drive Disk Settings` is a Single, so its `Long Int` quotas come back as text.
+
+        `tabSingles.value` is a longtext column and Frappe casts a Single's `Int`
+        and `Check` fields but not its `Long Int` ones, so the installed default
+        `0` reads back as `"0"`.
+        """
+        get_settings.return_value = frappe._dict(default_personal_quota="0", shared_quota="20480")
+
+        self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 0)
+        self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 20480)
+
+    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    def test_a_malformed_site_default_is_refused_not_read_as_unlimited(self, get_settings):
+        for stored in ("5GB", "1.5", "-1", "0x10", "1_000"):
+            with self.subTest(stored=stored):
+                get_settings.return_value = frappe._dict(default_personal_quota=stored)
+                with self.assertRaises(frappe.ValidationError):
+                    effective_quota({"kind": "Personal", "quota_bytes": 0})
+
+    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    def test_an_unset_site_default_is_unlimited(self, get_settings):
+        for stored in (None, "", "   ", 0):
+            with self.subTest(stored=stored):
+                get_settings.return_value = frappe._dict(default_personal_quota=stored)
+                self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 0)
+
+    def test_site_quota_bytes_takes_the_stored_form_and_nothing_else(self):
+        self.assertEqual(site_quota_bytes("0", "Site quota"), 0)
+        self.assertEqual(site_quota_bytes(" 10240 ", "Site quota"), 10240)
+        self.assertEqual(site_quota_bytes("+10240", "Site quota"), 10240)
+        self.assertEqual(site_quota_bytes(10240, "Site quota"), 10240)
+        self.assertEqual(site_quota_bytes(None, "Site quota"), 0)
+        for refused in ("abc", "1e3", "-1", -1, 1.5, True):
+            with self.subTest(refused=refused):
+                with self.assertRaises(frappe.ValidationError):
+                    site_quota_bytes(refused, "Site quota")
 
     def test_unknown_root_kind_is_not_treated_as_personal(self):
         with self.assertRaises(frappe.ValidationError):
@@ -152,6 +192,75 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(registered.count(job), 1)
         module_path, _, attribute = job.rpartition(".")
         self.assertIs(getattr(import_module(module_path), attribute), recompute_root_usage)
+
+
+class TestSiteDefaultQuota(IntegrationTestCase):
+    """The site defaults on a root with no override, read off the real Single.
+
+    `Drive Disk Settings` is a Single, so `default_personal_quota` and
+    `shared_quota` live in `tabSingles.value`, a longtext column. Frappe casts a
+    Single's `Int` and `Check` fields back to numbers but not its `Long Int`
+    ones, so both quotas reach `effective_quota` as text on every site.
+    """
+
+    user = "Administrator"
+
+    def setUp(self):
+        super().setUp()
+        self.previous = {
+            field: frappe.db.get_single_value("Drive Disk Settings", field)
+            for field in ("default_personal_quota", "shared_quota")
+        }
+        self.root = create_root(kind="Personal", title="Site default root", user=self.user).name
+
+    def tearDown(self):
+        for field, value in self.previous.items():
+            self._set_site_default(field, value)
+        frappe.db.delete("Drive Grant", {"node": self.root})
+        frappe.db.delete("Drive Root", self.root)
+        frappe.db.delete("Drive Node", self.root)
+        super().tearDown()
+
+    def _set_site_default(self, field, value):
+        frappe.db.set_single_value("Drive Disk Settings", field, value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+
+    def _root_row(self):
+        return frappe.db.get_value("Drive Root", self.root, ["name", "kind", "quota_bytes"], as_dict=True)
+
+    def test_the_installed_zero_default_is_unlimited(self):
+        """The gate failed here: a six-byte write into a root on the site default."""
+        self._set_site_default("default_personal_quota", 0)
+
+        self.assertEqual(effective_quota(self._root_row()), 0)
+        admit(self.root, 6)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 6)
+
+    def test_a_site_default_still_bounds_a_root_with_no_override(self):
+        self._set_site_default("default_personal_quota", 10)
+
+        self.assertEqual(effective_quota(self._root_row()), 10)
+        admit(self.root, 10)
+        with self.assertRaises(DriveOverQuota):
+            admit(self.root, 1)
+
+    def test_a_malformed_site_default_refuses_the_write(self):
+        self._set_site_default("default_personal_quota", "5GB")
+
+        with self.assertRaises(frappe.ValidationError):
+            effective_quota(self._root_row())
+
+    def test_saving_the_settings_normalizes_the_stored_quotas(self):
+        settings = frappe.get_doc("Drive Disk Settings")
+        settings.save()
+
+        self.assertIsInstance(settings.default_personal_quota, int)
+        self.assertIsInstance(settings.shared_quota, int)
+
+        settings.default_personal_quota = "-1"
+        with self.assertRaises(frappe.ValidationError):
+            settings.save()
+        settings.reload()
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
