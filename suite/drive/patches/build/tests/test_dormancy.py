@@ -7,6 +7,7 @@ wires the package up early.
 """
 
 import ast
+import importlib
 import json
 import unittest
 from pathlib import Path
@@ -26,9 +27,12 @@ class TestBuildIsDormant(unittest.TestCase):
         # Ticket 29 composes `execute` once every step exists. Until then a
         # hand-added patches.txt line fails loudly instead of half-migrating.
         self.assertFalse(hasattr(build, "execute"))
-        for module in ("gate", "legacy_bytes", "s3_copy", "state", "ports", "layout"):
-            with self.subTest(module=module):
-                self.assertFalse(hasattr(getattr(build, module, None), "execute"))
+        # Every module in the package, not a hand-kept list: a new one that
+        # ships an `execute` is exactly what this has to catch.
+        for path in self.modules():
+            with self.subTest(module=path.name):
+                module = importlib.import_module(f"{build.__name__}.{path.stem}")
+                self.assertFalse(hasattr(module, "execute"))
 
     def test_it_ships_no_doctype_no_fixture_and_no_json(self):
         self.assertEqual(sorted(p.name for p in Path(build.__file__).parent.glob("*.json")), [])

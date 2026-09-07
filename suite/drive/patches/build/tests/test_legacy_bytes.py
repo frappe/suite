@@ -305,10 +305,6 @@ class TestDurableRecord(PrepareCase):
         self.assertEqual(list(self.path.glob("*.corrupt-*")), [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestUnreachableRows(PrepareCase):
     """Rows neither step could read must still reach the record.
 
@@ -493,3 +489,7 @@ class TestTheRecordCannotUnderstate(PrepareCase):
 
         self.assertEqual([p.name for p in self.path.glob("*.tmp")], [])
         self.assertIn(str(os.getpid()), state._temp_path().name)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -15,10 +15,16 @@ reading the rows. Both are covered against the real thing in
 """
 
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD
 from suite.drive.patches.build.ports import BlobConflict, ClaimedBlob, LegacyRow
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
+
+# S3's own `CopyObject` source ceiling, an inclusive maximum
+# (`s3transfer.utils.MAX_SINGLE_UPLOAD_SIZE`). Spelled out rather than
+# imported from `layout`: a fake that took the production constant would
+# move with a mutation of it, and this boundary is the one thing the fake
+# exists to police. `test_layout` pins the two against each other.
+S3_COPY_OBJECT_MAX_BYTES = 5_368_709_120
 
 
 class FakeStorage:
@@ -226,7 +232,7 @@ class FakeBucket:
         return self.sizes.get(key)
 
     def copy_object(self, source_key, destination_key):
-        if self.sizes.get(source_key, 0) > MULTIPART_COPY_THRESHOLD:
+        if self.sizes.get(source_key, 0) > S3_COPY_OBJECT_MAX_BYTES:
             # What S3 answers: CopyObject has a hard 5 GB source ceiling.
             raise ValueError(f"copy_object source {source_key} is above the 5 GB ceiling")
         self._copy("copy_object", source_key, destination_key)

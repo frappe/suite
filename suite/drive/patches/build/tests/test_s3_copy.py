@@ -169,6 +169,19 @@ class TestResume(S3CopyCase):
         self.assertEqual(bucket.copies, [("copy_object", "team/f1", destination)])
         self.assertEqual(bucket.objects[destination], BYTES)
 
+    def test_an_oversized_object_at_the_destination_is_copied_again(self):
+        # The skip has to be an exact size match, the way the post-copy
+        # verification below it is. A `>=` would accept a longer object and
+        # link a blob whose checksum its bytes do not have.
+        destination = object_key(SHA, "a.txt")
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES + b"trailing")
+
+        self.run_copy(files=files, bucket=bucket)
+
+        self.assertEqual(bucket.copies, [("copy_object", "team/f1", destination)])
+        self.assertEqual(bucket.objects[destination], BYTES)
+
 
 class TestMissingBytes(S3CopyCase):
     def test_a_missing_object_is_recorded_and_the_row_stays_blobless(self):
@@ -310,10 +323,6 @@ class TestStreamingAcrossChunks(S3CopyCase):
         self.run_copy(files=files, bucket=bucket)
 
         self.assertEqual(bucket.opened, ["team/f1"])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestReuseVerifiesTheObject(S3CopyCase):
@@ -533,3 +542,7 @@ class TestBatchBoundaries(S3CopyCase):
         # memory only, while the durable record already claimed the copies.
         self.assertEqual(files.committed, files.rows)
         self.assertTrue(all(files.blob_of(f"f{i}") for i in range(5)))
+
+
+if __name__ == "__main__":
+    unittest.main()
