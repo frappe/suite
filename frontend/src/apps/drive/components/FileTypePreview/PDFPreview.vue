@@ -27,12 +27,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Skeleton, Button } from 'frappe-ui'
 import { breakpointsTailwind, useBreakpoints } from '@vueuse/core'
-import * as PDFJS from 'pdfjs-dist'
-
-PDFJS.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
+// Shared with mail's attachment viewer: one pdf.js instance, one worker asset. That module wires
+// up the worker too — workerSrc has to be set on the instance that opens the document.
+import { pdfjs } from '@/utils/pdfjs'
 
 const breakpoints = useBreakpoints(breakpointsTailwind)
 const isMobile = breakpoints.smaller('sm')
@@ -51,7 +48,7 @@ let pdfDoc = null
 
 async function loadPDF() {
   loading.value = true
-  const task = PDFJS.getDocument(src.value)
+  const task = pdfjs.getDocument(src.value)
   pdfDoc = await task.promise
   totalPages.value = pdfDoc.numPages
   await renderPage(currentPage.value)

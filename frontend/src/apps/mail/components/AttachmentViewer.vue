@@ -64,15 +64,30 @@
 							:alt="currentAttachment?.filename"
 							class="max-h-[85vh] max-w-full object-contain"
 						/>
-						<!-- PDF Preview -->
-						<template v-else-if="isPDF">
-							<VuePdfEmbed
+						<!--
+							PDF Preview. iOS renders nothing for an <embed>ed PDF — in a PWA
+							least of all — so the mobile tree draws the pages itself with pdf.js
+							rather than sending the reader out to a browser tab.
+						-->
+						<template v-else-if="isPDF && !pdfFailed">
+							<div
 								v-if="isMobile"
-								annotation-layer
-								text-layer
-								:source="previewUrl"
-								class="h-[85vh] w-full max-w-6xl space-y-2 overflow-auto"
-							/>
+								class="relative flex h-[85vh] w-full max-w-6xl justify-center"
+							>
+								<LoaderCircle
+									v-if="!pdfLoaded"
+									class="absolute top-1/2 h-8 w-8 animate-spin"
+								/>
+								<VuePdfEmbed
+									annotation-layer
+									text-layer
+									:source="previewUrl"
+									class="h-full w-full space-y-2 overflow-auto"
+									@loaded="pdfLoaded = true"
+									@loading-failed="onPdfError"
+									@rendering-failed="onPdfError"
+								/>
+							</div>
 							<embed
 								v-else
 								:src="previewUrl"
@@ -97,11 +112,15 @@
 							controls
 							class="w-full max-w-2xl"
 						/>
-						<!-- Unsupported Preview -->
+						<!-- Unsupported Preview, and the PDF renderer's fallback -->
 						<div v-else class="flex flex-col items-center justify-center space-y-4">
 							<FileIcon class="h-16 w-16" />
 							<p class="text-sm">
-								{{ __('Preview not available for this file type') }}
+								{{
+									pdfFailed
+										? __('This PDF could not be displayed here.')
+										: __('Preview not available for this file type')
+								}}
 							</p>
 							<Button
 								:label="__('Download')"
@@ -157,9 +176,14 @@ import 'vue-pdf-embed/dist/styles/textLayer.css'
 
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 
-// vue-pdf-embed bundles pdf.js — keep it lazy/code-split so it does not bloat
-// the MailboxView route chunk (only loaded when a PDF attachment is opened).
-const VuePdfEmbed = defineAsyncComponent(() => import('vue-pdf-embed'))
+// pdf.js is megabytes — keep it lazy/code-split so it does not bloat the MailboxView route chunk
+// (only loaded when a PDF attachment is opened). The "essential" entry is the build that imports
+// pdf.js rather than inlining its own copy, which is what lets @/utils/pdfjs point the worker at an
+// asset the bundle actually emits; without that the render fails and the viewer shows a black box.
+const VuePdfEmbed = defineAsyncComponent(async () => {
+	await import('@/utils/pdfjs')
+	return import('vue-pdf-embed/dist/index.essential.mjs')
+})
 import {
 	ChevronLeft,
 	ChevronRight,
@@ -190,6 +214,16 @@ const show = defineModel<boolean>()
 const currentIndex = ref(initialIndex || 0)
 const isDownloading = ref(false)
 const previewUrl = ref<string | null>(null)
+// pdf.js reports both a document that will not open and a page that will not draw as events rather
+// than exceptions, so the failure has to be caught here or it reads as a viewer that never loaded.
+const pdfLoaded = ref(false)
+const pdfFailed = ref(false)
+
+const onPdfError = (error: unknown) => {
+	pdfFailed.value = true
+	// The reader gets the download fallback; the reason only exists here.
+	console.error('[mail] PDF preview failed', error)
+}
 
 const currentAttachment = computed(() => attachments?.[currentIndex.value])
 const isImage = computed(() => currentAttachment.value?.type?.startsWith('image/'))
@@ -229,6 +263,8 @@ const loadAttachment = async () => {
 	if (!currentAttachment.value?.blob_id) return
 
 	releasePreview()
+	pdfLoaded.value = false
+	pdfFailed.value = false
 
 	try {
 		previewUrl.value = await getAttachmentUrl(
