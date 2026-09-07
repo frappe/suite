@@ -46,7 +46,7 @@
   {
    "fieldname": "head_snapshot",
    "fieldtype": "Link",
-   "options": "Sheet Snapshot",
+   "options": "Drive Node Version",
    "label": "Latest snapshot"
   },
   {
