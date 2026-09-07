@@ -1,13 +1,16 @@
+import logging
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 from werkzeug.datastructures import Headers
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from suite.drive.tests.fixtures import nodes_in_root
-from suite.drive.webdav import ALLOWED_METHODS
+from suite.drive.webdav import ALLOWED_METHODS, log
+from suite.drive.webdav import dispatch as dispatch_module
+from suite.drive.webdav import get as get_module
 from suite.drive.webdav.dispatch import handle_before_request
 from suite.drive.webdav.tests.utils import (
     dispatch,
@@ -248,21 +251,24 @@ class TestWebDAVDispatch(IntegrationTestCase):
         # a header that was already sendable is left exactly as it was
         self.assertEqual(response.headers["X-Plain"], "already ascii")
 
-    def test_a_sendable_response_keeps_every_header_it_had(self):
-        """The net must not rewrite, reorder or de-duplicate an ordinary
-        response: it runs on every DAV response there is."""
+    def test_a_rewritten_response_keeps_every_header_it_had(self):
+        """The net rebuilds the whole `Headers` object, so it must not reorder
+        or de-duplicate: it runs on every DAV response there is. One value has
+        to be unsendable, or the rebuild never happens and this proves nothing.
+        """
         from suite.drive.webdav import dispatch as dispatch_module
 
         def handler(ctx):
             answer = Response(status=207)
             answer.headers.add("X-Repeated", "one")
-            answer.headers.add("X-Repeated", "two")
+            answer.headers.add("X-Repeated", "tw€")
+            answer.headers.add("X-Repeated", "three")
             return answer
 
         with patch.object(dispatch_module, "_handler_for", return_value=handler):
             response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
 
-        self.assertEqual(response.headers.getlist("X-Repeated"), ["one", "two"])
+        self.assertEqual(response.headers.getlist("X-Repeated"), ["one", "tw%E2%82%AC", "three"])
 
     def test_unexpected_handler_error_maps_to_500_and_logs_durably(self):
         from suite.drive.webdav import dispatch as dispatch_module
@@ -283,3 +289,129 @@ class TestWebDAVDispatch(IntegrationTestCase):
         finally:
             frappe.db.delete("Error Log", log_filter)
             frappe.db.commit()
+
+
+class TestSendableHeaders(UnitTestCase):
+    """`dispatch._make_headers_sendable`, site-free.
+
+    The net runs on every DAV response there is, so its own cases must not
+    need a site: they are the ones that have to run in a worktree. The
+    dispatched-request case above proves it is wired into `_raise`; these
+    prove what it does.
+    """
+
+    def setUp(self):
+        super().setUp()
+        frappe.local._webdav_log = {"level": logging.INFO, "start": 0.0, "user": None, "note": None}
+
+    def tearDown(self):
+        frappe.local._webdav_log = None
+        super().tearDown()
+
+    def net(self, pairs: list[tuple[str, str]]) -> Response:
+        response = Response(status=200)
+        response.headers = Headers(pairs)
+        dispatch_module._make_headers_sendable(response)
+        return response
+
+    def note(self) -> str | None:
+        return frappe.local._webdav_log["note"]
+
+    def test_a_value_above_us_ascii_is_percent_encoded(self):
+        response = self.net([("Content-Disposition", 'attachment; filename="res-€"')])
+
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="res-%E2%82%AC"')
+        response.headers["Content-Disposition"].encode("latin-1")
+
+    def test_latin_1_is_encoded_too_because_obs_text_is_opaque(self):
+        """RFC 9110 §5.5 deprecates `obs-text` and tells a recipient to treat
+        it as opaque data, so a latin-1 title is no more carriable in meaning
+        than a Chinese one. It reaches the client percent-encoded."""
+        response = self.net([("Content-Disposition", 'attachment; filename="café.txt"')])
+
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="caf%C3%A9.txt"')
+
+    def test_a_control_character_is_encoded_although_it_is_ascii(self):
+        """§5.5 allows only `field-vchar`, SP and HTAB. Werkzeug refuses CR
+        and LF where a header is set, so a split cannot be built; NUL, DEL and
+        the rest of C0 it accepts, and a proxy is free to resynchronise on
+        them. The net is where they stop."""
+        response = self.net([("Content-Disposition", 'attachment; filename="a\x00b\x07c\x7fd"')])
+
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="a%00b%07c%7Fd"')
+        self.assertIn("Content-Disposition", self.note())
+
+    def test_a_lone_surrogate_is_encoded_rather_than_raising(self):
+        """`quote` refuses a surrogate, and the net runs where no handler can
+        answer: raising here would be the `UnicodeEncodeError` it exists to
+        prevent, one layer further out."""
+        response = self.net([("X-Broken", "a\udcffb")])
+
+        self.assertEqual(response.headers["X-Broken"], "a%3Fb")
+        response.headers["X-Broken"].encode("latin-1")
+
+    def test_space_and_tab_survive_because_a_field_value_may_hold_them(self):
+        response = self.net([("X-Spaced", "one two\tthree")])
+
+        self.assertEqual(response.headers["X-Spaced"], "one two\tthree")
+        self.assertIsNone(self.note())
+
+    def test_a_sendable_response_is_not_rebuilt_at_all(self):
+        """Identity, not equality: an untouched response must keep the very
+        `Headers` object its handler built, repeats and order included."""
+        before = Headers([("X-Repeated", "one"), ("X-Repeated", "two"), ("ETag", '"abc"')])
+        response = Response(status=207)
+        response.headers = before
+
+        dispatch_module._make_headers_sendable(response)
+
+        self.assertIs(response.headers, before)
+        self.assertEqual(response.headers.getlist("X-Repeated"), ["one", "two"])
+        self.assertIsNone(self.note())
+
+    def test_a_rewrite_keeps_every_repeat_in_order(self):
+        response = self.net(
+            [("X-Repeated", "one"), ("Content-Disposition", "attachment; filename=€"), ("X-Repeated", "two")]
+        )
+
+        self.assertEqual(
+            list(response.headers.items()),
+            [
+                ("X-Repeated", "one"),
+                ("Content-Disposition", "attachment; filename=%E2%82%AC"),
+                ("X-Repeated", "two"),
+            ],
+        )
+
+    def test_the_rewrite_names_every_header_it_touched_once(self):
+        response = self.net(
+            [("X-Bad", "€"), ("X-Fine", "plain"), ("X-Bad", "£"), ("Content-Disposition", "€")]
+        )
+
+        self.assertEqual(response.headers["X-Fine"], "plain")
+        self.assertEqual(self.note(), "percent-encoded unsendable header: Content-Disposition, X-Bad")
+
+    def test_the_rewrite_does_not_erase_the_reason_a_handler_already_named(self):
+        """A 400 says why it is a 400. The net runs after the handler on the
+        same request and may only add to that line."""
+        log.note("Unparsable If header at: ' [\"a6fe'")
+        self.net([("Content-Disposition", "€")])
+
+        self.assertEqual(
+            self.note(),
+            "Unparsable If header at: ' ['a6fe'; percent-encoded unsendable header: Content-Disposition",
+        )
+
+    def test_every_title_the_disposition_helper_can_produce_is_already_sendable(self):
+        """The net is a net. `get.py` is what must not need it, so the four
+        title shapes it handles reach here unchanged."""
+        for title in ("data.bin", "res-€", "café.txt", "日本語.txt", "a\nb.txt", "€"):
+            headers = Headers()
+            headers.set("Content-Disposition", "attachment", **get_module._disposition_names(title))
+            response = Response(status=200)
+            response.headers = headers
+
+            dispatch_module._make_headers_sendable(response)
+
+            self.assertIs(response.headers, headers, title)
+            self.assertIsNone(self.note(), title)
