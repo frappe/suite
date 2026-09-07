@@ -9,7 +9,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from suite.drive.patches.build.ports import (
+    ContentTarget,
     DriveTarget,
+    LegacyContent,
     LegacyFiles,
     LegacyTree,
     S3Bucket,
@@ -55,6 +57,9 @@ class BuildEnvironment:
     # keeps building the same environment it always did.
     tree: LegacyTree | None = None
     drive: DriveTarget | None = None
+    content: LegacyContent | None = None
+    content_target: ContentTarget | None = None
+    slide_journal: object | None = None
     # Two values every written row needs and no rule should invent: the id a
     # hash-named row gets, and the moment Build wrote it. A test supplies
     # both, so a fixture's output is a fixed string rather than a clock.
@@ -64,7 +69,16 @@ class BuildEnvironment:
 
     @classmethod
     def for_site(cls) -> BuildEnvironment:
-        from suite.drive.patches.build.ports import BotoBucket, SiteDrive, SiteFiles, SiteStorage, SiteTree
+        from suite.drive.patches.build.ports import (
+            BotoBucket,
+            SiteContentSource,
+            SiteContentTarget,
+            SiteDrive,
+            SiteFiles,
+            SiteStorage,
+            SiteTree,
+        )
+        from suite.drive.patches.build.slide_journal import SlidePreimageJournal
         from suite.drive.utils.files import S3_URL_PREFIX
 
         return cls(
@@ -77,6 +91,9 @@ class BuildEnvironment:
             open_bucket=BotoBucket.from_site,
             tree=SiteTree(),
             drive=SiteDrive(),
+            content=SiteContentSource(),
+            content_target=SiteContentTarget(),
+            slide_journal=SlidePreimageJournal.for_site(),
         )
 
     def bucket(self) -> S3Bucket:
