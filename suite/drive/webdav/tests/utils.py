@@ -15,6 +15,7 @@ Both are shapes `pathmap` still has to answer for.
 import base64
 import io
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
 from frappe.storage.blob import put_blob
@@ -235,17 +236,27 @@ def file_node(
     the content and takes no override, and `_core.nodes._validated_blob` refuses
     a file whose mime differs from its blob's, so a fixture that named one would
     only build a shape the product refuses.
+
+    The render enqueue is suppressed, the same way `test_previews._file` and the
+    three `test_drive_adoption` suites suppress it. These suites arrange about
+    140 files in `setUp` alone and commit, so an unsuppressed fixture leaves that
+    many `previews.render` jobs on the site's short queue after every run - a
+    suite changing the site it measures, and on a bench with no worker it fills
+    the queue for every real client. No row and no node field changes, so every
+    shape a DAV assertion reads is still the one `create_file` writes. A verb
+    handler under test still enqueues for real; only the fixture is quiet.
     """
     blob = put_blob(io.BytesIO(data), is_private=True, filename=title)
-    node = node_core.create_file(
-        node_principals(user),
-        parent,
-        title,
-        blob=blob.name,
-        size=blob.file_size,
-        mime=blob.mime_type,
-        content_modified=content_modified,
-    )
+    with patch("suite.drive._core.previews.enqueue_render"):
+        node = node_core.create_file(
+            node_principals(user),
+            parent,
+            title,
+            blob=blob.name,
+            size=blob.file_size,
+            mime=blob.mime_type,
+            content_modified=content_modified,
+        )
     return frappe._dict(
         name=node,
         blob=blob.name,

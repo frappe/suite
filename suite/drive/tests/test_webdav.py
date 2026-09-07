@@ -1356,3 +1356,41 @@ class TestRefusalMapping(DavCase):
             with self.subTest(refusal=refusal.__name__):
                 mapped = errors.map_exception(refusal("secret node title"))
                 self.assertNotIn("secret", mapped.message)
+
+
+# --- N. the harness itself (§12) ---
+
+
+class TestDavFixtureQueueHygiene(DavCase):
+    """The DAV harness must not change the site it measures.
+
+    `webdav/tests/utils.file_node` builds every fixture file through
+    `_core.nodes.create_file`, and those suites arrange about 140 files and
+    commit. An unsuppressed fixture therefore leaves that many
+    `previews.render` jobs on the site's short queue after each run.
+    """
+
+    def test_the_file_fixture_builds_its_node_without_queuing_a_render(self):
+        from suite.drive._core import previews
+        from suite.drive.webdav.tests import utils as dav_utils
+
+        before = previews.enqueue_render
+
+        def create_file(*args, **kwargs):
+            previews.enqueue_render("node-1")
+            return "node-1"
+
+        blob = frappe._dict(name="blob-1", file_size=3, mime_type="text/plain", checksum="abc")
+        with (
+            patch.object(dav_utils, "put_blob", return_value=blob),
+            patch.object(dav_utils, "node_principals", return_value=PRINCIPALS),
+            patch.object(dav_utils.node_core, "create_file", side_effect=create_file),
+            patch("suite.drive._core.previews.frappe.enqueue") as enqueue,
+        ):
+            node = dav_utils.file_node(USER, "root-1", "a.txt", b"abc")
+
+        self.assertEqual(node.name, "node-1")
+        self.assertEqual(node.blob, "blob-1")
+        enqueue.assert_not_called()
+        # the suppression is scoped to the fixture, not left on the module
+        self.assertIs(previews.enqueue_render, before)
