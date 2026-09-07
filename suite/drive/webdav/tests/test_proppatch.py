@@ -33,6 +33,7 @@ from suite.drive.webdav.tests.utils import (
     node_principals,
     personal_dav_root,
     raw_document_node,
+    reset_dav_request,
 )
 from suite.drive.webdav.xmlutil import dav
 
@@ -108,6 +109,7 @@ class TestWebDAVProppatch(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        reset_dav_request()
         # `drop_nodes` does not know about the DAV property table, so the rows
         # this suite writes are removed by id first.
         frappe.db.delete("Drive DAV Property", {"entity": ["in", self.created]})

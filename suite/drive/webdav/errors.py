@@ -94,6 +94,12 @@ class BadGateway(DAVError):
     status = 502
 
 
+class PayloadTooLarge(DAVError):
+    # RFC 7231 §6.5.11. A server-side body limit, not an exhausted quota:
+    # rclone stops a whole sync on 507 and skips one file on 413.
+    status = 413
+
+
 class InsufficientStorage(DAVError):
     status = 507
 

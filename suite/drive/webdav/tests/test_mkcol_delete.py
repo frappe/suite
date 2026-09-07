@@ -40,6 +40,7 @@ from suite.drive.webdav.tests.utils import (
     node_principals,
     personal_dav_root,
     raw_document_node,
+    reset_dav_request,
 )
 
 OWNER = "webdav-structure-owner@example.com"
@@ -69,6 +70,7 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        reset_dav_request()
         # every node under this mount is this suite's fixture, and a case that
         # denies `$GENERAL` on one cannot read it back to clean up by hand
         mine = frappe.get_all("Drive Node", filters={"root": self.root}, pluck="name")
@@ -184,6 +186,23 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             self._mkcol(f"/dav/{self.base_name}/Hidden/Intruder")
 
+    def test_mkcol_at_an_unreadable_name_is_404_and_not_a_405(self):
+        """The "already exists" 405 is an oracle without a read gate in front.
+
+        `pathmap` resolves without asking permission, so MKCOL at a folder the
+        caller cannot see answered 405 while a free name answered 201. That
+        pair names every node a caller has been shut out of inside their own
+        root. Below READ the answer is 404 (§12.1), taken or not.
+        """
+        hidden = folder_node(OWNER, self.base, "Concealed")
+        grant(hidden, "$GENERAL", NONE, node_principals(OWNER))
+
+        with self.assertRaises(DriveNotFound):
+            self._mkcol(f"/dav/{self.base_name}/Concealed")
+        # the free name beside it still creates, so the two really would have
+        # been distinguishable
+        self.assertEqual(self._mkcol(f"/dav/{self.base_name}/Plain").status_code, 201)
+
     # --- DELETE ---
 
     def test_delete_trashes_rather_than_purges(self):
@@ -227,6 +246,28 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         self.assertFalse(self._resolve("Doomed").exists)
         self.assertFalse(self._resolve("Doomed", "inner.txt").exists)
         self.assertIsNone(locks.find_lock(token))
+
+    def test_delete_on_a_collection_accepts_depth_infinity_only(self):
+        """RFC 4918 §9.6.1, which writes the rule for collections only.
+
+        `Depth: 0` on a collection asks to delete the folder and keep its
+        members, which the trash cannot do, so answering it with a subtree
+        trash would do something other than what was asked. On an ordinary file
+        Depth means nothing and the header stays legal.
+        """
+        folder = folder_node(OWNER, self.base, "DepthDir")
+        for depth in ("0", "1"):
+            with self.subTest(depth=depth), self.assertRaises(BadRequest):
+                self._delete(f"/dav/{self.base_name}/DepthDir", headers={"Depth": depth})
+        self.assertEqual(node_core.stored(folder).state, "Active")
+
+        victim = file_node(OWNER, self.base, "shallow.txt", b"x")
+        response = self._delete(f"/dav/{self.base_name}/shallow.txt", headers={"Depth": "0"})
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(node_core.stored(victim.name).state, "Trashed")
+
+        response = self._delete(f"/dav/{self.base_name}/DepthDir", headers={"Depth": "infinity"})
+        self.assertEqual(response.status_code, 204)
 
     def test_delete_refusals(self):
         """RFC 4918 §9.6: a missing URL is 404; the mount itself is refused."""
