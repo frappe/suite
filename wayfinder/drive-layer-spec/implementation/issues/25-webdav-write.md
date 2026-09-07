@@ -4,7 +4,7 @@
 
 **Blocked by:** [24 — Browse and download ordinary files over WebDAV](24-webdav-read.md)
 
-**Status:** in-review, awaiting the site gate
+**Status:** done
 
 **Owner:** Suite Drive WebDAV
 
@@ -15,16 +15,18 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] PUT spools once into private blob storage. Preflight Content-Length or bound the spool by remaining quota.
-- [ ] Replace keeps one nonempty previous version. Remove duplicate staging, compensation, generation, and owner-lock mechanisms.
-- [ ] MOVE/COPY/MKCOL/DELETE call shared workflows with the method-role table. Reject cross-root DAV moves.
-- [ ] LOCK on an unmapped path creates an empty node under UPLOAD. Expired unused locks leave that node intact.
-- [ ] Preserve lock ownership, overwrite checks, dead-property cloning, conditional headers, and client content times.
-- [ ] Record the authenticated actor and User-Agent once. Hidden content documents remain inaccessible to write methods.
+- [x] PUT spools once into private blob storage. Preflight Content-Length or bound the spool by remaining quota.
+- [x] Replace keeps one nonempty previous version. Remove duplicate staging, compensation, generation, and owner-lock mechanisms.
+- [x] MOVE/COPY/MKCOL/DELETE call shared workflows with the method-role table. Reject cross-root DAV moves.
+- [x] LOCK on an unmapped path creates an empty node under UPLOAD. Expired unused locks leave that node intact.
+- [x] Preserve lock ownership, overwrite checks, dead-property cloning, conditional headers, and client content times.
+- [x] Record the authenticated actor and User-Agent once. Hidden content documents remain inaccessible to write methods.
 
-Every box is implemented and covered by tests. None is ticked: 276 of the 302
-DAV cases have never run, and litmus has never run at all. See
-[Residual risks](#residual-risks) and [Site gate that must run](#site-gate-that-must-run).
+Every box is built, runs on `slides.localhost`, and is audited against the code
+at HEAD. The module gate and litmus both ran. The audit of each box, and the
+evidence behind it, is in
+[Site gate: final run and closeout](#site-gate-final-run-and-closeout) at the
+end of this ticket. That section supersedes every earlier status claim here.
 
 ## Verification
 
@@ -67,7 +69,7 @@ unchanged.
   dedupes on the content checksum and arms its own rollback. The staging file,
   the generation key, the owner lock, the compensation queue, and the drift
   repair are gone: the node write and the blob reference commit or roll back
-  together. `put.py` fell from 1200 lines to 230.
+  together. `put.py` fell from 975 lines to 266.
 - Quota is preflighted from `Content-Length` and the same figure bounds the
   spool when no length is declared (§7.3). The site's
   `drive_webdav_max_upload_size` is a second, separate ceiling and answers 413
@@ -253,8 +255,11 @@ deleted.
 - **`proppatch._validate` counts a `set` as an addition.** A client at the
   200-property cap gets a spurious 507 when overwriting a property it already
   owns. Pre-existing and unchanged by this ticket.
-- **LOCK Depth infinity locks a whole subtree on EDIT of its root alone,** with
-  no RFC 4918 §9.10.4 207 for members that could not be locked.
+- ~~**LOCK Depth infinity locks a whole subtree on EDIT of its root alone,**
+  with no RFC 4918 §9.10.4 207 for members that could not be locked.~~ Fixed by
+  the independent review in `107ef15ee`, and the citation is §9.10.3. See
+  [finding 3](#the-four-findings-the-implementation-left-open). `lock.py:158`
+  answers the 207 through `_unlockable_member` and `_hierarchy_refusal`.
 - **`propname` does not list the quota property names.** Carried from ticket
   24, unchanged.
 - **`Drive Legacy Route.entity` is still declared `Link → File`.** Ticket 23's
@@ -1872,3 +1877,249 @@ queue or any config file.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+## Site gate: final run and closeout
+
+Supersedes every earlier rerun note. Agents audited the six acceptance
+criteria against the code at HEAD, the git range, the test sources, and the
+litmus harness; the orchestrator decided the verdicts and made this commit.
+The module rerun and the litmus run were executed on the site and are recorded
+here as their results. This closeout ran no `bench`, no server, and no litmus.
+
+### Migration
+
+`bench --site slides.localhost migrate` succeeded at
+[gate run 1](#gate-run-1-the-site-quota-defaults-were-text). It stays valid.
+`git diff --name-only bc461122a..HEAD -- suite/patches.txt suite/hooks.py
+'suite/**/*.json' suite/drive/patches` is empty at HEAD, so no DocType JSON,
+patch, hook, or migration file changed in the whole ticket. The migrate is a
+no-op for this work and no later run was owed.
+
+### The final rerun
+
+The independent review of gate run 7 changed five production files:
+`webdav/dispatch.py`, `webdav/get.py`, `webdav/ifheader.py`, `webdav/lock.py`
+and `webdav/log.py`. The nine modules the review named ran on the site, one
+`script -qec "bench --site slides.localhost run-tests --module <module>"`
+invocation each, serialized. All nine are OK.
+
+| # | Module | Unit | Integration |
+|---|---|---|---|
+| 1 | `suite.drive.tests.test_webdav` | 125 | 0 |
+| 2 | `suite.drive.webdav.tests.test_put_get` | 6 | 50 |
+| 3 | `suite.drive.webdav.tests.test_locks` | 4 | 42 |
+| 4 | `suite.drive.webdav.tests.test_dispatch` | 10 | 15 |
+| 5 | `suite.drive.webdav.tests.test_log` | 6 | 7 |
+| 6 | `suite.drive.webdav.tests.test_ifheader` | 22 | 0 |
+| 7 | `suite.drive.webdav.tests.test_mkcol_delete` | 0 | 20 |
+| 8 | `suite.drive.webdav.tests.test_movecopy` | 0 | 39 |
+| 9 | `suite.drive.webdav.tests.test_proppatch` | 0 | 19 |
+
+365 cases: 173 unit and 192 integration. Every count matches a static count of
+`def test_` at HEAD, class by class. There is no `unittest.skip` and no
+`expectedFailure` anywhere in the DAV suites, so the collected count is the
+run count.
+
+`suite.drive.tests.test_webdav` held 100 cases at gate run 5. 25 of its cases
+therefore ran on the site for the first time in this rerun.
+
+### What was not rerun, and why
+
+The full gate is 23 modules. Fourteen were not rerun: `test_pathmap`,
+`test_propfind`, `test_properties`, `test_settings`, `test_auth`,
+`test_conditional`, `test_xmlutil`, `test_nodes`, `test_access`, `test_quota`,
+`test_roots`, `test_versions`, `http.tests.test_shims`, and
+`tests.test_architecture`. They passed at
+[gate run 5](#gate-run-5-a-full-job-queue-discarded-the-litmus-user), which is
+the last green 23-module gate, together with `test_previews` and
+`test_drive_permission`.
+
+`git diff --name-only 3a685474b..HEAD -- suite/` lists 15 files. Five are the
+production files above. Six are the test modules that were rerun. Four are the
+litmus harness. No other production file changed, so nothing the fourteen cover
+has moved.
+
+An agent traced the changed lines to their callers. Two un-rerun modules do
+reach changed code: `test_propfind` runs `get._disposition_names` through
+`get.handle`, and `test_properties` calls `ifheader.parse_if_header`. Neither
+is the only cover for its file, and both changed functions are pinned by cases
+that did run (`test_put_get.TestDispositionNames`, `test_ifheader`). No
+un-rerun module is the sole cover for any changed line. `test_auth` calls
+`auth.authenticate` directly and never reaches the changed `dispatch._raise`.
+
+This is a scoped rerun, not a full gate. It is stated as one.
+
+### litmus
+
+litmus 0.13, against a server started fresh from current `main` with this
+branch's Suite code, on a disposable port. All five groups ran and every
+group's `begin` passed.
+
+| Group | Result | Product verdict |
+|---|---|---|
+| `http` | 4 of 4 | clean |
+| `basic` | 16 of 16 | clean, with the ledgered Werkzeug fragment warning |
+| `copymove` | 13 of 13 | clean |
+| `props` | 30 of 30 | clean |
+| `locks` | 39 of 41 | clean; the 2 non-passes are litmus defects |
+
+The corrected runner exited 0 and printed `litmus: all groups clean`.
+
+**Tolerated external-tool limitations, not product failures.** Three, all
+ledgered in `litmus_expected.txt` from real runs, none of them a refusal this
+server got wrong:
+
+- `basic:delete_fragment` WARNING. Werkzeug builds `PATH_INFO` from
+  `urlsplit(...).path`, so a URI fragment is gone before the app runs and a
+  fragment-bearing DELETE cannot be told from a normal one. Nothing in Drive
+  sees it. litmus counts a warning as a passed test, which is why `basic` reads
+  16 of 16.
+- `locks:complex_cond_put` and `locks:fail_complex_cond_put` FAIL. litmus
+  formats `(<%s> [%s]) (Not <DAV:no-lock> [%s])` into a 200-byte buffer and
+  keeps 199 characters. A 45-character `urn:uuid` token and §12.4's 66-character
+  quoted SHA-256 entity-tag make the header 207, so it arrives cut mid-tag and
+  is not RFC 4918 §10.4 grammar. The 400 is correct. Both are verified from the
+  shipped binary's `.rodata` and both callers' `ne_snprintf` bound, by the
+  implementation and again by the independent review. See
+  [gate run 7](#2-and-3-lockscomplex_cond_put-and-locksfail_complex_cond_put--litmus-ledgered).
+
+**Everything else litmus reported is a product pass.** litmus ran 104 cases.
+101 passed outright: 4 `http`, 15 `basic`, 13 `copymove`, 30 `props`, 39
+`locks`. The other 3 are the ledgered lines above.
+
+**Why the ledger cannot hide a failure.** `litmus_verdict.sh` exits 0 only when
+all five groups ran, each `begin` passed, no `Could not create new collection`
+line appears, every non-pass carries a ledger line of the same kind, and every
+ledger line was seen with exactly that kind. A ledgered test that now passes is
+`STALE LEDGER LINE`; one that did not run is `LEDGERED TEST DID NOT RUN`. Both
+exit 1. The reported exit 0 therefore also proves that `delete_fragment` really
+warned and that both conditionals really failed in that run.
+
+### Acceptance criteria
+
+Agents audited each box against the code at HEAD, not against this ticket's
+prose, and named the cases that ran.
+
+| # | Criterion | Verdict |
+|---|---|---|
+| 1 | PUT spools once; preflight or bound by quota | Passes. `put.py:111` is the only body read and `put.py:230` the only `put_blob` call in the adapter. `_Ceilings` (`put.py:169-186`) feeds the `Content-Length` preflight and the spool stop from one value. 413 is the site cap, 507 the quota (`put.py:157-161`). `cint` makes an unparsable cap no cap. Live in `test_put_get` :539, :550, :559, :565, :580, :599, :617, :631. |
+| 2 | Replace keeps one nonempty previous version; the duplicate machinery is gone | Passes. `_replace_file` writes at the same node id (`_core/nodes.py:1254-1263`), so URL, id and grants survive; `nodes.py:1246-1248` keeps one version and never versions an empty head. `perms.py`, `RELINKED_METHODS` and `pathmap.ResolvedPath.entity` are absent at HEAD; no staging file, generation key, owner lock or compensation queue remains in the DAV write path. The PUT ETag is the full quoted checksum `getetag` and GET publish. Live in `test_put_get` :474, :490, :502, :645, :876. |
+| 3 | MOVE/COPY/MKCOL/DELETE on the shared workflows and the method-role table; no cross-root move | Passes. Every role matches §12.1: MKCOL `structure.py:68`, DELETE `:86`, MOVE `:115`/`:127`/`:202`, COPY `copy.py:40`/`:48`/`nodes.py:1719`. Collision, depth, cycle and quota stay inside `_core` under its row lock (`nodes.py:2219`, `:1824`, `:1736`, `:1334`). `resolve_destination` (`structure.py:239`) refuses a cross-root move for both verbs. Depth is scoped to collections on MOVE and DELETE. Live in `test_movecopy` (39) and `test_mkcol_delete` (20). |
+| 4 | LOCK on an unmapped path; expiry leaves the node | Passes. `lock.py:286-293` answers 409 for a missing intermediate, takes UPLOAD on the parent, and calls `create_empty_file`, which writes no blob and calls no `admit`. `purge_expired_locks` deletes lock rows only, and no job reaps an Active zero-byte node. The §9.10.3 207 is `lock.py:158-159`. Live in `test_locks` :346, :366, :387, :416. |
+| 5 | Lock ownership, overwrite checks, dead-property cloning, conditionals, client times | Passes. Ownership needs the token and `lock.owner_user == ctx.user` (`locks.py:75-76`); non-owner redaction is `locks.py:358-370`, reached only from `propfind.py:212`. `Overwrite: F` runs after the read gate in both verbs (`structure.py:198-199`, `copy.py:82-83`), so an unreadable destination is 404. COPY clones the subtree's dead properties in one read (`nodes.py:1634`, `:2051`). `conditional.py:40` evaluates the date only when `If-Match` is absent. `X-OC-Mtime: accepted` is set only when a time was stamped (`put.py:265`). Live in `test_locks` :454, :804, :856; `test_movecopy` :320, :478, :497; `test_conditional` :109; `test_put_get` :812, :826. |
+| 6 | Actor and User-Agent once; content documents closed to writes | Passes. `dispatch.py:74` binds the client before the handler is resolved at `:94`; `nodes.py:2323` is the one `Drive Activity` writer in the node engine, so a write stamps once, and `frappe.init(force=True)` clears the binding between requests. `pathmap._VISIBLE` (`pathmap.py:44`) and the folder check at `pathmap.py:105` hide a document and its media from every verb. Live in `test_put_get` :778, `test_mkcol_delete` :379, `test_movecopy` :355, `test_proppatch` :229, `test_locks` :326, and `test_webdav.TestHiddenContent`. |
+
+### Ticket 24's carried risks are discharged
+
+- A live case now writes a `Drive DAV Lock` and a `Drive DAV Property` row
+  keyed on a node id and reads it back. `test_locks` and `test_proppatch` ran
+  whole, and the four parked suites are unparked.
+- The `require_options="Drive Node"` purge cascade is covered live:
+  `test_locks.py:675` and `test_proppatch.py:429` both purge a node and assert
+  its DAV rows go with it.
+- Still open, carried forward: ticket 24 asked for the `pathmap` `EXPLAIN` to be
+  re-run against a folder holding persisted child rows. It was not re-run. It
+  is not one of this ticket's acceptance criteria or its verification line, so
+  it does not hold the ticket. `key`, `key_len` and `ref` were already proved;
+  only the `rows` estimate stays unmeasured.
+
+### Corrections to this ticket's own text
+
+Found while auditing the prose against the code. No production file changed.
+
+- "`put.py` fell from 1200 lines to 230" was wrong in both numbers. The base
+  file is 975 lines and HEAD is 266. Corrected above.
+- "Findings recorded, not fixed" still listed the depth-infinity LOCK with no
+  207 as unfixed. The independent review fixed it in `107ef15ee` and corrected
+  the citation to §9.10.3. The entry is struck above rather than deleted, so
+  the finding and its fix stay readable together.
+
+### Findings recorded, not fixed
+
+New at closeout. None blocks the ticket. Each is named where the code sits.
+
+- **A negative `drive_webdav_max_upload_size` refuses every PUT.** `cint("-1")`
+  is `-1`, which survives `hard or None` (`put.py:185-186`), so `check(0)`
+  raises 413 for a zero-byte body. An unparsable cap is no cap; a negative one
+  is a cap nothing can satisfy. Site misconfiguration only, and untested.
+- **The quota arithmetic is written twice.** `put.py:183` recomputes
+  `max(limit - used, 0)`, which `_core.quota.preflight` (`quota.py:74-81`)
+  already does. The two can drift.
+- **COPY takes EDIT on an overwritten destination** (`copy.py:87`). §12.1's
+  table gives COPY no destination role beyond UPLOAD on the parent. This is
+  stricter than the spec, deliberately: an overwrite destroys, and DELETE
+  prices that at EDIT. Recorded as a deviation, not a defect.
+- **A malformed `Depth` value 400s a LOCK refresh.** `context.py:133-138`
+  parses `Depth` for every request before any handler runs. RFC 4918 §9.10.2's
+  "MUST ignore" holds for every legal value; only a syntactically invalid one
+  differs.
+- **`run_litmus.sh` has no repository-local test.** `litmus_verdict.sh` was
+  split out precisely so the comparison could be tested from a recorded
+  transcript. The wrapper around it is proved only by a real litmus run.
+- **No `_core`-level case calls `nodes.update(blob=...)` directly** to assert
+  the one-version and empty-head rules. They are proved through the DAV suite
+  and through `http.tests.test_dispatch`.
+
+The earlier "recorded, not fixed" lists stand as written, less the struck
+entry.
+
+### Residual risks that stand
+
+- The 413-vs-507 split is new behaviour for any site that had
+  `drive_webdav_max_upload_size` set.
+- Chunked PUT still never drives `StreamingBody` in a test. litmus and a manual
+  client are its only real coverage, and litmus ran clean.
+- `test_dispatch` and `test_locks` commit their fixtures and drop them
+  explicitly. A run killed part way leaves users and roots on the site.
+- Real title collation in `pathmap._child` is exercised by the gate but not
+  asserted against MariaDB collation rules directly.
+
+### Site state after the run
+
+`webserver_port` is 8010 in both `sites/common_site_config.json` and
+`sites/slides.localhost/site_config.json`. The disposable port 8015 the
+litmus server used is stopped: nothing listens on it.
+
+`litmus_setup.teardown` drops the litmus user's Personal Root and provisions a
+fresh one. By design it leaves `litmus@example.com` and the site-wide
+`Drive Disk Settings.webdav_enabled` toggle as it found them set: CI sites are
+disposable, and a dev site keeps whatever an admin wanted. That is the run's
+one intended residue. The suites themselves restore the switch to its previous
+value rather than a hard-coded 0 (`webdav/tests/utils.py:96-109`).
+
+### Checks run at closeout
+
+Read-only, in this worktree, at `cfa1bcfca`. No `bench`, `migrate`, `serve`,
+litmus, queue change, site write, `push` or PR. Nothing was executed against
+the database.
+
+```
+$ git log --oneline bc461122a..HEAD | wc -l
+53
+$ git diff --shortstat bc461122a..HEAD -- suite/
+48 files changed, 5480 insertions(+), 4311 deletions(-)
+
+$ git diff --name-only bc461122a..HEAD -- suite/patches.txt suite/hooks.py \
+    'suite/**/*.json' suite/drive/patches
+(empty)
+
+$ git diff --name-only 3a685474b..HEAD -- suite/
+15 files: 5 production, 6 test modules, 4 litmus harness
+
+$ static count of `def test_` at HEAD, the nine reran modules
+365, matching the reported run exactly, class by class
+
+$ static collection across every module in suite/drive/webdav/tests
+TOTAL 342, matching the last recorded figure
+
+$ grep -rn 'unittest.skip' suite/drive/webdav/tests suite/drive/tests/test_webdav.py
+(no matches)
+
+$ grep -n webserver_port sites/common_site_config.json sites/slides.localhost/site_config.json
+8010, 8010
+```
+
+Ticket 29 stays dormant at closeout: the dormancy diff above is empty.
+
+**Status: in-review to done.** The next unblocked ticket is
+[26 — Prepare legacy bytes for an additive Build](26-build-storage-preparation.md).
