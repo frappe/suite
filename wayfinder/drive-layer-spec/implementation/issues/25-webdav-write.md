@@ -798,3 +798,140 @@ run them.
 
 Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
 suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 4: a full job queue discarded the user
+
+Module 9 (`suite.drive.webdav.tests.test_proppatch`) errored in `setUpClass`,
+before any DAV case ran. `ensure_user` could not insert
+`webdav-proppatch-owner`.
+
+**Cause.** Production, not the test. The `User` `after_insert` hook reaches
+`install.after_user_insert` (`:33`), which calls the legacy
+`utils.get_user_folder` (`:301`). That grants the new user their own home
+folder through `utils.grant_owner_access` (`:371`), which inserts a `Drive
+Permission`. `DrivePermission.after_insert` (`:12`) then calls
+`frappe.enqueue(notify_share)`.
+
+`frappe.enqueue` measures the queue depth in `_check_queue_size`
+(`background_jobs.py:175`) and raises `QueueOverloaded` there, at
+`background_jobs.py:751`. That is before the `enqueue_after_commit` callback is
+registered (`:216`), so the flag holds nothing back. The hook runs inside the
+insert of the grant row, so the refusal rolled the grant back — and with it the
+whole user. On a site whose short queue is at its cap, no user could be created
+at all. Same shape as gate run 3's upload defect, one blast radius up.
+
+The queue is at 550 because the bench runs no RQ worker. That is the
+environment. The refusal reaching the caller is the defect.
+
+**Fix.** Queuing is best-effort. The miss goes to the Error Log and the grant
+stands. Nothing requires it to be strict:
+
+- §9.5 is the whole notification contract and states no delivery guarantee.
+- Ticket 23 (`:486`) already records "a new share sends no email" as an
+  accepted regression, and §14 (`drive-layer-spec.md:3762`) drops the legacy
+  inbox at Build.
+- `notify_share` is already best-effort inside its own body: a failed
+  notification row is logged and swallowed (`notifications.py:107`) and a
+  failed email is swallowed outright (`:136`). Only the enqueue that scheduled
+  it was strict.
+
+The asymmetry, stated plainly: unlike a preview, a dropped share notice is
+never repaired. There is no §9.2 counterpart for §9.5. The compensation is that
+the grant is durable and the recipient has the access either way; only the
+announcement is lost.
+
+The enqueue arguments, the queue, the `fdocperm_` dedup job id, the
+install/migrate/patch skip and the `$GENERAL`/`$GROUP:` principal filter are
+unchanged, so the one existing test on the call shape still passes unchanged.
+
+**The test helper stays as it is.** `suite/tests/utils.ensure_user` was the
+caller, not the fault. It reaches the enqueue through production hooks that
+33 test modules depend on for personal-root and home-folder provisioning
+(`drive/tests/fixtures.py:11`, `webdav/tests/utils.py:199`). Suppressing the
+enqueue inside it would hide the production path from every one of them and
+would not have made the refusal correct anywhere else. Gate run 3's fixture
+change had a different reason: `file_node` queued about 140 render jobs per
+run and so filled the cap it then measured. `ensure_user` queues one job per
+test user, and once the guard is in the jobs are refused and logged rather than
+queued at all.
+
+**Audit.** An agent inventoried every `frappe.enqueue` reachable from the shared
+setup of the 23 gate modules.
+
+| Site | Reached from shared setup | State |
+|---|---|---|
+| `drive_permission.py:20` (`notify_share`) | yes, every `ensure_user` | unguarded, now guarded |
+| `_core/previews.py:105` (`render`) | yes, via `file_node` | guarded in gate run 3, and suppressed in the fixture |
+| `frappe` `user.py:332` (`create_contact`) | yes, `User.on_update` | safe: `now=frappe.in_test` short-circuits before the depth check |
+| `utils/files.py:80,88` (`upload_thumbnail`) | no, legacy `upload_file` only | safe: passes `now=True` |
+| `api/files.py:380` (`build_download_archive`) | no, API only | out of scope |
+| `patches/remove_teams.py:42` | no, patch only | out of scope |
+| `suite/utils/__init__.py:139` (`enqueue_job`) | no, mail only | out of scope |
+
+`provision_personal_root` inserts a `Drive Grant`, not a `Drive Permission`, and
+that controller has no `after_insert`. `create_user_settings`, `put_blob`,
+`enable_user_webdav`, `set_global_webdav` and all of `drive/tests/fixtures.py`
+reach no queue.
+
+So `drive_permission.py:20` was the only unguarded enqueue any gate module's
+setup could reach. The remaining ~30 `frappe.enqueue` sites under `suite/` stay
+outside this ticket, as gate run 3 recorded.
+
+| Commit | Change |
+|---|---|
+| `855de7eb4` | let a full job queue cost the share notice, not the grant |
+
+**Coverage.** Three cases in
+`suite.drive.doctype.drive_permission.test_drive_permission`.
+
+- `UnitTestDrivePermission.test_a_refused_queue_is_logged_and_not_raised` — a
+  `QueueOverloaded` from `frappe.enqueue` is logged, not raised.
+- `IntegrationTestDrivePermission.test_a_refused_queue_still_writes_an_ordinary_share`
+  — the grant row survives a refused queue.
+- `IntegrationTestDrivePermission.test_a_refused_queue_still_creates_the_user_and_their_home_folder`
+  — the case that pins this gate stop: `ensure_user` still creates the user,
+  their `Drive Settings.user_folder` and its owner grant.
+
+Both integration cases inject the refusal at
+`frappe.utils.background_jobs._check_queue_size`, where production raises it,
+rather than at `frappe.enqueue`. That keeps `create_contact`'s `now=True`
+short-circuit intact, so the harness refuses exactly what a full queue refuses.
+
+**Rerun.** `suite.drive.webdav.tests.test_proppatch`, then modules 10 to 23 in
+order. Then `suite.drive.tests.test_previews` (gate run 3) and
+`suite.drive.doctype.drive_permission.test_drive_permission`, which is not in
+the numbered list and carries this run's three cases. Module 4
+(`test_properties`) still carries gate run 2's case. No migrate: no DocType
+JSON, patch, hook, or fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, queue deletion, `push`, or PR. No external Redis state was touched.
+The 550 queued jobs were left alone.
+
+```
+$ python3 -m compileall -q suite/drive/doctype/drive_permission/
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/doctype/drive_permission/
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/doctype/drive_permission/
+3 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.tests.test_architecture
+Ran 7 tests in 1.218s
+OK
+
+$ ... frappe.init, no connect: DrivePermission.after_insert on a stub
+refused queue: swallowed and logged -> Drive: could not queue a share notification
+healthy queue: unchanged call shape
+
+$ ... the same stub against `git show HEAD:...drive_permission.py`
+pre-fix source raised: QueueOverloaded
+```
+
+The three new cases and the 39 `test_locks` integration cases are still unrun:
+`DrivePermission(...)` loads its meta from the database, so this module needs a
+site. Site-free checks cannot run it.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
