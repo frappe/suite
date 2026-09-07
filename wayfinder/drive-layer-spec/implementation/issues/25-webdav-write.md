@@ -22,7 +22,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [ ] Preserve lock ownership, overwrite checks, dead-property cloning, conditional headers, and client content times.
 - [ ] Record the authenticated actor and User-Agent once. Hidden content documents remain inaccessible to write methods.
 
-Every box is implemented and covered by tests. None is ticked: 255 of the 281
+Every box is implemented and covered by tests. None is ticked: 276 of the 302
 DAV cases have never run, and litmus has never run at all. See
 [Residual risks](#residual-risks) and [Site gate that must run](#site-gate-that-must-run).
 
@@ -59,7 +59,7 @@ unchanged.
 | `584261842` | stop the WebDAV README naming a module that is gone |
 | `72d1717de` | close the refusals a URL could be read through |
 
-30 files changed, 3008 insertions, 4195 deletions.
+31 files changed, 3325 insertions, 4198 deletions.
 
 ### Changed behaviour
 
@@ -142,7 +142,7 @@ $ grep -rn 'unittest.skip' suite/drive/webdav/tests suite/drive/tests/test_webda
 (no matches)
 ```
 
-Whole-app lint leaves 2 errors and 4 unformatted files: `http/shims.py`,
+Lint over `suite/drive` leaves 2 errors and 4 unformatted files: `http/shims.py`,
 `patches/team_restructure.py`, `doctype/drive_grant/drive_grant.py`,
 `http/tests/test_shims.py`, `tests/benchmark_views.py`. All predate this ticket
 and none is touched by it.
@@ -274,7 +274,7 @@ ticket 24 installed is untouched.
 
 ### Residual risks
 
-- **255 of the 281 DAV cases have never been executed.** They import, collect,
+- **276 of the 302 DAV cases have never been executed.** They import, collect,
   and lint clean. That is all that is proved. The four migrated suites were
   read assertion by assertion against production source by separate agents and
   no assertion was found that must fail, but reading is not running.
@@ -344,3 +344,190 @@ All five groups (http, basic, copymove, props, locks) must be attempted.
 Ledger what really fails; add nothing on expectation.
 
 This ticket stays open until that gate runs.
+
+## Independent review
+
+An independent reviewer read the ticket, §12, RFC 4918, and the whole diff
+`bc461122a..7a47ff7d5`, then fixed what it found. Three agents audited the
+production code, the migrated suites, and the dispatch wiring in parallel; the
+reviewer decided every verdict against the specs, wrote the fixes and the
+tests, and made the commits. The implementation's own notes were not taken on
+trust. This section is the reviewer's record and does not replace the sections
+above.
+
+### The four findings the implementation left open
+
+**1. The 404-vs-409 split on an unreadable intermediate — fixed.** The ticket
+called the pair irreconcilable: §12.1 says unreadable is 404, RFC 4918 §9.7.1
+says an absent parent is 409. It is reconcilable. §12.1's rule is about the
+*target* a verb names. The parent of a create is not the target; it is state
+the client asked about indirectly. RFC 4918 fixes that answer at 409 for PUT
+(§9.7.1), MKCOL (§9.3.1), MOVE and COPY (§9.9.4), and LOCK (§9.10.6). Answering
+409 for an unreadable parent is therefore a reading of §12.1, not a departure
+from it, and it is the reading §12.1 exists to enforce: while the two answers
+differed, the pair named every folder inside a caller's own root that had been
+taken away from them. The message is identical too, or the body restores the
+oracle the status code closed. A parent the caller can read but may not write
+is unchanged at 403.
+
+**2. PROPPATCH property-cap arithmetic — fixed.** The cap counted every
+`DAV:set` in the request, not the ones that would really be stored. Windows
+Explorer writes `Win32LastModifiedTime` on every save, so a client at the cap
+was refused 507 for overwriting its own property while the stored count never
+moved. `deadprops.existing_tags` now removes the tags already held.
+
+**3. LOCK Depth infinity with no multistatus — fixed.** The citation in the
+notes is wrong: the requirement is RFC 4918 §9.10.3, not §9.10.4. §9.10.3 says
+"Either the entire hierarchy is locked or no resources are locked". §5.1's
+nearest-wins lets a deeper grant lower the caller inside their own root, so
+EDIT on the collection alone handed out a lock the next PUT would answer 403.
+`_unlockable_member` now answers §9.10.3's 207: 403 on the member that refused,
+424 on the Request-URI, and no lock row. Only a member holding a `Drive Grant`
+of its own can differ from the collection, so an ordinary subtree costs one
+indexed query.
+
+**4. Unguarded `deadprops.copy_props` — no change needed.** `Drive DAV
+Property.entity` and `Drive DAV Lock.entity` are already declared
+`Link → Drive Node` in the committed JSON. `_dav_property_table_ready()` is
+therefore always true on a migrated site, and the guard the note asked for
+would never fire. Verified by reading the DocType JSON at HEAD, not by
+inference.
+
+### Defects the review found on its own
+
+- **A caller with no Active Personal Root got a 500.** `/dav` resolves to no
+  node and no parent for `Administrator`, whom `provision_personal_root` skips,
+  and for anyone whose root was archived. `require(None)` raised AttributeError
+  out of PUT and `segments[-1]` raised IndexError out of MKCOL. Reproduced at
+  `7a47ff7d5` from a clean `git archive` extract. Both now answer 409 through
+  the same guard as finding 1.
+- **MOVE refused a `Depth` header on an ordinary file.** RFC 4918 §9.9.3 is
+  written for collections. The check ran before the source was resolved, so
+  `Depth: 0` on a file was 400 — a move the client is entitled to make. DELETE
+  already scopes the same rule correctly (§9.6.1).
+- **A second lock could be minted over a resource the caller already held.**
+  The conflict list dropped any lock whose token the caller had submitted.
+  §9.10.5: "It is illegal for a principal to request the same lock twice."
+  `enforce` then demanded a token from every covering lock, so the holder could
+  write with neither until one expired, and UNLOCK of either left the file
+  locked.
+- **A LOCK refresh ran on READ.** §12.1 gives LOCK on an existing node EDIT,
+  and a refresh is that same LOCK. A holder whose grant had been lowered kept
+  the write lock alive for as long as it kept asking, and `enforce` refuses
+  every non-owner, so the node's own owner stayed locked out by a principal
+  that could not write it.
+- **A LOCK refresh honoured `Depth`.** RFC 4918 §9.10.2: "A server MUST ignore
+  the Depth header on a LOCK refresh." The check ran before the body was read,
+  so a client that stamps `Depth: 1` on everything lost the lock it was asking
+  to keep.
+- **LOCK skipped the If header's conditions.** RFC 4918 §10.4.1: the If header
+  is not method-specific. LOCK cannot call `locks.enforce` — its own rule is
+  §9.10.5's table, under which a second shared lock is legal where a write is
+  423 — and it dropped the conditions along with it.
+- **A stale `If-Unmodified-Since` overrode a matched `If-Match`.** RFC 7232 §6
+  step 2 evaluates the date only "when If-Match is not present".
+- **The test suites turned the site's WebDAV switch off for good.** Four suites
+  set `Drive Disk Settings.webdav_enabled` to 1, then committed a hard-coded 0.
+  On a site where an admin had WebDAV on, one gate run disabled the feature for
+  every real client. `test_log` also leaked the Personal Root it committed and
+  never called `super().setUp()`.
+- **The README described content documents as read-only exports.** §12.2 hides
+  them outright. The line stated the old server's behaviour.
+
+### Coverage the review added
+
+- a lock strictly below the collection a DELETE or MOVE names — the descendant
+  direction of the subtree walk (`check_descendants`), which no case reached
+  and which RFC 4918 §9.6.1 requires;
+- `locks.parse_timeout_header` and `lock._parse_lockinfo`, both read straight
+  off the wire, with every refusal branch. Site-free;
+- the `Allow` header on MKCOL's 405, which RFC 7231 §6.5.5 makes mandatory and
+  which `ff375deb0` added with nothing holding it.
+
+The DAV suites went from 281 collected cases to 302.
+
+### Recorded, not fixed
+
+- **Chunked PUT never drives `StreamingBody`.** The cases substitute
+  `context.BufferedBody`, so `_BoundedBody` is exercised but the streaming
+  reader that production uses is not. It needs a live server, so litmus and the
+  manual client checklist are the only real coverage for it.
+- **Most refusals assert an exception class, not a mapped status.** The cases
+  call handlers directly, so `errors.map_exception` is bypassed. `test_dispatch`
+  covers the mapper itself, and `test_movecopy.assert_refused` maps explicitly,
+  but the rest state the exception the handler raised.
+- **`test_put_conditionals`' `If-Match` case is a tautology.** It builds the
+  header from the ETag it just read.
+- **UNLOCK does not evaluate the If header.** Its token comes from
+  `Lock-Token`. §10.4 is general, but no client sends it and the litmus locks
+  group does not test it. Left alone rather than risk the unlock path.
+- **COPY and MOVE disagree on a case-only rename.** A COPY to a case variant of
+  a live sibling cannot succeed anyway; the two answer with different statuses.
+- **`drop_locks_under` leaves expired descendant rows.** `_locks_over_subtree`
+  filters on `expires_at`, and `purge_expired_locks` reaps them lazily on every
+  read, so they are never observable.
+- **`File Blob` rows written by fixtures are never dropped.** Pre-existing, and
+  the blobs dedupe on checksum.
+
+### Review checks that were run
+
+```
+$ uvx ruff@0.12.3 check suite/drive/webdav/          -> All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ -> 40 files already formatted
+$ python -m compileall -q suite/drive/webdav          -> clean
+
+$ per-commit: git archive <commit> suite/drive/webdav | compileall + ruff F821,F811,F401
+  12 of 12 commits compile; no new undefined or duplicate name in any of them
+
+$ site-free unit tests, whole app (PYTHONPATH=<worktree>, frappe.init, no connect)
+  Ran 776 tests -- 0 failures, 5 errors
+  The 5 errors are `RuntimeError: object is not bound` in
+  suite.drive.tests.test_access and suite.drive.tests.test_content. They need a
+  db handle. Reproduced identically from a `git archive 7a47ff7d5` extract, so
+  they predate this review.
+
+$ site-free WebDAV unit tests
+  Ran 124 tests -- OK
+  (8 test_conditional, 11 test_ifheader, 4 test_locks, 9 test_xmlutil,
+   92 suite.drive.tests.test_webdav)
+
+$ collection across every module in suite/drive/webdav/tests
+test_auth 17   test_conditional 8    test_dispatch 13   test_ifheader 11
+test_locks 43  test_log 7            test_mkcol_delete 20  test_movecopy 39
+test_pathmap 20  test_properties 16  test_propfind 22   test_proppatch 19
+test_put_get 49  test_settings 9     test_xmlutil 9
+TOTAL 302, ERRORS []
+
+$ uvx ruff@0.12.3 check suite/            -> Found 25 errors
+$ uvx ruff@0.12.3 format --check suite/   -> 6 files would be reformatted
+  None is in suite/drive/webdav and none is in a file this review touched.
+  They are in mail, sheets, writer, and drive/http, and all predate the ticket.
+```
+
+Not run: bench, migrate, install, restart, litmus, push, PR. The site gate
+below is unchanged and still has to run.
+
+### Review commits
+
+| Commit | Change |
+|---|---|
+| `e4dc29020` | stop the create verbs naming folders taken from the caller |
+| `2385edca2` | stop MOVE refusing a Depth header on an ordinary file |
+| `a9d8683de` | count only the properties a PROPPATCH would really add |
+| `42da275e1` | refuse a second lock over a resource the caller already holds |
+| `107ef15ee` | refuse a depth-infinity LOCK it cannot grant on every member |
+| `37965a926` | make a LOCK refresh take the EDIT the lock itself took |
+| `7e88dc45b` | ignore the Depth header on a LOCK refresh |
+| `3f71f9c0a` | evaluate the If header's conditions on LOCK |
+| `5c70a1b69` | stop a stale If-Unmodified-Since overriding a matched If-Match |
+| `3e0ab785f` | put the site's WebDAV switch back instead of turning it off |
+| `373f86756` | cover the lock paths and the 405 header nothing reached |
+| `66ffb1e6d` | state that content documents are hidden, not read-only |
+
+19 files changed, 648 insertions, 85 deletions.
+
+Ticket 29 stays dormant after the review: `git log bc461122a..HEAD --name-only
+-- suite/patches.txt suite/hooks.py 'suite/**/*.json' suite/drive/patches`
+still returns nothing.
+
+The acceptance boxes stay unticked. The site gate has not run.
