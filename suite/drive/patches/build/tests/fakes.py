@@ -431,6 +431,8 @@ class FakeDrive:
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
 
     def root_metadata(self, node):
+        if node in self.root_rows:
+            return dict(self.root_rows[node])
         for row in self.root_rows.values():
             if row["node"] == node:
                 return dict(row)

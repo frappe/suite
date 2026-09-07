@@ -58,12 +58,33 @@ GRANT_OWNER = "Administrator"
 
 def convert_grants(env, grants: GrantConversion, plans, *, batch_size: int = BUILD_BATCH_SIZE) -> None:
     """Map every legacy permission row, then hold the §3.2 Shared floor."""
+    _recover_link_intents(env, grants)
     nodes = _NodeFacts(env)
     batch = _Batch(env, grants, batch_size)
     _convert_permissions(env, grants, nodes, batch, batch_size)
     _convert_docshares(env, grants, nodes, batch, batch_size)
     batch.flush()
+    if grants.pending_link_nodes:
+        raise RuntimeError(
+            "unresolved Build link intents remain after the source walk: "
+            + ", ".join(sorted(grants.pending_link_nodes))
+        )
     _shared_floor(env, grants, plans)
+
+
+def _recover_link_intents(env, grants: GrantConversion) -> None:
+    """Finish counters for a grant batch committed just before a kill.
+
+    The state file is the write-ahead side of the database transaction. If
+    an intended link exists, the commit landed and only the cumulative
+    count still needs advancing. If it does not, the source walk stages the
+    same node again and the ordinary flush finishes it.
+    """
+    committed = [node for node in grants.pending_link_nodes if env.drive.has_link_grant(node)]
+    if not committed:
+        return
+    grants.finish_links(committed)
+    env.state.put_grants(grants)
 
 
 # ---------------------------------------------------------------- permissions
@@ -178,15 +199,22 @@ def _convert_anonymous(env, grants: GrantConversion, nodes, batch, node, role: i
     if role <= READ:
         return
 
-    if env.drive.has_link_grant(node["name"]) or batch.has_link(node["name"]):
-        # A previous run already minted for this node. Minting again would
+    if env.drive.has_link_grant(node["name"]):
+        # Also reconcile here in case a row appeared after the step's first
+        # recovery read. This is idempotent because finish_links consumes
+        # the write-ahead intent as it advances the counter.
+        if node["name"] in grants.pending_link_nodes:
+            grants.finish_links((node["name"],))
+            env.state.put_grants(grants)
+        return
+    if batch.has_link(node["name"]):
+        # This batch already staged one for the node. Minting again would
         # leave two live tokens for one row and count the owner twice.
         return
     minted = clamp_link(role)
     if minted != role:
         grants.links_clamped += 1
     batch.add(node["name"], _link_principal(env), minted, link=True)
-    grants.record_link(node["name"])
 
 
 def _principal_for(nodes, grants: GrantConversion, user: str, kind: str) -> str | None:
@@ -448,6 +476,14 @@ class _Batch:
     def flush(self) -> None:
         if not self.pending:
             return
+        link_nodes = sorted(self.links)
+        if link_nodes:
+            # Write-ahead ordering closes both interruption windows: before
+            # the DB commit an intent makes a rerun retry; after it the same
+            # intent makes a rerun finish the cumulative counter.
+            self.grants.prepare_links(link_nodes)
+            self.env.state.put_grants(self.grants)
+
         fresh = []
         by_node: dict[str, dict[str, int]] = {}
         for (node, principal), role in self.pending.items():
@@ -471,10 +507,9 @@ class _Batch:
 
         self.env.drive.insert_grants(fresh)
         self.grants.grants_written += len(fresh)
+        self.env.drive.commit()
+        if link_nodes:
+            self.grants.finish_links(link_nodes)
+        self.env.state.put_grants(self.grants)
         self.pending = {}
         self.links = set()
-        # Commit, then record. The other order would write a `links_minted`
-        # a rollback then took back, and an owner would be told a URL
-        # changed when it had not.
-        self.env.drive.commit()
-        self.env.state.put_grants(self.grants)

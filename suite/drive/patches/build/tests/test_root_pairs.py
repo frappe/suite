@@ -19,6 +19,8 @@ from suite.drive.patches.build.root_pairs import (
     PERSONAL,
     SHARED,
     BuildPairError,
+    _metadata_row,
+    _node_row,
     convert_root_pairs,
 )
 from suite.drive.patches.build.state import BuildState, TreeConversion
@@ -122,7 +124,7 @@ class RecordingDrive(FakeDrive):
 
     def commit(self):
         super().commit()
-        self.commit_snapshots.append((set(self.node_rows), set(self.root_rows)))
+        self.commit_snapshots.append((set(self.node_rows), set(self.root_rows), set(self.grant_rows)))
 
 
 class RootPairCase(unittest.TestCase):
@@ -451,6 +453,43 @@ class TestDuplicateUserFolders(RootPairCase):
         self.assertEqual(self.tree.roots_archived, 1)
 
 
+class TestPreprovisionedPersonalRoot(RootPairCase):
+    """A User hook may provision the target root before Build sees legacy Drive."""
+
+    def setUp(self):
+        super().setUp()
+        self.env = self.build(
+            users_row(),
+            personal_row("u-alice", ALICE),
+            users={ALICE: True},
+        )
+        fresh = personal_row("fresh-root", ALICE)
+        self.env.drive.insert_nodes([_node_row(fresh, PERSONAL)])
+        self.env.drive._insert_root(_metadata_row(fresh, PERSONAL, ALICE, ACTIVE))
+        self.tree, self.plans = self.run_roots(self.env)
+
+    def test_the_legacy_pair_is_archived_instead_of_making_a_second_active_root(self):
+        """§3.2 permits only one Active Personal root for one user."""
+        self.assertEqual(self.env.drive.root_rows["fresh-root"]["state"], ACTIVE)
+        self.assertEqual(self.env.drive.root_rows["u-alice"]["state"], ARCHIVED)
+        active = [
+            row
+            for row in self.env.drive.root_rows.values()
+            if row["kind"] == PERSONAL and row["user"] == ALICE and row["state"] == ACTIVE
+        ]
+        self.assertEqual([row["node"] for row in active], ["fresh-root"])
+
+    def test_descendants_still_receive_the_original_legacy_root_id(self):
+        """Archiving metadata does not discard the namespace or invent an id map."""
+        self.assertEqual([(plan.node, plan.state) for plan in self.plans], [("u-alice", ARCHIVED)])
+
+    def test_a_rerun_keeps_the_same_root_active(self):
+        """The target-table check is stable after the archived pair exists."""
+        second, plans = self.run_roots(self.env)
+        self.assertEqual(second.roots_already_complete, 1)
+        self.assertEqual([(plan.node, plan.state) for plan in plans], [("u-alice", ARCHIVED)])
+
+
 class TestRerun(RootPairCase):
     """A second run over a finished site writes nothing and reports the same."""
 
@@ -563,7 +602,29 @@ class TestMismatchRefusals(RootPairCase):
         message = self.refuse(
             drive_row(), node={"name": DRIVE_ROOT_ROW, "kind": "root", "parent": "elsewhere"}
         )
-        self.assertIn("no parent", message)
+        self.assertIn("parent='elsewhere'", message)
+
+    def test_every_noncanonical_root_node_field_is_refused(self):
+        """A complete pair is not valid merely because the node says kind=root."""
+        canonical = _node_row(drive_row(), SHARED)
+        contradictions = {
+            "root": DRIVE_ROOT_ROW,
+            "path": "/ancestor/",
+            "state": TRASHED,
+            "blob": "blob-1",
+            "size": 1,
+            "mime": "text/plain",
+            "url": "https://example.test",
+            "content_doctype": "Sheet",
+            "content_docname": "sheet-1",
+            "trashed_at": SOURCE_MODIFIED,
+            "trash_root": DRIVE_ROOT_ROW,
+            "is_template": 1,
+        }
+        for field, value in contradictions.items():
+            with self.subTest(field=field):
+                message = self.refuse(drive_row(), node={**canonical, field: value})
+                self.assertIn(field, message)
 
     def test_metadata_named_after_another_row_is_refused(self):
         """§14.3 pins `name` to the node id, and a rerun cannot rename a row."""
@@ -578,6 +639,20 @@ class TestMismatchRefusals(RootPairCase):
             },
         )
         self.assertIn("must equal the node id", message)
+
+    def test_metadata_named_like_the_legacy_id_but_pointing_elsewhere_is_refused(self):
+        """The primary-key lookup must not mistake a squatter for this pair."""
+        message = self.refuse(
+            drive_row(),
+            metadata={
+                "name": DRIVE_ROOT_ROW,
+                "node": "elsewhere",
+                "user": None,
+                "kind": SHARED,
+                "state": ACTIVE,
+            },
+        )
+        self.assertIn("points at node 'elsewhere'", message)
 
     def test_metadata_of_the_other_kind_is_refused(self):
         """A Shared row and a Personal row are two different namespaces."""
@@ -608,6 +683,21 @@ class TestMismatchRefusals(RootPairCase):
             },
         )
         self.assertIn(f"belongs to {BOB!r}", message)
+
+    def test_metadata_with_the_wrong_lifecycle_state_is_refused(self):
+        message = self.refuse(
+            users_row(),
+            personal_row("u-alice", ALICE),
+            users={ALICE: True},
+            metadata={
+                "name": "u-alice",
+                "node": "u-alice",
+                "user": ALICE,
+                "kind": PERSONAL,
+                "state": TRASHED,
+            },
+        )
+        self.assertIn("invalid state 'Trashed'", message)
 
 
 class TestInterruption(RootPairCase):
@@ -644,7 +734,7 @@ class TestInterruption(RootPairCase):
 
 
 class TestBatching(RootPairCase):
-    """The batch boundary sits between pairs, never inside one."""
+    """The target-row batch boundary sits between pairs, never inside one."""
 
     def setUp(self):
         super().setUp()
@@ -656,7 +746,7 @@ class TestBatching(RootPairCase):
             personal_row("u-carol", CAROL),
             users={ALICE: True, BOB: True, CAROL: True},
         )
-        self.tree, _ = self.run_roots(self.env, batch_size=2)
+        self.tree, _ = self.run_roots(self.env, batch_size=5)
 
     def test_every_pair_is_written(self):
         expected = {DRIVE_ROOT_ROW, "u-alice", "u-bob", "u-carol"}
@@ -664,20 +754,20 @@ class TestBatching(RootPairCase):
         self.assertEqual(set(self.env.drive.root_rows), expected)
 
     def test_the_commit_count_is_one_per_batch_plus_the_last(self):
-        """Four pairs at two a batch: two full batches, then the closing commit."""
+        """The 5-row first batch, 3-row second, and 3-row last are distinct."""
         self.assertEqual(self.env.drive.commits, 3)
 
     def test_no_commit_falls_inside_a_pair(self):
         """A kill at any commit must leave whole pairs only."""
-        for nodes, roots in self.env.drive.commit_snapshots:
+        for nodes, roots, _grants in self.env.drive.commit_snapshots:
             self.assertEqual(nodes, roots)
 
-    def test_each_batch_holds_two_pairs(self):
-        """The batch is counted in pairs, so the halves cannot be split across one."""
-        self.assertEqual(
-            [len(nodes) for nodes, _ in self.env.drive.commit_snapshots],
-            [2, 4, 4],
-        )
+    def test_each_batch_counts_nodes_metadata_and_optional_anchors(self):
+        """Shared costs 2 target rows; each Personal pair costs 3 with its anchor."""
+        totals = [sum(map(len, snapshot)) for snapshot in self.env.drive.commit_snapshots]
+        self.assertEqual(totals, [5, 8, 11])
+        deltas = [totals[0], totals[1] - totals[0], totals[2] - totals[1]]
+        self.assertEqual(deltas, [5, 3, 3])
 
 
 class TestStateFile(RootPairCase):

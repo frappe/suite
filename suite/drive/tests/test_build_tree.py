@@ -201,6 +201,105 @@ class TestRootPairWiring(BuildTreeCase):
         self.assertFalse(frappe.db.exists("Drive Node", self.root))
 
 
+class TestRootConversionRegressions(BuildTreeCase):
+    """The root decisions through SiteTree, SiteDrive, and convert_root_pairs."""
+
+    def legacy_personal_root(self, *, name=None):
+        return self.file_row(
+            name=name,
+            folder="Users",
+            file_name=self.owner,
+            is_folder=1,
+        )
+
+    def convert(self, env=None, *, batch_size=1000):
+        report = TreeConversion()
+        plans = root_pairs.convert_root_pairs(env or self.environment(), report, batch_size=batch_size)
+        return report, plans
+
+    def test_a_preprovisioned_user_root_archives_the_legacy_pair(self):
+        """User.after_insert may run before Build; it must remain the sole Active root."""
+        from suite.drive._core.roots import provision_personal_root
+
+        active = provision_personal_root(self.owner)
+        legacy = self.legacy_personal_root()
+
+        report, plans = self.convert()
+
+        self.assertEqual(
+            frappe.db.get_value("Drive Root", legacy, ["node", "user", "state"], as_dict=True),
+            {"node": legacy, "user": self.owner, "state": root_pairs.ARCHIVED},
+        )
+        self.assertEqual(frappe.db.get_value("Drive Root", active, "state"), ACTIVE)
+        self.assertEqual([(plan.node, plan.state) for plan in plans], [(legacy, root_pairs.ARCHIVED)])
+        self.assertEqual(report.roots_archived, 1)
+
+    def test_metadata_named_like_the_legacy_id_but_linking_elsewhere_is_refused(self):
+        legacy = self.legacy_personal_root(name=self.root)
+        other = self.name()
+        source = TreeRow(name=other, file_name=self.owner, folder=None, is_folder=1)
+        SiteDrive().insert_nodes([root_pairs._node_row(source, root_pairs.PERSONAL)])
+        squatter = frappe.new_doc("Drive Root")
+        squatter.update(root_pairs._metadata_row(source, root_pairs.PERSONAL, self.owner, ACTIVE))
+        squatter.name = legacy
+        squatter.db_insert()
+
+        with self.assertRaises(root_pairs.BuildPairError) as caught:
+            self.convert()
+
+        self.assertIn(f"points at node {other!r}", str(caught.exception))
+        self.assertFalse(frappe.db.exists("Drive Node", legacy))
+
+    def test_a_noncanonical_existing_root_node_is_refused_before_repair(self):
+        legacy = self.legacy_personal_root(name=self.root)
+        source = TreeRow(name=legacy, file_name=self.owner, folder="Users", is_folder=1)
+        malformed = root_pairs._node_row(source, root_pairs.PERSONAL)
+        malformed["root"] = legacy
+        SiteDrive().insert_nodes([malformed])
+
+        with self.assertRaises(root_pairs.BuildPairError) as caught:
+            self.convert()
+
+        self.assertIn(f"root={legacy!r}", str(caught.exception))
+        self.assertFalse(frappe.db.exists("Drive Root", legacy))
+
+    def test_the_real_adapter_batches_target_rows_and_keeps_each_pair_whole(self):
+        class RecordingSiteDrive(SiteDrive):
+            def __init__(self):
+                self.target_rows = 0
+                self.committed_rows = []
+
+            def write_root_pair(self, node, metadata, grants):
+                self.target_rows += bool(node) + bool(metadata) + len(grants)
+                return super().write_root_pair(node, metadata, grants)
+
+            def commit(self):
+                self.committed_rows.append(self.target_rows)
+                return super().commit()
+
+        for _index in range(3):
+            self.legacy_personal_root()
+        env = self.environment()
+        env.drive = RecordingSiteDrive()
+
+        self.convert(env, batch_size=5)
+
+        self.assertEqual(env.drive.committed_rows, [3, 6, 9])
+        cumulative = env.drive.committed_rows
+        deltas = [
+            cumulative[0],
+            *(cumulative[index] - cumulative[index - 1] for index in range(1, len(cumulative))),
+        ]
+        self.assertTrue(all(rows <= 5 for rows in deltas))
+        names = frappe.get_all(
+            "Drive Root",
+            filters={"name": ("like", self.prefix + "%")},
+            fields=["name", "node"],
+        )
+        self.assertEqual(len(names), 3)
+        self.assertTrue(all(row.name == row.node for row in names))
+
+
 class TestTreeWiring(BuildTreeCase):
     """§14.4: the walk against the real `File` table."""
 
@@ -384,6 +483,65 @@ class TestGrantWiring(BuildTreeCase):
         self.assertEqual(second.links_minted, 0)
         self.assertEqual(second.grants_written, 0)
         self.assertEqual(self.roles(), before)
+
+    def test_a_link_batch_killed_before_insert_retries_and_counts_once(self):
+        class FailingSiteDrive(SiteDrive):
+            def __init__(self):
+                self.fail_link_once = True
+
+            def insert_grants(self, rows):
+                if self.fail_link_once and any(row["principal"].startswith("$LINK:") for row in rows):
+                    self.fail_link_once = False
+                    raise RuntimeError("killed after the link write-ahead record")
+                return super().insert_grants(rows)
+
+        self.permission_row(self.node, "", read=1, write=1)
+        failing = self.environment()
+        failing.drive = FailingSiteDrive()
+        with self.assertRaisesRegex(RuntimeError, "write-ahead"):
+            grants_module.convert_grants(failing, self.report, [], batch_size=2)
+
+        stored = self.state.grants()
+        self.assertEqual(stored.pending_link_nodes, [self.node])
+        self.assertEqual(stored.links_minted, 0)
+        self.assertEqual(self.roles(), {})
+
+        self.report = stored
+        self.report.begin_run()
+        self.convert()
+        self.assertEqual(self.report.links_minted, 1)
+        self.assertEqual(self.report.pending_link_nodes, [])
+        self.assertEqual(len([p for p in self.roles() if p.startswith("$LINK:")]), 1)
+
+    def test_a_link_batch_killed_after_insert_recovers_its_counter_once(self):
+        class FailingState(BuildState):
+            def __init__(self, path):
+                super().__init__(path)
+                self.puts = 0
+
+            def put_grants(self, grants):
+                self.puts += 1
+                if self.puts == 2:
+                    raise RuntimeError("killed after the link database write")
+                return super().put_grants(grants)
+
+        self.permission_row(self.node, "", read=1, write=1)
+        failing = self.environment()
+        failing.state = FailingState(self.state.path)
+        with self.assertRaisesRegex(RuntimeError, "database write"):
+            grants_module.convert_grants(failing, self.report, [], batch_size=2)
+
+        stored = self.state.grants()
+        self.assertEqual(stored.pending_link_nodes, [self.node])
+        self.assertEqual(stored.links_minted, 0)
+        self.assertEqual(len([p for p in self.roles() if p.startswith("$LINK:")]), 1)
+
+        self.report = stored
+        self.report.begin_run()
+        self.convert()
+        self.assertEqual(self.report.links_minted, 1)
+        self.assertEqual(self.report.pending_link_nodes, [])
+        self.assertEqual(len([p for p in self.roles() if p.startswith("$LINK:")]), 1)
 
     def test_the_permission_page_skips_another_runs_rows(self):
         """The prefix narrows the compound keyset on `entity`.

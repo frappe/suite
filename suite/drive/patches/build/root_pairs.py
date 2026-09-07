@@ -81,9 +81,9 @@ class RootPlan:
 def convert_root_pairs(env, tree: TreeConversion, *, batch_size: int = BUILD_BATCH_SIZE) -> list[RootPlan]:
     """Create or repair every root pair. Returns the roots step 5 walks.
 
-    Commits per batch of pairs, never inside one: §14.2 forbids splitting a
-    root pair across commits, and a pair split across a kill is exactly the
-    half-published root §3.2 refuses to allow.
+    Commits per batch of target rows, never inside one pair: §14.2 forbids
+    splitting a root pair across commits, and a pair split across a kill is
+    exactly the half-published root §3.2 refuses to allow.
     """
     plans: list[RootPlan] = []
     written = 0
@@ -91,16 +91,35 @@ def convert_root_pairs(env, tree: TreeConversion, *, batch_size: int = BUILD_BAT
 
     for row in _root_rows(env, batch_size):
         tree.roots_seen += 1
-        plan = _reconcile(env, tree, row, claimed_users)
-        if plan is None:
+        reconciled = _reconcile(env, tree, row, claimed_users)
+        if reconciled is None:
             continue
+        plan, node, metadata, anchors = reconciled
+
+        # §14.2's batch size counts target rows, not source roots. A new
+        # Personal pair is three rows (node, metadata, anchor), while a
+        # repair can be only one. End the preceding batch before a whole
+        # pair would cross the limit; a pair larger than a deliberately
+        # tiny test batch remains one atomic, oversized batch.
+        pair_rows = bool(node) + bool(metadata) + len(anchors)
+        if pair_rows and written and written + pair_rows > batch_size:
+            env.drive.commit()
+            env.state.put_tree(tree)
+            written = 0
+        if pair_rows:
+            env.drive.write_root_pair(node, metadata, anchors)
+            if node and metadata:
+                tree.roots_created += 1
+            else:
+                tree.roots_repaired += 1
+            written += pair_rows
+        else:
+            tree.roots_already_complete += 1
+
         if plan.kind == PERSONAL and plan.state == ACTIVE and plan.user:
             claimed_users.add(plan.user)
         plans.append(plan)
 
-        # One pair is one node plus one metadata row plus its anchors. The
-        # batch boundary is checked between pairs, so a pair is never cut.
-        written += 1
         if written >= batch_size:
             env.drive.commit()
             env.state.put_tree(tree)
@@ -160,21 +179,15 @@ def _reconcile(env, tree: TreeConversion, row: TreeRow, claimed_users: set[str])
     existing_metadata = env.drive.root_metadata(row.name)
     _refuse_mismatch(row.name, existing_node, existing_metadata, metadata)
 
-    if existing_node and existing_metadata:
-        tree.roots_already_complete += 1
-    else:
-        env.drive.write_root_pair(
-            None if existing_node else node,
-            None if existing_metadata else metadata,
-            _anchor_grants(env, row.name, kind, user),
-        )
-        if existing_node or existing_metadata:
-            tree.roots_repaired += 1
-        else:
-            tree.roots_created += 1
-
     tree.max_id_length = max(tree.max_id_length, len(row.name))
-    return RootPlan(row.name, kind, user, node["title"], state)
+    missing_node = None if existing_node else node
+    missing_metadata = None if existing_metadata else metadata
+    anchors = (
+        _anchor_grants(env, row.name, kind, user)
+        if missing_node is not None or missing_metadata is not None
+        else []
+    )
+    return RootPlan(row.name, kind, user, node["title"], state), missing_node, missing_metadata, anchors
 
 
 def _metadata_state(env, row: TreeRow, kind: str, user: str | None, claimed: set[str]) -> str:
@@ -201,6 +214,15 @@ def _metadata_state(env, row: TreeRow, kind: str, user: str | None, claimed: set
     if kind == SHARED:
         return ACTIVE
     if user in claimed:
+        return ARCHIVED
+    # Build is not the only writer. User.after_insert can already have
+    # provisioned an Active Personal root at a fresh id before this legacy
+    # folder is reached. Keep that live namespace and archive the legacy
+    # pair; descendants still migrate under the original File id, while
+    # §3.2's one-Active-root invariant remains true. An Active root at this
+    # same id is the pair being resumed, not a conflict.
+    active = env.drive.active_root(PERSONAL, user)
+    if active and active != row.name:
         return ARCHIVED
     return ACTIVE if env.tree.user_enabled(user) else ARCHIVED
 
@@ -314,17 +336,37 @@ def _refuse_mismatch(node_id: str, existing_node, existing_metadata, intended: d
     hang a tree off a node that is not a root, or off a Personal root that
     now belongs to a different person.
     """
-    if existing_node and existing_node.get("kind") != "root":
-        raise BuildPairError(
-            f"Drive Node {node_id!r} already exists with kind "
-            f"{existing_node.get('kind')!r}, but Build must make it a root node. "
-            "Repair the row or truncate the new tables before migrating again."
-        )
-    if existing_node and existing_node.get("parent"):
-        raise BuildPairError(
-            f"Drive Node {node_id!r} is a root node with a parent "
-            f"{existing_node.get('parent')!r}. A root node has no parent (§3.1)."
-        )
+    if existing_node:
+        if existing_node.get("name") != node_id:
+            raise BuildPairError(
+                f"Drive Node {node_id!r} was read back as {existing_node.get('name')!r}; "
+                "the root identity must equal the legacy File id (§14.3)."
+            )
+        canonical = {
+            "kind": "root",
+            "parent": None,
+            "root": None,
+            "path": "",
+            "state": ACTIVE,
+            "blob": None,
+            "size": 0,
+            "mime": None,
+            "url": None,
+            "content_doctype": None,
+            "content_docname": None,
+            "trashed_at": None,
+            "trash_root": None,
+            "is_template": 0,
+        }
+        for field, expected in canonical.items():
+            actual = existing_node.get(field)
+            # Database Check/Long Int values may arrive as bool/int, so
+            # ordinary equality is intentionally enough for zero fields.
+            if actual != expected:
+                raise BuildPairError(
+                    f"Drive Node {node_id!r} has {field}={actual!r}; "
+                    f"a canonical root node requires {expected!r} (§3.1)."
+                )
     if not existing_metadata:
         return
     if existing_metadata.get("name") != node_id:
@@ -335,6 +377,11 @@ def _refuse_mismatch(node_id: str, existing_node, existing_metadata, intended: d
             f"Drive Root metadata for node {node_id!r} is named "
             f"{existing_metadata.get('name')!r}. It must equal the node id (§14.3)."
         )
+    if existing_metadata.get("node") != node_id:
+        raise BuildPairError(
+            f"Drive Root {node_id!r} points at node {existing_metadata.get('node')!r}; "
+            f"it must point at {node_id!r} (§3.2, §14.3)."
+        )
     if existing_metadata.get("kind") != intended["kind"]:
         raise BuildPairError(
             f"Drive Root {node_id!r} is a {existing_metadata.get('kind')!r} root, but "
@@ -344,4 +391,9 @@ def _refuse_mismatch(node_id: str, existing_node, existing_metadata, intended: d
         raise BuildPairError(
             f"Drive Root {node_id!r} belongs to {existing_metadata.get('user')!r}, but "
             f"the legacy folder names {intended['user']!r}."
+        )
+    if existing_metadata.get("state") not in (ACTIVE, ARCHIVED):
+        raise BuildPairError(
+            f"Drive Root {node_id!r} has invalid state {existing_metadata.get('state')!r}; "
+            f"root metadata must be {ACTIVE!r} or {ARCHIVED!r} (§3.2)."
         )

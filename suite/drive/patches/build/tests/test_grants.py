@@ -22,6 +22,7 @@ from suite.drive.patches.build.tests.fakes import (
     BUILD_STAMP,
     FakeDrive,
     FakeTree,
+    InterruptedRun,
     build_environment,
 )
 
@@ -627,6 +628,82 @@ class RerunTest(GrantCase):
         stored.begin_run()
         self.assertEqual(stored.links_minted, 7)
         self.assertEqual(stored.grants_written, 0)
+
+    def test_pending_link_intents_survive_the_start_of_a_rerun(self):
+        stored = GrantConversion(links_minted=7, pending_link_nodes=["doc0000001"])
+        stored.begin_run()
+        self.assertEqual(stored.links_minted, 7)
+        self.assertEqual(stored.pending_link_nodes, ["doc0000001"])
+
+
+class LinkInterruptionTest(GrantCase):
+    """The exact auto-flush boundary cannot lose the cumulative link count."""
+
+    def source(self):
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", "", read=1, write=1)]
+
+    def resume_from_disk(self):
+        self.report = BuildState(self.path / "drive-build-state.json").grants()
+        self.report.begin_run()
+        return self.run_grants(batch_size=2)
+
+    def assert_one_accounted_link(self, report):
+        roles = self.roles("doc0000001")
+        self.assertEqual(roles["$PUBLIC"], READ)
+        self.assertEqual(len([principal for principal in roles if principal.startswith("$LINK:")]), 1)
+        self.assertEqual(report.links_minted, 1)
+        self.assertEqual(report.pending_link_nodes, [])
+
+    def test_a_kill_after_the_write_ahead_record_but_before_insert_retries_once(self):
+        class FailingGrantDrive(FakeDrive):
+            fail_link_once = True
+
+            def insert_grants(self, rows):
+                if self.fail_link_once and any(row["principal"].startswith("$LINK:") for row in rows):
+                    self.fail_link_once = False
+                    raise InterruptedRun("killed after the link intent")
+                return super().insert_grants(rows)
+
+        self.drive = FailingGrantDrive()
+        self.add_root(PERSONAL_ROOT, PERSONAL, OWNER)
+        self.add_root(SHARED_ROOT, SHARED, None)
+        self.add_node("doc0000001", PERSONAL_ROOT)
+        self.legacy.drive = self.drive
+        self.source()
+
+        with self.assertRaises(InterruptedRun):
+            self.run_grants(batch_size=2)
+        stored = BuildState(self.path / "drive-build-state.json").grants()
+        self.assertEqual(stored.pending_link_nodes, ["doc0000001"])
+        self.assertEqual(stored.links_minted, 0)
+        self.assertEqual(self.roles("doc0000001"), {})
+
+        self.assert_one_accounted_link(self.resume_from_disk())
+
+    def test_a_kill_after_insert_but_before_counter_finish_recovers_from_target(self):
+        class FailingState(BuildState):
+            def __init__(self, path):
+                super().__init__(path)
+                self.puts = 0
+
+            def put_grants(self, grants):
+                self.puts += 1
+                if self.puts == 2:
+                    raise InterruptedRun("killed after the grant commit")
+                return super().put_grants(grants)
+
+        self.source()
+        env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        env.state = FailingState(self.path / "drive-build-state.json")
+        with self.assertRaises(InterruptedRun):
+            grants_module.convert_grants(env, self.report, [], batch_size=2)
+
+        stored = BuildState(self.path / "drive-build-state.json").grants()
+        self.assertEqual(stored.pending_link_nodes, ["doc0000001"])
+        self.assertEqual(stored.links_minted, 0)
+        self.assertEqual(len([p for p in self.roles("doc0000001") if p.startswith("$LINK:")]), 1)
+
+        self.assert_one_accounted_link(self.resume_from_disk())
 
 
 class StallTest(GrantCase):
