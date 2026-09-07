@@ -5,9 +5,11 @@ from frappe.tests import IntegrationTestCase
 
 from suite.drive.webdav.tests.utils import (
     dispatch,
+    drop_dav_root,
     enable_user_webdav,
     ensure_user_with_password,
     personal_dav_root,
+    set_global_webdav,
 )
 
 USER = "webdav-log@example.com"
@@ -25,17 +27,23 @@ class TestWebDAVLogging(IntegrationTestCase):
         cls.root = personal_dav_root(USER)
         frappe.db.commit()
         cls.logger_name = f"suite.drive.webdav-{frappe.local.site}"
+        # what the site held before this class ran, to be put back verbatim
+        cls.previous_global = frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled")
+
+    @classmethod
+    def tearDownClass(cls):
+        frappe.set_user("Administrator")
+        # `setUpClass` committed the root, so the class rollback cannot reach it
+        drop_dav_root(USER)
+        frappe.db.commit()
+        super().tearDownClass()
 
     def setUp(self):
-        # committed, because a failed-auth dispatch rolls the transaction back
-        frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
-        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-        frappe.db.commit()
+        super().setUp()
+        set_global_webdav(1)
 
     def tearDown(self):
-        frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
-        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-        frappe.db.commit()
+        set_global_webdav(self.previous_global)
         frappe.set_user("Administrator")
         super().tearDown()
 

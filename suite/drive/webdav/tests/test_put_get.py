@@ -45,6 +45,7 @@ from suite.drive.webdav.tests.utils import (
     ensure_user_with_password,
     file_node,
     folder_node,
+    global_webdav_enabled,
     make_ctx,
     node_principals,
     personal_dav_root,
@@ -268,11 +269,9 @@ class TestWebDAVContent(IntegrationTestCase):
             drop_nodes([docx.name])
 
     def test_end_to_end_get_through_dispatcher(self):
-        frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
-        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
         enable_user_webdav(OWNER)
         frappe.db.commit()
-        try:
+        with global_webdav_enabled():
             response = dispatch("GET", f"/dav/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(self._body(response), DATA)
@@ -294,11 +293,8 @@ class TestWebDAVContent(IntegrationTestCase):
             )
             self.assertEqual(response.status_code, 201)
             self.assertEqual(self._body(self._get(f"/dav/{self.folder_name}/new.txt")), b"x")
-        finally:
-            frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
-            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-            frappe.db.set_value("Drive Settings", OWNER, "webdav_enabled", 0, update_modified=False)
-            frappe.db.commit()
+        frappe.db.set_value("Drive Settings", OWNER, "webdav_enabled", 0, update_modified=False)
+        frappe.db.commit()
 
 
 class TestWebDAVPut(IntegrationTestCase):
@@ -818,11 +814,9 @@ class TestWebDAVPut(IntegrationTestCase):
     def test_put_records_the_actor_and_the_client_once(self):
         """§9.4 and §12.4: one activity row, naming the user and the agent."""
         agent = "Microsoft-WebDAV-MiniRedir/10.0.19041"
-        frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
-        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
         enable_user_webdav(OWNER)
         frappe.db.commit()
-        try:
+        with global_webdav_enabled():
             response = dispatch(
                 "PUT",
                 self._url("agented.txt"),
@@ -840,11 +834,8 @@ class TestWebDAVPut(IntegrationTestCase):
             self.assertEqual(rows[0].action, "create")
             self.assertEqual(rows[0].actor, OWNER)
             self.assertEqual(rows[0].client, agent)
-        finally:
-            frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
-            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
-            frappe.db.set_value("Drive Settings", OWNER, "webdav_enabled", 0, update_modified=False)
-            frappe.db.commit()
+        frappe.db.set_value("Drive Settings", OWNER, "webdav_enabled", 0, update_modified=False)
+        frappe.db.commit()
 
     def test_an_unnamed_client_leaves_the_column_empty(self):
         """`bind_client` is per request, so one named agent cannot bleed on."""
