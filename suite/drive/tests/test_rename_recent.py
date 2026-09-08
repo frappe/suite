@@ -18,20 +18,46 @@ from suite.drive.patches.rename_entity_log_to_recent import (
     ALTER_STATEMENTS,
     CLEAR_TARGET,
     LEGACY,
+    LEGACY_COLUMNS,
     RENAME,
+    RESUME,
     SKIP,
     TARGET,
     DriveRecentRenameError,
+    alter_statements,
     plan,
 )
 
 
 class PlanTest(unittest.TestCase):
-    """Which of the four sites this is, decided from three facts."""
+    """Which of the five sites this is, decided from four facts."""
 
     def test_a_site_without_the_legacy_table_is_left_alone(self):
         self.assertEqual(plan(legacy_table=False, target_table=False, target_rows=0), SKIP)
         self.assertEqual(plan(legacy_table=False, target_table=True, target_rows=99), SKIP)
+
+    def test_a_finished_target_is_left_alone_whatever_it_holds(self):
+        self.assertEqual(
+            plan(legacy_table=False, target_table=True, target_rows=99, columns=("user", "node", "opened_at")),
+            SKIP,
+        )
+
+    def test_a_half_renamed_target_is_resumed(self):
+        """The killed run committed `RENAME TABLE` and not the `ALTER`s.
+
+        Skipping here is what would lose every person's recents: model sync
+        adds `node` and `opened_at` empty beside the columns that hold the
+        values, and `UNIQUE recent_user_node` accepts a table of NULLs.
+        """
+        for columns in (
+            ("user", "entity_name", "last_interaction"),
+            # Killed between the two `CHANGE COLUMN`s.
+            ("user", "node", "last_interaction"),
+        ):
+            with self.subTest(columns=columns):
+                self.assertEqual(
+                    plan(legacy_table=False, target_table=True, target_rows=4, columns=columns), RESUME
+                )
 
     def test_the_upgrade_path_renames(self):
         self.assertEqual(plan(legacy_table=True, target_table=False, target_rows=0), RENAME)
@@ -64,6 +90,19 @@ class StatementTest(unittest.TestCase):
         self.assertIn("MODIFY COLUMN `name` bigint(20)", ALTER_STATEMENTS[1])
         self.assertIn("MODIFY COLUMN `name` varchar(140)", ALTER_STATEMENTS[2])
 
+    def test_a_resumed_run_leaves_out_the_rename_the_killed_run_landed(self):
+        # `CHANGE COLUMN entity_name` is an error, not a no-op, once the
+        # column is called `node`.
+        statements = alter_statements(("user", "node", "last_interaction"))
+        self.assertNotIn("`entity_name`", " ".join(statements))
+        self.assertIn("CHANGE COLUMN `last_interaction` `opened_at`", " ".join(statements))
+
+    def test_a_fully_renamed_table_needs_no_change_column_at_all(self):
+        self.assertEqual(alter_statements(("user", "node", "opened_at")), ALTER_STATEMENTS[:3])
+
+    def test_the_full_sequence_is_the_one_a_first_run_gets(self):
+        self.assertEqual(alter_statements(LEGACY_COLUMNS), ALTER_STATEMENTS)
+
     def test_both_columns_are_renamed_rather_than_added(self):
         # `CHANGE COLUMN` keeps the values. Adding `node` beside
         # `entity_name` is what would lose them.
@@ -89,14 +128,15 @@ class ExecuteCase(unittest.TestCase):
         self.enterContext(mock.patch.object(patch, "_refuse_a_site_that_cannot_build", self.gate))
         self.enterContext(mock.patch.object(patch, "_rename_docfields", mock.MagicMock()))
 
-    def tables(self, legacy, target, rows=0):
+    def tables(self, legacy, target, rows=0, columns=("user", "entity_name", "last_interaction")):
         self.frappe.db.table_exists.side_effect = lambda name: legacy if name == LEGACY else target
         self.frappe.db.count.return_value = rows
+        self.frappe.db.get_table_columns.return_value = list(columns)
 
 
 class ExecuteTest(ExecuteCase):
     def test_a_site_without_the_legacy_table_changes_nothing(self):
-        self.tables(legacy=False, target=True)
+        self.tables(legacy=False, target=True, columns=("user", "node", "opened_at"))
         patch.execute()
         self.gate.assert_not_called()
         self.frappe.rename_doc.assert_not_called()
@@ -148,6 +188,31 @@ class ExecuteTest(ExecuteCase):
         self.gate.assert_not_called()
         self.frappe.delete_doc.assert_not_called()
         self.frappe.rename_doc.assert_not_called()
+
+    def test_a_half_renamed_table_is_finished_without_renaming_anything(self):
+        self.tables(legacy=False, target=True, rows=4, columns=("user", "node", "last_interaction"))
+        patch.execute()
+        self.gate.assert_called_once_with()
+        self.frappe.rename_doc.assert_not_called()
+        self.frappe.delete_doc.assert_not_called()
+        # No dedupe: it reads `entity_name`, which the killed run renamed.
+        self.frappe.db.sql.assert_not_called()
+        self.assertEqual(
+            [call.args[0] for call in self.frappe.db.sql_ddl.call_args_list],
+            list(patch.alter_statements(("user", "node", "last_interaction"))),
+        )
+        self.frappe.db.commit.assert_called_once_with()
+
+    def test_a_finished_table_is_left_alone(self):
+        self.tables(legacy=False, target=True, rows=4, columns=("user", "node", "opened_at"))
+        patch.execute()
+        self.gate.assert_not_called()
+        self.frappe.db.sql_ddl.assert_not_called()
+
+    def test_the_first_run_reads_the_columns_off_the_legacy_table(self):
+        self.tables(legacy=True, target=False)
+        patch.execute()
+        self.frappe.db.get_table_columns.assert_called_once_with(LEGACY)
 
     def test_it_commits_and_clears_the_cache(self):
         self.tables(legacy=True, target=False)
