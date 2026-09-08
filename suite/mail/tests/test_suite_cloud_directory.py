@@ -254,7 +254,7 @@ class TestMembers(SuiteCloudTestCase):
     def test_unset_quota_takes_the_mail_settings_default(self) -> None:
         with self.change_settings("Mail Settings", default_disk_quota_gb=7):
             frappe.local.request_cache.clear()
-            admin.add_account(
+            admin.add_member(
                 "dave",
                 DOMAIN,
                 is_admin=False,
@@ -268,7 +268,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(self.fake.accounts[f"dave@{DOMAIN}"]["disk_quota_gb"], 7)
 
     def test_member_lifecycle_through_suite_cloud(self) -> None:
-        admin.add_account(
+        admin.add_member(
             "carol",
             DOMAIN,
             is_admin=False,
@@ -294,45 +294,45 @@ class TestMembers(SuiteCloudTestCase):
             f"apppassword-{self.email}",
         )
 
-        member = admin.get_account(self.email)
+        member = admin.get_member(self.email)
         self.assertEqual([a["email"] for a in member["email_addresses"]], [self.email, f"cd@{DOMAIN}"])
         self.assertEqual([g["email"] for g in member["groups"]], [f"sales@{DOMAIN}"])
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
         self.assertEqual(member["quota"]["total"], 2 * 1024**3)
         # Usage costs a cluster read per account, so the list carries no quota; the detail page does.
-        listed = next(u for u in admin.get_accounts(search="carol") if u["name"] == self.email)
+        listed = next(u for u in admin.get_members(search="carol") if u["name"] == self.email)
         self.assertNotIn("quota", listed)
 
-        admin.update_account(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")
+        admin.update_member(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")
         self.assertEqual(
             (account["display_name"], account["disk_quota_gb"], account["time_zone"]),
             ("Carol D", 3, "Asia/Kolkata"),
         )
 
-        admin.add_account_email(self.email, f"Carol.Doe@{DOMAIN}")
-        admin.set_account_email_enabled(self.email, f"cd@{DOMAIN}", 0)
+        admin.add_member_email(self.email, f"Carol.Doe@{DOMAIN}")
+        admin.set_member_email_enabled(self.email, f"cd@{DOMAIN}", 0)
         self.assertEqual(
             [(a["email"], a["enabled"]) for a in account["aliases"]],
             [(f"cd@{DOMAIN}", False), (f"carol.doe@{DOMAIN}", True)],
         )
-        admin.remove_account_email(self.email, f"cd@{DOMAIN}")
+        admin.remove_member_email(self.email, f"cd@{DOMAIN}")
         self.assertEqual([a["email"] for a in account["aliases"]], [f"carol.doe@{DOMAIN}"])
 
-        admin.remove_account_from_group(self.email, f"sales@{DOMAIN}")
+        admin.remove_member_from_group(self.email, f"sales@{DOMAIN}")
         self.assertEqual(account["groups"], [])
-        admin.add_account_to_groups(self.email, [f"sales@{DOMAIN}"])
+        admin.add_member_to_groups(self.email, [f"sales@{DOMAIN}"])
         self.assertEqual(self.fake.groups[f"sales@{DOMAIN}"]["members"], [self.email])
-        admin.remove_account_from_mailing_list(self.email, f"news@{DOMAIN}")
+        admin.remove_member_from_mailing_list(self.email, f"news@{DOMAIN}")
         self.assertEqual(self.fake.lists[f"news@{DOMAIN}"]["recipients"], {})
-        admin.add_account_to_mailing_lists(self.email, [f"news@{DOMAIN}"])
+        admin.add_member_to_mailing_lists(self.email, [f"news@{DOMAIN}"])
         self.assertIn(self.email, self.fake.lists[f"news@{DOMAIN}"]["recipients"])
 
-        admin.change_account_password(self.email, "another-strong-pw-9")
+        admin.change_member_password(self.email, "another-strong-pw-9")
         self.assertEqual(self.fake.passwords[self.email], "another-strong-pw-9")
 
-        admin.disable_accounts([self.email])
+        admin.disable_members([self.email])
         self.assertFalse(account["enabled"])
-        admin.enable_accounts([self.email])
+        admin.enable_members([self.email])
         self.assertTrue(account["enabled"])
 
         overview = admin.get_overview()
@@ -340,7 +340,7 @@ class TestMembers(SuiteCloudTestCase):
             (overview["domains"], overview["groups"], overview["limits"]["max_domains"]), (1, 1, 10)
         )
 
-        admin.delete_accounts([self.email])
+        admin.delete_members([self.email])
         self.assertNotIn(self.email, self.fake.accounts)
         self.assertFalse(frappe.db.exists("User", self.email))
 
@@ -348,7 +348,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertRaisesRegex(
             frappe.ValidationError,
             "does not exist",
-            admin.add_account,
+            admin.add_member,
             "dave",
             DOMAIN,
             False,
@@ -361,7 +361,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertRaisesRegex(
             frappe.ValidationError,
             "does not exist on the server",
-            admin.add_account,
+            admin.add_member,
             "dave",
             DOMAIN,
             False,

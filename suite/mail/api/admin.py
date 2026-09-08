@@ -40,7 +40,7 @@ def check_admin_permission(action: str, target: Any = None) -> str:
 
     The enabled check is defense-in-depth: a disabled admin holding a still-valid session (or an
     API key) must not be able to perform admin actions, e.g. re-enable their own account via
-    enable_accounts. Throws frappe.PermissionError otherwise.
+    enable_members. Throws frappe.PermissionError otherwise.
 
     Every action that changes something is also written to the admin log with ``target`` (the object
     acted on), so a shared inbox of administrators stays accountable. Reads are not logged: each
@@ -58,28 +58,28 @@ def check_admin_permission(action: str, target: Any = None) -> str:
     return user
 
 
-def check_account_target(account_id: str) -> str:
-    """Ensure ``account_id`` is a mail member the session user may act on, returning it.
+def check_member_target(member_id: str) -> str:
+    """Ensure ``member_id`` is a mail member the session user may act on, returning it.
 
     The member endpoints save the target User with ``ignore_permissions=True``, which bypasses the
     framework's own guard against editing Administrator and other standard users. Without this check
     a Suite Admin - a role ordinary members get when created with ``is_admin`` - could name any User
-    at all and, via change_account_password, take over the Administrator account.
+    at all and, via change_member_password, take over the Administrator account.
 
-    So the target must be a real mail member (the same predicate get_accounts lists on), never a
+    So the target must be a real mail member (the same predicate get_members lists on), never a
     standard user, and never a System Manager unless the caller is one too.
     """
 
-    if not account_id or account_id in frappe.STANDARD_USERS:
-        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(account_id)), frappe.PermissionError)
-    if not frappe.db.exists("User Settings", {"user": account_id, "username": ["is", "set"]}):
-        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(account_id)), frappe.PermissionError)
-    if is_system_manager(account_id) and not is_system_manager(frappe.session.user):
+    if not member_id or member_id in frappe.STANDARD_USERS:
+        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(member_id)), frappe.PermissionError)
+    if not frappe.db.exists("User Settings", {"user": member_id, "username": ["is", "set"]}):
+        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(member_id)), frappe.PermissionError)
+    if is_system_manager(member_id) and not is_system_manager(frappe.session.user):
         frappe.throw(
-            _("You do not have permission to act on {0}.").format(frappe.bold(account_id)),
+            _("You do not have permission to act on {0}.").format(frappe.bold(member_id)),
             frappe.PermissionError,
         )
-    return account_id
+    return member_id
 
 
 # --- domains ------------------------------------------------------------------------------------
@@ -297,7 +297,7 @@ def get_domain_dns_json(domain_id: str) -> str:
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def add_account(
+def add_member(
     username: str,
     domain: str,
     is_admin: bool,
@@ -341,17 +341,17 @@ def add_account(
     # Insert first: create permission on Mail Account Request is what gates this endpoint, so the
     # action is only authorized (and worth recording) once the request exists.
     account_request.insert()
-    log_admin_action("add accounts", account_request.account)
+    log_admin_action("add members", account_request.account)
 
     if not send_invite:
         account_request.force_verify_and_create_account(first_name, last_name, password, locale, time_zone)
 
 
 @frappe.whitelist()
-def get_accounts(
+def get_members(
     search: str | None = None, is_admin: bool | None = None, is_enabled: bool | None = None
 ) -> list:
-    check_admin_permission("view accounts")
+    check_admin_permission("view members")
 
     USER = frappe.qb.DocType("User")
     HAS_ROLE = frappe.qb.DocType("Has Role")
@@ -467,25 +467,25 @@ def _address_ref(email: str) -> dict:
 
 
 @frappe.whitelist()
-def get_account(account_id: str) -> dict:
+def get_member(member_id: str) -> dict:
     """The member with their account as Suite Cloud holds it.
 
     When the member has no account, or Suite Cloud cannot be reached, the account sections come
     back empty rather than failing the whole page.
     """
 
-    check_admin_permission("view accounts")
+    check_admin_permission("view members")
 
     user = frappe.db.get_value(
         "User",
-        account_id,
+        member_id,
         ["name", "full_name", "user_image", "last_active", "enabled", "creation"],
         as_dict=True,
     )
     if not user:
         frappe.throw(_("Account not found"), frappe.DoesNotExistError)
 
-    is_admin = bool(frappe.db.exists("Has Role", {"parent": account_id, "role": "Suite Admin"}))
+    is_admin = bool(frappe.db.exists("Has Role", {"parent": member_id, "role": "Suite Admin"}))
     result = {
         "name": user.name,
         "full_name": user.full_name,
@@ -505,7 +505,7 @@ def get_account(account_id: str) -> dict:
         "time_zone": None,
     }
 
-    email = get_account_email(account_id)
+    email = get_account_email(member_id)
     if not email:
         return result
     result["account"] = email
@@ -561,22 +561,22 @@ def delete_account_requests(names: list) -> None:
 
 
 @frappe.whitelist()
-def delete_accounts(names: list) -> None:
-    user = check_admin_permission("delete accounts", names)
+def delete_members(names: list) -> None:
+    user = check_admin_permission("delete members", names)
     if user in names:
         frappe.throw(_("You cannot delete your own account."))
     for name in names:
-        check_account_target(name)
+        check_member_target(name)
         frappe.delete_doc("User", name)
 
 
 @frappe.whitelist()
-def disable_accounts(names: list) -> None:
-    user = check_admin_permission("disable accounts", names)
+def disable_members(names: list) -> None:
+    user = check_admin_permission("disable members", names)
     if user in names:
         frappe.throw(_("You cannot disable your own account."))
     for name in names:
-        check_account_target(name)
+        check_member_target(name)
         member = frappe.get_doc("User", name)
         if not member.enabled:
             continue
@@ -585,10 +585,10 @@ def disable_accounts(names: list) -> None:
 
 
 @frappe.whitelist()
-def enable_accounts(names: list) -> None:
-    check_admin_permission("enable accounts", names)
+def enable_members(names: list) -> None:
+    check_admin_permission("enable members", names)
     for name in names:
-        check_account_target(name)
+        check_member_target(name)
         member = frappe.get_doc("User", name)
         if member.enabled:
             continue
@@ -598,21 +598,21 @@ def enable_accounts(names: list) -> None:
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def change_account_password(account_id: str, new_password: str) -> None:
+def change_member_password(member_id: str, new_password: str) -> None:
     """Saving the User with ``new_password`` triggers the update_account_password hook, which
     propagates the new password to the member's mail account."""
 
-    check_admin_permission("change account password", account_id)
-    check_account_target(account_id)
+    check_admin_permission("change member password", member_id)
+    check_member_target(member_id)
     if not new_password:
         frappe.throw(_("New password is required."))
-    member = frappe.get_doc("User", account_id)
+    member = frappe.get_doc("User", member_id)
     member.new_password = new_password
     member.save(ignore_permissions=True)
 
 
-def _require_account_email(account_id: str) -> str:
-    email = get_account_email(account_id)
+def _require_member_account(member_id: str) -> str:
+    email = get_account_email(member_id)
     if not email:
         frappe.throw(_("This account has no mailbox on the mail server."))
     return email
@@ -625,8 +625,8 @@ def get_account_options() -> dict:
 
 
 @frappe.whitelist()
-def update_account(
-    account_id: str,
+def update_member(
+    member_id: str,
     role: str | None = None,
     description: str | None = None,
     quota_gb: float | None = None,
@@ -635,10 +635,10 @@ def update_account(
 ) -> None:
     """The role only toggles the Suite Admin role on Frappe; the mail account carries no roles."""
 
-    check_admin_permission("update accounts", account_id)
-    check_account_target(account_id)
+    check_admin_permission("update members", member_id)
+    check_member_target(member_id)
 
-    member = frappe.get_doc("User", account_id)
+    member = frappe.get_doc("User", member_id)
     if role is not None:
         if role == "admin":
             member.append_roles("Suite Admin")
@@ -651,7 +651,7 @@ def update_account(
         member.last_name = last or None
     member.save(ignore_permissions=True)
 
-    email = get_account_email(account_id)
+    email = get_account_email(member_id)
     if not email:
         return
     changes = {}
@@ -721,58 +721,58 @@ def _set_aliases(kind: str, email_id: str, rows: list[dict]) -> None:
 
 
 @frappe.whitelist()
-def add_account_email(account_id: str, email: str, description: str | None = None) -> None:
-    check_admin_permission("update accounts", f"{account_id} ({email})")
-    _add_alias("accounts", _require_account_email(account_id), email, description)
+def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
+    check_admin_permission("update members", f"{member_id} ({email})")
+    _add_alias("accounts", _require_member_account(member_id), email, description)
 
 
 @frappe.whitelist()
-def remove_account_email(account_id: str, email: str) -> None:
-    check_admin_permission("update accounts", f"{account_id} ({email})")
-    _remove_alias("accounts", _require_account_email(account_id), email)
+def remove_member_email(member_id: str, email: str) -> None:
+    check_admin_permission("update members", f"{member_id} ({email})")
+    _remove_alias("accounts", _require_member_account(member_id), email)
 
 
 @frappe.whitelist()
-def set_account_email_enabled(account_id: str, email: str, enabled: int) -> None:
-    check_admin_permission("update accounts", f"{account_id} ({email})")
-    _set_alias_enabled("accounts", _require_account_email(account_id), email, bool(cint(enabled)))
+def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
+    check_admin_permission("update members", f"{member_id} ({email})")
+    _set_alias_enabled("accounts", _require_member_account(member_id), email, bool(cint(enabled)))
 
 
 # --- membership ----------------------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def add_account_to_groups(account_id: str, group_ids: list) -> None:
-    check_admin_permission("update accounts", account_id)
-    email = _require_account_email(account_id)
+def add_member_to_groups(member_id: str, group_ids: list) -> None:
+    check_admin_permission("update members", member_id)
+    email = _require_member_account(member_id)
     account = get_client().call("accounts.get_account", email=email)
     groups = list(dict.fromkeys([*(account.get("groups") or []), *_listify(group_ids)]))
     get_client().call("accounts.set_groups", email=email, groups=groups)
 
 
 @frappe.whitelist()
-def remove_account_from_group(account_id: str, group_id: str) -> None:
-    check_admin_permission("update accounts", f"{account_id} ({group_id})")
-    email = _require_account_email(account_id)
+def remove_member_from_group(member_id: str, group_id: str) -> None:
+    check_admin_permission("update members", f"{member_id} ({group_id})")
+    email = _require_member_account(member_id)
     account = get_client().call("accounts.get_account", email=email)
     groups = [g for g in account.get("groups") or [] if g != group_id]
     get_client().call("accounts.set_groups", email=email, groups=groups)
 
 
 @frappe.whitelist()
-def add_account_to_mailing_lists(account_id: str, list_ids: list) -> None:
-    check_admin_permission("update accounts", account_id)
-    email = _require_account_email(account_id)
+def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
+    check_admin_permission("update members", member_id)
+    email = _require_member_account(member_id)
     for list_id in _listify(list_ids):
         get_client().call("mailing_lists.add_recipients", email=list_id, recipients=[email])
 
 
 @frappe.whitelist()
-def remove_account_from_mailing_list(account_id: str, list_id: str) -> None:
+def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
     """Removes every address of the member from the list, aliases included."""
 
-    check_admin_permission("update accounts", f"{account_id} ({list_id})")
-    email = _require_account_email(account_id)
+    check_admin_permission("update members", f"{member_id} ({list_id})")
+    email = _require_member_account(member_id)
     account = get_client().call("accounts.get_account", email=email)
     addresses = [email, *[a["email"] for a in account.get("aliases") or []]]
     get_client().call("mailing_lists.remove_recipients", email=list_id, recipients=addresses)
@@ -797,7 +797,7 @@ def _search(rows: list[dict], search: str | None, fields: tuple[str, ...]) -> li
 
 
 @frappe.whitelist()
-def search_accounts(search: str | None = None) -> list[dict]:
+def get_accounts(search: str | None = None) -> list[dict]:
     """Every account of the site, for pickers."""
 
     check_admin_permission("view accounts")

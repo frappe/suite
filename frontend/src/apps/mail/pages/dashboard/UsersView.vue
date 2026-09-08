@@ -133,7 +133,7 @@ import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 
 
-type AccountRow = {
+type MemberRow = {
 	name: string
 	full_name: string
 	user_image?: string
@@ -154,7 +154,7 @@ const listView = useTemplateRef<{
 }>('listView')
 
 const members = createResource({
-	url: 'suite.mail.api.admin.search_accounts',
+	url: 'suite.mail.api.admin.get_members',
 	makeParams: () => {
 		const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
 			search: search.value,
@@ -173,10 +173,10 @@ const members = createResource({
 	auto: true,
 })
 
-const normalizedMembers = computed<AccountRow[]>(() => {
-	const map = new Map<string, AccountRow>()
+const normalizedMembers = computed<MemberRow[]>(() => {
+	const map = new Map<string, MemberRow>()
 
-	for (const row of (members.data || []) as AccountRow[]) {
+	for (const row of (members.data || []) as MemberRow[]) {
 		if (!map.has(row.name)) map.set(row.name, row)
 	}
 
@@ -225,14 +225,14 @@ const listOptions = computed(() => ({
 				title: __('No accounts found'),
 				description: __('Invite people to give them a mailbox on your domains.'),
 			},
-	getRowRoute: (row: AccountRow) => ({
+	getRowRoute: (row: MemberRow) => ({
 		name: 'mail-account',
 		params: { accountId: row.name },
 	}),
 }))
 
 const enableMembers = createResource({
-	url: 'suite.mail.api.admin.enable_accounts',
+	url: 'suite.mail.api.admin.enable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
 		members.reload()
@@ -255,7 +255,7 @@ const ENABLE_MEMBERS_OPTIONS = {
 }
 
 const disableMembers = createResource({
-	url: 'suite.mail.api.admin.disable_accounts',
+	url: 'suite.mail.api.admin.disable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
 		members.reload()
@@ -278,7 +278,7 @@ const DISABLE_MEMBERS_OPTIONS = {
 }
 
 const deleteMembers = createResource({
-	url: 'suite.mail.api.admin.delete_accounts',
+	url: 'suite.mail.api.admin.delete_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
 		members.reload()

@@ -1,10 +1,10 @@
 <template>
-	<DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!account.data">
+	<DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!member.data">
 		<DashboardDetailHeader
-			:title="account.data.description || account.data.name"
+			:title="member.data.description || member.data.name"
 			:badge-label="badge.label"
 			:badge-theme="badge.theme"
-			:meta="[account.data.name, account.data.is_admin ? __('Admin') : __('User')]"
+			:meta="[member.data.name, member.data.is_admin ? __('Admin') : __('User')]"
 		>
 			<template #actions>
 				<Button :label="__('Edit')" @click="showEdit = true" />
@@ -18,10 +18,10 @@
 				<div>
 					<InformationField
 						:label="__('Role')"
-						:value="account.data.is_admin ? __('Admin') : __('User')"
+						:value="member.data.is_admin ? __('Admin') : __('User')"
 					/>
-					<InformationField :label="__('Locale')" :value="localeLabel(account.data.locale)" />
-					<InformationField :label="__('Time Zone')" :value="account.data.time_zone" />
+					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
+					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Last Active')" :value="lastActive" />
 					<InformationField :label="__('Joined On')" :value="joinedOn" />
 				</div>
@@ -29,7 +29,7 @@
 
 			<!-- Quota Usage -->
 			<DashboardCard :title="__('Quota Usage')" :button-label="__('Edit')" @action="showEditQuota = true">
-				<QuotaDonut :quota="account.data.quota" />
+				<QuotaDonut :quota="member.data.quota" />
 			</DashboardCard>
 
 			<!-- Email Addresses -->
@@ -45,9 +45,9 @@
 						<span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
 						<span class="w-8 shrink-0" />
 					</div>
-					<template v-if="account.data.email_addresses.length">
+					<template v-if="member.data.email_addresses.length">
 						<div
-							v-for="entry in account.data.email_addresses"
+							v-for="entry in member.data.email_addresses"
 							:key="entry.email"
 							class="group border-b px-5 py-3 text-base last:border-b-0"
 						>
@@ -95,9 +95,9 @@
 					<div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
 						{{ __('Group') }}
 					</div>
-					<template v-if="account.data.groups.length">
+					<template v-if="member.data.groups.length">
 						<div
-							v-for="group in account.data.groups"
+							v-for="group in member.data.groups"
 							:key="group.id"
 							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
 							@click="router.push({ name: 'mail-group', params: { groupId: group.id } })"
@@ -125,9 +125,9 @@
 					<div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
 						{{ __('Mailing List') }}
 					</div>
-					<template v-if="account.data.mailing_lists.length">
+					<template v-if="member.data.mailing_lists.length">
 						<div
-							v-for="list in account.data.mailing_lists"
+							v-for="list in member.data.mailing_lists"
 							:key="list.id"
 							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
 							@click="router.push({ name: 'mail-mailing-list', params: { listId: list.id } })"
@@ -153,21 +153,21 @@
 	<Dialog v-model:open="showResetPassword" v-bind="RESET_PASSWORD_OPTIONS" />
 	<Dialog v-model:open="showToggleEnabled" v-bind="TOGGLE_ENABLED_OPTIONS" />
 	<Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS" />
-	<ChangeAccountPasswordModal v-model="showChangePassword" :account-id="accountId" />
-	<EditAccountModal v-if="data" v-model="showEdit" :account="data" @reload="account.reload()" />
-	<EditAccountQuotaModal v-if="data" v-model="showEditQuota" :account="data" @reload="account.reload()" />
-	<AddAccountEmailModal v-model="showAddEmail" :account-id="accountId" @reload="account.reload()" />
+	<ChangeAccountPasswordModal v-model="showChangePassword" :member-id="accountId" />
+	<EditAccountModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
+	<EditAccountQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
+	<AddAccountEmailModal v-model="showAddEmail" :member-id="accountId" @reload="member.reload()" />
 	<AddAccountGroupsModal
 		v-model="showAddGroups"
-		:account-id="accountId"
+		:member-id="accountId"
 		:current-ids="currentGroupIds"
-		@reload="account.reload()"
+		@reload="member.reload()"
 	/>
 	<AddAccountMailingListsModal
 		v-model="showAddLists"
-		:account-id="accountId"
+		:member-id="accountId"
 		:current-ids="currentListIds"
-		@reload="account.reload()"
+		@reload="member.reload()"
 	/>
 </template>
 
@@ -196,7 +196,7 @@ import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 
 import type { QuotaUsage } from '@/apps/mail/types'
 
-type AccountData = {
+type MemberData = {
 	name: string
 	full_name: string
 	description: string
@@ -227,17 +227,17 @@ const showAddEmail = ref(false)
 const showAddGroups = ref(false)
 const showAddLists = ref(false)
 
-const account = createResource({
-	url: 'suite.mail.api.admin.get_account',
+const member = createResource({
+	url: 'suite.mail.api.admin.get_member',
 	auto: true,
-	makeParams: () => ({ account_id: accountId }),
+	makeParams: () => ({ member_id: accountId }),
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Account not found.'), 'error')
 		router.replace({ name: 'mail-accounts' })
 	},
 })
 
-const data = computed(() => account.data as AccountData | undefined)
+const data = computed(() => member.data as MemberData | undefined)
 
 const currentGroupIds = computed(() => data.value?.groups.map((g) => g.id) || [])
 const currentListIds = computed(() => data.value?.mailing_lists.map((l) => l.id) || [])
@@ -245,11 +245,11 @@ const currentListIds = computed(() => data.value?.mailing_lists.map((l) => l.id)
 const toggleEmailEnabled = (entry: { email: string; enabled: boolean }, value: boolean) => {
 	entry.enabled = value // optimistic; reverted on error via reload
 	createResource({
-		url: 'suite.mail.api.admin.set_account_email_enabled',
-		makeParams: () => ({ account_id: accountId, email: entry.email, enabled: value ? 1 : 0 }),
+		url: 'suite.mail.api.admin.set_member_email_enabled',
+		makeParams: () => ({ member_id: accountId, email: entry.email, enabled: value ? 1 : 0 }),
 		onSuccess: () => raiseToast(value ? __('Email address enabled.') : __('Email address disabled.')),
 		onError: (error: { messages?: string[] }) => {
-			account.reload()
+			member.reload()
 			raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
 		},
 	}).submit()
@@ -257,10 +257,10 @@ const toggleEmailEnabled = (entry: { email: string; enabled: boolean }, value: b
 
 const removeEmail = (email: string) =>
 	createResource({
-		url: 'suite.mail.api.admin.remove_account_email',
-		makeParams: () => ({ account_id: accountId, email }),
+		url: 'suite.mail.api.admin.remove_member_email',
+		makeParams: () => ({ member_id: accountId, email }),
 		onSuccess: () => {
-			account.reload()
+			member.reload()
 			raiseToast(__('Email address removed.'))
 		},
 		onError: (error: { messages?: string[] }) =>
@@ -269,10 +269,10 @@ const removeEmail = (email: string) =>
 
 const removeGroup = (groupId: string) =>
 	createResource({
-		url: 'suite.mail.api.admin.remove_account_from_group',
-		makeParams: () => ({ account_id: accountId, group_id: groupId }),
+		url: 'suite.mail.api.admin.remove_member_from_group',
+		makeParams: () => ({ member_id: accountId, group_id: groupId }),
 		onSuccess: () => {
-			account.reload()
+			member.reload()
 			raiseToast(__('Removed from group.'))
 		},
 		onError: (error: { messages?: string[] }) =>
@@ -281,10 +281,10 @@ const removeGroup = (groupId: string) =>
 
 const removeList = (listId: string) =>
 	createResource({
-		url: 'suite.mail.api.admin.remove_account_from_mailing_list',
-		makeParams: () => ({ account_id: accountId, list_id: listId }),
+		url: 'suite.mail.api.admin.remove_member_from_mailing_list',
+		makeParams: () => ({ member_id: accountId, list_id: listId }),
 		onSuccess: () => {
-			account.reload()
+			member.reload()
 			raiseToast(__('Removed from mailing list.'))
 		},
 		onError: (error: { messages?: string[] }) =>
@@ -312,12 +312,12 @@ const BREADCRUMBS = computed(() => [
 const setEnabled = (enabled: boolean) =>
 	createResource({
 		url: enabled
-			? 'suite.mail.api.admin.enable_accounts'
-			: 'suite.mail.api.admin.disable_accounts',
+			? 'suite.mail.api.admin.enable_members'
+			: 'suite.mail.api.admin.disable_members',
 		makeParams: () => ({ names: [accountId] }),
 		onSuccess: () => {
 			showToggleEnabled.value = false
-			account.reload()
+			member.reload()
 			raiseToast(enabled ? __('Account enabled.') : __('Account disabled.'))
 		},
 		onError: (error: { messages?: string[] }) => {
@@ -363,7 +363,7 @@ const RESET_PASSWORD_OPTIONS = {
 }
 
 const deleteMember = createResource({
-	url: 'suite.mail.api.admin.delete_accounts',
+	url: 'suite.mail.api.admin.delete_members',
 	makeParams: () => ({ names: [accountId] }),
 	onSuccess: () => {
 		showDeleteMember.value = false

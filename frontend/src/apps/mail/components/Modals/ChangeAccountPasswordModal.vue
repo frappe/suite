@@ -28,7 +28,7 @@ import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
-const { accountId } = defineProps<{ accountId: string }>()
+const { memberId } = defineProps<{ memberId: string }>()
 
 const show = defineModel<boolean>()
 
@@ -58,8 +58,8 @@ const dialogOptions = computed(() => ({
 }))
 
 const changePassword = createResource({
-	url: 'suite.mail.api.admin.change_account_password',
-	makeParams: () => ({ account_id: accountId, new_password: newPassword.value }),
+	url: 'suite.mail.api.admin.change_member_password',
+	makeParams: () => ({ member_id: memberId, new_password: newPassword.value }),
 	onSuccess: () => {
 		show.value = false
 		raiseToast(__('Password updated.'))

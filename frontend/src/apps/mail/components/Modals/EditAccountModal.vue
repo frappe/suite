@@ -41,7 +41,7 @@ import { Combobox, Dialog, ErrorMessage, FormControl, createResource } from 'fra
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 
-type AccountData = {
+type MemberData = {
 	name: string
 	is_admin: boolean
 	description?: string
@@ -50,7 +50,7 @@ type AccountData = {
 }
 
 const show = defineModel<boolean>()
-const { account } = defineProps<{ account: AccountData }>()
+const { member } = defineProps<{ member: MemberData }>()
 const emit = defineEmits(['reload'])
 
 const ROLE_OPTIONS = [
@@ -66,19 +66,19 @@ const timeZone = ref<string | null>(null)
 const { localeOptions, timeZoneOptions } = useAccountOptions()
 
 watch(show, () => {
-	if (show.value && account) {
-		role.value = account.is_admin ? 'admin' : 'user'
-		description.value = account.description || ''
-		locale.value = account.locale || null
-		timeZone.value = account.time_zone || ''
+	if (show.value && member) {
+		role.value = member.is_admin ? 'admin' : 'user'
+		description.value = member.description || ''
+		locale.value = member.locale || null
+		timeZone.value = member.time_zone || ''
 		updateMember.reset()
 	}
 })
 
 const updateMember = createResource({
-	url: 'suite.mail.api.admin.update_account',
+	url: 'suite.mail.api.admin.update_member',
 	makeParams: () => ({
-		account_id: account.name,
+		member_id: member.name,
 		role: role.value,
 		description: description.value?.trim(),
 		locale: locale.value || '',

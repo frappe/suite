@@ -221,7 +221,7 @@ watch(show, () => {
 })
 
 const addMember = createResource({
-	url: 'suite.mail.api.admin.add_account',
+	url: 'suite.mail.api.admin.add_member',
 	makeParams: () => {
 		const [primary, ...rest] = emails.value
 		const aliases = rest
