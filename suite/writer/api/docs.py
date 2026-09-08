@@ -11,6 +11,7 @@ from suite.drive.api.permissions import (
     user_has_permission,
 )
 from suite.drive.utils.files import FileManager
+from suite.writer.drive import NODE_FIELD as WRITER_NODE_FIELD
 
 # To be moved to mimemapper
 QUICK_MAP = {
@@ -64,17 +65,22 @@ def create_document(title: str | None = None, parent: str | None = None, templat
     if not parent:
         frappe.throw("A personal Drive folder is required", frappe.ValidationError)
 
-    node = drive.create_document(parent, title or DEFAULT_TITLE, content_doctype="Writer Document")
-    row = frappe.db.get_value("Drive Node", node, _NODE_RESPONSE_FIELDS, as_dict=True)
-
-    if template:
-        frappe.db.set_value(
-            "Writer Document",
-            row.content_docname,
-            "settings",
-            frappe.as_json({"collab": True, "template": template}),
-            update_modified=False,
-        )
+    # The workflow closes its own savepoint before returning, so the template
+    # write below is outside it. This one holds both: a template the caller
+    # may not use must leave no node and no document behind, the same way any
+    # refusal inside `create_document` does.
+    savepoint = f"writer_create_document_{frappe.generate_hash(12)}"
+    frappe.db.savepoint(savepoint)
+    try:
+        node = drive.create_document(parent, title or DEFAULT_TITLE, content_doctype="Writer Document")
+        row = frappe.db.get_value("Drive Node", node, _NODE_RESPONSE_FIELDS, as_dict=True)
+        if template:
+            _apply_template(row.content_docname, template)
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
 
     return {
         "name": row.name,
@@ -90,6 +96,29 @@ def create_document(title: str | None = None, parent: str | None = None, templat
         "modified": row.content_modified or row.modified,
         "owner": row.owner,
     }
+
+
+def _apply_template(docname: str, template: str) -> None:
+    """Record which `Writer Template` a new document starts from.
+
+    The editor reads `settings.template` and applies the body itself, so the
+    name is stored, not the content. It is still a capability: a template the
+    caller cannot read must not be named here, or the editor would fetch a
+    body its reader was never granted. `Writer Template` keeps its own guards
+    past activation (`suite.writer.overrides`), so the ordinary permission
+    check is the right question to ask.
+    """
+    if not frappe.db.exists("Writer Template", template):
+        frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
+    if not frappe.has_permission("Writer Template", doc=template):
+        frappe.throw("You cannot start a document from this template", frappe.PermissionError)
+    frappe.db.set_value(
+        "Writer Document",
+        docname,
+        "settings",
+        frappe.as_json({"collab": True, "template": template}),
+        update_modified=False,
+    )
 
 
 @frappe.whitelist(allow_guest=True)
@@ -138,11 +167,32 @@ def clean_content_for_obsidian(content):
 
 @frappe.whitelist(allow_guest=True)
 def save_comments(doc: str, data: str):
+    """Store one legacy comment blob, off whichever store holds the document.
+
+    A linked document's comments are `Drive Node Comment` rows (§8.11) and the
+    controller refuses this call by name. Reading the `File` first turned that
+    documented refusal into `DoesNotExistError` for every document written
+    since activation, which names the wrong thing. The node is resolved first
+    so the controller answers.
+
+    The Drive check comes before the refusal, and it is COMMENT — the level
+    the legacy `user_has_permission(file, "comment")` named. Refusing by name
+    first would tell a stranger that an id is a linked Writer document, which
+    §5.4 does not say; the check answers `DriveNotFound` for them instead.
+    """
+    document = frappe.get_doc("Writer Document", doc)
+    node = document.get(WRITER_NODE_FIELD)
+    if node:
+        drive.check(node, drive.COMMENT)
+        # Refuses with "Drive owns this document. Use Drive comments instead."
+        document.save_comments(data, None)
+        return
+
     file = frappe.get_doc("File", {"content_docname": doc, "content_doctype": "Writer Document"})
     if not user_has_permission(file, "comment"):
         frappe.throw("You cannot comment on this file.")
 
-    frappe.get_doc("Writer Document", doc).save_comments(data, file)
+    document.save_comments(data, file)
 
 
 @frappe.whitelist()
