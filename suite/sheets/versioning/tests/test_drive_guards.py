@@ -58,16 +58,32 @@ class HeadSchema(unittest.TestCase):
 
 
 class LegacyMutationGuards(unittest.TestCase):
-    def test_maybe_snapshot_refuses_before_reading_legacy_history(self):
+    def test_maybe_snapshot_declines_a_linked_sheet_without_raising(self):
+        # `versioning.save` runs this inline on every autosave and turns any
+        # exception into an `Error Log` row. A refusal here would file one per
+        # save of every migrated sheet for the whole Build release, so this one
+        # path declines instead. It still writes nothing.
         with (
-            mock.patch.object(snapshots, "_refuse_linked_sheet", side_effect=RuntimeError("linked")),
+            mock.patch.object(snapshots, "is_drive_native", return_value=True) as linked,
             mock.patch.object(snapshots, "frappe") as frappe,
-            self.assertRaisesRegex(RuntimeError, "linked"),
         ):
-            snapshots.maybe_snapshot("SH-1")
+            self.assertIsNone(snapshots.maybe_snapshot("SH-1"))
+        linked.assert_called_once_with("SH-1")
         frappe.db.get_value.assert_not_called()
+        frappe.get_doc.assert_not_called()
+
+    def test_an_unlinked_sheet_still_reaches_the_snapshot_policy(self):
+        with (
+            mock.patch.object(snapshots, "is_drive_native", return_value=False),
+            mock.patch.object(snapshots, "frappe") as frappe,
+        ):
+            frappe.db.get_value.return_value = None
+            snapshots.maybe_snapshot("SH-1")
+        frappe.db.get_value.assert_called_once()
 
     def test_direct_snapshot_create_refuses_before_any_row_write(self):
+        # Only the inline autosave policy declines quietly. An explicit create
+        # is a deliberate legacy history write and stays a refusal.
         with (
             mock.patch.object(snapshots, "_refuse_linked_sheet", side_effect=RuntimeError("linked")),
             mock.patch.object(snapshots, "frappe") as frappe,
