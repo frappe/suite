@@ -283,8 +283,9 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual([g["email"] for g in member["groups"]], [f"sales@{DOMAIN}"])
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
         self.assertEqual(member["quota"]["total"], 2 * 1024**3)
+        # Usage costs a cluster read per account, so the list carries no quota; the detail page does.
         listed = next(u for u in admin.get_members(search="carol") if u["name"] == self.email)
-        self.assertEqual(listed["quota"]["total"], 2 * 1024**3)
+        self.assertNotIn("quota", listed)
 
         admin.update_member(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")
         self.assertEqual(

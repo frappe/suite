@@ -64,28 +64,6 @@
 								:theme="row.enabled ? 'green' : 'gray'"
 							/>
 						</template>
-						<template v-else-if="column.key === 'storage'">
-							<span v-if="!row.quota" class="text-ink-gray-5 text-sm">—</span>
-							<Tooltip v-else :text="storageTooltip(row.quota)">
-								<span v-if="row.quota.unlimited" class="text-ink-gray-5 text-sm">∞</span>
-								<div v-else class="flex items-center gap-2">
-									<div class="bg-surface-gray-4 h-1.5 w-16 shrink-0 rounded-full">
-										<div
-											class="h-full rounded-full"
-											:class="
-												row.quota.used_percentage > 80
-													? 'bg-surface-red-8'
-													: 'bg-surface-gray-10'
-											"
-											:style="{ width: storageBarWidth(row.quota) }"
-										/>
-									</div>
-									<span class="text-ink-gray-5 text-xs">
-										{{ Math.round(row.quota.used_percentage) }}%
-									</span>
-								</div>
-							</Tooltip>
-						</template>
 						<template v-else-if="column.key === 'last_active'">
 							<span class="text-ink-gray-5 text-sm">
 								{{
@@ -136,7 +114,6 @@ import {
 	Button,
 	Dialog,
 	FormControl,
-	Tooltip,
 	createResource,
 } from 'frappe-ui'
 import {
@@ -150,12 +127,11 @@ import {
 	ListView,
 } from 'frappe-ui/experimental'
 
-import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 
-import type { QuotaUsage } from '@/apps/mail/types'
 
 type MemberRow = {
 	name: string
@@ -164,19 +140,7 @@ type MemberRow = {
 	last_active?: string | null
 	is_admin: boolean
 	enabled: boolean
-	quota?: QuotaUsage | null
 }
-
-// Members without a personal mail account (or when the mail server is unreachable) have no quota.
-const storageTooltip = (quota: QuotaUsage) =>
-	quota.unlimited
-		? __('{0} used · Unlimited', [formatBytes(quota.used)])
-		: __('{0} of {1} used', [formatBytes(quota.used), formatBytes(quota.total)])
-
-// Hide sub-1% usage entirely: a rounded fill that narrow renders as a misleading dot.
-const storageBarWidth = (quota: QuotaUsage) =>
-	quota.used_percentage < 1 ? '0' : `${quota.used_percentage}%`
-
 
 const search = ref('')
 const roleFilter = ref<'all' | 'admin' | 'user'>('all')
@@ -230,7 +194,6 @@ const LIST_COLUMNS = [
 	{ label: __('User'), key: 'user' },
 	{ label: __('Role'), key: 'role' },
 	{ label: __('Status'), key: 'status' },
-	{ label: __('Storage'), key: 'storage' },
 	{ label: __('Last Active'), key: 'last_active' },
 ]
 

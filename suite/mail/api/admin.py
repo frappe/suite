@@ -396,7 +396,6 @@ def get_members(
         # Stored in system time; the API speaks UTC, like every other timestamp it returns.
         user["last_active"] = to_utc_z(user.get("last_active"))
 
-    _attach_quota_usage(users)
     return users
 
 
@@ -413,25 +412,6 @@ def _all_accounts() -> dict[str, dict]:
         start += ACCOUNT_PAGE
         if start >= page["total"] or not page["items"]:
             return accounts
-
-
-def _attach_quota_usage(users: list[dict]) -> None:
-    """Quota figures for every listed member in one read of the site's accounts.
-
-    ``quota`` stays ``None`` for members without an account, and for everyone when Suite Cloud is
-    unreachable — the members list still loads, just without storage figures.
-    """
-
-    for user in users:
-        user["quota"] = None
-    if not users:
-        return
-
-    with suppress(Exception):
-        accounts = _all_accounts()
-        for user in users:
-            if account := accounts.get(user.get("account")):
-                user["quota"] = _quota_usage(account)
 
 
 def _quota_usage(account: dict) -> dict:
