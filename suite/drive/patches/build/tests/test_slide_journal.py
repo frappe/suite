@@ -61,6 +61,25 @@ class JournalCase(unittest.TestCase):
 
 
 class TestIdentity(JournalCase):
+    def test_the_journal_hash_domains_and_framing_are_pinned_to_literals(self):
+        # These three values name every rollback record already on disk. A
+        # changed domain, framing byte, or field order renames the whole
+        # journal, and the next run would read an empty deck directory and
+        # rewrite bodies it had already rewritten. Recomputing them with the
+        # same functions would pin nothing.
+        self.assertEqual(
+            body_hash(SlideBody("[]", None)),
+            "2c23eca13f487a3db5bda3424993d72364e3dff79fa2876c35ec0f2bfa8e7088",
+        )
+        self.assertEqual(
+            deck_hash("deck-1"),
+            "992c39afd967899034117c29100802a713d252ca6ec46523f984102b9817013b",
+        )
+        self.assertEqual(
+            transition_hash("deck-1", "slide-1", SlideBody("[]", None)),
+            "e0e0a035d1c276f460c705744f8fc15841b28a71bba63c6feaa2410e20722cc0",
+        )
+
     def test_exact_values_determine_both_body_hashes(self):
         compact = SlideBody('[{"src":"/files/a.png"}]', None)
         spaced = SlideBody('[ {"src": "/files/a.png"} ]', None)
