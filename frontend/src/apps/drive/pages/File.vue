@@ -43,7 +43,7 @@ import {
   clearCrumbEntity,
 } from '@/apps/drive/data/breadcrumbs'
 import Navbar from '@/apps/drive/components/Navbar.vue'
-import { ref, computed, onMounted, onUnmounted, defineProps } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Button } from 'frappe-ui'
 import FileRender from '@/apps/drive/components/FileRender.vue'
 import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
