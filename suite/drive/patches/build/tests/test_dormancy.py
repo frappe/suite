@@ -4,7 +4,8 @@ Build is additive: it writes new rows and drops no legacy column, so
 `suite/patches.txt` runs it on an ordinary migrate. Cleanup is the
 destructive half and §14.10 puts it one release later, so nothing may
 register it early. §14.11's rollback ("truncate the new tables and ship the
-old code") holds only while that stays true.
+old code") holds only while that stays true, and while everything the old
+code reads is still here, so §14.10's deletion list is checked item by item.
 
 The rest of these checks are the ones the package has always had: Build is
 a patch and nothing else. No doctype, no fixture, no endpoint, no scheduled
@@ -96,6 +97,107 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
                     called = ast.unparse(node.func)
                     with self.subTest(module=path.name, line=node.lineno, call=called):
                         self.assertFalse(any(called.endswith(name) for name in DESTRUCTIVE_CALLS))
+
+
+# §14.10's deletion list, as this repository spells it today. Every name here
+# is something Cleanup removes, so finding all of them is what proves Cleanup
+# has not started. The list is written out rather than derived: a gate that
+# read the same files it guards would pass on an empty repository.
+RETAINED_DOCTYPES = (
+    "drive/doctype/drive_permission",
+    "drive/doctype/drive_entity_activity_log",
+    "drive/doctype/drive_token",
+    "writer/doctype/writer_version",
+    "writer/doctype/writer_doc_version",
+    "writer/doctype/writer_template",
+    "sheets/doctype/sheet_snapshot",
+)
+
+RETAINED_FILE_CUSTOM_FIELDS = (
+    "section_break_nfot8",
+    "mime_type",
+    "status",
+    "file_modified",
+    "column_break_tapww",
+    "content_doctype",
+    "content_docname",
+)
+
+RETAINED_PROPERTY_SETTERS = (
+    ("File", "file_url", "depends_on"),
+    ("File", "folder", "hidden"),
+    ("File", "folder", "depends_on"),
+)
+
+# Doctype JSON, and the fields on it Cleanup drops.
+RETAINED_FIELDS = (
+    ("drive/doctype/drive_settings", ("user_folder", "quota")),
+    ("drive/doctype/drive_disk_settings", ("quota", "aws_key", "aws_secret", "bucket", "endpoint_url")),
+    ("drive/doctype/drive_storage_reservation", ("storage_owner",)),
+    ("slides/doctype/presentation", ("title",)),
+    ("sheets/doctype/sheet", ("title", "trashed", "sheets_data")),
+    ("writer/doctype/writer_document", ("ycomments", "versions")),
+)
+
+LEGACY_METHOD_PREFIX = "/api/method/suite.drive.api."
+
+
+def fixture(name):
+    return json.loads((SUITE_ROOT / "fixtures" / f"{name}.json").read_text())
+
+
+def doctype_fields(path):
+    folder = SUITE_ROOT / path
+    return {
+        field["fieldname"]
+        for field in json.loads((folder / f"{folder.name}.json").read_text())["fields"]
+    }
+
+
+class TestCleanupHasRemovedNothingYet(unittest.TestCase):
+    """§14.10's list, still whole, one release before it may be cut.
+
+    Build is the expand half. §14.11's rollback is "truncate the new tables
+    and ship the old code", and the old code reads every name below. A
+    Ticket 29 change that removed one of them early would leave the branch
+    with no way back, and would do it quietly: the new tables would answer
+    every read, so nothing would look broken until someone rolled back.
+    """
+
+    def test_the_source_doctypes_are_all_still_shipped(self):
+        for path in RETAINED_DOCTYPES:
+            with self.subTest(doctype=path):
+                folder = SUITE_ROOT / path
+                self.assertTrue((folder / f"{folder.name}.json").is_file())
+
+    def test_the_seven_file_custom_fields_are_still_in_the_fixture(self):
+        held = {row["fieldname"] for row in fixture("custom_field") if row.get("dt") == "File"}
+        self.assertEqual(held, set(RETAINED_FILE_CUSTOM_FIELDS))
+
+    def test_the_three_property_setters_are_still_in_the_fixture(self):
+        held = {
+            (row["doc_type"], row.get("field_name"), row["property"])
+            for row in fixture("property_setter")
+        }
+        self.assertEqual(held, set(RETAINED_PROPERTY_SETTERS))
+
+    def test_every_legacy_column_cleanup_drops_is_still_declared(self):
+        for path, fieldnames in RETAINED_FIELDS:
+            held = doctype_fields(path)
+            for fieldname in fieldnames:
+                with self.subTest(doctype=path, fieldname=fieldname):
+                    self.assertIn(fieldname, held)
+
+    def test_the_legacy_method_prefix_is_still_reachable(self):
+        # Additive: §11.2's route namespace was added beside the old prefix,
+        # not in place of it, and Cleanup removes the old one.
+        hooks = importlib.import_module("suite.hooks")
+        self.assertIn(LEGACY_METHOD_PREFIX, hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertIn("/api/suite/drive/", hooks.ALLOWED_WILDCARD_PATHS)
+
+    def test_all_sixty_nine_forwarders_are_still_classified(self):
+        shims = importlib.import_module("suite.drive.http.shims")
+        self.assertEqual(len(shims.CLASSIFICATION), 69)
 
 
 class TestBuildIsOnlyAPatch(unittest.TestCase):
