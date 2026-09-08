@@ -169,6 +169,12 @@ def validate_content_registry() -> None:
     guards below already fail closed on one, but they fail closed for the
     person reading, so the migration that would leave them behind is the
     right place to stop.
+
+    So is a row with no node. §5.13 says that state cannot exist, and every
+    guard below is written on that promise, so a document Build did not link
+    would become a document nobody can read. It is refused here, where the
+    migration that produced it can still be seen, rather than one request at
+    a time afterwards.
     """
     content.validate_registry()
     for doctype in content.governed_doctypes():
@@ -178,6 +184,32 @@ def validate_content_registry() -> None:
                     doctype
                 )
             )
+    refuse_unlinked_documents()
+
+
+def refuse_unlinked_documents() -> None:
+    """Refuse activation while a governed row still has no node (§5.13).
+
+    This is the ordering rule §14.2 states as "content document node links"
+    before the registry answers anything: Build step 10 writes the link on
+    every document and adopts the ones that had no `File` row, and a
+    satellite takes its rights from the document it points at.
+    """
+    for doctype, spec in content.registry().items():
+        _refuse_unlinked(doctype, spec.node_field)
+        for satellite in spec.satellites:
+            _refuse_unlinked(satellite.doctype, satellite.link_field)
+
+
+def _refuse_unlinked(doctype: str, field: str) -> None:
+    unlinked = frappe.db.count(doctype, {field: ["is", "not set"]})
+    if not unlinked:
+        return
+    raise DriveConflict(
+        _("Drive cannot govern {0}: {1} rows have no {2}. Run the Drive Build migration first.").format(
+            doctype, unlinked, field
+        )
+    )
 
 
 def refuse_governed_share(doc, method=None) -> None:

@@ -17,7 +17,6 @@ import json
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
 
 import frappe
 import pycrdt
@@ -82,33 +81,17 @@ SOURCE_DOCTYPES = (
 )
 
 
-# The two specs ticket 29 registers. `suite/hooks.py` keeps
-# `drive_content_types` empty until that release, so a test that reads a spec
-# registers them for its own block and drops them again.
-CONTENT_TYPES = ("suite.writer.drive.SPEC", "suite.sheets.drive.SPEC")
-
-
 @contextmanager
 def registered_content_types():
-    """Build the content registry from both specs, and leave nothing behind.
+    """Read the registry `suite/hooks.py` ships, and leave nothing behind.
 
-    The registry is built from `drive_content_types` and cached per request,
-    so injecting the hook is the whole registration. The cache is dropped on
-    the way in and on the way out, and nothing is written.
+    Ticket 29 filled `drive_content_types`, so there is nothing to inject: the
+    registry is built from the hook and cached per request, and the cache is
+    dropped on the way in and on the way out.
     """
-    real_get_hooks = frappe.get_hooks
-
-    # `hook`, not `key`: frappe's own signature is `get_hooks(hook=None, ...)`
-    # and three framework call sites pass it by keyword.
-    def hooks(hook=None, *args, **kwargs):
-        if hook == "drive_content_types":
-            return list(CONTENT_TYPES)
-        return real_get_hooks(hook, *args, **kwargs)
-
     clear_registry_cache()
     try:
-        with patch("frappe.get_hooks", hooks):
-            yield
+        yield
     finally:
         clear_registry_cache()
 
