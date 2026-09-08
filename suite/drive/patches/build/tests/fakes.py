@@ -29,6 +29,7 @@ from suite.drive.patches.build.ports import (
     ContentShareRow,
     LegacyRow,
     MediaFileRow,
+    RootUsageRow,
     SheetSnapshotRow,
     SlideRow,
     TreeRow,
@@ -352,7 +353,7 @@ def build_environment(
         settings_target.settings = settings
         settings_target.drive = drive
     if usage is None:
-        usage = FakeUsage()
+        usage = FakeUsage(drive=drive)
     environment = BuildEnvironment(
         storage=storage if storage is not None else FakeStorage(),
         files=files if files is not None else FakeFiles(),
@@ -1306,9 +1307,15 @@ class FakeUsage:
     They read the same dictionary unless a test supplies `grouped`, which is
     how the reconciliation is exercised: on a healthy site the two agree,
     and the test needs the case where they do not.
+
+    Given a `drive`, the roots are the `Drive Root` rows Build actually
+    wrote, and `used_bytes` is written back onto them. That is what makes a
+    whole-patch run end with the counters the earlier steps' rows explain,
+    rather than with a list a test wrote by hand.
     """
 
-    def __init__(self, *, roots=(), totals=None, grouped=None):
+    def __init__(self, *, roots=(), totals=None, grouped=None, drive=None):
+        self.drive = drive
         self.root_rows = list(roots)
         self.total_rows = deepcopy(dict(totals or {}))
         self.grouped_rows = deepcopy(dict(grouped)) if grouped is not None else None
@@ -1319,7 +1326,20 @@ class FakeUsage:
         self.fail_write = None
 
     def roots(self, after, limit):
-        return _page_by_name(self.root_rows, after, limit)
+        return _page_by_name(self._rows(), after, limit)
+
+    def _rows(self):
+        if self.drive is None:
+            return self.root_rows
+        return [
+            RootUsageRow(
+                name=row["name"],
+                kind=row.get("kind"),
+                state=row.get("state"),
+                used_bytes=int(row.get("used_bytes") or 0),
+            )
+            for row in self.drive.root_rows.values()
+        ]
 
     def totals(self, root):
         self.totals_calls.append(root)
@@ -1333,6 +1353,12 @@ class FakeUsage:
     def set_used_bytes(self, root, value):
         if self.fail_write is not None and self.fail_write == root:
             raise InterruptedRun(f"killed while writing used_bytes for {root!r}")
+        if self.drive is not None:
+            if root not in self.drive.root_rows:
+                raise ValueError(f"no Drive Root {root!r}")
+            self.drive.root_rows[root]["used_bytes"] = value
+            self.writes.append((root, value))
+            return
         for index, row in enumerate(self.root_rows):
             if row.name == root:
                 self.root_rows[index] = replace(row, used_bytes=value)
