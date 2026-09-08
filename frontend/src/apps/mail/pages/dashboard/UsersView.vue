@@ -195,6 +195,21 @@ watchDebounced(() => search.value, list.reload, { debounce: 300 })
 watch(() => roleFilter.value, list.reload)
 watch(() => statusFilter.value, list.reload)
 
+// The ListView keeps its selection across reloads, so after "select all" on 100 rows and a
+// switch to 20 the banner still claimed 100. Names that are no longer listed leave the set;
+// Load More only adds rows, so it keeps the selection intact.
+watch(
+	() => list.rows,
+	(rows) => {
+		const selections = listView.value?.selections
+		if (!selections?.size) return
+		const shown = new Set(rows.map((row) => row.name))
+		for (const name of Array.from(selections)) {
+			if (!shown.has(name)) selections.delete(name)
+		}
+	},
+)
+
 const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
 
