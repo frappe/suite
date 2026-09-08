@@ -38,7 +38,9 @@ class PlanTest(unittest.TestCase):
 
     def test_a_finished_target_is_left_alone_whatever_it_holds(self):
         self.assertEqual(
-            plan(legacy_table=False, target_table=True, target_rows=99, columns=("user", "node", "opened_at")),
+            plan(
+                legacy_table=False, target_table=True, target_rows=99, columns=("user", "node", "opened_at")
+            ),
             SKIP,
         )
 

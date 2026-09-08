@@ -149,8 +149,7 @@ def fixture(name):
 def doctype_fields(path):
     folder = SUITE_ROOT / path
     return {
-        field["fieldname"]
-        for field in json.loads((folder / f"{folder.name}.json").read_text())["fields"]
+        field["fieldname"] for field in json.loads((folder / f"{folder.name}.json").read_text())["fields"]
     }
 
 
@@ -176,8 +175,7 @@ class TestCleanupHasRemovedNothingYet(unittest.TestCase):
 
     def test_the_three_property_setters_are_still_in_the_fixture(self):
         held = {
-            (row["doc_type"], row.get("field_name"), row["property"])
-            for row in fixture("property_setter")
+            (row["doc_type"], row.get("field_name"), row["property"]) for row in fixture("property_setter")
         }
         self.assertEqual(held, set(RETAINED_PROPERTY_SETTERS))
 
