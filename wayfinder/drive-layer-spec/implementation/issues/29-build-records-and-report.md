@@ -4,9 +4,10 @@
 
 **Blocked by:** [28 — Migrate content history, comments, templates, and media](28-build-content-and-media.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
-**Owner:** Suite migration
+**Owner:** Suite migration. Claimed 2026-09-08 by the Ticket 29 implementation agent on
+`implement/drive-29-build-records`, forked from `forge/drive-layer` at `9cba9ee91`.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -27,6 +28,18 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 ## Verification
 
 Run the full Build fixture suite twice with interrupted progress. Validate reports, source preservation, root-pair integrity, and independent usage sums.
+
+## Claimed files
+
+New: `suite/drive/patches/rename_entity_log_to_recent.py`,
+`suite/drive/patches/build/records.py`, `.../settings.py`, `.../usage.py`,
+`.../report.py`, `.../patch.py`, and their tests under
+`suite/drive/patches/build/tests/`.
+
+Edited: `suite/drive/patches/build/__init__.py`, `ports.py`, `state.py`,
+`environment.py`, `tests/fakes.py`, `tests/test_dormancy.py`,
+`suite/patches.txt`, `suite/hooks.py`, and the Drive record doctype JSON that
+step 9 retargets.
 
 ## Completion evidence
 
