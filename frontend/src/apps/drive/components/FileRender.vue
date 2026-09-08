@@ -23,7 +23,7 @@ const VideoPreview = defineAsyncComponent(() => import('./FileTypePreview/VideoP
 const TextPreview = defineAsyncComponent(() => import('./FileTypePreview/TextPreview.vue'))
 const AudioPreview = defineAsyncComponent(() => import('@/apps/drive/components/FileTypePreview/AudioPreview.vue'))
 import LucideAlertCircle from '~icons/lucide/alert-circle'
-import { diskSettings } from '@/apps/drive/resources/permissions'
+import { previewFileType, previewUnavailableReason } from '@/apps/drive/utils/filePreview'
 
 const props = defineProps({
   previewEntity: {
@@ -37,15 +37,7 @@ const props = defineProps({
   },
 })
 
-if (!diskSettings.data) diskSettings.fetch()
-const error = computed(() => {
-  const limit = diskSettings.data?.preview_size || 100
-  if (!Object.keys(RENDERS).includes(props.previewEntity.file_type))
-    return 'Previews are not supported for this file type. Would you like to download it instead?'
-  else if (props.previewEntity.file_size > limit * 1024 * 1024)
-    return 'This is too large to preview - would you like to download instead?'
-  return false
-})
+const error = computed(() => previewUnavailableReason(props.previewEntity, Object.keys(RENDERS)))
 
 const download = () => {
   window.location.href = `/api/method/suite.drive.api.files.get_file_content?entity_name=${props.previewEntity.name}&trigger_download=1`
@@ -63,12 +55,5 @@ const RENDERS = {
   Code: TextPreview,
 }
 
-const EXCEPTIONS = {
-  'text/csv': 'Text',
-}
-
-const getType = (k) => {
-  return EXCEPTIONS[k.mime_type] || k.file_type
-}
-const previewComponent = computed(() => RENDERS[getType(props.previewEntity)])
+const previewComponent = computed(() => RENDERS[previewFileType(props.previewEntity)])
 </script>

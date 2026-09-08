@@ -2,6 +2,7 @@
 # See license.txt
 
 import json
+import re
 from pathlib import Path
 
 import frappe
@@ -28,6 +29,18 @@ class UnitTestDriveDiskSettings(UnitTestCase):
         self.assertIn("pixels", field["description"].lower())
         self.assertIn("longest side", field["description"].lower())
         self.assertNotIn("megabyte", field["description"].lower())
+
+    def test_the_legacy_personal_team_patch_no_longer_clobbers_preview_size(self):
+        """§9.2's pixel contract must survive `patches.remove_personal`.
+
+        That patch predates the rewrite and once pinned `preview_size` to
+        100 under its old megabyte-cutoff meaning. Left in place, an old
+        site replaying this patch on upgrade would silently overwrite the
+        512 px default with a value that no longer means anything under the
+        current contract.
+        """
+        source = (Path(__file__).parents[2] / "patches" / "remove_personal.py").read_text()
+        self.assertNotRegex(source, r"preview_size\s*=\s*\d")
 
 
 class IntegrationTestDriveDiskSettings(IntegrationTestCase):
