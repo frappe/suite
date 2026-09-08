@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Max
+from frappe.query_builder.functions import Count, Max
 from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
@@ -28,6 +28,11 @@ from suite.mail.utils.user import get_account_email
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
+
+# Desk-style paging: the same page lengths as the list view, 100 by default.
+PAGE_LENGTHS = (20, 100, 500)
+DEFAULT_PAGE_LENGTH = 100
+
 
 ACCOUNT_PAGE = 200
 
@@ -167,7 +172,9 @@ def add_domain(name: str, description: str | None = None) -> str:
 
 
 @frappe.whitelist()
-def get_domains(txt: str | None = None, status: str | None = None) -> list[dict]:
+def get_domains(
+    txt: str | None = None, status: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH
+) -> dict:
     check_admin_permission("view domains")
     if status and status not in DOMAIN_STATUSES:
         frappe.throw(_("Unknown domain status {0}.").format(status))
@@ -180,7 +187,7 @@ def get_domains(txt: str | None = None, status: str | None = None) -> list[dict]
             if status and row["status"] != status:
                 continue
             rows.append(row)
-    return rows
+    return _page(rows, start, page_length)
 
 
 @frappe.whitelist()
@@ -351,9 +358,14 @@ def add_member(
 
 @frappe.whitelist()
 def get_members(
-    search: str | None = None, is_admin: bool | None = None, is_enabled: bool | None = None
-) -> list:
+    search: str | None = None,
+    is_admin: bool | None = None,
+    is_enabled: bool | None = None,
+    start: int = 0,
+    page_length: int = DEFAULT_PAGE_LENGTH,
+) -> dict:
     check_admin_permission("view members")
+    start, page_length = _paging(start, page_length)
 
     USER = frappe.qb.DocType("User")
     HAS_ROLE = frappe.qb.DocType("Has Role")
@@ -387,8 +399,14 @@ def get_members(
     if is_admin is not None:
         query = query.having(is_admin_expr == (1 if is_admin else 0))
 
+    # The grouped query is the row source; counting it as a subquery keeps the admin filter honest.
+    total = frappe.qb.from_(query.as_("members")).select(Count("*")).run()[0][0]
     users = (
-        query.orderby(is_admin_expr, order=Order.desc).orderby(USER.name, order=Order.asc).run(as_dict=True)
+        query.orderby(is_admin_expr, order=Order.desc)
+        .orderby(USER.name, order=Order.asc)
+        .limit(page_length)
+        .offset(start)
+        .run(as_dict=True)
     )
     for user in users:
         if not user.get("user_image"):
@@ -398,7 +416,7 @@ def get_members(
         # Stored in system time; the API speaks UTC, like every other timestamp it returns.
         user["last_active"] = to_utc_z(user.get("last_active"))
 
-    return users
+    return {"items": users, "total": total}
 
 
 def _all_accounts() -> dict[str, dict]:
@@ -791,6 +809,20 @@ def _listify(value) -> list:
     return list(value or [])
 
 
+def _paging(start: int | None, page_length: int | None) -> tuple[int, int]:
+    page_length = cint(page_length) or DEFAULT_PAGE_LENGTH
+    if page_length not in PAGE_LENGTHS:
+        frappe.throw(_("Page length must be one of {0}.").format(", ".join(map(str, PAGE_LENGTHS))))
+    return max(cint(start), 0), page_length
+
+
+def _page(rows: list[dict], start: int | None, page_length: int | None) -> dict:
+    """A slice plus the total, for the lists the site holds in full."""
+
+    start, page_length = _paging(start, page_length)
+    return {"items": rows[start : start + page_length], "total": len(rows)}
+
+
 def _search(rows: list[dict], search: str | None, fields: tuple[str, ...]) -> list[dict]:
     if not search:
         return rows
@@ -824,10 +856,10 @@ def _group_row(group: dict) -> dict:
 
 
 @frappe.whitelist()
-def get_groups(search: str | None = None) -> list[dict]:
+def get_groups(search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH) -> dict:
     check_admin_permission("view groups")
     rows = [_group_row(g) for g in get_client().call("groups.list_groups")]
-    return _search(rows, search, ("name", "email", "description"))
+    return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
 
 
 @frappe.whitelist()
@@ -932,10 +964,12 @@ def _list_row(mailing_list: dict) -> dict:
 
 
 @frappe.whitelist()
-def get_mailing_lists(search: str | None = None) -> list[dict]:
+def get_mailing_lists(
+    search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH
+) -> dict:
     check_admin_permission("view mailing lists")
     rows = [_list_row(ml) for ml in get_client().call("mailing_lists.list_mailing_lists")]
-    return _search(rows, search, ("name", "email", "description"))
+    return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
 
 
 @frappe.whitelist()

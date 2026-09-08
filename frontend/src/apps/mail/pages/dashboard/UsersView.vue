@@ -23,7 +23,7 @@
 		</div>
 	</div>
 	<ListView
-		v-if="members.data"
+		v-if="list.loaded"
 		ref="listView"
 		class="flex-1"
 		:columns="LIST_COLUMNS"
@@ -100,6 +100,16 @@
 		</ListSelectBanner>
 	</ListView>
 	<DashboardListSkeleton v-else :columns="5" />
+	<DashboardPager
+		v-if="list.loaded"
+		:count="list.rows.length"
+		:total="list.total"
+		:page-length="list.pageLength"
+		:has-more="list.hasMore"
+		:loading="list.loading"
+		@update:page-length="list.setPageLength"
+		@load-more="list.loadMore"
+	/>
 	<Dialog v-model:open="showEnableMembers" v-bind="ENABLE_MEMBERS_OPTIONS" />
 	<Dialog v-model:open="showDisableMembers" v-bind="DISABLE_MEMBERS_OPTIONS" />
 	<Dialog v-model:open="showDeleteMembers" v-bind="DELETE_MEMBERS_OPTIONS" />
@@ -131,6 +141,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
 
 type MemberRow = {
@@ -153,41 +164,37 @@ const listView = useTemplateRef<{
 	toggleAllRows?: () => void
 }>('listView')
 
-const members = createResource({
-	url: 'suite.mail.api.admin.get_members',
-	makeParams: () => {
-		const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
-			search: search.value,
-		}
+const list = usePagedList<MemberRow>('suite.mail.api.admin.get_members', () => {
+	const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
+		search: search.value,
+	}
 
-		if (roleFilter.value !== 'all') {
-			params.is_admin = roleFilter.value === 'admin'
-		}
+	if (roleFilter.value !== 'all') {
+		params.is_admin = roleFilter.value === 'admin'
+	}
 
-		if (statusFilter.value !== 'all') {
-			params.is_enabled = statusFilter.value === 'enabled'
-		}
+	if (statusFilter.value !== 'all') {
+		params.is_enabled = statusFilter.value === 'enabled'
+	}
 
-		return params
-	},
-	auto: true,
+	return params
 })
 
 const normalizedMembers = computed<MemberRow[]>(() => {
 	const map = new Map<string, MemberRow>()
 
-	for (const row of (members.data || []) as MemberRow[]) {
+	for (const row of list.rows) {
 		if (!map.has(row.name)) map.set(row.name, row)
 	}
 
 	return Array.from(map.values())
 })
 
-watchDebounced(() => search.value, members.reload, { debounce: 300 })
-watch(() => roleFilter.value, members.reload)
-watch(() => statusFilter.value, members.reload)
+watchDebounced(() => search.value, list.reload, { debounce: 300 })
+watch(() => roleFilter.value, list.reload)
+watch(() => statusFilter.value, list.reload)
 
-const reloadMembers = () => members.reload()
+const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
 
 const LIST_COLUMNS = [
@@ -235,7 +242,7 @@ const enableMembers = createResource({
 	url: 'suite.mail.api.admin.enable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showEnableMembers.value = false
 		raiseToast(__('Accounts enabled.'))
 		listView.value?.toggleAllRows?.()
@@ -258,7 +265,7 @@ const disableMembers = createResource({
 	url: 'suite.mail.api.admin.disable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showDisableMembers.value = false
 		raiseToast(__('Accounts disabled.'))
 		listView.value?.toggleAllRows?.()
@@ -281,7 +288,7 @@ const deleteMembers = createResource({
 	url: 'suite.mail.api.admin.delete_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showDeleteMembers.value = false
 		raiseToast(__('Accounts deleted.'))
 		listView.value?.toggleAllRows?.()

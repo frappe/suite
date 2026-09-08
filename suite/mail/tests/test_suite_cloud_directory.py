@@ -119,19 +119,19 @@ class TestMailSettings(SuiteCloudTestCase):
 class TestDomains(SuiteCloudTestCase):
     def test_domains_are_listed_added_exported_and_deleted(self) -> None:
         self.fake.domains[DOMAIN]["is_verified"] = 0  # walk the domain from pending to active
-        rows = admin.get_domains()
+        rows = admin.get_domains()["items"]
         self.assertEqual(
             [(r["id"], r["name"], r["status"], r["is_verified"]) for r in rows],
             [(DOMAIN, DOMAIN, "Pending Verification", False)],
         )
-        self.assertEqual(admin.get_domains(status="Active"), [])
+        self.assertEqual(admin.get_domains(status="Active")["items"], [])
         self.assertRaisesRegex(frappe.ValidationError, "Unknown domain status", admin.get_domains, status="x")
         # Pending domains are not offered for new objects, and Suite Cloud refuses them anyway.
         self.assertEqual(admin.get_enabled_domains(), [])
         self.assertRaisesRegex(frappe.ValidationError, "not active", admin.add_group, "sales", DOMAIN)
 
         self.assertEqual(admin.add_domain("Beta.test", description="Beta"), "Beta.test")
-        self.assertEqual([r["name"] for r in admin.get_domains(txt="beta")], ["Beta.test"])
+        self.assertEqual([r["name"] for r in admin.get_domains(txt="beta")["items"]], ["Beta.test"])
         self.assertRaisesRegex(frappe.ValidationError, "already exists", admin.add_domain, "Beta.test")
 
         record = admin.get_domain_ownership_record("gamma.test")["ownership_record"]
@@ -159,7 +159,7 @@ class TestDomains(SuiteCloudTestCase):
 
         self.assertTrue(admin.verify_domain(DOMAIN)["is_verified"])
         self.assertEqual(admin.get_domain(DOMAIN)["status"], "Active")
-        self.assertEqual([r["name"] for r in admin.get_domains(status="Active")], [DOMAIN])
+        self.assertEqual([r["name"] for r in admin.get_domains(status="Active")["items"]], [DOMAIN])
         self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
 
         updated = admin.update_domain(
@@ -177,7 +177,11 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual(admin.set_domain_enabled(DOMAIN, True)["status"], "Pending Verification")
 
         admin.delete_domain("Beta.test")
-        self.assertEqual([r["name"] for r in admin.get_domains()], [DOMAIN])
+        self.assertEqual([r["name"] for r in admin.get_domains()["items"]], [DOMAIN])
+        self.assertEqual(
+            admin.get_domains(page_length=20), {"items": admin.get_domains()["items"], "total": 1}
+        )
+        self.assertRaisesRegex(frappe.ValidationError, "Page length", admin.get_domains, page_length=7)
         self.assertRaises(frappe.DoesNotExistError, admin.get_domain, "Beta.test")
 
 
@@ -190,7 +194,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
     def test_group_crud_and_membership(self) -> None:
         group = admin.add_group("sales", DOMAIN, description="Sales", members=[f"alice@{DOMAIN}"], quota_gb=2)
         self.assertEqual(group, f"sales@{DOMAIN}")
-        self.assertEqual([g["name"] for g in admin.get_groups(search="sal")], ["sales"])
+        self.assertEqual([g["name"] for g in admin.get_groups(search="sal")["items"]], ["sales"])
 
         detail = admin.get_group(group)
         self.assertEqual([m["email"] for m in detail["members"]], [f"alice@{DOMAIN}"])
@@ -218,7 +222,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         )
 
         admin.delete_groups([group])
-        self.assertEqual(admin.get_groups(), [])
+        self.assertEqual(admin.get_groups(), {"items": [], "total": 0})
 
     def test_mailing_list_crud_and_recipients(self) -> None:
         mailing_list = admin.add_mailing_list(
@@ -226,7 +230,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         )
         self.assertEqual(mailing_list, f"news@{DOMAIN}")
         self.assertEqual(
-            [(r["name"], r["recipient_count"]) for r in admin.get_mailing_lists()], [("news", 2)]
+            [(r["name"], r["recipient_count"]) for r in admin.get_mailing_lists()["items"]], [("news", 2)]
         )
 
         admin.add_mailing_list_recipients(mailing_list, [f"bob@{DOMAIN}", " ", f"alice@{DOMAIN}"])
@@ -244,7 +248,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         self.assertEqual(self.fake.lists[mailing_list]["description"], "Product news")
 
         admin.delete_mailing_lists([mailing_list])
-        self.assertEqual(admin.get_mailing_lists(), [])
+        self.assertEqual(admin.get_mailing_lists(), {"items": [], "total": 0})
 
 
 class TestMembers(SuiteCloudTestCase):
@@ -330,7 +334,10 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
         self.assertEqual(member["quota"]["total"], 2 * 1024**3)
         # Usage costs a cluster read per account, so the list carries no quota; the detail page does.
-        listed = next(u for u in admin.get_members(search="carol") if u["name"] == self.email)
+        page = admin.get_members(search="carol")
+        self.assertEqual(page["total"], 1)
+        listed = next(u for u in page["items"] if u["name"] == self.email)
+        self.assertEqual(admin.get_members(search="carol", start=20, page_length=20)["items"], [])
         self.assertNotIn("quota", listed)
 
         admin.update_member(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")

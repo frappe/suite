@@ -188,8 +188,8 @@ const canSendInvite = computed(
 )
 
 // The account request stores the ids it was created with; the labels come from the live directory.
-const groups = createResource({ url: 'suite.mail.api.admin.get_groups' })
-const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists' })
+const groups = createResource({ url: 'suite.mail.api.admin.get_groups', params: { page_length: 500 } })
+const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists', params: { page_length: 500 } })
 
 const lines = (value?: string) =>
 	(value || '')
@@ -204,8 +204,8 @@ const labelsFor = (rows: Directory[], ids: string[]) => {
 
 const groupIds = computed(() => lines(accountRequest.value?.doc?.groups))
 const mailingListIds = computed(() => lines(accountRequest.value?.doc?.mailing_lists))
-const groupLabels = computed(() => labelsFor(groups.data || [], groupIds.value))
-const mailingListLabels = computed(() => labelsFor(mailingLists.data || [], mailingListIds.value))
+const groupLabels = computed(() => labelsFor(groups.data?.items || [], groupIds.value))
+const mailingListLabels = computed(() => labelsFor(mailingLists.data?.items || [], mailingListIds.value))
 
 const saveInvite = () => {
 	if (!isEditableInvite.value) return

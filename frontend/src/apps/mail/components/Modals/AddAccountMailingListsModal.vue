@@ -38,11 +38,11 @@ const emit = defineEmits(['reload'])
 
 const listIds = ref<string[]>([])
 
-const lists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists', auto: true })
+const lists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists', params: { page_length: 500 }, auto: true })
 
 // Exclude mailing lists the account is already a recipient of.
 const options = computed(() =>
-	(lists.data || [])
+	(lists.data?.items || [])
 		.filter((ml: { id: string }) => !currentIds.includes(ml.id))
 		.map((ml: { id: string; name: string; email?: string }) => ({ label: ml.email || ml.name, value: ml.id })),
 )

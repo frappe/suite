@@ -38,11 +38,11 @@ const emit = defineEmits(['reload'])
 
 const groupIds = ref<string[]>([])
 
-const groups = createResource({ url: 'suite.mail.api.admin.get_groups', auto: true })
+const groups = createResource({ url: 'suite.mail.api.admin.get_groups', params: { page_length: 500 }, auto: true })
 
 // Exclude groups the member already belongs to.
 const options = computed(() =>
-	(groups.data || [])
+	(groups.data?.items || [])
 		.filter((g: { id: string }) => !currentIds.includes(g.id))
 		.map((g: { id: string; name: string; email?: string }) => ({ label: g.email || g.name, value: g.id })),
 )

@@ -12,18 +12,18 @@
 			</FormControl>
 		</div>
 		<ListView
-			v-if="groups?.data"
+			v-if="list.loaded"
 			class="flex-1"
 			:columns="LIST_COLUMNS"
-			:rows="groups.data"
+			:rows="list.rows"
 			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
 			<ListRows>
-				<template v-if="groups.data.length">
+				<template v-if="list.rows.length">
 					<ListRow
-						v-for="row in groups.data"
+						v-for="row in list.rows"
 						:key="row.id"
 						v-slot="{ column, item }"
 						:row="row"
@@ -38,20 +38,32 @@
 			</ListRows>
 		</ListView>
 		<DashboardListSkeleton v-else :columns="3" />
+		<DashboardPager
+			v-if="list.loaded"
+			:count="list.rows.length"
+			:total="list.total"
+			:page-length="list.pageLength"
+			:has-more="list.hasMore"
+			:loading="list.loading"
+			@update:page-length="list.setPageLength"
+			@load-more="list.loadMore"
+		/>
 	</DashboardLayout>
-	<AddGroupModal v-model="showAddGroup" @reload="groups.reload()" />
+	<AddGroupModal v-model="showAddGroup" @reload="list.reload()" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
-import { FormControl, createResource, usePageMeta } from 'frappe-ui'
+import { FormControl, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { fromNow } from '@/apps/mail/utils/datetime'
+import { usePagedList } from '@/apps/mail/utils/pagedList'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 
 usePageMeta(() => appPageMeta(__('Groups'), 'Mail'))
@@ -59,13 +71,9 @@ usePageMeta(() => appPageMeta(__('Groups'), 'Mail'))
 const showAddGroup = ref(false)
 const search = ref('')
 
-const groups = createResource({
-	url: 'suite.mail.api.admin.get_groups',
-	auto: true,
-	makeParams: () => ({ search: search.value }),
-})
+const list = usePagedList<GroupRow>('suite.mail.api.admin.get_groups', () => ({ search: search.value }))
 
-watchDebounced(() => search.value, groups.reload, { debounce: 300 })
+watchDebounced(() => search.value, list.reload, { debounce: 300 })
 
 type GroupRow = { id: string; name: string; email?: string; description?: string; created_at?: string }
 

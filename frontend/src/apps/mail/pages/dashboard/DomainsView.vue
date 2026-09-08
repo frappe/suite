@@ -21,18 +21,18 @@
 			</div>
 		</div>
 		<ListView
-			v-if="domains?.data"
+			v-if="list.loaded"
 			class="flex-1"
 			:columns="LIST_COLUMNS"
-			:rows="domains.data"
+			:rows="list.rows"
 			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
 			<ListRows>
-				<template v-if="domains.data.length">
+				<template v-if="list.rows.length">
 					<ListRow
-						v-for="row in domains.data"
+						v-for="row in list.rows"
 						:key="row.id"
 						v-slot="{ column, item }"
 						:row="row"
@@ -57,18 +57,29 @@
 			</ListRows>
 		</ListView>
 		<DashboardListSkeleton v-else />
+		<DashboardPager
+			v-if="list.loaded"
+			:count="list.rows.length"
+			:total="list.total"
+			:page-length="list.pageLength"
+			:has-more="list.hasMore"
+			:loading="list.loading"
+			@update:page-length="list.setPageLength"
+			@load-more="list.loadMore"
+		/>
 	</DashboardLayout>
-	<AddDomainModal v-model="showAddDomain" @reload-domains="domains.reload()" />
+	<AddDomainModal v-model="showAddDomain" @reload-domains="list.reload()" />
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import {
-	Badge, FormControl, createResource, usePageMeta } from 'frappe-ui'
+	Badge, FormControl, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { fromNow } from '@/apps/mail/utils/datetime'
+import { usePagedList } from '@/apps/mail/utils/pagedList'
 import {
 	type DomainStatus,
 	domainStatusBadge,
@@ -76,6 +87,7 @@ import {
 } from '@/apps/mail/utils/domainStatus'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 
 usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
@@ -84,17 +96,13 @@ const showAddDomain = ref(false)
 const search = ref('')
 const status = ref<'All' | DomainStatus>('All')
 
-const domains = createResource({
-	url: 'suite.mail.api.admin.get_domains',
-	auto: true,
-	makeParams: () => ({
-		txt: search.value,
-		...(status.value !== 'All' ? { status: status.value } : {}),
-	}),
-})
+const list = usePagedList<DomainRow>('suite.mail.api.admin.get_domains', () => ({
+	txt: search.value,
+	...(status.value !== 'All' ? { status: status.value } : {}),
+}))
 
-watchDebounced(() => search.value, domains.reload, { debounce: 300 })
-watch(() => status.value, domains.reload)
+watchDebounced(() => search.value, list.reload, { debounce: 300 })
+watch(() => status.value, list.reload)
 
 type DomainRow = {
 	id: string

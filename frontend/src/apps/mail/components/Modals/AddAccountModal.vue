@@ -207,12 +207,12 @@ type Directory = { id: string; name: string; email?: string }
 // The account joins these once it exists: immediately when the invite is skipped, otherwise when the
 // invited user verifies and their account is created. Both are read live from Stalwart, so they are
 // fetched when the dialog opens rather than on every visit to the accounts list.
-const groups = createResource({ url: 'suite.mail.api.admin.get_groups' })
-const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists' })
+const groups = createResource({ url: 'suite.mail.api.admin.get_groups', params: { page_length: 500 } })
+const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists', params: { page_length: 500 } })
 
 const toOptions = (rows: Directory[]) => rows.map((r) => ({ label: r.email || r.name, value: r.id }))
-const groupOptions = computed(() => toOptions(groups.data || []))
-const mailingListOptions = computed(() => toOptions(mailingLists.data || []))
+const groupOptions = computed(() => toOptions(groups.data?.items || []))
+const mailingListOptions = computed(() => toOptions(mailingLists.data?.items || []))
 
 const { localeOptions, timeZoneOptions } = useAccountOptions()
 
