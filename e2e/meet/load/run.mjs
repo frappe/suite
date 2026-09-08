@@ -143,11 +143,17 @@ try {
 		report.rotation = { source: "Web Audio oscillator -> GainNode -> MediaStreamDestination", frequencyHz: 440, activeGain: 0.15,
 			silenceGain: 0, windows: [], limitations: "Gain schedule is configured locally; audio energy is reported only when Chromium exposes totalAudioEnergy." };
 		const resourceSamples = [hold.resources];
+		let previousWindow;
 		for (const window of schedule) {
 			await Promise.all(pages.map((page, index) => page.evaluate(({ active }) => window.meetLoad.setAudioActive(active),
 				{ active: window.expectedActiveIds.includes(participants[index].userId) })));
+			const actualStartedAt = new Date();
+			if (previousWindow) {
+				previousWindow.actualEndedAt = actualStartedAt.toISOString();
+				previousWindow.actualDurationMs = actualStartedAt - new Date(previousWindow.actualStartedAt);
+			}
 			const before = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
-			const actualStartedAt = new Date().toISOString(); await wait(window.durationMs);
+			await wait(window.durationMs);
 			const after = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
 			const rotationSample = await sample(`rotation-${window.index}`); resourceSamples.push(rotationSample.resources);
 			const observations = participants.map((participant, index) => ({ userId: participant.userId,
@@ -157,8 +163,13 @@ try {
 				outboundAudioEnergyDelta: finiteDelta(before[index].producerStats[0]?.totalAudioEnergy, after[index].producerStats[0]?.totalAudioEnergy),
 				expectedInbound: values.consume === "all" ? count - 1 : 0,
 				inboundAdvanced: after[index].consumerStats.filter((entry) => entry.bytesReceived > (before[index].consumerStats.find(({ producerId }) => producerId === entry.producerId)?.bytesReceived ?? 0)).length }));
-			report.rotation.windows.push({ ...window, actualStartedAt, observations });
+			previousWindow = { ...window, actualStartedAt: actualStartedAt.toISOString(), observations };
+			report.rotation.windows.push(previousWindow);
 		}
+		await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.setAudioActive(false))));
+		const actualEndedAt = new Date();
+		previousWindow.actualEndedAt = actualEndedAt.toISOString();
+		previousWindow.actualDurationMs = actualEndedAt - new Date(previousWindow.actualStartedAt);
 		report.errors.push(...evaluateRotation(report.rotation.windows, resourceSamples));
 	} else await wait(durationSeconds * 1000);
 	report.participants = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));

@@ -40,9 +40,10 @@ resolution, frame rate, or bitrate. `--consume none` isolates publication.
 `--scenario rotating-audio --media audio` gives every participant one persistent,
 enabled, unpaused microphone Producer sourced from a 440 Hz Web Audio oscillator.
 Only a `GainNode` changes: `--talkers` (default 10, never above `--count`) rotate on
-the deterministic `--rotation-interval-ms` cadence. Reports include each expected
-active set, per-publisher outbound RTP and optional audio-energy deltas, per-receiver
-inbound continuity, Producer IDs, and SFU Producer/Consumer gauges for every window.
+the configured `--rotation-interval-ms` cadence. Reports include each expected
+active set, actual gain-state boundaries and duration, per-publisher outbound RTP and
+optional audio-energy deltas, per-receiver inbound continuity, Producer IDs, and SFU
+Producer/Consumer gauges for every window.
 Configured gain is not proof of acoustic delivery; `totalAudioEnergy` is recorded
 when Chromium exposes it, otherwise the report says `null`.
 
