@@ -7,6 +7,7 @@ type Media = "audio" | "video" | "both" | "none";
 interface Config {
 	sfuUrl: string; meetingId: string; token: string; userId: string; name: string;
 	media: Media; consume: boolean; renderMedia: boolean; rotatingAudio: boolean; audioActive: boolean;
+	representativeCamera: boolean;
 }
 interface ProducerEvent { producerId: string; participantId?: string; user_id?: string; id?: string; }
 
@@ -18,6 +19,8 @@ let receivePending: Promise<Transport> | undefined;
 let stream: MediaStream | undefined;
 let audioContext: AudioContext | undefined;
 let audioGain: GainNode | undefined;
+let cameraCanvas: HTMLCanvasElement | undefined;
+let cameraTimer: number | undefined;
 let phase = "idle";
 let joinMs: number | null = null;
 let firstRemoteMediaMs: number | null = null;
@@ -25,6 +28,7 @@ let started = 0;
 let stopping = false;
 const producers = new Map<string, Producer>();
 const consumers = new Map<string, Consumer>();
+const renderedVideos = new Map<string, HTMLVideoElement>();
 const pending = new Map<string, Promise<void>>();
 const errors: string[] = [];
 
@@ -63,9 +67,13 @@ async function subscribe(config: Config, event: ProducerEvent) {
 		const consumer = await transport.consume(options);
 		if (stopping) return consumer.close();
 		consumers.set(producerId, consumer);
-		if (config.renderMedia) {
+		if (config.renderMedia || (config.representativeCamera && consumer.kind === "video" && !renderedVideos.size)) {
 			const element = document.createElement(consumer.kind);
 			element.autoplay = true; element.muted = true; element.srcObject = new MediaStream([consumer.track]);
+			if (consumer.kind === "video") {
+				const video = element as HTMLVideoElement; renderedVideos.set(producerId, video);
+				if (!config.renderMedia) Object.assign(video.style, { position: "fixed", left: "-2px", width: "1px", height: "1px" });
+			}
 			document.querySelector("#media")?.append(element); void element.play();
 		}
 	})();
@@ -85,6 +93,16 @@ async function publish(config: Config) {
 		oscillator.frequency.value = 440; audioGain.gain.value = config.audioActive ? 0.15 : 0;
 		oscillator.connect(audioGain).connect(destination); oscillator.start();
 		stream = destination.stream;
+	} else if (config.representativeCamera) {
+		cameraCanvas = document.createElement("canvas"); cameraCanvas.width = 1280; cameraCanvas.height = 720;
+		const context = cameraCanvas.getContext("2d")!; let frame = 0;
+		const draw = () => {
+			const hue = frame * 3 % 360; context.fillStyle = `hsl(${hue} 60% 35%)`; context.fillRect(0, 0, 1280, 720);
+			context.fillStyle = "white"; context.font = "48px monospace"; context.fillText(`${config.userId} frame ${frame}`, 40, 80);
+			context.fillRect(frame * 17 % 1180, 300, 100, 100); frame++;
+		};
+		draw(); cameraTimer = window.setInterval(draw, 1000 / 30);
+		stream = cameraCanvas.captureStream(30);
 	} else stream = await navigator.mediaDevices.getUserMedia({ audio, video });
 	const options = await request<TransportOptions>("create_webrtc_transport", { direction: "send", encryptionEnabled: false });
 	send = device!.createSendTransport(options); wire(send);
@@ -129,17 +147,34 @@ async function start(config: Config) {
 async function status() {
 	let bytesSent = 0, bytesReceived = 0, packetsLost = 0, packetsReceived = 0;
 	const producerStats = [], consumerStats = [];
-	for (const [id, endpoint] of producers) { let bytes = 0, totalAudioEnergy: number | null = null;
+	for (const [id, endpoint] of producers) { let bytes = 0, framesEncoded: number | null = null, framesPerSecond: number | null = null;
+		let totalAudioEnergy: number | null = null, sourceWidth: number | null = null, sourceHeight: number | null = null, sourceFramesPerSecond: number | null = null;
 		for (const report of (await endpoint.getStats()).values()) {
-			if (report.type === "outbound-rtp" && !report.isRemote) bytes += Number(report.bytesSent || 0);
-			if (report.type === "media-source" && Number.isFinite(report.totalAudioEnergy)) totalAudioEnergy = Number(report.totalAudioEnergy);
-		} bytesSent += bytes; producerStats.push({ id, bytesSent: bytes, totalAudioEnergy }); }
-	for (const [producerId, endpoint] of consumers) { let bytes = 0;
+			if (report.type === "outbound-rtp" && !report.isRemote) {
+				bytes += Number(report.bytesSent || 0); framesEncoded = Number.isFinite(report.framesEncoded) ? Number(report.framesEncoded) : framesEncoded;
+				framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
+			}
+			if (report.type === "media-source") {
+				totalAudioEnergy = Number.isFinite(report.totalAudioEnergy) ? Number(report.totalAudioEnergy) : totalAudioEnergy;
+				sourceWidth = Number.isFinite(report.width) ? Number(report.width) : sourceWidth; sourceHeight = Number.isFinite(report.height) ? Number(report.height) : sourceHeight;
+				sourceFramesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : sourceFramesPerSecond;
+			}
+		} bytesSent += bytes; producerStats.push({ id, kind: endpoint.kind, paused: endpoint.paused, trackEnabled: endpoint.track?.enabled,
+			trackReadyState: endpoint.track?.readyState, bytesSent: bytes, framesEncoded, framesPerSecond, totalAudioEnergy,
+			mediaSource: { width: sourceWidth, height: sourceHeight, framesPerSecond: sourceFramesPerSecond } }); }
+	for (const [producerId, endpoint] of consumers) { let bytes = 0, framesDecoded: number | null = null, frameWidth: number | null = null;
+		let frameHeight: number | null = null, framesPerSecond: number | null = null;
 		for (const report of (await endpoint.getStats()).values()) if (report.type === "inbound-rtp" && !report.isRemote) {
 			bytes += Number(report.bytesReceived || 0); packetsLost += Number(report.packetsLost || 0); packetsReceived += Number(report.packetsReceived || 0);
-		} bytesReceived += bytes; consumerStats.push({ producerId, bytesReceived: bytes }); }
+			framesDecoded = Number.isFinite(report.framesDecoded) ? Number(report.framesDecoded) : framesDecoded;
+			frameWidth = Number.isFinite(report.frameWidth) ? Number(report.frameWidth) : frameWidth; frameHeight = Number.isFinite(report.frameHeight) ? Number(report.frameHeight) : frameHeight;
+			framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
+		} bytesReceived += bytes; consumerStats.push({ producerId, kind: endpoint.kind, paused: endpoint.paused, trackEnabled: endpoint.track.enabled,
+			trackReadyState: endpoint.track.readyState, bytesReceived: bytes, framesDecoded, frameWidth, frameHeight, framesPerSecond,
+			browserDecodedFrames: renderedVideos.get(producerId)?.webkitDecodedFrameCount ?? null }); }
 	if (bytesReceived && firstRemoteMediaMs === null) firstRemoteMediaMs = performance.now() - started;
 	return { phase, joinMs, firstRemoteMediaMs, producerCount: producers.size, consumerCount: consumers.size,
+		sendTransportState: send?.connectionState ?? null, receiveTransportState: receive?.connectionState ?? null,
 		bytesSent, bytesReceived, packetsLost, packetsReceived, errors: [...errors],
 		producerStats, consumerStats,
 		capture: stream?.getTracks().map((track) => ({ kind: track.kind, settings: track.getSettings() })) || [] };
@@ -152,13 +187,18 @@ function setAudioActive(active: boolean) {
 
 async function stop() {
 	stopping = true; await Promise.allSettled(pending.values());
+	if (cameraTimer !== undefined) window.clearInterval(cameraTimer);
 	for (const endpoint of consumers.values()) endpoint.close();
 	for (const endpoint of producers.values()) endpoint.close();
 	receive?.close(); send?.close(); stream?.getTracks().forEach((track) => track.stop());
 	await audioContext?.close();
 	if (socket?.connected) socket.emit("leave_room", {}); socket?.disconnect(); phase = "stopped";
+	cameraCanvas?.remove();
 	return { localMediaReleased: !stream || stream.getTracks().every((track) => track.readyState === "ended") };
 }
 
-declare global { interface Window { meetLoad: { start: typeof start; status: typeof status; stop: typeof stop; setAudioActive: typeof setAudioActive } } }
+declare global {
+	interface HTMLVideoElement { webkitDecodedFrameCount?: number }
+	interface Window { meetLoad: { start: typeof start; status: typeof status; stop: typeof stop; setAudioActive: typeof setAudioActive } }
+}
 window.meetLoad = { start, status, stop, setAudioActive };

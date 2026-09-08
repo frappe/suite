@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { boundedInteger, containsJwt, delta, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
+import { boundedInteger, containsJwt, delta, evaluateCameras, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
 
 test("target safety defaults to loopback and rejects shared or remote targets", () => {
 	assert.deepEqual(targetMetadata("http://127.0.0.1:4317/", false), {
@@ -32,6 +32,16 @@ test("rotation evaluation uses observed RTP continuity, stable IDs, and stable r
 test("optional audio-energy deltas remain null when Chromium omits the stat", () => {
 	assert.equal(finiteDelta(0.25, 0.75), 0.5);
 	assert.equal(finiteDelta(undefined, undefined), null);
+});
+
+test("camera evaluation independently requires stable progressing publication, delivery, decode, and resources", () => {
+	const publisher = { userId: "a", publisher: true, producerIdsBefore: ["p1"], producerIdsAfter: ["p1"], producerReady: true,
+		outboundBytesDelta: 10, framesEncodedDelta: 3, expectedReceivers: 1, receiverCount: 1, inboundAdvanced: 1,
+		decodedAvailable: true, decodedAdvanced: 1 };
+	assert.deepEqual(evaluateCameras([publisher], [{ producers: 2, consumers: 2 }], { producers: 2, consumers: 2 }), []);
+	assert.match(evaluateCameras([{ ...publisher, producerIdsAfter: ["p2"], outboundBytesDelta: 0, framesEncodedDelta: 0,
+		receiverCount: 0, inboundAdvanced: 0, decodedAdvanced: 0 }], [{ producers: 1, consumers: 0 }],
+	{ producers: 2, consumers: 2 }).join("; "), /not stable.*outbound RTP.*framesEncoded.*received 0\/1.*inbound RTP.*decoded frames.*resources/);
 });
 
 test("bounds reject fractions and values outside the declared range", () => {

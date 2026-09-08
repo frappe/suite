@@ -32,6 +32,20 @@ SFU_LOAD_JWT_SECRET=local-secret SFU_METRICS_TOKEN=local-metrics \
   --output /tmp/meet-load-local.json
 ```
 
+`--scenario representative-camera` publishes deterministic first `--cameras`
+(default `min(40, count)`, maximum 40) Participant Connections and leaves the rest
+idle. Each camera is a moving, time-coded 1280x720 canvas captured at a requested 30
+fps; it does not use Chromium's generic fake camera. Reports keep requested source
+properties separate from observed track settings, sender `outbound-rtp` bytes,
+`framesEncoded` and fps, `media-source` dimensions/fps, and every eager receiver's
+`inbound-rtp` bytes, decoded frames, dimensions, and fps. Missing browser stats are
+`null`; short runs do not establish bitrate or sustained fps. Producer IDs, enabled
+and unpaused state, RTP/frame progression, decoded delivery when exposed, and SFU
+Producer/Consumer counts are checked across the hold window. One muted 1x1 off-screen
+video probe per Participant Connection drives playback and exposes Chromium's browser
+decoded-frame count; this avoids O(N) rendered elements. Full rendering remains off
+unless explicitly requested.
+
 `--media audio|video|both` uses Chromium's synthetic fake devices. Reports retain
 actual capture settings and observed RTP byte counters, but synthetic devices do not
 model representative speech/cameras and requested settings do not prove delivered
@@ -57,8 +71,8 @@ cleanup outcome.
 
 ## Progressive Scenarios
 
-Admission plus idle hold, uniform synthetic media, and rotating audio are implemented.
-The remaining representative suite is forty 720p30 cameras, two 1080p30 screens
+Admission plus idle hold, uniform synthetic media, rotating audio, and representative
+camera measurement are implemented. The remaining representative suite is two 1080p30 screens
 capped at 4 Mbps, and one Recorder Endpoint. Pinned representative video, actual
 delivered video constraints, screen publication, and recorder support must be
 implemented and measured before those properties are claimed.
