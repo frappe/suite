@@ -1372,6 +1372,36 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual((again.media_nodes_created, again.deck_previews_created), (1, 1))
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["cover"])
 
+    # -- defect 14: an identical rerun reports the same media count
+
+    def test_a_borrowed_node_still_counts_on_an_identical_rerun(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        template_url = "/private/files/template-logo.png"
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[
+                SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": template_url}])),
+            ],
+            media=[
+                media("template-file", deck_name=template.name, blob="blob-a", url=template_url),
+                media("own-file", deck_name=consumer.name, blob="blob-b", url="/files/own.png"),
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-b", b"b", mime_type="image/png")
+
+        first = convert_slides_and_templates(env)
+        children = self.media_children(target, consumer.node)
+        second = convert_slides_and_templates(env)
+
+        self.assertEqual(first.media_nodes_created, 3)
+        self.assertEqual(second.media_nodes_created, first.media_nodes_created)
+        self.assertEqual(self.media_children(target, consumer.node), children)
+
 
 if __name__ == "__main__":
     unittest.main()

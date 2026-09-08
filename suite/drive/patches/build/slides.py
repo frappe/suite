@@ -150,8 +150,9 @@ def _convert_deck(env, deck, batch_size, result):
     preview_created = _preview(env, deck, thumbnail)
     target.commit()
     # §13 counts a validated non-null `(deck node, blob)` outcome once, whether
-    # a local group or an adopted reference produced it.
-    created = len(nodes | borrowed_nodes)
+    # a local group, an adopted reference, or a node an earlier run already
+    # wrote into the body produced it.
+    created = len(nodes | borrowed_nodes | _settled_nodes(references, writer.children))
 
     updates = []
     for slide in slides:
@@ -713,6 +714,22 @@ def _named_by(references, row, host=""):
     """Whether a slide body names this File, through its equivalent spellings."""
     aliases = _aliases(row, host)
     return any(_path_variants(value, host) & aliases for value in references)
+
+
+def _settled_nodes(references, children):
+    """The deck's media children a stored slide body already names by id.
+
+    Run 1 mints a node and writes its id into the body. Run 2 reads that id,
+    finds no `file_url` behind it, and adopts nothing, but the node still
+    stands. §14.9 counts the target rows the bodies name, so an identical
+    rerun reports the count the first run reported.
+    """
+    settled = {
+        child["name"]
+        for child in children
+        if child.get("kind") == "file" and child.get("blob") and child.get("state") == "Active"
+    }
+    return settled & references
 
 
 def _local_url(value, host=""):
