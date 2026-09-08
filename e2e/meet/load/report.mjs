@@ -53,3 +53,35 @@ export function percentile(values, fraction) {
 export function containsJwt(value) {
 	return /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(JSON.stringify(value));
 }
+
+export function finiteDelta(before, after) {
+	return Number.isFinite(before) && Number.isFinite(after) ? after - before : null;
+}
+
+export function rotationWindows(participantIds, talkers, durationMs, intervalMs) {
+	const windows = [];
+	for (let startMs = 0, index = 0; startMs < durationMs; startMs += intervalMs, index++) {
+		windows.push({ index, startMs, durationMs: Math.min(intervalMs, durationMs - startMs),
+			expectedActiveIds: Array.from({ length: talkers }, (_, offset) =>
+				participantIds[(index * talkers + offset) % participantIds.length]) });
+	}
+	return windows;
+}
+
+export function evaluateRotation(windows, resourceSamples) {
+	const errors = [];
+	for (const window of windows) {
+		for (const participant of window.observations) {
+			if (participant.producerIdsBefore.join() !== participant.producerIdsAfter.join())
+				errors.push(`window ${window.index}: ${participant.userId} producer IDs changed`);
+			if (participant.outboundBytesDelta <= 0)
+				errors.push(`window ${window.index}: ${participant.userId} outbound RTP did not advance`);
+			if (participant.expectedInbound > 0 && participant.inboundAdvanced !== participant.expectedInbound)
+				errors.push(`window ${window.index}: ${participant.userId} inbound RTP advanced for ${participant.inboundAdvanced}/${participant.expectedInbound} publishers`);
+		}
+	}
+	const expected = resourceSamples[0];
+	if (resourceSamples.some((sample) => sample.producers !== expected.producers || sample.consumers !== expected.consumers))
+		errors.push("producer or consumer resources changed during rotation");
+	return errors;
+}

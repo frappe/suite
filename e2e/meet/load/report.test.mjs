@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { boundedInteger, containsJwt, delta, parseResourceMetrics, percentile, targetMetadata } from "./report.mjs";
+import { boundedInteger, containsJwt, delta, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
 
 test("target safety defaults to loopback and rejects shared or remote targets", () => {
 	assert.deepEqual(targetMetadata("http://127.0.0.1:4317/", false), {
@@ -10,6 +10,28 @@ test("target safety defaults to loopback and rejects shared or remote targets", 
 	assert.throws(() => targetMetadata("http://127.0.0.1:3000", false), /shared SFU/);
 	assert.throws(() => targetMetadata("https://sfu.example.com", false), /allow-remote-target/);
 	assert.equal(targetMetadata("https://sfu.example.com/base", true).loopback, false);
+});
+
+test("rotation schedule selects bounded talkers deterministically and keeps the final partial window", () => {
+	assert.deepEqual(rotationWindows(["a", "b", "c", "d"], 2, 2500, 1000), [
+		{ index: 0, startMs: 0, durationMs: 1000, expectedActiveIds: ["a", "b"] },
+		{ index: 1, startMs: 1000, durationMs: 1000, expectedActiveIds: ["c", "d"] },
+		{ index: 2, startMs: 2000, durationMs: 500, expectedActiveIds: ["a", "b"] },
+	]);
+});
+
+test("rotation evaluation uses observed RTP continuity, stable IDs, and stable resources", () => {
+	const participant = { userId: "a", producerIdsBefore: ["p1"], producerIdsAfter: ["p1"],
+		outboundBytesDelta: 10, expectedInbound: 1, inboundAdvanced: 1 };
+	assert.deepEqual(evaluateRotation([{ index: 0, observations: [participant] }],
+		[{ producers: 2, consumers: 2 }, { producers: 2, consumers: 2 }]), []);
+	assert.match(evaluateRotation([{ index: 0, observations: [{ ...participant, producerIdsAfter: ["p2"], outboundBytesDelta: 0 }] }],
+		[{ producers: 2, consumers: 2 }, { producers: 3, consumers: 2 }]).join("; "), /producer IDs changed.*outbound RTP.*resources changed/);
+});
+
+test("optional audio-energy deltas remain null when Chromium omits the stat", () => {
+	assert.equal(finiteDelta(0.25, 0.75), 0.5);
+	assert.equal(finiteDelta(undefined, undefined), null);
 });
 
 test("bounds reject fractions and values outside the declared range", () => {

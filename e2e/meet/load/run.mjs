@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { createServer } from "vite";
-import { boundedInteger, containsJwt, delta, parseResourceMetrics, percentile, targetMetadata } from "./report.mjs";
+import { boundedInteger, containsJwt, delta, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const { values } = parseArgs({ options: {
@@ -16,6 +16,9 @@ const { values } = parseArgs({ options: {
 	site: { type: "string", default: "load.test" },
 	count: { type: "string", default: "2" },
 	media: { type: "string", default: "none" },
+	scenario: { type: "string", default: "uniform" },
+	talkers: { type: "string" },
+	"rotation-interval-ms": { type: "string", default: "1000" },
 	consume: { type: "string", default: "all" },
 	"render-media": { type: "boolean", default: false },
 	"ramp-ms": { type: "string", default: "250" },
@@ -31,7 +34,11 @@ const count = boundedInteger(values.count, "count", 1, 150);
 const durationSeconds = boundedInteger(values["duration-seconds"], "duration-seconds", 1, 600);
 const cleanupSeconds = boundedInteger(values["cleanup-seconds"], "cleanup-seconds", 1, 90);
 const rampMs = boundedInteger(values["ramp-ms"], "ramp-ms", 0, 5000);
+const rotationIntervalMs = boundedInteger(values["rotation-interval-ms"], "rotation-interval-ms", 250, 60_000);
+const talkers = boundedInteger(values.talkers ?? String(Math.min(10, count)), "talkers", 1, count);
 if (!["none", "audio", "video", "both"].includes(values.media)) throw new Error("media must be none, audio, video, or both");
+if (!["uniform", "rotating-audio"].includes(values.scenario)) throw new Error("scenario must be uniform or rotating-audio");
+if (values.scenario === "rotating-audio" && values.media !== "audio") throw new Error("rotating-audio requires --media audio");
 if (!["all", "none"].includes(values.consume)) throw new Error("consume must be all or none");
 if (!/^load-[0-9a-f-]{36}$/.test(values["meeting-id"]) || !/^load(?:[.-][a-z0-9-]+)*\.test$/i.test(values.site)) {
 	throw new Error("Use the generated load UUID room and a load*.test site namespace");
@@ -48,6 +55,7 @@ const report = {
 	startedAt: new Date().toISOString(),
 	target,
 	config: { count, durationSeconds, cleanupSeconds, rampMs, media: values.media, consume: values.consume,
+		scenario: values.scenario, talkers, rotationIntervalMs,
 		renderMedia: values["render-media"], meetingId: values["meeting-id"], site: values.site,
 		authSource: values["token-file"] ? "token-file" : "environment-signed" },
 	host: { hostname: hostname(), platform: platform(), release: release(), node: process.version,
@@ -124,12 +132,35 @@ try {
 		page.on("pageerror", () => report.errors.push(`participant ${index + 1}: page error`));
 		await page.goto(clientUrl, { waitUntil: "networkidle", timeout: 15_000 });
 		await page.evaluate((config) => window.meetLoad.start(config), { ...participant, sfuUrl: target.endpoint,
-			meetingId: values["meeting-id"], media: values.media, consume: values.consume === "all", renderMedia: values["render-media"] });
+			meetingId: values["meeting-id"], media: values.media, consume: values.consume === "all", renderMedia: values["render-media"],
+			rotatingAudio: values.scenario === "rotating-audio", audioActive: index < talkers });
 		if (rampMs) await wait(rampMs);
 	}
 	const hold = await sample("hold");
 	if (hold.health.rooms !== 1 || hold.health.peers !== count) throw new Error("SFU hold counts do not match this run");
-	await wait(durationSeconds * 1000);
+	if (values.scenario === "rotating-audio") {
+		const schedule = rotationWindows(participants.map(({ userId }) => userId), talkers, durationSeconds * 1000, rotationIntervalMs);
+		report.rotation = { source: "Web Audio oscillator -> GainNode -> MediaStreamDestination", frequencyHz: 440, activeGain: 0.15,
+			silenceGain: 0, windows: [], limitations: "Gain schedule is configured locally; audio energy is reported only when Chromium exposes totalAudioEnergy." };
+		const resourceSamples = [hold.resources];
+		for (const window of schedule) {
+			await Promise.all(pages.map((page, index) => page.evaluate(({ active }) => window.meetLoad.setAudioActive(active),
+				{ active: window.expectedActiveIds.includes(participants[index].userId) })));
+			const before = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
+			const actualStartedAt = new Date().toISOString(); await wait(window.durationMs);
+			const after = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
+			const rotationSample = await sample(`rotation-${window.index}`); resourceSamples.push(rotationSample.resources);
+			const observations = participants.map((participant, index) => ({ userId: participant.userId,
+				expectedActive: window.expectedActiveIds.includes(participant.userId),
+				producerIdsBefore: before[index].producerStats.map(({ id }) => id).sort(), producerIdsAfter: after[index].producerStats.map(({ id }) => id).sort(),
+				outboundBytesDelta: after[index].bytesSent - before[index].bytesSent,
+				outboundAudioEnergyDelta: finiteDelta(before[index].producerStats[0]?.totalAudioEnergy, after[index].producerStats[0]?.totalAudioEnergy),
+				expectedInbound: values.consume === "all" ? count - 1 : 0,
+				inboundAdvanced: after[index].consumerStats.filter((entry) => entry.bytesReceived > (before[index].consumerStats.find(({ producerId }) => producerId === entry.producerId)?.bytesReceived ?? 0)).length }));
+			report.rotation.windows.push({ ...window, actualStartedAt, observations });
+		}
+		report.errors.push(...evaluateRotation(report.rotation.windows, resourceSamples));
+	} else await wait(durationSeconds * 1000);
 	report.participants = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
 	for (const [index, participant] of report.participants.entries()) {
 		if (participant.phase !== "running") report.errors.push(`participant ${index + 1}: not running`);

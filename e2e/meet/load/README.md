@@ -37,6 +37,15 @@ actual capture settings and observed RTP byte counters, but synthetic devices do
 model representative speech/cameras and requested settings do not prove delivered
 resolution, frame rate, or bitrate. `--consume none` isolates publication.
 
+`--scenario rotating-audio --media audio` gives every participant one persistent,
+enabled, unpaused microphone Producer sourced from a 440 Hz Web Audio oscillator.
+Only a `GainNode` changes: `--talkers` (default 10, never above `--count`) rotate on
+the deterministic `--rotation-interval-ms` cadence. Reports include each expected
+active set, per-publisher outbound RTP and optional audio-energy deltas, per-receiver
+inbound continuity, Producer IDs, and SFU Producer/Consumer gauges for every window.
+Configured gain is not proof of acoustic delivery; `totalAudioEnergy` is recorded
+when Chromium exposes it, otherwise the report says `null`.
+
 Server measurements need a dedicated authorized SFU, valid full-scope participant
 tokens matching the generated room/site (or its signing secret), and authenticated
 Prometheus metrics. A token file contains exactly `--count` JSONL rows shaped as
@@ -47,12 +56,11 @@ cleanup outcome.
 
 ## Progressive Scenarios
 
-Only admission plus idle hold and uniform synthetic media are implemented. The
-intended representative suite remains: participant admission plus idle, ten rotating
-audio talkers, forty 720p30 cameras, two 1080p30 screens capped at 4 Mbps, and one
-Recorder Endpoint. Rotation, pinned representative media, actual delivered media
-constraints, screen publication, and recorder support must be implemented and
-measured before those scenario names or properties are claimed.
+Admission plus idle hold, uniform synthetic media, and rotating audio are implemented.
+The remaining representative suite is forty 720p30 cameras, two 1080p30 screens
+capped at 4 Mbps, and one Recorder Endpoint. Pinned representative video, actual
+delivered video constraints, screen publication, and recorder support must be
+implemented and measured before those properties are claimed.
 
 ## Verification
 
