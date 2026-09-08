@@ -22,11 +22,29 @@
   "column_break_njvq",
   "spamd_scanning_mode",
   "spamd_hybrid_scanning_threshold",
+  "accounts_tab",
   "defaults_section",
   "default_disk_quota_gb",
   "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
+  "signup_section",
+  "allow_signup",
+  "column_break_daqm",
+  "signup_domains",
+  "event_invites_tab",
+  "event_invites_section",
+  "custom_event_invites",
+  "expand_mailing_list_participants",
+  "max_mailing_list_participants",
+  "jmap_push_tab",
+  "section_break_qvpk",
+  "enable_jmap_push_encryption",
+  "column_break_wpvf",
+  "jmap_push_auth",
+  "jmap_push_private_key",
+  "jmap_push_p256dh",
+  "advanced_tab",
   "limits_section",
   "exchange_max_export",
   "exchange_max_import",
@@ -38,12 +56,6 @@
   "column_break_cazi",
   "process_pending_emails_batch_size",
   "process_pending_emails_max_batch_size",
-  "logs_section",
-  "log_level",
-  "column_break_logging_1",
-  "log_max_file_size_mb",
-  "column_break_logging_2",
-  "log_file_count",
   "timeouts_seconds_section",
   "exchange_export_timeout",
   "exchange_import_timeout",
@@ -51,28 +63,18 @@
   "scan_message_timeout",
   "column_break_wvdy",
   "process_pending_emails_timeout",
-  "signup_tab",
-  "allow_signup",
-  "column_break_daqm",
-  "signup_domains",
-  "jmap_push_tab",
-  "section_break_qvpk",
-  "enable_jmap_push_encryption",
-  "column_break_wpvf",
-  "jmap_push_auth",
-  "jmap_push_private_key",
-  "jmap_push_p256dh",
-  "event_invites_tab",
-  "event_invites_section",
-  "custom_event_invites",
-  "expand_mailing_list_participants",
-  "max_mailing_list_participants"
+  "logs_section",
+  "log_level",
+  "column_break_logging_1",
+  "log_max_file_size_mb",
+  "column_break_logging_2",
+  "log_file_count"
  ],
  "fields": [
   {
    "fieldname": "config_tab",
    "fieldtype": "Tab Break",
-   "label": "Config"
+   "label": "Mail Server"
   },
   {
    "fieldname": "jmap_section",
@@ -189,11 +191,14 @@
    "read_only_depends_on": "eval: doc.spamd_scanning_mode != \"Hybrid Approach\""
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
+   "fieldname": "accounts_tab",
+   "fieldtype": "Tab Break",
+   "label": "Accounts"
+  },
+  {
    "fieldname": "defaults_section",
    "fieldtype": "Section Break",
-   "label": "Defaults"
+   "label": "Account Defaults"
   },
   {
    "default": "1",
@@ -224,8 +229,108 @@
    "reqd": 1
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
+   "fieldname": "signup_section",
+   "fieldtype": "Section Break",
+   "label": "Signup"
+  },
+  {
+   "default": "0",
+   "description": "Allows users to sign up and select a preferred username.",
+   "fieldname": "allow_signup",
+   "fieldtype": "Check",
+   "label": "Allow Signup"
+  },
+  {
+   "fieldname": "column_break_daqm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.allow_signup",
+   "description": "Domains allowed for signup.",
+   "fieldname": "signup_domains",
+   "fieldtype": "Small Text",
+   "label": "Signup Domains",
+   "mandatory_depends_on": "eval: doc.allow_signup"
+  },
+  {
+   "fieldname": "event_invites_tab",
+   "fieldtype": "Tab Break",
+   "label": "Event Invites"
+  },
+  {
+   "fieldname": "event_invites_section",
+   "fieldtype": "Section Break",
+   "label": "Event Invitations"
+  },
+  {
+   "default": "1",
+   "description": "Send calendar invitation, update, and cancellation emails from Frappe Mail using the templates below, with .ics attachments and HTTP RSVP links. When disabled, the JMAP server handles scheduling messages instead.",
+   "fieldname": "custom_event_invites",
+   "fieldtype": "Check",
+   "label": "Send Custom Event Invitations"
+  },
+  {
+   "default": "1",
+   "description": "Invite a mailing list's members individually when the list address is added to an event. The server expands a mailing list only when delivering mail, so an invitation addressed to the list itself reaches every member's inbox but is never added to their calendars.",
+   "fieldname": "expand_mailing_list_participants",
+   "fieldtype": "Check",
+   "label": "Expand Mailing List Participants"
+  },
+  {
+   "default": "100",
+   "depends_on": "expand_mailing_list_participants",
+   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Only members added by expansion are left out once this is reached, and they are reported; participants invited by name are always kept.",
+   "fieldname": "max_mailing_list_participants",
+   "fieldtype": "Int",
+   "label": "Max Mailing List Participants"
+  },
+  {
+   "fieldname": "jmap_push_tab",
+   "fieldtype": "Tab Break",
+   "label": "JMAP Push"
+  },
+  {
+   "fieldname": "section_break_qvpk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
+   "fieldname": "enable_jmap_push_encryption",
+   "fieldtype": "Check",
+   "label": "Enable Push Encryption"
+  },
+  {
+   "fieldname": "column_break_wpvf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Authentication secret for JMAP PushSubscription encryption.",
+   "fieldname": "jmap_push_auth",
+   "fieldtype": "Password",
+   "label": "JMAP Push Auth Secret",
+   "read_only": 1
+  },
+  {
+   "description": "ECDH P-256 private key used to decrypt incoming encrypted push notifications.",
+   "fieldname": "jmap_push_private_key",
+   "fieldtype": "Password",
+   "label": "JMAP Push Private Key",
+   "read_only": 1
+  },
+  {
+   "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
+   "fieldname": "jmap_push_p256dh",
+   "fieldtype": "Data",
+   "label": "JMAP Push Key (P256DH)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "advanced_tab",
+   "fieldtype": "Tab Break",
+   "label": "Advanced"
+  },
+  {
    "fieldname": "limits_section",
    "fieldtype": "Section Break",
    "label": "Limits"
@@ -295,48 +400,6 @@
    "reqd": 1
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "logs_section",
-   "fieldtype": "Section Break",
-   "label": "Logging"
-  },
-  {
-   "default": "INFO",
-   "description": "Applies to every mail log: admin, push, inbound, outbound and exchange. DEBUG traces every step; use it only while investigating a problem.",
-   "fieldname": "log_level",
-   "fieldtype": "Select",
-   "label": "Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_logging_1",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "5",
-   "description": "A log file is rotated once it grows past this size.",
-   "fieldname": "log_max_file_size_mb",
-   "fieldtype": "Int",
-   "label": "Max Log File Size (MB)",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_logging_2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "10",
-   "description": "Rotated files kept per log; the oldest is deleted when a new one is started.",
-   "fieldname": "log_file_count",
-   "fieldtype": "Int",
-   "label": "Log Files Kept",
-   "reqd": 1
-  },
-  {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
    "fieldname": "timeouts_seconds_section",
    "fieldtype": "Section Break",
    "label": "Timeouts (Seconds)"
@@ -378,107 +441,48 @@
    "reqd": 1
   },
   {
-   "fieldname": "signup_tab",
-   "fieldtype": "Tab Break",
-   "label": "Signup"
-  },
-  {
-   "default": "0",
-   "description": "Allows users to sign up and select a preferred username.",
-   "fieldname": "allow_signup",
-   "fieldtype": "Check",
-   "label": "Allow Signup"
-  },
-  {
-   "fieldname": "column_break_daqm",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval: doc.allow_signup",
-   "description": "Domains allowed for signup.",
-   "fieldname": "signup_domains",
-   "fieldtype": "Small Text",
-   "label": "Signup Domains",
-   "mandatory_depends_on": "eval: doc.allow_signup"
-  },
-  {
-   "fieldname": "jmap_push_tab",
-   "fieldtype": "Tab Break",
-   "label": "JMAP Push"
-  },
-  {
-   "fieldname": "section_break_qvpk",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "0",
-   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
-   "fieldname": "enable_jmap_push_encryption",
-   "fieldtype": "Check",
-   "label": "Enable Push Encryption"
-  },
-  {
-   "fieldname": "column_break_wpvf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Authentication secret for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_auth",
-   "fieldtype": "Password",
-   "label": "JMAP Push Auth Secret",
-   "read_only": 1
-  },
-  {
-   "description": "ECDH P-256 private key used to decrypt incoming encrypted push notifications.",
-   "fieldname": "jmap_push_private_key",
-   "fieldtype": "Password",
-   "label": "JMAP Push Private Key",
-   "read_only": 1
-  },
-  {
-   "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_p256dh",
-   "fieldtype": "Data",
-   "label": "JMAP Push Key (P256DH)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "event_invites_tab",
-   "fieldtype": "Tab Break",
-   "label": "Event Invites"
-  },
-  {
-   "fieldname": "event_invites_section",
+   "fieldname": "logs_section",
    "fieldtype": "Section Break",
-   "label": "Event Invitations"
+   "label": "Logging"
   },
   {
-   "default": "1",
-   "description": "Send calendar invitation, update, and cancellation emails from Frappe Mail using the templates below, with .ics attachments and HTTP RSVP links. When disabled, the JMAP server handles scheduling messages instead.",
-   "fieldname": "custom_event_invites",
-   "fieldtype": "Check",
-   "label": "Send Custom Event Invitations"
+   "default": "INFO",
+   "description": "Applies to every mail log: admin, push, inbound, outbound and exchange. DEBUG traces every step; use it only while investigating a problem.",
+   "fieldname": "log_level",
+   "fieldtype": "Select",
+   "label": "Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
   },
   {
-   "default": "1",
-   "description": "Invite a mailing list's members individually when the list address is added to an event. The server expands a mailing list only when delivering mail, so an invitation addressed to the list itself reaches every member's inbox but is never added to their calendars.",
-   "fieldname": "expand_mailing_list_participants",
-   "fieldtype": "Check",
-   "label": "Expand Mailing List Participants"
+   "fieldname": "column_break_logging_1",
+   "fieldtype": "Column Break"
   },
   {
-   "default": "100",
-   "depends_on": "expand_mailing_list_participants",
-   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Only members added by expansion are left out once this is reached, and they are reported; participants invited by name are always kept.",
-   "fieldname": "max_mailing_list_participants",
+   "default": "5",
+   "description": "A log file is rotated once it grows past this size.",
+   "fieldname": "log_max_file_size_mb",
    "fieldtype": "Int",
-   "label": "Max Mailing List Participants"
+   "label": "Max Log File Size (MB)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_logging_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "10",
+   "description": "Rotated files kept per log; the oldest is deleted when a new one is started.",
+   "fieldname": "log_file_count",
+   "fieldtype": "Int",
+   "label": "Log Files Kept",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 10:00:00.000000",
+ "modified": "2026-09-08 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",
