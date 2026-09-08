@@ -215,7 +215,15 @@ def create_file(
     mime: str,
     content_modified: datetime | int | float | str | None = None,
 ) -> str:
-    """Create one private blob-backed file, already stored, and charge its root."""
+    """Create one private blob-backed file, already stored, and charge its root.
+
+    `blob` names bytes this call did not just store: a cross-product caller
+    reaching this facade holds no bound upload session of its own (§8.4's
+    binding is a Drive-internal detail), so the id necessarily arrived some
+    other way. That is the same provenance §11.2's client door has, so this
+    facade makes the same proof `create` does: the caller must already be
+    able to read a node or version that holds `blob` (`_require_readable_blob`).
+    """
     from suite.drive._core.nodes import create_file as _create_file
 
     return _create_file(
@@ -226,6 +234,7 @@ def create_file(
         size=size,
         mime=mime,
         content_modified=content_modified,
+        _client_named_blob=True,
     )
 
 
