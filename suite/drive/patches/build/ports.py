@@ -656,9 +656,11 @@ class LegacyContent(Protocol):
 
     def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]: ...
 
-    def writer_versions(self, document: str) -> list[WriterVersionRow]: ...
+    def writer_versions(
+        self, document: str, after: tuple[str, str], limit: int
+    ) -> list[WriterVersionRow]: ...
 
-    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]: ...
+    def sheet_snapshots(self, sheet: str, after: tuple[int, str], limit: int) -> list[SheetSnapshotRow]: ...
 
     def residual_writer_versions(self, limit: int) -> list[str]: ...
 
@@ -680,6 +682,8 @@ class LegacyContent(Protocol):
 
     def site_timezone(self) -> str: ...
 
+    def site_host(self) -> str: ...
+
 
 class ContentTarget(Protocol):
     """Drive and app target writes for ticket 28."""
@@ -697,6 +701,8 @@ class ContentTarget(Protocol):
     def personal_roots(self, user: str) -> tuple[str, ...]: ...
 
     def versions(self, node: str) -> list[dict]: ...
+
+    def version_seqs(self, node: str) -> dict[int, str]: ...
 
     def version_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
@@ -1180,44 +1186,36 @@ class SiteContentSource:
         )
         return [TreeRow.of(row) for row in rows]
 
-    def writer_versions(self, document: str) -> list[WriterVersionRow]:
-        rows = frappe.get_all(
-            "Writer Version",
-            filters={"doc": document},
-            fields=[
-                "name",
-                "doc",
-                "snapshot",
-                "title",
-                "manual",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-            ],
-            order_by="creation asc, name asc",
+    def writer_versions(self, document: str, after: tuple[str, str], limit: int) -> list[WriterVersionRow]:
+        # Plan §13 keyset: `(doc, creation, name)`. A `snapshot` is the whole
+        # document body, so one page has to be bounded. `Writer Version` has no
+        # index on `(doc, creation, name)`, but `doc` alone narrows the scan to
+        # one document's history, which is what the page walks.
+        creation, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `doc`, `snapshot`, `title`, `manual`,
+                      `owner`, `creation`, `modified`, `modified_by`
+               FROM `tabWriter Version`
+               WHERE `doc` = %(doc)s AND (`creation`, `name`) > (%(creation)s, %(name)s)
+               ORDER BY `creation`, `name` LIMIT %(limit)s""",
+            {"doc": document, "creation": creation or "1000-01-01", "name": name, "limit": limit},
+            as_dict=True,
         )
         return [WriterVersionRow(**dict(row)) for row in rows]
 
-    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]:
-        rows = frappe.get_all(
-            "Sheet Snapshot",
-            filters={"sheet": sheet},
-            fields=[
-                "name",
-                "sheet",
-                "seq",
-                "kind",
-                "label",
-                "pinned",
-                "actor",
-                "sheets_data",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-            ],
-            order_by="seq asc, name asc",
+    def sheet_snapshots(self, sheet: str, after: tuple[int, str], limit: int) -> list[SheetSnapshotRow]:
+        # Plan §13 keyset: `(sheet, seq, name)`. `sheets_data` reaches 75 MB per
+        # row, so a sheet with hundreds of snapshots must never be materialised
+        # in one list.
+        seq, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `sheet`, `seq`, `kind`, `label`, `pinned`, `actor`,
+                      `sheets_data`, `owner`, `creation`, `modified`, `modified_by`
+               FROM `tabSheet Snapshot`
+               WHERE `sheet` = %(sheet)s AND (`seq`, `name`) > (%(seq)s, %(name)s)
+               ORDER BY `seq`, `name` LIMIT %(limit)s""",
+            {"sheet": sheet, "seq": seq, "name": name, "limit": limit},
+            as_dict=True,
         )
         return [SheetSnapshotRow(**dict(row)) for row in rows]
 
@@ -1309,6 +1307,9 @@ class SiteContentSource:
             "Slide",
             "Sheet Op Log",
         )
+        # `share_name` names a content document, not a `File`, so `name_prefix`
+        # cannot narrow this read. A row from outside the fixture is read and
+        # then dropped because no target node carries its content pair.
         rows = frappe.get_all(
             "DocShare",
             filters=[["share_doctype", "in", doctypes], ["name", ">", after]],
@@ -1337,6 +1338,19 @@ class SiteContentSource:
         from frappe.utils import get_system_timezone
 
         return get_system_timezone()
+
+    def site_host(self) -> str:
+        """The one netloc a stored `file_url` may carry and still be local.
+
+        Legacy Drive wrote both `/files/a.png` and the site's own absolute URL
+        into `File.file_url`. The second spelling still names a local file; any
+        other host does not, and §11 forbids localizing it.
+        """
+        from urllib.parse import urlsplit
+
+        from frappe.utils import get_url
+
+        return urlsplit(get_url()).netloc
 
     def _name_filters(self, after: str) -> list:
         return [["name", ">", after], *self._prefix_filters()]
@@ -1482,6 +1496,13 @@ class SiteContentTarget:
                 "Drive Node Version", filters={"node": node}, fields=list(VERSION_COLUMNS), order_by="seq asc"
             )
         ]
+
+    def version_seqs(self, node: str) -> dict[int, str]:
+        """Which sequences the node already holds, without the whole rows."""
+        rows = frappe.get_all(
+            "Drive Node Version", filters={"node": node}, fields=["name", "seq"], order_by="seq asc"
+        )
+        return {int(row.seq): row.name for row in rows}
 
     def version_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:

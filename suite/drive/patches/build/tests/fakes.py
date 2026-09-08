@@ -35,7 +35,11 @@ from suite.drive.patches.build.ports import (
     WriterTemplateRow,
     WriterVersionRow,
 )
-from suite.drive.patches.build.slide_journal import SlideBody
+from suite.drive.patches.build.slide_journal import (
+    JournalConflictError,
+    SlideBody,
+    UnknownBodyState,
+)
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
@@ -587,6 +591,7 @@ class FakeContent:
         shares=(),
         users=None,
         timezone="UTC",
+        host="site.example",
     ):
         self.document_rows = {(row.doctype, row.name): row for row in documents}
         self.file_rows = list(files)
@@ -598,6 +603,7 @@ class FakeContent:
         self.share_rows = list(shares)
         self.users = dict(users or {})
         self.timezone = timezone
+        self.host = host
         self.op_stamps = {}
         self.residual_versions = []
 
@@ -614,11 +620,19 @@ class FakeContent:
             row for row in self.file_rows if (row.content_doctype, row.content_docname) == (doctype, docname)
         ]
 
-    def writer_versions(self, document):
-        return [row for row in self.writer_version_rows if row.doc == document]
+    def writer_versions(self, document, after, limit):
+        rows = sorted(
+            (row for row in self.writer_version_rows if row.doc == document),
+            key=lambda row: (str(row.creation or ""), row.name),
+        )
+        return [row for row in rows if (str(row.creation or ""), row.name) > after][:limit]
 
-    def sheet_snapshots(self, sheet):
-        return [row for row in self.sheet_snapshot_rows if row.sheet == sheet]
+    def sheet_snapshots(self, sheet, after, limit):
+        rows = sorted(
+            (row for row in self.sheet_snapshot_rows if row.sheet == sheet),
+            key=lambda row: (int(row.seq), row.name),
+        )
+        return [row for row in rows if (int(row.seq), row.name) > after][:limit]
 
     def residual_writer_versions(self, limit):
         return sorted(self.residual_versions)[:limit]
@@ -656,6 +670,9 @@ class FakeContent:
 
     def site_timezone(self):
         return self.timezone
+
+    def site_host(self):
+        return self.host
 
     def link_document(self, doctype, docname, node):
         key = (doctype, docname)
@@ -730,6 +747,9 @@ class FakeContentTarget:
 
     def versions(self, node):
         return [dict(row) for row in self.version_rows.values() if row["node"] == node]
+
+    def version_seqs(self, node):
+        return {int(row["seq"]): row["name"] for row in self.version_rows.values() if row["node"] == node}
 
     def version_names(self, names):
         return {name: dict(self.version_rows[name]) for name in names if name in self.version_rows}
@@ -813,7 +833,11 @@ class FakeContentTarget:
         self.drive.raise_grant(node, principal, role)
 
     def insert_versions(self, rows):
-        self._insert_unique(self.version_rows, rows, "Drive Node Version")
+        # `Drive Node Version` carries a real unique index on `(node, seq)`
+        # (`drive_node_version.py:22`), so a fake that only checks the primary
+        # key would let a duplicate sequence through here and fail with an
+        # IntegrityError on a site.
+        self._insert_unique(self.version_rows, rows, "Drive Node Version", unique=("node", "seq"))
 
     def insert_threads(self, rows):
         self._insert_unique(self.thread_rows, rows, "Drive Comment Thread")
@@ -890,10 +914,19 @@ class FakeContentTarget:
         self.commits += 1
         self.drive.commit()
 
-    def _insert_unique(self, destination, rows, label):
+    def _insert_unique(self, destination, rows, label, *, unique=()):
         for row in rows:
             if row["name"] in destination:
                 raise ValueError(f"duplicate {label} {row['name']!r}")
+            if unique:
+                key = tuple(row.get(field) for field in unique)
+                taken = [
+                    stored
+                    for stored in destination.values()
+                    if tuple(stored.get(field) for field in unique) == key
+                ]
+                if taken:
+                    raise ValueError(f"duplicate {label} {'/'.join(unique)} {key!r}")
             destination[row["name"]] = dict(row)
 
     def _unit(self, name, write):
@@ -939,7 +972,11 @@ class FakeContentTarget:
 
 
 class FakeSlideJournal:
-    """A write-ahead Slide journal with exact in-memory body boundaries."""
+    """A write-ahead Slide journal with exact in-memory body boundaries.
+
+    It raises the real journal's exception family. `ValueError` would be caught
+    by the slides phase and hide the fact that a site journal conflict is not.
+    """
 
     def __init__(self):
         self.records = []
@@ -947,7 +984,7 @@ class FakeSlideJournal:
     def append(self, *, presentation, slide, before, after, changed_elements, created_at):
         same = [row for row in self.records if row[0] == presentation and row[1] == slide]
         if same and same[-1][3] != before:
-            raise ValueError(f"Slide {slide} journal chain is discontinuous")
+            raise JournalConflictError(f"Slide {slide} journal chain is discontinuous")
         record = (presentation, slide, before, after, changed_elements, created_at)
         if record not in self.records:
             self.records.append(record)
@@ -962,6 +999,6 @@ class FakeSlideJournal:
             current = current_bodies.get(slide)
             matches = [index for index, body in enumerate(boundaries) if body == current]
             if len(matches) != 1:
-                raise ValueError(f"Slide {slide} does not match one journal boundary")
+                raise UnknownBodyState(f"Slide {slide} does not match one journal boundary")
             total += sum(row[4] for row in chain[: matches[0]])
         return total
