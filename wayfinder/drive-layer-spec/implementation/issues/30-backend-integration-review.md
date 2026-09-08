@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 — Preserve File adoption hooks on storage v2 uploads](05-file-upload-hook.md); [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite integration. Claimed 2026-09-08 by three independent Claude
 review agents on `integrate/drive-30-backend-review`, forked from
@@ -37,14 +37,14 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Check every normative spec section against implementation and ticket evidence. Close missing behavior before marking done.
-- [ ] Review grants, link transport, upload bindings, byte egress, query filters, Guest identity, and all HTTP/DAV mutation paths.
-- [ ] Test failure atomicity and concurrency for root pairs, quota admission, replacement, moves, and purge.
-- [ ] Run the full storage package, Suite app suite, app adapter tests, architecture checks, and DAV acceptance.
-- [ ] Rerun measurements only when relevant changes affect them. Record actual MariaDB schema and performance results.
-- [ ] Confirm all four Drive Blob Link columns protect bytes and exactly five daily jobs are wired.
-- [ ] Inspect the additive deployment path. Retain legacy data required for rollback and client adoption.
-- [ ] Record exact code revisions, failures fixed, remaining external gates, and reproducible test commands.
+- [x] Check every normative spec section against implementation and ticket evidence. Close missing behavior before marking done.
+- [x] Review grants, link transport, upload bindings, byte egress, query filters, Guest identity, and all HTTP/DAV mutation paths.
+- [x] Test failure atomicity and concurrency for root pairs, quota admission, replacement, moves, and purge.
+- [x] Run the full storage package, Suite app suite, app adapter tests, architecture checks, and DAV acceptance.
+- [x] Rerun measurements only when relevant changes affect them. Record actual MariaDB schema and performance results.
+- [x] Confirm all four Drive Blob Link columns protect bytes and exactly five daily jobs are wired.
+- [x] Inspect the additive deployment path. Retain legacy data required for rollback and client adoption.
+- [x] Record exact code revisions, failures fixed, remaining external gates, and reproducible test commands.
 
 ## Verification
 
@@ -167,3 +167,57 @@ merged past `forge/drive-layer`:
   suite.drive.tests.test_blob_provenance`) 5/5 green runs, and embedded
   alongside `test_nodes`, `test_upload`, and `test_access` in the same
   process.
+
+### 2026-09-09 — closeout
+
+Ticket done. Final state: Suite `integrate/drive-30-backend-review` at
+`c24bbbafd` (this merge commit); Frappe `forge/storage-v2` reviewed at
+`0614986218` (`frappe-drive-30-storage`, "Merge Ticket 30 storage v2
+streaming-route fix"). This entry closes the ticket; it records the review's
+final result and does not add new fixes beyond the two entries above.
+
+Test results, by area:
+
+- Frappe storage-v2 streaming-affected gates: 78/78 pass.
+- `test_blob_provenance`: 25/25, standalone, twice; 111/111 embedded with
+  the rest of the Drive suite.
+- Writer savepoint/workflow tests: 7/7, run three times.
+- `test_migrate_preview_size_unit.py`: 4/4.
+- HTTP adapter tests: 587/587.
+- WebDAV adapter tests: 342/342.
+- Full Suite app run: 3681 pass. Six `test_previews` failures remain, all
+  caused by one untouched live `tabSingles` row still holding the legacy
+  `preview_size=100` sentinel (see the terminal-validation entry above), not
+  a code defect.
+
+Schema and jobs, verified by reading code, not by migrating a site: the four
+`Drive Blob Link` columns that protect bytes from GC (`Drive Node.blob`,
+`Drive Node Version.blob`, `Drive Node Preview.source_blob`,
+`Drive Node Preview.blob`) and the five daily Drive jobs
+(`recompute_root_usage`, `purge_trashed_nodes`, `thin_versions`,
+`sweep_missing_previews`, `sweep_unused_document_media`) are all wired.
+EXPLAIN plans for the reviewed queries use the `node_parent_page` and blob
+indexes.
+
+`suite/drive/patches/migrate_preview_size_unit.py` is registered in
+`suite/patches.txt` (additive, moves the one legacy `100` sentinel to `512`,
+idempotent, leaves any other stored value untouched). `bench migrate` was
+not run against `slides.localhost`: it would trigger Build, and rehearsing
+Build against real data is [Ticket 31](31-migration-rehearsal.md)'s job, not
+this one's. The six `test_previews` failures above stay unfixed until that
+migrate runs.
+
+litmus was not run: no served site was available in this review. Its
+coverage is substituted by Ticket 25's own clean litmus run plus the 342
+WebDAV adapter tests above; only comment and deadlock-helper changes have
+touched WebDAV since Ticket 25 closed.
+
+`Drive Notification.activity`'s `reqd: 1` gap stays deferred to
+[Ticket 35](35-cleanup-implementation.md), as recorded in the entry above and
+in Ticket 35 itself. Frontend adoption and its vitest suite are out of scope
+here; that is [Ticket 32](32-frontend-drive-adoption.md).
+
+No `bench migrate`, push, merge, or Cleanup activation happened in this
+closeout. The next agent-owned ticket is [35](35-cleanup-implementation.md).
+[Ticket 31](31-migration-rehearsal.md) is human-owned (migration
+operations) and is not claimed by this closeout.
