@@ -255,13 +255,9 @@ def retry_delivery_now(account: str, id: str) -> None:
     if _hold_active(submission):
         frappe.throw(_("This delivery is still scheduled — use send now instead."))
 
-    queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
-    if not queue_message:
-        frappe.throw(_("This delivery is no longer waiting in the outbound queue."))
-
-    from suite.mail.stalwart import get_queued_message_service
-
-    get_queued_message_service().retry([queue_message["id"]])
+    # The outbound queue belongs to the shared cluster and is not exposed to sites; the MTA
+    # retries on its own schedule.
+    frappe.throw(_("Retrying a queued delivery is not available; the server retries it on its own."))
 
 
 @frappe.whitelist()
@@ -460,39 +456,11 @@ def _envid(submission: dict) -> str | None:
 def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
     """The MTA queue messages behind the given submissions, keyed by ENVID.
 
-    Read with the admin management connection but exposing only messages whose ENVID matches
-    one of the account's own submissions. Best-effort: without the management API the rows
-    just lack retry counts and live queue state.
+    The outbound queue lives on the shared cluster and is not exposed to sites, so this is
+    always empty: rows simply lack retry counts and live queue state.
     """
 
-    envids = {envid for s in submissions if (envid := _envid(s))}
-    senders = {
-        email
-        for s in submissions
-        if _envid(s) and (email := ((s.get("envelope") or {}).get("mailFrom") or {}).get("email"))
-    }
-    if not envids:
-        return {}
-
-    try:
-        from suite.mail.stalwart import get_queued_message_service
-
-        service = get_queued_message_service()
-        messages = []
-        for sender in senders:
-            messages.extend(
-                service.get_all(
-                    filter={"returnPath": sender},
-                    properties=["id", "envId", "recipients", "nextRetry"],
-                )
-            )
-    except Exception:
-        log_mail_error(
-            _("Failed to read the MTA queue for scheduled mails"), frappe.get_traceback(with_context=True)
-        )
-        return {}
-
-    return {m["envId"]: m for m in messages if m.get("envId") in envids}
+    return {}
 
 
 def _identity_email(service: EmailSubmissionService, identity_id: str | None) -> str | None:

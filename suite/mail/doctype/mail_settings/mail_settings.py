@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.mail.stalwart import get_domain_service
+from suite.mail.directory import get_domains
 from suite.mail.utils import is_stalwart_configured
 
 
@@ -35,7 +35,6 @@ class MailSettings(Document):
         default_gravatar: DF.Literal[
             "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]
-        disabled_account_role: DF.Data | None
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int
@@ -61,7 +60,6 @@ class MailSettings(Document):
         outbound_log_file_count: DF.Int
         outbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
         outbound_log_max_file_size: DF.Int
-        password: DF.Password | None
         process_pending_emails_batch_size: DF.Int
         process_pending_emails_max_batch_size: DF.Int
         process_pending_emails_timeout: DF.Int
@@ -70,6 +68,9 @@ class MailSettings(Document):
         push_log_max_file_size: DF.Int
         scan_message_timeout: DF.Int
         server_url: DF.Data | None
+        site_api_key: DF.Data | None
+        site_api_secret: DF.Password | None
+        suite_cloud_url: DF.Data | None
         show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
         signup_domains: DF.SmallText | None
@@ -77,7 +78,6 @@ class MailSettings(Document):
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
-        username: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
@@ -107,11 +107,15 @@ class MailSettings(Document):
         if not signup_domains:
             frappe.throw(_("Invalid Signup Domains format. Please provide one domain per line."))
 
+        site_domains = {d["domain"] for d in get_domains()}
         valid_signup_domains = []
         for domain in signup_domains:
             domain = domain.strip().lower()
             if domain:
-                get_domain_service().get_by_name(domain, raise_exception=True)
+                if domain not in site_domains:
+                    frappe.throw(
+                        _("Domain {0} is not one of this site's mail domains.").format(frappe.bold(domain))
+                    )
                 valid_signup_domains.append(domain)
 
         self.signup_domains = "\n".join(valid_signup_domains)

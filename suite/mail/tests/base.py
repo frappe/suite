@@ -13,7 +13,6 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.jmap.connection import JMAPConnection
-from suite.mail.stalwart.connection import MANAGEMENT_SESSION_CACHE_KEY
 from suite.mail.utils import get_config, is_stalwart_configured
 
 # Names embed a fresh per-run token: Stalwart state never rolls back with the test database, and
@@ -34,14 +33,13 @@ def unique_name(prefix: str = "user") -> str:
 def clear_mail_caches() -> None:
     """Drops every cache through which a test could see a stale Stalwart config or session."""
 
-    frappe.local.request_cache.clear()  # get_config, get_management_connection, get_jmap_connection
-    frappe.cache.delete_value(MANAGEMENT_SESSION_CACHE_KEY)
+    frappe.local.request_cache.clear()  # get_config, get_client, get_jmap_connection
     frappe.cache.delete_value("jmap:sessions")
 
-    from suite.mail import stalwart
+    from suite.mail import directory
 
-    stalwart.get_domains.clear_cache()
-    stalwart.get_roles.clear_cache()
+    directory.get_domains.clear_cache()
+    directory.get_mailing_list_index.clear_cache()
 
 
 def _stalwart_available() -> bool:
@@ -248,9 +246,10 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
             domain_id = add_domain(name, description="Integration test domain")
 
         def cleanup(domain_id=domain_id):
-            from suite.mail.stalwart import get_domain_service
+            from suite.mail.api.admin import delete_domain
 
-            get_domain_service().delete(domain_id)
+            with cls.set_user("Administrator"):
+                delete_domain(domain_id)
 
         cls._stalwart_cleanups.append(cleanup)
         return name
@@ -327,7 +326,7 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
                 description=description or f"Test group {name}",
             )
 
-        cls._stalwart_cleanups.append(lambda group_id=group_id: _delete_stalwart("group", group_id))
+        cls._stalwart_cleanups.append(lambda group_id=group_id: _delete_directory("groups", group_id))
         return group_id
 
     @classmethod
@@ -344,42 +343,33 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
                 description=description or f"Test list {name}",
             )
 
-        cls._stalwart_cleanups.append(lambda list_id=list_id: _delete_stalwart("mailing_list", list_id))
+        cls._stalwart_cleanups.append(lambda list_id=list_id: _delete_directory("mailing_lists", list_id))
         return list_id
-
-    @classmethod
-    def create_role(
-        cls,
-        description: str | None = None,
-        enabled_permissions: list | None = None,
-        disabled_permissions: list | None = None,
-        role_ids: list | None = None,
-    ) -> str:
-        """Creates a role on Stalwart and returns its id."""
-
-        from suite.mail.api.admin import add_role
-
-        description = description or f"Test role {unique_name('role')}"
-        with cls.set_user("Administrator"):
-            role_id = add_role(
-                description=description,
-                enabled_permissions=enabled_permissions or [],
-                disabled_permissions=disabled_permissions or [],
-                role_ids=role_ids or [],
-            )
-
-        cls._stalwart_cleanups.append(lambda role_id=role_id: _delete_stalwart("role", role_id))
-        return role_id
 
 
 def _delete_stalwart_account(email: str) -> None:
-    from suite.mail.stalwart import delete_account
+    """Removes the account behind a test member; the User is the account's owner here."""
+
+    from suite.mail.directory import delete_account
 
     delete_account(email)
 
 
-def _delete_stalwart(kind: str, resource_id: str) -> None:
-    from suite.mail import stalwart
+def _delete_directory(kind: str, email: str) -> None:
+    from suite.mail.api import admin
 
-    service = getattr(stalwart, f"get_{kind}_service")()
-    service.delete(resource_id)
+    with _admin_session():
+        if kind == "groups":
+            admin.delete_groups([email])
+        else:
+            admin.delete_mailing_lists([email])
+
+
+@contextmanager
+def _admin_session():
+    user = frappe.session.user
+    frappe.set_user("Administrator")
+    try:
+        yield
+    finally:
+        frappe.set_user(user)

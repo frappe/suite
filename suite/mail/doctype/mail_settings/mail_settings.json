@@ -9,8 +9,9 @@
   "server_url",
   "verify_ssl",
   "column_break_xvlo",
-  "username",
-  "password",
+  "suite_cloud_url",
+  "site_api_key",
+  "site_api_secret",
   "mail_client_config_section",
   "show_mail_client_config",
   "show_calendar_client_config",
@@ -23,7 +24,6 @@
   "spamd_hybrid_scanning_threshold",
   "defaults_section",
   "default_disk_quota_gb",
-  "disabled_account_role",
   "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
@@ -91,14 +91,15 @@
   {
    "fieldname": "jmap_section",
    "fieldtype": "Section Break",
-   "label": "Stalwart/JMAP"
+   "label": "Mail Server"
   },
   {
    "fieldname": "server_url",
    "fieldtype": "Data",
-   "label": "Server URL",
+   "label": "JMAP URL",
    "options": "URL",
-   "placeholder": "https://mail.frappemail.com"
+   "placeholder": "https://mail.frappemail.com",
+   "description": "Address of the mail cluster users connect to, e.g. https://mail.blr.frappemail.com. Frappe Cloud writes it into the site config; set it here to override."
   },
   {
    "default": "1",
@@ -112,16 +113,25 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "username",
+   "description": "Suite Cloud that manages this site's domains, accounts, groups and lists, e.g. https://cloud.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
+   "fieldname": "suite_cloud_url",
    "fieldtype": "Data",
-   "label": "Username",
-   "mandatory_depends_on": "eval: doc.password"
+   "label": "Suite Cloud URL",
+   "options": "URL"
   },
   {
-   "fieldname": "password",
+   "description": "This site's key at Suite Cloud, issued when Frappe Cloud registered the site.",
+   "fieldname": "site_api_key",
+   "fieldtype": "Data",
+   "label": "Site API Key",
+   "mandatory_depends_on": "eval: doc.site_api_secret"
+  },
+  {
+   "description": "This site's secret at Suite Cloud, shown once by Frappe Cloud. Rotate it from Frappe Cloud if it leaks.",
+   "fieldname": "site_api_secret",
    "fieldtype": "Password",
-   "label": "Password",
-   "mandatory_depends_on": "eval: doc.username"
+   "label": "Site API Secret",
+   "mandatory_depends_on": "eval: doc.site_api_key"
   },
   {
    "collapsible": 1,
@@ -205,12 +215,6 @@
    "fieldtype": "Int",
    "label": "Default Disk Quota (GB)",
    "reqd": 1
-  },
-  {
-   "description": "Stalwart role (by description) applied to a user's mail account when the user is disabled. The role must be created manually on Stalwart with the appropriate allowed/disabled permissions. Leave blank to skip applying a role on disable.",
-   "fieldname": "disabled_account_role",
-   "fieldtype": "Data",
-   "label": "Disabled Account Role"
   },
   {
    "fieldname": "column_break_defaults_1",

@@ -34,10 +34,6 @@
 					<label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
 					<MultiSelect v-model="memberIds" :options="accountOptions" />
 				</div>
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Roles') }}</label>
-					<MultiSelect v-model="roleIds" :options="roleOptions" />
-				</div>
 				<ErrorMessage
 					:message="addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.'))"
 				/>
@@ -61,18 +57,13 @@ const name = ref('')
 const domain = ref('')
 const description = ref('')
 const memberIds = ref<string[]>([])
-const roleIds = ref<string[]>([])
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
 const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
-const roles = createResource({ url: 'suite.mail.api.admin.get_roles_list', auto: true })
 
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
 const accountOptions = computed(() =>
 	(accounts.data || []).map((a: { id: string; email: string }) => ({ label: a.email, value: a.id })),
-)
-const roleOptions = computed(() =>
-	(roles.data || []).map((r: { id: string; description: string }) => ({ label: r.description, value: r.id })),
 )
 
 watch(show, () => {
@@ -81,7 +72,6 @@ watch(show, () => {
 		domain.value = ''
 		description.value = ''
 		memberIds.value = []
-		roleIds.value = []
 		addGroup.reset()
 	}
 })
@@ -93,7 +83,6 @@ const addGroup = createResource({
 		domain: domain.value,
 		description: description.value?.trim() || undefined,
 		members: memberIds.value,
-		roles: roleIds.value,
 	}),
 	onSuccess: (data: string) => {
 		if (!data) return

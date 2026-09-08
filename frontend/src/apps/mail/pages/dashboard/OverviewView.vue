@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
 		<!-- KPI tiles: one glanceable number per section, each a link into it. -->
-		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
 			<RouterLink
 				v-for="stat in stats"
 				:key="stat.label"
@@ -19,40 +19,9 @@
 			</RouterLink>
 		</div>
 
-		<div class="grid grid-cols-1 gap-5 lg:grid-cols-5">
-			<!-- Recent activity -->
-			<DashboardCard :title="__('Recent Activity')" class="lg:col-span-3">
-				<template #actions>
-					<Button
-						variant="ghost"
-						:label="__('View Logs')"
-						@click="router.push({ name: 'mail-logs' })"
-					/>
-				</template>
-				<div v-if="recentLogs.length" class="flex flex-col">
-					<RouterLink
-						v-for="log in recentLogs"
-						:key="log.id"
-						:to="{ name: 'mail-log', params: { logId: log.id } }"
-						class="hover:bg-surface-gray-1 flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
-					>
-						<Badge :label="log.level_label || log.level" :theme="levelTheme(log.level)" />
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm">{{ log.event_label || log.event }}</p>
-							<p v-if="log.details" class="text-ink-gray-5 mt-0.5 truncate font-mono text-xs">
-								{{ log.details }}
-							</p>
-						</div>
-						<span class="text-ink-gray-5 shrink-0 text-xs">{{ fromNow(log.timestamp) }}</span>
-					</RouterLink>
-				</div>
-				<div v-else class="text-ink-gray-5 px-5 py-8 text-center text-sm">
-					{{ __('No recent log entries.') }}
-				</div>
-			</DashboardCard>
-
+		<div class="grid grid-cols-1 gap-5">
 			<!-- Quick actions -->
-			<DashboardCard :title="__('Quick Actions')" class="lg:col-span-2">
+			<DashboardCard :title="__('Quick Actions')">
 				<div class="flex flex-col">
 					<RouterLink
 						v-for="action in QUICK_ACTIONS"
@@ -83,47 +52,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
-import { useRouter } from 'vue-router'
-import { Badge, Button, createResource, usePageMeta } from 'frappe-ui'
+import { createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
-import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
-import Clock from '~icons/lucide/clock'
 import Globe from '~icons/lucide/globe'
-import Mails from '~icons/lucide/mails'
 import Megaphone from '~icons/lucide/megaphone'
-import Radar from '~icons/lucide/radar'
-import ScrollText from '~icons/lucide/scroll-text'
 import UserPlus from '~icons/lucide/user-plus'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 
 type CountWithDisabled = { total: number; disabled: number }
-type LogEntry = {
-	id: string
-	timestamp?: string
-	level?: string
-	level_label?: string
-	event?: string
-	event_label?: string
-	details?: string
+type Limits = {
+	max_domains?: number
+	max_accounts?: number
+	max_groups?: number
+	max_mailing_lists?: number
 }
 type OverviewData = {
 	members: CountWithDisabled | null
 	pending_invites: number | null
-	domains: CountWithDisabled | null
+	domains: number | null
 	groups: number | null
 	mailing_lists: number | null
-	queued_messages: number | null
-	recent_logs: LogEntry[]
+	limits: Limits | null
 }
 
 usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
-
-const router = useRouter()
 
 const overview = createResource({
 	url: 'suite.mail.api.admin.get_overview',
@@ -139,6 +96,9 @@ const count = (value: number | null | undefined) => (value == null ? '—' : Str
 
 const disabledSub = (value: CountWithDisabled | null | undefined) =>
 	value?.disabled ? __('{0} disabled', [String(value.disabled)]) : ''
+
+// Suite Cloud caps how many of each the site may hold; 0 means no cap.
+const limitSub = (limit: number | undefined) => (limit ? __('of {0}', [String(limit)]) : '')
 
 const stats = computed(() => [
 	{
@@ -160,16 +120,16 @@ const stats = computed(() => [
 	{
 		label: __('Domains'),
 		icon: Globe,
-		value: count(data.value?.domains?.total),
-		sub: disabledSub(data.value?.domains),
-		subTone: 'warning',
+		value: count(data.value?.domains),
+		sub: limitSub(data.value?.limits?.max_domains),
+		subTone: 'muted',
 		to: { name: 'mail-domains' },
 	},
 	{
 		label: __('Groups'),
 		icon: UsersRound,
 		value: count(data.value?.groups),
-		sub: '',
+		sub: limitSub(data.value?.limits?.max_groups),
 		subTone: 'muted',
 		to: { name: 'mail-groups' },
 	},
@@ -177,31 +137,11 @@ const stats = computed(() => [
 		label: __('Mailing Lists'),
 		icon: Megaphone,
 		value: count(data.value?.mailing_lists),
-		sub: '',
+		sub: limitSub(data.value?.limits?.max_mailing_lists),
 		subTone: 'muted',
 		to: { name: 'mail-mailing-lists' },
 	},
-	{
-		label: __('Queued'),
-		icon: Clock,
-		value: count(data.value?.queued_messages),
-		sub: data.value?.queued_messages ? __('awaiting delivery') : '',
-		subTone: 'muted',
-		to: { name: 'mail-queued-messages' },
-	},
 ])
-
-const recentLogs = computed(() => data.value?.recent_logs || [])
-
-// Mirrors the colours the server's TracingLevel enum assigns to each level.
-const LEVEL_THEMES: Record<string, string> = {
-	error: 'red',
-	warn: 'amber',
-	info: 'green',
-	debug: 'blue',
-	trace: 'violet',
-}
-const levelTheme = (level?: string) => LEVEL_THEMES[(level || '').toLowerCase()] || 'gray'
 
 const QUICK_ACTIONS = [
 	{
@@ -215,24 +155,6 @@ const QUICK_ACTIONS = [
 		description: __('Give someone a mailbox on your domains.'),
 		icon: UserPlus,
 		to: { name: 'mail-members' },
-	},
-	{
-		label: __('Run a delivery test'),
-		description: __('Trace a live SMTP delivery to diagnose issues.'),
-		icon: Radar,
-		to: { name: 'mail-delivery-test' },
-	},
-	{
-		label: __('Review the queue'),
-		description: __('Inspect and retry messages pending delivery.'),
-		icon: Mails,
-		to: { name: 'mail-queued-messages' },
-	},
-	{
-		label: __('Check server logs'),
-		description: __('Follow what the mail server is doing.'),
-		icon: ScrollText,
-		to: { name: 'mail-logs' },
 	},
 ]
 </script>

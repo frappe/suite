@@ -9,6 +9,11 @@
 			>
 				<template #icon><Globe class="h-5 w-5" /></template>
 				<template #actions>
+					<Button
+						:label="__('Verify DNS')"
+						:loading="verifyDomain.loading"
+						@click="verifyDomain.submit()"
+					/>
 					<Dropdown
 						:options="exportOptions"
 						:button="{ label: __('Export DNS'), iconLeft: 'lucide-download' }"
@@ -27,51 +32,13 @@
 			<div class="rounded-4 border">
 				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
-					:title="__('Email Deliverability')"
-					:description="
-						__('Email authentication records that protect your domain from spoofing.')
-					"
-					:records="emailDeliverabilityRecords"
-					:badge-label="__('Required')"
-					badge-theme="red"
-				/>
-				<DNSRecords
-					:title="__('Inbound Mail Routing')"
-					:description="
-						__(
-							'Mail routing records that ensure messages sent to your domain are delivered to the correct mail server.',
-						)
-					"
-					:records="inboundMailRoutingRecords"
-					:badge-label="__('Recommended')"
-					badge-theme="amber"
-				/>
-				<DNSRecords
-					:title="__('Service Configuration Records')"
-					:description="
-						__(
-							'Service records that enable automatic mail setup and enforce secure transport for your domain.',
-						)
-					"
-					:records="serviceConfigurationRecords"
-				/>
-				<DNSRecords
-					:title="__('Service Discovery Records')"
-					:description="
-						__(
-							'Records that allow mail and sync apps to automatically locate and connect to your domain’s email, calendar, and contacts services.',
-						)
-					"
-					:records="serviceDiscoveryRecords"
-				/>
-				<DNSRecords
-					:title="__('Email Transport Security Records')"
-					:description="
-						__(
-							'TXT records that enforce encrypted mail delivery and provide reporting on failed or insecure SMTP connections.',
-						)
-					"
-					:records="transportSecurityRecords"
+					v-for="group in recordGroups"
+					:key="group.key"
+					:title="group.label"
+					:description="group.description"
+					:records="recordsOf(group.key)"
+					:badge-label="group.is_mandatory ? __('Required') : undefined"
+					:badge-theme="group.is_mandatory ? 'red' : undefined"
 				/>
 			</div>
 		</template>
@@ -82,7 +49,7 @@
 import { computed, ref } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
@@ -94,13 +61,16 @@ import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
 type DNSRecord = Record<string, string>
+type RecordGroup = { key: string; label: string; description: string; is_mandatory: boolean }
 
 type DomainData = {
 	id: string
 	name: string
 	description: string
 	is_enabled: boolean
+	is_verified: boolean
 	created_at: string
+	dns_record_groups: RecordGroup[]
 	dns_records: DNSRecord[]
 }
 
@@ -135,33 +105,22 @@ const domainRecords = computed<DNSRecord[]>(
 	() => (domain.data as DomainData | undefined)?.dns_records || [],
 )
 
-const emailDeliverabilityRecords = computed(() =>
-	domainRecords.value.filter(
-		(record) =>
-			record.type === 'TXT' &&
-			!(record.name.startsWith('_smtp') || record.name.startsWith('_mta')),
-	),
+// Suite Cloud groups the records (authentication, routing, transport security, ...) and says
+// which groups a domain needs before it goes live; the page renders whatever it sends.
+const recordGroups = computed<RecordGroup[]>(
+	() => (domain.data as DomainData | undefined)?.dns_record_groups || [],
 )
+const recordsOf = (group: string) => domainRecords.value.filter((record) => record.group === group)
 
-const inboundMailRoutingRecords = computed(() =>
-	domainRecords.value.filter((record) => record.type === 'MX'),
-)
-
-const serviceConfigurationRecords = computed(() =>
-	domainRecords.value.filter((record) => record.type === 'CNAME'),
-)
-
-const serviceDiscoveryRecords = computed(() =>
-	domainRecords.value.filter((record) => record.type === 'SRV'),
-)
-
-const transportSecurityRecords = computed(() =>
-	domainRecords.value.filter(
-		(record) =>
-			record.type === 'TXT' &&
-			(record.name.startsWith('_smtp') || record.name.startsWith('_mta')),
-	),
-)
+const verifyDomain = createResource({
+	url: 'suite.mail.api.admin.verify_domain',
+	makeParams: () => ({ domain_id: domainId }),
+	onSuccess: () => {
+		domain.reload()
+		raiseToast(__('DNS records checked.'))
+	},
+	onError: (error: ResourceError) => raiseToast(getErrorMessage(error), 'error'),
+})
 
 const deleteDomain = createResource({
 	url: 'suite.mail.api.admin.delete_domain',
@@ -209,10 +168,13 @@ const BREADCRUMBS = computed(() => [
 
 const confirmDialogAction = ref<'deleteDomain'>('deleteDomain')
 
-const badge = computed<{ label: string; theme: 'green' | 'gray' }>(() =>
-	(domain.data as DomainData | undefined)?.is_enabled
-		? { label: __('Enabled'), theme: 'green' }
-		: { label: __('Disabled'), theme: 'gray' },
+// A domain goes live once its mandatory records resolve; until then it is pending.
+const badge = computed<{ label: string; theme: 'green' | 'gray' | 'amber' }>(() => {
+	const data = domain.data as DomainData | undefined
+	if (data?.is_verified && data?.is_enabled) return { label: __('Active'), theme: 'green' }
+	if (data?.is_verified) return { label: __('Disabled'), theme: 'gray' }
+	return { label: __('Pending verification'), theme: 'amber' }
+}
 )
 
 const confirmDialogOptions = computed(() => {

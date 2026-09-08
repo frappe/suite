@@ -16,12 +16,12 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
     expand_mailing_list_participants,
 )
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
-from suite.mail.stalwart import get_domains, get_mailing_list_index
+from suite.mail.directory import get_domains, get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
 
-DOMAINS = [{"name": "example.com"}]
+DOMAINS = [{"domain": "example.com"}]
 INDEX = {
     "team@example.com": ["alice@example.com", "bob@example.com"],
     "team-alias@example.com": ["alice@example.com", "bob@example.com"],

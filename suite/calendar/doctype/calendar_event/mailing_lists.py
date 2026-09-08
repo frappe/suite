@@ -22,7 +22,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from suite.mail.stalwart import get_domains, get_mailing_list_index
+from suite.mail.directory import get_domains, get_mailing_list_index
 from suite.mail.utils import get_config, log_mail_error
 
 DEFAULT_MAX_PARTICIPANTS = 100
@@ -139,7 +139,7 @@ def _has_local_participant(participants: list[dict]) -> bool:
     invite external attendees only.
     """
 
-    domains = {(d.get("name") or "").lower() for d in _domains()}
+    domains = {(d.get("domain") or "").lower() for d in _domains()}
 
     return any(_email_of(p).rpartition("@")[2] in domains for p in participants if _email_of(p))
 
