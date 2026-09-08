@@ -6,12 +6,18 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.drive._core.access import grant, revoke
+from suite.drive._core.activity import visit
+from suite.drive._core.nodes import purge, update
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import EDIT, NONE, READ
 from suite.tests.utils import ensure_user
 from suite.writer.api import docs
 from suite.writer.api.general import get_document_list, get_drive_file_meta, get_versions, search
 
 USER = "writer-general-user@example.com"
 OTHER = "writer-general-other@example.com"
+THIRD = "writer-general-third@example.com"
 
 
 class IntegrationTestGetDriveFileMeta(IntegrationTestCase):
@@ -94,16 +100,17 @@ class TestWriterSearch(IntegrationTestCase):
 
 
 class TestLegacyDocumentReads(IntegrationTestCase):
-    """The three reads built on `get_user_access`, against the row the product writes.
+    """The three legacy reads, against the row the product actually writes now.
 
-    `writer.api.docs.create_document` writes a `File` with no `Drive Node`:
-    `Writer Document` is not in `drive_content_types`, so §10.2 keeps it on
-    the legacy store until ticket 29 activates the type. §11.7 pointed
-    `get_user_access` at `Drive Node`, which answers all-zeros for an id no
-    node holds, and each of these three reads treats zeros as a denial.
+    Ticket 29 registered `Writer Document`, so `writer.api.docs.create_document`
+    is an adapter over `drive.create_document` and answers a `Drive Node` under
+    the legacy `File` field names. The three reads the editor still calls -
+    `get_document_list`, `get_versions`, and `search` - have to answer for that
+    row, because it is the only kind of row a caller can create.
 
-    The suite that existed here patched `get_user_access` out, so it could
-    not see any of this.
+    Each read is scoped by `get_user_access`, which §11.7 pointed at the node.
+    The author holds every bit on a document they wrote; a stranger holds none
+    and is refused, not answered with an empty page.
     """
 
     @classmethod
@@ -117,19 +124,28 @@ class TestLegacyDocumentReads(IntegrationTestCase):
         super().setUp()
         frappe.set_user(USER)
         self.addCleanup(frappe.set_user, "Administrator")
-        self.entity = docs.create_document(title=f"General {frappe.generate_hash(6)}")
-        self.addCleanup(self._drop, self.entity.name, self.entity.content_docname)
-        self.assertFalse(frappe.db.exists("Drive Node", self.entity.name), "no node before Build")
+        self.entity = frappe._dict(docs.create_document(title=f"General {frappe.generate_hash(6)}"))
+        self.addCleanup(self._drop, self.entity.name)
+        self.assertTrue(frappe.db.exists("Drive Node", self.entity.name), "the create is Drive-native now")
+        self.assertFalse(frappe.db.exists("File", self.entity.name), "and it grows no backing File (§14.7)")
 
     @staticmethod
-    def _drop(entity: str, docname: str):
+    def _drop(node: str):
+        """Purge through Drive, which owns the document, its history, and its charge."""
         frappe.set_user("Administrator")
-        for doctype, name in (("File", entity), ("Writer Document", docname)):
-            frappe.delete_doc(doctype, name, force=1, ignore_permissions=True, ignore_missing=True)
+        if not frappe.db.exists("Drive Node", node):
+            return
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        update(admin, node, state="Trashed")
+        purge(admin, node)
+        frappe.db.commit()
 
     def test_the_author_lists_the_document_they_just_created(self):
-        """`get_document_list` drops a row whose `read` is 0, so the list came
-        back without the document its caller had just written."""
+        """The list reads both stores, so a node-backed document is on it.
+
+        The legacy query alone answered a page with the caller's newest
+        documents missing from it, because they have no `File` row. The row is
+        published under the legacy `File` field names the frontend reads."""
         frappe.response.pop("data", None)
         get_document_list()
         rows = {row["name"]: row for row in frappe.response["data"]}
@@ -141,23 +157,69 @@ class TestLegacyDocumentReads(IntegrationTestCase):
         self.assertEqual(row["type"], "admin", "the owner, by the rule that wrote the row")
 
     def test_the_author_reads_the_history_of_the_document_they_just_created(self):
-        """`get_versions` throws `PermissionError` on a zeroed `write`."""
-        frappe.get_doc("Writer Document", self.entity.content_docname).new_version(
-            "<p>a draft</p>", title="first"
+        """A linked document's history is `Drive Node Version`, in the legacy shape.
+
+        `new_version` refuses a linked row rather than growing a second, private
+        history Drive cannot see, so the version is taken through Drive. The
+        published row keeps the four keys the sidebar reads, and `snapshot` is
+        the HTML Writer wrote into the version envelope."""
+        document = frappe.get_doc("Writer Document", self.entity.content_docname)
+        document.html = "<p>a draft</p>"
+        document.save()
+        document.drive_take_version(kind="named", label="first")
+
+        versions = get_versions(self.entity.name)
+
+        self.assertEqual([version["title"] for version in versions], ["first"])
+        self.assertEqual(versions[0]["snapshot"], "<p>a draft</p>")
+        self.assertEqual(versions[0]["manual"], 1)
+        self.assertTrue(versions[0]["name"])
+        self.assertTrue(versions[0]["creation"])
+
+    def test_an_automatic_version_is_titled_by_the_minute_it_was_taken(self):
+        """Legacy titled an automatic version with its timestamp and a manual one
+        with the name its author gave it. `Drive Node Version` carries `label`,
+        which is null for `kind = auto`, so the stamp is formatted here."""
+        document = frappe.get_doc("Writer Document", self.entity.content_docname)
+        document.html = "<p>one</p>"
+        document.save()
+        document.drive_take_version()
+
+        version = get_versions(self.entity.name)[0]
+
+        self.assertEqual(version["manual"], 0)
+        self.assertEqual(
+            version["title"], frappe.utils.get_datetime(version["creation"]).strftime("%Y-%m-%d %H:%M")
         )
-        titles = [version["title"] for version in get_versions(self.entity.name)]
-        self.assertEqual(titles, ["first"])
+
+    def test_the_history_is_published_oldest_first(self):
+        """Drive pages versions newest first (§9.1); the sidebar reads the
+        legacy order, which is the other one."""
+        document = frappe.get_doc("Writer Document", self.entity.content_docname)
+        for label in ("first", "second", "third"):
+            document.html = f"<p>{label}</p>"
+            document.save()
+            document.drive_take_version(kind="named", label=label)
+
+        self.assertEqual(
+            [version["title"] for version in get_versions(self.entity.name)],
+            ["first", "second", "third"],
+        )
+        self.assertEqual(
+            [version["snapshot"] for version in get_versions(self.entity.name)],
+            ["<p>first</p>", "<p>second</p>", "<p>third</p>"],
+        )
 
     def test_a_stranger_is_still_refused_the_history(self):
-        """The refusal is the old rule's, not a zeroed answer standing in for
-        one. `get_user_access_for_user` decides it, as it always did."""
+        """A stranger is refused, not handed an empty history. The refusal is
+        `get_user_access`'s, on the node."""
         frappe.set_user(OTHER)
         with self.assertRaises(frappe.PermissionError):
             get_versions(self.entity.name)
 
     def test_the_author_finds_the_document_they_just_created(self):
-        """`search` drops a hit whose `read` is 0 and recounts the summary to
-        zero, so the index found the document and the filter threw it away."""
+        """The search mapping reads both stores, so a hit on a node-backed
+        document resolves to an id and survives the readability filter."""
         docname = self.entity.content_docname
         hits = {
             "results": [{"name": docname}],
@@ -207,3 +269,195 @@ class TestLegacyDocumentReads(IntegrationTestCase):
 
         self.assertEqual(answer["results"], [])
         self.assertEqual(answer["summary"]["total_matches"], 0)
+
+
+class TestDocumentListShareCount(IntegrationTestCase):
+    """Legacy published one number for "who is this shared with".
+
+    -2 "anyone with the link", -1 "everyone on this site", otherwise the count
+    of people it is shared with. `DocumentList.vue` reads it, so the node half
+    has to answer the same three shapes off `Drive Grant`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        for user in (USER, OTHER, THIRD):
+            ensure_user(user)
+        frappe.db.commit()
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.entity = frappe._dict(docs.create_document(title=f"Shared {frappe.generate_hash(6)}"))
+        self.addCleanup(self._drop, self.entity.name)
+
+    @staticmethod
+    def _drop(node: str):
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("Drive Node", node):
+            return
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        update(admin, node, state="Trashed")
+        purge(admin, node)
+        frappe.db.commit()
+
+    def _share_count(self) -> int:
+        frappe.set_user(USER)
+        frappe.response.pop("data", None)
+        get_document_list(limit=200)
+        rows = {row["name"]: row for row in frappe.response["data"]}
+        return rows[self.entity.name]["share_count"]
+
+    def _grant(self, principal: str, role: int = READ):
+        grant(self.entity.name, principal, role, Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",)))
+
+    def test_an_unshared_document_counts_nobody(self):
+        self.assertEqual(self._share_count(), 0)
+
+    def test_each_person_counts_once(self):
+        self._grant(OTHER)
+        self.assertEqual(self._share_count(), 1)
+        self._grant(THIRD)
+        self.assertEqual(self._share_count(), 2)
+
+    def test_everyone_on_this_site_is_minus_one(self):
+        self._grant(OTHER)
+        self._grant("$GENERAL")
+        self.assertEqual(self._share_count(), -1)
+
+    def test_anyone_with_the_link_is_minus_two_and_wins(self):
+        """`$PUBLIC` is granted first here on purpose: a `$GENERAL` row on the
+        node is one of the owner's own principals, and the nearest one wins, so
+        granting it first would leave the owner at Read and unable to grant
+        again."""
+        self._grant("$PUBLIC")
+        self._grant(OTHER)
+        self._grant("$GENERAL")
+        self.assertEqual(self._share_count(), -2)
+
+    def test_a_share_link_is_not_a_person(self):
+        """A link is a credential, not somebody it is shared with, and legacy
+        never counted one."""
+        self._grant("$LINK", EDIT)
+        self.assertEqual(self._share_count(), 0)
+
+    def test_a_denial_is_not_a_share(self):
+        """§5.10 keeps removal and denial apart: `role = 0` is a deny row, and
+        counting it would report a document as shared with the one person it is
+        explicitly kept from."""
+        self._grant(OTHER, NONE)
+        self.assertEqual(self._share_count(), 0)
+
+
+class TestDocumentListPaging(IntegrationTestCase):
+    """The list merges two stores in Python, so it pages them itself."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(USER)
+        frappe.db.commit()
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.made = []
+        for index in range(3):
+            entity = frappe._dict(docs.create_document(title=f"Page {index} {frappe.generate_hash(6)}"))
+            self.made.append(entity.name)
+            self.addCleanup(self._drop, entity.name)
+
+    @staticmethod
+    def _drop(node: str):
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("Drive Node", node):
+            return
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        update(admin, node, state="Trashed")
+        purge(admin, node)
+        frappe.db.commit()
+
+    def _page(self, start: int, limit: int):
+        frappe.response.pop("data", None)
+        frappe.response.pop("has_next_page", None)
+        get_document_list(start=start, limit=limit)
+        return [row["name"] for row in frappe.response["data"]], frappe.response["has_next_page"]
+
+    def test_a_window_returns_that_many_rows_and_says_there_are_more(self):
+        first, more = self._page(0, 2)
+        self.assertEqual(len(first), 2)
+        self.assertTrue(more)
+
+    def test_the_next_window_does_not_repeat_the_first(self):
+        first, _ = self._page(0, 2)
+        second, _ = self._page(2, 2)
+        self.assertFalse(set(first) & set(second), "one row is on one page")
+
+    def test_every_document_the_caller_owns_is_reachable_by_paging(self):
+        seen, start = [], 0
+        while True:
+            page, more = self._page(start, 2)
+            seen += page
+            if not more:
+                break
+            start += 2
+        self.assertTrue(set(self.made) <= set(seen))
+
+    def test_the_last_window_says_there_are_no_more(self):
+        _, more = self._page(0, 500)
+        self.assertFalse(more)
+
+
+class TestDocumentListStaleRecent(IntegrationTestCase):
+    """ "Recently opened" outlives access, so the list re-asks before it publishes.
+
+    A `Drive Recent` row is a record of the past. Access is answered now. If
+    the list trusted the first one it would name a document to somebody whose
+    grant was taken away (§5.4).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        for user in (USER, OTHER):
+            ensure_user(user)
+        frappe.db.commit()
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.entity = frappe._dict(docs.create_document(title=f"Stale {frappe.generate_hash(6)}"))
+        self.addCleanup(self._drop, self.entity.name)
+        grant(self.entity.name, OTHER, READ, Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",)))
+        # Drive's own recorder, not a hand-written row: the point of the case
+        # is that a genuine "recently opened" record does not outlive access.
+        visit(Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",)), self.entity.name)
+
+    @staticmethod
+    def _drop(node: str):
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("Drive Node", node):
+            return
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        update(admin, node, state="Trashed")
+        purge(admin, node)
+        frappe.db.commit()
+
+    def _names_for_other(self) -> set[str]:
+        frappe.set_user(OTHER)
+        frappe.response.pop("data", None)
+        get_document_list(limit=200)
+        names = {row["name"] for row in frappe.response["data"]}
+        frappe.set_user(USER)
+        return names
+
+    def test_a_document_opened_by_a_reader_is_in_their_list(self):
+        self.assertIn(self.entity.name, self._names_for_other())
+
+    def test_the_same_document_leaves_the_list_when_the_grant_is_taken_away(self):
+        revoke(self.entity.name, OTHER, Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",)))
+        self.assertNotIn(self.entity.name, self._names_for_other())
