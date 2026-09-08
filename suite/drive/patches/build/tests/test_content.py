@@ -17,6 +17,7 @@ from suite.drive.patches.build.ports import (
     ContentRow,
     ContentShareRow,
     TreeRow,
+    WriterTemplateRow,
 )
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
@@ -629,6 +630,35 @@ class ContentTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BuildContentError, "has no template node"):
             link_content_documents(env)
+
+    def test_a_writer_template_with_a_blank_link_is_refused_like_a_deck(self):
+        """§14.6 gives every content document a link, templates included.
+
+        Step 8 writes the link with the document and repairs a blank one on a
+        rerun, so a blank link at step 10 means step 8 did not finish this
+        template. Accepting it leaves `Writer Document.node` unset for good.
+        """
+        row = document("Writer Document", "writer-template", title="Letter")
+        template = WriterTemplateRow(
+            name="writer-template",
+            title="Letter",
+            content="<p>Letter</p>",
+            keymap=None,
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(
+            documents=[row], writer_templates=[template], users={"Administrator": True, OWNER: True}
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "writer-template", row, is_template=1, mime="frappe/writer")
+
+        with self.assertRaisesRegex(BuildContentError, "writer-template has no reciprocal link"):
+            link_content_documents(env)
+
+        self.assertFalse(env.state.content().links_completed)
 
     def test_a_kill_inside_the_share_mapper_leaves_step_10_incomplete(self):
         """§14.2 lets a rerun skip a complete record, so completeness must wait.

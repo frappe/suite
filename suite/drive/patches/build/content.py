@@ -227,6 +227,12 @@ def _validate_template_link(env, row, stored) -> None:
         return
     if row.doctype != "Writer Document" or not env.content.writer_document_is_template(row.name):
         raise InvalidLegacyContent(f"a template node claims {row.doctype} {row.name}, which is not one")
+    if not row.node:
+        # §14.6 gives every content document a link. Step 8 writes this one with
+        # the document (`templates.write_writer_template`) and repairs a blank
+        # one on a rerun, so a blank link here means step 8 did not finish this
+        # template. The Presentation branch above refuses the same shape.
+        raise InvalidLegacyContent(f"Writer template {row.name} has no reciprocal link")
 
 
 def _orphan_node(env, row, root) -> tuple[dict, bool]:
