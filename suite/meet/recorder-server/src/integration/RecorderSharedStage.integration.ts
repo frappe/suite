@@ -229,12 +229,13 @@ async function startProducers(): Promise<{
 	const profiles: Array<{
 		video: 'webcam' | 'screen';
 		audio?: string;
+		marker: string;
 	}> = [
-		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,0\\,2.2)' },
-		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,1.8\\,4)' },
-		{ video: 'screen' },
-		{ video: 'screen' },
-	] as const;
+		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,0\\,2.2)', marker: 'red' },
+		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,1.8\\,4)', marker: 'lime' },
+		{ video: 'screen', marker: 'blue' },
+		{ video: 'screen', marker: 'yellow' },
+	];
 	const sockets: Socket[] = [];
 	const processes: ChildProcess[] = [];
 	const producerIds: string[] = [];
@@ -341,7 +342,7 @@ async function startProducers(): Promise<{
 				'-f',
 				'lavfi',
 				'-i',
-				`testsrc2=size=${size}:rate=2`,
+				`color=c=${profile.marker}:size=${size}:rate=30`,
 				'-c:v',
 				'libvpx',
 				'-deadline',
@@ -497,6 +498,7 @@ try {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
 	assertProducerProcessesAlive(producer.processes, 'artifact finalization');
+	const captureStoppedAt = performance.now();
 	const state = await worker.stop();
 	assertProducerProcessesAlive(producer.processes, 'capture completion');
 	if (state !== 'complete')
@@ -563,12 +565,12 @@ try {
 		'-i',
 		artifact,
 		'-vf',
-		'fps=4,scale=8:8,format=rgb24',
+		'fps=4,scale=32:32,format=rgb24',
 		'-f',
 		'rawvideo',
 		'-',
 	]);
-	const frameBytes = 8 * 8 * 3;
+	const frameBytes = 32 * 32 * 3;
 	const contentSamples = Array.from(
 		{ length: Math.floor(frames.stdout.length / frameBytes) },
 		(_, index) =>
@@ -591,15 +593,32 @@ try {
 		([red, green, blue]) =>
 			Math.max(red, green, blue) - Math.min(red, green, blue) > 50,
 	).length;
+	const markerPixels = {
+		red: pixels.filter(
+			([red, green, blue]) =>
+				red > 120 && red > green * 1.5 && red > blue * 1.5,
+		).length,
+		lime: pixels.filter(
+			([red, green, blue]) =>
+				green > 120 && green > red * 1.5 && green > blue * 1.5,
+		).length,
+		blue: pixels.filter(
+			([red, green, blue]) =>
+				blue > 120 && blue > red * 1.5 && blue > green * 1.5,
+		).length,
+		yellow: pixels.filter(
+			([red, green, blue]) => red > 120 && green > 120 && blue < 100,
+		).length,
+	};
 	const distinctContentSamples = new Set(
 		contentSamples.map((sample) =>
 			createHash('sha256').update(sample).digest('hex'),
 		),
 	).size;
-	if (coloredPixels === 0 || distinctContentSamples < 2)
+	if (Object.values(markerPixels).some((count) => count === 0))
 		throw new Error(
-			`MeetingLayout samples did not contain moving colored content ` +
-				`(bright=${brightPixels}, colored=${coloredPixels}, distinct=${distinctContentSamples}, total=${contentSamples.length})`,
+			`MeetingLayout samples did not contain every publisher marker ` +
+				`(markers=${JSON.stringify(markerPixels)}, total=${contentSamples.length})`,
 		);
 	const frequencyEnergy = await run('/usr/bin/ffmpeg', [
 		'-v',
@@ -676,7 +695,7 @@ try {
 		audio_stream: true,
 		startup_to_ready_ms: Math.round(captureReadyAt - grantDeliveredAt),
 		ready_to_capture_ms: Math.round(captureStartedAt - captureReadyAt),
-		capture_elapsed_ms: Math.round(performance.now() - captureStartedAt),
+		capture_elapsed_ms: Math.round(captureStoppedAt - captureStartedAt),
 		interruption_events: events.filter(({ type }) => type === 'interrupted')
 			.length,
 		human_participant_connections: 4,
@@ -695,6 +714,7 @@ try {
 		content_samples: contentSamples.length,
 		bright_content_pixels: brightPixels,
 		colored_content_pixels: coloredPixels,
+		marker_pixels: markerPixels,
 		distinct_content_samples: distinctContentSamples,
 		frequency_hz: 997,
 		frequency_energy_samples: energySamples.length,
