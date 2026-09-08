@@ -286,8 +286,14 @@ def _read_bounded(stream) -> bytes:
 def _version_payload(raw: bytes) -> dict:
     try:
         text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        frappe.throw(_("This Writer version is not valid UTF-8"), frappe.ValidationError)
+    except UnicodeDecodeError as invalid:
+        # `text` is unbound on this arm, so the rest of the function must not
+        # be reachable from it. Every other refusal here leaves its subject
+        # bound and can lean on `frappe.throw` raising; this one cannot, so the
+        # raise is written out. `throw` still runs, for the message log.
+        message = _("This Writer version is not valid UTF-8")
+        frappe.throw(message, frappe.ValidationError)
+        raise frappe.ValidationError(message) from invalid
 
     try:
         payload = json.loads(text)

@@ -15,8 +15,12 @@ def set_label(snapshot_id: str, label: str | None, pinned: bool | None = None) -
     pinned was explicitly set).
     """
     snap = frappe.get_doc("Sheet Snapshot", snapshot_id)
-    _refuse_linked_sheet(snap.sheet)
+    # Permission first, then the Drive refusal. Reversed, the refusal message
+    # tells a caller with no rights on the sheet that this snapshot id exists
+    # and that Drive owns its parent. `state.restore` needs no such swap:
+    # `at()` has already validated read.
     frappe.has_permission("Sheet", doc=snap.sheet, ptype="write", throw=True)
+    _refuse_linked_sheet(snap.sheet)
 
     if label is not None:
         clean = label.strip()
@@ -42,8 +46,9 @@ def delete(snapshot_id: str) -> dict:
     snap = frappe.db.get_value("Sheet Snapshot", snapshot_id, ["sheet", "pinned"], as_dict=True)
     if not snap:
         frappe.throw(f"Snapshot {snapshot_id} not found")
-    _refuse_linked_sheet(snap.sheet)
+    # Permission first, for the reason `set_label` states.
     frappe.has_permission("Sheet", doc=snap.sheet, ptype="write", throw=True)
+    _refuse_linked_sheet(snap.sheet)
     if snap.pinned:
         frappe.throw("Cannot delete a pinned snapshot — unpin it first")
 

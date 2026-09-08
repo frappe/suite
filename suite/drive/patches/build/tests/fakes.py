@@ -35,7 +35,11 @@ from suite.drive.patches.build.ports import (
     WriterTemplateRow,
     WriterVersionRow,
 )
-from suite.drive.patches.build.slide_journal import SlideBody
+from suite.drive.patches.build.slide_journal import (
+    JournalConflictError,
+    SlideBody,
+    UnknownBodyState,
+)
 from suite.drive.patches.build.state import BuildState
 from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
@@ -587,6 +591,7 @@ class FakeContent:
         shares=(),
         users=None,
         timezone="UTC",
+        host="site.example",
     ):
         self.document_rows = {(row.doctype, row.name): row for row in documents}
         self.file_rows = list(files)
@@ -598,6 +603,7 @@ class FakeContent:
         self.share_rows = list(shares)
         self.users = dict(users or {})
         self.timezone = timezone
+        self.host = host
         self.op_stamps = {}
         self.residual_versions = []
 
@@ -614,11 +620,21 @@ class FakeContent:
             row for row in self.file_rows if (row.content_doctype, row.content_docname) == (doctype, docname)
         ]
 
-    def writer_versions(self, document):
-        return [row for row in self.writer_version_rows if row.doc == document]
+    def writer_versions(self, document, after, limit):
+        rows = sorted(
+            (row for row in self.writer_version_rows if row.doc == document),
+            key=lambda row: (str(row.creation or ""), row.name),
+        )
+        return [row for row in rows if (str(row.creation or ""), row.name) > after][:limit]
 
-    def sheet_snapshots(self, sheet):
-        return [row for row in self.sheet_snapshot_rows if row.sheet == sheet]
+    def sheet_snapshots(self, sheet, after, limit):
+        # MariaDB sorts a NULL `seq` below every real one, so the fake does the
+        # same and lets `history.py` refuse the row instead of raising here.
+        rows = sorted(
+            (row for row in self.sheet_snapshot_rows if row.sheet == sheet),
+            key=lambda row: (int(row.seq or 0), row.name),
+        )
+        return [row for row in rows if (int(row.seq or 0), row.name) > after][:limit]
 
     def residual_writer_versions(self, limit):
         return sorted(self.residual_versions)[:limit]
@@ -631,14 +647,19 @@ class FakeContent:
             row for row in sorted(self.writer_template_rows, key=lambda row: row.name) if row.name > after
         ][:limit]
 
-    def slides(self, deck):
-        return sorted(
-            [row for row in self.slide_rows.values() if row.parent == deck],
+    def slides(self, deck, after, limit):
+        rows = sorted(
+            (row for row in self.slide_rows.values() if row.parent == deck),
             key=lambda row: (row.idx, row.name),
         )
+        return [row for row in rows if (row.idx, row.name) > after][:limit]
 
-    def media_files(self, deck):
-        return [row for row in self.media_rows if row.deck == deck]
+    def media_files(self, deck, after, limit):
+        rows = sorted(
+            (row for row in self.media_rows if row.deck == deck),
+            key=lambda row: (str(row.creation or ""), row.name),
+        )
+        return [row for row in rows if (str(row.creation or ""), row.name) > after][:limit]
 
     def media_files_by_urls(self, urls):
         wanted = set(urls)
@@ -647,6 +668,9 @@ class FakeContent:
     def presentation_is_template(self, deck):
         row = self.document_rows.get(("Presentation", deck))
         return bool(row and row.is_template)
+
+    def writer_document_is_template(self, name):
+        return any(row.name == name for row in self.writer_template_rows)
 
     def content_shares(self, after, limit):
         return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
@@ -657,10 +681,14 @@ class FakeContent:
     def site_timezone(self):
         return self.timezone
 
+    def site_host(self):
+        return self.host
+
     def link_document(self, doctype, docname, node):
         key = (doctype, docname)
         row = self.document_rows[key]
         self.document_rows[key] = replace(row, node=node)
+
 
     def update_slides(self, rows):
         for row in rows:
@@ -732,20 +760,14 @@ class FakeContentTarget:
             )
         )
 
-    def versions(self, node):
-        return [dict(row) for row in self.version_rows.values() if row["node"] == node]
+    def version_seqs(self, node):
+        return {int(row["seq"]): row["name"] for row in self.version_rows.values() if row["node"] == node}
 
     def version_names(self, names):
         return {name: dict(self.version_rows[name]) for name in names if name in self.version_rows}
 
-    def threads(self, node):
-        return [dict(row) for row in self.thread_rows.values() if row["node"] == node]
-
     def thread_names(self, names):
         return {name: dict(self.thread_rows[name]) for name in names if name in self.thread_rows}
-
-    def comments(self, thread):
-        return [dict(row) for row in self.comment_rows.values() if row["thread"] == thread]
 
     def comment_names(self, names):
         return {name: dict(self.comment_rows[name]) for name in names if name in self.comment_rows}
@@ -813,11 +835,23 @@ class FakeContentTarget:
     def grant_roles(self, node, principals):
         return self.drive.grant_roles(node, principals)
 
+    def grant_pairs(self, pairs):
+        found = {}
+        for node, principal in pairs:
+            role = self.drive.grant_roles(node, (principal,)).get(principal)
+            if role is not None:
+                found[(node, principal)] = role
+        return found
+
     def set_grant_role(self, node, principal, role):
         self.drive.raise_grant(node, principal, role)
 
     def insert_versions(self, rows):
-        self._insert_unique(self.version_rows, rows, "Drive Node Version")
+        # `Drive Node Version` carries a real unique index on `(node, seq)`
+        # (`drive_node_version.py:22`), so a fake that only checks the primary
+        # key would let a duplicate sequence through here and fail with an
+        # IntegrityError on a site.
+        self._insert_unique(self.version_rows, rows, "Drive Node Version", unique=("node", "seq"))
 
     def insert_threads(self, rows):
         self._insert_unique(self.thread_rows, rows, "Drive Comment Thread")
@@ -852,10 +886,10 @@ class FakeContentTarget:
 
         self._unit(node["name"], write)
 
-    def write_writer_template(self, document, node, grants):
-        if document is None and node is None and not grants:
+    def write_writer_template(self, document, node, grants, *, link=""):
+        if document is None and node is None and not grants and not link:
             return
-        name = (document or node)["name"]
+        name = (document or node)["name"] if (document or node) else link
 
         def write():
             if document:
@@ -867,6 +901,11 @@ class FakeContentTarget:
             if node:
                 self.insert_nodes([node])
             self.insert_grants(grants)
+            if link:
+                # One `tabWriter Document` on a site, two tables here: a
+                # template's document is a row this fake target wrote, not a
+                # legacy row the fake source holds.
+                self.writer_rows[link]["node"] = link
 
         self._unit(name, write)
 
@@ -894,10 +933,19 @@ class FakeContentTarget:
         self.commits += 1
         self.drive.commit()
 
-    def _insert_unique(self, destination, rows, label):
+    def _insert_unique(self, destination, rows, label, *, unique=()):
         for row in rows:
             if row["name"] in destination:
                 raise ValueError(f"duplicate {label} {row['name']!r}")
+            if unique:
+                key = tuple(row.get(field) for field in unique)
+                taken = [
+                    stored
+                    for stored in destination.values()
+                    if tuple(stored.get(field) for field in unique) == key
+                ]
+                if taken:
+                    raise ValueError(f"duplicate {label} {'/'.join(unique)} {key!r}")
             destination[row["name"]] = dict(row)
 
     def _unit(self, name, write):
@@ -943,7 +991,11 @@ class FakeContentTarget:
 
 
 class FakeSlideJournal:
-    """A write-ahead Slide journal with exact in-memory body boundaries."""
+    """A write-ahead Slide journal with exact in-memory body boundaries.
+
+    It raises the real journal's exception family. `ValueError` would be caught
+    by the slides phase and hide the fact that a site journal conflict is not.
+    """
 
     def __init__(self):
         self.records = []
@@ -951,7 +1003,7 @@ class FakeSlideJournal:
     def append(self, *, presentation, slide, before, after, changed_elements, created_at):
         same = [row for row in self.records if row[0] == presentation and row[1] == slide]
         if same and same[-1][3] != before:
-            raise ValueError(f"Slide {slide} journal chain is discontinuous")
+            raise JournalConflictError(f"Slide {slide} journal chain is discontinuous")
         record = (presentation, slide, before, after, changed_elements, created_at)
         if record not in self.records:
             self.records.append(record)
@@ -966,6 +1018,6 @@ class FakeSlideJournal:
             current = current_bodies.get(slide)
             matches = [index for index, body in enumerate(boundaries) if body == current]
             if len(matches) != 1:
-                raise ValueError(f"Slide {slide} does not match one journal boundary")
+                raise UnknownBodyState(f"Slide {slide} does not match one journal boundary")
             total += sum(row[4] for row in chain[: matches[0]])
         return total

@@ -320,6 +320,7 @@ class ContentIssue:
 
     source: str
     reason: str
+    phase: str = ""
 
 
 @dataclass
@@ -353,11 +354,26 @@ class ContentConversion:
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0
+    issues_by_phase: dict[str, int] = field(default_factory=dict)
 
-    def record_issue(self, source: str, reason: str) -> None:
+    def record_issue(self, source: str, reason: str, *, phase: str = "") -> None:
         self.issues_total += 1
+        self.issues_by_phase[phase] = self.issues_by_phase.get(phase, 0) + 1
         if len(self.issues) < SAMPLE_KEPT:
-            self.issues.append(ContentIssue(source, reason))
+            self.issues.append(ContentIssue(source, reason, phase))
+
+    def begin_phase(self, phase: str, fields: tuple[str, ...]) -> None:
+        """Reset one phase's counters and drop the evidence it recorded.
+
+        The three phases share one record, so a phase may only clear its own
+        rows. `issues_by_phase` keeps the subtraction exact even after the
+        sample list hits `SAMPLE_KEPT` and stops growing.
+        """
+        blank = ContentConversion()
+        for name in fields:
+            setattr(self, name, getattr(blank, name))
+        self.issues = [issue for issue in self.issues if issue.phase != phase]
+        self.issues_total -= self.issues_by_phase.pop(phase, 0)
 
     def begin_run(self) -> None:
         report_at = self.report_at if self.completed else None
@@ -373,6 +389,11 @@ class ContentConversion:
         known = {f for f in cls.__dataclass_fields__ if f != "issues"}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
+        content.issues_by_phase = {
+            str(key): int(value)
+            for key, value in (data.get("issues_by_phase") or {}).items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
         return content
 
 
