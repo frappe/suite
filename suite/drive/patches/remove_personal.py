@@ -17,7 +17,11 @@ def execute():
     frappe.reload_doc("Drive", "doctype", "Drive Disk Settings")
     doc = frappe.get_single("Drive Disk Settings")
     doc.team_prefix = "team_name"
-    doc.preview_size = 100
+    # `preview_size` used to mean a megabyte in-browser preview cutoff and
+    # this patch pinned it to 100 for that contract. §9.2 redefined the same
+    # field as the generated preview's longest side in pixels, `reqd: 1`,
+    # `default: 512`; writing the old value here would silently downgrade a
+    # site's preview quality on every upgrade through this patch.
     doc.save()
 
     frappe.reload_doc("Drive", "doctype", "Drive Permission")

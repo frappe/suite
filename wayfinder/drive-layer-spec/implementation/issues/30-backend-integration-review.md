@@ -54,3 +54,47 @@ Run integration checks serially on slides.localhost. Attach actual output summar
 
 Record changed behavior, exact revisions, commands, results, and unresolved gates here.
 Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+
+### 2026-09-09 — final review-fix pass, `fix/drive-30-final-review`
+
+Bounded fixes from the three independent review branches, applied cohesively
+in an isolated worktree (never merged past `forge/drive-layer`):
+
+- `suite/meet/api/recording.py`'s `_admission_transaction` now rolls back
+  through `drive.rollback_savepoint`, not a bare
+  `frappe.db.rollback(save_point=...)`; added to
+  `test_savepoint_discipline.py`'s `OWNED_SURFACE` and a runtime deadlock
+  test (`suite/meet/api/test/test_recording_savepoint.py`).
+- `preview_size` now has one coherent meaning end to end: `_core/previews.py`
+  reads `Drive Disk Settings.preview_size` (falling back to 512 on a bad
+  value) instead of a hardcoded constant; `patches/remove_personal.py` no
+  longer writes the stale megabyte-era `100`; `FileRender.vue`'s in-browser
+  file-size guard is now its own independent constant
+  (`utils/filePreview.js`), decoupled from the backend's pixel setting.
+- `test_blob_provenance.py`'s AST sweep now resolves `import ... as` aliases
+  before matching a call to `create_file`, which surfaced the public
+  `suite.drive.create_file` facade as an unproven caller; it now forwards
+  `_client_named_blob=True` like the HTTP client door.
+- `_require_readable_blob` no longer truncates its candidate scan at 50 rows
+  before checking readability (which could falsely refuse a caller whose
+  own readable copy sorted past the cut); it now pages through every
+  candidate, bounded per page, until one page proves readable or the scan is
+  exhausted.
+- Fixed a stale rule citation and a dead file reference in
+  `test_savepoint_discipline.py`'s module docstring (ARCHITECTURE.md rule
+  2.4, not 2.2; the two runtime cases live in
+  `suite/writer/tests/test_docs_savepoint.py` and
+  `suite/slides/tests/test_presentation_savepoint.py`, not a
+  `suite/tests/test_content_app_savepoints.py` that was never created).
+- ARCHITECTURE.md now records `rollback_savepoint` as an intentional
+  rule-9.5 exception to rule 3.2 (a transaction primitive, not a domain
+  workflow) rather than leaving its public export undocumented.
+- **Deferred, not fixed:** `Drive Notification.activity` is normatively
+  `reqd: 1` (§3.11), but `suite/drive/api/notifications.py`'s legacy writer
+  and `drive_user_invitation.py` still insert rows with no `activity` set.
+  Making the field required now would break those Build-era writers.
+  §14.10 already drops the legacy notification columns in Cleanup; enforcing
+  `reqd: 1` belongs in that same release, once the legacy writers are gone,
+  not in Build. See [Ticket 35](35-cleanup-implementation.md)'s acceptance
+  criteria for the ordered removal this depends on. This does not close
+  either ticket.

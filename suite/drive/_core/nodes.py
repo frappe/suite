@@ -2257,37 +2257,37 @@ def _refuse_sibling_collision(parent: str, title: str, *, exclude: str | None = 
         raise DriveConflict(_("An active Drive node with this title already exists"))
 
 
-# How many nodes and versions holding one blob are examined for the caller's
-# proof. Storage dedup is content-addressed and site-wide, so one blob can sit
-# under many nodes, and reading all of them to authorize one create is not a
-# cost this route is worth. Own rows are ordered first so the caller's copy is
-# inside the cap; a caller whose readable copy is past it has
-# `POST /nodes/<id>/copy`, which names its source and searches for nothing.
-BLOB_SOURCE_LIMIT = 50
+# Page size for the keyset scan below. Storage dedup is content-addressed and
+# site-wide, so one blob can sit under many nodes; this bounds each query's
+# work without bounding how many candidates the proof ever considers. A page
+# with no readable row and a full page keeps scanning; a short page is the
+# last one. Ordering by `name` alone (not "own" first) keeps every page a
+# disjoint, resumable range on the same indexed column the WHERE clause
+# already scans, so no candidate can fall outside every page the way a
+# single `LIMIT` on an "own DESC" order could strand a caller's own,
+# non-owning-but-readable copy behind fifty strangers' rows.
+BLOB_SOURCE_PAGE_SIZE = 50
 
 # Both `blob` columns carry `search_index: 1` for the framework GC's liveness
-# probe (§3.1, §3.4), so each arm is an index range scan.
+# probe (§3.1, §3.4), so each arm is an index range scan, and `name` is the
+# primary key both arms already order by for the keyset page.
 BLOB_SOURCES_SQL = """
 SELECT name, root, path, kind, own
 FROM (
     (
         SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
         FROM `tabDrive Node` n
-        WHERE n.`blob` = %(blob)s
-        ORDER BY own DESC
-        LIMIT %(limit)s
+        WHERE n.`blob` = %(blob)s AND n.name > %(after)s
     )
     UNION
     (
         SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
         FROM `tabDrive Node Version` v
         JOIN `tabDrive Node` n ON n.name = v.node
-        WHERE v.`blob` = %(blob)s
-        ORDER BY own DESC
-        LIMIT %(limit)s
+        WHERE v.`blob` = %(blob)s AND n.name > %(after)s
     )
 ) AS sources
-ORDER BY own DESC
+ORDER BY name
 LIMIT %(limit)s
 """
 
@@ -2305,24 +2305,29 @@ def _require_readable_blob(principals: Principals, blob: str) -> None:
     trash, and the purge that were supposed to end the access.
 
     So bytes Drive did not just store for this caller have to clear the bar
-    `copy` already clears: READ on something that already holds them. The proof
-    is one indexed lookup plus §5.7's one grant query over the union of every
-    candidate's chain, and it answers the same refusal for a blob that does not
-    exist, so it enumerates nothing.
+    `copy` already clears: READ on something that already holds them. The
+    proof pages through every node and version holding the blob, indexed and
+    in bounded batches, and stops at the first page that holds a readable
+    one. A blob with no page at all, and a blob whose every page comes back
+    unreadable, answer the same refusal, so the scan enumerates nothing.
 
     It runs before `_validated_blob`, which is what keeps `revive_blob` from
     pulling a stranger's orphaned blob back out of the GC window (§13.1).
     """
-    sources = frappe.db.sql(
-        BLOB_SOURCES_SQL,
-        {"blob": blob, "user": principals.user, "limit": BLOB_SOURCE_LIMIT},
-        as_dict=True,
-    )
-    # `_readable_rows` would run its grant query over an empty union, and the
-    # refusal is the same either way. A blob no node and no version holds is
-    # not Drive's to attach, whoever is asking.
-    if not sources or not _readable_rows(sources, principals):
-        raise DriveForbidden(_("A Drive file may only name bytes you can already read"))
+    after = ""
+    while True:
+        page = frappe.db.sql(
+            BLOB_SOURCES_SQL,
+            {"blob": blob, "user": principals.user, "limit": BLOB_SOURCE_PAGE_SIZE, "after": after},
+            as_dict=True,
+        )
+        if not page:
+            raise DriveForbidden(_("A Drive file may only name bytes you can already read"))
+        if _readable_rows(page, principals):
+            return
+        if len(page) < BLOB_SOURCE_PAGE_SIZE:
+            raise DriveForbidden(_("A Drive file may only name bytes you can already read"))
+        after = page[-1].name
 
 
 def _validated_blob(blob: str, size: int, mime: str) -> frappe._dict:

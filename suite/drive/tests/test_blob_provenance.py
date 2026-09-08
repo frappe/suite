@@ -62,6 +62,24 @@ def forwarded_flags(source: str) -> list:
     ]
 
 
+def _import_aliases(node) -> dict:
+    """Map a local name to the real name `import ... as <local>` gave it.
+
+    `node` may be a whole module or one function: an `import` inside a
+    function body (the public facade's own style) is only visible to a scan
+    that walks that function, not the module's top level.
+    """
+    aliases = {}
+    for child in ast.walk(node):
+        if isinstance(child, ast.ImportFrom):
+            for alias in child.names:
+                aliases[alias.asname or alias.name] = alias.name
+        elif isinstance(child, ast.Import):
+            for alias in child.names:
+                aliases[alias.asname or alias.name.split(".")[0]] = alias.name
+    return aliases
+
+
 class StubbedDatabase(UnitTestCase):
     """`frappe.db` replaced per test, so nothing here runs a query.
 
@@ -134,7 +152,7 @@ class TestReadableBlobProof(StubbedDatabase):
 
         self.assertEqual(str(unknown.exception), str(unreadable.exception))
 
-    def test_the_sources_query_reads_nodes_and_versions_under_one_cap(self):
+    def test_the_sources_query_reads_nodes_and_versions_one_page_at_a_time(self):
         """Version bytes are readable too, so a version blob is a real source.
 
         `GET /nodes/<id>/versions` mints a signed `/f/` URL per row, which is
@@ -151,7 +169,41 @@ class TestReadableBlobProof(StubbedDatabase):
         self.assertIn("tabDrive Node Version", statement)
         self.assertEqual(values["blob"], STRANGER_BLOB)
         self.assertEqual(values["user"], USER)
-        self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_LIMIT)
+        self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_PAGE_SIZE)
+        self.assertEqual(values["after"], "")
+
+    def test_a_readable_source_past_a_full_page_of_strangers_is_still_admitted(self):
+        """The page size must bound one query's cost, not the proof's reach.
+
+        A first page entirely full of unreadable rows used to be the whole
+        search: a single `LIMIT` on an "own DESC" order could strand a
+        caller's own readable-but-not-owned copy behind it forever. The scan
+        now keeps paging past a full, unreadable page instead of stopping.
+        """
+        full_page = [source_row(name=f"stranger-{i}") for i in range(node_workflows.BLOB_SOURCE_PAGE_SIZE)]
+        second_page = [source_row(name="their-node", root="their-root")]
+        self.db.sql.side_effect = [
+            full_page,
+            [],  # `_readable_rows` over the first page: nothing granted
+            second_page,
+            [grant_row("their-root", READ)],
+        ]
+
+        node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 4)
+        second_call_values = self.db.sql.call_args_list[2].args[1]
+        self.assertEqual(second_call_values["after"], "stranger-49")
+
+    def test_an_exhausted_scan_with_no_readable_page_is_refused(self):
+        """A blob with only unreadable sources must not page forever."""
+        short_unreadable_page = [source_row()]
+        self.db.sql.side_effect = [short_unreadable_page, []]
+
+        with self.assertRaises(DriveForbidden):
+            node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 2)
 
     def test_a_suite_admin_still_needs_the_blob_to_be_in_drive(self):
         """MANAGE everywhere is not a licence to name bytes Drive does not hold.
@@ -299,11 +351,19 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
         proof.assert_not_called()
 
     def test_the_caller_set_of_create_file_is_the_one_that_was_reviewed(self):
-        """A fourth caller must come back through this test.
+        """A fifth caller must come back through this test.
 
         The flag defaults to "already proved", so the guard that keeps it
-        honest is the caller set, not the default. `create` is the client
-        door; the other two hold §8.4's binding.
+        honest is the caller set, not the default. `create` and the
+        public facade are the two client doors; the other two hold §8.4's
+        binding.
+
+        A caller can reach `_core.nodes.create_file` under an alias - the
+        public facade imports it as `_create_file` inside the function body -
+        so the scan resolves both module-level and local `import ... as`
+        aliases before comparing a call's name. A scan that only matched the
+        literal name `create_file` would miss that call site entirely and
+        never notice it forwards no proof.
         """
         root = Path(node_workflows.__file__).parents[3]
         self.assertTrue((root / "suite" / "drive").is_dir(), root)
@@ -313,20 +373,23 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
             if "tests" in parts or source.name.startswith("test_"):
                 continue
             tree = ast.parse(source.read_text())
+            module_aliases = _import_aliases(tree)
             functions = [
                 node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             ]
             for function in functions:
+                aliases = {**module_aliases, **_import_aliases(function)}
                 for node in ast.walk(function):
                     called = node.func if isinstance(node, ast.Call) else None
                     name = getattr(called, "attr", None) or getattr(called, "id", None)
-                    if name == "create_file":
+                    if name and aliases.get(name, name) == "create_file":
                         callers.add(f"{source.relative_to(root)}:{function.name}")
 
         self.assertEqual(
             callers,
             {
                 "suite/drive/_core/nodes.py:create",
+                "suite/drive/__init__.py:create_file",
                 "suite/drive/_core/upload.py:finish_upload",
                 "suite/drive/webdav/put.py:handle",
                 # The legacy `File` adoption helper, a different function of
@@ -334,6 +397,12 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
                 "suite/drive/overrides/file.py:create_for_doc",
             },
         )
+
+    def test_the_public_facade_forwards_the_flag_too(self):
+        """The fifth caller found above must be a proven one, not a silent gap."""
+        import suite.drive as public_facade
+
+        self.assertEqual(forwarded_flags(inspect.getsource(public_facade.create_file)), [True])
 
 
 class TestTheReplacePathHasNoClientDoor(StubbedDatabase):
