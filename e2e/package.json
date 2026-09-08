@@ -6,6 +6,8 @@
     "test": "yarn test:drive-backed-apps",
     "test:drive-backed-apps": "playwright test -c drive-backed-apps/playwright.config.ts",
     "test:meet": "playwright test -c meet/playwright.config.ts",
+    "test:meet-load": "node --test meet/load/*.test.mjs",
+    "load:meet": "node meet/load/run.mjs",
     "test:headed": "yarn test:drive-backed-apps --headed",
     "test:debug": "yarn test:drive-backed-apps --debug",
     "test:ui": "yarn test:drive-backed-apps --ui",
@@ -15,6 +17,9 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/node": "^24.10.1",
-    "typescript": "^6.0.3"
+    "mediasoup-client": "^3.18.8",
+    "socket.io-client": "^4.8.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }

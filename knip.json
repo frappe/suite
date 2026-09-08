@@ -29,12 +29,14 @@
       "entry": [
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",
-        "meet/global-setup.ts"
+        "meet/global-setup.ts",
+        "meet/load/client.ts",
+        "meet/load/*.test.mjs"
       ],
       "project": [
         "shared/**/*.ts",
         "drive-backed-apps/**/*.ts",
-        "meet/**/*.ts"
+        "meet/**/*.{ts,mjs}"
       ],
       "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
     },
