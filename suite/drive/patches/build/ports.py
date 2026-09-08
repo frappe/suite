@@ -11,6 +11,7 @@ to 3, then `LegacyTree` for everything Build reads out of the legacy tables
 and `DriveTarget` for everything it writes into Drive's own.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import IO, Protocol
 
@@ -1621,22 +1622,47 @@ class SiteContentTarget:
             )
 
     def versions_to_thin(self, report_at: str) -> int:
+        """Project the runtime ladder deletions at one frozen report time.
+
+        This is a census, not a write. It reads a page of nodes and then one
+        page of their rows, rather than one query per node: after Build every
+        migrated document carries auto versions, so a per-node query would be
+        one round trip per document on the site.
+        """
         from frappe.utils import get_datetime
 
         from suite.drive._core.versions import _normalized_ladder, _pick_deletions
+        from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 
+        frozen = get_datetime(report_at)
+        ladder = _normalized_ladder(None)
         total = 0
-        nodes = frappe.get_all(
-            "Drive Node Version", filters={"kind": "auto", "pinned": 0}, distinct=True, pluck="node"
-        )
-        for node in nodes:
+        after = ""
+        while True:
+            nodes = frappe.get_all(
+                "Drive Node Version",
+                filters=[["kind", "=", "auto"], ["pinned", "=", 0], ["node", ">", after]],
+                distinct=True,
+                pluck="node",
+                order_by="node asc",
+                limit=BUILD_BATCH_SIZE,
+            )
+            if not nodes:
+                break
             rows = frappe.get_all(
                 "Drive Node Version",
-                filters={"node": node, "kind": "auto", "pinned": 0},
-                fields=["name", "seq", "creation", "size"],
-                order_by="creation desc, seq desc",
+                filters=[["kind", "=", "auto"], ["pinned", "=", 0], ["node", "in", nodes]],
+                fields=["name", "node", "seq", "creation", "size"],
+                order_by="node asc, creation desc, seq desc",
             )
-            total += len(_pick_deletions(rows, get_datetime(report_at), _normalized_ladder(None)))
+            grouped = defaultdict(list)
+            for row in rows:
+                grouped[row.node].append(row)
+            for node in nodes:
+                total += len(_pick_deletions(grouped[node], frozen, ladder))
+            after = nodes[-1]
+            if len(nodes) < BUILD_BATCH_SIZE:
+                break
         return total
 
     def commit(self) -> None:
