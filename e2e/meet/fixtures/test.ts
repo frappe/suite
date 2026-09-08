@@ -82,7 +82,7 @@ async function prepareContext(context: BrowserContext): Promise<void> {
 				const body = await response.json();
 				// Preserve Frappe-issued JWTs and claims; redirect only endpoint metadata.
 				if (body.data && "sfu_url" in body.data) {
-					body.data.sfu_url = `${endpoint.protocol}//${endpoint.hostname}`;
+					body.data.sfu_url = endpoint.origin;
 					body.data.sfu_port = Number(
 						endpoint.port || (endpoint.protocol === "https:" ? 443 : 80),
 					);

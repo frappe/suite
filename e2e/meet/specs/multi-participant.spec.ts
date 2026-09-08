@@ -1,5 +1,6 @@
 import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
-import { meetHostName } from "../helpers/auth";
+import { meetHost, meetHostName } from "../helpers/auth";
+import { loginViaApi } from "../../shared/auth";
 import { expectRemoteVideoReceiving } from "../helpers/media";
 
 declare global {
@@ -9,6 +10,46 @@ declare global {
 }
 
 test.describe("Multi participant", () => {
+	test("guest can join after a transient preview access-check failure", async ({
+		createMeeting, createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guest = await createParticipant();
+		let accessChecks = 0;
+		await guest.page.route("**/api/v2/method/suite.meet.api.meeting.check_meeting_access**", (route) => {
+			accessChecks++;
+			return route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+		});
+		await guest.joinAsGuest(meetingId, "Access Retry");
+		expect(accessChecks).toBeGreaterThan(0);
+		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
+	});
+
+	test("loopback SFU override preserves a non-default HTTPS port", async ({
+		createMeeting, createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const previousEndpoint = process.env.MEET_TEST_SFU_URL;
+		let guest;
+		try {
+			process.env.MEET_TEST_SFU_URL = "https://127.0.0.1:4444";
+			guest = await createParticipant();
+		} finally {
+			if (previousEndpoint === undefined) delete process.env.MEET_TEST_SFU_URL;
+			else process.env.MEET_TEST_SFU_URL = previousEndpoint;
+		}
+		await loginViaApi(guest.context.request, meetHost);
+		await guest.page.goto(appUrl("/meet/"));
+		const response = await guest.page.evaluate(async (id) => {
+			const result = await fetch(`/api/v2/method/suite.meet.api.meeting.get_sfu_presence_preview_token?meeting_id=${encodeURIComponent(id)}`);
+			return { status: result.status, body: await result.json() };
+		}, meetingId);
+		expect(response.status).toBe(200);
+		expect(response.body.data.sfu_url).toBe("https://127.0.0.1:4444");
+		expect(response.body.data.sfu_port).toBe(4444);
+		expect(response.body.data.auth_token).toEqual(expect.any(String));
+	});
+
 	for (const allowCapture of [true, false]) {
 		test(`waits for initial capture before guest join (${allowCapture ? "allowed" : "denied"})`, async ({
 			hostPage, createMeeting, createParticipant,

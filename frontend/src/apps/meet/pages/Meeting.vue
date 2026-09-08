@@ -1123,6 +1123,7 @@ onMounted(async () => {
 			}
 		} catch (error) {
 			console.error("Failed to check meeting access:", error);
+			isInitializingPreview.value = false;
 			return;
 		}
 	}
