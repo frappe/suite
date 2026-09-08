@@ -557,6 +557,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
@@ -609,6 +610,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			expect.anything(),
 			{ audio_enabled: true, video_enabled: false },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 	});
 

@@ -211,7 +211,7 @@ export function useTileAdaptiveStreaming() {
 			} else if (isVisible) {
 				scheduleRefresh(controller);
 			}
-		});
+		}, { threshold: VISIBILITY_THRESHOLD });
 		controller.intersectionObserver.observe(element);
 
 		const onLoadedMetadata = () => {

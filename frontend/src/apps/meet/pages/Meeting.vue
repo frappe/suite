@@ -85,7 +85,7 @@
 				:isMicOn="mediaState.isMicOn"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-				:isConnecting="sfuConnection.isConnecting.value"
+				:isConnecting="isInitializingPreview || sfuConnection.isConnecting.value"
 				:userInitials="currentUser.userInitials.value"
 				:userAvatar="currentUser.userAvatar.value"
 				:currentUserName="
@@ -918,6 +918,7 @@ const isHandRaised = computed(() => {
 });
 
 // --- Refs ---
+const isInitializingPreview = ref(true);
 const isReactionPickerOpen = ref(false);
 const isFullscreen = ref(false);
 const isToolbarVisible = ref(true);
@@ -1139,7 +1140,7 @@ onMounted(async () => {
 		if (selectedSpeakerId.value) {
 			await mediaControls.applySpeakerDevice();
 		}
-		connectionState.isInPreview = true;
+		isInitializingPreview.value = false;
 		return;
 	}
 
@@ -1157,6 +1158,8 @@ onMounted(async () => {
 	if (selectedSpeakerId.value) {
 		await mediaControls.applySpeakerDevice();
 	}
+
+	isInitializingPreview.value = false;
 
 	// Auto-join if just created
 	if (wasJustCreated) {

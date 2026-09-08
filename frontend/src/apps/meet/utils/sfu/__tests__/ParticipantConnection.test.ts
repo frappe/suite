@@ -329,6 +329,54 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(connection.state).toBe("ready");
 	});
 
+	it.each([false, true])("keeps the initial connection ID across retained-slot rebuild retries (expired initial slot: %s)", async (expiredInitialSlot) => {
+		vi.useFakeTimers();
+		vi.spyOn(Math, "random").mockReturnValue(0.5);
+		const { connection, sfuClient, transportManager } = createConnection();
+		let socket = 0;
+		let owner: string | undefined;
+		let retainedUntil = Infinity;
+		const conflicts: string[] = [];
+		sfuClient.connect.mockImplementation(async () => { socket += 1; });
+		sfuClient.disconnect.mockImplementation(async () => {
+			retainedUntil = Date.now() + 30_000;
+		});
+		// Independent server claim model: socket fallback, retained owner, no automatic takeover.
+		sfuClient.joinRoom.mockImplementation(async (_room, _user, _media, options?: { connectionId?: string; conflictId?: string }) => {
+			const claimant = options?.connectionId ?? `socket-${socket}`;
+			if (Date.now() >= retainedUntil) owner = undefined;
+			if (owner && owner !== claimant) {
+				conflicts.push(claimant);
+				throw new Error("PARTICIPANT_CONNECTION_CONFLICT");
+			}
+			owner = claimant;
+			retainedUntil = Infinity;
+		});
+		await connection.start(startOptions({ conflictId: "confirmed-initial-takeover" }));
+		const initialId = owner;
+		expect(initialId).toEqual(expect.any(String));
+		if (expiredInitialSlot) {
+			await sfuClient.disconnect();
+			await vi.advanceTimersByTimeAsync(35_000);
+			owner = undefined;
+		}
+		// A join can claim the slot before later media setup fails and forces another socket.
+		transportManager.initializeDevice
+			.mockRejectedValueOnce(new Error("device setup interrupted"))
+			.mockRejectedValueOnce(new Error("device setup interrupted again"));
+		const recovery = connection.rejoinAfterSignalingReconnect();
+		await vi.advanceTimersByTimeAsync(3000);
+		await recovery;
+
+		expect(conflicts).toEqual([]);
+		expect(connection.state).toBe("ready");
+		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(4);
+		for (const call of sfuClient.joinRoom.mock.calls.slice(1)) {
+			expect(call[3]).toEqual({ connectionId: initialId });
+		}
+		expect(owner).toBe(initialId);
+	});
+
 	it("cancels full rebuild backoff during cleanup", async () => {
 		vi.useFakeTimers();
 		const { connection, sfuClient } = createConnection();

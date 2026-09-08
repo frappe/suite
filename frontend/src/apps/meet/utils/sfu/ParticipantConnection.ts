@@ -873,6 +873,7 @@ export class ParticipantConnection {
 			this.meetingId,
 			this.lastJoinUserData,
 			this.getCurrentRejoinMediaState(),
+			{ connectionId: this.connectionId },
 		);
 		this.throwIfAborted(signal);
 		if (!(await this.waitForE2EEContextIfRequired(signal))) {

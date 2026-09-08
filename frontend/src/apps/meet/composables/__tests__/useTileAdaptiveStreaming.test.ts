@@ -16,9 +16,29 @@ class IntersectionObserverStub {
 	static instances: IntersectionObserverStub[] = [];
 	disconnect = vi.fn();
 	observe = vi.fn();
+	private previousRatio: number | null = null;
 
-	constructor(readonly callback: IntersectionObserverCallback) {
+	constructor(
+		readonly callback: IntersectionObserverCallback,
+		readonly options: IntersectionObserverInit = {},
+	) {
 		IntersectionObserverStub.instances.push(this);
+	}
+
+	setIntersection(ratio: number) {
+		const thresholds = [this.options.threshold ?? 0].flat();
+		const previous = this.previousRatio;
+		this.previousRatio = ratio;
+		if (
+			previous === null ||
+			(previous > 0) !== (ratio > 0) ||
+			thresholds.some((threshold) => (previous >= threshold) !== (ratio >= threshold))
+		) {
+			this.callback(
+				[{ isIntersecting: ratio > 0, intersectionRatio: ratio } as IntersectionObserverEntry],
+				this as unknown as IntersectionObserver,
+			);
+		}
 	}
 }
 
@@ -129,5 +149,34 @@ describe("useTileAdaptiveStreaming", () => {
 		expect(
 			IntersectionObserverStub.instances[0]?.disconnect,
 		).toHaveBeenCalledOnce();
+	});
+
+	it("resumes a tile that animates into view through less than ten percent visibility", async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal("requestAnimationFrame", vi.fn());
+		const manager = createManager("consumer-1");
+		const { app, registerTile } = mountComposable(ref(manager));
+		try {
+			const element = visibleVideoElement();
+			Object.defineProperty(element, "readyState", { value: 0 });
+			registerTile("participant-1", element);
+			const observer = IntersectionObserverStub.instances[0]!;
+			observer.setIntersection(0);
+			await Promise.resolve();
+			expect(manager.updateConsumerStreamPreferences).toHaveBeenLastCalledWith(
+				"consumer-1", { visible: false, width: 0, height: 0 },
+			);
+
+			// Position-only animation: no resize or media metadata event can rescue it.
+			observer.setIntersection(0.05);
+			observer.setIntersection(1);
+			await vi.advanceTimersByTimeAsync(300);
+			expect(manager.updateConsumerStreamPreferences).toHaveBeenLastCalledWith(
+				"consumer-1", { visible: true, width: 640, height: 360 },
+			);
+		} finally {
+			app.unmount();
+			vi.useRealTimers();
+		}
 	});
 });

@@ -15,15 +15,13 @@ export async function expectRemoteVideoReceiving(
 export async function expectVideoReceiving(video: Locator): Promise<void> {
 	await expect(video).toBeVisible({ timeout: 45_000 });
 
-	await video.evaluate(async (element) => {
+	await video.evaluate((element) => {
 		const videoEl = element as HTMLVideoElement;
 		videoEl.muted = true;
 		if (videoEl.paused) {
-			try {
-				await videoEl.play();
-			} catch {
+			void videoEl.play().catch(() => {
 				// Poll below is the real assertion.
-			}
+			});
 		}
 	});
 

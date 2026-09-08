@@ -46,17 +46,6 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 	const peerConnections = [];
 	const pendingReceiverFaults = [];
 	const lifecycle = { hidden: document.hidden, online: navigator.onLine };
-	Object.defineProperties(document, {
-		hidden: { configurable: true, get: () => lifecycle.hidden },
-		visibilityState: {
-			configurable: true,
-			get: () => (lifecycle.hidden ? "hidden" : "visible"),
-		},
-	});
-	Object.defineProperty(navigator, "onLine", {
-		configurable: true,
-		get: () => lifecycle.online,
-	});
 	const injectReceiverStats = (receiver, fault) => {
 		const originalGetStats = receiver.getStats.bind(receiver);
 		receiver.getStats = async () => {
@@ -122,9 +111,22 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 			pendingReceiverFaults.push(fault);
 		},
 		setBrowserLifecycle(next) {
-			const hiddenChanged = lifecycle.hidden !== next.hidden;
-			const onlineChanged = lifecycle.online !== next.online;
+			const hiddenChanged = document.hidden !== next.hidden;
+			const onlineChanged = navigator.onLine !== next.online;
+			lifecycle.online = navigator.onLine;
 			lifecycle.hidden = next.hidden;
+			// Ordinary UI tests must keep the browser's real network/visibility state.
+			Object.defineProperties(document, {
+				hidden: { configurable: true, get: () => lifecycle.hidden },
+				visibilityState: {
+					configurable: true,
+					get: () => (lifecycle.hidden ? "hidden" : "visible"),
+				},
+			});
+			Object.defineProperty(navigator, "onLine", {
+				configurable: true,
+				get: () => lifecycle.online,
+			});
 			if (hiddenChanged) document.dispatchEvent(new Event("visibilitychange"));
 			lifecycle.online = next.online;
 			if (onlineChanged) window.dispatchEvent(new Event(next.online ? "online" : "offline"));

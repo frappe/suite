@@ -129,7 +129,7 @@ test.describe("Media fault recovery", () => {
 	);
 
 	test(
-		"defers media repair while hidden and offline, then recovers on resume",
+		"defers media repair while hidden, then recovers only the stalled consumer",
 		{ tag: "@meet-group-2" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			test.setTimeout(120_000);
@@ -158,7 +158,8 @@ test.describe("Media fault recovery", () => {
 				"Healthy Control",
 			);
 
-			await setBrowserLifecycle(hostPage, { hidden: true, online: false });
+			// Offline signaling requires a full rejoin; sfu-reconnect.spec.ts covers it.
+			await setBrowserLifecycle(hostPage, { hidden: true, online: true });
 			await injectRemoteVideoFault(hostPage, "Fault Target", "decode-stall");
 			await hostPage.waitForTimeout(7000);
 			expect(
