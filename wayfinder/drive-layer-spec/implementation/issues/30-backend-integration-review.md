@@ -4,9 +4,31 @@
 
 **Blocked by:** [05 — Preserve File adoption hooks on storage v2 uploads](05-file-upload-hook.md); [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
-**Owner:** Suite integration
+**Owner:** Suite integration. Claimed 2026-09-08 by three independent Claude
+review agents on `integrate/drive-30-backend-review`, forked from
+`forge/drive-layer` at `1d3001a03` (Suite) and `forge/storage-v2` at
+`3357ad1605` (Frappe). Split into three non-overlapping review branches so
+each reviewer covers a disjoint file set. Each branch reports findings and
+fixes back onto `integrate/drive-30-backend-review`, which merges into
+`forge/drive-layer` only. This ticket work never merges into `main`.
+
+- **Review A — storage/framework** (spec §2–6, tickets 02–06, 05). Frappe repo,
+  `forge/storage-v2`: `frappe/storage/` (`blob.py`, `gc.py`, `upload.py`,
+  `serve.py`, `relocate.py`, `driver.py`, `local_driver.py`, `s3_driver.py`,
+  `backfill.py`, `email.py`, `url.py`) and `frappe/storage/tests/`.
+- **Review B — Drive core/concurrency** (spec §7–15, tickets 07–15). Suite
+  repo: `suite/drive/_core/`, `suite/drive/doctype/` (root, node, grant,
+  permission, storage_reservation, node_version, node_preview, comment*,
+  favourite, recent, token, dav_lock, dav_property), `suite/drive/locks/`,
+  `suite/drive/jobs.py`, `suite/drive/framework.py`, and their tests.
+- **Review C — content+HTTP+WebDAV/deployment** (spec §16–14.9, tickets
+  16–29). Suite repo: `suite/drive/http/`, `suite/drive/webdav/`,
+  `suite/drive/api/`, `suite/drive/e2e_api.py`, `suite/drive/patches/`
+  (including `build/`), `suite/drive/install.py`, content-contract call
+  sites in `suite/writer/`, `suite/slides/`, `suite/sheets/`, and their
+  tests.
 
 **Execution gate:** None beyond completed blockers.
 
