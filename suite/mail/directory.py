@@ -102,10 +102,14 @@ def delete_account(user: str) -> None:
     """Deletes the user's mail account (no-op if they have none)."""
 
     if email := get_account_email(user):
-        try:
-            get_client().call("accounts.delete_account", email=email)
-        except frappe.DoesNotExistError:
-            pass  # already gone: nothing to delete
+        delete_account_by_email(email)
+
+
+def delete_account_by_email(email: str) -> None:
+    try:
+        get_client().call("accounts.delete_account", email=email)
+    except frappe.DoesNotExistError:
+        pass  # already gone: nothing to delete
 
 
 def set_account_enabled(user: str, enabled: bool) -> None:

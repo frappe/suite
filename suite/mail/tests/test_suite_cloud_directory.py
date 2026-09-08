@@ -256,6 +256,26 @@ class TestMembers(SuiteCloudTestCase):
         self.fake.groups__create_group(f"sales@{DOMAIN}", description="Sales")
         self.fake.mailing_lists__create_mailing_list(f"news@{DOMAIN}", description="News")
 
+    def test_failed_user_creation_removes_the_cluster_account(self) -> None:
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.create_user",
+            side_effect=frappe.ValidationError("Throttled"),
+        ):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Failed to create user",
+                admin.add_member,
+                "erin",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="erin@backup.test",
+                first_name="Erin",
+                password="a-strong-password-9",
+            )
+        # Suite Cloud had already created the account; it must not survive as an orphan.
+        self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
+
     def test_unset_quota_takes_the_mail_settings_default(self) -> None:
         with self.change_settings("Mail Settings", default_disk_quota_gb=7):
             frappe.local.request_cache.clear()

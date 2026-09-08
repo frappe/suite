@@ -20,8 +20,8 @@ from frappe.utils import (
     validate_email_address,
 )
 
-from suite.mail.directory import create_account, get_domains
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.directory import create_account, delete_account_by_email, get_domains
+from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging, generate_otp
@@ -379,27 +379,33 @@ class MailAccountRequest(Document):
         )
         app_password = account["app_password"]
 
-        # Step - 3: Create User
-        user = execute_with_logging(
-            func=lambda: create_user(
-                self.account,
-                first_name,
-                last_name,
-                password,
-                ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
-            ),
-            title="Failed to create user",
-            user_message=_("Failed to create user, check error log for details."),
-            module="Mail",
-        )
+        # Steps 3 and 4 happen on this site, outside the cluster's transaction: if either fails, the
+        # cluster account is removed again so a retry does not run into "already exists".
+        try:
+            # Step - 3: Create User
+            user = execute_with_logging(
+                func=lambda: create_user(
+                    self.account,
+                    first_name,
+                    last_name,
+                    password,
+                    ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
+                ),
+                title="Failed to create user",
+                user_message=_("Failed to create user, check error log for details."),
+                module="Mail",
+            )
 
-        # Step - 4: Update User Settings
-        execute_with_logging(
-            func=lambda: self._update_user_settings(user, app_password),
-            title="Failed to update user settings",
-            user_message=_("Failed to update user settings, check error log for details."),
-            module="Mail",
-        )
+            # Step - 4: Update User Settings
+            execute_with_logging(
+                func=lambda: self._update_user_settings(user, app_password),
+                title="Failed to update user settings",
+                user_message=_("Failed to update user settings, check error log for details."),
+                module="Mail",
+            )
+        except Exception:
+            self._discard_cluster_account()
+            raise
 
         # Step - 5: Create Push Subscription
         if frappe.utils.get_url().startswith("https"):
@@ -407,6 +413,17 @@ class MailAccountRequest(Document):
                 func=lambda: self._create_push_subscription(user),
                 title="Failed to create push subscription",
                 module="Mail",
+            )
+
+    def _discard_cluster_account(self) -> None:
+        """Best effort: a failure here is logged, the original error is what the caller sees."""
+
+        try:
+            delete_account_by_email(self.account)
+        except Exception:
+            log_mail_error(
+                title=f"Failed to remove the cluster account {self.account} after a failed creation",
+                message=frappe.get_traceback(),
             )
 
     def _update_user_settings(self, user: str, app_password: str) -> None:
