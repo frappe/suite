@@ -9,10 +9,11 @@ from urllib.parse import unquote, urlsplit
 
 from PIL import Image, ImageOps
 
+from suite.drive._core.nodes import child_path
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent, exact_fields, standard_fields
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
-from suite.drive.patches.build.slide_journal import SlideBody
+from suite.drive.patches.build.slide_journal import SlideBody, SlideJournalError
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.utils.files import S3_URL_PREFIX
 
@@ -84,7 +85,9 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
         result.completed = result.history_completed and result.links_completed and result.slides_completed
         env.state.put_content(result)
         return result
-    except (InvalidLegacyContent, ValueError, OSError) as error:
+    # `SlideJournalError` is a `RuntimeError`, so §12's journal conflicts would
+    # otherwise leave the phase with no diagnostic and no state write.
+    except (InvalidLegacyContent, ValueError, OSError, SlideJournalError) as error:
         result.record_issue("slides", str(error))
         env.state.put_content(result)
         raise BuildSlidesError(str(error)) from error
@@ -95,27 +98,33 @@ def _convert_deck(env, deck, batch_size, result):
     deck_node = target.nodes((deck.node,)).get(deck.node)
     if not deck_node or deck_node.get("kind") != "document":
         raise InvalidLegacyContent(f"Presentation {deck.name} has no document node")
+    host = env.content.site_host()
     slides = env.content.slides(deck.name)
     parsed = {slide.name: _parse_elements(slide) for slide in slides}
     files = sorted(env.content.media_files(deck.name), key=lambda row: (str(row.creation or ""), row.name))
-    thumbnail, excluded = _thumbnail_file(deck, files)
+    thumbnail, excluded = _thumbnail_file(deck, files, host)
     media = [row for row in files if row.name not in excluded]
-    mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media)
+    writer = _MediaWriter(target, deck_node, batch_size)
+    mapping, nodes, collapsed, blobless = _media_mapping(env, deck, media, host, writer)
     local_mapping = dict(mapping)
-    borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping, result)
+    borrowed, borrowed_nodes = {}, set()
+    if not deck.is_composite:
+        # §11: a composite renders the referenced deck's own slides, so that
+        # deck keeps the media and this one never copies it.
+        borrowed, borrowed_nodes = _borrowed_mapping(env, deck, parsed, slides, mapping, result, host, writer)
     mapping.update(borrowed)
-    created += borrowed_created
+    writer.flush()
     preview_created = _preview(env, deck, thumbnail)
     target.commit()
-    retained = target.child_nodes(deck_node["name"])
-    created = sum(row.get("kind") == "file" and bool(row.get("blob")) for row in retained)
-    blobless = sum(row.get("kind") == "file" and not row.get("blob") for row in retained)
+    # §13 counts a validated non-null `(deck node, blob)` outcome once, whether
+    # a local group or an adopted reference produced it.
+    created = len(nodes | borrowed_nodes)
 
     updates = []
     for slide in slides:
         before = SlideBody(slide.elements, slide.background)
-        elements, changed, disagreements = _rewrite_elements(parsed[slide.name], mapping, local_mapping)
-        background, _ = _rewrite_value(slide.background, mapping)
+        elements, changed, disagreements = _rewrite_elements(parsed[slide.name], mapping, local_mapping, host)
+        background, _ = _rewrite_value(slide.background, mapping, host)
         after = SlideBody(_dump(elements), background)
         if disagreements:
             result.record_issue(
@@ -140,18 +149,12 @@ def _convert_deck(env, deck, batch_size, result):
     if updates:
         target.update_slides(updates)
         target.commit()
-    current = {
-        row.name: SlideBody(
-            next((item["elements"] for item in updates if item["name"] == row.name), row.elements),
-            next((item["background"] for item in updates if item["name"] == row.name), row.background),
-        )
-        for row in slides
-    }
     # The target port mutates fakes and SQL immediately. Rebuild planned values
     # so recovery also covers a crash after SQL and before the state write.
+    current = {}
     for row in slides:
-        elements, _, _ = _rewrite_elements(parsed[row.name], mapping, local_mapping)
-        background, _ = _rewrite_value(row.background, mapping)
+        elements, _, _ = _rewrite_elements(parsed[row.name], mapping, local_mapping, host)
+        background, _ = _rewrite_value(row.background, mapping, host)
         current[row.name] = SlideBody(_dump(elements), background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
     return created, collapsed, preview_created, rewritten, blobless
@@ -167,16 +170,56 @@ def _parse_elements(slide):
     return [item for item in value if isinstance(item, dict)]
 
 
-def _media_mapping(env, deck, parent, files):
+class _MediaWriter:
+    """One deck's media node writes, held to §13's 1,000-row commit ceiling.
+
+    One node is the indivisible unit, so the boundary falls between nodes. The
+    planned rows also stay in `children`, because §11 resolves a borrowed
+    reference against a node this deck has already planned.
+    """
+
+    def __init__(self, target, parent, batch_size):
+        self.target = target
+        self.parent = parent
+        self.batch_size = batch_size
+        self.children = target.child_nodes(parent["name"])
+        self.pending = []
+        self.written = 0
+
+    def add(self, row):
+        self.pending.append(row)
+        self.children.append(row)
+        self._reserve()
+
+    def upgrade(self, name, blob, size, mime):
+        self.target.update_media_node(name, blob, size, mime)
+        self.written += 1
+        self._reserve()
+
+    def _reserve(self):
+        if len(self.pending) + self.written >= self.batch_size:
+            self.flush()
+
+    def flush(self):
+        if not self.pending and not self.written:
+            return
+        if self.pending:
+            self.target.insert_nodes(self.pending)
+            self.pending = []
+        self.target.commit()
+        self.written = 0
+
+
+def _media_mapping(env, deck, files, host, writer):
     target = env.content_target
+    parent = writer.parent
     groups = defaultdict(list)
     for row in files:
         groups[("blob", row.blob) if row.blob else ("file", row.name)].append(row)
     mapping = {}
-    created = 0
+    nodes = set()
     collapsed = 0
     blobless = 0
-    children = target.child_nodes(parent["name"])
     for _key, rows in sorted(groups.items(), key=lambda item: (str(item[0]), item[1][0].name)):
         rows.sort(key=lambda row: (str(row.creation or ""), row.name))
         source = rows[0]
@@ -184,7 +227,7 @@ def _media_mapping(env, deck, parent, files):
             collapsed += len(rows) - 1
             blob = _ready_blob(target, source.blob)
             matches = [
-                row for row in children if row.get("kind") == "file" and row.get("blob") == source.blob
+                row for row in writer.children if row.get("kind") == "file" and row.get("blob") == source.blob
             ]
             if len(matches) > 1:
                 raise InvalidLegacyContent(f"Presentation {deck.name} has duplicate media nodes")
@@ -194,7 +237,7 @@ def _media_mapping(env, deck, parent, files):
                     raise InvalidLegacyContent(f"media placeholder {source.name} conflicts with a blob node")
                 placeholder = _media_node(source, parent, source.name, None)
                 exact_fields(source_node, placeholder, NODE_FIELDS, f"media placeholder {source.name}")
-                target.update_media_node(source.name, blob.name, int(blob.file_size), blob.mime_type)
+                writer.upgrade(source.name, blob.name, int(blob.file_size), _mime(blob))
                 name = source.name
             else:
                 name = matches[0]["name"] if matches else source.name
@@ -203,11 +246,10 @@ def _media_mapping(env, deck, parent, files):
             if found and found.get("blob"):
                 exact_fields(found, planned, NODE_FIELDS, f"media node {name}")
             elif not found:
-                target.insert_nodes([planned])
-                children.append(planned)
-            created += 1
+                writer.add(planned)
+            nodes.add(name)
             for row in rows:
-                for alias in _aliases(row):
+                for alias in _aliases(row, host):
                     _bind(mapping, alias, name)
         else:
             blobless += 1
@@ -216,49 +258,58 @@ def _media_mapping(env, deck, parent, files):
             if found:
                 exact_fields(found, planned, NODE_FIELDS, f"blobless media node {source.name}")
             else:
-                target.insert_nodes([planned])
-                children.append(planned)
-    return mapping, created, collapsed, blobless
+                writer.add(planned)
+    return mapping, nodes, collapsed, blobless
 
 
-def _borrowed_mapping(env, deck, parent, parsed, local, result):
+def _borrowed_mapping(env, deck, parsed, slides, local, result, host, writer):
+    parent = writer.parent
     references = set()
     for elements in parsed.values():
         for element in elements:
             for key in MEDIA_KEYS:
                 references |= _strings(element.get(key))
-    unresolved = tuple(
-        sorted(value for value in references if value not in local and not _never_media(value))
-    )
+    # §12 rewrites a whole `background` scalar too, so it names media as well.
+    references |= {row.background for row in slides if isinstance(row.background, str)}
+    unresolved = tuple(sorted(value for value in references if _resolve(value, local, host) is None))
     lookup = set(unresolved)
     for value in unresolved:
-        lookup |= _path_variants(value)
+        lookup |= _path_variants(value, host)
     candidates = env.content.media_files_by_urls(tuple(sorted(lookup)))
     by_url = defaultdict(list)
     for row in candidates:
         if row.deck != deck.name and env.content.presentation_is_template(row.deck):
-            for alias in _aliases(row):
+            for alias in _aliases(row, host):
                 by_url[alias].append(row)
     mapping = {}
-    created = 0
-    children = env.content_target.child_nodes(parent["name"])
+    nodes = set()
     for value in unresolved:
         rows = by_url.get(value, [])
         if not rows:
             # A non-template global File cannot be adopted: Build cannot
             # reconstruct the original paste actor's access.
-            if any(row.deck != deck.name and value in _aliases(row) for row in candidates):
+            if any(row.deck != deck.name and value in _aliases(row, host) for row in candidates):
                 result.record_issue(
                     f"Presentation:{deck.name}",
                     f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
                 )
             continue
-        blobs = {row.blob for row in rows if row.blob and env.content_target.blob(row.blob)}
+        # §3: one unambiguous Ready blob. A reference with none is unresolved
+        # evidence, not a reason to refuse a deck that is otherwise convertible.
+        blobs = {row.blob for row in rows if row.blob and _blob_is_ready(env.content_target, row.blob)}
+        if not blobs:
+            result.record_issue(
+                f"Presentation:{deck.name}",
+                f"media reference {value!r} has no Ready blob and was not adopted",
+            )
+            continue
         if len(blobs) != 1:
             raise InvalidLegacyContent(f"borrowed media {value!r} is ambiguous")
         blob_name = next(iter(blobs))
         blob = _ready_blob(env.content_target, blob_name)
-        matches = [row for row in children if row.get("kind") == "file" and row.get("blob") == blob_name]
+        matches = [
+            row for row in writer.children if row.get("kind") == "file" and row.get("blob") == blob_name
+        ]
         if len(matches) > 1:
             raise InvalidLegacyContent(f"Presentation {deck.name} has duplicate borrowed media")
         if matches:
@@ -272,11 +323,10 @@ def _borrowed_mapping(env, deck, parent, parsed, local, result):
                 modified_by=deck.modified_by or deck.owner,
                 content_modified=source.file_modified or source.modified,
             )
-            env.content_target.insert_nodes([planned])
-            children.append(planned)
-        created += 1
+            writer.add(planned)
+        nodes.add(name)
         mapping[value] = name
-    return mapping, created
+    return mapping, nodes
 
 
 def _media_node(row, parent, name, blob):
@@ -285,11 +335,13 @@ def _media_node(row, parent, name, blob):
         "title": row.file_name or row.name,
         "parent": parent["name"],
         "root": parent["root"],
-        "path": f"{parent['path'] or ''}{parent['name']}/",
+        # The controller rule, not a local spelling of it: a deck directly under
+        # a root has `path == ""`, and its children still need `/<deck>/`.
+        "path": child_path(parent),
         "kind": "file",
         "blob": blob.name if blob else None,
         "size": int(blob.file_size) if blob else 0,
-        "mime": (blob.mime_type or "application/octet-stream") if blob else None,
+        "mime": _mime(blob) if blob else None,
         "url": None,
         "content_doctype": None,
         "content_docname": None,
@@ -302,12 +354,22 @@ def _media_node(row, parent, name, blob):
     }
 
 
-def _thumbnail_file(deck, files):
+def _mime(blob):
+    """The MIME a media node stores. Both writers must agree, or the next run
+    refuses the node it repaired itself (§13 exact rerun validation)."""
+    return blob.mime_type or "application/octet-stream"
+
+
+def _thumbnail_file(deck, files, host=""):
     value = deck.thumbnail
-    if not value or _never_media(value):
+    if not value or _never_media(value, host):
         return None, set()
     exact = [row for row in files if row.file_url == value]
-    canonical = [row for row in files if _canonical(row.file_url) == _canonical(value)]
+    canonical = [
+        row
+        for row in files
+        if not _never_media(row.file_url, host) and _canonical(row.file_url, host) == _canonical(value, host)
+    ]
     tier = exact or canonical
     if not tier:
         raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is unmatched")
@@ -325,11 +387,26 @@ def _preview(env, deck, source):
         return 0
     target = env.content_target
     blob = _ready_blob(target, source.blob)
+    found = target.preview(deck.node)
+    if found:
+        # §13 validates a stored row rather than rewriting it. `put_private_blob`
+        # is content addressed, so re-encoding first would rename the preview
+        # blob after any encoder change and refuse the deck for good.
+        _validate_preview(target, deck, source, found)
+        return 1
     raw = target.read_blob(blob.name)
+    # Probe the declared size before any decode, the way `previews.py:181-198`
+    # does. `Image.DecompressionBombError` derives from `Exception`, not
+    # `OSError`, so a bomb reaches neither handler below.
+    try:
+        with Image.open(io.BytesIO(raw)) as probe:
+            width, height = probe.size
+    except Exception as error:
+        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is unreadable") from error
+    if width * height > MAX_IMAGE_PIXELS:
+        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is oversized")
     try:
         with Image.open(io.BytesIO(raw)) as image:
-            if image.width * image.height > MAX_IMAGE_PIXELS:
-                raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is oversized")
             image.load()
             image = ImageOps.exif_transpose(image)
             reusable = bool(blob.is_private and blob.mime_type == "image/webp" and max(image.size) <= 512)
@@ -356,12 +433,27 @@ def _preview(env, deck, source):
         "blob": preview_blob.name,
         **standard_fields(source),
     }
-    found = target.preview(deck.node)
-    if found:
-        exact_fields(found, planned, tuple(planned), f"preview {source.name}")
-        return 1
     target.insert_previews([planned])
     return 1
+
+
+def _validate_preview(target, deck, source, found):
+    """Accept one stored preview on its identity, never on its blob bytes.
+
+    §4 of the media memo: the row is named by the chosen File, carries the deck
+    node, and holds a validated private Ready WebP. Nothing here re-derives the
+    blob, so the row survives an encoder change inside the rollback window.
+    """
+    identity = {
+        "name": source.name,
+        "node": deck.node,
+        "source_blob": None,
+        **standard_fields(source),
+    }
+    exact_fields(found, identity, tuple(identity), f"preview {source.name}")
+    blob = target.blob(found.get("blob")) if found.get("blob") else None
+    if not blob or blob.status != "Ready" or not blob.is_private or blob.mime_type != "image/webp":
+        raise InvalidLegacyContent(f"Presentation {deck.name} preview blob is invalid")
 
 
 def _strings(value):
@@ -387,43 +479,93 @@ def _ready_blob(target, name):
     return blob
 
 
-def _aliases(row):
-    values = {row.name, row.file_url, unquote(row.file_url or "")}
-    parsed = urlsplit(row.file_url or "")
-    if not parsed.netloc:
-        values |= {_canonical(row.file_url), unquote(_canonical(row.file_url))}
-    for value in tuple(values):
-        if value.startswith("/files/"):
-            values.add("/private" + value)
-        elif value.startswith("/private/files/"):
-            values.add(value.removeprefix("/private"))
+def _aliases(row, host=""):
+    """Every complete string that names this File, and nothing wider.
+
+    The S3 spelling is the one that has to be special-cased: its identity is
+    the whole `?path=` URL and the key that query argument carries. Stripping
+    the query would leave `/api/method/suite.drive.api.s3.fetch`, which every
+    S3 File on the site shares.
+    """
+    url = row.file_url or ""
+    values = {row.name, url, unquote(url)}
+    if url.startswith(S3_URL_PREFIX):
+        values.add(unquote(url[len(S3_URL_PREFIX) :]))
+    else:
+        values |= _local_path_variants(url, host)
     return {value for value in values if value}
 
 
-def _path_variants(value):
-    values = {value, unquote(value), _canonical(value)}
-    for item in tuple(values):
-        if item.startswith("/files/"):
-            values.add("/private" + item)
-        elif item.startswith("/private/files/"):
-            values.add(item.removeprefix("/private"))
-    return {item for item in values if item}
+def _local_path_variants(url, host=""):
+    """The `/files/` spellings of one local URL, including its absolute form."""
+    parsed = urlsplit(url or "")
+    if parsed.netloc and parsed.netloc != host:
+        # §11: do not localize an unknown remote host.
+        return set()
+    if parsed.query:
+        return set()
+    values = set()
+    for path in (parsed.path, unquote(parsed.path or "")):
+        if path.startswith("/files/"):
+            values |= {path, "/private" + path}
+        elif path.startswith("/private/files/"):
+            values |= {path, path.removeprefix("/private")}
+    return values
 
 
-def _canonical(value):
-    parsed = urlsplit(value or "")
-    return unquote(parsed.path or value or "")
+def _path_variants(value, host=""):
+    return {value, unquote(value)} | _local_path_variants(value, host)
 
 
-def _never_media(value):
-    """A colour, data URL, bundled asset, or remote URL is never deck media."""
+def _local_url(value, host=""):
+    """The path and query of one value when it names this site, else None."""
+    parsed = urlsplit(str(value or ""))
+    if parsed.netloc and parsed.netloc != host:
+        return None
+    return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+
+
+def _canonical(value, host=""):
+    """The percent-decoded path and query of one URL, for thumbnail tier 2.
+
+    The query stays. Dropping it would leave every S3 File sharing
+    `/api/method/suite.drive.api.s3.fetch`, and two S3 attachments would both
+    match one S3 thumbnail.
+    """
+    return unquote(_local_url(value, host) or str(value or ""))
+
+
+def _never_media(value, host=""):
+    """A colour, data URL, bundled asset, or foreign host is never deck media.
+
+    §11 keeps a same-site absolute URL resolvable, because legacy Slides stored
+    one whenever the browser handed back a whole `file_url`.
+    """
     text = str(value or "")
-    return text.startswith(("data:", "/assets/", "#")) or bool(urlsplit(text).netloc)
+    if text.startswith(("data:", "/assets/", "#")):
+        return True
+    netloc = urlsplit(text).netloc
+    return bool(netloc) and netloc != host
 
 
-def _local_legacy_url(value):
-    text = str(value or "")
-    return not urlsplit(text).netloc and text.startswith(("/files/", "/private/files/", S3_URL_PREFIX))
+def _local_legacy_url(value, host=""):
+    local = _local_url(value, host)
+    return bool(local) and local.startswith(("/files/", "/private/files/", S3_URL_PREFIX))
+
+
+def _resolve(value, mapping, host=""):
+    """The node one complete value names, through its equivalent spellings.
+
+    An exact alias wins. §11 resolves complete strings only, so this widens the
+    spelling of one value and never matches a part of it, and it refuses to
+    guess when two equivalent spellings name different nodes.
+    """
+    if _never_media(value, host):
+        return None
+    if value in mapping:
+        return mapping[value]
+    found = {mapping[name] for name in _path_variants(value, host) if name in mapping}
+    return found.pop() if len(found) == 1 else None
 
 
 def _bind(mapping, alias, node):
@@ -432,7 +574,12 @@ def _bind(mapping, alias, node):
     mapping[alias] = node
 
 
-def _rewrite_elements(elements, mapping, local_mapping):
+def _blob_is_ready(target, name):
+    blob = target.blob(name)
+    return bool(blob and blob.status == "Ready")
+
+
+def _rewrite_elements(elements, mapping, local_mapping, host=""):
     output = []
     changed = 0
     disagreements = 0
@@ -442,15 +589,15 @@ def _rewrite_elements(elements, mapping, local_mapping):
         attachment = item.pop("attachmentName", None)
         for key in MEDIA_KEYS:
             if key in item:
-                item[key], nested = _rewrite_value(item[key], mapping)
+                item[key], nested = _rewrite_value(item[key], mapping, host)
                 item_changed |= nested
         source_src = source.get("src")
         if isinstance(source_src, str) and isinstance(attachment, str):
-            resolved = None if _never_media(source_src) else mapping.get(source_src)
+            resolved = _resolve(source_src, mapping, host)
             fallback = local_mapping.get(attachment)
             if resolved and fallback and resolved != fallback:
                 disagreements += 1
-            elif not resolved and fallback and _local_legacy_url(source_src):
+            elif not resolved and fallback and _local_legacy_url(source_src, host):
                 item["src"] = fallback
                 item_changed = True
         changed += int(item_changed)
@@ -458,22 +605,26 @@ def _rewrite_elements(elements, mapping, local_mapping):
     return output, changed, disagreements
 
 
-def _rewrite_value(value, mapping):
+def _rewrite_value(value, mapping, host=""):
     if isinstance(value, str):
-        if _never_media(value):
+        node = _resolve(value, mapping, host)
+        if node is None:
             return value, False
-        return (mapping[value], True) if value in mapping else (value, False)
+        # A keeper node takes its File's id, and that id is one of its own
+        # aliases. Rewriting a value onto itself changes nothing, and counting
+        # it would inflate `slide_elements_rewritten` on every repair run.
+        return node, node != value
     changed = False
     if isinstance(value, dict):
         output = {}
         for key, nested in value.items():
-            output[key], one = _rewrite_value(nested, mapping)
+            output[key], one = _rewrite_value(nested, mapping, host)
             changed |= one
         return output, changed
     if isinstance(value, list):
         output = []
         for nested in value:
-            item, one = _rewrite_value(nested, mapping)
+            item, one = _rewrite_value(nested, mapping, host)
             output.append(item)
             changed |= one
         return output, changed
