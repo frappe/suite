@@ -17,6 +17,8 @@ from suite.slides.tests.utils import (
     make_private,
     make_private_image,
     make_public,
+    node_of,
+    share,
     unique_bytes,
 )
 from suite.tests.utils import ensure_user
@@ -82,33 +84,66 @@ class TestMediaFileAccess(IntegrationTestCase):
             with self.assertRaises(Forbidden):
                 validate_media_file(self.file.file_url, own.name)
 
-    def test_guest_can_access_a_template_being_viewed(self):
-        with self.set_user(OWNER):
-            presentation = make_presentation("Viewed Template")
-            file = make_private_image(presentation.name)
-            frappe.db.set_value("Presentation", presentation.name, "is_template", 1)
+    def test_a_linked_template_is_read_by_its_grant_and_not_by_its_flag(self):
+        """§8.10: who may use a template is the grant on its node, and nothing else.
+
+        The legacy shortcut below (`is_template_media`) treated every template
+        as world-readable. It reads `Presentation.is_template`, which §14.7
+        freezes and moves to the node, so it can never fire for a linked deck.
+        A guest is refused; the `$GENERAL` READ grant §14.7 gives a migrated
+        template is what opens it, and `$GENERAL` is every signed-in user, not
+        a guest.
+        """
+        template, file = self.make_template("Granted Template")
 
         with self.set_user("Guest"):
-            self.assertIsNone(validate_media_file(file.file_url, presentation.name))
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url, template.name)
 
-    def test_guest_can_access_media_of_a_template(self):
-        # a presentation built from a template shows the template's own file urls: the
-        # layout is copied over, the File row stays on the template
-        _, file = self.make_template("Media Template")
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url, template.name)
+
+        with self.set_user(OWNER):
+            share(template.name, "$GENERAL")
+
+        with self.set_user(OTHER_USER):
+            self.assertIsNone(validate_media_file(file.file_url, template.name))
+
+        with self.set_user("Guest"):
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url, template.name)
+
+    def test_a_template_grant_does_not_travel_to_a_deck_built_from_it(self):
+        """The retired shortcut let any readable deck serve any template's media.
+
+        `Drive Grant` is per node (§1): a deck built from a template holds its
+        own copied media nodes, so naming the deck must not unlock a file url
+        that only the template holds.
+        """
+        template, file = self.make_template("Media Template")
+        with self.set_user(OWNER):
+            share(template.name, "$GENERAL")
 
         with self.set_user(OTHER_USER):
             presentation = make_presentation("Built From Template")
             make_public(presentation.name)
 
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url, presentation.name)
+
         with self.set_user("Guest"):
-            self.assertIsNone(validate_media_file(file.file_url, presentation.name))
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url, presentation.name)
 
     def test_template_media_still_needs_a_readable_presentation(self):
         # a file url is not a credential: naming no presentation, or one the caller
         # cannot read, stays forbidden
-        _, file = self.make_template("Gated Template")
+        template, file = self.make_template("Gated Template")
+        with self.set_user(OWNER):
+            share(template.name, "$GENERAL")
 
-        with self.set_user("Guest"):
+        with self.set_user(OTHER_USER):
             with self.assertRaises(Forbidden):
                 validate_media_file(file.file_url)
             with self.assertRaises(Forbidden):
@@ -142,21 +177,24 @@ class TestMediaFileAccess(IntegrationTestCase):
         with self.set_user("Guest"):
             self.assertIsNone(validate_media_file(file.file_url, composite.name))
 
-    def test_composite_shows_template_media_of_its_references(self):
-        # references built from templates carry the template's file urls too, and the
-        # composite is the only presentation the viewer ever names
-        _, file = self.make_template("Referenced Template")
+    def test_composite_shows_the_media_of_a_template_it_references(self):
+        """A composite that references a template resolves through the reference.
+
+        The viewer names only the composite, so the template has to be reached
+        through `get_reference_presentations` and read on its own grant — the
+        ordinary arm, not the retired world-readable-template shortcut.
+        """
+        template, file = self.make_template("Referenced Template")
+        with self.set_user(OWNER):
+            share(template.name, "$GENERAL")
 
         with self.set_user(OTHER_USER):
-            source = make_presentation("Built From Template Source")
-            make_public(source.name)
+            composite = make_presentation(
+                "Composite Of Templated",
+                is_composite=1,
+                reference_presentations=[{"presentation": template.name}],
+            )
 
-            composite = make_presentation("Composite Of Templated")
-            composite.is_composite = 1
-            composite.append("reference_presentations", {"presentation": source.name})
-            composite.save()
-
-        with self.set_user("Guest"):
             self.assertIsNone(validate_media_file(file.file_url, composite.name))
 
     def test_a_reference_made_private_later_keeps_its_own_media_private(self):
@@ -184,15 +222,19 @@ class TestMediaFileAccess(IntegrationTestCase):
                 validate_media_file("/private/files/no-such-file.png")
 
     def make_template(self, title):
-        """Inserted as a template, so `after_insert` skips `create_drive_file`: the
-        shape templates actually have in production, with no backing Drive File."""
+        """One linked template deck: `is_template` on the node, never on the column.
+
+        §14.7 moves the flag to `Drive Node` and gives a migrated template a
+        `$GENERAL` READ grant. The grant is left to the caller, so a case can
+        assert what the ungranted state answers first.
+        """
         with self.set_user(OWNER):
-            template = frappe.get_doc(
-                {"doctype": "Presentation", "title": title, "is_template": 1, "slides": [{"elements": "[]"}]}
-            ).insert()
+            template = make_presentation(title, is_template=True)
             file = make_private_image(template.name)
 
         self.assertIsNone(DriveFile.get_for_doc("Presentation", template.name))
+        self.assertFalse(frappe.db.get_value("Presentation", template.name, "is_template"))
+        self.assertTrue(frappe.db.get_value("Drive Node", node_of(template.name), "is_template"))
         return template, file
 
     def make_shared_url(self, title):
