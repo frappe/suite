@@ -13,11 +13,11 @@ import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table
 import { Selection } from '@tiptap/extensions'
 
 import { Fragment, Slice } from 'prosemirror-model'
-import { cellAround, CellSelection } from 'prosemirror-tables'
+import { cellAround, CellSelection } from '@tiptap/pm/tables'
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
-import { joinBackward } from 'prosemirror-commands'
-import { liftListItem } from 'prosemirror-schema-list'
+import { joinBackward } from '@tiptap/pm/commands'
+import { liftListItem } from '@tiptap/pm/schema-list'
 
 import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
@@ -106,7 +106,7 @@ const cellsToClear = ({ selection, doc }) => {
 	return cells.length ? CellSelection.create(doc, cells[0].pos, cells[cells.length - 1].pos) : null
 }
 
-export const getFirstMarks = (node) => {
+const getFirstMarks = (node) => {
 	let marks = []
 	node.descendants((child) => {
 		if (!marks.length && child.isText) marks = child.marks

@@ -18,7 +18,7 @@ export interface Point {
 	y: number
 }
 
-export const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
+const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
 
 // with a tolerance: clamping at an image edge can leave float dust, and a
 // near-full crop must still count as the canonical absent state

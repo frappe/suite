@@ -14,7 +14,7 @@ export interface MediaHealthState {
 	isTransportFailed: boolean;
 }
 
-export interface MediaHealthNetworkStats {
+interface MediaHealthNetworkStats {
 	rtt: number;
 	packetLoss: number;
 	availableOutgoingBitrate: number;

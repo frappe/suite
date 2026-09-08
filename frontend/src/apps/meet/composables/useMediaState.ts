@@ -12,7 +12,7 @@ export interface RemoteScreenShare extends ScreenShareBase {
 	producerId: string;
 }
 
-export interface LocalScreenShare extends ScreenShareBase {
+interface LocalScreenShare extends ScreenShareBase {
 	source: "local";
 }
 

@@ -23,7 +23,7 @@ const timestamp = (value: unknown): value is string =>
 	!Number.isNaN(Date.parse(value)) &&
 	new Date(value).toISOString() === value;
 
-export function safeManifestFile(value: unknown): value is string {
+function safeManifestFile(value: unknown): value is string {
 	return (
 		typeof value === 'string' &&
 		value.length > 0 &&

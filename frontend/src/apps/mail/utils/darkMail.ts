@@ -13,7 +13,7 @@
 // a brand link) is kept byte-identical unless it lacks contrast against the
 // dark canvas, in which case it is brightened just enough, hue untouched.
 
-export type ColorRole = 'fg' | 'bg' | 'border'
+type ColorRole = 'fg' | 'bg' | 'border'
 
 // OKLab lightness of #171717 — frappe-ui's dark surface-base and the reading
 // pane's canvas. White backgrounds map exactly onto it so remapped emails seam

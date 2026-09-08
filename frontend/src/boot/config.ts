@@ -59,6 +59,3 @@ export function configureFrappeUI() {
     }),
   )
 }
-
-/** Shared API base used by raw fetch/socket helpers that bypass frappe-ui. */
-export const API_BASE = '/api/method'

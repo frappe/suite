@@ -25,7 +25,7 @@ export const numericDetector = {
 	},
 }
 
-// Exposed for unit tests + the legacy detectStep() re-export in fill-series.js.
+// Shared with the numeric cross-axis fill helpers in fill-series.js.
 export function _detectStep(nums) {
 	if (nums.length < 2) return null
 	const step = nums[1] - nums[0]

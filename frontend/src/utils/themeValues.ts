@@ -1,6 +1,6 @@
-export const THEME_CYCLE = ['automatic', 'light', 'dark'] as const
+const THEME_CYCLE = ['automatic', 'light', 'dark'] as const
 
-export type ThemeMode = (typeof THEME_CYCLE)[number]
+type ThemeMode = (typeof THEME_CYCLE)[number]
 
 export function normalizeTheme(theme?: string | null): ThemeMode {
 	const mode = theme?.toLowerCase()

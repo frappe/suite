@@ -17,7 +17,7 @@ import type { ComposeMailData } from '@/apps/mail/types'
  */
 let pending: ComposeMailData | undefined
 
-export const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
+const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
 
 export const takePendingCompose = () => {
 	const draft = pending

@@ -1,8 +1,6 @@
 import type { Component, VNodeChild } from 'vue'
 
-export type ComboboxVariant = 'subtle' | 'outline' | 'ghost'
-
-export type SelectableOption = {
+type SelectableOption = {
   type?: 'option'
   label: string
   value: string
@@ -10,7 +8,7 @@ export type SelectableOption = {
   disabled?: boolean
 }
 
-export type CustomOption = {
+type CustomOption = {
   type: 'custom'
   label: string
   key: string
@@ -24,19 +22,6 @@ export type CustomOption = {
 }
 
 export type SimpleOption = string | SelectableOption | CustomOption
-export type GroupedOption = { group: string; options: SimpleOption[] }
-export type ComboboxOption = SimpleOption | GroupedOption
-
-export interface ComboboxProps {
-  variant?: ComboboxVariant
-  options: Array<ComboboxOption>
-  modelValue?: string | null
-  placeholder?: string
-  disabled?: boolean
-  openOnFocus?: boolean
-  openOnClick?: boolean
-  placement?: 'start' | 'center' | 'end'
-}
 export interface TagInputProps {
   modelValue?: string | null
   placeholder?: string

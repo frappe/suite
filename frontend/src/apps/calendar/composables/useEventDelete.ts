@@ -8,7 +8,7 @@ import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 /** The part of a calendar event that deleting one reads. */
-export interface DeletableEvent {
+interface DeletableEvent {
 	/** The event's own id. A recurring instance carries the series id in `master_id`. */
 	id?: string
 	master_id?: string

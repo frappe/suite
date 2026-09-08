@@ -3,7 +3,7 @@ import { Extension } from '@tiptap/core'
 type StyleValidator = (value: string) => boolean
 type StyleNormalizer = (value: string) => string | null
 
-export interface CleanStylesOptions {
+interface CleanStylesOptions {
   /**
    * Validators per CSS property.
    * Return false → property is removed.

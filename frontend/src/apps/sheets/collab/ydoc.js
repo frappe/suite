@@ -30,7 +30,7 @@ export const ROOT = Object.freeze({
 	COMMENTS: 'comments',
 })
 
-export const WORKBOOK_KEYS = Object.freeze({
+const WORKBOOK_KEYS = Object.freeze({
 	SHEET_NAMES: 'sheetNames',  // Y.Array<string>
 	CURRENT:     'current',     // string
 })
@@ -58,25 +58,6 @@ export function hydrateYDoc(doc, { sheet, formats, comments } = {}) {
 		_hydrateFormats(doc, formats)
 		_hydrateComments(doc, comments)
 	}, 'hydrate')
-}
-
-/**
- * Dump the Y.Doc back to the JSON shape the rest of the app already speaks.
- * Used by `usePersistence._persist()` to build the save payload.
- */
-export function ydocToSnapshot(doc) {
-	const workbook = doc.getMap(ROOT.WORKBOOK)
-	const cells    = doc.getMap(ROOT.CELLS)
-	const formats  = doc.getMap(ROOT.FORMATS)
-	const comments = doc.getMap(ROOT.COMMENTS)
-	return {
-		sheet: {
-			sheets:  _dumpNestedMap(cells),
-			current: workbook.get(WORKBOOK_KEYS.CURRENT) || 'Sheet1',
-		},
-		formats:  _dumpNestedMap(formats),
-		comments: _dumpNestedMap(comments),
-	}
 }
 
 // ── internal hydrate helpers ───────────────────────────────────────────────
@@ -113,18 +94,4 @@ function _hydrateComments(doc, comments) {
 		for (const [id, text] of Object.entries(cellComments || {})) m.set(id, text)
 		root.set(name, m)
 	}
-}
-
-// ── internal dump helpers ─────────────────────────────────────────────────
-
-function _dumpNestedMap(root) {
-	const out = {}
-	for (const [name, inner] of root.entries()) {
-		if (inner instanceof Y.Map) {
-			const obj = {}
-			for (const [k, v] of inner.entries()) obj[k] = v
-			out[name] = obj
-		}
-	}
-	return out
 }

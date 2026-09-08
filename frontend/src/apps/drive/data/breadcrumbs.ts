@@ -5,7 +5,7 @@ import { rootInfo } from '@/apps/drive/resources/files'
 import { shareView } from '@/apps/drive/data/prefs'
 import { useSessionStore } from '@/boot/session'
 
-export type DriveBreadcrumb = Record<string, unknown>
+type DriveBreadcrumb = Record<string, unknown>
 
 /** Published by the page that owns the entity; crumbs derive from it + route. */
 const crumbEntity = ref<Record<string, unknown> | null>(null)
@@ -14,15 +14,6 @@ const ENTITY_ROUTES = ['drive-Folder', 'drive-File', 'drive-Document']
 
 export function setCrumbEntity(entity: Record<string, unknown> | null) {
   crumbEntity.value = entity
-}
-
-export function renameCrumbEntity(entityName: string, label: string) {
-  const entity = crumbEntity.value
-  if (!entity) return
-  if (entity.name === entityName) entity.file_name = label
-  const trail = entity.breadcrumbs as Array<Record<string, unknown>> | undefined
-  const crumb = trail?.find((folder) => folder.name === entityName)
-  if (crumb) crumb.file_name = label
 }
 
 export function clearCrumbEntity(entityName?: string) {
@@ -100,7 +91,7 @@ export function isHomeContext() {
 }
 
 /** Build navbar crumbs from entity API payload — pure, no side effects. */
-export function buildBreadCrumbs(entity: Record<string, unknown>) {
+function buildBreadCrumbs(entity: Record<string, unknown>) {
   let breadcrumbs = [
     ...((entity.breadcrumbs as Array<Record<string, unknown>>) || []),
   ]

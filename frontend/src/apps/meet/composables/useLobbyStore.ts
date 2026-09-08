@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-export interface LobbyUser {
+interface LobbyUser {
 	userId: string;
 	name: string;
 	avatar?: string;

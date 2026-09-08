@@ -19,7 +19,7 @@ import suiteLogo from '@/assets/app-logos/suite.svg'
 import writerLogo from '@/assets/app-logos/writer.png'
 import { jmapUser, systemUser } from '@/boot/session'
 
-export interface SuiteApp {
+interface SuiteApp {
   id: string
   /** Display name shown in the launcher / top-nav. */
   name: string
@@ -29,7 +29,7 @@ export interface SuiteApp {
   logo: string
 }
 
-export interface SuiteAppSwitcherItem {
+interface SuiteAppSwitcherItem {
   name: string
   title: string
   route: string
@@ -49,7 +49,7 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo },
 ]
 
-export const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((app) => ({
+const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((app) => ({
   name: app.id,
   title: app.name,
   route: app.prefix,
@@ -57,7 +57,7 @@ export const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((
   spa: true,
 }))
 
-export const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
+const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
   name: 'frappe',
   title: 'Desk',
   route: '/app',

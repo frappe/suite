@@ -1,7 +1,9 @@
 import { ref }          from 'vue'
 import { parseCellId }  from '../../utils/cells.js'
 import { unpackSheet }  from '../../utils/sheet-codec.js'
-import * as _defaultApi from '../../services/versions.js'
+import { list, getState, restore, name, clearName, makeACopy, cellDiff } from '../../services/versions.js'
+
+const _defaultApi = { list, getState, restore, name, clearName, makeACopy, cellDiff }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 

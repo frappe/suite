@@ -1,6 +1,6 @@
 import router from '@/apps/drive/router'
 
-import { isHomeContext } from '@/apps/drive/data/breadcrumbs'
+import '@/apps/drive/data/breadcrumbs'
 import { currentFolder } from '@/apps/drive/data/currentFolder'
 import { formatSize } from '@/apps/drive/utils/format'
 import { nextTick } from 'vue'
@@ -14,10 +14,8 @@ import {
   getDocuments,
 } from '@/apps/drive/resources/files'
 import { set } from 'idb-keyval'
-import { toast } from '@/apps/drive/utils/toasts.js'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
 import emitter from '@/apps/drive/emitter'
-import { appDocumentTitle } from '@/utils/documentTitle'
 
 import folderIcon from '../../../../../suite/public/drive/images/icons/folder.svg'
 import imageIcon from '../../../../../suite/public/drive/images/icons/image.svg'
@@ -54,7 +52,7 @@ const FILE_ICONS = {
   Archive: archiveIcon,
 }
 
-export const WRITER_CONTENT_DOCTYPE = 'Writer Document'
+const WRITER_CONTENT_DOCTYPE = 'Writer Document'
 export const PRESENTATION_CONTENT_DOCTYPE = 'Presentation'
 
 export function displayFileName(file) {
@@ -67,21 +65,21 @@ export function displayFileName(file) {
     ? name
     : name.slice(0, dot)
 }
-export const SHEET_CONTENT_DOCTYPE = 'Sheet'
-export const ATTACHMENT_CONTENT_DOCTYPE = 'File'
+const SHEET_CONTENT_DOCTYPE = 'Sheet'
+const ATTACHMENT_CONTENT_DOCTYPE = 'File'
 
 export function isWriterDocument(entity) {
   return entity?.content_doctype === WRITER_CONTENT_DOCTYPE
 }
 
-export function isPresentation(entity) {
+function isPresentation(entity) {
   return entity?.content_doctype === PRESENTATION_CONTENT_DOCTYPE
 }
 
 // A native Sheets doc (its own `Sheet` doctype), distinct from an *uploaded*
 // spreadsheet (.xlsx/.csv) — both carry file_type 'Spreadsheet', so the
 // content_doctype is the only reliable discriminator.
-export function isSheet(entity) {
+function isSheet(entity) {
   return entity?.content_doctype === SHEET_CONTENT_DOCTYPE
 }
 
@@ -91,10 +89,6 @@ export function hasHostedContent(entity) {
 
 export function isManaged(entity) {
   return entity?.kind === 'native'
-}
-
-export function isReadonly(entity) {
-  return entity?.kind === 'readonly'
 }
 
 export function isAttachmentRef(entity) {
@@ -283,13 +277,6 @@ export const sortEntities = (rows, order) => {
   return rows
 }
 
-export const groupByFolder = (entities) => {
-  return {
-    Folders: entities.filter((x) => x.is_folder === 1),
-    Files: entities.filter((x) => x.is_folder === 0),
-  }
-}
-
 export const prettyData = (entities) => {
   return entities.map((entity) => {
     entity.file_size_pretty = formatSize(entity.file_size)
@@ -459,31 +446,6 @@ function slugger(file_name) {
     .replace(/\s+/g, '-')
 }
 
-function getLinkStem(entity) {
-  return `${
-    {
-      true: 'f',
-      [new Boolean(entity.is_folder)]: 'd',
-      [new Boolean(isWriterDocument(entity) || entity.mime_type === 'text/markdown')]: 'w',
-    }[true]
-  }/${entity.name}/${slugger(entity.file_name)}`
-}
-
-const copyToClipboard = (str) => {
-  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(str)
-  } else {
-    // Fallback to the legacy clipboard API
-    const textArea = document.createElement('textarea')
-    textArea.value = str
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
-    return Promise.resolve()
-  }
-}
-
 export async function updateURLSlug(file_name) {
   const route = router.currentRoute.value
   await nextTick()
@@ -502,46 +464,9 @@ export async function updateURLSlug(file_name) {
   }
 }
 
-export function getLink(entity, copy = true, withDomain = true) {
-  let link
-  if (entity.file_type === 'Link') link = entity.file_url
-  else if (entity.mime_type === 'frappe/slides' || isPresentation(entity)) {
-    link =
-      window.location.origin +
-      '/slides/presentation/' +
-      (entity.content_docname || entity.name)
-  } else if (
-    entity.file_type === 'Document' ||
-    entity.file_type === 'Markdown'
-  ) {
-    link = window.location.origin + '/writer/w/' + entity.name
-  } else if (entity.mime_type === 'frappe/sheet' || isSheet(entity)) {
-    link =
-      window.location.origin +
-      '/sheets/' +
-      (entity.content_docname || entity.name)
-  } else {
-    link = `${
-      withDomain ? window.location.origin : ''
-    }/drive/${getLinkStem(entity)}`
-  }
-  if (!copy) return link
-  try {
-    copyToClipboard(link).then(() => toast('Copied to your clipboard.'))
-  } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      toast('Clipboard permission denied')
-    } else {
-      console.error('Failed to copy link:', err)
-    }
-  }
-}
-
 export function dynamicList(k) {
   return k.filter((a) => typeof a !== 'object' || !('cond' in a) || a.cond)
 }
-
-export const setTitle = (file_name) => (document.title = appDocumentTitle(file_name, 'Drive'))
 
 async function uploadImage(file, params) {
   const uploader = useFileUpload()
@@ -586,136 +511,6 @@ export const pasteObj = (e) => {
   }
 }
 
-export const FONT_FAMILIES = [
-  {
-    label: 'Caveat',
-    value: 'caveat',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-caveat)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-caveat)',
-      }),
-  },
-  {
-    label: 'Comic Sans',
-    value: 'comic-sans',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-comic-sans)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-comic-sans)',
-      }),
-  },
-  {
-    label: 'Comfortaa',
-    value: 'comfortaa',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-comfortaa)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-comfortaa)',
-      }),
-  },
-  {
-    label: 'EB Garamond',
-    value: 'eb-garamond',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-eb-garamond)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-eb-garamond)',
-      }),
-  },
-  {
-    label: 'Fantasy',
-    value: 'fantasy',
-    action: (editor) => editor.chain().focus().setFontFamily('fantasy').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'fantasy',
-      }),
-  },
-  {
-    label: 'Geist',
-    value: 'geist',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-geist)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-geist)',
-      }),
-  },
-  {
-    label: 'IBM Plex Sans',
-    value: 'ibm-plex',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-ibm-plex)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-ibm-plex)',
-      }),
-  },
-  {
-    label: 'Inter',
-    value: 'inter',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-inter)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-inter)',
-      }),
-  },
-  {
-    label: 'JetBrains Mono',
-    value: 'jetbrains',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-jetbrains)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-jetbrains)',
-      }),
-  },
-  {
-    label: 'Lora',
-    value: 'lora',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-lora)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-lora)',
-      }),
-  },
-  {
-    label: 'Merriweather',
-    value: 'merriweather',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-merriweather)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-merriweather)',
-      }),
-  },
-  {
-    label: 'Nunito',
-    value: 'nunito',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-nunito)').run(),
-    isActive: (editor) =>
-      editor.isActive('textStyle', {
-        fontFamily: 'var(--font-nunito)',
-      }),
-  },
-]
-
-export function getRandomColor() {
-  const letters = '0123456789ABCDEF'
-  let color = '#'
-  for (let i = 0; i < 6; i++) {
-    color += letters[Math.floor(Math.random() * 10)]
-  }
-  return color
-}
 export const newExternal = async (type) => {
   if (type === 'Presentation') {
     router.push({

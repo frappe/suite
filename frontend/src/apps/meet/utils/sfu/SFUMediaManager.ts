@@ -69,7 +69,7 @@ export interface PublishedMedia {
 	audioError?: unknown;
 }
 
-export interface ConsumerMetadata {
+interface ConsumerMetadata {
 	isScreen?: boolean;
 }
 

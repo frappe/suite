@@ -105,5 +105,3 @@ function _padNum(n, pad) {
 	if (pad <= s.length) return sign + s
 	return sign + '0'.repeat(pad - s.length) + s
 }
-
-export const _internal = { _tokenize, _skeletonMatches }

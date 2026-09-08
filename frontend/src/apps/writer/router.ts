@@ -6,6 +6,4 @@ import suiteRouter from '@/router'
  * so this module only re-exports the single suite router instance for writer
  * utils that read `router.currentRoute`.
  */
-export const router = suiteRouter
-
 export default suiteRouter

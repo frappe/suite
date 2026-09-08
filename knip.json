@@ -1,24 +1,28 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
-    ".github/workflows/**/*.yml",
-    ".github/workflows/**/*.yaml",
-    "suite/**/doctype/**/*.js"
+    "frappe-ui/**"
   ],
   "tags": [
     "-lintignore"
   ],
   "workspaces": {
+    ".": {
+      "entry": ["realtime/handlers.js", "suite/public/js/ff_integration.bundle.js", "suite/public/js/file.js"],
+      "project": ["realtime/**/*.js", "suite/public/js/**/*.{js,ts,vue}", "suite/meet/type-policy/**/*.mjs"],
+      "github-actions": false
+    },
     "frontend": {
       "entry": [
-        "src/main.ts",
-        "vite.config.ts",
+        "recorder/main.ts",
+        "recorder/frappeUi.ts",
         "src/apps/mail/sw.ts",
-        "src/apps/slides/service-worker.js",
         "src/apps/sheets/engine/difftest/compare-engines.js",
-        "src/apps/sheets/engine/difftest/run.js"
+        "src/apps/sheets/engine/difftest/run.js",
+        "scripts/generate-pwa-splash.mjs"
       ],
-      "project": ["src/**/*.{js,ts,tsx,vue}", "!src/main.ts"],
+      "project": ["src/**/*.{js,ts,tsx,vue}", "recorder/**/*.{js,ts,tsx,vue}", "scripts/**/*.{js,mjs,cjs,ts}", "*.{js,mjs,cjs,ts}"],
+      "ignoreDependencies": ["@workadventure/noise-suppression", "@noble/hashes", "hyperformula"],
       "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
     },
     "e2e": {
@@ -31,19 +35,19 @@
         "shared/**/*.ts",
         "drive-backed-apps/**/*.ts",
         "meet/**/*.ts"
-      ]
+      ],
+      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
     },
     "suite/meet/sfu-server": {
-      "entry": ["src/server.ts", "src/**/*.test.ts"],
-      "project": ["src/**/*.ts", "!src/server.ts", "!src/**/*.test.ts"],
-      "vitest": false,
-      "ignoreBinaries": ["vitest"],
-      "ignoreIssues": {
-        "src/types/index.ts": ["types"]
-      }
+      "entry": ["src/server/RecordingGrantPersistenceFile.ts"],
+      "project": ["src/**/*.ts", "scripts/**/*.js"]
+    },
+    "suite/meet/recorder-server": {
+      "entry": ["src/integration/*.integration.ts"],
+      "project": ["src/**/*.ts"]
     },
     "suite/sheets/collab-server": {
-      "project": ["test/**/*.js", "!index.js"]
+      "project": ["*.js", "test/**/*.js"]
     }
   }
 }

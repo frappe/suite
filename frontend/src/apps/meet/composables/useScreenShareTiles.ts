@@ -14,7 +14,7 @@ interface CurrentUser {
 	name?: string;
 }
 
-export interface ScreenShareTileParticipant {
+interface ScreenShareTileParticipant {
 	user_id: string;
 	user_name: string;
 	avatar: string;

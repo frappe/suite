@@ -10,11 +10,11 @@
  */
 
 /** Absolute URL of the static worklet (see scripts/copy-noise-suppression-assets.mjs). */
-export const NOISE_SUPPRESSION_WORKLET_URL = import.meta.env.DEV
+const NOISE_SUPPRESSION_WORKLET_URL = import.meta.env.DEV
   ? '/noise-suppression/audio-worklet-processor.js'
   : '/assets/suite/noise-suppression/audio-worklet-processor.js'
 
-export const NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME =
+const NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME =
   'workadventure-noise-suppression'
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000
@@ -23,7 +23,7 @@ interface AudioWorkletCapableContext extends BaseAudioContext {
   readonly audioWorklet: AudioWorklet
 }
 
-export interface NoiseSuppressionAudioWorkletOptions {
+interface NoiseSuppressionAudioWorkletOptions {
   moduleUrl?: string
   threads?: boolean
   numThreads?: number
@@ -31,7 +31,7 @@ export interface NoiseSuppressionAudioWorkletOptions {
   readyTimeoutMs?: number
 }
 
-export interface NoiseSuppressionAudioWorkletReadyMessage {
+interface NoiseSuppressionAudioWorkletReadyMessage {
   type: 'ready'
   modelDetails?: unknown
 }

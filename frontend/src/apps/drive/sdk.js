@@ -14,8 +14,6 @@ export { default as InfoDialog } from '@/apps/drive/ui/drive/components/InfoDial
 export { getFileLink, prettyData, copyToClipboard } from '@/apps/drive/ui/drive/js/utils'
 export {
   allUsers,
-  usersWithAccess,
-  updateAccess,
   rename,
   rootInfo,
 } from '@/apps/drive/ui/drive/js/resources'

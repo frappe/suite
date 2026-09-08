@@ -2,7 +2,7 @@ import '@tiptap/extension-text-style'
 
 import { Extension } from '@tiptap/core'
 
-export type FontFamilyOptions = {
+type FontFamilyOptions = {
   /**
    * A list of node names where the font family can be applied.
    * @default ['textStyle']

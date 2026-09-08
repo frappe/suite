@@ -18,7 +18,7 @@ import { userStore } from '@/apps/mail/stores/user'
 
 import type { Mail, MailCopy, Mailbox, Thread } from '@/apps/mail/types'
 
-export type SetSeenParams = {
+type SetSeenParams = {
 	0?: string[]
 	1?: string[]
 }

@@ -83,7 +83,7 @@ const items = computed(() =>
   //   .filter((k) => k.name !== router.currentRoute.value.params.entityName)
   [],
 )
-export async function openEmbedSuggestion(view, from, editor) {
+async function openEmbedSuggestion(view, from, editor) {
   component = new VueRenderer(DocumentList, {
     editor,
     props: {

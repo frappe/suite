@@ -1,7 +1,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { AC_FUNS, AC_FUN_KEYS, parseAcToken } from '../../utils/formula-ac.js'
 
-export { AC_FUNS, AC_FUN_KEYS, parseAcToken }
+export { AC_FUNS, parseAcToken }
 
 /**
  * @param {{ formulaInputRef: import('vue').Ref, formulaValue: import('vue').Ref<string>, sheetNames: import('vue').Ref<string[]> }} opts

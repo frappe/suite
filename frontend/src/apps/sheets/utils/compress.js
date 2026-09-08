@@ -16,7 +16,7 @@ const KIND       = 'gzip'
 // outweighs the wire-size saving.
 const MIN_BYTES  = 64 * 1024
 
-export function isCompressionSupported() {
+function isCompressionSupported() {
   return typeof CompressionStream !== 'undefined'
 }
 

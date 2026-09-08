@@ -1,10 +1,5 @@
 export type Platform = "win" | "mac" | "linux" | "unknown";
 
-export interface FrappeRequestError extends Error {
-	messages: string[];
-	exc_type: string;
-}
-
 export interface ParticipantPreview {
 	user_id: string;
 	full_name: string;
@@ -23,7 +18,7 @@ export interface PresenceTokenResponse {
 	expires_in?: number;
 }
 
-export interface PresenceParticipant {
+interface PresenceParticipant {
 	user_id?: string;
 	id: string;
 	info: {
@@ -48,7 +43,7 @@ export interface PresenceJoinResponse {
 	error?: string;
 }
 
-export interface UserData {
+interface UserData {
 	name: string;
 	userId: string;
 	avatar?: string | null;
@@ -109,17 +104,13 @@ export interface JoinRoomMediaState {
 	video_enabled?: boolean;
 }
 
-export interface DeviceChangedEvent {
-	type: "camera" | "microphone" | "speaker";
-	deviceId: string;
-}
 export function isUnknownRecord(
 	value: unknown,
 ): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export type JoinStatus =
+type JoinStatus =
 	| "waiting_for_approval"
 	| "pending"
 	| "joined"
@@ -239,7 +230,7 @@ export interface ParticipantLeftEvent {
 	participantId: string;
 }
 
-export interface PollOption {
+interface PollOption {
 	id: string;
 	text: string;
 	votes: number;

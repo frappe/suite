@@ -1,7 +1,7 @@
 /** Owns MediaStream attachment and playback recovery for Meet media elements. */
 import { selectedSpeakerId } from "../../data/mediaPreferences";
 
-export type MediaAttachmentRole =
+type MediaAttachmentRole =
 	| "remote-video"
 	| "remote-audio"
 	| "local-preview"

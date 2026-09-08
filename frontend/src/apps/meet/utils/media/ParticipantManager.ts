@@ -18,7 +18,7 @@ export interface Participant {
 	isLocalScreenShare?: boolean;
 }
 
-export interface ParticipantUserData {
+interface ParticipantUserData {
 	name?: string;
 	avatar?: string | null;
 	audio_enabled?: boolean;

@@ -1,8 +1,6 @@
 import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts'
-import { openEntity, setTitle } from '@/apps/drive/utils/files'
-import { activeEntity } from '@/apps/drive/data/selection'
-import { renameCrumbEntity } from '@/apps/drive/data/breadcrumbs'
+import { openEntity } from '@/apps/drive/utils/files'
 import { getSortOrder } from '@/apps/drive/data/prefs'
 import {
   prettyData,
@@ -10,7 +8,6 @@ import {
   unwrapRows,
   PRESENTATION_CONTENT_DOCTYPE,
 } from '@/apps/drive/utils/files'
-import { updateURLSlug } from '@/apps/drive/utils/files'
 
 // GETTERS
 export const PAGE_SIZE = 50
@@ -32,7 +29,7 @@ export const COMMON_OPTIONS = {
   transform: formatRows,
 }
 
-export const getFiles = createResource({
+const getFiles = createResource({
   ...COMMON_OPTIONS,
   url: 'suite.drive.api.list.files',
   makeParams: (params) => {
@@ -132,7 +129,7 @@ export const getTrash = createResource({
 ].forEach((r) => (r.paginated = true))
 
 // SETTERS
-export const LISTS = [
+const LISTS = [
   getPersonal,
   getFiles,
   getRecents,
@@ -154,7 +151,7 @@ export const mutate = (entities, func) => {
   )
 }
 
-export const updateMoved = (new_parent) => {
+const updateMoved = (new_parent) => {
   // All details are repetetively provided (check Folder.vue) because if this is run first
   // No further mutation of the resource object can take place
   createResource({
@@ -263,28 +260,6 @@ export const clearTrash = createResource({
   },
   onError(error) {
     toast.error(JSON.stringify(error))
-  },
-})
-
-export const rename = createResource({
-  url: 'suite.drive.api.files.rename',
-  method: 'POST',
-  makeParams: (data) => {
-    return {
-      ...data,
-    }
-  },
-  onSuccess: () => {
-    renameCrumbEntity(rename.params.entity_name, rename.params.new_title)
-    if (activeEntity.value?.name === rename.params.entity_name) {
-      activeEntity.value.file_name = rename.params.new_title
-      activeEntity.value.modified = new Date()
-    }
-    setTitle(rename.params.new_title)
-    updateURLSlug(rename.params.new_title)
-  },
-  onError(error) {
-    toast.error(error.messages[error.messages.length - 1], { duration: 2000 })
   },
 })
 

@@ -1,7 +1,7 @@
 import { mergeAttributes, Node } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 
-export interface PageBreakRuleOptions {
+interface PageBreakRuleOptions {
   HTMLAttributes: Record<string, any>
 }
 

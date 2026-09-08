@@ -56,14 +56,14 @@ interface SFUMeetingManagerOptions {
 	eventHandlers?: SFUEventHandlers;
 }
 
-export interface E2EEPublicationResult {
+interface E2EEPublicationResult {
 	videoPublished: boolean;
 	audioPublished: boolean;
 }
 
-export type LocalProducerKind = "audio" | "video" | "screen";
+type LocalProducerKind = "audio" | "video" | "screen";
 
-export interface LocalProducerState {
+interface LocalProducerState {
 	id: string;
 	track: MediaStreamTrack | null;
 	paused: boolean;
@@ -159,7 +159,7 @@ const RTC_STATS_REPORT_KEYS = [
 	"candidateType",
 ] as const satisfies readonly (keyof RTCStatsReport)[];
 
-export type RTCStatsStreamSample = Readonly<{
+type RTCStatsStreamSample = Readonly<{
 	id: string;
 	direction: "send" | "receive";
 	kind: "audio" | "video";

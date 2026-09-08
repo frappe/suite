@@ -62,9 +62,11 @@ const serveNoiseSuppressionAssets = () => {
 }
 
 const benchRoot = path.resolve(__dirname, '../../..')
-const commonSiteConfig = JSON.parse(
-  fs.readFileSync(path.join(benchRoot, 'sites/common_site_config.json'), 'utf-8'),
-)
+const commonSiteConfigPath = path.join(benchRoot, 'sites/common_site_config.json')
+// Allow static tooling to load this config in a standalone checkout/worktree.
+const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
+  ? JSON.parse(fs.readFileSync(commonSiteConfigPath, 'utf-8'))
+  : {}
 const defaultSite = commonSiteConfig.default_site || 'localhost'
 const webserverPort = commonSiteConfig.webserver_port || 8000
 const frappeBackendUrl = `http://${defaultSite}:${webserverPort}`
@@ -184,7 +186,6 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: [
       'debug',
-      'frappe-ui > feather-icons',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type CollaborationUser = Record<string, unknown> & {
+type CollaborationUser = Record<string, unknown> & {
   clientId: number
   id?: string
   name?: string

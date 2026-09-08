@@ -13,7 +13,7 @@ export interface RecorderConfig {
 
 export type RecordingChallenge = RecordingProofChallenge;
 
-export const RECORDER_PROTOCOL_VERSION = 1 as const;
+const RECORDER_PROTOCOL_VERSION = 1 as const;
 
 export type RendererReasonCode =
 	| "sfu_disconnected"
@@ -41,14 +41,14 @@ type RendererReport =
 			diagnostic?: string;
 	  };
 
-export type PrepareCaptureCommand = {
+type PrepareCaptureCommand = {
 	type: "suite-recorder:prepare-capture";
 	protocol_version: 1;
 	job: string;
 	epoch: number;
 };
 
-export type CaptureStartedCommand = {
+type CaptureStartedCommand = {
 	type: "suite-recorder:capture-started";
 	protocol_version: 1;
 	job: string;
@@ -56,7 +56,7 @@ export type CaptureStartedCommand = {
 	capture_started_at: string;
 };
 
-export interface CaptureCommandController {
+interface CaptureCommandController {
 	prepareCapture(epoch: number): Promise<void>;
 	captureStarted(epoch: number, timestamp: string): Promise<void>;
 	failCaptureCommand(reason: string): void;
@@ -69,7 +69,7 @@ export class CaptureCommandSupersededError extends Error {
 	}
 }
 
-export type OutboundRendererMessage =
+type OutboundRendererMessage =
 	| {
 			type: "suite-recorder:public-key-ready";
 			protocol_version: 1;

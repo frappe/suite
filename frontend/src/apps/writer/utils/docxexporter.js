@@ -1072,6 +1072,3 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
   const blob = await Packer.toBlob(docxDoc)
   fileSaver.saveAs(blob, filename.endsWith('.docx') ? filename : `${filename}.docx`)
 }
-
-export default downloadDocxFromHtml
-export { tableFromTABLE }

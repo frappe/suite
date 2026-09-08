@@ -3,7 +3,7 @@ import type { UserAccount } from './doctypes'
 export * from './doctypes'
 
 // What happens to a sender when one of their messages is marked as Junk (JMAP Account).
-export type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
+type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 
 // A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
 // it into the Spam (Junk) folder; 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
@@ -238,7 +238,7 @@ export interface MailboxData {
 	automation_rules?: AutomationRules | null
 }
 
-export interface AutomationRules {
+interface AutomationRules {
 	emails_from: string
 	subject_contains: string
 	match_if: 'any' | 'all'

@@ -4,7 +4,7 @@
 
 type PlainTextBlockKind = 'body' | 'quote' | 'signature'
 
-export interface PlainTextBlock {
+interface PlainTextBlock {
 	kind: PlainTextBlockKind
 	/** Quote nesting, 0 for body and signature. */
 	depth: number
@@ -58,7 +58,7 @@ export const splitPlainText = (text: string): PlainTextBlock[] => {
 	return blocks.filter((block) => block.kind !== 'body' || block.text.trim())
 }
 
-export interface PlainTextSegment {
+interface PlainTextSegment {
 	kind: PlainTextBlockKind
 	blocks: PlainTextBlock[]
 }

@@ -5,21 +5,21 @@ import type {
 	Results,
 } from "@mediapipe/face_detection";
 
-export interface NormalizedFaceBox {
+interface NormalizedFaceBox {
 	xCenter: number;
 	yCenter: number;
 	width: number;
 	height: number;
 }
 
-export interface CropRect {
+interface CropRect {
 	x: number;
 	y: number;
 	width: number;
 	height: number;
 }
 
-export interface NormalizedCrop {
+interface NormalizedCrop {
 	x: number;
 	y: number;
 	size: number;

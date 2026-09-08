@@ -23,7 +23,7 @@ interface EditorHost {
 	}
 }
 
-export interface ComposeMailOptions {
+interface ComposeMailOptions {
 	/** A draft being resumed, or the reply/forward this composition starts from. */
 	mailDetails?: ComposeMailData
 	/** Inline in a thread (desktop), rather than a composer of its own. */

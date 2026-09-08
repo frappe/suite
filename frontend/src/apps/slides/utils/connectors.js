@@ -18,7 +18,7 @@ const SIDE_HYSTERESIS_DEGREES = 2
 const addVectors = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })
 const subtractVectors = (a, b) => ({ x: a.x - b.x, y: a.y - b.y })
 
-export const getBoxCenter = (box) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+const getBoxCenter = (box) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
 
 // box-local (top-left relative) point to slide space, rotated about the centre
 const toSlideSpace = (box, localPoint) => {

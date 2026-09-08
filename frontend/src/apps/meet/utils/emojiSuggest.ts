@@ -57,7 +57,7 @@ function writeRecentStore(items: EmojiSuggestion[]) {
 }
 
 /** Most recently used first, up to 5. */
-export function getRecentEmojis(): EmojiSuggestion[] {
+function getRecentEmojis(): EmojiSuggestion[] {
 	return readRecentStore();
 }
 

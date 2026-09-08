@@ -75,5 +75,3 @@ export const alphabeticDetector = {
 		}
 	},
 }
-
-export const _internal = { _alphaIndex, _indexToAlpha }

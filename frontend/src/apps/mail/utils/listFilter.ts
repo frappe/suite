@@ -12,7 +12,7 @@ export interface FilterOption {
 	condition?: () => boolean
 }
 
-export interface StoredFilterOptions {
+interface StoredFilterOptions {
 	/**
 	 * What the remembered choice is remembered FOR — a mailbox id, or 'all-inboxes' for the merged
 	 * list. A getter, since the mailbox view switches mailbox without remounting.

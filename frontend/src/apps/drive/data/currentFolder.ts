@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type CurrentFolder = {
+type CurrentFolder = {
   name: string
   entities: Record<string, unknown>[]
 }

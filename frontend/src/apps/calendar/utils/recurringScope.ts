@@ -21,7 +21,7 @@ export interface RecurringScopeOption {
  * A function rather than a constant: `__` reads the loaded translations, and at
  * module scope they are not loaded yet.
  */
-export const scopeLabels = (): Record<RecurringScope, string> => ({
+const scopeLabels = (): Record<RecurringScope, string> => ({
 	instance: __('This event only'),
 	following: __('This and following events'),
 	series: __('All events in the series'),

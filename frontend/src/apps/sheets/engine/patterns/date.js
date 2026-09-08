@@ -179,6 +179,3 @@ export const dateDetector = {
 		return null
 	},
 }
-
-// Exposed for tests.
-export const _internal = { PARSERS, _classifyStep, _stepDate }

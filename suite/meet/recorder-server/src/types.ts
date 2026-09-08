@@ -3,7 +3,7 @@ export const COMMAND_TYPE = 'meet-recorder-command+jwt';
 export const HEALTH_AUDIENCE = 'meet-recorder-health';
 export const HEALTH_TYPE = 'meet-recorder-health+jwt';
 export const PROTOCOL_VERSION = 1;
-export type CommandOperation = 'reserve' | 'query' | 'grant' | 'stop';
+type CommandOperation = 'reserve' | 'query' | 'grant' | 'stop';
 export type CommandRejectionReason =
 	| 'capacity'
 	| 'storage'
@@ -12,7 +12,7 @@ export type CommandRejectionReason =
 	| 'policy'
 	| 'invalid_request'
 	| 'invalid_job';
-export type DeploymentReadinessReason =
+type DeploymentReadinessReason =
 	| 'ready'
 	| 'ledger_unavailable'
 	| 'renderer_unavailable'
@@ -75,7 +75,7 @@ export interface PublicJwk {
 	y: string;
 }
 
-export type JobState =
+type JobState =
 	| 'reserved'
 	| 'configured'
 	| 'proof_complete'

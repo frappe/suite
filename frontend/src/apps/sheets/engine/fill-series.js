@@ -2,17 +2,9 @@
 // in ./patterns.  Each source column is classified independently (numeric /
 // date / named-sequence / copy fallback) and extended by the matching
 // detector's next() function.
-//
-// The legacy detectStep + numeric-only helpers are re-exported so existing
-// call sites and tests keep working.
 
 import { detectSeries } from './patterns/index.js'
 import { _detectStep as numericStep, _asNumbers } from './patterns/numeric.js'
-
-// Re-export for backward compatibility with prior numeric-only tests.
-export function detectStep(nums) {
-	return numericStep(nums)
-}
 
 // ── Fill DOWN / UP ────────────────────────────────────────────────────────
 

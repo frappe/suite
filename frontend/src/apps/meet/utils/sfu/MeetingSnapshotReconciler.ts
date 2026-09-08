@@ -1,8 +1,8 @@
-export interface ReconciledParticipant {
+interface ReconciledParticipant {
   participantId: string;
 }
 
-export interface ReconciledProducer {
+interface ReconciledProducer {
   producerId: string;
   participantId: string;
   isScreen: boolean;
@@ -26,7 +26,7 @@ export interface MeetingReconciliationState<
   closedProducerIds: ReadonlySet<string>;
 }
 
-export interface MeetingSnapshot<Participant extends ReconciledParticipant> {
+interface MeetingSnapshot<Participant extends ReconciledParticipant> {
   participants?: readonly Participant[];
   producers?: readonly ReconciledProducer[];
 }

@@ -10,8 +10,6 @@ import { isWrapText, getTextWrap, wrapLines, lineHeightFor } from '../utils/text
 import { chipFont } from './chip-geometry.js'
 import { checkboxRect } from './checkbox-geometry.js'
 
-export { colLabel, cellId, parseCellId } from '../utils/cells.js'
-
 export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getSparkline, getRightInset, onHyperlinkClick, onLinkHover, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, onColMove, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false, canEdit = () => true, isCellEditable, onBlockedEdit } = {}) {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1

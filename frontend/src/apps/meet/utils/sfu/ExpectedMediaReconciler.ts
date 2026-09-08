@@ -1,4 +1,4 @@
-export type ExpectedMediaStage =
+type ExpectedMediaStage =
 	| "disabled"
 	| "desired"
 	| "captured"
@@ -8,21 +8,21 @@ export type ExpectedMediaStage =
 	| "decoding"
 	| "failed";
 
-export type MediaRepairStage =
+type MediaRepairStage =
 	| "capture"
 	| "publication"
 	| "subscription"
 	| "rtp"
 	| "decode";
 
-export type MediaRepairAction =
+type MediaRepairAction =
 	| "reacquire"
 	| "recreate_producer"
 	| "subscribe"
 	| "recreate_consumer"
 	| "request_keyframe";
 
-export interface ExpectedMediaObservation {
+interface ExpectedMediaObservation {
 	key: string;
 	direction: "local" | "remote";
 	media: "audio" | "video";
@@ -35,7 +35,7 @@ export interface ExpectedMediaObservation {
 	decoding?: boolean;
 }
 
-export interface ExpectedMediaEntry extends ExpectedMediaObservation {
+interface ExpectedMediaEntry extends ExpectedMediaObservation {
 	stage: ExpectedMediaStage;
 	attempts: number;
 	healthySamples: number;

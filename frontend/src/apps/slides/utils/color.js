@@ -46,17 +46,3 @@ export const getDefaultBandColor = (textColor) => {
 		.setAlpha(isBackgroundColorDark(color) ? 0.04 : 0.1)
 		.toHex8String()
 }
-
-export const getColorAndOpacity = (colorString = '#000000ff') => {
-	if (!colorString?.startsWith('#') || colorString.length !== 9) {
-		return {
-			color: colorString,
-			opacity: 1,
-		}
-	}
-
-	return {
-		color: colorString.slice(0, 7),
-		opacity: parseInt(colorString.slice(7, 9), 16) / 255,
-	}
-}

@@ -42,7 +42,7 @@ export type RTCStreamStats = {
 	muted: boolean;
 };
 
-export type RTCStatsSnapshot = {
+type RTCStatsSnapshot = {
 	timestamp: number;
 	quality: "good" | "poor" | "critical" | "unknown";
 	rtt?: number;

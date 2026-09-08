@@ -29,5 +29,3 @@ export const routes: RouteRecordRaw[] = [
     props: true,
   },
 ]
-
-export default routes

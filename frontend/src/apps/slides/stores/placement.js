@@ -244,6 +244,5 @@ export {
 	alignElement,
 	arrangeElements,
 	getAlignedDirections,
-	getAlignmentPositions,
 	getRaiseAboveCommands,
 }

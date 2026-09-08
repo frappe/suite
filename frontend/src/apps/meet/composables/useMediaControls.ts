@@ -143,7 +143,7 @@ interface MediaControlsAPI {
 type ScreenShareStopReason =
 	"user-click" | "track-ended" | "publish-failed" | "cleanup";
 
-export interface E2EEMediaRepublishDetail {
+interface E2EEMediaRepublishDetail {
 	needsCamera?: boolean;
 	needsMicrophone?: boolean;
 }

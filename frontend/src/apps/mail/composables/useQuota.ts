@@ -45,4 +45,4 @@ export function useQuota() {
 }
 
 /** Percent used past which storage counts as critical. */
-export const CRITICAL_FROM = 80
+const CRITICAL_FROM = 80

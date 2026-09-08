@@ -15,7 +15,7 @@ const {
 } = await import('./tableStructure')
 const { getCells } = await import('@/apps/slides/stores/tiptapSetup')
 const { getTableSize, getTableWidth, getTableInfo } = await import('./tableWidths')
-const { CellSelection } = await import('prosemirror-tables')
+const { CellSelection } = await import('@tiptap/pm/tables')
 
 const { activeEditor, initTextEditor } = useTextEditor()
 

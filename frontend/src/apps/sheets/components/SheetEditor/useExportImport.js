@@ -27,7 +27,7 @@ function _esc(v) {
 }
 
 
-export function _parseCSV(text) {
+function _parseCSV(text) {
   const rows = []
   const s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   let i = 0

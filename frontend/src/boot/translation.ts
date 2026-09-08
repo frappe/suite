@@ -36,5 +36,3 @@ export const translationPlugin = {
     window.__ = translate
   },
 }
-
-export default translationPlugin

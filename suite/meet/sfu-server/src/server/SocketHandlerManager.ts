@@ -2,7 +2,11 @@ import type { Server } from 'socket.io';
 import type { SFUConfig } from '../config';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
 import type { Telemetry } from '../telemetry/Telemetry';
-import type { ClientToServerEvents, ServerToClientEvents } from '../types';
+import type {
+	ClientToServerEvents,
+	RecordingProofRequest,
+	ServerToClientEvents,
+} from '../types';
 import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
 import type { AuthManager } from './AuthManager';
@@ -296,7 +300,7 @@ export class SocketHandlerManager {
 
 export function isRecordingProofRequest(
 	value: unknown,
-): value is import('../types').RecordingProofRequest {
+): value is RecordingProofRequest {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 	const keys = Object.keys(value);
 	return (

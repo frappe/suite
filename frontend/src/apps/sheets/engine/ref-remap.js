@@ -179,13 +179,6 @@ export function remapIndexKeys(obj, map) {
   return out
 }
 
-// Remap a Set of int indices; deleted members dropped.
-export function remapIndexSet(set, map) {
-  const out = new Set()
-  for (const i of set) { const ni = map(i); if (ni != null && ni >= 0) out.add(ni) }
-  return out
-}
-
 // Parse a bare A1 range/cell string ("A1", "B2:D9", "A:A") into a rectangle.
 // Whole-column endpoints get row null. Returns null if unparseable.
 export function parseA1Range(range) {

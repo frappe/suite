@@ -1,57 +1,26 @@
 import router from '@/apps/writer/router'
 
-import { useSessionStore } from '@/boot/session'
 import { formatSize } from '@/apps/writer/utils/format'
 import { nextTick, h } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
-import { set } from 'idb-keyval'
 import editorStyle from '@/apps/writer/styles/editor.css?inline'
 import globalStyle from '@/apps/writer/styles/index.css?inline'
 import slugify from 'slugify'
-import { useFileUpload, toast as nToast, createResource } from 'frappe-ui'
+import { toast as nToast, createResource } from 'frappe-ui'
 import { rootInfo } from '@/apps/drive/sdk'
-import { appDocumentTitle } from '@/utils/documentTitle'
 
 rootInfo.fetch()
-import emitter from '@/apps/writer/emitter'
 import { createLowlight, common } from 'lowlight'
 import { toHtml } from 'hast-util-to-html'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import TurndownService from 'turndown'
 import { formatDate } from '@/apps/writer/utils/format'
-import {
-  default as TableOfContents,
-  getHierarchicalIndexes,
-} from '@tiptap/extension-table-of-contents'
 import { FontSize } from '@/apps/writer/extensions/font-size'
 import EmbedExtension from '@/apps/writer/extensions/embed-extension'
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
 import { cssLineHeight } from '@/apps/writer/utils/typography'
-
-function trimCommonPrefix(a, b) {
-  let i = 0
-  while (i < a.length && i < b.length && !/^\d+$/.test(a[i]) && a[i] === b[i])
-    i++
-  return [
-    a.slice(i).split(/[\W]/)[0].toLowerCase(),
-    b.slice(i).split(/[\W]/)[0].toLowerCase(),
-  ]
-}
-
-function extractNum(name) {
-  const match = name.match(/^(.*?)(\d+)(\D*)$/)
-  if (!match) return 0
-  return parseInt(match[2], 10)
-}
-
-export const groupByFolder = (entities) => {
-  return {
-    Folders: entities.filter((x) => x.is_folder === 1),
-    Files: entities.filter((x) => x.is_folder === 0),
-  }
-}
 
 export const prettyData = (entities) => {
   return entities.map((entity) => {
@@ -61,166 +30,6 @@ export const prettyData = (entities) => {
     return entity
   })
 }
-export const setBreadCrumbs = (entity) => {
-  let breadcrumbs = entity.breadcrumbs
-  let res = [
-    {
-      label: __('Shared'),
-      name: 'Shared',
-      route: useSessionStore().isLoggedIn && '/shared',
-    },
-  ]
-  const homeIdx = breadcrumbs.findIndex((k) => k.name === rootInfo.data?.home)
-  if (homeIdx > -1) {
-    res = [{ label: __('Home'), name: 'Home', route: { name: 'Home' } }]
-    breadcrumbs.splice(0, homeIdx + 1)
-  } else if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
-  const popBreadcrumbs = (item) => () =>
-    res.splice(res.findIndex((k) => k.name === item.name) + 1)
-
-  breadcrumbs.forEach((folder, idx) => {
-    const final = idx === breadcrumbs.length - 1
-    res.push({
-      label: folder.file_name,
-      name: folder.name,
-      onClick: final
-        ? () => entity.write && emitter.emit('rename')
-        : popBreadcrumbs(folder),
-      route: final
-        ? null
-        : { name: 'Folder', params: { entityName: folder.name } },
-    })
-  })
-}
-
-export const MIME_LIST_MAP = {
-  Folder: [],
-  Image: [
-    'image/png',
-    'image/jpeg',
-    'image/svg+xml',
-    'image/heic',
-    'image/heif',
-    'image/avif',
-    'image/webp',
-    'image/tiff',
-    'image/gif',
-  ],
-  PDF: ['application/pdf'],
-  'After Effects': ['application/vnd.adobe.aftereffects.project'],
-  Photoshop: ['application/photoshop'],
-  Code: [
-    'text/x-python',
-    'text/x-shellscript',
-    'application/x-httpd-php',
-    'application/x-python-script',
-    'application/x-sql',
-    'text/html',
-    'text/css',
-    'text/javascript',
-    'application/javascript',
-  ],
-  Sketch: ['application/sketch'],
-  Markdown: ['text/markdown'],
-  Text: [
-    'text/plain',
-
-    'text/rich-text',
-    'application/json',
-
-    'text/x-perl',
-    'text/x-csrc',
-    'text/x-sh',
-  ],
-  'XML Data': ['application/xml'],
-  Document: [
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.oasis.opendocument.text',
-    'application/vnd.apple.pages',
-    'application/x-abiword',
-    'frappe_doc',
-  ],
-  Spreadsheet: [
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.oasis.opendocument.spreadsheet',
-    'text/csv',
-    'application/vnd.apple.numbers',
-  ],
-  Presentation: [
-    'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.oasis.opendocument.presentation',
-    'application/vnd.apple.keynote',
-  ],
-  Audio: [
-    'audio/mpeg',
-    'audio/wav',
-    'audio/x-midi',
-    'audio/ogg',
-    'audio/mp4',
-    'audio/mp3',
-  ],
-  Video: [
-    'video/mp4',
-    'video/webm',
-    'video/ogg',
-    'video/quicktime',
-    'video/x-matroska',
-  ],
-  Book: ['application/epub+zip', 'application/x-mobipocket-ebook'],
-  Application: [
-    'application/octet-stream',
-    'application/x-sh',
-    'application/vnd.microsoft.portable-executable',
-  ],
-  Archive: [
-    'application/zip',
-    'application/x-rar-compressed',
-    'application/x-tar',
-    'application/gzip',
-    'application/x-bzip2',
-  ],
-}
-
-// Synced cache - ensure all setters are reflected in the app
-function getCacheKey(cacheKey) {
-  if (!cacheKey) {
-    return null
-  }
-  if (typeof cacheKey === 'string') {
-    cacheKey = [cacheKey]
-  }
-  return JSON.stringify(cacheKey)
-}
-export function setCache(t, cache) {
-  t.setData = async (data) => {
-    if (typeof data === 'function') {
-      t.data = data(t.data)
-    } else {
-      t.data = data
-    }
-    await set(getCacheKey(cache), JSON.stringify(t.data))
-  }
-}
-
-export function enterFullScreen() {
-  let elem = document.getElementById('renderContainer')
-  if (elem.requestFullscreen) {
-    elem.requestFullscreen()
-  } else if (elem.mozRequestFullScreen) {
-    /* Firefox */
-    elem.mozRequestFullScreen()
-  } else if (elem.webkitRequestFullscreen) {
-    /* Chrome, Safari & Opera */
-    elem.webkitRequestFullscreen()
-  } else if (elem.msRequestFullscreen) {
-    /* IE/Edge */
-    elem.msRequestFullscreen()
-  }
-}
-
 function highlightCodeBlocks(html) {
   const lowlight = createLowlight(common)
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -371,30 +180,6 @@ function slugger(title) {
   })
 }
 
-function getLinkStem(entity) {
-  return `${
-    {
-      true: 'f',
-      [new Boolean(entity.is_folder)]: 'd',
-    }[true]
-  }/${entity.name}/${slugger(entity.file_name)}`
-}
-
-const copyToClipboard = (str) => {
-  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(str)
-  } else {
-    // Fallback to the legacy clipboard API
-    const textArea = document.createElement('textarea')
-    textArea.value = str
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
-    return Promise.resolve()
-  }
-}
-
 export async function updateURLSlug(title) {
   const route = router.currentRoute.value
   await nextTick()
@@ -407,51 +192,8 @@ export async function updateURLSlug(title) {
   }
 }
 
-export function getLink(entity, copy = true, withDomain = true) {
-  let link
-  if (entity.file_type === 'Link') link = entity.file_url
-  else if (entity.mime_type === 'frappe/slides') {
-    link = window.location.origin + '/slides/presentation/' + entity.name
-  } else {
-    link = `${withDomain ? window.location.origin + '/drive' : ''}/${getLinkStem(entity)}`
-  }
-  if (!copy) return link
-  try {
-    copyToClipboard(link).then(() => toast('Copied to your clipboard.'))
-  } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      toast({
-        icon: 'lucide-alert-triangle',
-        iconClasses: 'text-red-700',
-        title: 'Clipboard permission denied',
-        position: 'bottom-right',
-      })
-    } else {
-      console.error('Failed to copy link:', err)
-    }
-  }
-}
-
 export function dynamicList(k) {
   return k.filter((a) => typeof a !== 'object' || !('cond' in a) || a.cond)
-}
-
-export const setTitle = (title) => (document.title = appDocumentTitle(title, 'Writer'))
-
-async function uploadImage(file, params) {
-  const uploader = useFileUpload()
-  const upload = uploader.upload(file, {
-    private: false,
-    params,
-    upload_endpoint: '/api/method//api/method/suite.drive.api.files.upload_file',
-  })
-  let entity = await new Promise((resolve) => {
-    upload.then((data) => {
-      resolve(data)
-    })
-  })
-
-  return entity
 }
 
 export const FONT_FAMILIES = [
@@ -706,26 +448,4 @@ export const insertTemplate = (template, editor) => {
   editor.commands.insertContent(content)
   editor.commands.focus()
   return true
-}
-
-export const formatShortcut = (sequence) => {
-  if (!sequence) return ''
-  const isMac = navigator.platform.toUpperCase().includes('MAC')
-  const parts = sequence.split('-')
-  return parts
-    .map((part) => {
-      switch (part.toLowerCase()) {
-        case 'meta':
-          return isMac ? '⌘' : 'Win'
-        case 'ctrl':
-          return isMac ? '⌃' : 'Ctrl'
-        case 'alt':
-          return isMac ? '⌥' : 'Alt'
-        case 'shift':
-          return isMac ? '⇧' : 'Shift'
-        default:
-          return part.toUpperCase()
-      }
-    })
-    .join(isMac ? '' : '+')
 }

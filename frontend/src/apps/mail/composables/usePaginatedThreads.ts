@@ -72,12 +72,12 @@ export const refreshLoadedThreads = (
 }
 
 /** The shape of a reset resource this reads and writes — createResource satisfies it. */
-export interface ThreadListResource {
+interface ThreadListResource {
 	data?: Thread[]
 	loading: boolean
 }
 
-export interface PaginatedThreadsOptions {
+interface PaginatedThreadsOptions {
 	/** The active reset resource. A getter, since the search view swaps which one is active. */
 	resource: () => ThreadListResource
 	/** Triggers the append fetch. Its onSuccess must hand the rows to `appendThreads`. */

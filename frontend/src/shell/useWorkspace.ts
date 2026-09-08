@@ -3,7 +3,7 @@ import { createResource } from 'frappe-ui'
 
 import { hasServerBoot } from '@/boot/session'
 
-export interface WorkspaceInfo {
+interface WorkspaceInfo {
   workspace_name: string
   workspace_logo: string
 }

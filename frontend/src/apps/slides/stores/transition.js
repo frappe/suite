@@ -344,8 +344,6 @@ const getTransitionKey = (element) =>
 export {
 	getTransitionKey,
 	isAffectedByMagicMove,
-	getCommandsToAddMagicMove,
-	getCommandsToRemoveMagicMove,
 	getCommandsToSetTransition,
 	getCommandsToInitElementRefId,
 	getCommandsToUpdateElementRefId,

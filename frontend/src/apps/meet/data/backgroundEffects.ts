@@ -72,7 +72,7 @@ export const autoFramingEnabled: Ref<boolean> = ref(
 	storedPreferences.autoFramingEnabled,
 );
 
-export interface FramingCropSnapshot {
+interface FramingCropSnapshot {
 	x: number;
 	y: number;
 	size: number;

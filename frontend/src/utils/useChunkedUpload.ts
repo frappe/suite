@@ -4,7 +4,7 @@ import { ref } from 'vue'
 // chunked `upload_file` handler (frappe PR #37888). Large files are sent in sequential chunks so the
 // upload isn't capped by the web server's request-body limit — needed for big mail-import archives.
 
-export interface UploadedFile {
+interface UploadedFile {
 	name: string
 	file_name: string
 	file_url: string
@@ -12,7 +12,7 @@ export interface UploadedFile {
 	[key: string]: unknown
 }
 
-export interface ChunkedUploadOptions {
+interface ChunkedUploadOptions {
 	private?: boolean
 	folder?: string
 	doctype?: string

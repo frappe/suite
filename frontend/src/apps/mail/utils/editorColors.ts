@@ -51,7 +51,7 @@ const PROSE_COLOR_VAR = /var\(--prose-(color|highlight)-([a-z]+)\)/g
 // A name we don't know is left as the variable rather than guessed at: an unstyled word is a
 // smaller loss than a confidently wrong colour, and it keeps a colour added upstream from being
 // silently flattened to something else.
-export const resolveColorVariables = (style: string) =>
+const resolveColorVariables = (style: string) =>
 	style.replace(PROSE_COLOR_VAR, (variable, kind: string, name: string) => {
 		const palette = kind === 'color' ? TEXT_COLORS : HIGHLIGHT_COLORS
 		return palette[name] ?? variable

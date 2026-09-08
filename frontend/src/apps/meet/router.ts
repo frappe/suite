@@ -1,6 +1,5 @@
 import type { RouteLocationNormalized } from "vue-router";
 
-import suiteRouter from "@/router";
 import { userResource } from "@/boot/session";
 import { isUnknownRecord } from "./types";
 
@@ -10,11 +9,7 @@ import { isUnknownRecord } from "./types";
  * for any route whose name doesn't start with `meet-`; auth itself is the
  * suite router's `beforeEach` (redirects guests unless `meta.allowGuest`,
  * which `meet-meeting` carries so guests can join).
- *
- * Re-exports the suite router instance as `router` for meet pages/composables.
  */
-export const router = suiteRouter;
-
 export const meetGuard = async (to: RouteLocationNormalized) => {
 	// Only act on meet routes; let the suite handle everything else.
 	if (typeof to.name !== "string" || !to.name.startsWith("meet-")) return;
@@ -43,5 +38,3 @@ export const meetGuard = async (to: RouteLocationNormalized) => {
 		}
 	}
 };
-
-export default router;

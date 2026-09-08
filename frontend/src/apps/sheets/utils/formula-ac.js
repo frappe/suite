@@ -90,7 +90,7 @@ export function parseSignatureContext(value, cursor) {
 
 // Functions where an adjacent numeric run is a sensible first-argument guess.
 // Kept narrow so we never nudge a range into e.g. IF( or CONCAT(.
-export const RANGE_SUGGEST_FUNS = new Set([
+const RANGE_SUGGEST_FUNS = new Set([
   'SUM', 'AVERAGE', 'COUNT', 'COUNTA', 'MAX', 'MIN', 'PRODUCT', 'MEDIAN',
 ])
 

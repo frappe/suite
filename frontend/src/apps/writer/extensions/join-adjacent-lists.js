@@ -51,5 +51,3 @@ export const JoinAdjacentLists = Extension.create({
     ]
   },
 })
-
-export default JoinAdjacentLists

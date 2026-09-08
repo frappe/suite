@@ -57,7 +57,7 @@ export const extractNameFromEmail = (email: string) =>
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : email
 
-export const getRepeatFrequencyOptions = (interval: number) => [
+const getRepeatFrequencyOptions = (interval: number) => [
   { label: interval === 1 ? __('Year') : __('Years'), value: 'yearly' },
   { label: interval === 1 ? __('Month') : __('Months'), value: 'monthly' },
   { label: interval === 1 ? __('Week') : __('Weeks'), value: 'weekly' },

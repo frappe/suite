@@ -85,5 +85,3 @@ export const namedSequenceDetector = {
 		return null
 	},
 }
-
-export const _internal = { SEQUENCES, _classify }

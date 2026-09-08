@@ -11,7 +11,7 @@ interface MailThreadInstance {
 	removeMailFromView: (mailId: string) => { emptied: boolean; rollback: () => void }
 }
 
-export interface MailRemovalOptions {
+interface MailRemovalOptions {
 	/** The loaded row the mail's thread belongs to, if it is in the loaded window. */
 	row: (mail: Mail) => Thread | undefined
 	/** The open reading pane, which drops the mail from its own view. */

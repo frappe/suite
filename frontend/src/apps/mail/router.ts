@@ -12,11 +12,9 @@ import { userStore } from '@/apps/mail/stores/user'
  * start with `mail-`; auth itself is the suite router's `beforeEach`
  * (redirects guests unless `meta.allowGuest`).
  *
- * Re-exports the suite router instance as `router` so mail pages/stores can
+ * Re-exports the suite router instance as default so mail pages/stores can
  * import it from `@/apps/mail/router`.
  */
-export const router = suiteRouter
-
 type Params = Record<string, string | string[]>
 
 const handleSetupWizardEscape = () => {
@@ -121,4 +119,4 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 	if (to.meta.isLogin) return defaultRoute
 }
 
-export default router
+export default suiteRouter

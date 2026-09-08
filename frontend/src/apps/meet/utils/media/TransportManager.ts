@@ -26,7 +26,7 @@ import {
 
 type Direction = "send" | "recv";
 
-export type IceRestartDirectionResult = "restarted" | "not-needed" | "failed";
+type IceRestartDirectionResult = "restarted" | "not-needed" | "failed";
 
 export type TransportIceRestartResult = Record<
 	Direction,

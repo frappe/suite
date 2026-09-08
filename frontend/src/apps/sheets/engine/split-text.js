@@ -5,7 +5,6 @@
 // detectSeparator(rows)  → picks a separator from a fixed priority list by
 //                          looking for the one that produces the most
 //                          consistent multi-token split across the column.
-// splitRange(values, sep) → 2D array of tokens (one row per source cell).
 //
 // All pure — no DOM, no Vue, no engines.  SheetEditor wraps the result with
 // op-logging + history bookkeeping.
@@ -71,7 +70,7 @@ function _scoreSeparator(values, sepKey) {
 	return extras
 }
 
-export function detectSeparator(values) {
+function detectSeparator(values) {
 	for (const key of _AUTO_PRIORITY) {
 		if (_scoreSeparator(values, key) > 0) return key
 	}
@@ -89,18 +88,3 @@ export function resolveSeparator(values, choice) {
 	}
 	return _SEP_LITERAL[choice] || null
 }
-
-// Split each value with the resolved separator.  Returns:
-//   { tokens: string[][], maxCols: number }
-// `maxCols` lets the caller know how many output columns the operation
-// produces — useful for op-log summaries and overflow-warning logic.
-export function splitRange(values, separator) {
-	if (!separator) return { tokens: values.map(v => [v == null ? '' : String(v)]), maxCols: 1 }
-	const tokens = values.map(v => parseRow(v, separator))
-	let maxCols = 0
-	for (const row of tokens) if (row.length > maxCols) maxCols = row.length
-	return { tokens, maxCols }
-}
-
-// Exposed for tests; lets the test file assert on the literal tab/comma map.
-export const _internal = { _SEP_LITERAL, _AUTO_PRIORITY }

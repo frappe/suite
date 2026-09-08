@@ -45,8 +45,3 @@ export function detectSeries(values) {
 	}
 	return null
 }
-
-export {
-	numericDetector, dateDetector, namedSequenceDetector,
-	timeDetector, textNumberDetector, alphabeticDetector,
-}

@@ -1,6 +1,6 @@
 import type { PollPayloadFE } from "../types";
 
-export interface TimelineMessage {
+interface TimelineMessage {
 	id: string | number;
 	user_id: string;
 	user_name: string;
@@ -8,7 +8,7 @@ export interface TimelineMessage {
 	timestamp: string;
 }
 
-export interface MessageGroup {
+interface MessageGroup {
 	id: string | number;
 	user_id: string;
 	user_name: string;
@@ -17,7 +17,7 @@ export interface MessageGroup {
 	messages: TimelineMessage[];
 }
 
-export type ChatItem =
+type ChatItem =
 	| {
 			type: "poll";
 			key: string;

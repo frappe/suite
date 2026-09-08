@@ -27,7 +27,7 @@ export const getAttachmentUrl = async (blobID: string, type?: string, account?: 
 	return URL.createObjectURL(blob)
 }
 
-export const fetchAttachmentsAsZip = createResource({
+const fetchAttachmentsAsZip = createResource({
 	url: 'suite.mail.api.mail.fetch_attachments_as_zip',
 	makeParams: ({ attachments, account }: { attachments: Attachment[]; account?: string }) => ({
 		account: account || store.accountId,

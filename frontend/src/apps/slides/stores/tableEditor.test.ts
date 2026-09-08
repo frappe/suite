@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { CellSelection } from 'prosemirror-tables'
+import { CellSelection } from '@tiptap/pm/tables'
 import { AllSelection } from 'prosemirror-state'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))

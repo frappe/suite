@@ -381,7 +381,7 @@ export const useListReload = () => ({
 
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
 // <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
-export interface BlockableSender {
+interface BlockableSender {
 	name?: string
 	email: string
 }

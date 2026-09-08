@@ -9,7 +9,7 @@
 //
 // This module has no canvas/DOM dependency so the geometry is unit-testable.
 
-export const SPARK_TYPES = new Set(['line', 'column'])
+const SPARK_TYPES = new Set(['line', 'column'])
 
 // A colour is a hex literal (#rgb…#rrggbbaa) or a real CSS colour keyword. We
 // validate against the actual keyword set — a bare /[a-z]+/ would admit a typo

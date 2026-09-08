@@ -12,9 +12,9 @@
 // `LOCAL_ORIGIN`; we ignore observe events that carry it.
 
 import * as Y from 'yjs'
-import { ROOT, WORKBOOK_KEYS } from './ydoc.js'
+import { ROOT } from './ydoc.js'
 
-export const LOCAL_ORIGIN  = Symbol('local')
+const LOCAL_ORIGIN  = Symbol('local')
 export const REMOTE_ORIGIN = Symbol('remote')
 
 /**
@@ -145,24 +145,6 @@ export function bindCells({ doc, sheet, onRemoteSheetChange } = {}) {
 	}
 
 	return { dispose, drainLocalTouches }
-}
-
-/**
- * Mirror the engine's current-sheet pointer into the Y.Doc workbook map so
- * collaborators can render an indicator (Google Sheets shows a coloured dot
- * next to the tab someone else is viewing). Returns a `dispose()`.
- */
-export function bindCurrentSheet({ doc, currentSheetRef }) {
-	const wb = doc.getMap(ROOT.WORKBOOK)
-	const stop = []
-	// Local → doc: when the local user switches sheets, write to the doc.
-	// Done via Vue watcher in the caller; here we just expose the setter.
-	function setLocalCurrent(name) {
-		doc.transact(() => wb.set(WORKBOOK_KEYS.CURRENT, name), LOCAL_ORIGIN)
-	}
-	// Doc → local is awareness-only — we don't force-switch other users'
-	// active sheet just because someone else changed theirs. So no observer.
-	return { setLocalCurrent, dispose: () => stop.forEach(fn => fn()) }
 }
 
 function _ensureSheetMap(root, name) {

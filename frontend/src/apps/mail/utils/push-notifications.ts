@@ -1,6 +1,6 @@
 import type { NotificationPayload } from '@/apps/mail/types'
 
-export const isChrome = (): boolean => navigator.userAgent.toLowerCase().includes('chrome')
+const isChrome = (): boolean => navigator.userAgent.toLowerCase().includes('chrome')
 
 export const showNotification = (payload: NotificationPayload): void => {
 	const registration: ServiceWorkerRegistration | undefined =

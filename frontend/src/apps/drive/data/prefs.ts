@@ -1,9 +1,9 @@
 import { ref, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 
-export type ViewMode = 'list' | 'grid'
+type ViewMode = 'list' | 'grid'
 
-export type SortOrder = {
+type SortOrder = {
   label: string
   field: string
   ascending: boolean
@@ -27,7 +27,7 @@ export const view = ref<ViewMode>(getJson('view', 'list'))
 watch(view, (v) => setJson('view', v))
 
 /** Sort order keyed by folder / route scope id. */
-export const sortOrders = ref<Record<string, SortOrder>>(getJson('sortOrder', {}))
+const sortOrders = ref<Record<string, SortOrder>>(getJson('sortOrder', {}))
 
 export function getSortOrder(scopeId: string): SortOrder | undefined {
   const order = sortOrders.value[scopeId]

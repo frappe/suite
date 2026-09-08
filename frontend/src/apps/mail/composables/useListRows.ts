@@ -11,12 +11,12 @@ import type { Thread } from '@/apps/mail/types'
  * A date header — the one navigable row a list draws itself rather than getting from buildListRows,
  * which is deliberately date-agnostic.
  */
-export type GroupRow = { type: 'group'; key: string; dateKey: string }
+type GroupRow = { type: 'group'; key: string; dateKey: string }
 
 /** Anything the keyboard cursor can land on: a thread row, a stack row, or a date header. */
 export type NavRow = ListRow | GroupRow
 
-export interface ListRowsOptions {
+interface ListRowsOptions {
 	/** The loaded threads, newest first. */
 	threads: () => Thread[]
 	/** A thread row's key. The all-accounts views prefix it with the account. */

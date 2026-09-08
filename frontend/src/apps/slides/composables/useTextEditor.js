@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/vue-3'
 import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { Selection, TextSelection } from 'prosemirror-state'
-import { cellAround } from 'prosemirror-tables'
+import { cellAround } from '@tiptap/pm/tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {

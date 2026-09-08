@@ -1,4 +1,4 @@
-export type ParticipantRecoveryScope =
+type ParticipantRecoveryScope =
 	| "publication"
 	| "subscription"
 	| "transport"
@@ -10,7 +10,7 @@ export interface ParticipantRecoveryTrigger {
 	reason: string;
 }
 
-export type ParticipantRecoveryPhase =
+type ParticipantRecoveryPhase =
 	| "healthy"
 	| "rebuilding_participant_connection"
 	| "verifying"

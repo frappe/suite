@@ -234,14 +234,14 @@ export class StallDetector {
 	}
 }
 
-export interface DecodeSample {
+interface DecodeSample {
 	id: string;
 	isPaused: () => boolean;
 	bytesReceived: number | null;
 	framesDecoded: number | null;
 }
 
-export interface DecodeRecoveryAction {
+interface DecodeRecoveryAction {
 	consumerId: string;
 	action: "request-keyframe" | "recreate";
 }

@@ -1,4 +1,4 @@
-export type LogEvent =
+type LogEvent =
 	| 'request'
 	| 'authorization_rejected'
 	| 'job_reservation'

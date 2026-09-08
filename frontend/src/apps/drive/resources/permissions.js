@@ -3,17 +3,6 @@ import { getAppSwitcherItems } from '@/apps/registry'
 import { toast } from '@/apps/drive/utils/toasts'
 import { useSessionStore } from '@/boot/session'
 
-export const usersWithAccess = createResource({
-  url: 'suite.drive.api.permissions.get_shared_with_list',
-  makeParams: (params) => params,
-})
-
-export const updateAccess = createResource({
-  url: 'suite.drive.api.files.share',
-  makeParams: (params) => ({ ...params, method: params.method || 'share' }),
-  onError: (error) => toast.error(error.messages[0]),
-})
-
 export const notifCount = createResource({
   url: '/api/method/suite.drive.api.notifications.get_unread_count',
   method: 'GET',
@@ -32,14 +21,6 @@ export const setSettings = createResource({
   onSuccess: () => {
     settings.fetch()
   },
-})
-
-export const generalAccess = createResource({
-  url: 'suite.drive.api.permissions.get_general_access',
-})
-
-export const userList = createResource({
-  url: 'suite.drive.api.permissions.get_shared_with_list',
 })
 
 export const siteUsers = createResource({

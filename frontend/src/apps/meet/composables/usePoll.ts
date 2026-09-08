@@ -9,7 +9,7 @@ import { getErrorMessage } from "../utils/error";
 import audioNotificationManager from "../utils/audioNotifications";
 import type { InjectionKey } from "vue";
 
-export interface PollAPI {
+interface PollAPI {
 	setupPollEvents: (notify: (notification: PollNotification) => void) => void;
 	createPoll: (question: string, options: { text: string }[]) => Promise<void>;
 	submitVote: (pollId: string, optionId: string) => Promise<void>;

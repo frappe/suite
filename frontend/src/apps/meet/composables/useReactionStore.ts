@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-export interface ReactionEntry {
+interface ReactionEntry {
 	emoji: string;
 	expiresAt: number;
 	timeoutId: number;

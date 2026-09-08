@@ -1,6 +1,6 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
-import suiteRouter from '@/router'
+import '@/router'
 
 import { userStore } from '@/apps/calendar/stores/user'
 
@@ -9,11 +9,7 @@ import { userStore } from '@/apps/calendar/stores/user'
  * user-data wait, account resolution and shortcut-route expansion.
  * Early-returns for any route whose name doesn't start with `calendar-`;
  * auth itself is the suite router's `beforeEach`.
- *
- * Re-exports the suite router instance as `router` for calendar views.
  */
-export const router = suiteRouter
-
 type Params = Record<string, string | string[]>
 
 const resolveShortcut = (
@@ -51,5 +47,3 @@ export const calendarGuard = async (to: RouteLocationNormalized) => {
 	// query rides along — it carries the open event's deep link (?event=).
 	if (to.meta.shortcut) return { ...resolveShortcut(to.name, to.params, accountId), query: to.query }
 }
-
-export default router

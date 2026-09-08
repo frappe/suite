@@ -1334,7 +1334,7 @@ import { createNamedRanges }   from '../../engine/named-ranges.js'
 import { getFunctionNames }    from '../../engine/formula.js'
 import NamedRangesDialog       from './NamedRangesDialog.vue'
 import { useSmartFill }        from './useSmartFill.js'
-import * as versionsApi        from '../../services/versions.js'
+import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import {
    Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip, usePageMeta } from 'frappe-ui'
 import {
@@ -4888,7 +4888,7 @@ async function openCellHistory() {
   cellHistory.error   = ''
   cellHistory.entries = []
   try {
-    cellHistory.entries = await versionsApi.cellHistory(
+    cellHistory.entries = await fetchCellHistory(
       props.id, id, sheet.getCurrentSheet(),
     )
   } catch (err) {

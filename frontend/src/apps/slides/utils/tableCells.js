@@ -1,4 +1,4 @@
-import { CellSelection } from 'prosemirror-tables'
+import { CellSelection } from '@tiptap/pm/tables'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { getCells } from '@/apps/slides/stores/tiptapSetup'

@@ -24,7 +24,7 @@ interface E2EEConnectionHandshakeDeps {
 	isCurrentTabHost: Ref<boolean>;
 }
 
-export interface E2EEConnectionHandshake {
+interface E2EEConnectionHandshake {
 	handleMeetingE2EEEnabled: (data: {
 		meeting_id?: string;
 		e2ee_enabled?: boolean;

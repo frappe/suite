@@ -5,7 +5,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 import { Schema } from 'prosemirror-model'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import { EditorState } from 'prosemirror-state'
-import { columnResizing, tableNodes } from 'prosemirror-tables'
+import { columnResizing, tableNodes } from '@tiptap/pm/tables'
 
 import { draggedWidth, scaleAwareColumnResizing } from './columnResizing'
 

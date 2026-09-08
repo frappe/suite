@@ -86,12 +86,6 @@ export async function clearName(_sheet, version) {
 	return call(`${PREFIX}.label_snapshot`, { snapshot: version, label: '', pinned: 0 })
 }
 
-// ── Explicit "Save version" — UI button that pins right now. ─────────────────
-
-export async function saveVersion(sheet, versionName) {
-	return call(`${PREFIX}.save_snapshot`, { sheet, label: versionName })
-}
-
 // ── Make a copy ───────────────────────────────────────────────────────────────
 //
 // v2 doesn't have a dedicated copy endpoint; we replay the snapshot state
@@ -136,33 +130,4 @@ export async function cellHistory(sheet, cellRef, sheetName = 'Sheet1', limit = 
 
 export async function cellDiff(_sheet, _version, _against = '') {
 	return { sheets: {} }
-}
-
-// ── Op recording — fire-and-forget audit logging. ─────────────────────────────
-//
-// In the new model ops are submitted as a batch with each save (see
-// usePersistence). This single-op endpoint is kept for ad-hoc / realtime
-// callers that want to record an action without forcing a save.
-
-export function recordOp({ sheet, opType, cellRefs = null, before = null,
-                           after = null, summary = '', subSheet = '' }) {
-	return call('suite.sheets.api.record_op', {
-		sheet,
-		op_type:   opType,
-		cell_refs: cellRefs && JSON.stringify(cellRefs),
-		before:    before && JSON.stringify(before),
-		after:     after  && JSON.stringify(after),
-		summary,
-		sub_sheet: subSheet,
-	})
-}
-
-// Used to be the Version row created by the latest save. The new model
-// doesn't have a 1:1 (ops aren't pinned to versions), so we return the
-// current head_seq — that's what callers actually need (a monotonic
-// ordering anchor).
-
-export async function latestVersion(sheet) {
-	const head = await call(`${PREFIX}.head`, { sheet })
-	return head?.head_seq ?? 0
 }

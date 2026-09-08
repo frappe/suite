@@ -150,25 +150,6 @@ async function verifyWithEd25519(
 	return getSubtle().verify({ name: "Ed25519" }, publicKey, signature, data);
 }
 
-async function _hkdfBits(
-	ikm: Uint8Array<ArrayBuffer>,
-	info: Uint8Array<ArrayBuffer>,
-	length = 32,
-): Promise<Uint8Array<ArrayBuffer>> {
-	const subtle = getSubtle();
-	const baseKey = await subtle.importKey("raw", ikm, "HKDF", false, [
-		"deriveBits",
-	]);
-	const bits = await subtle.deriveBits(
-		{ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info },
-		baseKey,
-		length * 8,
-	);
-	const out = new Uint8Array(length);
-	out.set(new Uint8Array(bits));
-	return out;
-}
-
 export async function generateMeetingSecret(): Promise<
 	Uint8Array<ArrayBuffer>
 > {

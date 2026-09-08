@@ -254,7 +254,7 @@ export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 // Mirrors the backend's DOMAIN_NAME_PATTERN: 1-63 char labels of letters/digits/hyphens (no leading or
 // trailing hyphen), joined by dots, at most 253 chars overall — so the Add button never enables a value
 // the API would reject.
-export const isDomain = (s: string) =>
+const isDomain = (s: string) =>
 	/^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
 
 // A screened value: either a full email address or a whole domain (@example.com).

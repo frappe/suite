@@ -57,8 +57,3 @@ export function downloadDocxFromHtml(
   filename: string,
   settings?: Record<string, unknown>,
 ): Promise<void>
-
-export function tableFromTABLE(tbl: HTMLTableElement, ctx: unknown): Promise<unknown>
-
-declare const _default: typeof downloadDocxFromHtml
-export default _default

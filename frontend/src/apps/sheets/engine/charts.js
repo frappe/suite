@@ -128,10 +128,6 @@ export const DEFAULT_CHART_SIZE = { width: 480, height: 320 }
 // knows how to render.
 export const CHART_TYPES = ['line', 'bar', 'pie', 'area', 'scatter']
 
-export function isValidChartType(t) {
-	return CHART_TYPES.includes(t)
-}
-
 // Aggregation functions offered in the chart dialog. `none` (the default)
 // plots each source row as-is; the rest group rows by the X-axis value and
 // summarise each series column — see `_aggregate` in chart-data.js. Values are

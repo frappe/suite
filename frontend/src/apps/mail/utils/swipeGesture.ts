@@ -5,17 +5,17 @@
 // a sandboxed document); keep the two in step.
 
 /** A swipe must travel at least this far sideways. */
-export const SWIPE_MIN_X = 64
+const SWIPE_MIN_X = 64
 
 // Vertical travel that settles a gesture as a scroll, for good. The path decides that,
 // not the two endpoints: a scroll that wanders back towards the height it began at nets
 // almost no dy, and a thumb travelling that far arcs well past SWIPE_MIN_X sideways —
 // which is how reading a message used to page to the next one. Once a gesture has
 // scrolled it can never become a swipe, however it ends.
-export const SCROLL_LOCK_Y = 24
+const SCROLL_LOCK_Y = 24
 
 /** Left → 1 (next), right → -1 (previous). */
-export type SwipeOffset = 1 | -1
+type SwipeOffset = 1 | -1
 
 export const createSwipeGesture = () => {
 	let origin: { x: number; y: number } | null = null

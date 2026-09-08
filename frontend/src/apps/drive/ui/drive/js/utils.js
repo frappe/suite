@@ -69,7 +69,7 @@ export const copyToClipboard = (str) => {
   }
 }
 
-export function formatSize(size, nDigits = 1) {
+function formatSize(size, nDigits = 1) {
   if (size === 0) return '0 KB'
   var i = -1
   var byteUnits = ['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']

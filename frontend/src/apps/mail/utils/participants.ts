@@ -94,7 +94,7 @@ const firstNameOf = (fullName: string) => {
  * own addresses), so deriving the fallback letter from anywhere else — the latest sender, say, which is
  * the user on any thread they have answered — puts one person's initial on another's photo.
  */
-export const primaryParticipant = (participants: ThreadParticipant[]): ThreadParticipant | undefined =>
+const primaryParticipant = (participants: ThreadParticipant[]): ThreadParticipant | undefined =>
 	participants.find((p) => !p.is_self) ?? participants[0]
 
 /**

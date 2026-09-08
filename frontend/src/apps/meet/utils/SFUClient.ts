@@ -152,18 +152,18 @@ interface ParticipantConnectionConflictDetails {
 	conflictId: string;
 }
 
-export interface SFUWebRtcTransportResponse {
+interface SFUWebRtcTransportResponse {
 	id: string;
 	iceParameters: IceParameters;
 	iceCandidates: IceCandidate[];
 	dtlsParameters: DtlsParameters;
 }
 
-export interface SFUProducerResponse {
+interface SFUProducerResponse {
 	id: string;
 }
 
-export interface SFUConsumerResponse {
+interface SFUConsumerResponse {
 	id: string;
 	producerId: string;
 	kind: MediaKind;
@@ -199,7 +199,7 @@ export interface ScreenShareSignalData extends ProducerCloseMetadata {
 
 type SFUEventHandler = (...args: unknown[]) => void;
 
-export type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
+type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
 
 export class SFURequestError extends Error {
 	readonly code: SFURequestErrorCode;

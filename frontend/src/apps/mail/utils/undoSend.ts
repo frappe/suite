@@ -2,7 +2,7 @@ import type { User } from '@/apps/mail/types'
 
 /** The undo-send periods offered in Settings; mirrors UNDO_SEND_PERIODS in suite/mail/utils/user.py. */
 export const UNDO_SEND_PERIODS = [5, 10, 20, 30] as const
-export const DEFAULT_UNDO_SEND_PERIOD = 5
+const DEFAULT_UNDO_SEND_PERIOD = 5
 
 /**
  * Seconds a plain Send is held for this user (User Settings.undo_send_period), before the few

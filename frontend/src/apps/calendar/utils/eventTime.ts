@@ -17,7 +17,7 @@ type Dayjs = ReturnType<typeof dayjs>
  * The timing fields every formatted calendar event carries (the backend's
  * `format_calendar_event`): a JSCalendar wall clock, an ISO-8601 duration, and the all-day flag.
  */
-export interface EventTiming {
+interface EventTiming {
 	start: string
 	duration?: string | null
 	show_without_time?: boolean | 0 | 1

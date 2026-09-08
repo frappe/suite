@@ -38,7 +38,7 @@ interface MediaControlsActions {
 	) => Promise<void>;
 }
 
-export interface MeetingDocLike {
+interface MeetingDocLike {
 	banGuest: Call<unknown, { guest_id: string }>;
 	promoteToCohost: Call<unknown, { user_id: string }>;
 	reload: () => Promise<unknown>;

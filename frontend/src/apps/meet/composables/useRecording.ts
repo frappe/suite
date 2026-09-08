@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useSocket } from "../socket";
 import { submit } from "../utils/request";
 
-export type RecordingStatus =
+type RecordingStatus =
 	| "Pending"
 	| "Starting"
 	| "Recording"

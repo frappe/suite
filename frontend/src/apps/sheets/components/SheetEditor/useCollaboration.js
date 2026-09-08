@@ -40,7 +40,7 @@ function _defaultCollabUrl() {
 }
 
 // Collaboration cursor palette — 8 distinct colours not covered by Espresso tokens.
-export const CURSOR_PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#AB47BC', '#00ACC1', '#FF7043', '#8D6E63']
+const CURSOR_PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#AB47BC', '#00ACC1', '#FF7043', '#8D6E63']
 
 function hashUserColor(user) {
   let hash = 0

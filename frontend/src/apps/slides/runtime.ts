@@ -4,7 +4,7 @@ import { createResource } from 'frappe-ui'
 import { getSessionUser, useSessionStore } from '@/boot/session'
 import { removeOfflineCopy } from '@/apps/slides/stores/offlineCopy'
 import { claimSlidesCachesFor } from '@/apps/slides/utils/serviceWorker'
-import { editorAccess, setEditorAccess, setPreviousRoute } from './routerState'
+import { editorAccess, setEditorAccess } from './routerState'
 
 const getEditorAccess = async (presentationId: string) => {
   try {
@@ -27,8 +27,6 @@ export const beforeEach = async (
   to: RouteLocationNormalized,
   from: RouteLocationNormalizedLoaded,
 ) => {
-  setPreviousRoute(from)
-
   const user = getSessionUser()
   if (user) await claimSlidesCachesFor(user).catch(() => {})
 

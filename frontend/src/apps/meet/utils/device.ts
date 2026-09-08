@@ -16,10 +16,6 @@ export function getPlatform(): Platform {
 	return "unknown";
 }
 
-export function isMobile(): boolean {
-	return window.innerWidth < 640;
-}
-
 export function isMobileDevice(): boolean {
 	return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
 }

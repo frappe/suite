@@ -9,7 +9,7 @@ import type {
 	RecordingProofResponse,
 } from "../../suite/meet/types";
 
-export interface RecorderParticipantUserData {
+interface RecorderParticipantUserData {
 	name?: string;
 	avatar?: string | null;
 	audio_enabled?: boolean;
@@ -40,56 +40,13 @@ export interface RecorderParticipantUpdate {
 	userData?: RecorderParticipantUserData;
 }
 
-export type ParticipantMessage =
-	| {
-			type: "participant-joined";
-			value: RecorderParticipantData & { participantId: string };
-	  }
-	| { type: "participant-left"; value: { participantId: string } };
-
 export interface ProducerEvent {
 	producerId: string;
 	participantId: string;
 	isScreen: boolean;
 }
 
-export type ProducerMessage =
-	| { type: "producer-created"; value: ProducerEvent }
-	| { type: "producer-closed"; value: ProducerEvent };
-
-export type LegacyMediaControlAction =
-	"mute" | "unmute" | "video_off" | "video_on";
-
-export type MediaControlAction =
-	LegacyMediaControlAction | { type: "audio" | "video"; enabled: boolean };
-
-export type MediaControlMessage =
-	| { participantId: string; action: LegacyMediaControlAction }
-	| {
-			participantId: string;
-			action: { type: "audio" | "video"; enabled: boolean };
-	  };
-
-export interface ParticipantSnapshot {
-	id: string;
-	user_id?: string;
-	info: RecorderParticipantUserData & { user_name?: string };
-}
-
-export interface ProducerSnapshot {
-	id: string;
-	participantId: string;
-	isScreen: boolean;
-}
-
-export interface ChatMessage {
-	fromUser?: string;
-	fromName?: string;
-	message: string;
-	timestamp?: string;
-}
-
-export type RecordingChallengeMessage = RecordingProofChallenge;
+type RecordingChallengeMessage = RecordingProofChallenge;
 
 const exactKeys = (
 	value: object,
@@ -462,208 +419,10 @@ const parseParticipantUserData = (
 	};
 };
 
-export const parseParticipantMessage = (
-	type: ParticipantMessage["type"],
-	value: unknown,
-): ParticipantMessage | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	if (typeof participantId !== "string" || !participantId) return null;
-	if (type === "participant-left") {
-		return { type, value: { participantId } };
-	}
-	const userDataValue = "userData" in value ? value.userData : undefined;
-	const userData =
-		userDataValue === undefined
-			? undefined
-			: parseParticipantUserData(userDataValue);
-	if (userDataValue !== undefined && !userData) return null;
-	return { type, value: { participantId, ...(userData ? { userData } : {}) } };
-};
-
-export const parseProducerMessage = (
-	type: ProducerMessage["type"],
-	value: unknown,
-): ProducerMessage | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const producerId = "producerId" in value ? value.producerId : undefined;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	const isScreen = "isScreen" in value ? value.isScreen : false;
-	if (
-		typeof producerId !== "string" ||
-		!producerId ||
-		typeof participantId !== "string" ||
-		!participantId ||
-		typeof isScreen !== "boolean"
-	)
-		return null;
-	return { type, value: { producerId, participantId, isScreen } };
-};
-
-export const parseParticipantSnapshot = (
-	value: unknown,
-): ParticipantSnapshot | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const id = "id" in value ? value.id : undefined;
-	const userId = "user_id" in value ? value.user_id : undefined;
-	const infoValue = "info" in value ? value.info : undefined;
-	if (
-		typeof id !== "string" ||
-		!id ||
-		!optionalString(userId) ||
-		typeof infoValue !== "object" ||
-		infoValue === null
-	)
-		return null;
-	const info = parseParticipantUserData(infoValue);
-	const userName = "user_name" in infoValue ? infoValue.user_name : undefined;
-	if (!info || !optionalString(userName)) return null;
-	return { id, user_id: userId, info: { ...info, user_name: userName } };
-};
-
-export const parseProducerSnapshot = (
-	value: unknown,
-): ProducerSnapshot | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const id = "id" in value ? value.id : undefined;
-	const participantId =
-		"participantId" in value
-			? value.participantId
-			: "user_id" in value
-				? value.user_id
-				: "userId" in value
-					? value.userId
-					: undefined;
-	const isScreen = "isScreen" in value ? value.isScreen : false;
-	if (
-		typeof id !== "string" ||
-		!id ||
-		typeof participantId !== "string" ||
-		!participantId ||
-		typeof isScreen !== "boolean"
-	)
-		return null;
-	return { id, participantId, isScreen };
-};
-
-export const parseMediaControlMessage = (
-	value: unknown,
-): MediaControlMessage | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	const action = "action" in value ? value.action : undefined;
-	if (typeof participantId !== "string" || !participantId) return null;
-	if (
-		action === "mute" ||
-		action === "unmute" ||
-		action === "video_off" ||
-		action === "video_on"
-	)
-		return { participantId, action };
-	if (typeof action !== "object" || action === null) return null;
-	const actionType = "type" in action ? action.type : undefined;
-	const enabled = "enabled" in action ? action.enabled : undefined;
-	if (
-		(actionType !== "audio" && actionType !== "video") ||
-		typeof enabled !== "boolean"
-	)
-		return null;
-	return { participantId, action: { type: actionType, enabled } };
-};
-
 export const parseConsumerId = (value: unknown): string | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const consumerId = "consumerId" in value ? value.consumerId : undefined;
 	return typeof consumerId === "string" && consumerId ? consumerId : null;
-};
-
-export const parseParticipantId = (value: unknown): string | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	return typeof participantId === "string" && participantId
-		? participantId
-		: null;
-};
-
-export const parseActiveSpeakers = (value: unknown): string[] | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantIds =
-		"participantIds" in value ? value.participantIds : undefined;
-	return Array.isArray(participantIds) &&
-		participantIds.every((id) => typeof id === "string" && id)
-		? participantIds
-		: null;
-};
-
-export const parseReaction = (
-	value: unknown,
-): { fromUser: string; reaction: string } | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const fromUser = "fromUser" in value ? value.fromUser : undefined;
-	const reaction = "reaction" in value ? value.reaction : undefined;
-	return typeof fromUser === "string" &&
-		fromUser &&
-		typeof reaction === "string" &&
-		reaction
-		? { fromUser, reaction }
-		: null;
-};
-
-export const parseHandChange = (
-	value: unknown,
-): { participantId: string; raised: boolean; timestamp: string } | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	const raised = "raised" in value ? value.raised : undefined;
-	const timestamp = "timestamp" in value ? value.timestamp : undefined;
-	if (
-		typeof participantId !== "string" ||
-		!participantId ||
-		typeof raised !== "boolean" ||
-		!optionalString(timestamp)
-	)
-		return null;
-	return {
-		participantId,
-		raised,
-		timestamp: timestamp || new Date().toISOString(),
-	};
-};
-
-export const parseRaisedHands = (
-	value: unknown,
-): Record<string, string> | null => {
-	if (typeof value !== "object" || value === null || !("hands" in value))
-		return null;
-	const hands = value.hands;
-	if (typeof hands !== "object" || hands === null || Array.isArray(hands))
-		return null;
-	const entries = Object.entries(hands);
-	if (entries.some(([, timestamp]) => typeof timestamp !== "string"))
-		return null;
-	return Object.fromEntries(entries);
-};
-
-export const parseChatMessage = (value: unknown): ChatMessage | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const fromUser = "fromUser" in value ? value.fromUser : undefined;
-	const fromName = "fromName" in value ? value.fromName : undefined;
-	const message = "message" in value ? value.message : undefined;
-	const timestamp = "timestamp" in value ? value.timestamp : undefined;
-	if (
-		!optionalString(fromUser) ||
-		!optionalString(fromName) ||
-		typeof message !== "string" ||
-		!message ||
-		!optionalString(timestamp)
-	)
-		return null;
-	return { fromUser, fromName, message, timestamp };
 };
 
 export const parseParticipantUpdate = (
@@ -844,21 +603,4 @@ export const parseScreenShareStarted = (
 		producerId: consumer.producerId,
 		stream,
 	};
-};
-
-export const parseScreenShareStopped = (
-	value: unknown,
-): { participantId: string; producerId: string } | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const participantId =
-		"participantId" in value ? value.participantId : undefined;
-	const producerId = "producerId" in value ? value.producerId : undefined;
-	if (
-		typeof participantId !== "string" ||
-		!participantId ||
-		typeof producerId !== "string" ||
-		!producerId
-	)
-		return null;
-	return { participantId, producerId };
 };

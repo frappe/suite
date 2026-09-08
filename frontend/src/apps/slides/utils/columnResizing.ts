@@ -16,7 +16,7 @@ import {
 	columnResizing,
 	columnResizingPluginKey,
 	updateColumnsOnResize,
-} from 'prosemirror-tables'
+} from '@tiptap/pm/tables'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 
 import { frameResizeAttribute, stretchColumnsToFrame } from './tableWidths'

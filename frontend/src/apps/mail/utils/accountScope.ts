@@ -17,7 +17,7 @@ import type { UserAccount } from '@/apps/mail/types'
  * their own instances, fetched on first use and kept for the session — folder menus
  * and identities don't need the poll-fresh counts the active list does.
  */
-export interface AccountScope {
+interface AccountScope {
 	accountId: ComputedRef<string>
 	/** The account's record off the user resource (default_outgoing_email, block_remote_images, …). */
 	account: ComputedRef<UserAccount | undefined>

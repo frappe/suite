@@ -15,10 +15,12 @@ export const DEFAULT_TOTAL_COLS = 26
 // Live bindings — `let` so the row/column count can grow at runtime via the
 // grid's `expandRows` / `expandCols` API. ES modules expose live bindings, so
 // importers always see the current value.
-export let TOTAL_ROWS = DEFAULT_TOTAL_ROWS
-export let TOTAL_COLS = DEFAULT_TOTAL_COLS    // A–Z; more can be added on demand
+export let TOTAL_ROWS
+export let TOTAL_COLS
 export function setTotalRows(n) { TOTAL_ROWS = Math.max(1, Math.floor(n)) }
 export function setTotalCols(n) { TOTAL_COLS = Math.max(1, Math.floor(n)) }
+setTotalRows(DEFAULT_TOTAL_ROWS)
+setTotalCols(DEFAULT_TOTAL_COLS)
 
 // Frappe Espresso palette — resolved hex values mirroring the frappe-ui
 // semantic tokens (surface-*, outline-*, ink-*). Canvas can't read CSS vars,

@@ -86,5 +86,3 @@ export const timeDetector = {
 		}
 	},
 }
-
-export const _internal = { _parse, _format, _classifyStep }

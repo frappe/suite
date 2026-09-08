@@ -140,14 +140,14 @@ export const deliveryErrorTitle = (row: Submission) =>
 export const subjectLabel = (row: Submission) =>
 	row.email_deleted ? __('(Message deleted)') : row.subject || __('(No subject)')
 
-export type SubmissionAction = {
+type SubmissionAction = {
 	label: string
 	icon: Component
 	theme?: string
 	onClick: () => void
 }
 
-export type SubmissionActionHandlers = {
+type SubmissionActionHandlers = {
 	/** When provided, "Open email" leads the menu (for submissions whose message still exists). */
 	openEmail?: () => void
 	sendNow: () => void

@@ -1,4 +1,4 @@
-export const POLYGON_SIDES = { diamond: 4, triangle: 3, pentagon: 5 }
+const POLYGON_SIDES = { diamond: 4, triangle: 3, pentagon: 5 }
 
 export const isPolygonShape = (shapeType) => shapeType in POLYGON_SIDES
 
