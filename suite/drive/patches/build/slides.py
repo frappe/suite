@@ -125,6 +125,13 @@ def _convert_deck(env, deck, batch_size, result):
         lambda row: (str(row.creation or ""), row.name),
     )
     thumbnail, excluded = _thumbnail_file(deck, files, result, host)
+    references = _references(parsed, slides)
+    if any(_named_by(references, row, host) for row in files if row.name in excluded):
+        # §14.7 asks for both conversions. A File a slide body names is deck
+        # media whatever else it is, so it becomes a child node and the body
+        # holds that node id, while the same File still builds the preview.
+        # Every excluded row carries the chosen blob, so the group is one node.
+        excluded = set()
     media = [row for row in files if row.name not in excluded]
     _refuse_unreachable_children(deck, deck_node)
     writer = _MediaWriter(target, deck_node, batch_size)
@@ -136,7 +143,7 @@ def _convert_deck(env, deck, batch_size, result):
         # §11: a composite renders the referenced deck's own slides, so that
         # deck keeps the media and this one never copies it.
         borrowed, borrowed_nodes = _borrowed_mapping(
-            env, deck, _references(parsed, slides), mapping, result, host, writer, titles
+            env, deck, references, mapping, result, host, writer, titles
         )
     mapping.update(borrowed)
     writer.flush()
@@ -700,6 +707,12 @@ def _references(parsed, slides):
                 found |= _strings(element.get(key))
     # §12 rewrites a whole `background` scalar too, so it names media as well.
     return found | {row.background for row in slides if isinstance(row.background, str)}
+
+
+def _named_by(references, row, host=""):
+    """Whether a slide body names this File, through its equivalent spellings."""
+    aliases = _aliases(row, host)
+    return any(_path_variants(value, host) & aliases for value in references)
 
 
 def _local_url(value, host=""):

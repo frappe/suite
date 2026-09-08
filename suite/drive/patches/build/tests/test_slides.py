@@ -1346,6 +1346,32 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.issues[0].source, "Presentation:deck-1")
         self.assertIn("non-template", result.issues[0].reason)
 
+    # -- defect 13: one File is both the deck preview and slide media
+
+    def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
+        row = media("cover", blob="cover-blob", url="/files/cover.webp", field="thumbnail")
+        source = FakeContent(
+            documents=[deck(thumbnail=row.file_url)],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": "/files/cover.webp"}]))],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("cover-blob", webp_bytes(), mime_type="image/webp")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.deck_previews_created, 1)
+        self.assertEqual(target.preview_rows["deck-node"]["name"], "cover")
+        self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["cover"])
+        self.assertEqual(result.media_nodes_created, 1)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "cover"}])
+        self.assertEqual(result.issues_total, 0)
+
+        again = convert_slides_and_templates(env)
+        self.assertEqual((again.media_nodes_created, again.deck_previews_created), (1, 1))
+        self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["cover"])
+
 
 if __name__ == "__main__":
     unittest.main()
