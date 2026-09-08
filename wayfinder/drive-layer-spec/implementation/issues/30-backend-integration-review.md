@@ -77,9 +77,16 @@ in an isolated worktree (never merged past `forge/drive-layer`):
   `_client_named_blob=True` like the HTTP client door.
 - `_require_readable_blob` no longer truncates its candidate scan at 50 rows
   before checking readability (which could falsely refuse a caller whose
-  own readable copy sorted past the cut); it now pages through every
-  candidate, bounded per page, until one page proves readable or the scan is
-  exhausted.
+  own readable copy sorted past the cut). It has since been rebounded again
+  (`fix/drive-30-site-findings`): the proof is now the caller's own
+  references first (`BLOB_OWN_SOURCES_SQL`, the cheap, common case), then
+  every reference any principal holds only if that finds nothing. Each tier
+  pages in bounded batches and now also caps the number of pages it reads
+  (`BLOB_SOURCE_MAX_PAGES`), refusing past that bound instead of paging to
+  exhaustion under `create_file`'s parent lock. See
+  `suite/drive/_core/nodes.py`'s `_require_readable_blob` docstring and
+  `test_blob_provenance.py`'s `TestReadableBlobProof` for the current
+  contract.
 - Fixed a stale rule citation and a dead file reference in
   `test_savepoint_discipline.py`'s module docstring (ARCHITECTURE.md rule
   2.4, not 2.2; the two runtime cases live in
@@ -98,3 +105,65 @@ in an isolated worktree (never merged past `forge/drive-layer`):
   not in Build. See [Ticket 35](35-cleanup-implementation.md)'s acceptance
   criteria for the ordered removal this depends on. This does not close
   either ticket.
+
+### 2026-09-09 — terminal-validation fixes, `fix/drive-30-site-findings`
+
+Three findings from a terminal validation pass against `19be46c0b`
+(`/tmp/ticket30-validation/log.md`), fixed in an isolated worktree, never
+merged past `forge/drive-layer`:
+
+- **Stale `preview_size=100` on a live `tabSingles` row.** The 2026-09-08
+  entry above stopped `patches/remove_personal.py` from writing the
+  megabyte-era `100` on *future* runs, but a site that already carried that
+  value from an earlier run keeps it - §9.2's pixel default never
+  retroactively applies to an existing Single row, so `_preview_longest_side()`
+  reads a real, explicit `100` instead of falling back to `512`.
+  `suite/drive/patches/migrate_preview_size_unit.py` (registered in
+  `suite/patches.txt`, post-model-sync, immediately before
+  `suite.drive.patches.build`) is additive and idempotent: it moves the one
+  known legacy sentinel value forward once, and leaves every other stored
+  value - including one an admin genuinely set to `512`, or to anything
+  else post-transition - untouched. Not run: no `bench migrate` was executed
+  against `slides.localhost` for this validation, so its stale
+  `preview_size=100` row (and `test_previews`' resulting failure) is
+  unchanged and still needs a real `migrate` to clear. Tests:
+  `suite/drive/patches/test_migrate_preview_size_unit.py` (100→512, an
+  explicit non-legacy value preserved, the pixel default itself preserved,
+  rerun-after-translation is a no-op).
+- **`test_ticket29_create_document`'s reproducible MariaDB error.** The
+  failing case mocked `docs.drive.personal_root_for` and
+  `docs.drive.create_document` at the boundary `writer/api/docs.py` calls
+  Drive through, but not `docs.drive.rollback_savepoint` - the same
+  boundary, called from the same `except` arm. With that one call unmocked,
+  the adapter's real exception handler ran the real
+  `_core/errors.rollback_savepoint`, which issued a genuine
+  `frappe.db.rollback(save_point=...)` against live MariaDB using a
+  savepoint name built from a mocked `frappe.generate_hash()`. This is a
+  test boundary gap, not a production leak: `rollback_savepoint`'s
+  deadlock-vs-lost-savepoint behavior is real transaction logic and stays
+  covered, unweakened, by `suite/writer/tests/test_docs_savepoint.py`. The
+  fix mocks `docs.drive.rollback_savepoint` in
+  `test_a_workflow_refusal_leaves_no_trailing_write`, the same way the
+  module's other tests already mock every other `docs.drive.*` call, and
+  asserts it received the workflow's own exception.
+- **`test_blob_provenance` standalone `RecursionError`.** Confirmed
+  test-isolation, not a production defect. `StubbedDatabase.setUp` replaces
+  `frappe.local.db` with a bare `MagicMock()`; every test in the module
+  explicitly stubs `db.sql` for its own proof, but none stubs `db.get_value`,
+  which framework internals (translation, doctype meta) still call
+  incidentally while constructing a `DriveForbidden`. An unconfigured mock
+  answers `get_value(...)` with a fresh child mock, not `None`; subscripting
+  it (`d["doctype"]`, `d["fieldtype"]`, ...) reads as a present row instead
+  of a miss, so `Document.load_from_db()`'s doctype-meta bootstrap keeps
+  reconstructing a "doctype" that is itself never anything but another mock
+  of the same call, recursing until the interpreter's stack gives out. Only
+  surfaces when this module runs first or alone in a process, which is why
+  it passed embedded in the full run and failed standalone: whichever test
+  ran first elsewhere already resolved that meta over a real connection.
+  Setting `self.db.get_value.return_value = None` in `StubbedDatabase.setUp`
+  makes that incidental path a normal, harmless miss; no test in this module
+  reads or asserts on `get_value` itself. Verified standalone
+  (`bench --site slides.localhost run-tests --module
+  suite.drive.tests.test_blob_provenance`) 5/5 green runs, and embedded
+  alongside `test_nodes`, `test_upload`, and `test_access` in the same
+  process.
