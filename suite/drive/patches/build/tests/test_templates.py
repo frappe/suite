@@ -4,10 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from suite.drive._core.roles import MANAGE, READ
+from suite.drive._core.roles import EDIT, MANAGE, READ
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL
-from suite.drive.patches.build.ports import ContentRow, WriterTemplateRow
+from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, WriterTemplateRow
+from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
@@ -20,12 +21,12 @@ STAMP = "2024-01-02 03:04:05.000000"
 OWNER = "owner@example.com"
 
 
-def writer_template(name, title="Template", owner=OWNER):
+def writer_template(name, title="Template", owner=OWNER, keymap="vim"):
     return WriterTemplateRow(
         name=name,
         title=title,
         content="<p>Exact HTML</p>",
-        keymap="vim",
+        keymap=keymap,
         owner=owner,
         creation=STAMP,
         modified=STAMP,
@@ -61,6 +62,54 @@ class TemplateTest(unittest.TestCase):
             content_ready=True,
         )
         return env, target
+
+    def admin_root(self, target, name="root-1"):
+        """The Administrator Personal Root ticket 27 leaves behind."""
+        target.node_rows[name] = {
+            "name": name,
+            "title": "Administrator",
+            "parent": None,
+            "root": None,
+            "path": "",
+            "kind": "root",
+            "state": ACTIVE,
+        }
+        target.root_rows[name] = {
+            "name": name,
+            "node": name,
+            "user": "Administrator",
+            "kind": "Personal",
+            "state": ACTIVE,
+        }
+        return name
+
+    def folder_row(self, target, root, name="folder-1", **values):
+        row = {
+            "name": name,
+            "title": "Templates",
+            "parent": root,
+            "root": root,
+            "path": "",
+            "kind": "folder",
+            "blob": None,
+            "size": 0,
+            "mime": None,
+            "url": None,
+            "content_doctype": None,
+            "content_docname": None,
+            "state": ACTIVE,
+            "trashed_at": None,
+            "trash_root": None,
+            "content_modified": STAMP,
+            "is_template": 0,
+            "owner": "Administrator",
+            "creation": STAMP,
+            "modified": STAMP,
+            "modified_by": "Administrator",
+        }
+        row.update(values)
+        target.node_rows[name] = row
+        return name
 
     def test_writer_template_creates_noncollaborative_document_node_and_grants(self):
         source_row = writer_template("writer-template")
@@ -168,6 +217,322 @@ class TemplateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(InvalidLegacyContent, "has no User row"):
             convert_templates(env)
+
+    # -- canonical position
+
+    def test_template_nodes_carry_the_canonical_child_path(self):
+        """`drive_node.py:80` recomputes a child path from its parent on save.
+
+        A path with no leading slash makes `_validate_chain` throw, and makes
+        the `path LIKE CONCAT('%/', node, '/%')` ancestor-grant and
+        `revoke_below` queries skip every template node.
+        """
+        writer = writer_template("writer-template")
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            writer_templates=[writer],
+            documents=[deck],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+
+        folder = convert_templates(env)
+
+        root = target.node_rows[folder]["root"]
+        self.assertEqual(target.node_rows[folder]["path"], "")
+        self.assertEqual(target.node_rows["writer-template"]["path"], f"/{folder}/")
+        self.assertEqual(target.node_rows["deck-template"]["path"], f"/{folder}/")
+        self.assertEqual(target.node_rows["writer-template"]["root"], root)
+        self.assertEqual(target.node_rows["deck-template"]["root"], root)
+
+    # -- the Templates folder
+
+    def test_an_exact_templates_folder_is_reused(self):
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        root = self.admin_root(target)
+        existing = self.folder_row(target, root)
+
+        folder = convert_templates(env)
+
+        self.assertEqual(folder, existing)
+        self.assertEqual(target.node_rows["writer-template"]["parent"], existing)
+
+    def test_a_trashed_templates_folder_does_not_block_a_new_active_one(self):
+        """Plan §10: active sibling uniqueness ignores Trashed nodes."""
+        source = FakeContent(
+            writer_templates=[writer_template("writer-template")], users={"Administrator": True, OWNER: True}
+        )
+        env, target = self.environment(source)
+        root = self.admin_root(target)
+        self.folder_row(target, root, name="old", state=TRASHED)
+
+        folder = convert_templates(env)
+
+        self.assertNotEqual(folder, "old")
+        self.assertEqual(target.node_rows["old"]["state"], TRASHED)
+        self.assertEqual(target.node_rows[folder]["state"], ACTIVE)
+
+    def test_duplicate_active_templates_folders_are_refused(self):
+        source = FakeContent(users={"Administrator": True})
+        env, target = self.environment(source)
+        root = self.admin_root(target)
+        self.folder_row(target, root, name="one")
+        self.folder_row(target, root, name="two")
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "ambiguous Templates"):
+            convert_templates(env)
+
+    def test_a_non_folder_named_templates_is_refused(self):
+        """Plan §10: refuse a file, link, document, or root with that title."""
+        source = FakeContent(users={"Administrator": True})
+        env, target = self.environment(source)
+        root = self.admin_root(target)
+        self.folder_row(target, root, kind="file")
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "Templates folder field kind"):
+            convert_templates(env)
+
+    def test_a_templates_folder_in_the_wrong_position_is_refused(self):
+        source = FakeContent(users={"Administrator": True})
+        env, target = self.environment(source)
+        root = self.admin_root(target)
+        self.folder_row(target, root)
+        target.node_rows["folder-1"]["root"] = "elsewhere"
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "Templates folder field root"):
+            convert_templates(env)
+
+    def test_the_templates_folder_receives_no_general_grant(self):
+        """Plan §10 and memo §7: the folder itself gets no `$GENERAL` grant."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        folder = convert_templates(env)
+
+        self.assertEqual(target.grant_roles(folder, (GENERAL, OWNER, "Administrator")), {})
+
+    # -- collisions
+
+    def test_an_unrelated_node_holding_a_writer_template_id_is_refused(self):
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.node_rows[row.name] = {"name": row.name, "title": "Unrelated", "kind": "folder"}
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "Writer template node writer-template field"):
+            convert_templates(env)
+
+    def test_an_unrelated_node_holding_a_presentation_template_id_is_refused(self):
+        row = presentation_template("deck-template")
+        source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.node_rows[row.name] = {"name": row.name, "title": "Unrelated", "kind": "folder"}
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "Presentation template node deck-template field"):
+            convert_templates(env)
+
+    def test_a_mismatched_writer_document_collision_is_refused(self):
+        """Memo §9: refuse any mismatched Writer Document, never mint another id."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.writer_rows[row.name] = {
+            "name": row.name,
+            "node": row.name,
+            "content": "AAA=",
+            "html": "<p>Somebody else wrote this</p>",
+            "settings": '{"keymap":"vim"}',
+            "collab": 0,
+            "owner": OWNER,
+            "creation": STAMP,
+            "modified": STAMP,
+            "modified_by": OWNER,
+        }
+
+        with self.assertRaisesRegex(
+            InvalidLegacyContent, "Writer template document writer-template field html"
+        ):
+            convert_templates(env)
+
+    def stored_writer_document(self, target, row, **values):
+        document = {
+            "name": row.name,
+            "node": row.name,
+            "content": "AAA=",
+            "html": row.content or "",
+            "settings": '{"keymap":"vim"}',
+            "collab": 0,
+            "owner": row.owner,
+            "creation": row.creation,
+            "modified": row.modified,
+            "modified_by": row.modified_by,
+        }
+        document.update(values)
+        target.writer_rows[row.name] = document
+        return document
+
+    def test_a_blank_writer_document_link_is_repaired_on_a_rerun(self):
+        """Plan §10: repair a blank reciprocal link, the way the deck path does."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        self.stored_writer_document(target, row, node=None)
+
+        convert_templates(env)
+
+        self.assertEqual(target.writer_rows[row.name]["node"], row.name)
+
+    def test_a_writer_document_linking_another_node_is_refused(self):
+        """A wrong link is a collision, not a half-written row."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        self.stored_writer_document(target, row, node="somebody-else")
+
+        with self.assertRaisesRegex(
+            InvalidLegacyContent, "Writer template document writer-template field node"
+        ):
+            convert_templates(env)
+
+    def test_a_blank_link_is_repaired_only_after_the_whole_row_matches(self):
+        """The repair must not bless a document whose body is somebody else's."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        self.stored_writer_document(target, row, node=None, html="<p>Somebody else wrote this</p>")
+
+        with self.assertRaisesRegex(
+            InvalidLegacyContent, "Writer template document writer-template field html"
+        ):
+            convert_templates(env)
+
+        self.assertIsNone(target.writer_rows[row.name]["node"])
+
+    def test_a_mismatched_existing_template_grant_is_refused(self):
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.grant_rows["stale"] = {
+            "name": "stale",
+            "node": row.name,
+            "principal": GENERAL,
+            "role": EDIT,
+        }
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "conflicting"):
+            convert_templates(env)
+
+    # -- source shapes
+
+    def test_a_presentation_template_without_a_title_uses_its_source_id(self):
+        """`Presentation.title` is `reqd=0`, so NULL is a real source value."""
+        row = ContentRow(
+            "Presentation",
+            "deck-template",
+            title=None,
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+            is_template=1,
+        )
+        source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        convert_templates(env)
+
+        self.assertEqual(target.node_rows["deck-template"]["title"], "deck-template")
+
+    def test_an_empty_keymap_serializes_to_empty_settings(self):
+        row = writer_template("writer-template", keymap="")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        convert_templates(env)
+
+        self.assertEqual(target.writer_rows[row.name]["settings"], "{}")
+
+    def test_light_and_dark_decks_keep_their_presentation_ids(self):
+        light = presentation_template("deck-light", title="Light")
+        dark = presentation_template("deck-dark", title="Dark")
+        source = FakeContent(documents=[light, dark], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        folder = convert_templates(env)
+
+        for row in (light, dark):
+            node = target.node_rows[row.name]
+            self.assertEqual(node["parent"], folder)
+            self.assertEqual(node["title"], row.title)
+            self.assertEqual(node["is_template"], 1)
+            self.assertEqual(source.document_rows[(row.doctype, row.name)].node, row.name)
+        self.assertEqual(env.state.content().template_nodes_created, 2)
+
+    # -- reruns
+
+    def test_convert_templates_fills_the_callers_live_conversion_record(self):
+        """A caller holding the record already must pass it in.
+
+        Loading a second copy here and saving it is overwritten the moment the
+        caller saves its own older instance, and every template counter then
+        reports zero.
+        """
+        writer = writer_template("writer-b", title="Common")
+        deck = presentation_template("deck-a", title="Common")
+        source = FakeContent(
+            writer_templates=[writer],
+            documents=[deck],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, _ = self.environment(source)
+        live = env.state.content()
+        live.slides_deferred = 3
+
+        convert_templates(env, result=live)
+
+        self.assertEqual(live.template_nodes_created, 2)
+        self.assertEqual(live.writer_templates_converted, 1)
+        self.assertEqual(live.template_title_renames, 1)
+        # The caller's own phase counters survive.
+        self.assertEqual(live.slides_deferred, 3)
+
+    def test_the_slides_phase_saves_the_template_counters_it_produced(self):
+        """slides.py owns the phase record, so the counters must reach it."""
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.writer_templates_converted, 1)
+        self.assertEqual(result.template_nodes_created, 1)
+        self.assertEqual(env.state.content().writer_templates_converted, 1)
+
+    def test_a_second_run_changes_no_row_and_no_counter(self):
+        writer = writer_template("writer-template")
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            writer_templates=[writer],
+            documents=[deck],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+
+        convert_templates(env)
+        rows = (dict(target.node_rows), dict(target.grant_rows), dict(target.writer_rows))
+        first = env.state.content()
+        convert_templates(env)
+        second = env.state.content()
+
+        self.assertEqual((dict(target.node_rows), dict(target.grant_rows), dict(target.writer_rows)), rows)
+        self.assertEqual(
+            (first.template_nodes_created, first.writer_templates_converted, first.template_title_renames),
+            (second.template_nodes_created, second.writer_templates_converted, second.template_title_renames),
+        )
+        self.assertEqual(second.template_nodes_created, 2)
 
 
 if __name__ == "__main__":

@@ -743,7 +743,9 @@ class ContentTarget(Protocol):
 
     def write_orphan(self, node: dict, doctype: str, docname: str) -> None: ...
 
-    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None: ...
+    def write_writer_template(
+        self, document: dict | None, node: dict | None, grants: list[dict], *, link: str = ""
+    ) -> None: ...
 
     def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None: ...
 
@@ -1595,11 +1597,17 @@ class SiteContentTarget:
             lambda: (self.insert_nodes([node]), self.write_content_link(doctype, docname, node["name"])),
         )
 
-    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None:
+    def write_writer_template(
+        self, document: dict | None, node: dict | None, grants: list[dict], *, link: str = ""
+    ) -> None:
         def write():
             self._bulk("Writer Document", WRITER_DOCUMENT_COLUMNS, [document] if document else [])
             self.insert_nodes([node] if node else [])
             self.insert_grants(grants)
+            if link:
+                # Plan §10 repair: a stored document keeps its blank reciprocal
+                # link only because an earlier run stopped inside this unit.
+                self.write_content_link("Writer Document", link, link)
 
         self._unit("drive_build_writer_template", write)
 
