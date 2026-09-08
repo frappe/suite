@@ -20,7 +20,7 @@ from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
 from suite.drive._core.access import require
-from suite.drive._core.errors import DriveConflict
+from suite.drive._core.errors import DriveConflict, rollback_savepoint
 from suite.drive._core.roles import EDIT, READ
 from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
@@ -172,16 +172,21 @@ def _relocate(ctx: DavContext, row: frappe._dict, dest_parent: frappe._dict, des
         try:
             node_core.update(ctx.principals, row.name, parent=dest_parent.name)
             node_core.update(ctx.principals, row.name, title=dest_name)
-        except DriveConflict:
-            frappe.db.rollback(save_point=savepoint)
+        except DriveConflict as collision:
+            rollback_savepoint(savepoint, collision)
             node_core.update(ctx.principals, row.name, title=dest_name)
             node_core.update(ctx.principals, row.name, parent=dest_parent.name)
-    except Exception:
+    except Exception as failure:
         # the fallback's own first leg has to be discarded too. Placing a
         # collection inside itself is refused in both orders, and without this
         # the rename-first order would leave the source renamed where it
         # stands - half of a request the client is told failed.
-        frappe.db.rollback(save_point=savepoint)
+        #
+        # Either leg can be an InnoDB deadlock victim, and the victim's
+        # savepoints are gone by the time this arm runs. The shared helper
+        # reports the deadlock the client has to retry on instead of the
+        # savepoint that went with it.
+        rollback_savepoint(savepoint, failure)
         raise
     else:
         frappe.db.release_savepoint(savepoint)

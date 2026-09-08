@@ -148,6 +148,11 @@ def finish_upload(
 
     # Delete the binding only after storage successfully claims and finalizes
     # the session. In particular, an empty/no-data session remains retryable.
+    #
+    # The blob below is the one this bound session just stored, so neither
+    # write is a client naming bytes it learned: §8.4's binding is already the
+    # proof. `nodes.create`'s `_client_named_blob` proof is for the §11.2 door
+    # that has no session to show.
     blob = finish_upload_to_blob(upload_id, checksum=checksum)
     frappe.cache().delete_value(_binding_key(upload_id))
 
