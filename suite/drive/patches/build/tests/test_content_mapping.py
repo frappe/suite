@@ -21,12 +21,17 @@ from suite.drive.patches.build.ports import ContentShareRow
 
 class ContentMappingTest(unittest.TestCase):
     def test_docshare_role_uses_the_content_share_ladder(self):
+        # §14.5: `share` and `write` is MANAGE, `write` is EDIT, `read` only
+        # is READ, and `share` without `write` leaves the highest content
+        # flag to win. `submit` is not on the ladder.
         rows = (
-            (ContentShareRow("a", "Writer Document", "doc", share=1), MANAGE),
+            (ContentShareRow("a", "Writer Document", "doc", share=1, write=1), MANAGE),
             (ContentShareRow("b", "Writer Document", "doc", write=1), EDIT),
-            (ContentShareRow("c", "Writer Document", "doc", submit=1), EDIT),
+            (ContentShareRow("c", "Writer Document", "doc", share=1, read=1), READ),
             (ContentShareRow("d", "Writer Document", "doc", read=1), READ),
             (ContentShareRow("e", "Writer Document", "doc"), None),
+            (ContentShareRow("f", "Writer Document", "doc", share=1), None),
+            (ContentShareRow("g", "Writer Document", "doc", submit=1, read=1), READ),
         )
         for row, expected in rows:
             with self.subTest(row=row.name):

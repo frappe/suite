@@ -181,6 +181,11 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
 
 def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
     target = env.content_target
+    # Lock the identity before the read, the way `_core/roots.py` and ticket
+    # 27 both do. Read first and a root committed between the read and the
+    # write leaves the user with two Active Personal Roots, which §3.2 bars
+    # and no later run can repair.
+    target.lock_root_identity(user)
     found = target.active_roots(user)
     if len(found) > 1:
         raise InvalidLegacyContent(f"user {user} has multiple Active Personal Roots")
