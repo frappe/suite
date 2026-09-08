@@ -152,7 +152,7 @@ class TestReadableBlobProof(StubbedDatabase):
 
         self.assertEqual(str(unknown.exception), str(unreadable.exception))
 
-    def test_the_sources_query_reads_nodes_and_versions_under_one_cap(self):
+    def test_the_sources_query_reads_nodes_and_versions_one_page_at_a_time(self):
         """Version bytes are readable too, so a version blob is a real source.
 
         `GET /nodes/<id>/versions` mints a signed `/f/` URL per row, which is
@@ -169,7 +169,41 @@ class TestReadableBlobProof(StubbedDatabase):
         self.assertIn("tabDrive Node Version", statement)
         self.assertEqual(values["blob"], STRANGER_BLOB)
         self.assertEqual(values["user"], USER)
-        self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_LIMIT)
+        self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_PAGE_SIZE)
+        self.assertEqual(values["after"], "")
+
+    def test_a_readable_source_past_a_full_page_of_strangers_is_still_admitted(self):
+        """The page size must bound one query's cost, not the proof's reach.
+
+        A first page entirely full of unreadable rows used to be the whole
+        search: a single `LIMIT` on an "own DESC" order could strand a
+        caller's own readable-but-not-owned copy behind it forever. The scan
+        now keeps paging past a full, unreadable page instead of stopping.
+        """
+        full_page = [source_row(name=f"stranger-{i}") for i in range(node_workflows.BLOB_SOURCE_PAGE_SIZE)]
+        second_page = [source_row(name="their-node", root="their-root")]
+        self.db.sql.side_effect = [
+            full_page,
+            [],  # `_readable_rows` over the first page: nothing granted
+            second_page,
+            [grant_row("their-root", READ)],
+        ]
+
+        node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 4)
+        second_call_values = self.db.sql.call_args_list[2].args[1]
+        self.assertEqual(second_call_values["after"], "stranger-49")
+
+    def test_an_exhausted_scan_with_no_readable_page_is_refused(self):
+        """A blob with only unreadable sources must not page forever."""
+        short_unreadable_page = [source_row()]
+        self.db.sql.side_effect = [short_unreadable_page, []]
+
+        with self.assertRaises(DriveForbidden):
+            node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 2)
 
     def test_a_suite_admin_still_needs_the_blob_to_be_in_drive(self):
         """MANAGE everywhere is not a licence to name bytes Drive does not hold.
