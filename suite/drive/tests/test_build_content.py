@@ -1097,7 +1097,8 @@ class TestSlideMedia(BuildContentCase):
         with Image.open(io.BytesIO(target.read_blob(preview.blob))) as image:
             self.assertEqual(image.size, (512, 256))
         self.assertEqual(report.deck_previews_created, 1)
-        # The thumbnail File is excluded from ordinary media (§11).
+        # No slide body names this thumbnail File, so it is excluded from
+        # ordinary media (§11).
         self.assertNotIn(deck["thumbnail"], [row["name"] for row in self.media_children(deck["node"])])
 
         second = frappe.new_doc("Drive Node Preview")
@@ -1111,6 +1112,28 @@ class TestSlideMedia(BuildContentCase):
         self.assertEqual(
             frappe.get_all("Drive Node Preview", filters={"node": deck["node"]}, pluck="name"),
             [deck["thumbnail"]],
+        )
+
+    def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
+        """§14.7: one File can be both the deck preview and a slide picture."""
+        thumb_url = f"/files/{self.prefix}thumb.png"
+        deck = self.deck_fixture(elements=[{"type": "image", "src": thumb_url}])
+        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "thumbnail"), thumb_url)
+
+        report = convert_slides_and_templates(self.environment())
+
+        children = {row["name"]: row for row in self.media_children(deck["node"])}
+        self.assertEqual(sorted(children), sorted([deck["keeper"], deck["thumbnail"]]))
+        self.assertEqual(children[deck["thumbnail"]]["blob"], deck["thumb_blob"])
+        self.assertEqual(report.media_nodes_created, 2)
+        self.assertEqual(report.deck_previews_created, 1)
+        self.assertEqual(
+            frappe.get_all("Drive Node Preview", filters={"node": deck["node"]}, pluck="name"),
+            [deck["thumbnail"]],
+        )
+        self.assertEqual(
+            json.loads(frappe.db.get_value("Slide", deck["slides"][0], "elements")),
+            [{"type": "image", "src": deck["thumbnail"]}],
         )
 
     def test_rollback_restores_the_exact_slide_columns(self):
