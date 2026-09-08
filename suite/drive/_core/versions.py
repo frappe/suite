@@ -15,7 +15,12 @@ from frappe.utils import get_datetime, now_datetime
 
 from suite.drive._core import content, previews
 from suite.drive._core.access import require
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+    rollback_savepoint,
+)
 from suite.drive._core.nodes import (
     CONTENT_TTL_SECONDS,
     DEFAULT_PAGE_SIZE,
@@ -94,11 +99,11 @@ def take_version(
             {"blob": blob, "size": size, "version": seq},
             via_link=via_link,
         )
-    except Exception:
+    except Exception as exc:
         # Content bytes are stored before this savepoint. On a refused write
         # their unreferenced File Blob row is deliberately left for framework
         # GC, just like a finalized upload whose Drive admission fails.
-        frappe.db.rollback(save_point=savepoint)
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -235,8 +240,8 @@ def label_version(
         if pinned is not KEEP:
             changes["pinned"] = int(pinned)
         frappe.db.set_value("Drive Node Version", version.name, changes)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -261,8 +266,8 @@ def delete_version(principals: Principals, node: str, seq: int) -> None:
         version = _version(current.name, seq, for_update=True)
         frappe.db.delete("Drive Node Version", {"name": version.name})
         release(current.root, int(version.size or 0))
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -352,8 +357,8 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
             },
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -428,13 +433,13 @@ def _thin_node(node: str, now: datetime, policy: Mapping[str, int]) -> dict:
         if removals:
             frappe.db.delete("Drive Node Version", {"name": ["in", tuple(row.name for row in removals)]})
             release(current.root, released)
-    except DriveNotFound:
+    except DriveNotFound as exc:
         # The node was purged between the candidate query and this lock. Its
         # versions and their charge went with it (§9.1), so there is no work.
-        frappe.db.rollback(save_point=savepoint)
+        rollback_savepoint(savepoint, exc)
         return {"scanned": 0, "deleted": 0, "released_bytes": 0}
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
