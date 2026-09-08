@@ -4,9 +4,11 @@
 
 **Blocked by:** [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
-**Owner:** Suite migration
+**Owner:** Suite migration (starting revision `6e6906176`, worktree
+`integrate/drive-35-cleanup`, claimed files: `suite/drive/patches/cleanup/**`,
+`suite/drive/patches/build/tests/test_dormancy.py`)
 
 **Execution gate:** None beyond completed blockers.
 
