@@ -122,9 +122,11 @@ class TestDomains(SuiteCloudTestCase):
     def test_domains_are_listed_added_exported_and_deleted(self) -> None:
         rows = admin.get_domains()
         self.assertEqual(
-            [(r["id"], r["name"], r["is_enabled"], r["is_verified"]) for r in rows],
-            [(DOMAIN, DOMAIN, True, False)],
+            [(r["id"], r["name"], r["status"], r["is_verified"]) for r in rows],
+            [(DOMAIN, DOMAIN, "Pending Verification", False)],
         )
+        self.assertEqual(admin.get_domains(status="Active"), [])
+        self.assertRaisesRegex(frappe.ValidationError, "Unknown domain status", admin.get_domains, status="x")
         self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
 
         self.assertEqual(admin.add_domain("Beta.test", description="Beta"), "Beta.test")
@@ -151,7 +153,8 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual(json.loads(admin.get_domain_dns_json(DOMAIN))[0]["type"], "TXT")
 
         self.assertTrue(admin.verify_domain(DOMAIN)["is_verified"])
-        self.assertTrue(admin.get_domain(DOMAIN)["is_verified"])
+        self.assertEqual(admin.get_domain(DOMAIN)["status"], "Active")
+        self.assertEqual([r["name"] for r in admin.get_domains(status="Active")], [DOMAIN])
 
         admin.delete_domain("Beta.test")
         self.assertEqual([r["name"] for r in admin.get_domains()], [DOMAIN])

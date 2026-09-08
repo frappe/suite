@@ -85,13 +85,26 @@ def check_member_target(member_id: str) -> str:
 # --- domains ------------------------------------------------------------------------------------
 
 
+DOMAIN_STATUSES = ("Active", "Pending Verification", "Disabled")
+
+
+def _domain_status(domain: dict) -> str:
+    """One status for every domain view: a domain goes live once its mandatory records resolve."""
+
+    if not domain.get("enabled"):
+        return "Disabled"
+    return "Active" if domain.get("is_verified") else "Pending Verification"
+
+
 def _domain_row(domain: dict) -> dict:
     return {
         "id": domain["domain"],
         "name": domain["domain"],
         "description": domain.get("description") or "",
+        "status": _domain_status(domain),
         "is_enabled": bool(domain.get("enabled")),
         "is_verified": bool(domain.get("is_verified")),
+        "last_verified_at": to_utc_z(domain.get("last_verified_at")),
         "created_at": to_utc_z(domain.get("created_at")),
     }
 
@@ -136,15 +149,17 @@ def add_domain(name: str, description: str | None = None) -> str:
 
 
 @frappe.whitelist()
-def get_domains(txt: str | None = None, is_enabled: bool | None = None) -> list[dict]:
+def get_domains(txt: str | None = None, status: str | None = None) -> list[dict]:
     check_admin_permission("view domains")
+    if status and status not in DOMAIN_STATUSES:
+        frappe.throw(_("Unknown domain status {0}.").format(status))
     rows = []
     with suppress(Exception):
         for domain in get_site_domains():
             row = _domain_row(domain)
             if txt and txt.lower() not in row["name"] and txt.lower() not in row["description"].lower():
                 continue
-            if is_enabled is not None and row["is_enabled"] != bool(is_enabled):
+            if status and row["status"] != status:
                 continue
             rows.append(row)
     return rows

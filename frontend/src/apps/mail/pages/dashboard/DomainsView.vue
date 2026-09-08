@@ -40,13 +40,16 @@
 					>
 						<ListRowItem :item="item">
 							<Badge
-								v-if="column.key === 'is_enabled'"
-								:theme="item ? 'green' : 'gray'"
-								:label="item ? __('Enabled') : __('Disabled')"
+								v-if="column.key === 'status'"
+								:theme="domainStatusBadge(item).theme"
+								:label="domainStatusBadge(item).label"
 							/>
-							<span v-else-if="column.key === 'created_at'">{{
-								formatCreatedAt(item)
-							}}</span>
+							<span
+								v-else-if="column.key === 'last_verified_at' || column.key === 'created_at'"
+								class="text-ink-gray-5 text-sm"
+							>
+								{{ formatAgo(item) }}
+							</span>
 						</ListRowItem>
 					</ListRow>
 				</template>
@@ -66,6 +69,11 @@ import {
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { fromNow } from '@/apps/mail/utils/datetime'
+import {
+	type DomainStatus,
+	domainStatusBadge,
+	domainStatusOptions,
+} from '@/apps/mail/utils/domainStatus'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
@@ -74,14 +82,14 @@ usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
 
 const showAddDomain = ref(false)
 const search = ref('')
-const status = ref<'All' | 'Enabled' | 'Disabled'>('All')
+const status = ref<'All' | DomainStatus>('All')
 
 const domains = createResource({
 	url: 'suite.mail.api.admin.get_domains',
 	auto: true,
 	makeParams: () => ({
 		txt: search.value,
-		...(status.value !== 'All' ? { is_enabled: status.value === 'Enabled' } : {}),
+		...(status.value !== 'All' ? { status: status.value } : {}),
 	}),
 	cache: ['mailDomains', search.value, status.value],
 })
@@ -93,15 +101,17 @@ type DomainRow = {
 	id: string
 	name: string
 	description?: string
-	is_enabled: boolean
+	status: DomainStatus
+	last_verified_at?: string
 	created_at?: string
 }
 
 const LIST_COLUMNS = [
 	{ label: __('Domain'), key: 'name' },
+	{ label: __('Status'), key: 'status' },
 	{ label: __('Description'), key: 'description' },
-	{ label: __('Status'), key: 'is_enabled' },
-	{ label: __('Created At'), key: 'created_at' },
+	{ label: __('Last Verified'), key: 'last_verified_at' },
+	{ label: __('Added'), key: 'created_at' },
 ]
 
 // The empty state depends on why the list is empty: a filtered search that found
@@ -128,11 +138,7 @@ const listOptions = computed(() => ({
 	getRowRoute: (row: DomainRow) => ({ name: 'mail-domain', params: { domainId: row.id } }),
 }))
 
-const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '—'
+const formatAgo = (value?: string) => fromNow(value) || '—'
 
-const STATUS_OPTIONS = [
-	{ label: __('All'), value: 'All' },
-	{ label: __('Enabled'), value: 'Enabled' },
-	{ label: __('Disabled'), value: 'Disabled' },
-]
+const STATUS_OPTIONS = domainStatusOptions()
 </script>

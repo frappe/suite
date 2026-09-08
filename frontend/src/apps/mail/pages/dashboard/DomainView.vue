@@ -56,6 +56,7 @@ import Info from '~icons/lucide/info'
 
 import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
+import { type DomainStatus, domainStatusBadge } from '@/apps/mail/utils/domainStatus'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -67,8 +68,8 @@ type DomainData = {
 	id: string
 	name: string
 	description: string
-	is_enabled: boolean
-	is_verified: boolean
+	status: DomainStatus
+	last_verified_at?: string
 	created_at: string
 	dns_record_groups: RecordGroup[]
 	dns_records: DNSRecord[]
@@ -168,14 +169,7 @@ const BREADCRUMBS = computed(() => [
 
 const confirmDialogAction = ref<'deleteDomain'>('deleteDomain')
 
-// A domain goes live once its mandatory records resolve; until then it is pending.
-const badge = computed<{ label: string; theme: 'green' | 'gray' | 'amber' }>(() => {
-	const data = domain.data as DomainData | undefined
-	if (data?.is_verified && data?.is_enabled) return { label: __('Active'), theme: 'green' }
-	if (data?.is_verified) return { label: __('Disabled'), theme: 'gray' }
-	return { label: __('Pending verification'), theme: 'amber' }
-}
-)
+const badge = computed(() => domainStatusBadge((domain.data as DomainData | undefined)?.status))
 
 const confirmDialogOptions = computed(() => {
 	const config = {
