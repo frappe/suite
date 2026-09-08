@@ -149,7 +149,6 @@ const list = createResource({
 	url: 'suite.mail.api.admin.get_mailing_list',
 	auto: true,
 	makeParams: () => ({ list_id: listId }),
-	cache: ['mailMailingList', listId],
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Mailing list not found.'), 'error')
 		router.replace({ name: 'mail-mailing-lists' })

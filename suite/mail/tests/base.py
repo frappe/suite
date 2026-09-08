@@ -38,7 +38,6 @@ def clear_mail_caches() -> None:
 
     from suite.mail import directory
 
-    directory.get_domains.clear_cache()
     directory.get_mailing_list_index.clear_cache()
 
 

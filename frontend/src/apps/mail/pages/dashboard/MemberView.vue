@@ -231,7 +231,6 @@ const member = createResource({
 	url: 'suite.mail.api.admin.get_member',
 	auto: true,
 	makeParams: () => ({ member_id: memberId }),
-	cache: ['mailMember', memberId],
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Member not found.'), 'error')
 		router.replace({ name: 'mail-members' })

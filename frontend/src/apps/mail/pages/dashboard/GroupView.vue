@@ -175,7 +175,6 @@ const member = createResource({
 	url: 'suite.mail.api.admin.get_group',
 	auto: true,
 	makeParams: () => ({ group_id: groupId }),
-	cache: ['mailGroup', groupId],
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Group not found.'), 'error')
 		router.replace({ name: 'mail-groups' })

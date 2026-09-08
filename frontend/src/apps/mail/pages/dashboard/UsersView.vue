@@ -207,7 +207,6 @@ const members = createResource({
 		return params
 	},
 	auto: true,
-	cache: ['mailMembers', search.value, roleFilter.value, statusFilter.value],
 })
 
 const normalizedMembers = computed<MemberRow[]>(() => {

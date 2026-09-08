@@ -21,12 +21,17 @@ class MailSettings(Document):
 
     if TYPE_CHECKING:
         from frappe.types import DF
-        from suite.mail.doctype.mail_client_configuration.mail_client_configuration import MailClientConfiguration
+
+        from suite.mail.doctype.mail_client_configuration.mail_client_configuration import (
+            MailClientConfiguration,
+        )
 
         allow_signup: DF.Check
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
-        default_gravatar: DF.Literal["404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"]
+        default_gravatar: DF.Literal[
+            "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
+        ]
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int

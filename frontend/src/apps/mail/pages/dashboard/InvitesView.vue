@@ -110,7 +110,6 @@ const invites = createResource({
 		...(status.value !== 'All' ? { status: status.value } : {}),
 	}),
 	auto: true,
-	cache: ['memberInvites', search.value, status.value],
 })
 
 const inviteRows = computed<InviteRow[]>(() =>

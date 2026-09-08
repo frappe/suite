@@ -91,7 +91,6 @@ const domains = createResource({
 		txt: search.value,
 		...(status.value !== 'All' ? { status: status.value } : {}),
 	}),
-	cache: ['mailDomains', search.value, status.value],
 })
 
 watchDebounced(() => search.value, domains.reload, { debounce: 300 })

@@ -60,7 +60,6 @@ const lists = createResource({
 	url: 'suite.mail.api.admin.get_mailing_lists',
 	auto: true,
 	makeParams: () => ({ search: search.value }),
-	cache: ['mailMailingLists', search.value],
 })
 
 watchDebounced(() => search.value, lists.reload, { debounce: 300 })

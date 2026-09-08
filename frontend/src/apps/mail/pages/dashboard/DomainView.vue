@@ -95,7 +95,6 @@ const domain = createResource({
 	url: 'suite.mail.api.admin.get_domain',
 	auto: true,
 	makeParams: () => ({ domain_id: domainId }),
-	cache: ['mailDomain', domainId],
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Domain not found.'), 'error')
 		router.replace({ name: 'mail-domains' })

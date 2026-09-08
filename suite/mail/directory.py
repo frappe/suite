@@ -16,9 +16,8 @@ GB = 1024**3
 MAILING_LIST_INDEX_LIMIT = 5000
 
 
-@redis_cache(ttl=60)
 def get_domains() -> list[dict]:
-    """The site's domains (cached briefly)."""
+    """The site's domains, read from Suite Cloud on every call so the dashboard is never stale."""
 
     return get_client().call("domains.list_domains")
 
@@ -45,7 +44,6 @@ def get_mailing_list_index() -> dict[str, list[str]]:
     return index
 
 
-@redis_cache(ttl=3600)
 def get_account_metadata() -> dict:
     """Locale and time zone choices as ``{value, label}`` lists."""
 

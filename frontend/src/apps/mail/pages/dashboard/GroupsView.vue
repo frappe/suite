@@ -63,7 +63,6 @@ const groups = createResource({
 	url: 'suite.mail.api.admin.get_groups',
 	auto: true,
 	makeParams: () => ({ search: search.value }),
-	cache: ['mailGroups', search.value],
 })
 
 watchDebounced(() => search.value, groups.reload, { debounce: 300 })

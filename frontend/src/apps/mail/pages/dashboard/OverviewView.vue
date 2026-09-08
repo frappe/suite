@@ -85,7 +85,6 @@ usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
 const overview = createResource({
 	url: 'suite.mail.api.admin.get_overview',
 	auto: true,
-	cache: 'mailOverview',
 })
 
 const data = computed(() => overview.data as OverviewData | undefined)

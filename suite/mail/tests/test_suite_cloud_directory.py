@@ -10,7 +10,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.api import admin
-from suite.mail.directory import get_domains
 from suite.mail.suite_cloud import SuiteCloudClient, is_suite_cloud_configured
 from suite.mail.tests.fake_suite_cloud import FakeSuiteCloud, fake_suite_cloud
 
@@ -34,14 +33,12 @@ class SuiteCloudTestCase(IntegrationTestCase):
         self._fake_context = fake_suite_cloud()
         self.fake: FakeSuiteCloud = self._fake_context.__enter__()
         self.fake.domains__create_domain(DOMAIN, description="Acme")
-        get_domains.clear_cache()
         frappe.set_user("Administrator")
 
     def tearDown(self) -> None:
         self._fake_context.__exit__(None, None, None)
         self._settings.__exit__(None, None, None)
         frappe.local.request_cache.clear()
-        get_domains.clear_cache()
         super().tearDown()
 
 

@@ -144,7 +144,6 @@ def add_domain(name: str, description: str | None = None) -> str:
 
     check_admin_permission("add domains", name)
     domain = get_client().call("domains.create_domain", domain=name, description=description)
-    get_site_domains.clear_cache()
     return domain["domain"]
 
 
@@ -184,7 +183,6 @@ def verify_domain(domain_id: str) -> dict:
 
     check_admin_permission("verify domains", domain_id)
     result = get_client().call("domains.verify_dns_records", domain=domain_id)
-    get_site_domains.clear_cache()
     return result
 
 
@@ -192,7 +190,6 @@ def verify_domain(domain_id: str) -> dict:
 def delete_domain(domain_id: str) -> None:
     check_admin_permission("delete domains", domain_id)
     get_client().call("domains.delete_domain", domain=domain_id)
-    get_site_domains.clear_cache()
 
 
 @frappe.whitelist()
