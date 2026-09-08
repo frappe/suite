@@ -24,6 +24,8 @@ from suite.drive.patches.build.ports import (
     ROOT_READ_COLUMNS,
     BlobConflict,
     BotoBucket,
+    SiteContentSource,
+    SiteContentTarget,
     SiteDrive,
     SiteFiles,
     SiteStorage,
@@ -805,6 +807,79 @@ class TestFakeDriveKeys(unittest.TestCase):
         )
 
         self.assertEqual(self.drive.active_roots("Shared", None), ())
+
+
+class TestSiteContentTarget(StubbedDatabase):
+    """The wiring ticket 28 writes through, checked without a connection."""
+
+    def setUp(self):
+        super().setUp()
+        self.target = SiteContentTarget()
+
+    def test_root_metadata_tries_the_primary_key_before_the_node_column(self):
+        self.db.get_value.return_value = {"name": "root-1", "node": "root-1"}
+
+        found = self.target.root_metadata("root-1")
+
+        # §3.2 names a `Drive Root` after its node. A row named this id whose
+        # `node` column points elsewhere is invisible to the filter read, and
+        # Build would then insert a duplicate primary key on every run.
+        first = self.db.get_value.call_args_list[0]
+        self.assertEqual(first.args[1], "root-1")
+        self.assertEqual(found["name"], "root-1")
+
+    def test_root_metadata_falls_back_to_the_node_column(self):
+        self.db.get_value.side_effect = [None, {"name": "other", "node": "root-1"}]
+
+        found = self.target.root_metadata("root-1")
+
+        self.assertEqual(self.db.get_value.call_args_list[1].args[1], {"node": "root-1"})
+        self.assertEqual(found["node"], "root-1")
+
+    def test_the_personal_root_reads_lock_the_user_and_stay_current(self):
+        self.db.get_values.return_value = []
+
+        self.target.lock_root_identity("owner@example.com")
+        self.target.active_roots("owner@example.com")
+        self.target.personal_roots("owner@example.com")
+
+        # Postgres cannot lock a root row that does not exist yet, so the
+        # User row is the identity both creators lock, and the reads behind
+        # it must be current or Build mints a second Active Personal Root.
+        self.db.get_value.assert_called_once_with("User", "owner@example.com", "name", for_update=True)
+        for call in self.db.get_values.call_args_list:
+            self.assertTrue(call.kwargs["for_update"])
+            self.assertEqual(call.kwargs["order_by"], "name asc")
+
+    def test_a_deadlocked_unit_keeps_the_original_error_and_resets(self):
+        deadlock = frappe.QueryDeadlockError("victim")
+
+        def rollback(save_point=None):
+            if save_point:
+                raise Exception("savepoint does not exist")
+
+        self.db.rollback.side_effect = rollback
+
+        def fail():
+            raise deadlock
+
+        with self.assertRaises(frappe.QueryDeadlockError):
+            self.target._unit("drive_build_unit", fail)
+
+        # InnoDB already rolled the victim back, savepoints included. The
+        # narrow rollback raises over the original error, and the shared
+        # helper answers that with a full rollback.
+        self.assertIn(((),), [(call.args,) for call in self.db.rollback.call_args_list])
+
+
+class TestSiteContentSource(StubbedDatabase):
+    def test_the_residual_version_sample_is_ordered(self):
+        with patch.object(frappe, "get_all", return_value=[]) as get_all:
+            SiteContentSource().residual_writer_versions(20)
+
+        # These ids are the sample §14.9 prints. An unordered `LIMIT 20`
+        # names different rows on every run.
+        self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
 
 
 if __name__ == "__main__":

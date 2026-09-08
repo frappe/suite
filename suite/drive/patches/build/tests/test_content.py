@@ -226,6 +226,18 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(result.issues, [])
         self.assertEqual(result.issues_total, 0)
 
+    def test_the_personal_root_identity_is_locked_before_it_is_read(self):
+        row = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+
+        link_content_documents(env)
+
+        # `_core/roots.py` and ticket 27 both lock the identity first. Read
+        # first and a root committed in between leaves the user with two
+        # Active Personal Roots, which §3.2 bars and no rerun can repair.
+        self.assertIn(OWNER, target.locked_content_roots)
+
     def test_file_sheet_trash_disagreement_is_counted_without_repair(self):
         row = document("Sheet", "sheet-1", trashed=1)
         source = FakeContent(documents=[row], files=[file_for(row, "file-1", ACTIVE)])
@@ -261,7 +273,7 @@ class ContentTest(unittest.TestCase):
         row = document("Writer Document", "writer-1", node="node-1")
         shares = [
             ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1),
-            ContentShareRow("share-2", row.doctype, row.name, everyone=1, share=1),
+            ContentShareRow("share-2", row.doctype, row.name, everyone=1, share=1, write=1),
             ContentShareRow("share-3", row.doctype, row.name, user="missing@example.com", write=1),
             ContentShareRow("share-4", "Writer Version", "old-version", user="reader@example.com", read=1),
         ]

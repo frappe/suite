@@ -51,10 +51,17 @@ def within_capacity(path: str) -> bool:
 
 
 def docshare_role(row) -> int | None:
-    """Map Frappe sharing rights to Drive's strict role ladder."""
-    if row.share:
+    """Map Frappe sharing rights to Drive's strict role ladder.
+
+    §14.5, one line each: `share` and `write` is MANAGE, `write` is EDIT,
+    `read` only is READ, and `share` without `write` leaves the highest
+    content flag to win. `submit` is not on the ladder and no content
+    doctype here is submittable, so a submit-only row falls to its own
+    `read` flag, which Frappe always sets alongside.
+    """
+    if row.share and row.write:
         return MANAGE
-    if row.write or row.submit:
+    if row.write:
         return EDIT
     if row.read:
         return READ
