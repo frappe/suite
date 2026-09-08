@@ -52,6 +52,11 @@ def sync_from_disk():
 
 
 def auto_delete_from_trash():
+    """Legacy `File`-status trash sweep. Superseded by `jobs.purge_trashed_nodes`.
+
+    No longer scheduled (§2.2 names five daily jobs); kept unscheduled for
+    rollback until Cleanup drops it with the `File`-status trash it reads.
+    """
     days_before = (date.today() - timedelta(days=30)).isoformat()
     # Ids, not rows: `delete_entities` forwards onto `nodes.purge`, which takes
     # a node id. The old body reached `frappe.get_doc`, which accepted either.
@@ -65,6 +70,11 @@ def auto_delete_from_trash():
 
 
 def clear_deleted_files():
+    """Legacy `File`-status purge sweep. Superseded by `jobs.purge_trashed_nodes`.
+
+    No longer scheduled (§2.2 names five daily jobs); kept unscheduled for
+    rollback until Cleanup drops it with the `File`-status purge it reads.
+    """
     days_before = (date.today() - timedelta(days=30)).isoformat()
     result = frappe.db.get_all(
         "File",

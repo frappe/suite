@@ -36,8 +36,8 @@
    "label": "General"
   },
   {
-   "default": "100",
-   "description": "Largest file size (in megabytes) that opens as an in-browser preview.",
+   "default": "512",
+   "description": "Longest side, in pixels, of the generated preview image.",
    "fieldname": "preview_size",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -181,7 +181,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-31 09:40:05.165393",
+ "modified": "2026-09-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Disk Settings",
