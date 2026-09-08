@@ -46,6 +46,18 @@ class WriterVersionPayloads(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(frappe.ValidationError):
                 writer._version_payload(raw)
 
+    def test_invalid_utf8_refuses_without_leaning_on_throw_raising(self):
+        # `text` is unbound on the decode arm, so the rest of the function must
+        # be unreachable from it on its own. With `frappe.throw` stubbed out,
+        # the old arm fell through and raised `UnboundLocalError` on the next
+        # line.
+        with (
+            mock.patch.object(writer, "_", side_effect=lambda message: message),
+            mock.patch.object(writer.frappe, "throw"),
+            self.assertRaises(frappe.ValidationError),
+        ):
+            writer._version_payload(b"\xff")
+
     def test_a_json_object_is_an_envelope_and_owes_a_schema(self):
         # The fork is the shape, not a key spelling. A truncated envelope, or
         # one whose key is misspelled, must not restore its own source text as
@@ -77,9 +89,13 @@ class WriterVersionPayloads(unittest.TestCase):
         write.assert_not_called()
 
     def test_version_capture_includes_collaboration_mode(self):
+        # The columns are half the contract. Drop `collab` from the read and
+        # `row.collab` is None in production, so every native envelope records
+        # `collab: 0` and every restore turns collaboration off.
         row = frappe._dict(content="body", html="<p>x</p>", collab=0)
-        with mock.patch.object(writer.frappe.db, "get_value", return_value=row):
+        with mock.patch.object(writer.frappe.db, "get_value", return_value=row) as read:
             stream, mime = writer.version_bytes("WR-1")
+        self.assertEqual(read.call_args.args, (writer.DOCTYPE, "WR-1", ("content", "html", "collab")))
         self.assertEqual(mime, writer.VERSION_MIME)
         self.assertEqual(json.loads(stream.read())["collab"], 0)
 
@@ -120,6 +136,9 @@ class WriterVersionPermissions(unittest.TestCase):
             self.assertFalse(overrides.version_has_permission(version, "read"))
         refuse.assert_called_once_with("Writer Version", "VER-1", "read", "reader@example.com")
         legacy_file.assert_not_called()
+        # The node column decides, so name it. Any other fieldname would leave
+        # the guard reading something Drive does not own.
+        self.assertEqual(frappe.db.get_value.call_args.args, ("Writer Document", "DOC-1", "node"))
 
     def test_unlinked_parent_keeps_file_backed_permission(self):
         frappe = self._frappe()
@@ -127,6 +146,7 @@ class WriterVersionPermissions(unittest.TestCase):
         with (
             mock.patch.object(overrides.File, "get_for_doc", return_value="FILE-1"),
             mock.patch.object(overrides, "user_has_permission", return_value=True) as allowed,
+            mock.patch.object(overrides.drive, "refuse_shared_row") as refuse,
         ):
             self.assertTrue(
                 overrides.version_has_permission(
@@ -135,6 +155,9 @@ class WriterVersionPermissions(unittest.TestCase):
                 )
             )
         allowed.assert_called_once_with("FILE-1", "read", "reader@example.com")
+        # A legacy row is answered, never refused: refusing here would take a
+        # `DocShare` away that Build has not replaced yet.
+        refuse.assert_not_called()
 
     def test_orphan_child_is_refused_before_frappe_can_apply_its_share(self):
         self._frappe()
@@ -159,7 +182,7 @@ class WriterVersionPermissions(unittest.TestCase):
         )
 
     def test_list_keeps_the_legacy_parent_predicate_when_no_shared_child_is_linked(self):
-        frappe = self._frappe()
+        self._frappe()
         with (
             mock.patch.object(overrides.drive, "refuse_shared_child_rows"),
             mock.patch.object(overrides, "_document_predicate", return_value="legacy-parent") as parent,
@@ -167,8 +190,6 @@ class WriterVersionPermissions(unittest.TestCase):
             condition = overrides.version_query_conditions("reader@example.com")
         self.assertIn("legacy-parent", condition)
         parent.assert_called_once_with("reader@example.com")
-        frappe.db.set_value.assert_not_called()
-        frappe.db.delete.assert_not_called()
 
     def test_only_the_administrator_skips_the_version_guards(self):
         # §4.9 grants no `System Manager` bypass. Drive Grant is the only
@@ -195,6 +216,27 @@ class WriterVersionPermissions(unittest.TestCase):
         ):
             overrides.version_query_conditions("reader@example.com")
         refuse_list.assert_called_once()
+
+        # And the Administrator does skip both, which is the other half of the
+        # claim: `frappe.has_permission` answers for them before any hook
+        # (`frappe/permissions.py:109-111`), so a refusal here would only lock
+        # out the person who has to remove the offending `DocShare`.
+        with (
+            mock.patch.object(overrides.drive, "refuse_shared_row") as never_row,
+            mock.patch.object(overrides.drive, "refuse_shared_child_rows") as never_list,
+            mock.patch.object(overrides.File, "get_for_doc") as never_file,
+        ):
+            self.assertTrue(
+                overrides.version_has_permission(
+                    {"doctype": "Writer Version", "name": "VER-1", "doc": "DOC-1"},
+                    "read",
+                    "Administrator",
+                )
+            )
+            self.assertEqual(overrides.version_query_conditions("Administrator"), "")
+        never_row.assert_not_called()
+        never_list.assert_not_called()
+        never_file.assert_not_called()
 
 
 class SharedChildRefusal(unittest.TestCase):

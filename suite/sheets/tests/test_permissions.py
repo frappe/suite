@@ -46,11 +46,23 @@ class QueryConditions(unittest.TestCase):
             self.assertEqual(permissions.sheet_op_log_query(), "")
             self.assertEqual(permissions.sheet_snapshot_query(), "")
 
-    def test_system_manager_gets_no_filter(self):
+    @mock.patch("frappe.share.get_shared", return_value=[])
+    def test_system_manager_is_scoped_to_the_sheets_drive_does_not_own(self, _shared):
+        """Ticket 28 removed the role bypass: only the Administrator skips it.
+
+        A System Manager keeps every legacy child row it reads today, because
+        the unlinked side still answers. A migrated sheet is Drive's.
+        """
         with mock.patch("suite.sheets.permissions.frappe") as f:
             f.session.user = "sm@example.com"
             f.get_roles.return_value = ["System Manager", "All"]
-            self.assertEqual(permissions.sheet_op_log_query(), "")
+            f.db.escape.side_effect = _esc
+            _legacy(f)
+            sql = permissions.sheet_op_log_query()
+
+        self.assertIn("`tabSheet Op Log`.sheet IN", sql)
+        self.assertIn("`tabSheet`.`node` IS NULL OR `tabSheet`.`node` = ''", sql)
+        self.assertNotIn("tabDocShare", sql)
 
     @mock.patch("frappe.share.get_shared", return_value=[])
     def test_regular_user_scoped_to_owned_and_shared(self, _shared):
