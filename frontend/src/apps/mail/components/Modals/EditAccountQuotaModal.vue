@@ -35,24 +35,24 @@ import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
-type MemberData = { name: string; quota: { total: number } }
+type AccountData = { name: string; quota: { total: number } }
 
 const show = defineModel<boolean>()
-const { member } = defineProps<{ member: MemberData }>()
+const { account } = defineProps<{ account: AccountData }>()
 const emit = defineEmits(['reload'])
 
 const quotaGb = ref(0)
 
 watch(show, () => {
-	if (show.value && member) {
-		quotaGb.value = member.quota?.total ? Math.round(member.quota.total / 1024 ** 3) : 0
+	if (show.value && account) {
+		quotaGb.value = account.quota?.total ? Math.round(account.quota.total / 1024 ** 3) : 0
 		updateQuota.reset()
 	}
 })
 
 const updateQuota = createResource({
-	url: 'suite.mail.api.admin.update_member',
-	makeParams: () => ({ member_id: member.name, quota_gb: Number(quotaGb.value) || 0 }),
+	url: 'suite.mail.api.admin.update_account',
+	makeParams: () => ({ account_id: account.name, quota_gb: Number(quotaGb.value) || 0 }),
 	onSuccess: () => {
 		show.value = false
 		emit('reload')

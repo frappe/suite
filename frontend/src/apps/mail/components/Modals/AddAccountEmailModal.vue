@@ -53,7 +53,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { memberId } = defineProps<{ memberId: string }>()
+const { accountId } = defineProps<{ accountId: string }>()
 const emit = defineEmits(['reload'])
 
 const username = ref('')
@@ -72,9 +72,9 @@ watch(show, () => {
 })
 
 const addEmail = createResource({
-	url: 'suite.mail.api.admin.add_member_email',
+	url: 'suite.mail.api.admin.add_account_email',
 	makeParams: () => ({
-		member_id: memberId,
+		account_id: accountId,
 		email: `${username.value}@${domain.value}`,
 		description: description.value?.trim() || undefined,
 	}),

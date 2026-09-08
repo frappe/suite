@@ -33,7 +33,7 @@ import { Dialog, ErrorMessage, MultiSelect, createResource } from 'frappe-ui'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { memberId, currentIds } = defineProps<{ memberId: string; currentIds: string[] }>()
+const { accountId, currentIds } = defineProps<{ accountId: string; currentIds: string[] }>()
 const emit = defineEmits(['reload'])
 
 const groupIds = ref<string[]>([])
@@ -55,8 +55,8 @@ watch(show, () => {
 })
 
 const addGroups = createResource({
-	url: 'suite.mail.api.admin.add_member_to_groups',
-	makeParams: () => ({ member_id: memberId, group_ids: groupIds.value }),
+	url: 'suite.mail.api.admin.add_account_to_groups',
+	makeParams: () => ({ account_id: accountId, group_ids: groupIds.value }),
 	onSuccess: () => {
 		show.value = false
 		emit('reload')

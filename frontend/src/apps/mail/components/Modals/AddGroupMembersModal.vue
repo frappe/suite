@@ -38,7 +38,7 @@ const emit = defineEmits(['reload'])
 
 const accountIds = ref<string[]>([])
 
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
+const accounts = createResource({ url: 'suite.mail.api.admin.search_accounts', auto: true })
 
 // Exclude accounts already in the group.
 const options = computed(() =>

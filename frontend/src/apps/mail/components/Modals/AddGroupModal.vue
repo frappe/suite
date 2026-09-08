@@ -59,7 +59,7 @@ const description = ref('')
 const memberIds = ref<string[]>([])
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
+const accounts = createResource({ url: 'suite.mail.api.admin.search_accounts', auto: true })
 
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
 const accountOptions = computed(() =>
