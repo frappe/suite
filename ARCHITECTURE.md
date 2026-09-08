@@ -199,9 +199,12 @@ The package exports complete workflows needed by real cross-product callers. Can
 - create, grow, consume, and release a storage reservation;
 - resolve a caller's Personal Root;
 - declare a `ContentTypeSpec` and `Satellite`;
-- catch documented Drive errors and use the exported Drive role values.
+- catch documented Drive errors and use the exported Drive role values;
+- roll back a savepoint opened around a Drive workflow, through the shared deadlock-safe helper.
 
 The final exported names must be derived from the production caller inventory. Do not export an operation merely because an internal test uses it.
+
+`rollback_savepoint` is the one exported name that is a transaction primitive rather than a domain workflow, recorded here as an intentional exception under rule 9.5. A caller outside Drive that wraps a Drive workflow in its own savepoint has no other safe way to unwind it: Drive's row-locking workflows can make that caller's request the InnoDB deadlock victim, which discards the caller's savepoint along with the workflow's own, and only `_core.errors.rollback_savepoint`'s logic tells that case apart from an ordinary refusal without reaching into `_core` (owner: Suite Drive; review condition: revisit if a future workflow can absorb the caller's writes into its own transaction and remove the need for a caller-owned savepoint).
 
 The following remain private implementation details:
 
