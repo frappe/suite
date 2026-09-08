@@ -33,20 +33,32 @@
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
 			</div>
-			<DashboardCard :title="__('General Information')" :button-label="__('Edit')" @action="showEdit = true">
-				<div>
-					<InformationField :label="__('Description')" :value="domain.data.description || '—'" />
-					<InformationField
-						:label="__('Catch-All Address')"
-						:value="domain.data.catch_all_address || __('None (unknown addresses are rejected)')"
-					/>
-					<InformationField
-						:label="__('Sub-addressing')"
-						:value="domain.data.sub_addressing ? __('Enabled') : __('Disabled')"
-					/>
-					<InformationField :label="__('Last Verified')" :value="lastVerified" />
-				</div>
-			</DashboardCard>
+			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+				<DashboardCard :title="__('General Information')">
+					<div>
+						<InformationField :label="__('Description')" :value="domain.data.description" />
+						<InformationField
+							:label="__('Catch-All Address')"
+							:value="domain.data.catch_all_address || __('None')"
+						/>
+						<InformationField
+							:label="__('Sub-addressing')"
+							:value="domain.data.sub_addressing ? __('Enabled') : __('Disabled')"
+						/>
+						<InformationField :label="__('Added')" :value="createdAt" />
+					</div>
+				</DashboardCard>
+				<DashboardCard :title="__('Verification')">
+					<div>
+						<InformationField :label="__('Status')">
+							<Badge :label="badge.label" :theme="badge.theme" />
+						</InformationField>
+						<InformationField :label="__('Required Records')" :value="requiredRecords" />
+						<InformationField :label="__('Last Verified')" :value="lastVerified" />
+						<InformationField :label="__('Mail Flow')" :value="mailFlow" />
+					</div>
+				</DashboardCard>
+			</div>
 			<div class="rounded-4 border">
 				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
@@ -68,13 +80,13 @@
 import { computed, ref } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
 
 import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
-import { fromNow } from '@/apps/mail/utils/datetime'
+import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { type DomainStatus, domainStatusBadge } from '@/apps/mail/utils/domainStatus'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
@@ -235,6 +247,25 @@ const confirmDialogOptions = computed(() => {
 })
 
 const isEnabled = computed(() => !!(domain.data as DomainData | undefined)?.is_enabled)
+
+const createdAt = computed(() => {
+	const at = (domain.data as DomainData | undefined)?.created_at
+	return at ? formatDateTime(at) : undefined
+})
+
+// "3 of 4" reads the state at a glance; the tables below say which record is still missing.
+const requiredRecords = computed(() => {
+	const required = domainRecords.value.filter((record) => record.is_mandatory)
+	const verified = required.filter((record) => record.is_verified).length
+	return __('{0} of {1} verified', [verified, required.length])
+})
+
+const mailFlow = computed(() => {
+	const data = domain.data as DomainData | undefined
+	if (data?.status === 'Active') return __('Sending and receiving')
+	if (data?.status === 'Disabled') return __('Stopped: domain disabled')
+	return __('Stopped until the required records verify')
+})
 
 const lastVerified = computed(() => {
 	const at = (domain.data as DomainData | undefined)?.last_verified_at
