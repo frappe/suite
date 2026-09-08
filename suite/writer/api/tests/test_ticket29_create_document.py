@@ -148,18 +148,34 @@ class CreateDocumentAdapter(unittest.TestCase):
     def test_a_workflow_refusal_leaves_no_trailing_write(self):
         """The workflow's own savepoint already rolled the node and the document
         back (§8.3). The adapter must not read or write anything afterwards -
-        that would be a second, unguarded write outside the rollback."""
+        that would be a second, unguarded write outside the rollback.
+
+        `drive.rollback_savepoint` is mocked here the same way `create_document`
+        and `personal_root_for` are above: it is a call through the `drive`
+        boundary this adapter delegates to, not a workflow this file tests. Its
+        real deadlock-vs-lost-savepoint behavior belongs to
+        `suite/writer/tests/test_docs_savepoint.py`; leaving it unmocked here
+        would let this unit test's fake `frappe.generate_hash()` savepoint name
+        reach a real `frappe.db.rollback(save_point=...)` against a live
+        connection.
+        """
         patched = self._frappe()
 
         class Boom(Exception):
             pass
 
+        failure = Boom("conflict")
         with (
             mock.patch.object(docs.drive, "personal_root_for", return_value="ROOT-1"),
-            mock.patch.object(docs.drive, "create_document", side_effect=Boom("conflict")),
+            mock.patch.object(docs.drive, "create_document", side_effect=failure),
+            mock.patch.object(docs.drive, "rollback_savepoint") as rollback,
         ):
             with self.assertRaises(Boom):
                 docs.create_document(template="Letterhead")
+        rollback.assert_called_once()
+        savepoint, rolled_back_error = rollback.call_args.args
+        self.assertIsInstance(savepoint, str)
+        self.assertIs(rolled_back_error, failure)
         patched.db.get_value.assert_not_called()
         patched.db.set_value.assert_not_called()
 
