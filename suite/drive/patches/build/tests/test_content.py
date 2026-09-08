@@ -473,9 +473,22 @@ class ContentTest(unittest.TestCase):
         source = FakeContent(documents=[row], users={OWNER: True})
         env, target = self.environment(source)
         link_content_documents(env)
-        target.node_rows["sheet-1"].update({"root": "elsewhere", "mime": "frappe/writer", "is_template": 1})
+        # Not `is_template`: that flag routes the row to the template branch,
+        # which owns its own refusal (`test_a_template_node_claims_...`).
+        target.node_rows["sheet-1"].update({"root": "elsewhere", "mime": "frappe/writer"})
 
         with self.assertRaisesRegex(BuildContentError, "orphan node sheet-1 field root"):
+            link_content_documents(env)
+
+    def test_a_template_node_claims_a_document_that_no_template_row_explains(self):
+        """§14.7 owns `is_template`, so an orphan node carrying it is a collision."""
+        row = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+        link_content_documents(env)
+        target.node_rows["sheet-1"]["is_template"] = 1
+
+        with self.assertRaisesRegex(BuildContentError, "a template node claims Sheet sheet-1"):
             link_content_documents(env)
 
     # -- Personal Root

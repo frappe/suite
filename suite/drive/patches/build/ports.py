@@ -682,6 +682,8 @@ class LegacyContent(Protocol):
 
     def presentation_is_template(self, deck: str) -> bool: ...
 
+    def writer_document_is_template(self, name: str) -> bool: ...
+
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]: ...
 
     def user_enabled(self, user: str) -> bool | None: ...
@@ -1311,6 +1313,15 @@ class SiteContentSource:
 
     def presentation_is_template(self, deck: str) -> bool:
         return bool(frappe.db.get_value("Presentation", deck, "is_template"))
+
+    def writer_document_is_template(self, name: str) -> bool:
+        """Whether §14.7 step 8 minted this `Writer Document` from a template.
+
+        `Writer Document` carries no `is_template` column; the flag lives on
+        the node. The source row keeps the same id, and the doctype is dropped
+        in Cleanup, not in Build, so it still answers here.
+        """
+        return bool(frappe.db.exists("Writer Template", name))
 
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]:
         doctypes = (
