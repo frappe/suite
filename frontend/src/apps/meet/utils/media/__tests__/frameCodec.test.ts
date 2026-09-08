@@ -3,7 +3,6 @@ import { generateMeetingSecret } from "../e2ee";
 import {
 	AES_GCM_TAG_SIZE,
 	buildSignedFramePayload,
-	chainTipToAESKey,
 	decodeFrameHeader,
 	deriveFrameKey,
 	encodeFrameHeader,
@@ -12,7 +11,6 @@ import {
 	FRAME_MAGIC,
 	getClearPrefixSize,
 	hasFrameMagic,
-	initSenderChain,
 	MIN_SIGNED_ENCRYPTED_FRAME_SIZE,
 	REPLAY_WINDOW,
 } from "../frameCodec";
@@ -137,19 +135,5 @@ describe("frameCodec: chain key derivations (pure crypto smoke)", () => {
 		const key = await deriveFrameKey(secret, 7, "video", 0);
 		expect(key.algorithm.name).toBe("AES-GCM");
 		expect(key.usages).toContain("encrypt");
-	});
-
-	it("initSenderChain produces a non-zero chain tip", async () => {
-		const secret = await generateMeetingSecret();
-		const tip = await initSenderChain(secret, 1, "video");
-		expect(tip.length).toBe(32);
-		expect(tip.some((b) => b !== 0)).toBe(true);
-	});
-
-	it("chainTipToAESKey produces a usable AES-GCM key", async () => {
-		const secret = await generateMeetingSecret();
-		const tip = await initSenderChain(secret, 1, "video");
-		const key = await chainTipToAESKey(tip);
-		expect(key.algorithm.name).toBe("AES-GCM");
 	});
 });

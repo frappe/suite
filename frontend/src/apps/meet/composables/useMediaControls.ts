@@ -81,23 +81,6 @@ interface NoiseCancellationAPI {
 	error: Ref<string | null>;
 }
 
-type ToastAPI = Pick<typeof toast, "success" | "error" | "warning" | "create">;
-
-interface MediaPreferencesAPI {
-	micEnabled: Ref<boolean>;
-	cameraEnabled: Ref<boolean>;
-	selectedCameraId: Ref<string>;
-	selectedMicId: Ref<string>;
-	selectedSpeakerId: Ref<string>;
-	pushToTalkEnabled: Ref<boolean>;
-	noiseCancellationEnabled: Ref<boolean>;
-	setMicEnabled: (v: boolean) => void;
-	setCameraEnabled: (v: boolean) => void;
-	setSelectedCameraId: (v: string) => void;
-	setSelectedMicId: (v: string) => void;
-	setSelectedSpeakerId: (v: string) => void;
-}
-
 interface MediaControlsDeps {
 	mediaState: MediaState;
 	connectionState: ConnectionState;
@@ -109,8 +92,6 @@ interface MediaControlsDeps {
 	deviceManager: typeof deviceManager;
 	backgroundEffects: BackgroundEffectsAPI;
 	noiseCancellation: NoiseCancellationAPI;
-	toast: ToastAPI;
-	mediaPreferences: MediaPreferencesAPI;
 }
 
 interface MediaControlsAPI {

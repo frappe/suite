@@ -10,30 +10,6 @@ from frappe.utils.caching import redis_cache
 from suite.meet import guest_access
 
 
-def unique_users(user_list: list) -> list[dict]:
-    """Return unique child table rows, preserving order and metadata."""
-    seen = set()
-    unique_list = []
-
-    for user in user_list or []:
-        if isinstance(user, str):
-            user_id = user
-            user_row = {"user": user_id}
-        else:
-            user_id = user.get("user") if hasattr(user, "get") else getattr(user, "user", None)
-            if not user_id:
-                continue
-            user_row = dict(user) if isinstance(user, dict) else user.as_dict()
-
-        if user_id in seen:
-            continue
-
-        seen.add(user_id)
-        unique_list.append(user_row)
-
-    return unique_list
-
-
 def is_guest_user(user_id: str) -> bool:
     """Check if a user ID is a guest identifier."""
     return user_id.startswith("guest_")

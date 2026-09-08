@@ -54,20 +54,19 @@ describe("TsMlsEpochProtocolProvider", () => {
 			signingPubKey,
 		});
 
-		const addBob = await provider.addMember(
-			alice.state,
+		const addBob = await provider.addMultipleMembers(alice.state, [
 			bobKeyPackage.publicPackage,
-		);
+		]);
 		const bob = await provider.joinFromWelcome(
 			addBob.welcome,
 			bobKeyPackage.publicPackage,
 			bobKeyPackage.privatePackage,
-			addBob.state.ratchetTree,
+			addBob.epoch.state.ratchetTree,
 		);
 
-		expect(addBob.epochNumber).toBe(2);
+		expect(addBob.epoch.epochNumber).toBe(2);
 		expect(bob.epochNumber).toBe(2);
-		expect([...bob.meetingSecret]).toEqual([...addBob.meetingSecret]);
+		expect([...bob.meetingSecret]).toEqual([...addBob.epoch.meetingSecret]);
 		expect([...bob.meetingSecret]).not.toEqual([...alice.meetingSecret]);
 	});
 
@@ -137,15 +136,14 @@ describe("TsMlsEpochProtocolProvider", () => {
 			senderId: 9,
 			signingPubKey,
 		});
-		const addBob = await provider.addMember(
-			alice.state,
+		const addBob = await provider.addMultipleMembers(alice.state, [
 			bobKeyPackage.publicPackage,
-		);
+		]);
 		const bob = await provider.joinFromWelcome(
 			addBob.welcome,
 			bobKeyPackage.publicPackage,
 			bobKeyPackage.privatePackage,
-			addBob.state.ratchetTree,
+			addBob.epoch.state.ratchetTree,
 		);
 		const carolKeyPackage = await provider.generateKeyPackage({
 			groupId: "meeting-vscl-sabe-ykvp",
@@ -155,16 +153,15 @@ describe("TsMlsEpochProtocolProvider", () => {
 			signingPubKey,
 		});
 
-		const addCarol = await provider.addMember(
-			addBob.state,
+		const addCarol = await provider.addMultipleMembers(addBob.epoch.state, [
 			carolKeyPackage.publicPackage,
-		);
+		]);
 		const bobAfterCarol = await provider.processCommit(bob.state, addCarol.commit);
 
-		expect(addCarol.epochNumber).toBe(3);
+		expect(addCarol.epoch.epochNumber).toBe(3);
 		expect(bobAfterCarol.epochNumber).toBe(3);
 		expect([...bobAfterCarol.meetingSecret]).toEqual([
-			...addCarol.meetingSecret,
+			...addCarol.epoch.meetingSecret,
 		]);
 	});
 
@@ -187,40 +184,38 @@ describe("TsMlsEpochProtocolProvider", () => {
 		const bobKeyPackage = await provider.generateKeyPackage(bobMember);
 		const carolKeyPackage = await provider.generateKeyPackage(carolMember);
 
-		const result = await provider.createGenesisEpochWithMembers(
-			{
-				groupId: "meeting-vscl-sabe-ykvp",
-				userId: "alice@example.com",
-				deviceId: "alice-laptop",
-				senderId: 7,
-				signingPubKey,
-			},
-			[
-				{ member: bobMember, keyPackage: bobKeyPackage },
-				{ member: carolMember, keyPackage: carolKeyPackage },
-			],
-		);
+		const genesis = await provider.createGenesisEpoch({
+			groupId: "meeting-vscl-sabe-ykvp",
+			userId: "alice@example.com",
+			deviceId: "alice-laptop",
+			senderId: 7,
+			signingPubKey,
+		});
+		const result = await provider.addMultipleMembers(genesis.state, [
+			bobKeyPackage.publicPackage,
+			carolKeyPackage.publicPackage,
+		]);
 
 		const bob = await provider.joinFromWelcome(
 			result.welcome,
 			bobKeyPackage.publicPackage,
 			bobKeyPackage.privatePackage,
-			result.state.ratchetTree,
+			result.epoch.state.ratchetTree,
 		);
 		const carol = await provider.joinFromWelcome(
 			result.welcome,
 			carolKeyPackage.publicPackage,
 			carolKeyPackage.privatePackage,
-			result.state.ratchetTree,
+			result.epoch.state.ratchetTree,
 		);
 
-		expect(result.epochNumber).toBe(2);
+		expect(result.epoch.epochNumber).toBe(2);
 		expect(bob.epochNumber).toBe(2);
 		expect(carol.epochNumber).toBe(2);
-		expect([...bob.meetingSecret]).toEqual([...result.meetingSecret]);
-		expect([...carol.meetingSecret]).toEqual([...result.meetingSecret]);
+		expect([...bob.meetingSecret]).toEqual([...result.epoch.meetingSecret]);
+		expect([...carol.meetingSecret]).toEqual([...result.epoch.meetingSecret]);
 		expect([...bob.meetingSecret]).toEqual([...carol.meetingSecret]);
-		expect(getGroupMembers(result.state)).toHaveLength(3);
+		expect(getGroupMembers(result.epoch.state)).toHaveLength(3);
 	});
 
 	it("removes a member and rotates the meeting secret to a new value", async () => {
@@ -239,20 +234,19 @@ describe("TsMlsEpochProtocolProvider", () => {
 			senderId: 9,
 			signingPubKey,
 		});
-		const addBob = await provider.addMember(
-			alice.state,
+		const addBob = await provider.addMultipleMembers(alice.state, [
 			bobKeyPackage.publicPackage,
-		);
-		expect(getGroupMembers(addBob.state)).toHaveLength(2);
+		]);
+		expect(getGroupMembers(addBob.epoch.state)).toHaveLength(2);
 
-		const removeBob = await provider.removeMember(addBob.state, 1);
+		const removeBob = await provider.removeMember(addBob.epoch.state, 1);
 		expect(removeBob.epoch.epochNumber).toBe(3);
 		expect(getGroupMembers(removeBob.epoch.state)).toHaveLength(1);
 		expect([...removeBob.epoch.meetingSecret]).not.toEqual([
 			...alice.meetingSecret,
 		]);
 		expect([...removeBob.epoch.meetingSecret]).not.toEqual([
-			...addBob.meetingSecret,
+			...addBob.epoch.meetingSecret,
 		]);
 	});
 });

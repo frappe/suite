@@ -13,14 +13,6 @@ function createController(options: { isHost?: boolean } = {}) {
 		publicPackage: { id: "public-package" } as never,
 		privatePackage: { id: "private-package" } as never,
 	}));
-	const addMember = vi.fn(async () => ({
-		epochNumber: 2,
-		state: { id: "epoch-2-state" } as never,
-		encodedState: new Uint8Array([8]),
-		meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
-		commit: { id: "commit" } as never,
-		welcome: { id: "welcome" } as never,
-	}));
 	const addMultipleMembers = vi.fn(
 		async (state: unknown, joiningMembers: unknown[]) => {
 			expect(Array.isArray(joiningMembers)).toBe(true);
@@ -93,14 +85,12 @@ function createController(options: { isHost?: boolean } = {}) {
 		})),
 		epochProtocolProvider: {
 			createGenesisEpoch,
-			createGenesisEpochWithMembers: vi.fn(),
 			generateKeyPackage,
 			encodeKeyPackage,
 			decodeKeyPackage,
 			encodeCommit,
 			encodeWelcome,
 			decodeWelcome,
-			addMember,
 			addMultipleMembers,
 			removeMember,
 			joinFromWelcome,
@@ -112,7 +102,6 @@ function createController(options: { isHost?: boolean } = {}) {
 		controller,
 		sendE2EEEpochEnvelope,
 		generateKeyPackage,
-		addMember,
 		addMultipleMembers,
 		removeMember,
 		joinFromWelcome,

@@ -549,60 +549,6 @@ export class WebGLManager {
 		return texture;
 	}
 
-	createTextureFromSource(
-		source: ImageData | HTMLCanvasElement | ImageBitmap,
-	): WebGLTexture | null {
-		const texture = this.gl.createTexture();
-		if (!texture) return null;
-
-		this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
-		this.gl.texParameteri(
-			this.gl.TEXTURE_2D,
-			this.gl.TEXTURE_WRAP_S,
-			this.gl.CLAMP_TO_EDGE,
-		);
-		this.gl.texParameteri(
-			this.gl.TEXTURE_2D,
-			this.gl.TEXTURE_WRAP_T,
-			this.gl.CLAMP_TO_EDGE,
-		);
-		this.gl.texParameteri(
-			this.gl.TEXTURE_2D,
-			this.gl.TEXTURE_MIN_FILTER,
-			this.gl.LINEAR,
-		);
-		this.gl.texParameteri(
-			this.gl.TEXTURE_2D,
-			this.gl.TEXTURE_MAG_FILTER,
-			this.gl.LINEAR,
-		);
-
-		if (source instanceof ImageData) {
-			this.gl.texImage2D(
-				this.gl.TEXTURE_2D,
-				0,
-				this.gl.RGBA,
-				source.width,
-				source.height,
-				0,
-				this.gl.RGBA,
-				this.gl.UNSIGNED_BYTE,
-				source.data,
-			);
-		} else {
-			this.gl.texImage2D(
-				this.gl.TEXTURE_2D,
-				0,
-				this.gl.RGBA,
-				this.gl.RGBA,
-				this.gl.UNSIGNED_BYTE,
-				source,
-			);
-		}
-
-		return texture;
-	}
-
 	renderBlur(
 		texture: WebGLTexture,
 		maskTexture: WebGLTexture,
@@ -1010,7 +956,7 @@ export class WebGLManager {
 		if (this.backgroundCache?.source === backgroundImageData) {
 			backgroundTexture = this.backgroundCache.texture;
 		} else {
-			backgroundTexture = this.createTextureFromSource(backgroundImageData);
+			backgroundTexture = this.createTexture(backgroundImageData);
 			if (backgroundTexture) {
 				if (this.backgroundCache)
 					this.gl.deleteTexture(this.backgroundCache.texture);

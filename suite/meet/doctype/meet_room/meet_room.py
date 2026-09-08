@@ -10,10 +10,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.meet import guest_access
-from suite.meet.utils.user import (
-    get_user_info,
-    unique_users,
-)
+from suite.meet.utils.user import get_user_info
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 
@@ -246,14 +243,6 @@ class MeetRoom(Document):
 
         return not self.is_user_banned(user)
 
-    def update_members(self, members_list):
-        """Update members list and save"""
-        self.set("members", [])
-        for row in unique_users(members_list):
-            user = row.get("user") if isinstance(row, dict) else row
-            if user:
-                self.append("members", self.build_user_row(user))
-
     def get_waiting_room(self):
         """Get list of users waiting for approval"""
         return self.get_table_users("waiting_room")
@@ -431,19 +420,6 @@ class MeetRoom(Document):
 
         banned_user_emails = [row.user for row in self.banned_users]
         return user in banned_user_emails
-
-    def validate_guest_id(self, guest_id: str):
-        if not guest_id or not isinstance(guest_id, str):
-            frappe.throw(_("Invalid guest ID"))
-
-        if not guest_id.startswith("guest_"):
-            frappe.throw(_("Invalid guest ID format"))
-
-        if len(guest_id) < 7:
-            frappe.throw(_("Invalid guest ID format"))
-
-        if self.is_user_banned(guest_id):
-            frappe.throw(_("Guest is banned from this meeting"))
 
     @frappe.whitelist(methods=["POST"])
     @dynamic_rate_limit()

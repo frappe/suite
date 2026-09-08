@@ -338,8 +338,6 @@ import {
 } from "../composables/useSFUConnection";
 import {
 	autoHideToolbar,
-	selectedCameraId,
-	selectedMicId,
 	selectedSpeakerId,
 } from "../data/mediaPreferences";
 import {
@@ -682,25 +680,6 @@ const mediaControls = useMediaControls({
 	deviceManager,
 	backgroundEffects,
 	noiseCancellation,
-	toast,
-	mediaPreferences: {
-		micEnabled: ref(false),
-		cameraEnabled: ref(false),
-		selectedCameraId,
-		selectedMicId,
-		selectedSpeakerId,
-		pushToTalkEnabled: ref(false),
-		noiseCancellationEnabled: ref(false),
-		setMicEnabled: (_v: boolean) => {
-			/* handled via mediaState */
-		},
-		setCameraEnabled: (_v: boolean) => {
-			/* handled via mediaState */
-		},
-		setSelectedCameraId: () => {},
-		setSelectedMicId: () => {},
-		setSelectedSpeakerId: () => {},
-	},
 });
 
 import { meetingControls } from "../composables/useKeyboardShortcuts";

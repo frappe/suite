@@ -457,15 +457,6 @@ export class E2EEEpochRelay {
 			});
 			return;
 		}
-		await this.persistence.retainKeyPackage(roomId, {
-			type: 'key-package',
-			fromParticipantId,
-			fromSenderId,
-			epochNumber: payload.epochNumber,
-			keyPackage: payload.keyPackage,
-			consumed: false,
-			expiresAt: this.expiresAt(),
-		});
 		this.emitToFullAccessParticipants(roomId, {
 			type: 'key-package',
 			fromParticipantId,
@@ -948,11 +939,6 @@ export class E2EEEpochRelay {
 		await this.retainCommit(roomId, commit);
 		this.emitToFullAccessParticipants(roomId, commit);
 		if (hasMatchingPending) {
-			await this.persistence.markKeyPackagesConsumed(
-				roomId,
-				payload.previousEpochNumber,
-				this.parseJoiningSenderIds(payload.membershipDeltaId),
-			);
 			await this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
 		}
 	}
@@ -1286,16 +1272,6 @@ export class E2EEEpochRelay {
 
 	private expiresAt(): number {
 		return Date.now() + E2EE_COORDINATOR_TTL_MS;
-	}
-
-	private parseJoiningSenderIds(membershipDeltaId: string): number[] {
-		if (!membershipDeltaId.startsWith('add-')) return [];
-		const body = membershipDeltaId.slice('add-'.length).split('-to-')[0];
-		if (!body) return [];
-		return body
-			.split('-')
-			.map((id) => Number.parseInt(id, 10))
-			.filter((id) => this.isSenderId(id));
 	}
 
 	private hasContiguousRetainedEpochs(

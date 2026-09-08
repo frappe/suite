@@ -482,8 +482,6 @@ function createCameraHarness({
 		deviceManager,
 		backgroundEffects: effectsApi,
 		noiseCancellation: noiseCancellationOverride ?? { error: ref(null) },
-		toast: {},
-		mediaPreferences: {},
 	} as never);
 
 	return {
@@ -1121,8 +1119,6 @@ describe("useMediaControls", () => {
 			},
 			backgroundEffects: {},
 			noiseCancellation: { error: ref(null) },
-			toast: {},
-			mediaPreferences: {},
 		} as never);
 
 		const result = await controls.acquireUserMedia(false, true, {
@@ -1172,8 +1168,6 @@ describe("useMediaControls", () => {
 			},
 			backgroundEffects: {},
 			noiseCancellation: { error: ref(null) },
-			toast: {},
-			mediaPreferences: {},
 		} as never);
 
 		await controls.acquireUserMedia(true, true, {
@@ -1216,8 +1210,6 @@ describe("useMediaControls", () => {
 			},
 			backgroundEffects: {},
 			noiseCancellation: { error: ref(null) },
-			toast: {},
-			mediaPreferences: {},
 		} as never);
 
 		await expect(
@@ -1295,8 +1287,6 @@ describe("useMediaControls", () => {
 				isProcessing: ref(false),
 				error: ref(null),
 			},
-			toast: {} as never,
-			mediaPreferences: {} as never,
 		} as never);
 
 		await controls.toggleMicrophone();

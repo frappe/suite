@@ -124,13 +124,6 @@ describe("query methods", () => {
 		expect(cm.getConsumersByParticipant("p1")).toHaveLength(2);
 	});
 
-	it("getConsumersByKind filters by kind", () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		cm.addConsumer(mockConsumer({ id: "c2", kind: "audio" }));
-		expect(cm.getConsumersByKind("audio")).toHaveLength(1);
-	});
-
 	it("getVideoConsumer excludes screen shares", () => {
 		const cm = createManager();
 		cm.addConsumer(mockConsumer());
@@ -158,54 +151,6 @@ describe("query methods", () => {
 			}),
 		);
 		expect(cm.getScreenShareConsumers()).toHaveLength(1);
-	});
-});
-
-describe("pause / resume consumer", () => {
-	it("pauseConsumer calls consumer.pause", async () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		expect(await cm.pauseConsumer("c1")).toBe(true);
-	});
-
-	it("resumeConsumer calls consumer.resume", async () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		expect(await cm.resumeConsumer("c1")).toBe(true);
-	});
-
-	it("pauseConsumer returns false for unknown consumer", async () => {
-		const cm = createManager();
-		expect(await cm.pauseConsumer("nobody")).toBe(false);
-	});
-
-	it("resumeConsumer returns false for unknown consumer", async () => {
-		const cm = createManager();
-		expect(await cm.resumeConsumer("nobody")).toBe(false);
-	});
-});
-
-describe("pauseParticipantConsumers / resumeParticipantConsumers", () => {
-	it("pauses all consumers for a participant", async () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		cm.addConsumer(mockConsumer({ id: "c2", kind: "audio" }));
-		const results = await cm.pauseParticipantConsumers("p1");
-		expect(results).toHaveLength(2);
-		expect(results.every(Boolean)).toBe(true);
-	});
-
-	it("pauses only consumers of the given kind", async () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		cm.addConsumer(mockConsumer({ id: "c2", kind: "audio" }));
-		const results = await cm.pauseParticipantConsumers("p1", "audio");
-		expect(results).toHaveLength(1);
-	});
-
-	it("returns empty array for participant with no consumers", async () => {
-		const cm = createManager();
-		expect(await cm.pauseParticipantConsumers("nobody")).toEqual([]);
 	});
 });
 
@@ -246,43 +191,6 @@ describe("cleanupParticipantConsumers", () => {
 		const removed = cm.cleanupParticipantConsumers("p1");
 		expect(removed).toHaveLength(2);
 		expect(cm.getConsumersByParticipant("p1")).toHaveLength(0);
-	});
-});
-
-describe("getConsumerStats", () => {
-	it("aggregates consumer counts", () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		cm.addConsumer(mockConsumer({ id: "c2", kind: "audio" }));
-		cm.addConsumer(
-			mockConsumer({
-				id: "c3",
-				appData: { userId: "p2", type: "screen" },
-			}),
-		);
-		const stats = cm.getConsumerStats();
-		expect(stats.total).toBe(3);
-		expect(stats.video).toBe(2);
-		expect(stats.audio).toBe(1);
-		expect(stats.screenShare).toBe(1);
-	});
-});
-
-describe("getConsumersByParticipantStats", () => {
-	it("groups consumers by participant", () => {
-		const cm = createManager();
-		cm.addConsumer(mockConsumer());
-		cm.addConsumer(mockConsumer({ id: "c2", kind: "audio" }));
-		cm.addConsumer(
-			mockConsumer({
-				id: "c3",
-				appData: { userId: "p2", type: "screen" },
-			}),
-		);
-		const stats = cm.getConsumersByParticipantStats();
-		expect(stats.p1?.video).toBe(1);
-		expect(stats.p1?.audio).toBe(1);
-		expect(stats.p2?.screen).toBe(1);
 	});
 });
 

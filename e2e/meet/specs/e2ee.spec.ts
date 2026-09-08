@@ -92,11 +92,9 @@ async function forceSFUReconnect(page: Page): Promise<void> {
 
 function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 	const errors: string[] = [];
-	const logs: string[] = [];
 	const onPageError = (error: Error) => errors.push(error.stack ?? error.message);
 	const onConsole = (message: { type(): string; text(): string }) => {
 		const text = message.text();
-		logs.push(`[${message.type()}] ${text}`);
 		if (message.type() !== "error") return;
 		if (filterPatterns.some((p) => text.includes(p))) return;
 		errors.push(text);

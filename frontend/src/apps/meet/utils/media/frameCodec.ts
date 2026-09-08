@@ -13,13 +13,7 @@
 // main-thread conservative value; the worker overrides locally.
 // The intent is deliberate, not a bug.
 
-import {
-	encodeInfo,
-	INFO_AES,
-	INFO_FRAME,
-	INFO_FRAME_AT,
-	INFO_SENDER,
-} from "./e2eePrimitives";
+import { encodeInfo, INFO_FRAME_AT } from "./e2eePrimitives";
 
 export const FRAME_HEADER_FIXED_SIZE = 28;
 const FRAME_SIGNATURE_SIZE = 64;
@@ -67,22 +61,6 @@ function concatBytes(
 		offset += p.byteLength;
 	}
 	return out;
-}
-
-async function hkdfBits(
-	ikm: Uint8Array<ArrayBuffer>,
-	info: Uint8Array<ArrayBuffer>,
-): Promise<Uint8Array<ArrayBuffer>> {
-	const subtle = getSubtle();
-	const baseKey = await subtle.importKey("raw", ikm, "HKDF", false, [
-		"deriveBits",
-	]);
-	const bits = await subtle.deriveBits(
-		{ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info },
-		baseKey,
-		256,
-	);
-	return new Uint8Array(bits);
 }
 
 async function hkdfToAESKey(
@@ -173,26 +151,6 @@ export function getClearPrefix(
 	const prefix = new Uint8Array(Math.min(prefixSize, source.byteLength));
 	prefix.set(source.subarray(0, prefix.byteLength));
 	return prefix;
-}
-
-export function initSenderChain(
-	meetingSecret: Uint8Array<ArrayBuffer>,
-	senderId: number,
-	mediaType: string,
-): Promise<Uint8Array<ArrayBuffer>> {
-	return hkdfBits(meetingSecret, encodeInfo(INFO_SENDER(senderId, mediaType)));
-}
-
-export function advanceChain(
-	chainTip: Uint8Array<ArrayBuffer>,
-): Promise<Uint8Array<ArrayBuffer>> {
-	return hkdfBits(chainTip, encodeInfo(INFO_FRAME));
-}
-
-export function chainTipToAESKey(
-	chainTip: Uint8Array<ArrayBuffer>,
-): Promise<CryptoKey> {
-	return hkdfToAESKey(chainTip, encodeInfo(INFO_AES));
 }
 
 export function deriveFrameKey(

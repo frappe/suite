@@ -39,10 +39,8 @@ async function gotoAppPage(page: Page, pathname: string): Promise<void> {
 interface Participant {
 	context: BrowserContext;
 	page: Page;
-	joinMeeting(meetingId: string): Promise<void>;
 	joinAsGuest(meetingId: string, guestName: string): Promise<void>;
 	joinAsHost(meetingId: string): Promise<void>;
-	endCall(): Promise<void>;
 }
 
 interface TestFixtures {
@@ -151,10 +149,6 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 	return {
 		context,
 		page,
-		async joinMeeting(meetingId: string) {
-			await gotoAppPage(page, `/meet/${meetingId}`);
-			await joinFromPreview(page);
-		},
 		async joinAsGuest(meetingId: string, guestName: string) {
 			await gotoAppPage(page, `/meet/${meetingId}`);
 			await expect(page.getByRole("heading", { name: "Ready to join?" })).toBeVisible({
@@ -173,10 +167,6 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 			await gotoAppPage(page, "/meet/");
 			await gotoAppPage(page, `/meet/${meetingId}`);
 			await joinFromPreview(page);
-		},
-		async endCall() {
-			await page.getByRole("button", { name: "End Call" }).click();
-			await page.waitForURL(/\/meet\/?$/);
 		},
 	};
 }

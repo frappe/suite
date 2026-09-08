@@ -265,7 +265,7 @@ describe('E2EE coordinator persistence', () => {
 		]);
 	});
 
-	it('marks admitted key packages consumed after matching commit', async () => {
+	it('forwards a joining key package and broadcasts the matching commit', async () => {
 		const persistence = new InMemoryE2eeCoordinatorPersistence();
 		const sent: Array<{ participantId: string; envelope: EmittedEnvelope }> =
 			[];
@@ -275,6 +275,18 @@ describe('E2EE coordinator persistence', () => {
 			epochNumber: 1,
 			keyPackage: 'a2V5LXBhY2thZ2U=',
 		});
+		expect(sent).toEqual([
+			{
+				participantId: 'host',
+				envelope: expect.objectContaining({
+					type: 'key-package',
+					fromParticipantId: 'joiner',
+					fromSenderId: 9,
+					epochNumber: 1,
+					keyPackage: 'a2V5LXBhY2thZ2U=',
+				}),
+			},
+		]);
 		await new Promise((resolve) => setTimeout(resolve, 400));
 		const request = sent.find(
 			(entry) => entry.envelope.type === 'commit-request',
@@ -290,13 +302,16 @@ describe('E2EE coordinator persistence', () => {
 			mlsCommit: 'Y29tbWl0',
 		});
 
-		const state = await persistence.loadAll();
-		expect(state.get('meeting-1')?.keyPackages).toEqual([
-			expect.objectContaining({
-				fromSenderId: 9,
-				epochNumber: 1,
-				consumed: true,
+		expect(sent).toContainEqual({
+			participantId: 'host',
+			envelope: expect.objectContaining({
+				type: 'commit',
+				fromParticipantId: 'host',
+				fromSenderId: 1,
+				previousEpochNumber: 1,
+				epochNumber: 2,
+				mlsCommit: 'Y29tbWl0',
 			}),
-		]);
+		});
 	});
 });

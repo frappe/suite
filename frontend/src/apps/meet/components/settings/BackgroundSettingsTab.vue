@@ -196,11 +196,6 @@ interface BackgroundOption {
 	isCustom?: boolean;
 }
 
-interface BackgroundImageOption {
-	label: string;
-	value: string;
-}
-
 const props = withDefaults(
 	defineProps<{
 		isVisible?: boolean;
@@ -235,7 +230,7 @@ let previewController: AbortController | null = null;
 // Background effects
 const backgroundBlurEnabledLocal = ref(backgroundBlurEnabled.value);
 const backgroundImageEnabledLocal = ref(backgroundImageEnabled.value);
-const selectedBackgroundImageLocal = ref<BackgroundImageOption | string | null>(
+const selectedBackgroundImageLocal = ref<string | null>(
 	selectedBackgroundImage.value,
 );
 const blurIntensityLocal = ref(blurIntensity.value);
@@ -257,13 +252,6 @@ const allBackgroundOptionsTyped = computed<BackgroundOption[]>(() =>
 const { applyBackgroundEffects, stopProcessing: stopBackgroundProcessing } =
 	useBackgroundEffects();
 
-const backgroundImageOptions = computed<BackgroundImageOption[]>(() =>
-	availableBackgroundImages.map((image) => ({
-		label: image.label,
-		value: image.name,
-	})),
-);
-
 // Selected background option
 const selectedBackgroundOption = computed({
 	get() {
@@ -274,11 +262,7 @@ const selectedBackgroundOption = computed({
 			backgroundImageEnabledLocal.value &&
 			selectedBackgroundImageLocal.value
 		) {
-			const img = selectedBackgroundImageLocal.value;
-			if (typeof img === "string") {
-				return img;
-			}
-			return img.value || img;
+			return selectedBackgroundImageLocal.value;
 		}
 		return "none";
 	},
@@ -301,25 +285,13 @@ const selectedBackgroundOption = computed({
 			return;
 		}
 
-		const predefinedImage = backgroundImageOptions.value.find(
-			(opt) => opt.value === value,
-		);
-		if (predefinedImage) {
-			selectedBackgroundImageLocal.value = predefinedImage;
-			setSelectedBackgroundImage(predefinedImage.value);
-			handleBackgroundImageToggle(true);
-			return;
-		}
-
-		const customImage = customBackgroundImages.value.find(
-			(img) => img.name === value,
-		);
-		if (customImage) {
-			selectedBackgroundImageLocal.value = {
-				label: customImage.label,
-				value: customImage.name,
-			};
-			setSelectedBackgroundImage(customImage.name);
+		if (
+			[...availableBackgroundImages, ...customBackgroundImages.value].some(
+				(image) => image.name === value,
+			)
+		) {
+			selectedBackgroundImageLocal.value = value;
+			setSelectedBackgroundImage(value);
 			handleBackgroundImageToggle(true);
 		}
 	},
@@ -413,12 +385,7 @@ async function startVideoPreview(deviceId: string) {
 					{
 						backgroundBlurEnabled: backgroundBlurEnabledLocal.value,
 						backgroundImageEnabled: backgroundImageEnabledLocal.value,
-						selectedBackgroundImage: (() => {
-							const img = selectedBackgroundImageLocal.value;
-							if (typeof img === "string") return img;
-							if (img && typeof img === "object") return img.value;
-							return null;
-						})(),
+						selectedBackgroundImage: selectedBackgroundImageLocal.value,
 						blurIntensity: blurIntensityLocal.value,
 						autoFramingEnabled: autoFramingEnabledLocal.value,
 						autoFramingPaused: autoFramingPausedLocal.value,
@@ -512,18 +479,11 @@ async function applyPreviewOptions() {
 		return;
 	}
 
-	const selectedImageValue = (() => {
-		const img = selectedBackgroundImageLocal.value;
-		if (typeof img === "string") return img;
-		if (img && typeof img === "object") return img.value;
-		return null;
-	})();
-
 	try {
 		await previewSession.updateOptions({
 			backgroundBlurEnabled: backgroundBlurEnabledLocal.value,
 			backgroundImageEnabled: backgroundImageEnabledLocal.value,
-			selectedBackgroundImage: selectedImageValue,
+			selectedBackgroundImage: selectedBackgroundImageLocal.value,
 			blurIntensity: blurIntensityLocal.value,
 			autoFramingEnabled: autoFramingEnabledLocal.value,
 			autoFramingPaused: autoFramingPausedLocal.value,
@@ -583,10 +543,7 @@ function handleBackgroundImageToggle(enabled: boolean) {
 		availableBackgroundImages.length > 0
 	) {
 		const firstImage = availableBackgroundImages[0];
-		const firstOption = backgroundImageOptions.value.find(
-			(option) => option.value === firstImage.name,
-		);
-		selectedBackgroundImageLocal.value = firstOption || null;
+		selectedBackgroundImageLocal.value = firstImage.name;
 		setSelectedBackgroundImage(firstImage.name);
 	}
 }
@@ -657,40 +614,13 @@ watch(autoFramingPaused, (newVal) => {
 });
 
 watch(selectedBackgroundImage, (newVal) => {
-	// for autocomplete
-	const matchingOption = backgroundImageOptions.value.find(
-		(option) => option.value === newVal,
-	);
-
-	if (matchingOption) {
-		selectedBackgroundImageLocal.value = matchingOption;
-	} else if (newVal) {
-		// if custom image, create a local option object
-		const customImage = customBackgroundImages.value.find(
-			(img) => img.name === newVal,
-		);
-		if (customImage) {
-			selectedBackgroundImageLocal.value = {
-				label: customImage.label,
-				value: customImage.name,
-			};
-		} else {
-			// no custom image found
-			selectedBackgroundImageLocal.value = null;
-		}
-	} else {
-		// No selection
-		selectedBackgroundImageLocal.value = null;
-	}
+	selectedBackgroundImageLocal.value = [
+		...availableBackgroundImages,
+		...customBackgroundImages.value,
+	].some((image) => image.name === newVal) ? newVal : null;
 });
 
-watch(selectedBackgroundImageLocal, (newImageOption) => {
-	const imageValue = (() => {
-		if (typeof newImageOption === "string") return newImageOption;
-		if (newImageOption && typeof newImageOption === "object")
-			return newImageOption.value;
-		return "";
-	})();
+watch(selectedBackgroundImageLocal, (imageValue) => {
 	if (imageValue && imageValue !== selectedBackgroundImage.value) {
 		setSelectedBackgroundImage(imageValue);
 		setBackgroundImageEnabled(true);

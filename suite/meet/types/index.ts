@@ -377,31 +377,3 @@ export interface RaiseHandRequest {
 export interface LeaveRoomRequest {
 	roomId?: string;
 }
-
-export interface PresenceTokenResponse {
-	auth_token?: string;
-	sfu_url?: string;
-	sfu_port?: number;
-	error?: string;
-}
-
-export interface PresenceParticipant extends PreviewParticipantInfo {
-	user_id?: string;
-	info: PreviewParticipantInfo['info'] & {
-		userId?: string;
-		audio_enabled?: boolean;
-		video_enabled?: boolean;
-		is_guest?: boolean;
-	};
-}
-
-export interface PresenceParticipantsResponse {
-	success: boolean;
-	participants?: PresenceParticipant[];
-	error?: string;
-}
-
-export interface PresenceJoinResponse {
-	success: boolean;
-	error?: string;
-}

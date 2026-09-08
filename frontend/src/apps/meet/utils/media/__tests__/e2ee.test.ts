@@ -16,82 +16,39 @@ afterEach(() => {
 import { decodeFrameHeader, encodeFrameHeader } from "../frameCodec";
 
 describe("Crypto primitives (T1.1)", () => {
-	describe("X25519 ECDH", () => {
-		it("generates 32-byte public key", async () => {
-			const { x25519KeyPair, exportPublicKey } = await import("../e2ee");
-			const kp = await x25519KeyPair();
-			const b64 = await exportPublicKey(kp.publicKey);
-			const raw = atob(b64);
-			expect(raw.length).toBe(32);
-		});
-
-		it("round-trips public key export/import", async () => {
-			const { x25519KeyPair, exportPublicKey, importPublicKey } = await import(
-				"../e2ee"
-			);
-			const kp = await x25519KeyPair();
-			const b64 = await exportPublicKey(kp.publicKey);
-			const imported = await importPublicKey(b64);
-			const reExported = await exportPublicKey(imported);
-			expect(reExported).toBe(b64);
-		});
-
-		it("derives matching shared secrets on both sides (RFC 7748 property)", async () => {
-			const {
-				x25519KeyPair,
-				exportPublicKey,
-				importPublicKey,
-				ecdhKeyAgreement,
-			} = await import("../e2ee");
-			const alice = await x25519KeyPair();
-			const bob = await x25519KeyPair();
-			const aliceShared = await ecdhKeyAgreement(
-				alice.privateKey,
-				await importPublicKey(await exportPublicKey(bob.publicKey)),
-			);
-			const bobShared = await ecdhKeyAgreement(
-				bob.privateKey,
-				await importPublicKey(await exportPublicKey(alice.publicKey)),
-			);
-			expect(Buffer.from(aliceShared).toString("hex")).toBe(
-				Buffer.from(bobShared).toString("hex"),
-			);
-		});
-	});
-
 	describe("Ed25519 signatures", () => {
 		it("round-trips sign/verify", async () => {
-			const { ed25519KeyPair, signProof, verifyProof } = await import(
+			const { ed25519KeyPair, signWithEd25519 } = await import(
 				"../e2ee"
 			);
 			const kp = await ed25519KeyPair();
 			const payload = new TextEncoder().encode("host_pub|12345678");
-			const sig = await signProof(kp.privateKey, payload);
-			const ok = await verifyProof(kp.publicKey, payload, sig);
+			const sig = await signWithEd25519(kp.privateKey, payload);
+			const ok = await crypto.subtle.verify("Ed25519", kp.publicKey, sig, payload);
 			expect(ok).toBe(true);
 		});
 
 		it("rejects signature with wrong key", async () => {
-			const { ed25519KeyPair, signProof, verifyProof } = await import(
+			const { ed25519KeyPair, signWithEd25519 } = await import(
 				"../e2ee"
 			);
 			const signer = await ed25519KeyPair();
 			const attacker = await ed25519KeyPair();
 			const payload = new TextEncoder().encode("host_pub|12345678");
-			const sig = await signProof(signer.privateKey, payload);
-			const ok = await verifyProof(attacker.publicKey, payload, sig);
+			const sig = await signWithEd25519(signer.privateKey, payload);
+			const ok = await crypto.subtle.verify("Ed25519", attacker.publicKey, sig, payload);
 			expect(ok).toBe(false);
 		});
 
 		it("rejects signature with tampered payload", async () => {
-			const { ed25519KeyPair, signProof, verifyProof } = await import(
+			const { ed25519KeyPair, signWithEd25519 } = await import(
 				"../e2ee"
 			);
 			const kp = await ed25519KeyPair();
 			const payload = new TextEncoder().encode("host_pub|12345678");
-			const sig = await signProof(kp.privateKey, payload);
+			const sig = await signWithEd25519(kp.privateKey, payload);
 			const tampered = new TextEncoder().encode("host_pub|00000000");
-			const ok = await verifyProof(kp.publicKey, tampered, sig);
+			const ok = await crypto.subtle.verify("Ed25519", kp.publicKey, sig, tampered);
 			expect(ok).toBe(false);
 		});
 
@@ -118,74 +75,6 @@ describe("Chain derivation (T1.3)", () => {
 			expect(Buffer.from(s1).toString("hex")).not.toBe(
 				Buffer.from(s2).toString("hex"),
 			);
-		});
-	});
-
-	describe("HKDF chain", () => {
-		it("initSenderChain is deterministic per (meetingSecret, senderId, mediaType)", async () => {
-			const { generateMeetingSecret, initSenderChain } = await import(
-				"../e2ee"
-			);
-			const secret = await generateMeetingSecret();
-			const c1 = await initSenderChain(secret, 7, "video");
-			const c2 = await initSenderChain(secret, 7, "video");
-			expect(Buffer.from(c1).toString("hex")).toBe(
-				Buffer.from(c2).toString("hex"),
-			);
-		});
-
-		it("initSenderChain differs across senderIds", async () => {
-			const { generateMeetingSecret, initSenderChain } = await import(
-				"../e2ee"
-			);
-			const secret = await generateMeetingSecret();
-			const c7 = await initSenderChain(secret, 7, "video");
-			const c8 = await initSenderChain(secret, 8, "video");
-			expect(Buffer.from(c7).toString("hex")).not.toBe(
-				Buffer.from(c8).toString("hex"),
-			);
-		});
-
-		it("initSenderChain differs across mediaTypes for same senderId", async () => {
-			const { generateMeetingSecret, initSenderChain } = await import(
-				"../e2ee"
-			);
-			const secret = await generateMeetingSecret();
-			const cVideo = await initSenderChain(secret, 1, "video");
-			const cAudio = await initSenderChain(secret, 1, "audio");
-			expect(Buffer.from(cVideo).toString("hex")).not.toBe(
-				Buffer.from(cAudio).toString("hex"),
-			);
-		});
-
-		it("advanceChain produces 32-byte deterministic next tip", async () => {
-			const { advanceChain } = await import("../e2ee");
-			const tip = new Uint8Array(32);
-			const next1 = await advanceChain(tip);
-			const next2 = await advanceChain(tip);
-			expect(next1.length).toBe(32);
-			expect(Buffer.from(next1).toString("hex")).toBe(
-				Buffer.from(next2).toString("hex"),
-			);
-			expect(Buffer.from(next1).toString("hex")).not.toBe("0".repeat(64));
-		});
-
-		it("chainTipToAESKey produces a usable AES-GCM key", async () => {
-			const { chainTipToAESKey, advanceChain } = await import("../e2ee");
-			const tip = await advanceChain(new Uint8Array(32));
-			const aesKey = await chainTipToAESKey(tip);
-			const iv = new Uint8Array(12);
-			const ct = await globalThis.crypto.subtle.encrypt(
-				{ name: "AES-GCM", iv },
-				aesKey,
-				new TextEncoder().encode("hello"),
-			);
-			const pt = await globalThis.crypto.subtle.decrypt(
-				{ name: "AES-GCM", iv },
-				aesKey,
-				ct,
-			);
-			expect(new TextDecoder().decode(pt)).toBe("hello");
 		});
 	});
 

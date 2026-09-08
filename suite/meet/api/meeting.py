@@ -88,10 +88,6 @@ def _get_codec_strategy() -> str:
     return frappe.get_cached_doc("Meet Settings").codec_strategy or "svc"
 
 
-def _is_e2ee_enabled(meeting_id: str) -> bool:
-    return bool(frappe.db.get_value("Meet Room", meeting_id, "e2ee_enabled"))
-
-
 def _is_valid_e2ee_device_id(device_id: str | None) -> bool:
     """A device id is a short opaque client-chosen string (max 64 chars)."""
     if not device_id or not isinstance(device_id, str):

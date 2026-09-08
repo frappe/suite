@@ -4,13 +4,9 @@ import {
 	bufferToBase64,
 	bytesFromBase64,
 	encodeInfo,
-	INFO_AES,
 	INFO_CHAT,
-	INFO_ENVELOPE,
-	INFO_ENVELOPE_CONTEXT,
-	INFO_FRAME,
 	INFO_FRAME_AT,
-	INFO_SENDER,
+	INFO_POLL,
 } from "../e2eePrimitives";
 
 describe("e2eePrimitives: base64 codec", () => {
@@ -43,39 +39,19 @@ describe("e2eePrimitives: base64 codec", () => {
 
 describe("e2eePrimitives: HKDF info-string domain separators", () => {
 	it("all info strings share the 'meet-e2ee|' security prefix", () => {
-		expect(INFO_FRAME.startsWith("meet-e2ee|")).toBe(true);
-		expect(INFO_AES.startsWith("meet-e2ee|")).toBe(true);
+		expect(INFO_FRAME_AT(3, "video", 17).startsWith("meet-e2ee|")).toBe(true);
+		expect(INFO_POLL.startsWith("meet-e2ee|")).toBe(true);
 		expect(INFO_CHAT.startsWith("meet-e2ee|")).toBe(true);
-	});
-
-	it("INFO_SENDER encodes the senderId and mediaType into the string", () => {
-		expect(INFO_SENDER(7, "video")).toBe("meet-e2ee|sender|7|video");
-		expect(INFO_SENDER(42, "audio")).toBe("meet-e2ee|sender|42|audio");
 	});
 
 	it("INFO_FRAME_AT encodes senderId, mediaType, and generation", () => {
 		expect(INFO_FRAME_AT(3, "video", 17)).toBe("meet-e2ee|frame|3|video|17");
 	});
 
-	it("INFO_ENVELOPE encodes meetingId and keyVersion", () => {
-		expect(INFO_ENVELOPE("vscl-sabe-ykvp", 1)).toBe(
-			"meet-e2ee|envelope|vscl-sabe-ykvp|1",
-		);
-	});
-
-	it("INFO_ENVELOPE_CONTEXT uses a leading pipe (signed-data suffix, not HKDF info)", () => {
-		expect(INFO_ENVELOPE_CONTEXT("vscl-sabe-ykvp", 1)).toBe(
-			"|vscl-sabe-ykvp|1",
-		);
-		expect(INFO_ENVELOPE_CONTEXT("vscl-sabe-ykvp", 1)).not.toContain(
-			"meet-e2ee",
-		);
-	});
-
 	it("encodeInfo returns a Uint8Array copy of the UTF-8 bytes (not the TextEncoder Uint8Array's underlying buffer)", () => {
-		const encoded = encodeInfo(INFO_SENDER(1, "video"));
+		const encoded = encodeInfo(INFO_FRAME_AT(1, "video", 0));
 		expect(encoded).toBeInstanceOf(Uint8Array);
-		const expected = new TextEncoder().encode(INFO_SENDER(1, "video"));
+		const expected = new TextEncoder().encode("meet-e2ee|frame|1|video|0");
 		expect(Array.from(encoded)).toEqual(Array.from(expected));
 	});
 });
