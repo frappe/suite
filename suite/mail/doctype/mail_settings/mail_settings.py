@@ -21,17 +21,12 @@ class MailSettings(Document):
 
     if TYPE_CHECKING:
         from frappe.types import DF
-
-        from suite.mail.doctype.mail_client_configuration.mail_client_configuration import (
-            MailClientConfiguration,
-        )
+        from suite.mail.doctype.mail_client_configuration.mail_client_configuration import MailClientConfiguration
 
         allow_signup: DF.Check
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
-        default_gravatar: DF.Literal[
-            "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
-        ]
+        default_gravatar: DF.Literal["404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"]
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int
@@ -56,16 +51,16 @@ class MailSettings(Document):
         process_pending_emails_timeout: DF.Int
         scan_message_timeout: DF.Int
         server_url: DF.Data | None
-        site_api_key: DF.Data | None
-        site_api_secret: DF.Password | None
-        suite_cloud_url: DF.Data | None
         show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
         signup_domains: DF.SmallText | None
+        site_api_key: DF.Data | None
+        site_api_secret: DF.Password | None
         spamd_host: DF.Data | None
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
+        suite_cloud_url: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
