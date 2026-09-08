@@ -4,9 +4,9 @@
 
 **Blocked by:** [28 — Migrate content history, comments, templates, and media](28-build-content-and-media.md)
 
-**Status:** in-progress — blocked. Seven acceptance criteria pass. Criterion 7
-(registry activation) is refused: activation breaks the three shipped document
-creation endpoints. See the remaining gate below.
+**Status:** done. All eight acceptance criteria pass. Criterion 7 is closed:
+the three creation endpoints and the read paths around them now run on
+`drive.create_document`, and the whole Suite site suite is green.
 
 **Owner:** Suite migration. Claimed 2026-09-08 by the Ticket 29 implementation agent on
 `implement/drive-29-build-records`, forked from `forge/drive-layer` at `9cba9ee91`.
@@ -25,7 +25,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [x] Recompute usage last from nodes, versions, and reservations. Reconcile totals independently.
 - [x] Produce every specified report key and preserve evidence across reruns. Save reports privately; do not log link secrets.
 - [x] Compose the complete Build patch and registration order. Retain legacy source columns until Cleanup.
-- [ ] Coordinate content registry activation and compatibility routing only after required links exist.
+- [x] Coordinate content registry activation and compatibility routing only after required links exist.
 - [x] Prove restart behavior at each batch boundary. Keep destructive Cleanup unregistered.
 
 ## Verification
@@ -46,12 +46,14 @@ step 9 retargets.
 
 ## Completion evidence
 
-The migration half of this ticket is built and proved. The activation half is
-not: turning `drive_content_types` on stops Writer, Slides, and Sheets document
-creation, so this ticket stays open behind the gate at the end of this section.
+Both halves are built and proved. The migration half was reviewed on
+`review/drive-29-full`; the activation half was closed afterwards on
+`integrate/drive-29-final`, where the three creation endpoints and the read
+paths around them moved onto `drive.create_document`.
 
 An independent review audited the whole `9cba9ee91..592a36ba4` delta, found five
-defects, fixed four with regression tests, and proved the fifth against the site.
+defects, fixed four with regression tests, and proved the fifth against the
+site. The fifth is now closed as well.
 
 ### Revisions
 
@@ -59,6 +61,8 @@ defects, fixed four with regression tests, and proved the fifth against the site
 - Implementation tip received for review: `592a36ba4`.
 - Reviewed tip: `857d11c6b`, on `review/drive-29-full`. 16 commits, 45 files,
   +5117 / -1842.
+- Activation tip: `423db9aa4`, on `integrate/drive-29-final`. 13 commits over
+  the reviewed tip, 21 files, +2051 / -362 over `a70b726ac`.
 - Integration target is `forge/drive-layer`. Nothing was merged or pushed.
 
 ### Defects found by the review
@@ -69,7 +73,7 @@ defects, fixed four with regression tests, and proved the fifth against the site
 | 2 | The Recent rename lost every person's recents on a retried migration. `DocType.after_rename` commits `RENAME TABLE` before the `ALTER`s, so a kill in between left the table renamed with legacy column names; the plan read only table existence, so the rerun skipped, model sync added `node` and `opened_at` empty beside the full columns, and `UNIQUE recent_user_node` accepted the NULLs. | `4bbf82d64`: the plan reads the columns as well and resumes a half-done rename, emitting only the `CHANGE COLUMN`s the killed run had not landed. 17 → 25 cases. |
 | 3 | §14.9's `activity_verbs_derived` and `activity_rows_dropped` counted only the rows a run inserted, so a rerun over a finished site reported zero derived verbs. Both keys are a census of the source rows. | `6b71283d8`: every source row is mapped before the already-present check. Proved by probe (2 → 0 before, stable after) and mutation-tested. |
 | 4 | The dormancy package proved Cleanup is unregistered and that Build removes nothing, and checked nothing else §14.10 deletes. | `47e86ff6d`: `TestCleanupHasRemovedNothingYet` walks the whole §14.10 list. Mutation-checked with three separate removals. |
-| 5 | **Activation stops document creation** in Writer, Slides, and Sheets. | Open. See the gate below. |
+| 5 | **Activation stops document creation** in Writer, Slides, and Sheets. | Closed. `b7968daf2`, `640ed26a6`, `bfc236fa0` move the three endpoints onto `drive.create_document`; `5acf79f3d`..`423db9aa4` move the read paths around them. See the closed gate below. |
 
 ### Results
 
@@ -101,13 +105,42 @@ worktree. The registered Build patch was **not** run and `bench migrate` was
 | `suite.tests.test_architecture` | 7 OK |
 | `suite.drive.patches.build.tests.test_dormancy` | 19 OK |
 
-A whole-app run (`run-tests --app suite`) is 859 unit OK, 1427
-unspecified-category OK, and 1217 of 1395 integration with 54 errors. 36 of
-those errors are on the base branch as well (`test_upload` 26, `test_versions`
-10). The other 18 are the gate below.
+Modules added or rebuilt for the activation half, on the same serialized gate:
+
+| Module | Result |
+|---|---|
+| `suite.writer.api.tests.test_docs` | 8 OK (new) |
+| `suite.writer.api.tests.test_embed` | 9 OK (new) |
+| `suite.writer.api.tests.test_general` | 21 OK |
+| `suite.writer.api.tests.test_ticket29_create_document` | 7 OK |
+| `suite.sheets.tests.test_api_titles` | 9 OK (new) |
+| `suite.sheets.tests.test_list_sheets` | 26 OK |
+| `suite.sheets.tests.test_create_sheet` | 8 OK |
+| `suite.slides.doctype.presentation.test_presentation` | 28 OK |
+| `suite.slides.api.test_file` | 21 OK |
+| `suite.slides.tests.test_thumbnail_patches` | 5 OK |
+| `suite.slides.tests.test_create_presentation` | 13 OK |
+| `suite.slides.tests.test_composite_groups` | 18 + 34 OK |
+| `suite.drive.api.tests.test_files` | 59 OK |
+| `suite.drive.tests.test_versions` | 7 + 14 OK |
+| `suite.drive.tests.test_upload` | 8 + 26 OK |
+
+A whole-app run (`run-tests --app suite`) at `423db9aa4` is **859 unit OK, 1311
+of 1447 integration OK with 26 skipped, and 1464 unspecified-category OK. No
+failures and no errors.** The 36 errors recorded earlier were not code: two
+`Drive Root` rows for the fixture users `drive-upload-user@example.com` and
+`drive-version-user@example.com` had survived a killed run, and every one of
+the 36 was the same `DriveConflict: An active Drive root already exists`. The
+two rows were removed from `slides.localhost` and both modules pass.
+
+Fourteen mutations were checked, each reverting one decision and each caught:
+the `save_comments` COMMENT check, both create rollbacks, the
+`get_drive_file_meta` cache guard, the sheets title and search halves, the deck
+list's hidden rows, the template picker's permission query, `read_version`'s
+READ check, the embed id resolution, and the three share-count rules.
 
 Ruff 0.12.3: import sort clean, 24 lint findings, all of them present on the
-base branch as well. Three files fail `ruff format` and all three fail on the
+base branch as well. Three files fail `ruff format`, and all three fail on the
 base branch too. `compileall` over `suite/` returns 0 on Python 3.14.
 
 ### Retired tests
@@ -133,45 +166,50 @@ Settings, Drive Disk Settings, Drive Storage Reservation, Presentation, Sheet
 and Writer Document, the `/api/method/suite.drive.api.` prefix beside §11.2's
 route namespace, and all 69 forwarders.
 
-### The remaining gate
+### The gate, and how it was closed
 
 **Activation must not ship before the three creation endpoints move onto
-`drive.create_document`.** `drive_content_types` now names all three apps, so
-`content.require_node` refuses a content document with no node. Every shipped
-creation endpoint writes exactly that:
+`drive.create_document`.** `drive_content_types` names all three apps, so
+`content.require_node` refuses a content document with no node, and every
+shipped creation endpoint used to write exactly that:
 
-| Endpoint | Called by | Base `9cba9ee91` | Tip `592a36ba4` |
+| Endpoint | Called by | Base `9cba9ee91` | Now |
 |---|---|---|---|
-| `suite.writer.api.docs.create_document` | `writer/resources/index.js:19`, `drive/resources/files.js:293` | creates a `File` | `DriveConflict: A Drive content document requires its node` |
-| `suite.sheets.api.create_sheet` | `drive/resources/files.js:299` | returns a sheet id | same refusal |
-| `suite.slides...presentation.create_presentation` | `slides/stores/presentation.js:21` | inserts a deck | same refusal, on `presentation.insert()` |
+| `suite.writer.api.docs.create_document` | `writer/resources/index.js:19`, `drive/resources/files.js:293` | creates a `File` | `b7968daf2` + `6f89d4e72`: an atomic adapter over `drive.create_document`, template applied in the same savepoint |
+| `suite.sheets.api.create_sheet` | `drive/resources/files.js:299` | returns a sheet id | `640ed26a6`: the same adapter, with the personal-root fallback `shims._home` uses |
+| `suite.slides...presentation.create_presentation` | `slides/stores/presentation.js:21` | inserts a deck | `bfc236fa0` + `b69b7ce0a`: the same adapter, with the `theme` write held in one savepoint beside it |
 
-Measured directly against `slides.localhost` inside a savepoint that was rolled
-back, on both revisions. The 18 site test errors that are not on the base
-branch are the same defect seen through six fixtures:
-`suite.slides.api.test_file` (2 `setUpClass`, 21 cases blocked),
-`suite.slides.doctype.presentation.test_presentation` (3),
-`suite.slides.tests.test_thumbnail_patches` (5),
-`suite.slides.tests.test_pasted_media` (1, 3 cases blocked),
-`suite.writer.api.tests.test_general` (5), and
-`suite.drive.api.tests.test_files` (2).
+Ticket 17 recorded the size of the read path the creation endpoint cannot move
+without. All of it is moved:
 
-Ticket 23 recorded this handover: "the fallback outlives its reason if ticket 29
-does not replace `create_document` … ticket 29 or 34 owns the replacement."
-Ticket 17 recorded its size: the creation endpoint cannot move without the read
-path around it — `docs.get_document`, `general.get_document_list`,
-`general.get_versions`, the search mapping, `drive/api/list.py:files`, and
-`writer/api/embed.py`. That is ticket-sized work and the review did not
-attempt it.
+| Read path | Commit |
+|---|---|
+| `general.get_document_list`, `general.get_versions`, `get_drive_file_meta` | `da21f7704` |
+| `writer/api/embed.py` (`add` and `get`) | `58f713bd5` |
+| `drive.list_versions` and `drive.read_version` under `get_versions` | `5acf79f3d` |
+| `sheets.api.list_sheets` and `get_sheet` titles and search | `9e56e3233` |
+| `presentation.get_presentations` and `get_templates` | `b69b7ce0a` |
 
-Close this criterion one of two ways, and the choice is the program's, not the
-reviewer's:
+`docs.get_document`, the search mapping, and `drive/api/list.py:files` needed no
+change: each already reads through Drive or through a column activation does not
+freeze.
 
-1. Move the three endpoints and their read paths onto `drive.create_document`
-   in a dedicated ticket, then keep activation here.
-2. Hold the `drive_content_types` entries out of `suite/hooks.py` until Ticket
-   34 lands, and ship the rest of Build now. Everything else in this ticket is
-   independent of activation.
+The 18 site test errors that were not on the base branch are gone. The six
+fixtures behind them were rebuilt as linked fixtures, never made to bypass
+`require_node`: `suite.slides.api.test_file`,
+`suite.slides.doctype.presentation.test_presentation`,
+`suite.slides.tests.test_thumbnail_patches`, `suite.writer.api.tests.test_general`,
+and `suite.drive.api.tests.test_files` each build their document through
+`drive.create_document` and hand it back through Drive's trash and purge.
+`suite.slides.tests.test_pasted_media` was deleted: every assertion in it was
+about `File` rows a linked deck cannot have, and its two surviving properties
+moved to `suite.slides.tests.test_drive_adoption`.
+
+No registry entry was deactivated and no authorization was weakened to close
+this. Two hardenings went the other way: `save_comments` now checks COMMENT on
+the node before it names the document, which removes an existence oracle
+(§5.4), and both creation endpoints roll back the node when the write after it
+fails.
 
 Independent site proof of the migration itself is still owed and belongs to
 Ticket 31: no run of the registered Build patch and no `bench migrate` has been
