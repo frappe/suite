@@ -16,11 +16,29 @@ from suite.drive.patches.build import patch as patch_module
 from suite.drive.patches.build import report as report_module
 from suite.drive.patches.build.environment import LegacyS3Config
 from suite.drive.patches.build.patch import CONTENT_PASSES, BuildPatchError, execute, run_build
-from suite.drive.patches.build.ports import ACTIVE, DRIVE_ROOT_ROW, USERS_ROW, TreeRow
+from suite.drive.patches.build.ports import (
+    ACTIVE,
+    DRIVE_ROOT_ROW,
+    TRASHED,
+    USERS_ROW,
+    ActivityLogRow,
+    EntityRow,
+    FavouriteRow,
+    PermissionRow,
+    RecentRow,
+    ReservationRow,
+    TreeRow,
+    UserQuotaRow,
+)
 from suite.drive.patches.build.report import REPORT_KEYS
 from suite.drive.patches.build.tests.fakes import (
     FakeDrive,
+    FakeRecords,
+    FakeRecordsTarget,
+    FakeSettings,
+    FakeSettingsTarget,
     FakeTree,
+    InterruptedRun,
     build_environment,
 )
 
@@ -294,6 +312,172 @@ class WholePatchTest(unittest.TestCase):
         run_build(resumed)
         self.assertIn(self.DOCUMENT, self.drive.node_rows)
         self.assertTrue(resumed.state.usage().completed)
+
+
+OTHER = "other@example.com"
+
+
+class ReportCensusTest(unittest.TestCase):
+    """§14.9's keys are the migration's numbers, not one run's numbers.
+
+    §14.2 lets a rerun skip a complete record, so every key here has to be
+    decided from the source rows. The fixture is chosen to make each of the
+    three kinds of key non-zero: one derived from a source column
+    (`activity_verbs_derived`), one published once and remembered
+    (`links_minted`), and one whose subject cannot be recognised twice
+    (`personal_roots_created_for_reservations`).
+    """
+
+    PERSONAL = "personal01"
+    DOCUMENT = "document01"
+    TRASHED_ROW = "trashed001"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        self.private = self.path / "private"
+        patcher = mock.patch.object(report_module, "_private_directory", lambda: self.private)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        self.drive = FakeDrive()
+        self.legacy = FakeTree(drive=self.drive, users={OWNER: True, OTHER: True})
+        for row in (
+            folder(DRIVE_ROOT_ROW, None),
+            folder(USERS_ROW, None),
+            TreeRow(
+                name=self.PERSONAL,
+                file_name=OWNER,
+                folder=USERS_ROW,
+                is_folder=1,
+                owner=OWNER,
+                creation=SOURCE_CREATION,
+                modified=SOURCE_MODIFIED,
+                status=ACTIVE,
+            ),
+            TreeRow(
+                name=self.DOCUMENT,
+                file_name="notes.txt",
+                folder=self.PERSONAL,
+                is_folder=0,
+                owner=OWNER,
+                creation=SOURCE_CREATION,
+                modified=SOURCE_MODIFIED,
+                status=ACTIVE,
+                file_size=120,
+            ),
+            TreeRow(
+                name=self.TRASHED_ROW,
+                file_name="gone.txt",
+                folder=self.PERSONAL,
+                is_folder=0,
+                owner=OWNER,
+                creation=SOURCE_CREATION,
+                modified=SOURCE_MODIFIED,
+                status=TRASHED,
+                file_size=7,
+            ),
+        ):
+            self.legacy.rows[row.name] = row
+        # §14.5: a `user = ""` row above read mints a link.
+        self.legacy.permissions_rows = [
+            PermissionRow(name="p1", entity=self.DOCUMENT, user="", read=1, write=1, creation=SOURCE_CREATION)
+        ]
+
+        self.records = FakeRecords()
+        self.records.activity_rows = [
+            # §14.6 derives each of these from the `File.status` it names.
+            self.deleted("a1", self.DOCUMENT),
+            self.deleted("a2", self.TRASHED_ROW),
+            self.deleted("a3", "missing0001"),
+            ActivityLogRow(
+                name="a4",
+                entity=self.DOCUMENT,
+                action_type="edit",
+                owner=OWNER,
+                creation=SOURCE_CREATION,
+                modified=SOURCE_MODIFIED,
+                modified_by=OWNER,
+            ),
+        ]
+        self.records.favourite_rows = [FavouriteRow("1", OWNER, entity=self.DOCUMENT)]
+        self.records.recent_rows = [RecentRow("r1", OWNER, node=self.DOCUMENT)]
+        self.records.route_rows = [EntityRow("old1", self.DOCUMENT)]
+        self.records.notification_counts = (5, 5)
+        self.records_target = FakeRecordsTarget(records=self.records, drive=self.drive)
+
+        # §14.8: an owner with no Personal Root gets one created in Build.
+        self.settings = FakeSettings(
+            quota_mb=10,
+            user_quotas=[UserQuotaRow("s1", OWNER, 50)],
+            reservations=[ReservationRow("res1", root=None, storage_owner=OTHER, reserved_bytes=99)],
+        )
+        self.settings_target = FakeSettingsTarget(settings=self.settings, drive=self.drive)
+
+    @staticmethod
+    def deleted(name, entity):
+        return ActivityLogRow(
+            name=name,
+            entity=entity,
+            action_type="delete",
+            owner=OWNER,
+            creation=SOURCE_CREATION,
+            modified=SOURCE_MODIFIED,
+            modified_by=OWNER,
+        )
+
+    def make_env(self):
+        return build_environment(
+            self.path,
+            tree=self.legacy,
+            drive=self.drive,
+            records=self.records,
+            records_target=self.records_target,
+            settings=self.settings,
+            settings_target=self.settings_target,
+            legacy_s3=LegacyS3Config(enabled=False),
+        )
+
+    def keys(self, report):
+        return {key: report[key] for key in REPORT_KEYS}
+
+    def test_the_fixture_makes_the_three_kinds_of_key_non_zero(self):
+        """Otherwise the comparisons below would pass on a report of zeros."""
+        report = self.keys(run_build(self.make_env()))
+        self.assertEqual(report["activity_verbs_derived"], 2)
+        self.assertEqual(report["activity_rows_dropped"], 1)
+        self.assertEqual(report["links_minted"], 1)
+        self.assertEqual(report["personal_roots_created_for_reservations"], 1)
+
+    def test_a_rerun_reports_the_same_migration(self):
+        first = self.keys(run_build(self.make_env()))
+        second = self.keys(run_build(self.make_env()))
+        self.assertEqual(second, first)
+
+    def test_a_run_killed_inside_the_activity_batch_resumes_to_the_same_report(self):
+        clean = self.keys(run_build(self.make_env()))
+
+        self.setUp()
+        # `a3` is dropped, so it is never inserted; `a4` is the last insert.
+        self.records_target.fail_insert = "a4"
+        with self.assertRaises(InterruptedRun):
+            run_build(self.make_env(), batch_size=2)
+        # What a killed connection leaves behind.
+        self.records_target.rollback()
+        self.drive.rollback()
+        self.records_target.fail_insert = None
+
+        resumed = self.keys(run_build(self.make_env(), batch_size=2))
+        self.assertEqual(resumed, clean)
+
+    def test_every_run_keeps_its_own_report_file(self):
+        run_build(self.make_env())
+        run_build(self.make_env())
+        saved = sorted(self.private.glob("drive-build-report-*.json"))
+        self.assertEqual(len(saved), 2)
+        for path in saved:
+            self.assertNotIn("$LINK:", path.read_text())
 
 
 if __name__ == "__main__":

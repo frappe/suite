@@ -18,6 +18,7 @@ from suite.drive.patches.build.ports import (
     EntityRow,
     FavouriteRow,
     RecentRow,
+    TreeRow,
 )
 from suite.drive.patches.build.records import BuildRecordError, convert_records
 from suite.drive.patches.build.tests.fakes import (
@@ -43,6 +44,20 @@ def activity(name, entity, action_type="edit", **columns):
     columns.setdefault("modified", SOURCE_MODIFIED)
     columns.setdefault("modified_by", OWNER)
     return ActivityLogRow(name=name, entity=entity, action_type=action_type, **columns)
+
+
+def tree_row(name, status, owner=OWNER):
+    """A legacy `File` row, so the derived-verb map has a status to read."""
+    return TreeRow(
+        name=name,
+        file_name=name,
+        folder=None,
+        is_folder=0,
+        owner=owner,
+        creation=SOURCE_CREATION,
+        modified=SOURCE_MODIFIED,
+        status=status,
+    )
 
 
 class RecordCase(unittest.TestCase):
@@ -321,6 +336,49 @@ class ActivityEntityTest(RecordCase):
         self.assertEqual(result.activity_rows_already_present, 1)
         self.assertEqual(result.activity_rows_written, 0)
         self.assertEqual(len(self.target.activity_rows), 1)
+
+    def test_a_rerun_derives_the_same_verbs_it_derived_the_first_time(self):
+        """§14.9's two activity keys are a census of the source rows.
+
+        Counting only what this run inserted made a rerun over a finished
+        site report `activity_verbs_derived: 0`, which is neither what Build
+        did nor what the previous report said.
+        """
+        self.legacy.rows[self.MIGRATED] = tree_row(self.MIGRATED, TRASHED)
+        self.records.activity_rows = [
+            activity("a1", self.MIGRATED, action_type="delete"),
+            activity("a2", self.MIGRATED, action_type="delete"),
+            activity("a3", self.LOST, action_type="delete"),
+        ]
+        first = self.run_records()
+        second = self.run_records()
+        self.assertEqual(first.activity_verbs_derived, 2)
+        self.assertEqual(second.activity_verbs_derived, first.activity_verbs_derived)
+        self.assertEqual(second.derived_verbs, first.derived_verbs)
+        self.assertEqual(second.activity_rows_dropped, first.activity_rows_dropped)
+        self.assertEqual(second.activity_rows_already_present, 2)
+        self.assertEqual(second.activity_rows_written, 0)
+
+    def test_a_resumed_run_derives_the_verbs_the_killed_run_had_written(self):
+        self.legacy.rows[self.MIGRATED] = tree_row(self.MIGRATED, TRASHED)
+        self.records.activity_rows = [
+            activity(f"a{index}", self.MIGRATED, action_type="delete") for index in range(4)
+        ]
+        clean = self.run_records()
+
+        self.setUp()
+        self.legacy.rows[self.MIGRATED] = tree_row(self.MIGRATED, TRASHED)
+        self.records.activity_rows = [
+            activity(f"a{index}", self.MIGRATED, action_type="delete") for index in range(4)
+        ]
+        self.target.fail_insert = "a2"
+        with self.assertRaises(InterruptedRun):
+            self.run_records(batch_size=2)
+        self.target.rollback()
+        self.target.fail_insert = None
+        resumed = self.run_records(batch_size=2)
+        self.assertEqual(resumed.activity_verbs_derived, clean.activity_verbs_derived)
+        self.assertEqual(resumed.derived_verbs, clean.derived_verbs)
 
 
 class NotificationTest(RecordCase):
