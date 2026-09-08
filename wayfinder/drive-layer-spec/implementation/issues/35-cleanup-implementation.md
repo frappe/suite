@@ -31,3 +31,14 @@ Run Cleanup against isolated fixtures only. Prove every missing gate leaves data
 
 Record changed behavior, exact revisions, commands, results, and unresolved gates here.
 Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+
+### 2026-09-09 — noted from Ticket 30's final review pass
+
+`Drive Notification.activity` is `reqd: 1` per §3.11, but is left optional on
+the live doctype for the Build release: `suite/drive/api/notifications.py`
+and `drive_user_invitation.py` still insert legacy rows with no `activity`.
+This gate's "drop the old notification columns" step (§14.10) is what makes
+those writers go away; enforcing `reqd: 1` on `activity` belongs in the same
+Cleanup change that removes them, not before. Not implemented here; recorded
+so Cleanup's ordered-removal work picks it up explicitly instead of
+rediscovering it. This does not close this ticket.

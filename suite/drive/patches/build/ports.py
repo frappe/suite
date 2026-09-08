@@ -18,6 +18,7 @@ from typing import IO, Protocol
 import frappe
 from frappe.utils import cint
 
+from suite.drive._core.errors import rollback_savepoint
 from suite.drive._core.roles import NONE
 
 
@@ -181,12 +182,17 @@ class SiteStorage:
         # — the outcome `BlobConflict` exists to avoid. MariaDB does not need
         # it. Two extra statements against a row that already paid for an S3
         # copy is not a cost worth branching on.
+        #
+        # The rollback goes through the shared deadlock-aware helper, the way
+        # the root-pair and per-unit savepoints below already do. A Build unit
+        # takes row locks, so it can be an InnoDB deadlock victim, and a victim
+        # has no savepoint left to roll back to.
         savepoint = "drive_build_insert_blob"
         frappe.db.savepoint(savepoint)
         try:
             blob.insert(ignore_permissions=True)
         except frappe.UniqueValidationError as e:
-            frappe.db.rollback(save_point=savepoint)
+            rollback_savepoint(savepoint, e)
             raise BlobConflict(checksum) from e
         frappe.db.release_savepoint(savepoint)
         return blob.name
@@ -1128,9 +1134,7 @@ class SiteDrive:
             # including this savepoint. The shared helper preserves that
             # original error and resets the handle with a full rollback;
             # Postgres and ordinary errors keep the narrow rollback.
-            from suite.drive._core.nodes import _rollback_savepoint
-
-            _rollback_savepoint(savepoint, exc)
+            rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
 
@@ -1782,9 +1786,7 @@ class SiteContentTarget:
             # savepoints included, so the narrow rollback would raise over
             # the original error and leave the handle unusable. The shared
             # helper keeps the original and resets with a full rollback.
-            from suite.drive._core.nodes import _rollback_savepoint
-
-            _rollback_savepoint(savepoint, exc)
+            rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
 

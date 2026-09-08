@@ -395,6 +395,33 @@ class TestPreviewContract(UnitTestCase):
         with _webp(payload) as image:
             self.assertEqual(image.size, (384, PREVIEW_LONGEST_SIDE))
 
+    def test_the_configured_preview_size_overrides_the_512_default(self):
+        """§9.2's px contract is the site setting, not the hardcoded fallback."""
+        page = _FakePdfPage(1024, 768)
+
+        with (
+            patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}),
+            patch("suite.drive._core.previews.frappe.db.get_single_value", return_value=256),
+        ):
+            payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
+
+        self.assertEqual((page.pixmaps[0].matrix.a, page.pixmaps[0].matrix.d), (0.25, 0.25))
+        with _webp(payload) as image:
+            self.assertEqual(image.size, (256, 192))
+
+    def test_an_unset_or_non_positive_preview_size_falls_back_to_512(self):
+        """A Single field that has never been saved must not reach `thumbnail()` as None."""
+        for stub in (None, "", 0, -10, "not-a-number"):
+            with self.subTest(stub=stub):
+                page = _FakePdfPage(1024, 768)
+                with (
+                    patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}),
+                    patch("suite.drive._core.previews.frappe.db.get_single_value", return_value=stub),
+                ):
+                    payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
+                with _webp(payload) as image:
+                    self.assertEqual(image.size, (PREVIEW_LONGEST_SIDE, 384))
+
     def _render_with(self, mime: str, module_name: str, module, source_bytes: bytes):
         """Drive `render` through one branch with no database and no blob store."""
         snapshot = frappe._dict(name="node-a", kind="file", state="Active", blob="src", mime=mime)
@@ -417,6 +444,7 @@ class TestPreviewContract(UnitTestCase):
             patch("suite.drive._core.previews._publish_rendered", return_value=True) as publish,
         ):
             db.get_value.side_effect = get_value
+            db.get_single_value.return_value = PREVIEW_LONGEST_SIDE
             driver.return_value.read.return_value.__enter__.return_value = io.BytesIO(source_bytes)
             render("node-a")
 
