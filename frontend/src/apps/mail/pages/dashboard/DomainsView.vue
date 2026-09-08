@@ -58,7 +58,7 @@
 		</ListView>
 		<DashboardListSkeleton v-else />
 		<DashboardPager
-			v-if="list.loaded"
+			v-if="list.loaded && list.total"
 			:count="list.rows.length"
 			:total="list.total"
 			:page-length="list.pageLength"
