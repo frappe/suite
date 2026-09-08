@@ -62,6 +62,19 @@ class FakeSuiteCloud:
         self.domains[domain] = {"domain": domain, "description": description, "enabled": 1, "is_verified": 0}
         return self._domain(domain)
 
+    def domains__update_domain(self, domain: str, **changes) -> dict:
+        d = self._require(self.domains, domain)
+        if "enabled" in changes:
+            d["enabled"] = int(bool(changes.pop("enabled")))
+            if not d["enabled"]:
+                d["is_verified"] = 0  # Suite Cloud drops verification with the domain
+        if "catch_all_address" in changes:
+            changes["catch_all_address"] = changes["catch_all_address"] or None
+        if "sub_addressing" in changes:
+            changes["sub_addressing"] = int(bool(changes["sub_addressing"]))
+        d.update(changes)
+        return self._domain(domain)
+
     def domains__delete_domain(self, domain: str) -> None:
         self._require(self.domains, domain)
         del self.domains[domain]

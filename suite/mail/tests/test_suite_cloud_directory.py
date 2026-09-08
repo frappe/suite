@@ -157,6 +157,20 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual(admin.get_domain(DOMAIN)["status"], "Active")
         self.assertEqual([r["name"] for r in admin.get_domains(status="Active")], [DOMAIN])
 
+        updated = admin.update_domain(
+            DOMAIN, description="Acme Inc", catch_all_address=" Inbox@acme.test ", sub_addressing=False
+        )
+        self.assertEqual(
+            (updated["description"], updated["catch_all_address"], updated["sub_addressing"]),
+            ("Acme Inc", "inbox@acme.test", False),
+        )
+        self.assertRaises(frappe.ValidationError, admin.update_domain, DOMAIN, catch_all_address="nope")
+        self.assertEqual(admin.update_domain(DOMAIN, catch_all_address="")["catch_all_address"], "")
+
+        # Disabling drops the verification, so enabling again lands the domain back in pending.
+        self.assertEqual(admin.set_domain_enabled(DOMAIN, False)["status"], "Disabled")
+        self.assertEqual(admin.set_domain_enabled(DOMAIN, True)["status"], "Pending Verification")
+
         admin.delete_domain("Beta.test")
         self.assertEqual([r["name"] for r in admin.get_domains()], [DOMAIN])
         self.assertRaises(frappe.DoesNotExistError, admin.get_domain, "Beta.test")

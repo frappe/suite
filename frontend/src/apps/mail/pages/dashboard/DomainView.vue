@@ -9,6 +9,7 @@
 			>
 				<template #icon><Globe class="h-5 w-5" /></template>
 				<template #actions>
+					<Button :label="__('Edit')" @click="showEdit = true" />
 					<Button
 						:label="__('Verify DNS')"
 						:loading="verifyDomain.loading"
@@ -32,6 +33,20 @@
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
 			</div>
+			<DashboardCard :title="__('General Information')" :button-label="__('Edit')" @action="showEdit = true">
+				<div>
+					<InformationField :label="__('Description')" :value="domain.data.description || '—'" />
+					<InformationField
+						:label="__('Catch-All Address')"
+						:value="domain.data.catch_all_address || __('None (unknown addresses are rejected)')"
+					/>
+					<InformationField
+						:label="__('Sub-addressing')"
+						:value="domain.data.sub_addressing ? __('Enabled') : __('Disabled')"
+					/>
+					<InformationField :label="__('Last Verified')" :value="lastVerified" />
+				</div>
+			</DashboardCard>
 			<div class="rounded-4 border">
 				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
@@ -47,6 +62,7 @@
 		</template>
 	</DashboardLayout>
 	<Dialog v-model:open="showConfirmDialog" v-bind="confirmDialogOptions" />
+	<EditDomainModal v-if="domain.data" v-model="showEdit" :domain="domain.data" @reload="domain.reload()" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -61,6 +77,9 @@ import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { type DomainStatus, domainStatusBadge } from '@/apps/mail/utils/domainStatus'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
+import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import InformationField from '@/apps/mail/components/InformationField.vue'
+import EditDomainModal from '@/apps/mail/components/Modals/EditDomainModal.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
@@ -72,6 +91,9 @@ type DomainData = {
 	name: string
 	description: string
 	status: DomainStatus
+	is_enabled: boolean
+	catch_all_address?: string
+	sub_addressing: boolean
 	last_verified_at?: string
 	created_at: string
 	dns_record_groups: RecordGroup[]
@@ -93,6 +115,7 @@ usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 const router = useRouter()
 
 const showConfirmDialog = ref(false)
+const showEdit = ref(false)
 
 const domain = createResource({
 	url: 'suite.mail.api.admin.get_domain',
@@ -136,6 +159,17 @@ const deleteDomain = createResource({
 	onError: (error: ResourceError) => raiseToast(getErrorMessage(error), 'error'),
 })
 
+const setEnabled = createResource({
+	url: 'suite.mail.api.admin.set_domain_enabled',
+	makeParams: (values: { enabled: boolean }) => ({ domain_id: domainId, enabled: values.enabled }),
+	onSuccess: (data: DomainData) => {
+		domain.reload()
+		showConfirmDialog.value = false
+		raiseToast(data.is_enabled ? __('Domain enabled. Verify its DNS records to bring it live.') : __('Domain disabled.'))
+	},
+	onError: (error: ResourceError) => raiseToast(getErrorMessage(error), 'error'),
+})
+
 const downloadFile = (content: string, extension: string, mimeType: string) => {
 	const domainName = (domain.data as DomainData | undefined)?.name || domainId
 	const fileName = `${domainName.replace(/[^a-zA-Z0-9.-]+/g, '_')}.${extension}`
@@ -169,12 +203,19 @@ const BREADCRUMBS = computed(() => [
 	{ label: domain.data?.name || domainId },
 ])
 
-const confirmDialogAction = ref<'deleteDomain'>('deleteDomain')
+const confirmDialogAction = ref<'deleteDomain' | 'disableDomain'>('deleteDomain')
 
 const badge = computed(() => domainStatusBadge((domain.data as DomainData | undefined)?.status))
 
 const confirmDialogOptions = computed(() => {
 	const config = {
+		disableDomain: {
+			title: __('Disable Domain'),
+			message: __(
+				'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows. Continue?',
+			),
+			action: () => setEnabled.submit({ enabled: false }),
+		},
 		deleteDomain: {
 			title: __('Delete Domain'),
 			message: __(
@@ -191,6 +232,13 @@ const confirmDialogOptions = computed(() => {
 		icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 		actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: config.action }],
 	}
+})
+
+const isEnabled = computed(() => !!(domain.data as DomainData | undefined)?.is_enabled)
+
+const lastVerified = computed(() => {
+	const at = (domain.data as DomainData | undefined)?.last_verified_at
+	return at ? fromNow(at) : __('Never')
 })
 
 const addedAgo = computed(() => {
@@ -213,6 +261,20 @@ const dropdownOptions = computed(() => [
 	{
 		group: '',
 		options: [
+			isEnabled.value
+				? {
+						label: __('Disable Domain'),
+						icon: 'lucide-pause',
+						onClick: () => {
+							confirmDialogAction.value = 'disableDomain'
+							showConfirmDialog.value = true
+						},
+					}
+				: {
+						label: __('Enable Domain'),
+						icon: 'lucide-play',
+						onClick: () => setEnabled.submit({ enabled: true }),
+					},
 			{
 				label: __('Delete Domain'),
 				icon: 'lucide-trash-2',

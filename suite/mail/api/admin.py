@@ -103,6 +103,8 @@ def _domain_row(domain: dict) -> dict:
         "description": domain.get("description") or "",
         "status": _domain_status(domain),
         "is_enabled": bool(domain.get("enabled")),
+        "catch_all_address": domain.get("catch_all_address") or "",
+        "sub_addressing": bool(domain.get("sub_addressing")),
         "is_verified": bool(domain.get("is_verified")),
         "last_verified_at": to_utc_z(domain.get("last_verified_at")),
         "created_at": to_utc_z(domain.get("created_at")),
@@ -201,6 +203,39 @@ def verify_domain(domain_id: str) -> dict:
     check_admin_permission("verify domains", domain_id)
     result = get_client().call("domains.verify_dns_records", domain=domain_id)
     return result
+
+
+@frappe.whitelist()
+def update_domain(
+    domain_id: str,
+    description: str | None = None,
+    catch_all_address: str | None = None,
+    sub_addressing: bool | None = None,
+) -> dict:
+    """Description, catch-all and sub-addressing; an empty catch-all means unknown addresses bounce."""
+
+    check_admin_permission("update domains", domain_id)
+    changes: dict[str, Any] = {}
+    if description is not None:
+        changes["description"] = description.strip()
+    if catch_all_address is not None:
+        catch_all_address = catch_all_address.strip().lower()
+        if catch_all_address:
+            validate_email_address(catch_all_address, throw=True)
+        changes["catch_all_address"] = catch_all_address
+    if sub_addressing is not None:
+        changes["sub_addressing"] = bool(sub_addressing)
+    if not changes:
+        return get_domain(domain_id)
+    return _domain_row(get_client().call("domains.update_domain", domain=domain_id, **changes))
+
+
+@frappe.whitelist()
+def set_domain_enabled(domain_id: str, enabled: bool) -> dict:
+    """Disabling also drops the domain's verification on Suite Cloud; enabling needs a fresh verify."""
+
+    check_admin_permission("enable domains" if enabled else "disable domains", domain_id)
+    return _domain_row(get_client().call("domains.update_domain", domain=domain_id, enabled=bool(enabled)))
 
 
 @frappe.whitelist()
