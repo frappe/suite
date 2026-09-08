@@ -1938,18 +1938,26 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec(satellites=(wrong,))), self.assertRaises(DriveConflict):
             validate_registry()
 
-    def test_the_registry_is_empty_until_activation_stages_an_app_into_it(self):
+    def test_the_registry_holds_the_three_apps_activation_staged_into_it(self):
         """Staged activation (§10.3, README execution rules).
 
         An app declares its spec in its own adoption ticket — Writer at 17,
-        Slides at 18, Sheets at 19 — and joins `drive_content_types` only at
-        ticket 29, once Build has linked every row. Until then Drive governs no
-        doctype: no permission hook moves, and `validate_content_registry`
-        inspects no `DocShare`, so a site with real content data still
-        migrates.
+        Slides at 18, Sheets at 19 — and joins `drive_content_types` at ticket
+        29, once Build has linked every row. All three are in now, and every
+        declaration is the one its app ships.
         """
         content.clear_registry_cache()
-        self.assertEqual(registry(), {}, "staged activation: no app is registered yet")
+        self.assertEqual(
+            sorted(registry()),
+            ["Presentation", "Sheet", "Writer Document"],
+        )
+        for doctype, dotted in (
+            ("Writer Document", "suite.writer.drive.SPEC"),
+            ("Presentation", "suite.slides.drive.SPEC"),
+            ("Sheet", "suite.sheets.drive.SPEC"),
+        ):
+            with self.subTest(doctype=doctype):
+                self.assertIs(registry()[doctype], frappe.get_attr(dotted))
 
 
 def _purge_fixture_roots() -> None:

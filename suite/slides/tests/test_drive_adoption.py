@@ -1,29 +1,28 @@
 """Slides' adoption of the Drive content contract (ticket 18, §6.6, §10.7, §14.7).
 
-Adoption is an expand phase, not a switch. Slides declares its `ContentTypeSpec`
-and `Presentation` gains the `node` Link, but `suite/hooks.py` leaves
-`drive_content_types` empty and keeps both `Presentation` permission entries on
-`suite.slides.doctype.presentation.presentation`. Ticket 28 links every row and
-ticket 29 makes the registry and the four hook changes together.
+Adoption was an expand phase. Slides declared its `ContentTypeSpec` at ticket
+18 and `Presentation` gained the `node` Link; ticket 28 linked every row, and
+ticket 29 made the registry entry and the four hook changes together. So
+`suite/hooks.py` now names `suite.slides.drive.SPEC` and points `Presentation`
+and `Slide` at `suite.drive.framework`.
 
-So the three classes here split along that seam:
+The three classes here:
 
 `TestSlidesDeclaration`   the declaration, the version envelope, and the body
-                          readers, on no rows. It also proves the hooks are
-                          dormant and that activation registers exactly what
-                          ticket 29 will install.
-`TestSlidesBeforeActivation`
-                          what a site running this commit does: legacy decks,
-                          the legacy create path, a `DocShare` that must not
-                          fail `migrate`, and the one check that still refuses
-                          activation.
+                          readers, on no rows. It also proves the shipped hook
+                          entries.
+`TestSlidesAfterActivation`
+                          what activation settled: the frozen legacy `title`
+                          column, and the declarations the boot check still
+                          refuses.
 `TestSlidesInDrive`       the Drive-native lifecycle, history, media, previews,
-                          composites, satellites, and failure rollback, under
-                          `activated()`.
+                          composites, satellites, and failure rollback.
 
-`activated()` injects the registry and the four hook targets rather than
-shipping them, so nothing here depends on the site being activated and nothing
-here activates it.
+**A deck with no node cannot exist any more.** `require_node` holds §5.13 for
+a registered doctype, so `make_presentation` and `create_presentation` refuse
+one and the legacy-deck cases this module used to carry are gone with the
+state they described. `activated()` stays as a name so every call site reads
+the same, and it is now only the registry cache drop.
 
 The integration classes reach `suite.drive._core` for the workflows the package
 root does not expose yet: roots, trash, media upload, and version restore. Those
@@ -76,8 +75,8 @@ OTHER = "slides-adoption-other@example.com"
 DOCTYPE = "Presentation"
 SATELLITE = "Slide"
 
-# The five entries ticket 29 installs together, once Build has linked every
-# `Presentation` row. `suite/hooks.py` carries none of them yet.
+# The five entries ticket 29 installed together, once Build had linked every
+# `Presentation` row. `suite/hooks.py` carries all of them.
 ACTIVATION = {
     "drive_content_types": ["suite.slides.drive.SPEC"],
     "has_permission": {
@@ -93,33 +92,30 @@ ACTIVATION = {
 
 @contextmanager
 def activated():
-    """Register Slides for the block, exactly the way ticket 29 will register it.
+    """Read the registry `suite/hooks.py` ships, and leave nothing behind.
 
-    The registry is built from `drive_content_types` and the framework reads
-    both permission hooks from the same hook map, so injecting the map is the
-    whole activation. Nothing is written and nothing survives the block: the
-    per-request registry cache is dropped on the way in and on the way out.
+    Ticket 29 installed every entry in `ACTIVATION`, so there is nothing to
+    inject. The registry is built from `drive_content_types` and cached per
+    request, and the cache is dropped on the way in and on the way out.
     """
-    real_get_hooks = frappe.get_hooks
-
-    # `hook`, not `key`: frappe's own signature is `get_hooks(hook=None, ...)`
-    # and three framework call sites pass it by keyword. A different parameter
-    # name here makes those raise `TypeError` inside the block.
-    def hooks(hook=None, *args, **kwargs):
-        if hook == "drive_content_types":
-            return list(ACTIVATION[hook])
-        if hook in ("has_permission", "permission_query_conditions"):
-            wired = dict(real_get_hooks(hook, *args, **kwargs) or {})
-            wired.update({name: list(paths) for name, paths in ACTIVATION[hook].items()})
-            return wired
-        return real_get_hooks(hook, *args, **kwargs)
-
     clear_registry_cache()
     try:
-        with patch("frappe.get_hooks", hooks):
-            yield
+        yield
     finally:
         clear_registry_cache()
+
+
+@contextmanager
+def linked():
+    """Answer the Build link check the way a migrated site would.
+
+    `slides.localhost` still holds pre-Build decks, so
+    `validate_content_registry` refuses it on the count of unlinked rows.
+    These cases are about the declaration, not about the site's data;
+    `suite/drive/tests/test_content.py` covers the link check itself.
+    """
+    with patch("suite.drive.framework.refuse_unlinked_documents"):
+        yield
 
 
 def png(color: str = "red") -> bytes:
@@ -202,36 +198,30 @@ class TestSlidesDeclaration(UnitTestCase):
 
     # staged activation
 
-    def test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were(self):
+    def test_the_declaration_is_registered_and_all_four_hooks_moved(self):
         """README execution rules: stage the registry and the permission hooks
-        after the required node links exist. Build writes them at ticket 28 and
-        ticket 29 activates. Registering now would refuse every legacy deck on
-        its next permission check."""
+        after the required node links exist. Ticket 28 wrote the links, ticket
+        29 activated, and `refuse_unlinked_documents` is what proves the
+        ordering on a real migration."""
         from suite import hooks
 
-        self.assertEqual(hooks.drive_content_types, [], "activation waits for ticket 29")
+        self.assertIn("suite.slides.drive.SPEC", hooks.drive_content_types)
+        self.assertEqual(hooks.has_permission[DOCTYPE], "suite.drive.framework.doc_has_permission")
         self.assertEqual(
-            hooks.has_permission[DOCTYPE],
-            "suite.slides.doctype.presentation.presentation.has_permission",
+            hooks.permission_query_conditions[DOCTYPE], "suite.drive.framework.doc_query_conditions"
         )
+        self.assertEqual(hooks.has_permission[SATELLITE], "suite.drive.framework.satellite_has_permission")
         self.assertEqual(
-            hooks.permission_query_conditions[DOCTYPE],
-            "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
+            hooks.permission_query_conditions[SATELLITE],
+            "suite.drive.framework.satellite_query_conditions",
         )
-        self.assertNotIn(SATELLITE, hooks.has_permission)
-        self.assertNotIn(SATELLITE, hooks.permission_query_conditions)
-        clear_registry_cache()
-        self.assertFalse(governs(DOCTYPE), "Drive governs nothing while the registry is empty")
-        self.assertFalse(governs(SATELLITE))
 
-    def test_a_dormant_registry_leaves_a_docshare_alone(self):
-        """The one thing that would fail `migrate` on a site with real decks.
-        Desk assignment writes a `DocShare` (`frappe.share.add`), and no tool
-        rewrites those rows as grants before Build."""
+    def test_a_registered_deck_refuses_a_docshare(self):
+        """`Drive Grant` is the only permission table for a governed deck, and
+        a `DocShare` grants around both permission hooks. Desk assignment is
+        what writes one, so it is refused where it is written."""
         share = frappe._dict(share_doctype=DOCTYPE, share_name="anything")
-        refuse_governed_share(share)
-
-        with activated(), self.assertRaises(DriveForbidden):
+        with self.assertRaises(DriveForbidden):
             refuse_governed_share(share)
 
     def test_activation_registers_the_declaration_and_moves_all_four_hooks(self):
@@ -244,7 +234,6 @@ class TestSlidesDeclaration(UnitTestCase):
                 for doctype, paths in ACTIVATION[key].items():
                     with self.subTest(hook=key, doctype=doctype):
                         self.assertEqual(wired[doctype], paths)
-        self.assertFalse(governs(DOCTYPE), "the injection leaves nothing behind")
 
     # the version envelope
 
@@ -447,215 +436,15 @@ class TestSlidesDeclaration(UnitTestCase):
             frappe.local.db = previous
 
 
-class TestSlidesBeforeActivation(IntegrationTestCase):
-    """What a site running this commit actually does: nothing Drive-native.
+class TestSlidesAfterActivation(IntegrationTestCase):
+    """What activation settled, on the real `Presentation` doctype.
 
-    `drive_content_types` is empty here, as it is on a site. These are the
-    outcomes the staged activation buys: a legacy deck stays reachable and
-    editable, and a `DocShare` no longer fails `migrate`.
+    A deck with no node cannot exist here: `require_node` holds §5.13 for a
+    registered doctype, so the legacy-deck cases this class used to carry
+    describe a state Build and ticket 29 removed together. What is left is the
+    frozen legacy `title` column §14.7 reads and §14.10 drops, and the
+    declarations the boot check still refuses.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        ensure_user(USER)
-        ensure_user(OTHER)
-        frappe.db.commit()
-
-    def setUp(self):
-        super().setUp()
-        frappe.set_user("Administrator")
-        # Registered first, so it runs last: after every `delete_doc` cleanup a
-        # test queues, and after the rows those cleanups missed are swept.
-        self._decks_before = set(frappe.get_all(DOCTYPE, pluck="name"))
-        self._files_before = self._deck_files_now()
-        self.addCleanup(self._remove_fixture_rows)
-        clear_registry_cache()
-        self.addCleanup(clear_registry_cache)
-
-    def _remove_fixture_rows(self):
-        """Commit the removals, because tests in this class commit.
-
-        `IntegrationTestCase` rolls back once per class, not once per test, so
-        a `frappe.db.commit()` inside a test makes its rows permanent. The
-        per-test `delete_doc` cleanups then delete them inside the transaction
-        that rollback throws away, and the committed rows come back.
-
-        A surviving deck is poison the same way a surviving `Writer Document`
-        is: `_refuse_shared_list` refuses the whole list for a user who holds a
-        `DocShare` on it, and `validate_content_registry` refuses to activate
-        the type. A surviving backing `File` is worse than untidy — it names a
-        deck that no longer exists, and `File.after_delete` treats that name as
-        a document to delete (`suite/drive/overrides/file.py:145-152`).
-
-        There is no `DocShare` sweep because there is nothing left to sweep:
-        `delete_doc` clears the share rows that name the deck
-        (`frappe/model/delete_doc.py:505`). The regression test asserts that
-        outcome rather than trusting it.
-        """
-        frappe.set_user("Administrator")
-        for deck in set(frappe.get_all(DOCTYPE, pluck="name")) - self._decks_before:
-            # Takes the `Slide` child rows, every attached `File`, and every
-            # `DocShare` written against the deck.
-            frappe.delete_doc(DOCTYPE, deck, force=1, ignore_permissions=True, ignore_missing=True)
-        # After the decks, not before, so the `after_delete` cascade back to
-        # `content_docname` finds nothing left to do.
-        for file in self._deck_files_now() - self._files_before:
-            frappe.delete_doc("File", file, force=1, ignore_permissions=True, ignore_missing=True)
-        frappe.db.commit()
-
-    @staticmethod
-    def _deck_files_now() -> set[str]:
-        """Every `File` a deck fixture leaves behind, at both links it uses.
-
-        `after_insert` backs a legacy deck with a `File` that names it through
-        `content_doctype`/`content_docname` (`presentation.py:115-124`), and
-        deleting the deck does not delete that row: the `on_trash` hook calls
-        `permanent_delete`, which only sets `status` to `Removed`
-        (`suite/drive/overrides/file.py:394-408`). `save_presentation_thumbnail`
-        writes a second `File` at `attached_to_doctype`/`attached_to_name`
-        (`presentation.py:214-232`). Sweeping one link would leave the other.
-        """
-        return set(frappe.get_all("File", filters={"content_doctype": DOCTYPE}, pluck="name")) | set(
-            frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE}, pluck="name")
-        )
-
-    @staticmethod
-    def _backing_file(deck: str) -> str | None:
-        """The same lookup as `DriveFile.get_for_doc`, spelled out.
-
-        Importing `suite.drive.overrides.file` here would add a fourth boundary
-        violation to the three `suite/tests/test_architecture.py` already
-        records against this module.
-        """
-        return frappe.db.get_value("File", {"content_doctype": DOCTYPE, "content_docname": deck}, "name")
-
-    def _legacy_deck(self, title="Legacy deck") -> str:
-        deck = make_presentation(f"{title} {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, DOCTYPE, deck.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        return deck.name
-
-    def test_a_committed_fixture_row_does_not_outlive_the_class_rollback(self):
-        """The leak `_remove_fixture_rows` exists to stop, asserted in the run
-        that causes it.
-
-        Without this the leak is invisible here and lands on the next run of
-        this module. The deck that survives is the one written by the last test
-        in this class that commits, so which rows leak depends on nothing more
-        than method name order. Eight runs of this module before the fix left
-        eight `Presentation` rows, eight `Slide` rows, and twenty-four `File`
-        rows behind.
-
-        The template deck is here so the deck sweep carries its own weight.
-        `after_insert` skips `create_drive_file` for a template
-        (`presentation.py:79-82`), so no backing `File` names it and the file
-        sweep's cascade back to `content_docname` cannot reach it. Without the
-        template every assertion below still passes with the deck sweep deleted.
-        """
-        name = self._legacy_deck("Committed")
-        share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
-        backing = self._backing_file(name)
-        api.save_presentation_thumbnail(name, webp_capture())
-        thumbnail = frappe.db.get_value(
-            "File", {"attached_to_doctype": DOCTYPE, "attached_to_name": name}, "name"
-        )
-        template = frappe.get_doc(
-            {
-                "doctype": DOCTYPE,
-                "title": f"Committed template {frappe.generate_hash(6)}",
-                "is_template": 1,
-                "slides": [{"elements": "[]"}],
-            }
-        ).insert()
-        self.assertTrue(backing, "the deck is backed by a File")
-        self.assertTrue(thumbnail, "and the capture wrote a second one")
-        self.assertIsNone(self._backing_file(template.name), "the template is backed by none")
-        frappe.db.commit()
-
-        self._remove_fixture_rows()
-        # What `_rollback_db` does at class teardown. A removal that is only
-        # queued and not committed does not survive it.
-        frappe.db.rollback()
-
-        self.assertFalse(frappe.db.exists(DOCTYPE, name), "the deck is gone for good")
-        self.assertFalse(frappe.db.exists(DOCTYPE, template.name), "and so is the template")
-        self.assertFalse(frappe.db.exists("DocShare", share.name), "and the share written against it")
-        self.assertFalse(frappe.db.exists("File", backing), "and the File that backs it")
-        self.assertFalse(frappe.db.exists("File", thumbnail), "and the File the capture wrote")
-        self.assertFalse(
-            frappe.get_all(SATELLITE, filters={"parent": name, "parenttype": DOCTYPE}),
-            "and the slide rows the deck carried",
-        )
-
-    def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
-        """The refusal is scoped to a deck that carries a node. Before Build no
-        row has one, so a site with Desk assignments lists what it always did.
-
-        This belongs here and not beside the linked-deck guard tests: a legacy
-        row is one with no node, and `require_node` refuses to insert one once
-        the declaration is registered (`content.py:762-765`).
-        """
-        name = self._legacy_deck("Assigned")
-        share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
-        self.addCleanup(
-            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        frappe.db.commit()
-
-        self.assertIn("`tabPresentation`.`node` IS NULL", api.get_permission_query_conditions(OTHER))
-
-    def test_a_legacy_composite_still_answers_editor_access_without_a_grant(self):
-        """`get_editor_access` now asks the node first. The legacy arm below it
-        is untouched: Build has not linked the row and ticket 23 owns the legacy
-        read path."""
-        name = self._legacy_deck("Legacy composite access")
-        frappe.db.set_value(DOCTYPE, name, "is_composite", 1, update_modified=False)
-        frappe.db.commit()
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        self.assertEqual(api.get_editor_access(name), "view")
-
-    def test_a_legacy_deck_keeps_its_title_its_slug_and_its_backing_file(self):
-        """The whole point of not activating. A node-less deck is untouched:
-        the mirrored title, the slug, and the `File` every legacy read path
-        still asks about."""
-        from suite.drive.overrides.file import File as DriveFile
-
-        name = self._legacy_deck("Untouched")
-        deck = frappe.get_doc(DOCTYPE, name)
-
-        self.assertIsNone(deck.get("node"), "no node before Build")
-        self.assertTrue(deck.title)
-        self.assertEqual(deck.slug, api.slug(deck.title))
-        self.assertTrue(DriveFile.get_for_doc(DOCTYPE, name), "the legacy identity is still the File")
-        self.assertTrue(frappe.has_permission(DOCTYPE, "read", name))
-        self.assertIn(name, frappe.get_list(DOCTYPE, pluck="name"))
-
-    def test_a_legacy_deck_still_renames_and_still_takes_a_thumbnail_file(self):
-        name = self._legacy_deck("Renamed")
-
-        api.update_title(name, "A new title")
-        url = api.save_presentation_thumbnail(name, webp_capture())
-
-        self.assertEqual(frappe.db.get_value(DOCTYPE, name, "slug"), "a-new-title")
-        self.assertTrue(url.startswith("/"), url)
-        self.assertEqual(frappe.db.get_value(DOCTYPE, name, "thumbnail"), url)
-
-    def test_a_docshare_on_a_presentation_does_not_fail_a_migration(self):
-        """`after_migrate` runs `validate_content_registry`. Desk assignment
-        writes a `DocShare` (`frappe/desk/form/assign_to.py` calls
-        `frappe.share.add`) and no tool rewrites those rows as grants before
-        Build, so activating now would refuse the site."""
-        name = self._legacy_deck("Shared")
-        share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
-        self.addCleanup(
-            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        validate_content_registry()
 
     def test_activation_accepts_the_frozen_legacy_title_column(self):
         """Ticket 29 has no impossible choice left.
@@ -670,7 +459,7 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         meta = frappe.get_meta(DOCTYPE)
         self.assertIsNotNone(meta.get_field("title"), "Build still reads it (§14.7)")
 
-        with activated():
+        with activated(), linked():
             validate_content_registry()
 
     def test_the_display_title_still_resolves_to_the_frozen_legacy_column(self):
@@ -711,6 +500,7 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         undeclared = dataclasses.replace(slides.SPEC, legacy_fields=())
         with (
             activated(),
+            linked(),
             patch(
                 "suite.drive._core.content._build_registry",
                 return_value={DOCTYPE: undeclared},
@@ -729,6 +519,7 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         stale = dataclasses.replace(slides.SPEC, legacy_fields=("title", "trashed"))
         with (
             activated(),
+            linked(),
             patch("suite.drive._core.content._build_registry", return_value={DOCTYPE: stale}),
             self.assertRaises(DriveConflict),
         ):

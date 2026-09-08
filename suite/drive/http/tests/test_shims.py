@@ -3670,10 +3670,21 @@ class TestPermanentSurface(ShimCase):
         self.assertIn("/api/method/suite.drive.api.", hooks.ALLOWED_WILDCARD_PATHS)
         self.assertEqual(hooks.DENIED_WILDCARD_PATHS, ["/api/"])
 
-    def test_destructive_removal_stays_disabled(self):
+    def test_activation_removed_none_of_the_legacy_surface(self):
+        """Ticket 29 filled `drive_content_types`; §11.7 still answers.
+
+        Registering the three content types is not the removal §14.10 does.
+        Cleanup deletes this module and the legacy method prefix together, one
+        release later, so the whole shim surface has to survive activation.
+        """
         from suite import hooks
 
-        self.assertEqual(hooks.drive_content_types, [])
+        self.assertEqual(
+            hooks.drive_content_types,
+            ["suite.writer.drive.SPEC", "suite.slides.drive.SPEC", "suite.sheets.drive.SPEC"],
+        )
+        self.assertIn("/api/method/suite.drive.api.", hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertEqual(len(shims.CLASSIFICATION), 69)
 
 
 if __name__ == "__main__":
