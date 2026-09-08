@@ -1,7 +1,11 @@
 <template>
+	<!-- While the request runs the dialog cannot be dismissed or edited: a second click or an
+	     early close would leave a half-created account behind. -->
 	<Dialog
 		v-model:open="show"
-	 v-bind="{
+		:dismissible="!addMember.loading"
+		:show-close-button="!addMember.loading"
+		v-bind="{
 			title: __('Add Account'),
 			actions: [
 				{
@@ -14,7 +18,18 @@
 		}"
 	>
 		<template #default>
-			<div class="space-y-4">
+			<div class="relative">
+				<div
+					v-if="addMember.loading"
+					class="bg-surface-white/60 absolute inset-0 z-10 flex items-center justify-center rounded-4"
+				>
+					<LoadingIndicator class="text-ink-gray-6 h-6 w-6" />
+				</div>
+				<div
+					class="space-y-4"
+					:class="{ 'pointer-events-none select-none': addMember.loading }"
+					:aria-busy="addMember.loading"
+				>
 				<div class="space-y-3">
 					<div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
 						<div class="flex items-center justify-between">
@@ -141,6 +156,7 @@
 					:message="addMember.error && (addMember.error?.messages?.[0] || addMember.error?.message || __('Request failed.'))"
 				/>
 			</div>
+			</div>
 		</template>
 	</Dialog>
 </template>
@@ -148,7 +164,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import {
-	Button, Combobox, Dialog, ErrorMessage, FormControl, MultiSelect, Switch, createResource } from 'frappe-ui'
+	Button, Combobox, Dialog, ErrorMessage, FormControl, MultiSelect, Switch, createResource, LoadingIndicator } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
