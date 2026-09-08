@@ -67,8 +67,9 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
 
     §4 gives this phase two jobs: adopt orphans, and rerun history conversion
     for the nodes it adopted. Step 8 runs first and owns templates and Slide
-    media, so a Presentation template whose node step 8 has not written yet is
-    refused with bounded evidence rather than converted here.
+    media. Both template kinds reach this loop with no `File` row, so neither
+    is an orphan: this phase validates the link step 8 left and refuses a
+    template with no node, with bounded evidence rather than a conversion.
     """
     if not env.state.tree().completed or not env.state.grants().completed:
         raise BuildContentError("ticket 27 tree and grants must complete first")
@@ -178,6 +179,14 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
         raise InvalidLegacyContent("the orphan names a missing Drive Node")
     if row.node and row.node != stored["name"]:
         raise InvalidLegacyContent("the orphan points at another Drive Node")
+    if stored is not None and stored.get("is_template"):
+        # §14.7: step 8 mints a `Writer Document` for every `Writer Template`
+        # and puts its node under `Templates` in Administrator's Personal Root.
+        # That document has no `File` row, so it reaches this loop, but it is
+        # not an orphan: re-deriving it here would refuse the template node
+        # step 8 wrote and adopting it would move it to its owner's root.
+        _validate_template_link(env, row, stored)
+        return False, False, False
     if not row.owner:
         raise InvalidLegacyContent("the orphan has no owner for a Personal Root")
     if not stored and target.nodes((row.name,)):
@@ -198,6 +207,22 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     reserve(2)
     target.write_orphan(node, row.doctype, row.name)
     return True, renamed, False
+
+
+def _validate_template_link(env, row, stored) -> None:
+    """Accept a template document only on evidence from its own source row.
+
+    A flag on the target is not evidence. `Writer Template` and
+    `Presentation.is_template` are the rows §14.7 converts, and they stay
+    readable until Cleanup, so a node flagged `is_template` that no template
+    row explains is a target collision and is refused.
+    """
+    if row.doctype == "Presentation":
+        if not row.is_template:
+            raise InvalidLegacyContent("a template node claims a Presentation that is not a template")
+        return
+    if row.doctype != "Writer Document" or not env.content.writer_document_is_template(row.name):
+        raise InvalidLegacyContent(f"a template node claims {row.doctype} {row.name}, which is not one")
 
 
 def _orphan_node(env, row, root) -> tuple[dict, bool]:

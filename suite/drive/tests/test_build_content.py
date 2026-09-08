@@ -887,15 +887,12 @@ class TestContentLinksAndSources(BuildContentCase):
     def full_fixture(self) -> dict:
         """One document of each governed kind, plus a preserved share.
 
-        No `Writer Template`. Step 8 gives a Writer template a node in the
-        shared Templates folder, then step 10 reads the same document as an
-        orphan and derives a node under the owner's Personal Root instead,
-        so `exact_fields` refuses the pair it was just handed. Step 10 has a
-        skip for a `Presentation` template and none for a Writer one. That is
-        a step 10 defect, not a fixture choice: every Build on a site holding
-        a Writer template stops there. Until it is fixed, a Writer template
-        cannot appear in a `convert_all` fixture. `TestTemplates` covers both
-        template types through step 8.
+        No `Writer Template`. Step 8 creates a `Writer Document` row for one,
+        and this fixture backs `test_sources_survive_except_slide_bodies_and_new_links`,
+        which asserts the source tables hold the same rows before and after.
+        A template is a new source row by design, so it belongs in
+        `TestTemplates`, which runs both template types through step 8 and
+        step 10.
         """
         thread = self.prefix + "th"
         writer = self.writer_fixture(
@@ -1206,6 +1203,57 @@ class TestTemplates(BuildContentCase):
 
         listed = views(principals_for_principal(GENERAL), "templates", limit=200)
         self.assertIn(name, [row.name for row in listed["rows"]])
+
+    def test_step_10_keeps_both_template_kinds_where_step_8_put_them(self):
+        """§14.7 owns a template; §14.6's orphan rule must leave it alone.
+
+        A `Writer Document` step 8 mints has no `File` row, so step 10 reads
+        it back in the orphan loop. Adopting it would move it out of the
+        shared `Templates` folder, and re-deriving it there refuses the node
+        step 8 just wrote, on the first run and on every run after it.
+        """
+        writer = self.prefix + "tpl"
+        deck = self.prefix + "deck-tpl"
+        self.insert(
+            "Writer Template",
+            writer,
+            title=f"{self.prefix} Template",
+            content="<p>body</p>",
+            keymap="mod-b",
+        )
+        self.insert("Presentation", deck, title=f"{self.prefix} Deck", is_template=1, is_composite=0)
+
+        convert_slides_and_templates(self.environment())
+        before = {name: self.node_row(name) for name in (writer, deck)}
+        folders = {name: before[name]["parent"] for name in (writer, deck)}
+        for parent in folders.values():
+            self.assertEqual(frappe.db.get_value("Drive Node", parent, "title"), "Templates")
+
+        report = link_content_documents(self.environment())
+
+        self.assertEqual([issue.reason for issue in report.issues], [])
+        self.assertTrue(report.links_completed)
+        self.assertEqual(report.orphan_content_docs_adopted, 0)
+        for name in (writer, deck):
+            self.assertEqual(self.node_row(name), before[name])
+            self.assertEqual(self.node_row(name)["is_template"], 1)
+            self.assert_controller_accepts("Drive Node", name)
+        self.assertEqual(frappe.db.get_value("Writer Document", writer, "node"), writer)
+        self.assertEqual(frappe.db.get_value("Presentation", deck, "node"), deck)
+        # No Personal Root was minted for the template owner on the way past.
+        self.assertEqual(
+            frappe.get_all(
+                "Drive Root", filters={"user": self.owner, "name": ("like", self.prefix + "%")}, pluck="name"
+            ),
+            [],
+        )
+
+        again = link_content_documents(self.environment())
+
+        self.assertEqual([issue.reason for issue in again.issues], [])
+        self.assertEqual(again.orphan_content_docs_adopted, 0)
+        for name in (writer, deck):
+            self.assertEqual(self.node_row(name), before[name])
 
 
 class TestSecondRun(BuildContentCase):

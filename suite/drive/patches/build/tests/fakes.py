@@ -689,6 +689,9 @@ class FakeContent:
         row = self.document_rows[key]
         self.document_rows[key] = replace(row, node=node)
 
+    def add_content_document(self, row):
+        """Register a content document another phase created on the site."""
+        self.document_rows[(row.doctype, row.name)] = row
 
     def update_slides(self, rows):
         for row in rows:
@@ -886,6 +889,23 @@ class FakeContentTarget:
 
         self._unit(node["name"], write)
 
+    def _mirror_writer_document(self, name):
+        """Publish a template's `Writer Document` on the source side too."""
+        if self.content is None:
+            return
+        row = self.writer_rows[name]
+        self.content.add_content_document(
+            ContentRow(
+                doctype="Writer Document",
+                name=name,
+                node=row.get("node"),
+                owner=row.get("owner"),
+                creation=row.get("creation"),
+                modified=row.get("modified"),
+                modified_by=row.get("modified_by"),
+            )
+        )
+
     def write_writer_template(self, document, node, grants, *, link=""):
         if document is None and node is None and not grants and not link:
             return
@@ -896,16 +916,18 @@ class FakeContentTarget:
                 if name in self.writer_rows:
                     raise ValueError(f"duplicate Writer Document {name!r}")
                 self.writer_rows[name] = dict(document)
+                # A site has one `tabWriter Document`. The row step 8 mints is
+                # read back by step 10 like any other, so the fake source has
+                # to see it too or the phase order goes untested.
+                self._mirror_writer_document(name)
             if self.fail_unit == name:
                 raise InterruptedRun("killed while writing Writer template")
             if node:
                 self.insert_nodes([node])
             self.insert_grants(grants)
             if link:
-                # One `tabWriter Document` on a site, two tables here: a
-                # template's document is a row this fake target wrote, not a
-                # legacy row the fake source holds.
                 self.writer_rows[link]["node"] = link
+                self._mirror_writer_document(link)
 
         self._unit(name, write)
 

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from suite.drive._core.roles import EDIT, MANAGE, READ
+from suite.drive.patches.build.content import BuildContentError, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL
 from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, WriterTemplateRow
@@ -530,6 +531,72 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(result.writer_templates_converted, 1)
         self.assertEqual(result.template_nodes_created, 1)
         self.assertEqual(env.state.content().writer_templates_converted, 1)
+
+    def test_step_10_leaves_the_template_documents_step_8_created(self):
+        """§14.7 puts a template under `Templates`; §14.6's orphan rule must not move it.
+
+        The `Writer Document` step 8 mints has no `File` row, so step 10 reads
+        it back in the orphan loop. Re-deriving it there would place it in its
+        owner's Personal Root and then refuse the node step 8 wrote, on the
+        first run and on every run after it.
+        """
+        writer = writer_template("writer-template")
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            writer_templates=[writer],
+            documents=[deck],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+
+        convert_slides_and_templates(env)
+        folder = target.node_rows["writer-template"]["parent"]
+        before = dict(target.node_rows["writer-template"])
+        self.assertEqual(target.node_rows[folder]["title"], "Templates")
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.issues, [])
+        self.assertTrue(result.links_completed)
+        self.assertEqual(result.orphan_content_docs_adopted, 0)
+        self.assertEqual(result.link_title_renames, 0)
+        self.assertEqual(target.node_rows["writer-template"], before)
+        self.assertEqual(len(target.content_nodes("Writer Document", "writer-template")), 1)
+        # No Personal Root was minted for the template's owner either.
+        self.assertNotIn(OWNER, target.locked_content_roots)
+
+        again = link_content_documents(env)
+
+        self.assertEqual(again.issues, [])
+        self.assertEqual(again.orphan_content_docs_adopted, 0)
+        self.assertEqual(target.node_rows["writer-template"], before)
+
+    def test_a_template_node_claiming_an_ordinary_document_is_refused(self):
+        """The flag on the node is not the evidence; the source row is."""
+        writer = writer_template("writer-template")
+        source = FakeContent(writer_templates=[writer], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        convert_slides_and_templates(env)
+        # An ordinary orphan whose node an earlier target write flagged.
+        source.add_content_document(
+            ContentRow(
+                "Writer Document",
+                "writer-1",
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+                modified_by=OWNER,
+            )
+        )
+        target.node_rows["node-1"] = {
+            **target.node_rows["writer-template"],
+            "name": "node-1",
+            "content_docname": "writer-1",
+        }
+        source.link_document("Writer Document", "writer-1", "node-1")
+
+        with self.assertRaisesRegex(BuildContentError, "which is not one"):
+            link_content_documents(env)
 
     def test_a_second_run_changes_no_row_and_no_counter(self):
         writer = writer_template("writer-template")
