@@ -8,7 +8,13 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
-from suite.drive._core.errors import DriveConflict, DriveError, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveError,
+    DriveForbidden,
+    DriveNotFound,
+    rollback_savepoint,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 
@@ -159,11 +165,11 @@ def _insert_unique(doc: dict, reread) -> tuple[str | None, bool]:
     frappe.db.savepoint(savepoint)
     try:
         name = frappe.get_doc(doc).insert(ignore_permissions=True).name
-    except frappe.UniqueValidationError:
-        frappe.db.rollback(save_point=savepoint)
+    except frappe.UniqueValidationError as exc:
+        rollback_savepoint(savepoint, exc)
         return reread(), False
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     frappe.db.release_savepoint(savepoint)
     return name, True

@@ -32,7 +32,14 @@ from suite.drive._core.access import (
     require_from_rows,
     require_link,
 )
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+)
+from suite.drive._core.errors import (
+    rollback_savepoint as _rollback_savepoint,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
@@ -368,6 +375,14 @@ def create(
     the declared pair matches it exactly, writes the node from the stored
     values, and charges the root the stored size. What the client says can
     therefore fail the create, and can never change what is written or billed.
+
+    The blob id is a third proof obligation, and this is the entry that owes
+    it. A client that reached here stored nothing: it names bytes it learned
+    from a §6.8 URL Drive minted, and that URL expires in fifteen minutes
+    while a node does not. So the file branch passes `_client_named_blob`, and
+    `create_file` makes the caller prove READ on a node or version that
+    already holds those bytes - the bar `POST /nodes/<id>/copy` already clears
+    for the same outcome (§8.2).
     """
     if kind not in CLIENT_CREATE_KINDS:
         frappe.throw(_("Drive node kind {0} cannot be created").format(kind), frappe.ValidationError)
@@ -392,6 +407,7 @@ def create(
             size=size,
             mime=mime,
             content_modified=content_modified,
+            _client_named_blob=True,
         )
     if kind == "link":
         _refuse_create_extras(content_doctype=content_doctype, from_node=from_node)
@@ -1068,8 +1084,20 @@ def create_file(
     mime: str,
     content_modified: datetime | int | float | str | None = None,
     _via_link: str | None = None,
+    _client_named_blob: bool = False,
 ) -> str:
-    """Create one private blob-backed file and charge its root atomically."""
+    """Create one private blob-backed file and charge its root atomically.
+
+    `_client_named_blob` says the blob id arrived in a request body rather
+    than from bytes this request stored. `create` sets it, because that is the
+    §11.2 door a client reaches; the flag is not an argument any adapter can
+    pass, and no whitelisted route names it. The other two callers stored the
+    bytes inside the same request - §8.4's bound upload session and the WebDAV
+    PUT - so §8.4's binding is already their proof and they leave it unset.
+
+    Set, it makes the caller prove READ on a node or version that already
+    holds the blob (`_require_readable_blob`).
+    """
     _validate_title(title)
     savepoint = f"drive_create_file_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -1080,6 +1108,8 @@ def create_file(
             require_link(parent_row, UPLOAD, principals, _via_link)
             via_link = _via_link
         _validate_parent(parent_row, for_update=True)
+        if _client_named_blob:
+            _require_readable_blob(principals, blob)
         blob_row = _validated_blob(blob, size, mime)
         if parent_row.kind == "document":
             # §8.9: inside one document, one media node per blob. Uploading the
@@ -1222,7 +1252,14 @@ def _replace_file(
     _via_link: str | None = None,
     _bound_parent: str | None = None,
 ) -> dict:
-    """Replace a file head, preserving a nonempty old head as one auto version."""
+    """Replace a file head, preserving a nonempty old head as one auto version.
+
+    No client names the bytes here. §11.2 gives `PATCH /nodes/<id>` and
+    `POST /nodes/batch` four fields, none of them `blob`, so the only callers
+    are §8.4's bound finish and the WebDAV PUT, and each stored what it
+    passes. `create_file`'s `_client_named_blob` proof has nothing to guard on
+    this path (`test_blob_provenance`).
+    """
     if blob is None or size is None or mime is None:
         frappe.throw(_("A file replacement requires blob, size, and MIME type"), frappe.ValidationError)
 
@@ -1269,8 +1306,8 @@ def _replace_file(
             via_link=via_link,
         )
         previews.enqueue_render(current.name)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1303,8 +1340,8 @@ def _rename(principals: Principals, node_id: str, title: str) -> dict:
                 {"old_title": old_title, "new_title": title},
                 via_link=via_link,
             )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1429,8 +1466,8 @@ def _trash(principals: Principals, node_id: str) -> dict:
             via_link=via_link,
             at=stamp,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1501,8 +1538,8 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
             {"trash_root": current.name, "nodes": changed, "reparented_to": reparented_to},
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1520,8 +1557,8 @@ def purge(principals: Principals, node: str) -> int:
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, principals, via_link=via_link, subtree=subtree)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1546,11 +1583,11 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, system, via_link=None, subtree=subtree)
-    except DriveNotFound:
-        frappe.db.rollback(save_point=savepoint)
+    except DriveNotFound as exc:
+        _rollback_savepoint(savepoint, exc)
         return 0
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -2158,18 +2195,6 @@ def _chain_node(node_id: str, *, for_update: bool = False) -> frappe._dict:
         raise DriveConflict(_("The Drive node has an invalid tree position")) from exc
 
 
-def _rollback_savepoint(savepoint: str, error: Exception) -> None:
-    """Rollback one workflow without masking MariaDB's original deadlock."""
-    try:
-        frappe.db.rollback(save_point=savepoint)
-    except Exception:
-        if not isinstance(error, frappe.QueryDeadlockError):
-            raise
-        # InnoDB has already rolled back the deadlock victim's transaction,
-        # including its savepoints. A full rollback safely resets the handle.
-        frappe.db.rollback()
-
-
 def _validate_parent(
     parent: frappe._dict,
     *,
@@ -2230,6 +2255,140 @@ def _refuse_sibling_collision(parent: str, title: str, *, exclude: str | None = 
     )
     if collision:
         raise DriveConflict(_("An active Drive node with this title already exists"))
+
+
+# Page size for both blob-source scans below. Storage dedup is
+# content-addressed and site-wide, so one blob can sit under many nodes; this
+# bounds each query's work. A page with no readable row and a full page keeps
+# scanning (up to `BLOB_SOURCE_MAX_PAGES`); a short page is the last one.
+# Ordering by `name` alone keeps every page a disjoint, resumable range on the
+# same indexed column the WHERE clause already scans.
+BLOB_SOURCE_PAGE_SIZE = 50
+
+# Caps the number of pages either scan below reads. `create_file` runs this
+# proof while `_lock_create_parent` still holds the parent row locked, so a
+# heavily deduplicated blob's total reference count cannot become the proof's
+# cost: unbounded paging through thousands of references, each page costing a
+# row fetch and a grant resolution, would turn one `POST /nodes` into
+# thousands of SQL and grant checks and stall every other write to that
+# parent for as long as the scan runs. Past this many pages, a scan gives up
+# and treats the caller as unproven for that tier rather than paging further
+# under the lock - a documented refusal over an unbounded scan. A caller whose
+# only readable copy sorts past both bounds is refused; retrying after
+# reusing an earlier copy, or an admin granting one that sorts sooner,
+# recovers it.
+BLOB_SOURCE_MAX_PAGES = 4
+
+# Both `blob` columns carry `search_index: 1` for the framework GC's liveness
+# probe (§3.1, §3.4), so each arm is an index range scan, and `name` is the
+# primary key both arms already order by for the keyset page.
+#
+# Scoped to the caller's own rows: `create_file` overwhelmingly reuses a blob
+# the caller already owns a copy of (their own upload, their own earlier
+# version), and that case never needs to look at anyone else's references at
+# all. This is the direct proof - one indexed, bounded scan of only the
+# caller's own rows - tried before the shared-grant scan below has to look at
+# every other reference to the same bytes.
+BLOB_OWN_SOURCES_SQL = """
+SELECT name, root, path, kind
+FROM (
+    (
+        SELECT n.name, n.root, n.path, n.kind
+        FROM `tabDrive Node` n
+        WHERE n.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
+    )
+    UNION
+    (
+        SELECT n.name, n.root, n.path, n.kind
+        FROM `tabDrive Node Version` v
+        JOIN `tabDrive Node` n ON n.name = v.node
+        WHERE v.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
+    )
+) AS owned
+ORDER BY name
+LIMIT %(limit)s
+"""
+
+# Every reference to the blob, any owner. Tried only once the own-tier scan
+# above finds nothing readable, since this is the scan a heavily
+# deduplicated, mostly-other-people's blob makes expensive.
+BLOB_SOURCES_SQL = """
+SELECT name, root, path, kind, own
+FROM (
+    (
+        SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
+        FROM `tabDrive Node` n
+        WHERE n.`blob` = %(blob)s AND n.name > %(after)s
+    )
+    UNION
+    (
+        SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
+        FROM `tabDrive Node Version` v
+        JOIN `tabDrive Node` n ON n.name = v.node
+        WHERE v.`blob` = %(blob)s AND n.name > %(after)s
+    )
+) AS sources
+ORDER BY name
+LIMIT %(limit)s
+"""
+
+
+def _blob_source_page_scan(query: str, principals: Principals, blob: str) -> bool:
+    """Page through `query`'s candidates, bounded, and report if one is readable.
+
+    Stops at the first page holding a readable row (True), an empty or
+    short (last) page with none (False), or `BLOB_SOURCE_MAX_PAGES` pages
+    with none (False) - the bound `_require_readable_blob` documents.
+    """
+    after = ""
+    for _page in range(BLOB_SOURCE_MAX_PAGES):
+        page = frappe.db.sql(
+            query,
+            {"blob": blob, "user": principals.user, "limit": BLOB_SOURCE_PAGE_SIZE, "after": after},
+            as_dict=True,
+        )
+        if not page:
+            return False
+        if _readable_rows(page, principals):
+            return True
+        if len(page) < BLOB_SOURCE_PAGE_SIZE:
+            return False
+        after = page[-1].name
+    return False
+
+
+def _require_readable_blob(principals: Principals, blob: str) -> None:
+    """Refuse a named blob the caller cannot already read (§6.8, §8.2 copy).
+
+    A blob id is a bearer capability, and Drive prints it itself: §6.8's signed
+    `/f/` URL carries it in the path, and the content redirect, every row of
+    `GET /nodes/<id>/media`, the preview expansion, and the version list all
+    hand one out. That disclosure is deliberately time-boxed - §6.8 sets a
+    fifteen-minute TTL and rejects a day-long one as "a different security
+    promise". A node is not time-boxed. Without this check the fifteen minutes
+    become a permanent node in the reader's own root, outliving the revoke, the
+    trash, and the purge that were supposed to end the access.
+
+    So bytes Drive did not just store for this caller have to clear the bar
+    `copy` already clears: READ on something that already holds them. Two
+    bounded, indexed proofs clear it: the caller's own references first
+    (`BLOB_OWN_SOURCES_SQL`, the common case and the cheap one), then every
+    reference any principal holds (`BLOB_SOURCES_SQL`) if that finds nothing.
+    Each pages through its candidates, bounded per page and bounded in page
+    count, and stops at the first page that holds a readable one. A blob with
+    no candidate in either scan, and a blob whose every scanned page comes
+    back unreadable, answer the same refusal, so the scan enumerates nothing
+    and a fanout no bound was applied to cannot hold the caller's parent lock
+    for its full length.
+
+    It runs before `_validated_blob`, which is what keeps `revive_blob` from
+    pulling a stranger's orphaned blob back out of the GC window (§13.1).
+    """
+    if _blob_source_page_scan(BLOB_OWN_SOURCES_SQL, principals, blob) or _blob_source_page_scan(
+        BLOB_SOURCES_SQL, principals, blob
+    ):
+        return
+    raise DriveForbidden(_("A Drive file may only name bytes you can already read"))
 
 
 def _validated_blob(blob: str, size: int, mime: str) -> frappe._dict:

@@ -26,6 +26,24 @@ PREVIEW_NODE_FIELDS = ("name", "kind", "root", "path", "state", "blob", "mime")
 PREVIEW_LONGEST_SIDE = 512
 PREVIEW_TTL_SECONDS = 15 * 60
 
+
+def _preview_longest_side() -> int:
+    """Read the site's configured preview dimension, falling back safely.
+
+    `Drive Disk Settings.preview_size` is `reqd: 1` with `default: 512`
+    (§3.13, §9.2), but a Single field can still come back `None` or a stale
+    non-positive value before the site's first save. A render runs from a
+    background job, so there is no request to refuse; fall back to the spec
+    default rather than pass a bad size into PIL's `thumbnail()` or a
+    division in the PDF zoom maths.
+    """
+    try:
+        value = int(frappe.db.get_single_value("Drive Disk Settings", "preview_size"))
+    except (TypeError, ValueError):
+        return PREVIEW_LONGEST_SIDE
+    return value if value > 0 else PREVIEW_LONGEST_SIDE
+
+
 # A pushed preview is an app-rendered thumbnail, not a photograph, so the bound
 # is generous. It exists because `_encode_image` decodes before it thumbnails:
 # a 294 KB solid WebP of 13000x13000 is 169 megapixels, sits under Pillow's own
@@ -164,7 +182,7 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
     _refuse_oversized_image(image_bytes)
 
     try:
-        preview_bytes = _image_webp(io.BytesIO(image_bytes))
+        preview_bytes = _image_webp(io.BytesIO(image_bytes), _preview_longest_side())
     except (OSError, ValueError):
         # A header that parsed and a body that did not: Pillow raises
         # `OSError` on truncated data, which is a malformed argument, not a
@@ -283,8 +301,9 @@ def _renderable_file(node: frappe._dict | None) -> bool:
 
 
 def _render_webp(stream, mime: str) -> bytes:
+    longest_side = _preview_longest_side()
     if mime in IMAGE_MIMES:
-        return _image_webp(stream)
+        return _image_webp(stream, longest_side)
     if mime in VIDEO_MIMES:
         import av
 
@@ -293,33 +312,33 @@ def _render_webp(stream, mime: str) -> bytes:
             if video.duration:
                 container.seek(video.duration // 2, stream=video)
             frame = next(container.decode(video))
-            return _image_webp(frame.to_image())
+            return _image_webp(frame.to_image(), longest_side)
     if mime == PDF_MIME:
         import pymupdf
 
         with pymupdf.open(stream=stream.read(), filetype="pdf") as pdf:
             page = pdf.load_page(0)
-            zoom = PREVIEW_LONGEST_SIDE / max(page.rect.width, page.rect.height)
+            zoom = longest_side / max(page.rect.width, page.rect.height)
             pixmap = page.get_pixmap(
                 matrix=pymupdf.Matrix(zoom, zoom),
                 colorspace=pymupdf.csRGB,
                 alpha=False,
             )
             image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-            return _image_webp(image)
+            return _image_webp(image, longest_side)
     raise ValueError(f"Unsupported preview MIME: {mime}")
 
 
-def _image_webp(source) -> bytes:
+def _image_webp(source, longest_side: int) -> bytes:
     if isinstance(source, Image.Image):
-        return _encode_image(source)
+        return _encode_image(source, longest_side)
     with Image.open(source) as image:
-        return _encode_image(image)
+        return _encode_image(image, longest_side)
 
 
-def _encode_image(image: Image.Image) -> bytes:
+def _encode_image(image: Image.Image, longest_side: int) -> bytes:
     image = ImageOps.exif_transpose(image)
-    image.thumbnail((PREVIEW_LONGEST_SIDE, PREVIEW_LONGEST_SIDE))
+    image.thumbnail((longest_side, longest_side))
     output = io.BytesIO()
     image.convert("RGB").save(output, format="WEBP")
     return output.getvalue()

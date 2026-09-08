@@ -76,8 +76,12 @@ def create_document(title: str | None = None, parent: str | None = None, templat
         row = frappe.db.get_value("Drive Node", node, _NODE_RESPONSE_FIELDS, as_dict=True)
         if template:
             _apply_template(row.content_docname, template)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as failure:
+        # `create_document` takes row locks, so this request can be an InnoDB
+        # deadlock victim, and a victim's savepoints are gone before this arm
+        # runs. Drive's shared helper reports the deadlock the caller has to
+        # retry on instead of the savepoint that went with it.
+        drive.rollback_savepoint(savepoint, failure)
         raise
     else:
         frappe.db.release_savepoint(savepoint)

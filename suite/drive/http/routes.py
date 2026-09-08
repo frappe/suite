@@ -29,8 +29,11 @@ Two things a client may not say. It may not name bytes that reach accounting:
 `POST /nodes` takes §11.2's declared `blob`, `size`, and `mime`, and they are
 claims `create_file` checks against the stored blob row before it writes or
 charges anything - every other route reaches bytes only through an upload
-session, which §8.4 makes the proof that the caller produced them. And it may
-not name a target twice: the translator writes the path segments into
+session, which §8.4 makes the proof that the caller produced them. This route
+has no session to show, so `nodes.create` also makes it prove READ on a node or
+version that already holds the blob: Drive prints blob ids in its own §6.8
+signed URLs, and a fifteen-minute read must not become a permanent node. And it
+may not name a target twice: the translator writes the path segments into
 `form_dict` after the body was parsed, so the id in the URL is the id that
 acts.
 """
@@ -52,7 +55,13 @@ from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
 from suite.drive._core.access import describe
-from suite.drive._core.errors import DriveConflict, DriveError, DriveLocked, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveError,
+    DriveLocked,
+    DriveNotFound,
+    rollback_savepoint,
+)
 from suite.drive.http import shapes
 
 # Every handler argument is annotated with this one permissive alias, and none
@@ -141,7 +150,10 @@ def node_create(
     `blob`, `size`, and `mime` are §11.2's declared body, and they are claims
     the workflow checks, not values it stores. `create_file` re-reads the blob
     row, refuses unless the declared size and mime match it, writes the node
-    from the stored values, and charges the root the stored size.
+    from the stored values, and charges the root the stored size. The blob id
+    itself is checked too: this is the one create with no upload session
+    behind it, so `nodes.create` makes the caller prove READ on a node or
+    version that already holds those bytes.
     """
     principals = _principals()
     created = node_core.create(
@@ -293,7 +305,12 @@ def node_batch(nodes: Given = None, patch: Given = None) -> dict:
     what makes "one activity row per node that moved" true.
 
     A refusal is reported. Anything else is a defect, and is left to abort the
-    request rather than be flattened into a per-node message.
+    request rather than be flattened into a per-node message. A deadlock is one
+    of those: `QueryDeadlockError` is not a `ValidationError`, so it leaves this
+    loop with the whole batch, which is the truth after InnoDB rolled the
+    victim's transaction back. The rollback goes through the shared helper so
+    that a savepoint InnoDB has already discarded cannot replace the error the
+    caller has to read.
     """
     principals = _principals()
     asked = shapes.identifiers(nodes, "nodes")
@@ -313,7 +330,7 @@ def node_batch(nodes: Given = None, patch: Given = None) -> dict:
                 content_modified=mutation.get("content_modified"),
             )
         except frappe.ValidationError as refusal:
-            frappe.db.rollback(save_point=savepoint)
+            rollback_savepoint(savepoint, refusal)
             kind = type(refusal) if isinstance(refusal, DriveError) else DriveError
             failed.append({"node": node, "type": kind.__name__, "message": str(refusal)})
         else:
