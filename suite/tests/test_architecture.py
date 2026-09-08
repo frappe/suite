@@ -44,9 +44,6 @@ BASELINE_DEBT = {
             "suite/slides/doctype/presentation/patches/integrate_with_drive.py"
             "|drive-table-write|Drive Permission",
             "suite/slides/doctype/presentation/presentation.py|drive-table-write|Drive Permission",
-            "suite/slides/tests/test_pasted_media.py|drive-table-write|Drive Permission",
-            "suite/slides/tests/utils.py|drive-table-write|Drive Permission",
-            "suite/slides/tests/utils.py|drive-table-write|Drive Permission#2",
         ),
     ),
     **_debt(
@@ -94,11 +91,7 @@ BASELINE_DEBT = {
             "suite/slides/doctype/presentation/patches/integrate_with_drive.py|import|suite.drive.utils",
             "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file",
             "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file#2",
-            "suite/slides/tests/test_pasted_media.py|import|suite.drive.overrides.file",
-            "suite/slides/tests/utils.py|import|suite.drive.overrides.file",
-            "suite/slides/tests/utils.py|import|suite.drive.overrides.file#2",
             "suite/writer/api/docs.py|import|suite.drive.api.permissions",
-            "suite/writer/api/docs.py|import|suite.drive.utils",
             "suite/writer/api/docs.py|import|suite.drive.utils.files",
             "suite/writer/api/embed.py|import|suite.drive.api.files",
             "suite/writer/api/embed.py|import|suite.drive.api.permissions",
@@ -147,6 +140,37 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.framework",
+            # The legacy-read fixture creates its document through
+            # `docs.create_document`, which ticket 29 made Drive-native, so it
+            # has to hand the document back through Drive's trash and purge.
+            # `suite.drive` exposes neither yet.
+            "suite/writer/api/tests/test_general.py|import|suite.drive._core.nodes",
+            "suite/writer/api/tests/test_general.py|import|suite.drive._core.principals",
+            # The list fixtures share and re-open a document to pin legacy's
+            # one share number and its stale-recent drop. Granting, revoking,
+            # and recording a visit are Drive workflows with no public call
+            # yet, and the roles are the ladder each grant names.
+            "suite/writer/api/tests/test_general.py|import|suite.drive._core.access",
+            "suite/writer/api/tests/test_general.py|import|suite.drive._core.activity",
+            "suite/writer/api/tests/test_general.py|import|suite.drive._core.roles",
+            # `create_document` is atomic over Drive now, so the create and
+            # comment fixtures build, grant on, and purge nodes directly.
+            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.access",
+            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.errors",
+            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.nodes",
+            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.principals",
+            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.roles",
+            # An embedded picture is a media node below the document (§9.4),
+            # so the fixture builds roots and nodes and reads Drive's own
+            # upload path. The dotted string patches the realtime publish that
+            # path makes; there is no upload fixture above it yet.
+            "suite/writer/api/tests/test_embed.py|dotted-string|suite.drive.api.files.frappe.publish_realtime",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.access",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.errors",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.nodes",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.principals",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.roots",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive.tests.fixtures",
         ),
     ),
     **_debt(
@@ -188,6 +212,19 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.framework",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
+            # Ticket 29 activated the registry, so a deck fixture is a Drive
+            # node and `make_public` is a `Drive Grant`, not a `Drive Permission`
+            # row. `suite.drive` exposes no grant workflow, so the shared Slides
+            # fixture takes the same `_core` route this module already takes,
+            # and the refusal assertions name the error classes by type.
+            "suite/slides/doctype/presentation/test_presentation.py|import|suite.drive._core.errors",
+            "suite/slides/tests/utils.py|import|suite.drive._core.access",
+            "suite/slides/tests/utils.py|import|suite.drive._core.principals",
+            "suite/slides/tests/utils.py|import|suite.drive._core.roles",
+            # `trash` puts a fixture deck in Drive's trash so a case can tell
+            # "Drive hides it" apart from "it is gone". No public Drive call
+            # trashes a node yet.
+            "suite/slides/tests/utils.py|import|suite.drive._core.nodes",
         ),
     ),
     **_debt(
@@ -223,6 +260,11 @@ BASELINE_DEBT = {
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.framework",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
+            # The title fixtures create a sheet through the endpoint and hand
+            # it back through Drive's trash and purge, which `suite.drive` does
+            # not expose yet.
+            "suite/sheets/tests/test_api_titles.py|import|suite.drive._core.nodes",
+            "suite/sheets/tests/test_api_titles.py|import|suite.drive._core.principals",
         ),
     ),
     **_debt(
