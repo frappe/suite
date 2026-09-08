@@ -16,6 +16,7 @@ from suite.drive.patches.build.content_mapping import (
     derived_name,
     docshare_role,
     epoch_millis,
+    exact_fields,
     sheet_anchor,
     sheet_version_bytes,
 )
@@ -114,6 +115,40 @@ class ContentMappingTest(unittest.TestCase):
                 self.assertEqual(epoch_millis(0, timezone), expected)
         with self.assertRaises(InvalidLegacyContent):
             epoch_millis(True, "UTC")
+
+    def test_a_stored_datetime_matches_the_planned_stamp_it_was_written_from(self):
+        # MariaDB hands a `datetime(6)` back as a `datetime`, and `str()` on
+        # one whose microsecond is zero drops the `.000000` `epoch_millis`
+        # writes. Every stamp field compares the instant, not the rendering.
+        planned = {
+            "creation": "1970-01-01 05:30:01.000000",
+            "modified": "2024-01-02 03:04:05.500000",
+            "resolved_at": None,
+            "trashed_at": "2024-01-02 03:04:05.000000",
+            "content_modified": "2024-01-02 03:04:05.000000",
+        }
+        stored = {
+            "creation": datetime(1970, 1, 1, 5, 30, 1),
+            "modified": datetime(2024, 1, 2, 3, 4, 5, 500_000),
+            "resolved_at": None,
+            "trashed_at": "2024-01-02 03:04:05",
+            "content_modified": datetime(2024, 1, 2, 3, 4, 5),
+        }
+        exact_fields(stored, planned, tuple(planned), "row")
+
+    def test_a_stamp_that_is_another_instant_or_no_stamp_is_still_refused(self):
+        # Normalizing must not bless a row a later run would have to trust.
+        cases = (
+            (datetime(1970, 1, 1, 5, 30, 2), "1970-01-01 05:30:01.000000"),
+            (datetime(1970, 1, 1, 5, 30, 1, 1), "1970-01-01 05:30:01.000000"),
+            (None, "1970-01-01 05:30:01.000000"),
+            (datetime(1970, 1, 1, 5, 30, 1), None),
+            ("not a stamp", "1970-01-01 05:30:01.000000"),
+        )
+        for value, planned in cases:
+            with self.subTest(value=value):
+                with self.assertRaises(InvalidLegacyContent):
+                    exact_fields({"creation": value}, {"creation": planned}, ("creation",), "row")
 
     def test_template_settings_keep_only_a_nonblank_keymap(self):
         self.assertEqual(compact_settings("vim"), '{"keymap":"vim"}')

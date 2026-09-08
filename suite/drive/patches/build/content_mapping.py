@@ -118,6 +118,34 @@ def epoch_millis(value, timezone: str) -> str:
     return converted.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
+STAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
+# What MariaDB hands back for a `datetime(6)`, in the two renderings the
+# driver produces: with microseconds, and without them when they are zero.
+STAMP_TEXT_FORMATS = (STAMP_FORMAT, "%Y-%m-%d %H:%M:%S")
+
+
+def normalized_stamp(value):
+    """Render one stamp the same way whatever produced it.
+
+    A planned stamp is text with microseconds. The same row read back is a
+    `datetime`, and `str()` on one whose microsecond is zero drops the
+    `.000000`, so an exact comparison would refuse a row it just wrote.
+    Both sides go through one format, so the comparison is of the instant.
+    A value that is not a stamp is returned unchanged and still mismatches.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime(STAMP_FORMAT)
+    text = str(value)
+    for pattern in STAMP_TEXT_FORMATS:
+        try:
+            return datetime.strptime(text, pattern).strftime(STAMP_FORMAT)
+        except ValueError:
+            continue
+    return text
+
+
 def compact_settings(keymap: str | None) -> str:
     """Preserve a Writer Template shortcut without inventing settings."""
     value = (keymap or "").strip()
@@ -219,8 +247,8 @@ def exact_fields(actual: dict, expected: dict, fields: tuple[str, ...], label: s
         left = actual.get(field)
         right = expected.get(field)
         if field in {"creation", "modified", "content_modified", "trashed_at", "resolved_at"}:
-            left = str(left) if left is not None else None
-            right = str(right) if right is not None else None
+            left = normalized_stamp(left)
+            right = normalized_stamp(right)
         if field in {"pinned", "resolved", "is_template", "collab", "docstatus", "idx"}:
             left = int(left or 0)
             right = int(right or 0)
