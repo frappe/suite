@@ -79,7 +79,10 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     if not isinstance(values, dict):
         raise InvalidLegacyContent("Writer comments root is not a map")
     plans = []
-    fallback = _container_fallback(document)
+    # Lazy: a document whose entries all carry a complete author and stamp
+    # never needs a fallback, and refusing it for an incomplete container
+    # stamp it never reads would drop comments the source can express.
+    fallback = _lazy(lambda: _container_fallback(document))
     timezone = env.content.site_timezone()
     for key, value in values.items():
         if not isinstance(value, dict) or value.get("id") != key:
@@ -132,7 +135,7 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
         return []
     if not isinstance(raw, dict):
         raise InvalidLegacyContent("Sheet comments root is not an object")
-    fallback = _sheet_fallback(env, document)
+    fallback = _lazy(lambda: _sheet_fallback(env, document))
     timezone = env.content.site_timezone()
     plans = []
     for sheet_name, cells in raw.items():
@@ -201,7 +204,7 @@ def _entry(value, *, identity, owner_key, name_key, time_key, fallback, timezone
     try:
         stamp = epoch_millis(value.get(time_key), timezone)
     except InvalidLegacyContent:
-        stamp = fallback[1]
+        stamp = fallback()[1]
         source_complete = False
     mentions = value.get("mentions") or []
     if not isinstance(mentions, list):
@@ -236,8 +239,8 @@ def _thread_plan(node, anchor, resolved, entries, fallback, *, thread_id=None):
         max(complete, key=lambda item: item[:3])[3]
         if complete
         else {
-            "author": fallback[0],
-            "stamp": fallback[1],
+            "author": fallback()[0],
+            "stamp": fallback()[1],
         }
     )
     first, last = entries[0], entries[-1]
@@ -308,6 +311,18 @@ def _refuse_colliding_ids(plans) -> None:
         raise InvalidLegacyContent("comment thread ids collide")
     if len(comment_names) != len(set(comment_names)):
         raise InvalidLegacyContent("comment ids collide")
+
+
+def _lazy(compute):
+    """Compute one fallback at most once, and only if something reads it."""
+    cache = []
+
+    def get():
+        if not cache:
+            cache.append(compute())
+        return cache[0]
+
+    return get
 
 
 def _container_fallback(document) -> tuple[str, str]:

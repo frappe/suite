@@ -447,6 +447,50 @@ class CommentTest(unittest.TestCase):
         with self.assertRaisesRegex(InvalidLegacyContent, "field idx"):
             convert_document_comments(env, document, "node-1", batch_size=1000)
 
+    def test_a_complete_thread_never_reads_the_container_fallback(self):
+        # A document whose entries all carry an author and a valid stamp needs
+        # no fallback, so an incomplete container stamp must not refuse it.
+        ycomments = writer_update(
+            {
+                "top": {
+                    "id": "top",
+                    "text": "First",
+                    "owner": "a@example.com",
+                    "creation": 1_000,
+                }
+            }
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=None, modified_by=None
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, target = self.environment(source)
+
+        self.assertEqual(convert_document_comments(env, document, "node-1", batch_size=10), 1)
+        self.assertEqual(target.comment_rows["top"]["author"], "a@example.com")
+
+    def test_a_sheet_with_no_comments_never_reads_the_container_fallback(self):
+        document = ContentRow(
+            "Sheet", "sheet-1", sheets_data='{"sheets":[]}', modified=None, modified_by=None
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, _ = self.environment(source)
+
+        self.assertEqual(convert_document_comments(env, document, "node-1", batch_size=10), 0)
+
+    def test_an_entry_that_needs_the_fallback_still_refuses_an_incomplete_one(self):
+        ycomments = writer_update(
+            {"top": {"id": "top", "text": "First", "owner": "a@example.com", "creation": "nope"}}
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=None, modified_by=None
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, _ = self.environment(source)
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "timestamp fallback"):
+            convert_document_comments(env, document, "node-1", batch_size=10)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -745,23 +745,14 @@ class FakeContentTarget:
             )
         )
 
-    def versions(self, node):
-        return [dict(row) for row in self.version_rows.values() if row["node"] == node]
-
     def version_seqs(self, node):
         return {int(row["seq"]): row["name"] for row in self.version_rows.values() if row["node"] == node}
 
     def version_names(self, names):
         return {name: dict(self.version_rows[name]) for name in names if name in self.version_rows}
 
-    def threads(self, node):
-        return [dict(row) for row in self.thread_rows.values() if row["node"] == node]
-
     def thread_names(self, names):
         return {name: dict(self.thread_rows[name]) for name in names if name in self.thread_rows}
-
-    def comments(self, thread):
-        return [dict(row) for row in self.comment_rows.values() if row["thread"] == thread]
 
     def comment_names(self, names):
         return {name: dict(self.comment_rows[name]) for name in names if name in self.comment_rows}

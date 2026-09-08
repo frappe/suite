@@ -700,17 +700,11 @@ class ContentTarget(Protocol):
 
     def personal_roots(self, user: str) -> tuple[str, ...]: ...
 
-    def versions(self, node: str) -> list[dict]: ...
-
     def version_seqs(self, node: str) -> dict[int, str]: ...
 
     def version_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
-    def threads(self, node: str) -> list[dict]: ...
-
     def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
-
-    def comments(self, thread: str) -> list[dict]: ...
 
     def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
@@ -1489,14 +1483,6 @@ class SiteContentTarget:
             )
         )
 
-    def versions(self, node: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Node Version", filters={"node": node}, fields=list(VERSION_COLUMNS), order_by="seq asc"
-            )
-        ]
-
     def version_seqs(self, node: str) -> dict[int, str]:
         """Which sequences the node already holds, without the whole rows."""
         rows = frappe.get_all(
@@ -1512,17 +1498,6 @@ class SiteContentTarget:
         )
         return {row.name: dict(row) for row in rows}
 
-    def threads(self, node: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Comment Thread",
-                filters={"node": node},
-                fields=list(THREAD_COLUMNS),
-                order_by="name asc",
-            )
-        ]
-
     def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
             return {}
@@ -1530,17 +1505,6 @@ class SiteContentTarget:
             "Drive Comment Thread", filters=[["name", "in", list(names)]], fields=list(THREAD_COLUMNS)
         )
         return {row.name: dict(row) for row in rows}
-
-    def comments(self, thread: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Comment",
-                filters={"thread": thread},
-                fields=list(COMMENT_COLUMNS),
-                order_by="idx asc, name asc",
-            )
-        ]
 
     def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
