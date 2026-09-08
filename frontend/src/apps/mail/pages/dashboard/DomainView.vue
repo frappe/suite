@@ -21,7 +21,10 @@
 					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
 			</DashboardDetailHeader>
-			<div class="bg-surface-blue-1 flex items-start gap-3 rounded-4 border p-4">
+			<div
+				v-if="domain.data.status !== 'Active'"
+				class="bg-surface-blue-1 flex items-start gap-3 rounded-4 border p-4"
+			>
 				<Info class="text-ink-blue-5 mt-0.5 h-4 w-4 shrink-0" />
 				<div class="space-y-1">
 					<h3 class="text-base font-medium">{{ BANNER.title }}</h3>
@@ -222,6 +225,7 @@ const dropdownOptions = computed(() => [
 	},
 ])
 
+// Shown while the records are still to be published; an active domain needs no setup pitch.
 const BANNER = {
 	title: __('Set Up Your Domain'),
 	message: __("Add the following records to your domain's DNS settings."),
