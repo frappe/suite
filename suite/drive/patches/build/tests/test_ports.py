@@ -882,5 +882,174 @@ class TestSiteContentSource(StubbedDatabase):
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
 
 
+class TestSiteContentHistory(StubbedDatabase):
+    """The ticket 28 history reads, rendered without a database.
+
+    Both source pages carry whole document bodies, so what matters here is
+    that the SQL really is a bounded keyset page and not a full read with a
+    cursor bolted on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.source = SiteContentSource()
+        self.db.sql.return_value = []
+
+    def test_the_writer_version_page_is_a_bounded_creation_name_keyset(self):
+        self.source.writer_versions("doc-1", ("2024-01-01 00:00:00", "v-3"), 250)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`doc` = %(doc)s", query)
+        self.assertIn("(`creation`, `name`) > (%(creation)s, %(name)s)", query)
+        self.assertIn("ORDER BY `creation`, `name` LIMIT %(limit)s", query)
+        self.assertEqual(
+            values, {"doc": "doc-1", "creation": "2024-01-01 00:00:00", "name": "v-3", "limit": 250}
+        )
+
+    def test_the_first_writer_page_starts_below_every_stored_stamp(self):
+        # An empty cursor must not compare as a string above a real datetime,
+        # or the first page would skip the whole document.
+        self.source.writer_versions("doc-1", ("", ""), 10)
+
+        self.assertEqual(self.db.sql.call_args.args[1]["creation"], "1000-01-01")
+
+    def test_the_sheet_snapshot_page_is_a_bounded_seq_name_keyset(self):
+        self.source.sheet_snapshots("sheet-1", (7, "s-2"), 100)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`sheet` = %(sheet)s", query)
+        self.assertIn("(`seq`, `name`) > (%(seq)s, %(name)s)", query)
+        self.assertIn("ORDER BY `seq`, `name` LIMIT %(limit)s", query)
+        self.assertEqual(values, {"sheet": "sheet-1", "seq": 7, "name": "s-2", "limit": 100})
+        # `sheets_data` is the 75 MB column, so it is read one page at a time.
+        self.assertIn("`sheets_data`", query)
+
+
+class TestGrantPairs(StubbedDatabase):
+    """The batched grant read the share mapper uses."""
+
+    def setUp(self):
+        super().setUp()
+        self.target = SiteContentTarget()
+
+    def test_one_read_names_every_node_and_keeps_only_the_pairs_asked_for(self):
+        pairs = (("node-a", "u1@example.com"), ("node-b", "u2@example.com"))
+        rows = [
+            frappe._dict(node="node-a", principal="u1@example.com", role=8),
+            # The cross product also matches this stored grant. It was not
+            # asked for, so merging it would move a role nobody shared.
+            frappe._dict(node="node-b", principal="u1@example.com", role=1),
+        ]
+        calls = []
+
+        def get_all(doctype, **kwargs):
+            calls.append((doctype, kwargs))
+            return rows
+
+        with patch.object(frappe, "get_all", get_all):
+            found = self.target.grant_pairs(pairs)
+
+        self.assertEqual(found, {("node-a", "u1@example.com"): 8})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1]["filters"][0], ["node", "in", ["node-a", "node-b"]])
+        self.assertEqual(calls[0][1]["filters"][1], ["principal", "in", ["u1@example.com", "u2@example.com"]])
+
+    def test_the_node_list_is_paged_so_neither_in_list_grows_without_bound(self):
+        pairs = tuple((f"node-{index:03d}", f"u{index}@example.com") for index in range(250))
+        calls = []
+
+        def get_all(doctype, **kwargs):
+            calls.append(kwargs)
+            return []
+
+        with patch.object(frappe, "get_all", get_all):
+            self.assertEqual(self.target.grant_pairs(pairs), {})
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([len(call["filters"][0][2]) for call in calls], [100, 100, 50])
+        # Each page names only its own nodes' principals.
+        self.assertEqual([len(call["filters"][1][2]) for call in calls], [100, 100, 50])
+
+    def test_an_empty_batch_reads_nothing(self):
+        with patch.object(frappe, "get_all", side_effect=AssertionError("read")):
+            self.assertEqual(self.target.grant_pairs(()), {})
+
+
+class TestSiteContentMedia(StubbedDatabase):
+    """The ticket 28 Slides reads.
+
+    `elements` is a whole slide body, so these must be bounded pages even
+    though the caller holds one deck at a time to preflight it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.source = SiteContentSource()
+        self.db.sql.return_value = []
+
+    def test_the_slide_page_is_a_bounded_idx_name_keyset(self):
+        self.source.slides("deck-1", (3, "slide-2"), 250)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`parent` = %(deck)s AND `parenttype` = 'Presentation'", query)
+        self.assertIn("(`idx`, `name`) > (%(idx)s, %(name)s)", query)
+        self.assertIn("ORDER BY `idx`, `name` LIMIT %(limit)s", query)
+        self.assertIn("`elements`", query)
+        self.assertEqual(values, {"deck": "deck-1", "idx": 3, "name": "slide-2", "limit": 250})
+
+    def test_the_media_file_page_is_a_bounded_creation_name_keyset(self):
+        self.source.media_files("deck-1", ("2024-01-01 00:00:00", "file-3"), 100)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`attached_to_doctype` = 'Presentation'", query)
+        self.assertIn("(`creation`, `name`) > (%(creation)s, %(name)s)", query)
+        self.assertIn("ORDER BY `creation`, `name` LIMIT %(limit)s", query)
+        self.assertEqual(
+            values,
+            {"deck": "deck-1", "creation": "2024-01-01 00:00:00", "name": "file-3", "limit": 100},
+        )
+
+    def test_the_first_media_page_starts_below_every_stored_stamp(self):
+        self.source.media_files("deck-1", ("", ""), 10)
+
+        self.assertEqual(self.db.sql.call_args.args[1]["creation"], "1000-01-01")
+
+
+class TestVersionsToThin(StubbedDatabase):
+    def setUp(self):
+        super().setUp()
+        self.target = SiteContentTarget()
+
+    def test_the_census_reads_pages_of_nodes_not_one_query_per_node(self):
+        # After Build every migrated document carries auto versions, so a
+        # per-node query is one round trip per document on the site.
+        nodes = [f"node-{index}" for index in range(3)]
+        rows = [
+            frappe._dict(name=f"v-{node}", node=node, seq=1, creation="2020-01-01", size=10) for node in nodes
+        ]
+        calls = []
+
+        def get_all(doctype, **kwargs):
+            calls.append(kwargs)
+            if kwargs.get("pluck") == "node":
+                return nodes if len(calls) == 1 else []
+            return rows
+
+        with (
+            patch.object(frappe, "get_all", side_effect=get_all),
+            patch("suite.drive._core.versions._pick_deletions", return_value=["a", "b"]) as picked,
+        ):
+            total = self.target.versions_to_thin("2024-04-01 00:00:00")
+
+        self.assertEqual(total, 6)
+        # One node page and one row page. A short page ends the walk, so the
+        # three nodes cost two round trips instead of four.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["filters"][2], ["node", "in", nodes])
+        self.assertEqual(picked.call_count, 3)
+        # Each node is projected against only its own rows.
+        self.assertEqual([call.args[0] for call in picked.call_args_list], [[row] for row in rows])
+
+
 if __name__ == "__main__":
     unittest.main()

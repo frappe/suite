@@ -1528,31 +1528,66 @@ class TestTheGateProbes(IntegrationTestCase):
         self.assertNotIn(docname, _listed(OP_LOG, "sheet"))
 
     def test_a_share_on_one_op_log_row_refuses_the_whole_op_log_list(self):
-        """The one link no node column can scope: the share is on the child."""
+        """The one link no node column can scope: the share is on the child.
+
+        `DriveForbidden`, not `frappe.PermissionError`: the guard is
+        `drive.refuse_shared_child_rows`, and `frappe.desk.notifications` and
+        `frappe.desk.desktop` swallow a `PermissionError`.
+        """
         _node, docname = self._linked_sheet()
         op = frappe.get_all(OP_LOG, filters={"sheet": docname}, pluck="name")[0]
         self._share(OP_LOG, op, GATE_VICTIM, read=1)
 
         self._as(GATE_VICTIM)
-        with self.assertRaises(frappe.PermissionError):
+        with self.assertRaises(DriveForbidden):
             _listed(OP_LOG, "sheet")
 
     def test_a_share_on_one_snapshot_row_refuses_the_whole_snapshot_list(self):
         """`Sheet Snapshot` keeps its own guard past activation, and gets the
         same refusal for the same reason."""
         _node, docname = self._linked_sheet()
-        row = frappe.get_doc(
-            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
-        )
-        # Stands in for a row Build preserved: it predates the link, so it never
-        # met `SheetSnapshot.validate`, which now refuses a linked parent.
-        row.flags.ignore_validate = True
-        snapshot = row.insert(ignore_permissions=True).name
+        snapshot = self._preserved_snapshot(docname)
         self._share("Sheet Snapshot", snapshot, GATE_VICTIM, read=1)
 
         self._as(GATE_VICTIM)
-        with self.assertRaises(frappe.PermissionError):
+        with self.assertRaises(DriveForbidden):
             _listed("Sheet Snapshot", "sheet")
+
+    def test_a_new_snapshot_under_a_linked_sheet_is_refused_on_insert(self):
+        """`SheetSnapshot.validate` is the guard `_preserved_snapshot` skips.
+
+        Build preserves rows that predate the link, so the fixture needs
+        `ignore_validate`. Nothing else may: a legacy snapshot written after
+        the link would be history Drive does not own (§8, "Refuse linked-Sheet
+        mutations in every legacy create, restore, label, pin, delete, and
+        pruning path").
+        """
+        _node, docname = self._linked_sheet()
+        row = frappe.get_doc(
+            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 2, "kind": "auto", "sheets_data": "{}"}
+        )
+        with self.assertRaises(frappe.ValidationError):
+            row.insert(ignore_permissions=True)
+
+    def test_deleting_a_preserved_snapshot_under_a_linked_sheet_is_refused(self):
+        """`SheetSnapshot.on_trash` is the other half. Drive prunes migrated
+        history; the legacy pruner must not reach a linked sheet's rows."""
+        _node, docname = self._linked_sheet()
+        snapshot = self._preserved_snapshot(docname)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.delete_doc("Sheet Snapshot", snapshot, ignore_permissions=True)
+
+    def _preserved_snapshot(self, docname: str) -> str:
+        """One `Sheet Snapshot` row standing in for one Build preserved.
+
+        It predates the link, so it never met `SheetSnapshot.validate`, which
+        refuses a linked parent.
+        """
+        row = frappe.get_doc(
+            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
+        )
+        row.flags.ignore_validate = True
+        return row.insert(ignore_permissions=True).name
 
     # the controls: the same share, against a sheet Build has not linked
 

@@ -16,6 +16,8 @@ from suite.drive.patches.build.content_mapping import (
 
 MAX_COMMENT_BYTES = 65_535
 
+# Every column `_bulk` writes, so a rerun validates the whole row rather than
+# blessing one whose primary key happens to exist (plan §13).
 THREAD_FIELDS = (
     "name",
     "node",
@@ -27,6 +29,8 @@ THREAD_FIELDS = (
     "creation",
     "modified",
     "modified_by",
+    "docstatus",
+    "idx",
 )
 
 COMMENT_FIELDS = (
@@ -41,6 +45,7 @@ COMMENT_FIELDS = (
     "creation",
     "modified",
     "modified_by",
+    "docstatus",
     "idx",
 )
 
@@ -74,7 +79,10 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     if not isinstance(values, dict):
         raise InvalidLegacyContent("Writer comments root is not a map")
     plans = []
-    fallback = _container_fallback(document)
+    # Lazy: a document whose entries all carry a complete author and stamp
+    # never needs a fallback, and refusing it for an incomplete container
+    # stamp it never reads would drop comments the source can express.
+    fallback = _lazy(lambda: _container_fallback(document))
     timezone = env.content.site_timezone()
     # `to_py()` hands back the yrs map order, and yrs hashes with a seed
     # that changes per process. Sorted keys give one thread order, so an
@@ -82,19 +90,20 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     for key, value in sorted(values.items(), key=lambda item: str(item[0])):
         if not isinstance(value, dict) or value.get("id") != key:
             raise InvalidLegacyContent("Writer comment map key and id disagree")
+        # 140 is the `name` bound and it is the tighter of the two: the same id
+        # is also the thread anchor, whose column takes 255.
         if not isinstance(key, str) or not key or len(key) > 140:
             raise InvalidLegacyContent("Writer comment id does not fit the target")
-        if len(key) > 255:
-            raise InvalidLegacyContent("Writer comment anchor exceeds 255 characters")
         replies = value.get("replies") or []
         if not isinstance(replies, list):
             raise InvalidLegacyContent("Writer comment replies are not a list")
         entries = [value, *replies]
+        # `identity` is read off the entry below, so the shape check cannot wait
+        # for `_entry`: a string reply would raise `AttributeError`, which
+        # `history.py` does not catch, and one malformed reply would end the run
+        # with a traceback instead of a recorded refusal.
         if any(not isinstance(entry, dict) for entry in entries):
-            # `entry.get` below runs before `_entry` can check the type. A
-            # string reply would raise `AttributeError`, which no caller
-            # catches, so the run would die with no issue recorded.
-            raise InvalidLegacyContent("Writer comment reply is not an object")
+            raise InvalidLegacyContent("Writer comment or reply is not an object")
         normalized = [
             _entry(
                 entry,
@@ -129,7 +138,7 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
         return []
     if not isinstance(raw, dict):
         raise InvalidLegacyContent("Sheet comments root is not an object")
-    fallback = _sheet_fallback(env, document)
+    fallback = _lazy(lambda: _sheet_fallback(env, document))
     timezone = env.content.site_timezone()
     plans = []
     for sheet_name, cells in raw.items():
@@ -143,6 +152,10 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
             if isinstance(raw_thread, str):
                 if not raw_thread.strip():
                     raise InvalidLegacyContent("Sheet legacy comment is blank")
+                # §9: the creation of a legacy string is `Sheet.modified`. The
+                # op-log stamp `_sheet_fallback` finds is the *resolution*
+                # fallback, and a resolved-at from an old head op would date the
+                # comment years before the sheet last changed.
                 entries = [
                     {
                         "id": derived_name("drive-sheet-comment/1", thread_id, 0),
@@ -150,7 +163,7 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
                         "author": "Guest",
                         "author_name": None,
                         "name": None,
-                        "stamp": fallback[1],
+                        "stamp": _container_fallback(document)[1],
                         "source_complete": False,
                     }
                 ]
@@ -199,7 +212,7 @@ def _entry(value, *, identity, owner_key, name_key, time_key, fallback, timezone
     try:
         stamp = epoch_millis(value.get(time_key), timezone)
     except InvalidLegacyContent:
-        stamp = fallback[1]
+        stamp = fallback()[1]
         source_complete = False
     mentions = value.get("mentions") or []
     if not isinstance(mentions, list):
@@ -234,8 +247,8 @@ def _thread_plan(node, anchor, resolved, entries, fallback, *, thread_id=None):
         max(complete, key=lambda item: item[:3])[3]
         if complete
         else {
-            "author": fallback[0],
-            "stamp": fallback[1],
+            "author": fallback()[0],
+            "stamp": fallback()[1],
         }
     )
     first, last = entries[0], entries[-1]
@@ -306,6 +319,18 @@ def _refuse_colliding_ids(plans) -> None:
         raise InvalidLegacyContent("comment thread ids collide")
     if len(comment_names) != len(set(comment_names)):
         raise InvalidLegacyContent("comment ids collide")
+
+
+def _lazy(compute):
+    """Compute one fallback at most once, and only if something reads it."""
+    cache = []
+
+    def get():
+        if not cache:
+            cache.append(compute())
+        return cache[0]
+
+    return get
 
 
 def _container_fallback(document) -> tuple[str, str]:

@@ -3,7 +3,10 @@
 import base64
 import gzip
 import json
+import unicodedata
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from suite.drive._core.roles import EDIT, MANAGE, READ
 from suite.drive.patches.build.content_mapping import (
@@ -57,12 +60,25 @@ class ContentMappingTest(unittest.TestCase):
         with self.assertRaisesRegex(InvalidLegacyContent, "not JSON"):
             sheet_version_bytes("plain text", 1)
 
-    def test_sheet_anchor_is_compact_reversible_and_not_normalized(self):
+    def test_sheet_anchor_is_compact_and_reversible(self):
         anchor = sheet_anchor("Résumé", "A/1")
         self.assertEqual(anchor, '["Résumé","A/1"]')
         self.assertEqual(json.loads(anchor), ["Résumé", "A/1"])
+
+    def test_sheet_anchor_keeps_a_decomposed_sheet_name_decomposed(self):
+        # The literal below is NFD. Normalising it would rewrite the stored
+        # anchor, and §9 forbids applying any Unicode normalisation: the
+        # round trip has to return the exact source strings.
+        decomposed = "Re\u0301sume\u0301"
+        self.assertFalse(unicodedata.is_normalized("NFC", decomposed))
+        self.assertEqual(json.loads(sheet_anchor(decomposed, "A1"))[0], decomposed)
+
+    def test_the_sheet_anchor_bound_is_the_exact_column_width(self):
+        # `Drive Comment Thread.anchor` is varchar(255), so 255 fits and 256
+        # does not. The encoding adds seven characters to the two values.
+        self.assertEqual(len(sheet_anchor("x" * 246, "A1")), 255)
         with self.assertRaisesRegex(InvalidLegacyContent, "255"):
-            sheet_anchor("x" * 250, "A1")
+            sheet_anchor("x" * 247, "A1")
 
     def test_derived_names_are_full_stable_sha256_values(self):
         first = derived_name("drive-sheet-thread/1", "sheet", "a/b", "c")
@@ -72,8 +88,30 @@ class ContentMappingTest(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(first, derived_name("drive-sheet-thread/1", "sheet", "a/b", "c"))
 
+    def test_the_frozen_id_domains_and_material_are_pinned_to_literals(self):
+        # These two ids are the identity of every migrated Sheet comment. A
+        # changed domain, part order, or separator re-ids the whole corpus, and
+        # the next run would insert a duplicate set instead of validating the
+        # stored one. Recomputing them with `derived_name` would pin nothing.
+        thread = derived_name("drive-sheet-thread/1", "SH-1", "Sheet 1", "A1")
+        self.assertEqual(thread, "00c4e2c344f3e28e61ae6fd9dac42a167abfcdc9e46345a740bcc70edc77da3d")
+        self.assertEqual(
+            derived_name("drive-sheet-comment/1", "0" * 64, 0),
+            "c8f5f1b9227c0b02846b9d666b86262b8b783d3c1425219dab871817821ef625",
+        )
+
     def test_epoch_millis_uses_the_site_timezone(self):
-        self.assertEqual(epoch_millis(0, "Asia/Kolkata"), "1970-01-01 05:30:00.000000")
+        # Neither zone may be the host's, or a host-local `fromtimestamp` would
+        # pass here and shift every migrated comment on a differently
+        # configured runner.
+        host = datetime.now().astimezone().utcoffset()
+        for timezone, expected in (
+            ("UTC", "1970-01-01 00:00:00.000000"),
+            ("America/New_York", "1969-12-31 19:00:00.000000"),
+        ):
+            with self.subTest(timezone=timezone):
+                self.assertNotEqual(host, ZoneInfo(timezone).utcoffset(datetime(1970, 1, 1)))
+                self.assertEqual(epoch_millis(0, timezone), expected)
         with self.assertRaises(InvalidLegacyContent):
             epoch_millis(True, "UTC")
 

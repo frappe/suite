@@ -1,3 +1,4 @@
+import inspect
 import json
 import pathlib
 from unittest.mock import MagicMock, patch
@@ -22,6 +23,7 @@ from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, READ
 from suite.drive._core.roots import create_root
+from suite.drive.patches.build import comments as build_comments
 from suite.tests.utils import ensure_user, stub_db
 
 OWNER = "drive-comment-owner@example.com"
@@ -286,17 +288,25 @@ class TestMigratedCommentOrdering(UnitTestCase):
         ):
             result = threads(Principals("reader@example.com", (), ()), "node-1")
 
-        for call in read.call_args_list:
-            self.assertEqual(call.kwargs["order_by"], "creation asc, name asc")
+        orders = [call.kwargs["order_by"] for call in read.call_args_list]
+        self.assertEqual(orders, ["creation asc, name asc", "creation asc, idx asc, name asc"])
         self.assertEqual(result[0].comments[0].name, "comment-1")
 
-    def test_neither_comment_doctype_is_a_child_table_so_idx_can_break_no_tie(self):
-        # `base_document.init_valid_columns` forces `idx` to 0 on a non-child
-        # row, so an `idx` sort key breaks no tie and costs `Drive Comment` its
-        # `comment_thread (thread, creation)` index.
+    def test_comment_order_carries_the_source_position_build_stores_in_idx(self):
+        # Build writes the source entry position into `idx`
+        # (`patches/build/comments.py`), and a migrated thread routinely holds
+        # several entries at one `creation`. Without `idx` between the two keys
+        # they read back ordered by a sha256 id.
+        source = pathlib.Path(build_comments.__file__).read_text()
+        self.assertIn('"idx": index', source)
+        self.assertIn("idx asc", inspect.getsource(comments.threads))
+
+    def test_the_comment_columns_build_orders_by_exist_on_the_shipped_doctype(self):
         doctypes = pathlib.Path(comments.__file__).parents[1] / "doctype"
         for name in ("drive_comment", "drive_comment_thread"):
             meta = json.loads((doctypes / name / f"{name}.json").read_text())
             with self.subTest(doctype=name):
+                # Not child tables, so nothing at runtime writes `idx`: a native
+                # row keeps the 0 `init_valid_columns` leaves and the key is
+                # inert for it.
                 self.assertFalse(meta.get("istable"))
-        self.assertNotIn("idx", comments.threads.__code__.co_consts.__str__())
