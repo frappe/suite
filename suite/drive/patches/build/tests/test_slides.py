@@ -146,6 +146,35 @@ class SlidesTest(unittest.TestCase):
             self.assertEqual(target.node_rows[name]["parent"], "deck-node")
             self.assertEqual(target.node_rows[name]["root"], "root")
 
+    def test_media_inserts_are_held_to_the_batch_size(self):
+        rows = [media(f"media-{index}", blob=f"blob-{index}") for index in range(5)]
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, "[]")],
+            media=rows,
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        for row in rows:
+            target.add_blob(row.blob, row.name.encode(), mime_type="image/png")
+        sizes = []
+        original = target.insert_nodes
+
+        def record(nodes):
+            media_rows = [row for row in nodes if row["parent"] == "deck-node"]
+            if media_rows:
+                sizes.append(len(media_rows))
+            original(nodes)
+
+        target.insert_nodes = record
+
+        convert_slides_and_templates(env, batch_size=2)
+
+        # §14.2 holds a Build write to the batch size. One insert per node
+        # would put a whole deck's media in a single transaction.
+        self.assertEqual(sizes, [2, 2, 1])
+        self.assertEqual(len(self.media_children(target, "deck-node")), 5)
+
     def test_media_files_sharing_a_file_name_get_deduped_sibling_titles(self):
         first = replace(media("media-a", blob="blob-a"), file_name="picture.png")
         second = replace(media("media-b", blob="blob-b"), file_name="picture.png")

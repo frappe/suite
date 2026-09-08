@@ -226,6 +226,35 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(result.issues, [])
         self.assertEqual(result.issues_total, 0)
 
+    def test_a_rerun_reports_the_same_title_rename_count(self):
+        row = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+        target.node_rows["personal"] = {"name": "personal", "kind": "root", "state": ACTIVE, "title": OWNER}
+        target.root_rows["personal"] = {
+            "name": "personal",
+            "node": "personal",
+            "kind": PERSONAL,
+            "user": OWNER,
+            "state": ACTIVE,
+        }
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent": "personal",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
+
+        first = link_content_documents(env)
+        second = link_content_documents(env)
+
+        # The ticket compares every reported count across two identical
+        # runs. The second run adopts nothing new, so it has to read the
+        # rename back off the node the first run wrote.
+        self.assertEqual(first.title_renames, 1)
+        self.assertEqual(second.title_renames, 1)
+        self.assertEqual(second.orphan_content_docs_adopted, first.orphan_content_docs_adopted)
+
     def test_the_personal_root_identity_is_locked_before_it_is_read(self):
         row = document("Sheet", "sheet-1", title="Budget")
         source = FakeContent(documents=[row], users={OWNER: True})

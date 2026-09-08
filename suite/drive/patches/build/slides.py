@@ -120,7 +120,7 @@ def _convert_deck(env, deck, batch_size, result):
     media = [row for row in files if row.name not in excluded]
     _fits_below(deck, deck_node)
     titles = _sibling_titles(target, deck_node, media)
-    mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media, titles)
+    mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media, titles, batch_size)
     local_mapping = dict(mapping)
     borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping, result, titles)
     mapping.update(borrowed)
@@ -250,8 +250,19 @@ def _parse_elements(slide):
     return [item for item in value if isinstance(item, dict)]
 
 
-def _media_mapping(env, deck, parent, files, titles):
+def _media_mapping(env, deck, parent, files, titles, batch_size):
     target = env.content_target
+    # One insert per node would put a whole deck's media in one transaction.
+    # §14.2 holds a Build write to 1000 rows, so the media of a very large
+    # deck lands in batches like everything else.
+    fresh = []
+
+    def flush(force=False):
+        if fresh and (force or len(fresh) >= batch_size):
+            target.insert_nodes(fresh)
+            target.commit()
+            fresh.clear()
+
     groups = defaultdict(list)
     for row in files:
         groups[("blob", row.blob) if row.blob else ("file", row.name)].append(row)
@@ -291,8 +302,9 @@ def _media_mapping(env, deck, parent, files, titles):
             if found and found.get("blob"):
                 exact_fields(found, planned, NODE_FIELDS, f"media node {name}")
             elif not found:
-                target.insert_nodes([planned])
+                fresh.append(planned)
                 children.append(planned)
+                flush()
             created += 1
             for row in rows:
                 for alias in _aliases(row):
@@ -304,8 +316,10 @@ def _media_mapping(env, deck, parent, files, titles):
             if found:
                 exact_fields(found, planned, NODE_FIELDS, f"blobless media node {source.name}")
             else:
-                target.insert_nodes([planned])
+                fresh.append(planned)
                 children.append(planned)
+                flush()
+    flush(force=True)
     return mapping, created, collapsed, blobless
 
 
