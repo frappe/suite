@@ -47,6 +47,7 @@ export interface ProducerClosedLifecycle extends ProducerCloseMetadata {
 
 export class MediasoupManager {
 	private readonly closingRooms = new Set<string>();
+	private creatingRooms = new Map<string, Promise<Room>>();
 	private workerManager = new WorkerManager();
 	private roomManager = new RoomManager();
 	private peerManager = new PeerManager();
@@ -275,8 +276,13 @@ export class MediasoupManager {
 		roomId: string,
 		onActiveSpeaker?: (roomId: string, participantIds: string[]) => void,
 	): Promise<Room> {
+		const room = this.roomManager.getRoom(roomId);
+		if (room) return room;
+		const pending = this.creatingRooms.get(roomId);
+		if (pending) return pending;
+
 		const { id, worker, webRtcServer } = this.workerManager.getNextWorker();
-		return this.roomManager.createRoom(
+		const creation = this.roomManager.createRoom(
 			roomId,
 			id,
 			worker,
@@ -284,6 +290,12 @@ export class MediasoupManager {
 			this.config.router.mediaCodecs as RtpCodecCapability[],
 			onActiveSpeaker,
 		);
+		this.creatingRooms.set(roomId, creation);
+		try {
+			return await creation;
+		} finally {
+			this.creatingRooms.delete(roomId);
+		}
 	}
 
 	async closeRoom(roomId: string): Promise<void> {

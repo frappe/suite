@@ -65,6 +65,28 @@ function join(socket: MockSocket) {
 
 afterEach(() => vi.restoreAllMocks());
 
+it('places the next room on the next worker after concurrent first joins', async () => {
+	const { media, createRouter, sockets } = fixture();
+	createRouter.mockImplementation(async () => router());
+	const workers = [1, 2].map((id) => ({
+		id,
+		worker: { createRouter } as unknown as Worker,
+		webRtcServer: {} as WebRtcServer,
+	}));
+	let nextWorker = 0;
+	vi.mocked(WorkerManager.prototype.getNextWorker).mockImplementation(
+		() => workers[nextWorker++ % workers.length],
+	);
+	for (const result of await Promise.all(sockets.map(join)))
+		expect(result).toMatchObject({ success: true });
+	expect((await media.createRoom('room-2')).workerId).toBe(2);
+	expect((await media.createRoom('room-1')).workerId).toBe(1);
+	expect((await media.createRoom('room-3')).workerId).toBe(1);
+	await media.closeRoom('room-1');
+	await media.closeRoom('room-2');
+	await media.closeRoom('room-3');
+});
+
 it('allows another room to admit a participant while creation is pending', async () => {
 	const { media, createRouter, sockets } = fixture();
 	const pending = deferred<Router>();
