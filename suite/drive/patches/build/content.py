@@ -24,11 +24,22 @@ class BuildContentError(RuntimeError):
 
 
 def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
-    """Implement §14.2 step 10, then drain deferred history."""
+    """Implement §14.2 step 8 and step 10, then drain deferred history.
+
+    Step 8 runs first. A template deck has no `File` and therefore no node
+    until §14.7 creates one (`presentation.py`: `after_insert` returns early
+    for `is_template`), and step 10 refuses a template that has no node. In
+    the other order the first run of a site that holds one template refuses
+    before it writes anything, and so does every rerun.
+    """
     if not env.state.tree().completed or not env.state.grants().completed:
         raise BuildContentError("ticket 27 tree and grants must complete first")
     source, target = _ports(env)
     result = env.state.content()
+    # Refusals are evidence for one run. A rerun re-derives them from the
+    # source rows, so the previous run's list must not be inherited.
+    result.issues = []
+    result.issues_total = 0
     result.links_completed = False
     result.documents_seen = 0
     result.trash_disagreements = 0
@@ -44,6 +55,10 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
             env.state.put_content(result)
             writes = 0
         writes += target_rows
+
+    from suite.drive.patches.build.slides import convert_slides_and_templates
+
+    convert_slides_and_templates(env, result, batch_size=batch_size)
 
     for doctype in MIMES:
         after = ""
@@ -75,12 +90,6 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     result.links_completed = True
     env.state.put_content(result)
 
-    if not result.slides_completed or result.slides_deferred:
-        from suite.drive.patches.build.slides import convert_slides_and_templates
-
-        result = convert_slides_and_templates(env, batch_size=batch_size)
-    result.link_title_renames = link_renames
-    result.title_renames = result.template_title_renames + result.link_title_renames
     _convert_content_shares(env, result, batch_size)
     env.state.put_content(result)
 

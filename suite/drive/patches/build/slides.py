@@ -4,16 +4,23 @@ import io
 import json
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlsplit
 
 from PIL import Image, ImageOps
 
-from suite.drive.patches.build.content_mapping import InvalidLegacyContent, exact_fields, standard_fields
+from suite.drive.patches.build.content_mapping import (
+    InvalidLegacyContent,
+    child_path,
+    exact_fields,
+    standard_fields,
+    within_capacity,
+)
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
-from suite.drive.patches.build.slide_journal import SlideBody
+from suite.drive.patches.build.slide_journal import SlideBody, SlideJournalError
 from suite.drive.patches.build.templates import convert_templates
+from suite.drive.patches.build.titles import SiblingTitles
 from suite.drive.utils.files import S3_URL_PREFIX
 
 MAX_IMAGE_PIXELS = 25_000_000
@@ -41,14 +48,21 @@ class BuildSlidesError(RuntimeError):
     """A deck cannot be converted without guessing."""
 
 
-def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
-    """Implement §14.2 step 8 without deleting any source row or blob."""
+def convert_slides_and_templates(env, result=None, *, batch_size: int = BUILD_BATCH_SIZE):
+    """Implement §14.2 step 8 without deleting any source row or blob.
+
+    `result` is the caller's durable record. Reading a second copy out of
+    state would drop every counter `convert_templates` writes: each
+    `BuildState.content()` call returns a fresh object, and the next
+    `put_content` here would persist this function's stale copy over it.
+    """
     if not env.state.tree().completed or not env.state.grants().completed:
         raise BuildSlidesError("ticket 27 tree and grants must complete first")
     source, target = _ports(env)
     if env.slide_journal is None:
         raise RuntimeError("Build has no Slide preimage journal")
-    result = env.state.content()
+    if result is None:
+        result = env.state.content()
     result.slides_completed = False
     result.media_nodes_created = 0
     result.media_duplicates_collapsed = 0
@@ -58,7 +72,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
     result.slides_deferred = 0
 
     try:
-        convert_templates(env, batch_size=batch_size)
+        convert_templates(env, result, batch_size=batch_size)
         after = ""
         while True:
             decks = source.documents("Presentation", after, batch_size)
@@ -84,7 +98,11 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
         result.completed = result.history_completed and result.links_completed and result.slides_completed
         env.state.put_content(result)
         return result
-    except (InvalidLegacyContent, ValueError, OSError) as error:
+    except (InvalidLegacyContent, ValueError, OSError, SlideJournalError) as error:
+        # `SlideJournalError` subclasses `RuntimeError`, so `ValueError` does
+        # not cover it. Left out, a diverged or unreadable journal escapes
+        # with no issue recorded and no state written, and every rerun
+        # repeats it in silence.
         result.record_issue("slides", str(error))
         env.state.put_content(result)
         raise BuildSlidesError(str(error)) from error
@@ -98,11 +116,13 @@ def _convert_deck(env, deck, batch_size, result):
     slides = env.content.slides(deck.name)
     parsed = {slide.name: _parse_elements(slide) for slide in slides}
     files = sorted(env.content.media_files(deck.name), key=lambda row: (str(row.creation or ""), row.name))
-    thumbnail, excluded = _thumbnail_file(deck, files)
+    thumbnail, excluded = _thumbnail_file(deck, files, result)
     media = [row for row in files if row.name not in excluded]
-    mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media)
+    _fits_below(deck, deck_node)
+    titles = _sibling_titles(target, deck_node, media)
+    mapping, created, collapsed, blobless = _media_mapping(env, deck, deck_node, media, titles)
     local_mapping = dict(mapping)
-    borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping, result)
+    borrowed, borrowed_created = _borrowed_mapping(env, deck, deck_node, parsed, mapping, result, titles)
     mapping.update(borrowed)
     created += borrowed_created
     preview_created = _preview(env, deck, thumbnail)
@@ -114,13 +134,12 @@ def _convert_deck(env, deck, batch_size, result):
     updates = []
     for slide in slides:
         before = SlideBody(slide.elements, slide.background)
-        elements, changed, disagreements = _rewrite_elements(parsed[slide.name], mapping, local_mapping)
-        background, _ = _rewrite_value(slide.background, mapping)
-        after = SlideBody(_dump(elements), background)
-        if disagreements:
+        planned = _rewritten_body(slide, parsed[slide.name], mapping, local_mapping)
+        after = SlideBody(planned.elements, planned.background)
+        if planned.disagreements:
             result.record_issue(
                 f"Slide:{slide.name}",
-                f"{disagreements} attachmentName value(s) disagreed with src; src won",
+                f"{planned.disagreements} attachmentName value(s) disagreed with src; src won",
             )
         if after == before:
             continue
@@ -129,7 +148,7 @@ def _convert_deck(env, deck, batch_size, result):
             slide=slide.name,
             before=before,
             after=after,
-            changed_elements=changed,
+            changed_elements=planned.changed,
             created_at=env.now(),
         )
         updates.append({"name": slide.name, "elements": after.elements, "background": after.background})
@@ -140,21 +159,85 @@ def _convert_deck(env, deck, batch_size, result):
     if updates:
         target.update_slides(updates)
         target.commit()
-    current = {
-        row.name: SlideBody(
-            next((item["elements"] for item in updates if item["name"] == row.name), row.elements),
-            next((item["background"] for item in updates if item["name"] == row.name), row.background),
-        )
-        for row in slides
-    }
-    # The target port mutates fakes and SQL immediately. Rebuild planned values
-    # so recovery also covers a crash after SQL and before the state write.
+    # The target port mutates fakes and SQL immediately. Recompute the planned
+    # body from the source rows so recovery also covers a crash after the SQL
+    # and before the state write.
+    current = {}
     for row in slides:
-        elements, _, _ = _rewrite_elements(parsed[row.name], mapping, local_mapping)
-        background, _ = _rewrite_value(row.background, mapping)
-        current[row.name] = SlideBody(_dump(elements), background)
+        planned = _rewritten_body(row, parsed[row.name], mapping, local_mapping)
+        current[row.name] = SlideBody(planned.elements, planned.background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
     return created, collapsed, preview_created, rewritten, blobless
+
+
+@dataclass(frozen=True)
+class _PlannedBody:
+    """One slide body as Build intends to store it, with why it changed."""
+
+    elements: str
+    background: str | None
+    changed: int
+    disagreements: int
+
+
+def _rewritten_body(slide, elements, mapping, local_mapping) -> _PlannedBody:
+    """The stored body a slide keeps, or the rewritten one it earns.
+
+    A deck whose media all live outside this mapping resolves nothing. Dumping
+    its parsed elements back would still rewrite the row, because `json.dumps`
+    is compact and the stored string may be indented or ordered by another
+    writer. That is a body change with no reference change: it fills the
+    journal, counts as a rewrite in §14.9, and edits a source row the ticket
+    says to preserve. So an untouched body keeps its exact stored bytes.
+    """
+    rewritten, changed, disagreements = _rewrite_elements(elements, mapping, local_mapping)
+    background, moved = _rewrite_value(slide.background, mapping)
+    return _PlannedBody(
+        slide.elements if not changed else _dump(rewritten),
+        slide.background if not moved else background,
+        changed,
+        disagreements,
+    )
+
+
+def _fits_below(deck, parent):
+    """Refuse a deck whose media nodes cannot carry a legal path.
+
+    `Drive Node.path` is `varchar(500)` and the tree stops at `DEPTH_CAP`
+    levels. Bulk SQL fires no validator, so an over-long path would be stored
+    and every later save, move, or restore of that node would then fail on
+    `_check_tree_position`.
+    """
+    path = child_path(parent)
+    if not within_capacity(path):
+        raise InvalidLegacyContent(f"Presentation {deck.name} sits too deep to hold media nodes")
+    return path
+
+
+def _media_title(row) -> str:
+    """The title rule ticket 27 used for a File node, spelled the same way."""
+    return (row.file_name or "").strip() or row.name
+
+
+def _sibling_titles(target, parent, media) -> SiblingTitles:
+    """The titles already taken below the deck node by nodes Build keeps.
+
+    Every media node this run writes is re-titled from its source row, so its
+    own stored title must not block it on a rerun. A node from an earlier run
+    that this run does not revisit, such as adopted template media, keeps its
+    title and holds it against the rest.
+    """
+    planned = {row.name for row in media}
+    for child in target.child_nodes(parent["name"]):
+        if child.get("kind") == "file" and child.get("blob") in {row.blob for row in media if row.blob}:
+            planned.add(child["name"])
+    return SiblingTitles(
+        {
+            child["title"]
+            for child in target.child_nodes(parent["name"])
+            if child.get("state") == "Active" and child["name"] not in planned
+        }
+    )
 
 
 def _parse_elements(slide):
@@ -167,7 +250,7 @@ def _parse_elements(slide):
     return [item for item in value if isinstance(item, dict)]
 
 
-def _media_mapping(env, deck, parent, files):
+def _media_mapping(env, deck, parent, files, titles):
     target = env.content_target
     groups = defaultdict(list)
     for row in files:
@@ -180,6 +263,11 @@ def _media_mapping(env, deck, parent, files):
     for _key, rows in sorted(groups.items(), key=lambda item: (str(item[0]), item[1][0].name)):
         rows.sort(key=lambda row: (str(row.creation or ""), row.name))
         source = rows[0]
+        # One claim per stored node. Two media Files of one deck can carry the
+        # same `file_name`, and `_refuse_sibling_collision` bars two Active
+        # siblings from sharing a title. Bulk SQL fires no validator, so the
+        # rename has to happen here or the pair lands unrenamable.
+        title = titles.claim(_media_title(source))
         if source.blob:
             collapsed += len(rows) - 1
             blob = _ready_blob(target, source.blob)
@@ -192,13 +280,13 @@ def _media_mapping(env, deck, parent, files):
             if source_node and not source_node.get("blob"):
                 if matches and matches[0]["name"] != source.name:
                     raise InvalidLegacyContent(f"media placeholder {source.name} conflicts with a blob node")
-                placeholder = _media_node(source, parent, source.name, None)
+                placeholder = _media_node(source, parent, source.name, None, title)
                 exact_fields(source_node, placeholder, NODE_FIELDS, f"media placeholder {source.name}")
                 target.update_media_node(source.name, blob.name, int(blob.file_size), blob.mime_type)
                 name = source.name
             else:
                 name = matches[0]["name"] if matches else source.name
-            planned = _media_node(source, parent, name, blob)
+            planned = _media_node(source, parent, name, blob, title)
             found = target.nodes((name,)).get(name)
             if found and found.get("blob"):
                 exact_fields(found, planned, NODE_FIELDS, f"media node {name}")
@@ -211,7 +299,7 @@ def _media_mapping(env, deck, parent, files):
                     _bind(mapping, alias, name)
         else:
             blobless += 1
-            planned = _media_node(source, parent, source.name, None)
+            planned = _media_node(source, parent, source.name, None, title)
             found = target.nodes((source.name,)).get(source.name)
             if found:
                 exact_fields(found, planned, NODE_FIELDS, f"blobless media node {source.name}")
@@ -221,7 +309,7 @@ def _media_mapping(env, deck, parent, files):
     return mapping, created, collapsed, blobless
 
 
-def _borrowed_mapping(env, deck, parent, parsed, local, result):
+def _borrowed_mapping(env, deck, parent, parsed, local, result, titles):
     references = set()
     for elements in parsed.values():
         for element in elements:
@@ -266,7 +354,7 @@ def _borrowed_mapping(env, deck, parent, parsed, local, result):
         else:
             source = min(rows, key=lambda row: (str(row.creation or ""), row.name))
             name = env.new_id()
-            planned = _media_node(source, parent, name, blob)
+            planned = _media_node(source, parent, name, blob, titles.claim(_media_title(source)))
             planned.update(
                 owner=deck.owner,
                 modified_by=deck.modified_by or deck.owner,
@@ -279,13 +367,13 @@ def _borrowed_mapping(env, deck, parent, parsed, local, result):
     return mapping, created
 
 
-def _media_node(row, parent, name, blob):
+def _media_node(row, parent, name, blob, title):
     return {
         "name": name,
-        "title": row.file_name or row.name,
+        "title": title,
         "parent": parent["name"],
         "root": parent["root"],
-        "path": f"{parent['path'] or ''}{parent['name']}/",
+        "path": child_path(parent),
         "kind": "file",
         "blob": blob.name if blob else None,
         "size": int(blob.file_size) if blob else 0,
@@ -302,15 +390,32 @@ def _media_node(row, parent, name, blob):
     }
 
 
-def _thumbnail_file(deck, files):
+def _thumbnail_file(deck, files, result):
+    """The File a deck preview is built from, or nothing and a report line.
+
+    Three tiers, widest last. A `Presentation.thumbnail` written before the
+    File was made private reads `/files/x.webp` while the row now reads
+    `/private/files/x.webp`, and neither the exact nor the canonical tier
+    matches it. `_path_variants` covers that pair.
+
+    An unmatched thumbnail is reported, not raised. A preview is derived
+    data: §14.7 rebuilds it on demand, and the deck itself, its media, and
+    every other deck on the site are worth more than one refusal.
+    """
     value = deck.thumbnail
     if not value or _never_media(value):
         return None, set()
     exact = [row for row in files if row.file_url == value]
     canonical = [row for row in files if _canonical(row.file_url) == _canonical(value)]
-    tier = exact or canonical
+    wanted = _path_variants(value)
+    variant = [row for row in files if _path_variants(row.file_url or "") & wanted]
+    tier = exact or canonical or variant
     if not tier:
-        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is unmatched")
+        result.record_issue(
+            f"Presentation:{deck.name}",
+            f"thumbnail {value!r} matches no File row; no preview was built",
+        )
+        return None, set()
     marked = [row for row in tier if row.attached_to_field == "thumbnail"]
     winning = marked or tier
     blobs = {row.blob for row in winning}
