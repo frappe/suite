@@ -306,7 +306,15 @@ def build_environment(
     content=None,
     content_target=None,
     slide_journal=None,
+    records=None,
+    records_target=None,
+    settings=None,
+    settings_target=None,
+    usage=None,
     content_ready=False,
+    tree_ready=False,
+    settings_ready=False,
+    usage_ready=False,
     clock=None,
     make_id=None,
     make_token=None,
@@ -329,6 +337,22 @@ def build_environment(
         content_target.content = content
     if slide_journal is None:
         slide_journal = FakeSlideJournal()
+    if records is None:
+        records = FakeRecords()
+    if records_target is None:
+        records_target = FakeRecordsTarget(records=records, drive=drive)
+    else:
+        records_target.records = records
+        records_target.drive = drive
+    if settings is None:
+        settings = FakeSettings()
+    if settings_target is None:
+        settings_target = FakeSettingsTarget(settings=settings, drive=drive)
+    else:
+        settings_target.settings = settings
+        settings_target.drive = drive
+    if usage is None:
+        usage = FakeUsage()
     environment = BuildEnvironment(
         storage=storage if storage is not None else FakeStorage(),
         files=files if files is not None else FakeFiles(),
@@ -340,17 +364,31 @@ def build_environment(
         content=content,
         content_target=content_target,
         slide_journal=slide_journal,
+        records=records,
+        records_target=records_target,
+        settings=settings,
+        settings_target=settings_target,
+        usage=usage,
         clock=clock if clock is not None else (lambda: BUILD_STAMP),
         make_id=make_id if make_id is not None else Counter("id"),
         make_token=make_token if make_token is not None else Counter("tok"),
     )
-    if content_ready:
+    if content_ready or tree_ready or usage_ready:
         tree_state = environment.state.tree()
         tree_state.completed = True
         environment.state.put_tree(tree_state)
+    if content_ready or usage_ready:
         grant_state = environment.state.grants()
         grant_state.completed = True
         environment.state.put_grants(grant_state)
+    if usage_ready:
+        content_state = environment.state.content()
+        content_state.completed = True
+        environment.state.put_content(content_state)
+    if settings_ready or usage_ready:
+        settings_state = environment.state.settings()
+        settings_state.completed = True
+        environment.state.put_settings(settings_state)
     return environment
 
 
@@ -527,7 +565,7 @@ class FakeDrive:
                 self._insert_root(metadata)
             self.insert_grants(grants)
         except Exception:
-            self.node_rows, self.root_rows, self.grant_rows = before
+            self._restore(before)
             raise
 
     def _insert_root(self, row):
@@ -563,7 +601,21 @@ class FakeDrive:
         self.committed = (dict(self.node_rows), dict(self.root_rows), dict(self.grant_rows))
 
     def rollback(self):
-        self.node_rows, self.root_rows, self.grant_rows = (dict(part) for part in self.committed)
+        self._restore(self.committed)
+
+    def _restore(self, snapshot):
+        """Put the rows back in place, without rebinding the dictionaries.
+
+        `FakeContentTarget` and every other double share these three
+        dictionaries by reference, the way they share one database. Rebinding
+        them would roll back what one reader sees and leave the rest looking
+        at the rows that were meant to be gone.
+        """
+        for destination, source in zip(
+            (self.node_rows, self.root_rows, self.grant_rows), snapshot, strict=True
+        ):
+            destination.clear()
+            destination.update(deepcopy(source))
 
     # -- assertions
 
@@ -1043,3 +1095,250 @@ class FakeSlideJournal:
                 raise UnknownBodyState(f"Slide {slide} does not match one journal boundary")
             total += sum(row[4] for row in chain[: matches[0]])
         return total
+
+
+def _page_by_name(rows, after, limit):
+    """One keyset page, the way every `LegacyRecords` reader pages."""
+    ordered = sorted(rows, key=lambda row: row.name)
+    return [row for row in ordered if row.name > after][:limit]
+
+
+class FakeRecords:
+    """`LegacyRecords` over lists of frozen rows. Reads only."""
+
+    def __init__(
+        self,
+        *,
+        favourites=(),
+        recents=(),
+        activity=(),
+        notifications=(0, 0),
+        routes=(),
+        locks=(),
+        properties=(),
+    ):
+        self.favourite_rows = list(favourites)
+        self.recent_rows = list(recents)
+        self.activity_rows = list(activity)
+        self.notification_counts = tuple(notifications)
+        self.route_rows = list(routes)
+        self.lock_rows = list(locks)
+        self.property_rows = list(properties)
+
+    def favourites(self, after, limit):
+        return _page_by_name(self.favourite_rows, after, limit)
+
+    def recents(self, after, limit):
+        return _page_by_name(self.recent_rows, after, limit)
+
+    def activity_log(self, after, limit):
+        return _page_by_name(self.activity_rows, after, limit)
+
+    def notifications(self):
+        return self.notification_counts
+
+    def legacy_routes(self, after, limit):
+        return _page_by_name(self.route_rows, after, limit)
+
+    def dav_locks(self, after, limit):
+        return _page_by_name(self.lock_rows, after, limit)
+
+    def dav_properties(self, after, limit):
+        return _page_by_name(self.property_rows, after, limit)
+
+
+class FakeRecordsTarget:
+    """`RecordsTarget` over the same rows `FakeRecords` reads.
+
+    On a site the source and the target of the favourite retarget are one
+    table, so the fake shares the list rather than keeping a second copy: a
+    rerun has to see the `node` the first run filled in.
+
+    `Drive Activity.name` is the primary key and a second insert for one id
+    raises, which is what makes the resume path a real test. `fail_insert`
+    kills the run inside a batch the way a lost connection would, and
+    `rollback()` returns the target to its last commit.
+    """
+
+    def __init__(self, *, records=None, drive=None, activity=()):
+        self.records = records if records is not None else FakeRecords()
+        self.drive = drive if drive is not None else FakeDrive()
+        self.activity_rows = {row["name"]: dict(row) for row in activity}
+        self.commits = 0
+        self.fail_insert = None
+        self.committed = self._snapshot()
+
+    def _snapshot(self):
+        return (list(self.records.favourite_rows), deepcopy(self.activity_rows))
+
+    def nodes_present(self, names):
+        return {name for name in names if name in self.drive.node_rows}
+
+    def favourite_nodes(self, pairs):
+        held = {(row.user, row.node) for row in self.records.favourite_rows if row.node}
+        return {pair for pair in pairs if pair in held}
+
+    def set_favourite_node(self, name, node):
+        rows = self.records.favourite_rows
+        for index, row in enumerate(rows):
+            if row.name == name:
+                rows[index] = replace(row, node=node)
+                return
+        raise ValueError(f"no Drive Favourite {name!r}")
+
+    def activity_present(self, names):
+        return {name for name in names if name in self.activity_rows}
+
+    def insert_activity(self, rows):
+        for row in rows:
+            if self.fail_insert is not None and row["name"] == self.fail_insert:
+                raise InterruptedRun(f"killed while inserting activity {row['name']!r}")
+            if row["name"] in self.activity_rows:
+                raise ValueError(f"duplicate Drive Activity {row['name']!r}")
+            self.activity_rows[row["name"]] = dict(row)
+
+    def commit(self):
+        self.commits += 1
+        self.committed = self._snapshot()
+
+    def rollback(self):
+        favourites, activity = self.committed
+        self.records.favourite_rows = list(favourites)
+        self.activity_rows = deepcopy(activity)
+
+
+class FakeSettings:
+    """`LegacySettings` over the three legacy sources. Reads only."""
+
+    def __init__(self, *, quota_mb=0, user_quotas=(), reservations=()):
+        self.quota_mb = quota_mb
+        self.user_quota_rows = list(user_quotas)
+        self.reservation_rows = list(reservations)
+
+    def disk_quota_mb(self):
+        return self.quota_mb
+
+    def user_quotas(self, after, limit):
+        return _page_by_name(self.user_quota_rows, after, limit)
+
+    def reservations(self, after, limit):
+        return _page_by_name(self.reservation_rows, after, limit)
+
+
+class FakeSettingsTarget:
+    """`SettingsTarget` over `Drive Settings`, `Drive Root`, and reservations.
+
+    `bind_reservation` clears `storage_owner` because the doctype allows one
+    of the two and not both. The legacy column on every other row stays
+    exactly where Build found it: Cleanup drops it, not this step.
+
+    `commit` also commits `drive`, because both are `frappe.db.commit()` on
+    a site and the reservation step creates root pairs through the content
+    target.
+    """
+
+    def __init__(self, *, settings=None, drive=None):
+        self.settings = settings if settings is not None else FakeSettings()
+        self.drive = drive if drive is not None else FakeDrive()
+        self.default_personal_quota = 0
+        self.shared_quota = 0
+        self.root_quotas = {}
+        self.commits = 0
+        self.fail_bind = None
+        self.committed = self._snapshot()
+
+    def _snapshot(self):
+        return (
+            self.default_personal_quota,
+            self.shared_quota,
+            dict(self.root_quotas),
+            list(self.settings.reservation_rows),
+        )
+
+    def site_quotas(self):
+        return (self.default_personal_quota, self.shared_quota)
+
+    def set_site_quotas(self, default_personal, shared):
+        self.default_personal_quota = default_personal
+        self.shared_quota = shared
+
+    def root_quota(self, root):
+        if root not in self.drive.root_rows:
+            return None
+        return self.root_quotas.get(root, 0)
+
+    def set_root_quota(self, root, quota_bytes):
+        if root not in self.drive.root_rows:
+            raise ValueError(f"no Drive Root {root!r}")
+        self.root_quotas[root] = quota_bytes
+
+    def bind_reservation(self, name, root):
+        if self.fail_bind is not None and self.fail_bind == name:
+            raise InterruptedRun(f"killed while binding reservation {name!r}")
+        rows = self.settings.reservation_rows
+        for index, row in enumerate(rows):
+            if row.name == name:
+                rows[index] = replace(row, root=root, storage_owner=None)
+                return
+        raise ValueError(f"no Drive Storage Reservation {name!r}")
+
+    def commit(self):
+        self.commits += 1
+        self.drive.commit()
+        self.committed = self._snapshot()
+
+    def rollback(self):
+        (
+            self.default_personal_quota,
+            self.shared_quota,
+            quotas,
+            reservations,
+        ) = self.committed
+        self.root_quotas = dict(quotas)
+        self.settings.reservation_rows = list(reservations)
+        self.drive.rollback()
+
+
+class FakeUsage:
+    """`UsageLedger` with two independent answers a test can disagree.
+
+    `totals` answers per root and `grouped_totals` answers for the site.
+    They read the same dictionary unless a test supplies `grouped`, which is
+    how the reconciliation is exercised: on a healthy site the two agree,
+    and the test needs the case where they do not.
+    """
+
+    def __init__(self, *, roots=(), totals=None, grouped=None):
+        self.root_rows = list(roots)
+        self.total_rows = deepcopy(dict(totals or {}))
+        self.grouped_rows = deepcopy(dict(grouped)) if grouped is not None else None
+        self.commits = 0
+        self.writes = []
+        self.totals_calls = []
+        self.grouped_calls = 0
+        self.fail_write = None
+
+    def roots(self, after, limit):
+        return _page_by_name(self.root_rows, after, limit)
+
+    def totals(self, root):
+        self.totals_calls.append(root)
+        return dict(self.total_rows.get(root) or {})
+
+    def grouped_totals(self):
+        self.grouped_calls += 1
+        source = self.grouped_rows if self.grouped_rows is not None else self.total_rows
+        return deepcopy(source)
+
+    def set_used_bytes(self, root, value):
+        if self.fail_write is not None and self.fail_write == root:
+            raise InterruptedRun(f"killed while writing used_bytes for {root!r}")
+        for index, row in enumerate(self.root_rows):
+            if row.name == root:
+                self.root_rows[index] = replace(row, used_bytes=value)
+                self.writes.append((root, value))
+                return
+        raise ValueError(f"no Drive Root {root!r}")
+
+    def commit(self):
+        self.commits += 1
