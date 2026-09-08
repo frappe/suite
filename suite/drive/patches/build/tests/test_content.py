@@ -630,6 +630,28 @@ class ContentTest(unittest.TestCase):
         with self.assertRaisesRegex(BuildContentError, "has no template node"):
             link_content_documents(env)
 
+    def test_a_kill_inside_the_share_mapper_leaves_step_10_incomplete(self):
+        """§14.2 lets a rerun skip a complete record, so completeness must wait.
+
+        Set before the share mapper, the flag claims step 10 finished on a
+        record that carries no content share at all.
+        """
+        row = document("Writer Document", "writer-1", title="Letter")
+        share = ContentShareRow("share-1", "Writer Document", "writer-1", user="reader@example.com", read=1)
+        source = FakeContent(documents=[row], shares=[share], users={OWNER: True, "reader@example.com": True})
+
+        class Exploding(FakeContentTarget):
+            def grant_pairs(self, *args, **kwargs):
+                raise RuntimeError("killed inside the share mapper")
+
+        env, target = self.environment(source, target=Exploding(content=source))
+
+        with self.assertRaises(RuntimeError):
+            link_content_documents(env)
+
+        self.assertFalse(env.state.content().links_completed)
+        self.assertFalse(env.state.content().completed)
+
     def test_a_converted_template_validates_and_receives_its_governed_shares(self):
         """§7 maps a Presentation share onto the template node step 8 wrote."""
         deck = document("Presentation", "deck-template", title="Light", is_template=1, node="deck-template")

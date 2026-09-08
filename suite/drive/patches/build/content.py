@@ -117,12 +117,16 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
 
     result.link_title_renames = link_renames
     result.title_renames = result.template_title_renames + result.link_title_renames
-    result.links_completed = True
     env.state.put_content(result)
 
     # Plan §7: the share mapper runs once templates and orphan links exist, so
     # an absent target means an unmigrated entity rather than phase ordering.
+    #
+    # `links_completed` stays False until the mapper returns. Set before it, a
+    # kill inside the mapper leaves a record that claims step 10 finished with
+    # no content share mapped, and §14.2 lets a rerun skip a complete record.
     _convert_content_shares(env, result, batch_size)
+    result.links_completed = True
     env.state.put_content(result)
 
     from suite.drive.patches.build.history import convert_history_and_comments
