@@ -19,7 +19,7 @@ from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
-from suite.mail.directory import GB, get_account_metadata, get_enabled_domain_names
+from suite.mail.directory import GB, get_account_metadata, get_active_domain_names
 from suite.mail.directory import get_domains as get_site_domains
 from suite.mail.suite_cloud import get_client
 from suite.mail.utils.dt import from_utc_z, to_utc_z
@@ -246,9 +246,11 @@ def delete_domain(domain_id: str) -> None:
 
 @frappe.whitelist()
 def get_enabled_domains() -> list[str]:
+    """Domains offered when adding accounts, groups and lists: only active ones take them."""
+
     check_admin_permission("view domains")
     try:
-        return get_enabled_domain_names()
+        return get_active_domain_names()
     except Exception:
         return []
 

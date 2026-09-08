@@ -22,8 +22,10 @@ def get_domains() -> list[dict]:
     return get_client().call("domains.list_domains")
 
 
-def get_enabled_domain_names() -> list[str]:
-    return sorted(d["domain"] for d in get_domains() if d.get("enabled"))
+def get_active_domain_names() -> list[str]:
+    """Domains that take new accounts, groups and lists: enabled and verified on Suite Cloud."""
+
+    return sorted(d["domain"] for d in get_domains() if d.get("enabled") and d.get("is_verified"))
 
 
 @redis_cache(ttl=60)

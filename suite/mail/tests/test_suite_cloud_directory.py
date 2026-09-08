@@ -33,6 +33,7 @@ class SuiteCloudTestCase(IntegrationTestCase):
         self._fake_context = fake_suite_cloud()
         self.fake: FakeSuiteCloud = self._fake_context.__enter__()
         self.fake.domains__create_domain(DOMAIN, description="Acme")
+        self.fake.domains[DOMAIN]["is_verified"] = 1  # live: takes accounts, groups and lists
         frappe.set_user("Administrator")
 
     def tearDown(self) -> None:
@@ -117,6 +118,7 @@ class TestMailSettings(SuiteCloudTestCase):
 
 class TestDomains(SuiteCloudTestCase):
     def test_domains_are_listed_added_exported_and_deleted(self) -> None:
+        self.fake.domains[DOMAIN]["is_verified"] = 0  # walk the domain from pending to active
         rows = admin.get_domains()
         self.assertEqual(
             [(r["id"], r["name"], r["status"], r["is_verified"]) for r in rows],
@@ -124,7 +126,9 @@ class TestDomains(SuiteCloudTestCase):
         )
         self.assertEqual(admin.get_domains(status="Active"), [])
         self.assertRaisesRegex(frappe.ValidationError, "Unknown domain status", admin.get_domains, status="x")
-        self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
+        # Pending domains are not offered for new objects, and Suite Cloud refuses them anyway.
+        self.assertEqual(admin.get_enabled_domains(), [])
+        self.assertRaisesRegex(frappe.ValidationError, "not active", admin.add_group, "sales", DOMAIN)
 
         self.assertEqual(admin.add_domain("Beta.test", description="Beta"), "Beta.test")
         self.assertEqual([r["name"] for r in admin.get_domains(txt="beta")], ["Beta.test"])
@@ -156,6 +160,7 @@ class TestDomains(SuiteCloudTestCase):
         self.assertTrue(admin.verify_domain(DOMAIN)["is_verified"])
         self.assertEqual(admin.get_domain(DOMAIN)["status"], "Active")
         self.assertEqual([r["name"] for r in admin.get_domains(status="Active")], [DOMAIN])
+        self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
 
         updated = admin.update_domain(
             DOMAIN, description="Acme Inc", catch_all_address=" Inbox@acme.test ", sub_addressing=False

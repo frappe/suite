@@ -165,6 +165,7 @@ class FakeSuiteCloud:
         time_zone=None,
         **_,
     ) -> dict:
+        self._require_active_domain(email)
         if email in self.accounts:
             frappe.throw(f"{email} is already a Mail Account.", frappe.ValidationError)
         if email.split("@", 1)[1] not in self.domains:
@@ -243,6 +244,7 @@ class FakeSuiteCloud:
     def groups__create_group(
         self, email, description=None, aliases=None, members=None, disk_quota_gb=None
     ) -> dict:
+        self._require_active_domain(email)
         if email in self.groups:
             frappe.throw(f"{email} is already a Mail Group.", frappe.ValidationError)
         self.groups[email] = {
@@ -297,6 +299,7 @@ class FakeSuiteCloud:
     def mailing_lists__create_mailing_list(
         self, email, description=None, aliases=None, recipients=None
     ) -> dict:
+        self._require_active_domain(email)
         if email in self.lists:
             frappe.throw(f"{email} is already a Mailing List.", frappe.ValidationError)
         self.lists[email] = {
@@ -367,6 +370,17 @@ class FakeSuiteCloud:
         }
 
     # --- helpers ----------------------------------------------------------------------------------
+
+    def _require_active_domain(self, email: str) -> None:
+        """Suite Cloud creates objects only on a domain that is enabled and verified."""
+
+        name = email.split("@", 1)[1]
+        domain = self.domains.get(name)
+        if not domain or not (domain["enabled"] and domain["is_verified"]):
+            frappe.throw(
+                f"Domain {name} is not active: enable it and verify its DNS records first.",
+                frappe.ValidationError,
+            )
 
     @staticmethod
     def _require(store: dict, key: str) -> dict:
