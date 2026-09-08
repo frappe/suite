@@ -6,7 +6,7 @@ from frappe import _
 from suite import drive
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
-from suite.sheets.drive import DOCTYPE, docname_for_node, refuse_drive_native
+from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node, refuse_drive_native
 from suite.sheets.versioning import save as save_mod
 
 MAX_TITLE_LEN = 280
@@ -336,9 +336,17 @@ def list_sheets(
     limit = min(max(frappe.utils.cint(limit) or 50, 1), 100)
 
     filters = {"trashed": 0}
+    or_filters = None
     search = (search or "").strip()
     if search:
-        filters["title"] = ["like", f"%{search}%"]
+        # Drive owns a linked sheet's title and `Sheet.title` is frozen there
+        # (§10.2), so the column alone matched nothing a caller has written
+        # since activation. The node half is resolved to ids first and OR'd in,
+        # which keeps the page, the total, and the permission query in SQL.
+        or_filters = [
+            ["title", "like", f"%{search}%"],
+            ["name", "in", _sheets_titled_like(search) or [""]],
+        ]
     if owner_filter == "mine":
         filters["owner"] = me
     elif owner_filter == "shared":
@@ -347,11 +355,13 @@ def list_sheets(
     rows = frappe.get_list(
         "Sheet",
         filters=filters,
-        fields=["name", "title", "modified", "owner"],
+        or_filters=or_filters,
+        fields=["name", "title", "node", "modified", "owner"],
         order_by=_list_sheets_order_by(order_by, sort_dir),
         limit_start=start,
         limit_page_length=limit,
     )
+    _publish_titles(rows)
     for r in rows:
         r["is_owner"] = r["owner"] == me
 
@@ -361,6 +371,7 @@ def list_sheets(
     total = frappe.get_list(
         "Sheet",
         filters=filters,
+        or_filters=or_filters,
         fields=[{"COUNT": "*", "as": "total"}],
     )[0]["total"]
     # `now` shares the naive server-local frame of `modified`, so the client
@@ -389,7 +400,10 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
     # doc they can't persist and only discovering it when save_sheet throws.
     return {
         "name": doc.name,
-        "title": doc.title,
+        # Drive owns a linked sheet's title, with no mirror on the frozen
+        # legacy column (§10.2), so the editor would have opened every sheet
+        # written since activation with a blank name.
+        "title": _title_of(doc),
         "can_write": bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False)),
         "sheets_data": raw if frappe.utils.cint(compressed) else decode_sheets_data(raw),
         # The sheet's true creator, so the Share dialog can label the owner row
@@ -727,6 +741,57 @@ def _user_identity(user: str) -> dict:
     parts = full_name.split()
     initials = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
     return {"full_name": full_name, "initials": initials, "user_image": user_image}
+
+
+def _sheets_titled_like(search: str) -> list[str]:
+    """The linked sheets whose node title matches, as sheet ids.
+
+    A read of Drive's own column, not a decision: `list_sheets` still runs the
+    permission query over the ids this answers.
+    """
+    nodes = frappe.get_all(
+        "Drive Node",
+        filters={"content_doctype": DOCTYPE, "title": ["like", f"%{search}%"]},
+        pluck="name",
+        ignore_permissions=True,
+    )
+    if not nodes:
+        return []
+    return frappe.get_all("Sheet", filters={"node": ["in", nodes]}, pluck="name", ignore_permissions=True)
+
+
+def _title_of(doc) -> str:
+    """One sheet's title, from its node when Drive owns it."""
+    node = doc.get(NODE_FIELD)
+    if not node:
+        return doc.title
+    return frappe.db.get_value("Drive Node", node, "title") or ""
+
+
+def _publish_titles(rows: list[dict]) -> None:
+    """Fill each listed sheet's title from its node, and drop the link column.
+
+    LIMITATION: `order_by=title` still sorts on the frozen `Sheet.title`
+    column, so linked sheets sort together rather than by the title shown.
+    Ordering on the node needs a join Drive Node permissions refuse to a
+    non-admin caller; ticket 34 moves this list onto Drive's own listing.
+    """
+    linked = {row["name"]: row[NODE_FIELD] for row in rows if row.get(NODE_FIELD)}
+    titles = {}
+    if linked:
+        titles = {
+            row["name"]: row["title"]
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"name": ["in", list(linked.values())]},
+                fields=["name", "title"],
+                ignore_permissions=True,
+            )
+        }
+    for row in rows:
+        node = row.pop(NODE_FIELD, None)
+        if node:
+            row["title"] = titles.get(node) or ""
 
 
 def _clean_title(title: str) -> str:
