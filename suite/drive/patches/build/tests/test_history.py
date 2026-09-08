@@ -146,6 +146,50 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(target.report_times, [first.report_at, first.report_at])
         self.assertEqual(second.versions_to_thin, 7)
 
+    def test_a_killed_pass_does_not_move_the_frozen_thinning_census(self):
+        """§14.6: the census counts what the ladder will thin after Build.
+
+        A pass that dies partway writes a partial `versions_seen` next to the
+        earlier pass's `report_at`, because the record is written per document.
+        Reading that partial count as "new history arrived" would re-mint
+        `report_at` to today and sweep in every version written since.
+        """
+        document = content_row("Writer Document", "writer-1", "node-1")
+        versions = [
+            WriterVersionRow(
+                f"version-{index}", "writer-1", "<p>x</p>", owner=OWNER, creation=STAMP, modified=STAMP
+            )
+            for index in range(3)
+        ]
+        source = FakeContent(documents=[document], writer_versions=versions)
+        times = iter(("2024-04-01 00:00:00", "2024-04-02 00:00:00", "2024-04-03 00:00:00"))
+        target = FakeContentTarget(content=source)
+        env = build_environment(
+            self.path,
+            content=source,
+            content_target=target,
+            content_ready=True,
+            clock=lambda: next(times),
+        )
+        add_document_node(target, "node-1", "Writer Document", "writer-1")
+
+        first = convert_history_and_comments(env)
+        self.assertEqual(first.report_at, "2024-04-01 00:00:00")
+        self.assertEqual(first.versions_seen, 3)
+
+        # The kill: a pass that reset the phase and counted one document before
+        # it stopped. Nothing about the source changed.
+        killed = env.state.content()
+        killed.history_completed = False
+        killed.versions_seen = 1
+        env.state.put_content(killed)
+
+        third = convert_history_and_comments(env)
+
+        self.assertEqual(third.report_at, first.report_at)
+        self.assertEqual(third.versions_seen, 3)
+        self.assertTrue(third.history_completed)
+
     def test_sheet_sequences_and_runtime_envelopes_keep_valid_gaps(self):
         document = ContentRow(
             **{
