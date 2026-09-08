@@ -346,6 +346,17 @@ def node_of(docname: str) -> str | None:
     return frappe.db.get_value(DOCTYPE, docname, NODE_FIELD) or None
 
 
+def docname_for_node(node: str) -> str | None:
+    """Return the sheet bound to this Drive node, or None.
+
+    The reverse of `node_of`. `drive.create_document` hands back the node id,
+    never the document name, so an app-facing create endpoint that must answer
+    with a sheet id reads it back through the reciprocal link `_link_document`
+    guarantees.
+    """
+    return frappe.db.get_value(DOCTYPE, {NODE_FIELD: node}, "name") or None
+
+
 def is_drive_native(docname: str) -> bool:
     """True when Drive owns this sheet, false for a legacy row with no node."""
     return bool(node_of(docname))
