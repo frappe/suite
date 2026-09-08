@@ -153,19 +153,19 @@
 	<Dialog v-model:open="showResetPassword" v-bind="RESET_PASSWORD_OPTIONS" />
 	<Dialog v-model:open="showToggleEnabled" v-bind="TOGGLE_ENABLED_OPTIONS" />
 	<Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS" />
-	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
-	<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
-	<EditMemberQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
-	<AddMemberEmailModal v-model="showAddEmail" :member-id="memberId" @reload="member.reload()" />
-	<AddMemberGroupsModal
+	<ChangeAccountPasswordModal v-model="showChangePassword" :member-id="accountId" />
+	<EditAccountModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
+	<EditAccountQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
+	<AddAccountEmailModal v-model="showAddEmail" :member-id="accountId" @reload="member.reload()" />
+	<AddAccountGroupsModal
 		v-model="showAddGroups"
-		:member-id="memberId"
+		:member-id="accountId"
 		:current-ids="currentGroupIds"
 		@reload="member.reload()"
 	/>
-	<AddMemberMailingListsModal
+	<AddAccountMailingListsModal
 		v-model="showAddLists"
-		:member-id="memberId"
+		:member-id="accountId"
 		:current-ids="currentListIds"
 		@reload="member.reload()"
 	/>
@@ -182,15 +182,15 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
-import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
-import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsModal.vue'
-import AddMemberMailingListsModal from '@/apps/mail/components/Modals/AddMemberMailingListsModal.vue'
-import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMemberPasswordModal.vue'
+import AddAccountEmailModal from '@/apps/mail/components/Modals/AddAccountEmailModal.vue'
+import AddAccountGroupsModal from '@/apps/mail/components/Modals/AddAccountGroupsModal.vue'
+import AddAccountMailingListsModal from '@/apps/mail/components/Modals/AddAccountMailingListsModal.vue'
+import ChangeAccountPasswordModal from '@/apps/mail/components/Modals/ChangeAccountPasswordModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
-import EditMemberQuotaModal from '@/apps/mail/components/Modals/EditMemberQuotaModal.vue'
+import EditAccountModal from '@/apps/mail/components/Modals/EditAccountModal.vue'
+import EditAccountQuotaModal from '@/apps/mail/components/Modals/EditAccountQuotaModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 
@@ -210,12 +210,12 @@ type MemberData = {
 	quota: QuotaUsage
 }
 
-const { memberId } = defineProps<{ memberId: string }>()
+const { accountId } = defineProps<{ accountId: string }>()
 
 const router = useRouter()
 const { localeLabel } = useAccountOptions()
 
-usePageMeta(() => appPageMeta(memberId, 'Mail'))
+usePageMeta(() => appPageMeta(accountId, 'Mail'))
 
 const showDeleteMember = ref(false)
 const showResetPassword = ref(false)
@@ -230,10 +230,10 @@ const showAddLists = ref(false)
 const member = createResource({
 	url: 'suite.mail.api.admin.get_member',
 	auto: true,
-	makeParams: () => ({ member_id: memberId }),
+	makeParams: () => ({ member_id: accountId }),
 	onError: (error: { messages?: string[] }) => {
-		raiseToast(error.messages?.[0] || __('Member not found.'), 'error')
-		router.replace({ name: 'mail-members' })
+		raiseToast(error.messages?.[0] || __('Account not found.'), 'error')
+		router.replace({ name: 'mail-accounts' })
 	},
 })
 
@@ -246,7 +246,7 @@ const toggleEmailEnabled = (entry: { email: string; enabled: boolean }, value: b
 	entry.enabled = value // optimistic; reverted on error via reload
 	createResource({
 		url: 'suite.mail.api.admin.set_member_email_enabled',
-		makeParams: () => ({ member_id: memberId, email: entry.email, enabled: value ? 1 : 0 }),
+		makeParams: () => ({ member_id: accountId, email: entry.email, enabled: value ? 1 : 0 }),
 		onSuccess: () => raiseToast(value ? __('Email address enabled.') : __('Email address disabled.')),
 		onError: (error: { messages?: string[] }) => {
 			member.reload()
@@ -258,7 +258,7 @@ const toggleEmailEnabled = (entry: { email: string; enabled: boolean }, value: b
 const removeEmail = (email: string) =>
 	createResource({
 		url: 'suite.mail.api.admin.remove_member_email',
-		makeParams: () => ({ member_id: memberId, email }),
+		makeParams: () => ({ member_id: accountId, email }),
 		onSuccess: () => {
 			member.reload()
 			raiseToast(__('Email address removed.'))
@@ -270,7 +270,7 @@ const removeEmail = (email: string) =>
 const removeGroup = (groupId: string) =>
 	createResource({
 		url: 'suite.mail.api.admin.remove_member_from_group',
-		makeParams: () => ({ member_id: memberId, group_id: groupId }),
+		makeParams: () => ({ member_id: accountId, group_id: groupId }),
 		onSuccess: () => {
 			member.reload()
 			raiseToast(__('Removed from group.'))
@@ -282,7 +282,7 @@ const removeGroup = (groupId: string) =>
 const removeList = (listId: string) =>
 	createResource({
 		url: 'suite.mail.api.admin.remove_member_from_mailing_list',
-		makeParams: () => ({ member_id: memberId, list_id: listId }),
+		makeParams: () => ({ member_id: accountId, list_id: listId }),
 		onSuccess: () => {
 			member.reload()
 			raiseToast(__('Removed from mailing list.'))
@@ -303,22 +303,22 @@ const lastActive = computed(() => formatDate(data.value?.last_active) || __('Nev
 const joinedOn = computed(() => formatDate(data.value?.joined_on))
 
 const BREADCRUMBS = computed(() => [
-	{ label: __('Members'), route: '/mail/dashboard/members' },
-	{ label: data.value?.name || memberId },
+	{ label: __('Accounts'), route: '/mail/dashboard/accounts' },
+	{ label: data.value?.name || accountId },
 ])
 
-// Member actions reuse the bulk admin endpoints with a single-name list.
+// Account actions reuse the bulk admin endpoints with a single-name list.
 
 const setEnabled = (enabled: boolean) =>
 	createResource({
 		url: enabled
 			? 'suite.mail.api.admin.enable_members'
 			: 'suite.mail.api.admin.disable_members',
-		makeParams: () => ({ names: [memberId] }),
+		makeParams: () => ({ names: [accountId] }),
 		onSuccess: () => {
 			showToggleEnabled.value = false
 			member.reload()
-			raiseToast(enabled ? __('Member enabled.') : __('Member disabled.'))
+			raiseToast(enabled ? __('Account enabled.') : __('Account disabled.'))
 		},
 		onError: (error: { messages?: string[] }) => {
 			showToggleEnabled.value = false
@@ -329,11 +329,11 @@ const setEnabled = (enabled: boolean) =>
 const TOGGLE_ENABLED_OPTIONS = computed(() => {
 	const enabling = !data.value?.enabled
 	return {
-		title: enabling ? __('Enable Member') : __('Disable Member'),
+		title: enabling ? __('Enable Account') : __('Disable Account'),
 		message: enabling
-			? __('Are you sure you want to enable this member? They will be able to log in again.')
+			? __('Are you sure you want to enable this account? They will be able to log in again.')
 			: __(
-					'Are you sure you want to disable this member? They will no longer be able to log in.',
+					'Are you sure you want to disable this account? They will no longer be able to log in.',
 				),
 		actions: [
 			{ label: __('Confirm'), variant: 'solid', onClick: () => setEnabled(enabling) },
@@ -343,7 +343,7 @@ const TOGGLE_ENABLED_OPTIONS = computed(() => {
 
 const resetPassword = createResource({
 	url: 'suite.mail.api.account.send_reset_password_link',
-	makeParams: () => ({ user: memberId }),
+	makeParams: () => ({ user: accountId }),
 	onSuccess: (email: string) => {
 		showResetPassword.value = false
 		raiseToast(__('Reset password link sent to {0}.', [email]))
@@ -357,28 +357,28 @@ const resetPassword = createResource({
 const RESET_PASSWORD_OPTIONS = {
 	title: __('Reset Password'),
 	message: __(
-		'Send a password reset link to this member? The link will be emailed to their backup email address.',
+		'Send a password reset link to this account? The link will be emailed to their backup email address.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: () => resetPassword.submit() }],
 }
 
 const deleteMember = createResource({
 	url: 'suite.mail.api.admin.delete_members',
-	makeParams: () => ({ names: [memberId] }),
+	makeParams: () => ({ names: [accountId] }),
 	onSuccess: () => {
 		showDeleteMember.value = false
-		raiseToast(__('Member deleted.'))
-		router.push({ name: 'mail-members' })
+		raiseToast(__('Account deleted.'))
+		router.push({ name: 'mail-accounts' })
 	},
 	onError: (error: { messages?: string[] }) => {
 		showDeleteMember.value = false
-		raiseToast(error.messages?.[0] || __('Failed to delete member.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to delete account.'), 'error')
 	},
 })
 
 const DELETE_MEMBER_OPTIONS = {
-	title: __('Delete Member'),
-	message: __('Are you sure you want to delete this member? This action cannot be undone.'),
+	title: __('Delete Account'),
+	message: __('Are you sure you want to delete this account? This action cannot be undone.'),
 	size: 'xl',
 	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [

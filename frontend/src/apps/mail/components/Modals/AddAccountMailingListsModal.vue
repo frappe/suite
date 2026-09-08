@@ -40,7 +40,7 @@ const listIds = ref<string[]>([])
 
 const lists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists', auto: true })
 
-// Exclude mailing lists the member is already a recipient of.
+// Exclude mailing lists the account is already a recipient of.
 const options = computed(() =>
 	(lists.data || [])
 		.filter((ml: { id: string }) => !currentIds.includes(ml.id))

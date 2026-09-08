@@ -101,12 +101,12 @@ const limitSub = (limit: number | undefined) => (limit ? __('of {0}', [String(li
 
 const stats = computed(() => [
 	{
-		label: __('Members'),
+		label: __('Accounts'),
 		icon: Users,
 		value: count(data.value?.members?.total),
 		sub: disabledSub(data.value?.members),
 		subTone: 'muted',
-		to: { name: 'mail-members' },
+		to: { name: 'mail-accounts' },
 	},
 	{
 		label: __('Invites'),
@@ -150,10 +150,10 @@ const QUICK_ACTIONS = [
 		to: { name: 'mail-domains' },
 	},
 	{
-		label: __('Invite a member'),
+		label: __('Add an account'),
 		description: __('Give someone a mailbox on your domains.'),
 		icon: UserPlus,
-		to: { name: 'mail-members' },
+		to: { name: 'mail-accounts' },
 	},
 ]
 </script>

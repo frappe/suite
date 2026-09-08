@@ -91,7 +91,7 @@
 							v-for="m in filteredMembers"
 							:key="m.id"
 							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center border-b px-5 py-3 text-base last:border-b-0"
-							@click="m.email && router.push({ name: 'mail-member', params: { memberId: m.email } })"
+							@click="m.email && router.push({ name: 'mail-account', params: { accountId: m.email } })"
 						>
 							<span class="flex-1 truncate">{{ m.email || m.name }}</span>
 							<Button
@@ -170,7 +170,7 @@ const showAddMembers = ref(false)
 const showDelete = ref(false)
 const memberSearch = ref('')
 
-// Named `member` so the quota/card markup mirrors MemberView.vue one-to-one.
+// Named `member` so the quota/card markup mirrors AccountView.vue one-to-one.
 const member = createResource({
 	url: 'suite.mail.api.admin.get_group',
 	auto: true,

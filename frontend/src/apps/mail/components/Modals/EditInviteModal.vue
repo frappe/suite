@@ -78,7 +78,7 @@
 				/>
 				<template v-if="groupIds.length || mailingListIds.length">
 					<hr />
-					<p class="text-ink-gray-5 text-xs font-medium">{{ __('Membership Details') }}</p>
+					<p class="text-ink-gray-5 text-xs font-medium">{{ __('Account Details') }}</p>
 					<FormControl
 						v-if="groupIds.length"
 						:label="__('Groups')"

@@ -71,9 +71,9 @@ def check_member_target(member_id: str) -> str:
     """
 
     if not member_id or member_id in frappe.STANDARD_USERS:
-        frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(member_id)), frappe.PermissionError)
     if not frappe.db.exists("User Settings", {"user": member_id, "username": ["is", "set"]}):
-        frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+        frappe.throw(_("{0} is not a mail account.").format(frappe.bold(member_id)), frappe.PermissionError)
     if is_system_manager(member_id) and not is_system_manager(frappe.session.user):
         frappe.throw(
             _("You do not have permission to act on {0}.").format(frappe.bold(member_id)),
@@ -483,7 +483,7 @@ def get_member(member_id: str) -> dict:
         as_dict=True,
     )
     if not user:
-        frappe.throw(_("Member not found"), frappe.DoesNotExistError)
+        frappe.throw(_("Account not found"), frappe.DoesNotExistError)
 
     is_admin = bool(frappe.db.exists("Has Role", {"parent": member_id, "role": "Suite Admin"}))
     result = {
@@ -614,7 +614,7 @@ def change_member_password(member_id: str, new_password: str) -> None:
 def _require_member_account(member_id: str) -> str:
     email = get_account_email(member_id)
     if not email:
-        frappe.throw(_("This member does not have a mail account."))
+        frappe.throw(_("This account has no mailbox on the mail server."))
     return email
 
 

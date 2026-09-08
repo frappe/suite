@@ -30,7 +30,7 @@
 					/>
 				</div>
 				<p class="text-ink-gray-4 -mt-2 text-xs">
-					{{ __('Mail sent to this address is delivered to this member\'s mailbox.') }}
+					{{ __('Mail sent to this address is delivered to this account\'s mailbox.') }}
 				</p>
 				<FormControl
 					v-model="description"

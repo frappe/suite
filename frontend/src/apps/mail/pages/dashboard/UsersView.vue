@@ -218,16 +218,16 @@ const listOptions = computed(() => ({
 	rowHeight: 50,
 	emptyState: hasActiveFilters.value
 		? {
-				title: __('No matching members'),
+				title: __('No matching accounts'),
 				description: __('Try adjusting your search or filters.'),
 			}
 		: {
-				title: __('No members found'),
+				title: __('No accounts found'),
 				description: __('Invite people to give them a mailbox on your domains.'),
 			},
 	getRowRoute: (row: MemberRow) => ({
-		name: 'mail-member',
-		params: { memberId: row.name },
+		name: 'mail-account',
+		params: { accountId: row.name },
 	}),
 }))
 
@@ -237,19 +237,19 @@ const enableMembers = createResource({
 	onSuccess: () => {
 		members.reload()
 		showEnableMembers.value = false
-		raiseToast(__('Members enabled.'))
+		raiseToast(__('Accounts enabled.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showEnableMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to enable members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to enable accounts.'), 'error')
 	},
 })
 
 const ENABLE_MEMBERS_OPTIONS = {
-	title: __('Enable Members'),
+	title: __('Enable Accounts'),
 	message: __(
-		'Are you sure you want to enable the selected members? They will be able to log in again.',
+		'Are you sure you want to enable the selected accounts? They will be able to log in again.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: enableMembers.submit }],
 }
@@ -260,19 +260,19 @@ const disableMembers = createResource({
 	onSuccess: () => {
 		members.reload()
 		showDisableMembers.value = false
-		raiseToast(__('Members disabled.'))
+		raiseToast(__('Accounts disabled.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showDisableMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to disable members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to disable accounts.'), 'error')
 	},
 })
 
 const DISABLE_MEMBERS_OPTIONS = {
-	title: __('Disable Members'),
+	title: __('Disable Accounts'),
 	message: __(
-		'Are you sure you want to disable the selected members? They will no longer be able to log in.',
+		'Are you sure you want to disable the selected accounts? They will no longer be able to log in.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: disableMembers.submit }],
 }
@@ -283,19 +283,19 @@ const deleteMembers = createResource({
 	onSuccess: () => {
 		members.reload()
 		showDeleteMembers.value = false
-		raiseToast(__('Members deleted.'))
+		raiseToast(__('Accounts deleted.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showDeleteMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to delete members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to delete accounts.'), 'error')
 	},
 })
 
 const DELETE_MEMBERS_OPTIONS = {
-	title: __('Delete Members'),
+	title: __('Delete Accounts'),
 	message: __(
-		'Are you sure you want to delete the selected members? This action cannot be undone.',
+		'Are you sure you want to delete the selected accounts? This action cannot be undone.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteMembers.submit }],
 }

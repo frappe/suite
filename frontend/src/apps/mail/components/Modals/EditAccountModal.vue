@@ -2,7 +2,7 @@
 	<Dialog
 		v-model:open="show"
 	 v-bind="{
-			title: __('Edit Member'),
+			title: __('Edit Account'),
 			actions: [
 				{
 					label: __('Save'),
@@ -88,7 +88,7 @@ const updateMember = createResource({
 	onSuccess: () => {
 		show.value = false
 		emit('reload')
-		raiseToast(__('Member updated.'))
+		raiseToast(__('Account updated.'))
 	},
 })
 </script>

@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout
-		:breadcrumbs="[{ label: __('Members') }]"
-		:button-label="__('Add Member')"
+		:breadcrumbs="[{ label: __('Accounts') }]"
+		:button-label="__('Add Account')"
 		:button-action="() => (showAddMember = true)"
 		:remove-spacing="true"
 	>
@@ -10,7 +10,7 @@
 			v-model="tab"
 			class="[&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5"
 			:tabs="[
-				{ value: 'users', label: __('Users'), iconLeft: Users },
+				{ value: 'users', label: __('Accounts'), iconLeft: Users },
 				{ value: 'invites', label: __('Invites'), iconLeft: Mails },
 			]"
 		>
@@ -24,7 +24,7 @@
 			</template>
 		</Tabs>
 	</DashboardLayout>
-	<AddMemberModal v-model="showAddMember" @reload="reload" />
+	<AddAccountModal v-model="showAddMember" @reload="reload" />
 </template>
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue'
@@ -36,9 +36,9 @@ import { Tabs, usePageMeta } from 'frappe-ui'
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import AddMemberModal from '@/apps/mail/components/Modals/AddMemberModal.vue'
+import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
 
-usePageMeta(() => appPageMeta(__('Members'), 'Mail'))
+usePageMeta(() => appPageMeta(__('Accounts'), 'Mail'))
 
 const route = useRoute()
 const router = useRouter()
@@ -50,12 +50,12 @@ const router = useRouter()
 const tab = computed({
 	get: () => (route.name === 'mail-invites' ? 'invites' : 'users'),
 	set: (val) => {
-		const name = val === 'invites' ? 'mail-invites' : 'mail-members'
+		const name = val === 'invites' ? 'mail-invites' : 'mail-accounts'
 		if (route.name !== name) router.push({ name })
 	},
 })
 
-// add/invite members
+// add/invite accounts
 
 const showAddMember = ref(false)
 

@@ -2,10 +2,10 @@
 	<Dialog
 		v-model:open="show"
 	 v-bind="{
-			title: __('Add Member'),
+			title: __('Add Account'),
 			actions: [
 				{
-					label: __(accountRequest.send_invite ? 'Invite Member' : 'Add Member'),
+					label: __(accountRequest.send_invite ? 'Send Invite' : 'Add Account'),
 					variant: 'solid',
 					loading: addMember.loading,
 					onClick: addMember.submit,
@@ -116,9 +116,9 @@
 						type="password"
 						:label="__('Password')"
 						placeholder="••••••••"
-						:description="__('The member can change this later in their account settings.')"
+						:description="__('The user can change this later in their account settings.')"
 					/>
-					<!-- Only set here when the account is created right away; an invited member picks
+					<!-- Only set here when the account is created right away; an invited user picks
 					their own on the setup form. -->
 					<div class="space-y-1.5">
 						<label class="text-ink-gray-5 block text-xs">{{ __('Locale') }}</label>
@@ -189,8 +189,8 @@ const emit = defineEmits(['reload'])
 type Directory = { id: string; name: string; email?: string }
 
 // The account joins these once it exists: immediately when the invite is skipped, otherwise when the
-// invited member verifies and their account is created. Both are read live from Stalwart, so they are
-// fetched when the dialog opens rather than on every visit to the members list.
+// invited user verifies and their account is created. Both are read live from Stalwart, so they are
+// fetched when the dialog opens rather than on every visit to the accounts list.
 const groups = createResource({ url: 'suite.mail.api.admin.get_groups' })
 const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists' })
 
@@ -244,7 +244,7 @@ const addMember = createResource({
 		}
 	},
 	onSuccess: () => {
-		raiseToast(accountRequest.send_invite ? __('Member invited.') : __('Member added.'))
+		raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
 		emit('reload')
 		show.value = false
 	},

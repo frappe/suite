@@ -338,10 +338,10 @@ const dashboardItems = [
 		label: __('Directory'),
 		items: [
 			{
-				label: __('Members'),
+				label: __('Accounts'),
 				icon: Users,
-				to: { name: 'mail-members' },
-				activeFor: ['mail-members', 'mail-invites', 'mail-member'],
+				to: { name: 'mail-accounts' },
+				activeFor: ['mail-accounts', 'mail-invites', 'mail-account'],
 			},
 			{
 				label: __('Groups'),
