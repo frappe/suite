@@ -11,7 +11,7 @@ UserGroupMember = frappe.qb.DocType("User Group Member")
 DriveFile = frappe.qb.DocType("File")
 DrivePermission = frappe.qb.DocType("Drive Permission")
 DriveFavourite = frappe.qb.DocType("Drive Favourite")
-Recents = frappe.qb.DocType("Drive Entity Log")
+Recents = frappe.qb.DocType("Drive Recent")
 
 Binary = CustomFunction("BINARY", ["expression"])
 
@@ -23,9 +23,9 @@ def get_document_list(
 ):
     user = frappe.session.user
 
-    recently_opened = frappe.qb.from_(Recents).select(Recents.entity_name).where(Recents.user == user)
+    recently_opened = frappe.qb.from_(Recents).select(Recents.node).where(Recents.user == user)
 
-    recent_field = fn.Coalesce(Recents.last_interaction, DriveFile.file_modified)
+    recent_field = fn.Coalesce(Recents.opened_at, DriveFile.file_modified)
     query = (
         frappe.qb.from_(DriveFile)
         .select(
@@ -44,10 +44,10 @@ def get_document_list(
     )
 
     query = query.left_join(Recents).on(
-        (Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user)
+        (Recents.node == DriveFile.name) & (Recents.user == frappe.session.user)
     )
 
-    query = query.select(Recents.last_interaction.as_("accessed"))
+    query = query.select(Recents.opened_at.as_("accessed"))
 
     # Add ordering
     query = query.orderby(recent_field, order=Order.desc)

@@ -644,13 +644,13 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.addCleanup(
             frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
         )
-        self.addCleanup(frappe.db.delete, "Drive Entity Log", {"entity_name": entity.name})
+        self.addCleanup(frappe.db.delete, "Drive Recent", {"node": entity.name})
         self.assertFalse(frappe.db.exists("Drive Node", entity.name), "no node before Build")
         return entity
 
     def test_opening_a_document_the_api_creates_records_when_it_was_opened(self):
         """`useDocument` calls `track_visit` on every open, and nothing else
-        writes `Drive Entity Log`. `get_document_list` orders the caller's own
+        writes `Drive Recent`. `get_document_list` orders the caller's own
         documents by that row and publishes it as `accessed`, so a forwarder
         that only visits nodes left every document with neither."""
         frappe.set_user(USER)
@@ -660,9 +660,7 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         track_visit(entity_name=entity.name)
 
         self.assertTrue(
-            frappe.db.get_value(
-                "Drive Entity Log", {"entity_name": entity.name, "user": USER}, "last_interaction"
-            ),
+            frappe.db.get_value("Drive Recent", {"node": entity.name, "user": USER}, "opened_at"),
             "the open is on the log the list reads",
         )
         frappe.response.pop("data", None)
@@ -712,7 +710,7 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             track_visit(entity_name=entity.name)
         self.assertFalse(
-            frappe.db.exists("Drive Entity Log", {"entity_name": entity.name, "user": OTHER}),
+            frappe.db.exists("Drive Recent", {"node": entity.name, "user": OTHER}),
             "a refused visit writes nothing",
         )
 

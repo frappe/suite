@@ -32,7 +32,7 @@ UserGroupMember = frappe.qb.DocType("User Group Member")
 DriveFile = frappe.qb.DocType("File")
 DrivePermission = frappe.qb.DocType("Drive Permission")
 DriveFavourite = frappe.qb.DocType("Drive Favourite")
-Recents = frappe.qb.DocType("Drive Entity Log")
+Recents = frappe.qb.DocType("Drive Recent")
 
 Binary = CustomFunction("BINARY", ["expression"])
 
@@ -415,8 +415,8 @@ def get_query_data(
     if recents_only:
         query = (
             query.right_join(Recents)
-            .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
-            .orderby(Recents.last_interaction, order=Order.desc)
+            .on((Recents.node == DriveFile.name) & (Recents.user == frappe.session.user))
+            .orderby(Recents.opened_at, order=Order.desc)
             .orderby(DriveFile.name, order=Order.asc)
         )
     else:
@@ -428,13 +428,13 @@ def get_query_data(
         sort_order = Order.asc if ascending else Order.desc
         query = (
             query.left_join(Recents)
-            .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
+            .on((Recents.node == DriveFile.name) & (Recents.user == frappe.session.user))
             .orderby(sort_field, order=sort_order)
             .orderby(DriveFile.file_name, order=sort_order)
             .orderby(DriveFile.name, order=Order.asc)
         )
 
-    query = query.select(Recents.last_interaction.as_("accessed"))
+    query = query.select(Recents.opened_at.as_("accessed"))
 
     # Apply file kind filter
     query = _apply_file_kinds_filter(query, file_kinds)
