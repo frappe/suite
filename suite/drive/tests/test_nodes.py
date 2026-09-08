@@ -1,5 +1,7 @@
+import ast
 import io
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier, Event, local
 from unittest.mock import call, patch
 
@@ -881,6 +883,62 @@ class TestLifecyclePolicy(UnitTestCase):
 
         self.assertIs(raised.exception, deadlock)
         self.assertEqual(rollback.call_args_list, [call(save_point="drive_create"), call()])
+
+    def test_every_core_savepoint_rolls_back_through_the_deadlock_helper(self):
+        """No `_core` module may issue a bare `ROLLBACK TO SAVEPOINT`.
+
+        A deadlock victim's savepoints are already gone when the `except` arm
+        runs, so a bare rollback raises "SAVEPOINT does not exist" and hides
+        the deadlock the caller has to retry on. `errors.rollback_savepoint` is
+        the one place allowed to make that call.
+        """
+        core = Path(node_workflows.__file__).parent
+        offenders = []
+        for module in sorted(core.glob("*.py")):
+            tree = ast.parse(module.read_text())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not any(keyword.arg == "save_point" for keyword in node.keywords):
+                    continue
+                if module.name == "errors.py":
+                    continue
+                offenders.append(f"{module.name}:{node.lineno}")
+        self.assertEqual(offenders, [])
+
+    def test_every_locking_workflow_reports_the_deadlock_not_the_lost_savepoint(self):
+        """Drive the six lock-taking workflows into a deadlock and read the error.
+
+        Each one opens a savepoint and then takes `FOR UPDATE` locks inside it,
+        so each one can be the victim. The caller has to see
+        `QueryDeadlockError` to know the work is retryable.
+        """
+        deadlock = frappe.QueryDeadlockError("deadlock")
+        principals = Principals(USER, (USER,), ())
+        workflows = {
+            "trash": lambda: node_workflows._trash(principals, "node"),
+            "restore": lambda: node_workflows._restore(principals, "node", parent=None),
+            "purge": lambda: node_workflows.purge(principals, "node"),
+            "expired purge": lambda: node_workflows.purge_expired_trash_root("node", now_datetime()),
+            "rename": lambda: node_workflows._rename(principals, "node", "title"),
+            "replace": lambda: node_workflows._replace_file(
+                principals, "node", blob="blob", size=1, mime="text/plain"
+            ),
+        }
+        for label, workflow in workflows.items():
+            with self.subTest(workflow=label):
+                with (
+                    patch("suite.drive._core.nodes._node", side_effect=deadlock),
+                    patch(
+                        "suite.drive._core.errors.frappe.db.rollback",
+                        side_effect=[RuntimeError("savepoint no longer exists"), None],
+                    ) as rollback,
+                    patch("suite.drive._core.nodes.frappe.db.savepoint"),
+                    self.assertRaises(frappe.QueryDeadlockError) as raised,
+                ):
+                    workflow()
+                self.assertIs(raised.exception, deadlock)
+                self.assertEqual(rollback.call_args_list[-1], call())
 
     def test_subtree_charge_is_one_root_path_indexed_query(self):
         source = frappe._dict(name="folder", root="root", path="/ancestor/")

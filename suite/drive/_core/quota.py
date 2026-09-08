@@ -8,7 +8,12 @@ from uuid import uuid4
 import frappe
 from frappe import _
 
-from suite.drive._core.errors import DriveConflict, DriveNotFound, DriveOverQuota
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveNotFound,
+    DriveOverQuota,
+    rollback_savepoint,
+)
 from suite.drive._core.roots import validate_root_pair
 
 ADMIT_SQL = """
@@ -339,8 +344,8 @@ def _reservation_transaction() -> Iterator[None]:
     frappe.db.savepoint(savepoint)
     try:
         yield
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)

@@ -9,7 +9,12 @@ from frappe.utils import now_datetime
 
 from suite.drive._core.access import effective_role, require
 from suite.drive._core.activity import notify_users, record
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+    rollback_savepoint,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ
 
@@ -64,8 +69,8 @@ def create_thread(
             via_link=via_link,
         )
         notify_users(activity, mentions)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -107,8 +112,8 @@ def reply(
             via_link=via_link,
         )
         notify_users(activity, mentions)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -142,8 +147,8 @@ def resolve(principals: Principals, thread: str, resolved: bool = True) -> None:
             detail={"thread": thread_row.name, "comment": None, "resolved": resolved},
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -179,8 +184,8 @@ def edit_comment(principals: Principals, comment: str, text: str) -> None:
             via_link=via_link,
         )
         notify_users(activity, mentions)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -209,8 +214,8 @@ def delete_comment(principals: Principals, comment: str) -> None:
             },
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
