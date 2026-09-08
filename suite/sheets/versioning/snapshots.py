@@ -51,7 +51,13 @@ def maybe_snapshot(sheet: str, expected_head_seq: int | None = None) -> str | No
     the seq the request thought was the head — used only for telemetry, not
     correctness (we always snapshot the *current* head).
     """
-    _refuse_linked_sheet(sheet)
+    # A linked sheet's history is Drive's, so it takes no legacy snapshot. This
+    # one path declines instead of refusing: `versioning.save` runs it inline on
+    # every autosave and turns any exception into an `Error Log` row, so a
+    # refusal here would file one error per keystroke batch for the whole Build
+    # release. `create` still refuses, so no caller can write one deliberately.
+    if is_drive_native(sheet):
+        return None
     doc = frappe.db.get_value("Sheet", sheet, ["head_seq", "head_snapshot"], as_dict=True)
     if not doc:
         return None
@@ -162,3 +168,9 @@ def _refuse_linked_sheet(sheet: str) -> None:
     from suite.sheets.drive import refuse_drive_native
 
     refuse_drive_native(sheet, "Drive version history")
+
+
+def is_drive_native(sheet: str) -> bool:
+    from suite.sheets.drive import is_drive_native as _is_drive_native
+
+    return _is_drive_native(sheet)
