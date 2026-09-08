@@ -111,6 +111,10 @@ execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frapp
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
 suite.drive.patches.webdav_property_index
+# §9.2 redefined `preview_size` from a megabyte cutoff to pixels; translates
+# only the known legacy sentinel a site could still be carrying, additive
+# and idempotent, ahead of Build so its report reads the corrected value.
+suite.drive.patches.migrate_preview_size_unit
 # --- drive (the additive Build migration, spec §14) ---
 # Last in the file. Build reads the legacy Drive tables after every patch
 # above has finished reshaping them, and it writes only new rows: no legacy
