@@ -669,9 +669,9 @@ class LegacyContent(Protocol):
 
     def writer_templates(self, after: str, limit: int) -> list[WriterTemplateRow]: ...
 
-    def slides(self, deck: str) -> list[SlideRow]: ...
+    def slides(self, deck: str, after: tuple[int, str], limit: int) -> list[SlideRow]: ...
 
-    def media_files(self, deck: str) -> list[MediaFileRow]: ...
+    def media_files(self, deck: str, after: tuple[str, str], limit: int) -> list[MediaFileRow]: ...
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
 
@@ -1234,33 +1234,37 @@ class SiteContentSource:
         )
         return [WriterTemplateRow(**dict(row)) for row in rows]
 
-    def slides(self, deck: str) -> list[SlideRow]:
-        rows = frappe.get_all(
-            "Slide",
-            filters={"parent": deck, "parenttype": "Presentation"},
-            fields=["name", "parent", "idx", "elements", "background"],
-            order_by="idx asc, name asc",
+    def slides(self, deck: str, after: tuple[int, str], limit: int) -> list[SlideRow]:
+        # Plan §13 keyset: `(deck, idx, name)`. `elements` is a whole slide
+        # body, so the query is bounded even though §12 makes the caller hold
+        # one deck's slides at once to preflight them.
+        idx, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `parent`, `idx`, `elements`, `background`
+               FROM `tabSlide`
+               WHERE `parent` = %(deck)s AND `parenttype` = 'Presentation'
+                 AND (`idx`, `name`) > (%(idx)s, %(name)s)
+               ORDER BY `idx`, `name` LIMIT %(limit)s""",
+            {"deck": deck, "idx": idx, "name": name, "limit": limit},
+            as_dict=True,
         )
         return [SlideRow(**dict(row)) for row in rows]
 
-    def media_files(self, deck: str) -> list[MediaFileRow]:
-        rows = frappe.get_all(
-            "File",
-            filters={"attached_to_doctype": "Presentation", "attached_to_name": deck},
-            fields=[
-                "name",
-                "attached_to_name as deck",
-                "file_name",
-                "file_url",
-                "blob",
-                "attached_to_field",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-                "file_modified",
-            ],
-            order_by="creation asc, name asc",
+    def media_files(self, deck: str, after: tuple[str, str], limit: int) -> list[MediaFileRow]:
+        # Plan §13 keyset: `(deck, creation, name)`. Thumbnail classification
+        # and `(deck, blob)` grouping both need the whole set, so this bounds
+        # the query rather than the caller's memory.
+        creation, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `attached_to_name` AS `deck`, `file_name`, `file_url`, `blob`,
+                      `attached_to_field`, `owner`, `creation`, `modified`, `modified_by`,
+                      `file_modified`
+               FROM `tabFile`
+               WHERE `attached_to_doctype` = 'Presentation' AND `attached_to_name` = %(deck)s
+                 AND (`creation`, `name`) > (%(creation)s, %(name)s)
+               ORDER BY `creation`, `name` LIMIT %(limit)s""",
+            {"deck": deck, "creation": creation or "1000-01-01", "name": name, "limit": limit},
+            as_dict=True,
         )
         return [MediaFileRow(**dict(row)) for row in rows]
 

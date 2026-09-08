@@ -164,6 +164,31 @@ class SlidesTest(unittest.TestCase):
         convert_slides_and_templates(env)
         self.assertEqual(len(env.slide_journal.records), 1)
 
+    def test_a_deck_wider_than_one_page_converts_every_slide_and_file(self):
+        """§13 reads the deck in bounded pages, and §12 still preflights all of it."""
+        rows = [media(f"media-{index}", blob=f"blob-{index}") for index in range(5)]
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(f"slide-{index}", "deck-1", index + 1, json.dumps([{"src": row.file_url}]))
+                for index, row in enumerate(rows)
+            ],
+            media=rows,
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        for index in range(5):
+            target.add_blob(f"blob-{index}", b"media", mime_type="image/png")
+
+        result = convert_slides_and_templates(env, batch_size=2)
+
+        self.assertEqual(result.media_nodes_created, 5)
+        self.assertEqual(result.slide_elements_rewritten, 5)
+        self.assertEqual(len(self.media_children(target, "deck-node")), 5)
+        for index in range(5):
+            body = json.loads(source.slide_rows[f"slide-{index}"].elements)
+            self.assertEqual(body[0]["src"], f"media-{index}")
+
     def test_blobless_media_creates_a_placeholder_but_does_not_resolve_body(self):
         source = FakeContent(
             documents=[deck()],

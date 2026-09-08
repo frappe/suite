@@ -852,6 +852,46 @@ class TestSiteContentHistory(StubbedDatabase):
         self.assertIn("`sheets_data`", query)
 
 
+class TestSiteContentMedia(StubbedDatabase):
+    """The ticket 28 Slides reads.
+
+    `elements` is a whole slide body, so these must be bounded pages even
+    though the caller holds one deck at a time to preflight it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.source = SiteContentSource()
+        self.db.sql.return_value = []
+
+    def test_the_slide_page_is_a_bounded_idx_name_keyset(self):
+        self.source.slides("deck-1", (3, "slide-2"), 250)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`parent` = %(deck)s AND `parenttype` = 'Presentation'", query)
+        self.assertIn("(`idx`, `name`) > (%(idx)s, %(name)s)", query)
+        self.assertIn("ORDER BY `idx`, `name` LIMIT %(limit)s", query)
+        self.assertIn("`elements`", query)
+        self.assertEqual(values, {"deck": "deck-1", "idx": 3, "name": "slide-2", "limit": 250})
+
+    def test_the_media_file_page_is_a_bounded_creation_name_keyset(self):
+        self.source.media_files("deck-1", ("2024-01-01 00:00:00", "file-3"), 100)
+
+        query, values = self.db.sql.call_args.args[0], self.db.sql.call_args.args[1]
+        self.assertIn("`attached_to_doctype` = 'Presentation'", query)
+        self.assertIn("(`creation`, `name`) > (%(creation)s, %(name)s)", query)
+        self.assertIn("ORDER BY `creation`, `name` LIMIT %(limit)s", query)
+        self.assertEqual(
+            values,
+            {"deck": "deck-1", "creation": "2024-01-01 00:00:00", "name": "file-3", "limit": 100},
+        )
+
+    def test_the_first_media_page_starts_below_every_stored_stamp(self):
+        self.source.media_files("deck-1", ("", ""), 10)
+
+        self.assertEqual(self.db.sql.call_args.args[1]["creation"], "1000-01-01")
+
+
 class TestVersionsToThin(StubbedDatabase):
     def setUp(self):
         super().setUp()

@@ -99,9 +99,18 @@ def _convert_deck(env, deck, batch_size, result):
     if not deck_node or deck_node.get("kind") != "document":
         raise InvalidLegacyContent(f"Presentation {deck.name} has no document node")
     host = env.content.site_host()
-    slides = env.content.slides(deck.name)
+    # §12 preflights every Slide of a deck before the first deck write, and
+    # thumbnail classification needs the whole File set, so both are collected
+    # in full. The reads themselves stay bounded pages (§13).
+    slides = _pages(env.content.slides, deck.name, (0, ""), batch_size, lambda row: (row.idx, row.name))
     parsed = {slide.name: _parse_elements(slide) for slide in slides}
-    files = sorted(env.content.media_files(deck.name), key=lambda row: (str(row.creation or ""), row.name))
+    files = _pages(
+        env.content.media_files,
+        deck.name,
+        ("", ""),
+        batch_size,
+        lambda row: (str(row.creation or ""), row.name),
+    )
     thumbnail, excluded = _thumbnail_file(deck, files, host)
     media = [row for row in files if row.name not in excluded]
     writer = _MediaWriter(target, deck_node, batch_size)
@@ -158,6 +167,21 @@ def _convert_deck(env, deck, batch_size, result):
         current[row.name] = SlideBody(_dump(elements), background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
     return created, collapsed, preview_created, rewritten, blobless
+
+
+def _pages(read, deck, start, batch_size, key):
+    """Walk one deck's keyset pages and return the rows in cursor order."""
+    collected = []
+    after = start
+    while True:
+        rows = read(deck, after, batch_size)
+        if not rows:
+            break
+        collected.extend(rows)
+        after = key(rows[-1])
+        if len(rows) < batch_size:
+            break
+    return collected
 
 
 def _parse_elements(slide):

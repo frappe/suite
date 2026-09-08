@@ -645,14 +645,19 @@ class FakeContent:
             row for row in sorted(self.writer_template_rows, key=lambda row: row.name) if row.name > after
         ][:limit]
 
-    def slides(self, deck):
-        return sorted(
-            [row for row in self.slide_rows.values() if row.parent == deck],
+    def slides(self, deck, after, limit):
+        rows = sorted(
+            (row for row in self.slide_rows.values() if row.parent == deck),
             key=lambda row: (row.idx, row.name),
         )
+        return [row for row in rows if (row.idx, row.name) > after][:limit]
 
-    def media_files(self, deck):
-        return [row for row in self.media_rows if row.deck == deck]
+    def media_files(self, deck, after, limit):
+        rows = sorted(
+            (row for row in self.media_rows if row.deck == deck),
+            key=lambda row: (str(row.creation or ""), row.name),
+        )
+        return [row for row in rows if (str(row.creation or ""), row.name) > after][:limit]
 
     def media_files_by_urls(self, urls):
         wanted = set(urls)
