@@ -171,11 +171,17 @@ def _convert_activity(env, records, target, result, batch_size) -> None:
         already = target.activity_present(tuple(row.name for row in rows))
         for row in rows:
             result.activity_rows_seen += 1
-            if row.name in already:
-                result.activity_rows_already_present += 1
-                continue
+            # Mapped before the already-present check, not after. §14.9's
+            # `activity_rows_dropped` and `activity_verbs_derived` are a census
+            # of the source rows, so a resumed run has to derive the verb of a
+            # row the killed run already wrote. Reading `already` first made
+            # both keys count only what this run happened to insert, and a
+            # rerun over a finished site reported zero derived verbs.
             mapped = _activity_row(env, row, present, statuses, result)
             if mapped is None:
+                continue
+            if row.name in already:
+                result.activity_rows_already_present += 1
                 continue
             pending.append(mapped)
             if len(pending) >= batch_size:
