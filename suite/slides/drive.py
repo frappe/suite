@@ -282,6 +282,27 @@ def node_of(docname: str) -> str:
     return node
 
 
+def docname_for_node(node: str) -> str | None:
+    """Return the deck bound to this Drive node, or None.
+
+    The reverse of `node_of`. `drive.create_document` hands back the node id,
+    never the document name, so an app-facing create endpoint that must answer
+    with a deck id reads it back through the reciprocal link `_link_document`
+    guarantees.
+    """
+    return frappe.db.get_value(DOCTYPE, {NODE_FIELD: node}, "name") or None
+
+
+def node_title_of(node: str) -> str:
+    """Read one node's title. Drive owns it; there is no mirror (§10.2)."""
+    return frappe.db.get_value("Drive Node", node, "title") or ""
+
+
+def node_is_template(node: str) -> bool:
+    """True when this node is a template. The legacy `is_template` column never is (§8.10)."""
+    return bool(frappe.db.get_value("Drive Node", node, "is_template"))
+
+
 def elements_of(slide: dict) -> list[dict]:
     """Parse one slide's elements, or refuse. The caller owns the slide payload."""
     return _element_list(slide.get("elements"))
