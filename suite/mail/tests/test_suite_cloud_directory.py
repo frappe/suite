@@ -251,6 +251,22 @@ class TestMembers(SuiteCloudTestCase):
         self.fake.groups__create_group(f"sales@{DOMAIN}", description="Sales")
         self.fake.mailing_lists__create_mailing_list(f"news@{DOMAIN}", description="News")
 
+    def test_unset_quota_takes_the_mail_settings_default(self) -> None:
+        with self.change_settings("Mail Settings", default_disk_quota_gb=7):
+            frappe.local.request_cache.clear()
+            admin.add_account(
+                "dave",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="dave@backup.test",
+                first_name="Dave",
+                last_name="Doe",
+                password="a-strong-password-9",
+            )
+        frappe.local.request_cache.clear()
+        self.assertEqual(self.fake.accounts[f"dave@{DOMAIN}"]["disk_quota_gb"], 7)
+
     def test_member_lifecycle_through_suite_cloud(self) -> None:
         admin.add_account(
             "carol",

@@ -106,9 +106,12 @@ class MailAccountRequest(Document):
 
     @property
     def _quota_gb(self) -> float | None:
-        """The disk quota to create the account with; unset means Suite Cloud's default for the site."""
+        """The quota to create the account with: the request's, else Mail Settings' default.
 
-        return flt(self.quota_gb) if self.quota_gb else None
+        Unset in both places, Suite Cloud applies the site's own default.
+        """
+
+        return flt(self.quota_gb) or flt(get_config("default_disk_quota_gb")) or None
 
     def before_insert(self) -> None:
         is_stalwart_configured(raise_exception=True)
