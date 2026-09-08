@@ -136,7 +136,7 @@ def _convert_deck(env, deck, batch_size, result):
         # §11: a composite renders the referenced deck's own slides, so that
         # deck keeps the media and this one never copies it.
         borrowed, borrowed_nodes = _borrowed_mapping(
-            env, deck, parsed, slides, mapping, result, host, writer, titles
+            env, deck, _references(parsed, slides), mapping, result, host, writer, titles
         )
     mapping.update(borrowed)
     writer.flush()
@@ -377,33 +377,28 @@ def _media_mapping(env, deck, files, host, writer, titles):
     return mapping, nodes, collapsed, blobless
 
 
-def _borrowed_mapping(env, deck, parsed, slides, local, result, host, writer, titles):
+def _borrowed_mapping(env, deck, references, local, result, host, writer, titles):
     parent = writer.parent
-    references = set()
-    for elements in parsed.values():
-        for element in elements:
-            for key in MEDIA_KEYS:
-                references |= _strings(element.get(key))
-    # §12 rewrites a whole `background` scalar too, so it names media as well.
-    references |= {row.background for row in slides if isinstance(row.background, str)}
     unresolved = tuple(sorted(value for value in references if _resolve(value, local, host) is None))
-    lookup = set(unresolved)
-    for value in unresolved:
-        lookup |= _path_variants(value, host)
-    candidates = env.content.media_files_by_urls(tuple(sorted(lookup)))
+    candidates = env.content.media_files_by_urls(tuple(sorted(_url_lookup(unresolved, host))))
     by_url = defaultdict(list)
+    foreign = defaultdict(list)
     for row in candidates:
-        if row.deck != deck.name and env.content.presentation_is_template(row.deck):
-            for alias in _aliases(row, host):
+        if row.deck == deck.name:
+            continue
+        adoptable = env.content.presentation_is_template(row.deck)
+        for alias in _aliases(row, host):
+            foreign[alias].append(row)
+            if adoptable:
                 by_url[alias].append(row)
     mapping = {}
     nodes = set()
     for value in unresolved:
-        rows = by_url.get(value, [])
+        rows = _named_rows(by_url, value, host)
         if not rows:
             # A non-template global File cannot be adopted: Build cannot
             # reconstruct the original paste actor's access.
-            if any(row.deck != deck.name and value in _aliases(row, host) for row in candidates):
+            if _named_rows(foreign, value, host):
                 result.record_issue(
                     f"Presentation:{deck.name}",
                     f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
@@ -632,7 +627,12 @@ def _aliases(row, host=""):
 
 
 def _local_path_variants(url, host=""):
-    """The `/files/` spellings of one local URL, including its absolute form."""
+    """The `/files/` and `/private/files/` spellings of one local URL.
+
+    A site-absolute URL narrows to those paths. The absolute spelling itself
+    is not returned: `site_host` carries no scheme to rebuild it with.
+    `_url_lookup` asks the database for that spelling instead.
+    """
     parsed = urlsplit(url or "")
     if parsed.netloc and parsed.netloc != host:
         # §11: do not localize an unknown remote host.
@@ -650,6 +650,56 @@ def _local_path_variants(url, host=""):
 
 def _path_variants(value, host=""):
     return {value, unquote(value)} | _local_path_variants(value, host)
+
+
+def _url_lookup(values, host=""):
+    """Every stored `file_url` these references could be filed under.
+
+    The port matches `file_url` exactly, so the widening §11 applies to a
+    value must reach the query as well. Legacy Slides also stored the site's
+    own absolute URL, so each local path is asked for under both schemes and
+    the scheme-relative form. A returned row is still matched on its own
+    aliases, so a wider question cannot widen an answer.
+    """
+    lookup = set()
+    for value in values:
+        variants = _path_variants(value, host)
+        lookup |= variants
+        if not host:
+            continue
+        paths = [path for path in variants if path.startswith("/") and not path.startswith("//")]
+        lookup |= {
+            prefix + path for prefix in (f"//{host}", f"http://{host}", f"https://{host}") for path in paths
+        }
+    return lookup
+
+
+def _named_rows(index, value, host=""):
+    """The File rows one complete value names, widened as `_resolve` widens.
+
+    An exact alias wins, the way it does in `_resolve`. Both sides then carry
+    every `/files/` spelling, so a body value and a stored `file_url` that
+    differ only in spelling still meet. The caller refuses a widened set that
+    names two blobs rather than guessing between them.
+    """
+    if value in index:
+        return list(index[value])
+    found = {}
+    for alias in sorted(_path_variants(value, host)):
+        for row in index.get(alias, ()):
+            found[row.name] = row
+    return list(found.values())
+
+
+def _references(parsed, slides):
+    """Every complete string a deck's slide bodies use to name media."""
+    found = set()
+    for elements in parsed.values():
+        for element in elements:
+            for key in MEDIA_KEYS:
+                found |= _strings(element.get(key))
+    # §12 rewrites a whole `background` scalar too, so it names media as well.
+    return found | {row.background for row in slides if isinstance(row.background, str)}
 
 
 def _local_url(value, host=""):
