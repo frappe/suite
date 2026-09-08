@@ -364,21 +364,19 @@ def _convert_content_shares(env, result, batch_size):
 
 def _flush_grants(env, pending):
     target = env.content_target
-    # One read per node rather than one per `(node, principal)`: the port takes
-    # a principal tuple already, so a document with many shares costs one query.
-    by_node: dict[str, dict[str, int]] = {}
-    for (node, principal), role in pending.items():
-        by_node.setdefault(node, {})[principal] = role
+    # One read for the whole batch, not one per `(node, principal)` pair and
+    # not one per node: a site with 200k content shares would otherwise pay a
+    # round trip for every document it shares.
+    stored = target.grant_pairs(tuple(pending))
     fresh = []
-    for node, roles in by_node.items():
-        stored = target.grant_roles(node, tuple(roles))
-        for principal, role in roles.items():
-            if principal not in stored:
-                fresh.append(_grant_row(env, node, principal, role))
-                continue
-            wanted = merged_role(stored[principal], role)
-            if wanted != stored[principal]:
-                target.set_grant_role(node, principal, wanted)
+    for key, role in pending.items():
+        node, principal = key
+        if key not in stored:
+            fresh.append(_grant_row(env, node, principal, role))
+            continue
+        wanted = merged_role(stored[key], role)
+        if wanted != stored[key]:
+            target.set_grant_role(node, principal, wanted)
     target.insert_grants(fresh)
     if pending:
         target.commit()

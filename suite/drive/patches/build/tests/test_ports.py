@@ -852,6 +852,56 @@ class TestSiteContentHistory(StubbedDatabase):
         self.assertIn("`sheets_data`", query)
 
 
+class TestGrantPairs(StubbedDatabase):
+    """The batched grant read the share mapper uses."""
+
+    def setUp(self):
+        super().setUp()
+        self.target = SiteContentTarget()
+
+    def test_one_read_names_every_node_and_keeps_only_the_pairs_asked_for(self):
+        pairs = (("node-a", "u1@example.com"), ("node-b", "u2@example.com"))
+        rows = [
+            frappe._dict(node="node-a", principal="u1@example.com", role=8),
+            # The cross product also matches this stored grant. It was not
+            # asked for, so merging it would move a role nobody shared.
+            frappe._dict(node="node-b", principal="u1@example.com", role=1),
+        ]
+        calls = []
+
+        def get_all(doctype, **kwargs):
+            calls.append((doctype, kwargs))
+            return rows
+
+        with patch.object(frappe, "get_all", get_all):
+            found = self.target.grant_pairs(pairs)
+
+        self.assertEqual(found, {("node-a", "u1@example.com"): 8})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1]["filters"][0], ["node", "in", ["node-a", "node-b"]])
+        self.assertEqual(calls[0][1]["filters"][1], ["principal", "in", ["u1@example.com", "u2@example.com"]])
+
+    def test_the_node_list_is_paged_so_neither_in_list_grows_without_bound(self):
+        pairs = tuple((f"node-{index:03d}", f"u{index}@example.com") for index in range(250))
+        calls = []
+
+        def get_all(doctype, **kwargs):
+            calls.append(kwargs)
+            return []
+
+        with patch.object(frappe, "get_all", get_all):
+            self.assertEqual(self.target.grant_pairs(pairs), {})
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([len(call["filters"][0][2]) for call in calls], [100, 100, 50])
+        # Each page names only its own nodes' principals.
+        self.assertEqual([len(call["filters"][1][2]) for call in calls], [100, 100, 50])
+
+    def test_an_empty_batch_reads_nothing(self):
+        with patch.object(frappe, "get_all", side_effect=AssertionError("read")):
+            self.assertEqual(self.target.grant_pairs(()), {})
+
+
 class TestSiteContentMedia(StubbedDatabase):
     """The ticket 28 Slides reads.
 

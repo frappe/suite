@@ -313,6 +313,11 @@ USERS_ROW = "Users"
 # it. `Drive Root.state` reuses ACTIVE above: both columns spell one word.
 PERSONAL = "Personal"
 
+# How many nodes one batched grant read names at once. The read is a cross
+# product of two IN lists, so a short node page keeps the principal list short
+# with it.
+GRANT_PAIR_NODES = 100
+
 # What Build reads off one legacy row. `frappe.get_all` returns `_dict`, so
 # the frozen shape below is what pins the column list in one place.
 TREE_COLUMNS = (
@@ -726,6 +731,8 @@ class ContentTarget(Protocol):
     def insert_grants(self, rows: list[dict]) -> None: ...
 
     def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]: ...
+
+    def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]: ...
 
     def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
 
@@ -1566,6 +1573,27 @@ class SiteContentTarget:
 
     def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
         return SiteDrive().grant_roles(node, principals)
+
+    def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]:
+        # One read for a whole share batch, not one per node. The two IN lists
+        # are a cross product, so only the pairs asked for are kept and the
+        # nodes are paged to keep either list short.
+        found: dict[tuple[str, str], int] = {}
+        wanted = set(pairs)
+        nodes = sorted({node for node, _ in pairs})
+        for start in range(0, len(nodes), GRANT_PAIR_NODES):
+            page = set(nodes[start : start + GRANT_PAIR_NODES])
+            principals = sorted({principal for node, principal in pairs if node in page})
+            rows = frappe.get_all(
+                "Drive Grant",
+                filters=[["node", "in", sorted(page)], ["principal", "in", principals]],
+                fields=["node", "principal", "role"],
+            )
+            for row in rows:
+                key = (row.node, row.principal)
+                if key in wanted:
+                    found[key] = cint(row.role)
+        return found
 
     def set_grant_role(self, node: str, principal: str, role: int) -> None:
         SiteDrive().raise_grant(node, principal, role)

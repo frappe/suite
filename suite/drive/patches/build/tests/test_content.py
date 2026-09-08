@@ -94,15 +94,20 @@ class CountingTarget(FakeContentTarget):
 
 
 class CountingGrantReads(FakeContentTarget):
-    """Count the `grant_roles` round trips the share mapper issues."""
+    """Count the grant round trips the share mapper issues."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.grant_reads = 0
+        self.pair_reads = 0
 
     def grant_roles(self, node, principals):
         self.grant_reads += 1
         return super().grant_roles(node, principals)
+
+    def grant_pairs(self, pairs):
+        self.pair_reads += 1
+        return super().grant_pairs(pairs)
 
 
 class ContentTest(unittest.TestCase):
@@ -602,28 +607,32 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(result.docshare_rows_dropped, 2)
         self.assertEqual(len(source.share_rows), 4)
 
-    def test_every_share_on_one_node_costs_one_grant_read(self):
+    def test_a_whole_share_batch_costs_one_grant_read(self):
         """A site with 200k content shares must not issue 200k round trips."""
-        row = document("Writer Document", "writer-1")
+        rows = [document("Writer Document", f"writer-{index}") for index in range(3)]
         readers = [f"reader{index}@example.com" for index in range(4)]
         shares = [
-            ContentShareRow(f"share-{index}", row.doctype, row.name, user=user, read=1)
+            ContentShareRow(f"share-{row.name}-{index}", row.doctype, row.name, user=user, read=1)
+            for row in rows
             for index, user in enumerate(readers)
         ]
         source = FakeContent(
-            documents=[row],
-            files=[file_for(row, "file-1")],
+            documents=rows,
+            files=[file_for(row, f"file-{row.name}") for row in rows],
             shares=shares,
             users=dict.fromkeys(readers, True),
         )
         env, target = self.environment(source, CountingGrantReads(content=source))
-        add_document_node(target, "file-1", row)
+        for row in rows:
+            add_document_node(target, f"file-{row.name}", row)
 
         link_content_documents(env)
-        reads = target.grant_reads
 
-        self.assertEqual(reads, 1)
-        self.assertEqual(len(target.grant_roles("file-1", tuple(readers))), 4)
+        # One read for twelve pairs over three nodes, and not one per node.
+        self.assertEqual(target.pair_reads, 1)
+        self.assertEqual(target.grant_reads, 0)
+        for row in rows:
+            self.assertEqual(len(target.grant_roles(f"file-{row.name}", tuple(readers))), 4)
 
     def test_a_refusal_does_not_leave_the_loop_reading_unbound_names(self):
         """`_fail` raises today; the loop must not depend on that for binding."""
