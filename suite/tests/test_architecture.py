@@ -106,13 +106,27 @@ BASELINE_DEBT = {
             "suite/writer/api/embed.py|import|suite.drive.api.permissions",
             "suite/writer/api/general.py|import|suite.drive.api.permissions",
             "suite/writer/api/general.py|import|suite.drive.utils",
+            "suite/writer/doctype/writer_document/test_writer_document.py|import|suite.drive._core.errors",
             "suite/writer/doctype/writer_document/writer_document.py|import|suite.drive.api.notifications",
             "suite/writer/overrides/__init__.py|import|suite.drive.api.permissions",
             "suite/writer/overrides/__init__.py|import|suite.drive.overrides.file",
-            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.files",
-            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.list",
-            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.notifications",
-            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.permissions",
+        ),
+    ),
+    **_debt(
+        "Suite migration",
+        "Remove with the Cleanup release: these two fixtures assert what the shipped "
+        "`drive_content_types` hook holds, so they name a spec until the hook does not.",
+        # Ticket 29 filled `drive_content_types`, so a Drive test that proves
+        # what activation settled has to name the three dotted paths the hook
+        # ships. Naming a path is not importing one: nothing here reaches into
+        # a content product, and the registry is still built by the framework.
+        (
+            "suite/drive/http/tests/test_shims.py|dotted-string|suite.sheets.drive.SPEC",
+            "suite/drive/http/tests/test_shims.py|dotted-string|suite.slides.drive.SPEC",
+            "suite/drive/http/tests/test_shims.py|dotted-string|suite.writer.drive.SPEC",
+            "suite/drive/tests/test_content.py|dotted-string|suite.sheets.drive.SPEC",
+            "suite/drive/tests/test_content.py|dotted-string|suite.slides.drive.SPEC",
+            "suite/drive/tests/test_content.py|dotted-string|suite.writer.drive.SPEC",
         ),
     ),
     **_debt(
@@ -122,7 +136,10 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content.spec_for",
             "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
             "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission#2",
             "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions#2",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.refuse_unlinked_documents",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.access",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.content",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.errors",
@@ -155,9 +172,14 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions#2",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.refuse_unlinked_documents",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions#2",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.access",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.content",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.content#2",
@@ -168,7 +190,6 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.framework",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
-            "suite/slides/tests/test_drive_adoption.py|import|suite.drive.overrides.file#2",
         ),
     ),
     **_debt(
@@ -193,9 +214,7 @@ BASELINE_DEBT = {
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission",
-            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission#2",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
-            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions#2",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.access",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.content",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.content#2",
@@ -206,7 +225,6 @@ BASELINE_DEBT = {
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.framework",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
-            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.overrides.file#2",
         ),
     ),
     **_debt(
