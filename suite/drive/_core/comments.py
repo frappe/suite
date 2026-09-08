@@ -239,9 +239,10 @@ def threads(
         # Sheets cell threads in one pass, so a migrated node can hold many rows
         # at one timestamp and MariaDB may return them in any order between two
         # reads of the same page. `name` breaks the tie so a reader sees one
-        # order twice. It is a stable order, not a chronological one: both
-        # doctypes are `autoname: hash`, so Build owes any thread order it wants
-        # preserved to `creation` itself.
+        # order twice. A thread carries no source position of its own — both
+        # doctypes are `autoname: hash` — so this is a stable order, not a
+        # chronological one, and Build owes any thread order it wants preserved
+        # to `creation` itself.
         order_by="creation asc, name asc",
     )
     by_thread = {row.name: row for row in rows}
@@ -264,12 +265,15 @@ def threads(
             "creation",
             "modified",
         ],
-        # The same tie-break, and only that one. `idx` is not a third key here:
-        # neither doctype is a child table, so `frappe.model.base_document`
-        # forces every row's `idx` to 0 and nothing in Build or at runtime ever
-        # writes it. Sorting on it breaks no tie and drops the read off
-        # `comment_thread (thread, creation)` into a filesort.
-        order_by="creation asc, name asc",
+        # `idx` sits between the two, and it is the only key that carries source
+        # order. Nothing at runtime writes it, so a native row keeps the 0
+        # `base_document.init_valid_columns` leaves, and the key is inert. Build
+        # writes the source entry position (`patches/build/comments.py`), and a
+        # migrated thread routinely holds several entries at one `creation`:
+        # every entry that fell back to its container stamp, and every legacy
+        # Sheet cell string. Without `idx` those read back ordered by a sha256
+        # id, so a reply can precede the comment it answers.
+        order_by="creation asc, idx asc, name asc",
     )
     for comment in comments:
         comment.mentions = _json_value(comment.mentions, [])
