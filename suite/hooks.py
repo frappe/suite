@@ -150,13 +150,18 @@ ignore_file_permissions = True
 #
 # `Sheet` carried an `if_owner` `All` row instead, so ticket 19 widened it to the
 # open baseline §10.4 needs and put the owner rule into
-# `suite.sheets.permissions.sheet_has_permission`, where it can also read the
-# node column. Its `Guest` read row is there for the same link grants. Only
-# `if_owner` was dropped: the row keeps `share`, `export`, `print`, `email`, and
-# `report`, because a hook can only deny and a right the row does not carry is a
-# right no hook can hand back. `share_sheet` asks `ptype="share"` and
-# `frappe.share.check_share_permission` asks it again, so a narrower row would
-# refuse the owner of a legacy sheet, which ticket 23 still owns.
+# `suite.sheets.permissions.sheet_has_permission`. `doc_has_permission` answers
+# that row now, and the owner reaches it through the MANAGE grant Build wrote on
+# their own node. The row is kept as ticket 19 left it: it carries `share`,
+# `export`, `print`, `email`, and `report`, because a hook can only deny and a
+# right the row does not carry is a right no hook can hand back. `share_sheet`
+# asks `ptype="share"` and `frappe.share.check_share_permission` asks it again.
+# Its `Guest` read row is there for link grants.
+#
+# `suite/sheets/permissions.py` still defines `sheet_has_permission`,
+# `sheet_query_conditions`, and the two `sheet_op_log_*` guards. No hook names
+# them from here any more. Ticket 35 deletes the module with the doctypes it
+# reads; only `sheet_snapshot_*` is still wired, below.
 #
 # `Presentation` still owns the legacy `title` column §14.7 read at Build and
 # §14.10 drops at Cleanup, one release after activation. `suite.slides.drive.SPEC`

@@ -529,8 +529,8 @@ class TestSlidesAfterActivation(IntegrationTestCase):
 class TestSlidesInDrive(IntegrationTestCase):
     """Lifecycle, history, media, previews, composites, and satellites, on real rows.
 
-    Every test runs under `activated()`, because none of these workflows exist
-    on a site until ticket 29 registers the declaration.
+    Every test runs under `activated()`, which now only drops the per-request
+    registry cache: ticket 29 registered the declaration in `suite/hooks.py`.
     """
 
     @classmethod
