@@ -32,7 +32,14 @@ from suite.drive._core.access import (
     require_from_rows,
     require_link,
 )
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+)
+from suite.drive._core.errors import (
+    rollback_savepoint as _rollback_savepoint,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
@@ -1269,8 +1276,8 @@ def _replace_file(
             via_link=via_link,
         )
         previews.enqueue_render(current.name)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1303,8 +1310,8 @@ def _rename(principals: Principals, node_id: str, title: str) -> dict:
                 {"old_title": old_title, "new_title": title},
                 via_link=via_link,
             )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1429,8 +1436,8 @@ def _trash(principals: Principals, node_id: str) -> dict:
             via_link=via_link,
             at=stamp,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1501,8 +1508,8 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
             {"trash_root": current.name, "nodes": changed, "reparented_to": reparented_to},
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1520,8 +1527,8 @@ def purge(principals: Principals, node: str) -> int:
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, principals, via_link=via_link, subtree=subtree)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -1546,11 +1553,11 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, system, via_link=None, subtree=subtree)
-    except DriveNotFound:
-        frappe.db.rollback(save_point=savepoint)
+    except DriveNotFound as exc:
+        _rollback_savepoint(savepoint, exc)
         return 0
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -2156,18 +2163,6 @@ def _chain_node(node_id: str, *, for_update: bool = False) -> frappe._dict:
         return _node(node_id, for_update=for_update)
     except DriveNotFound as exc:
         raise DriveConflict(_("The Drive node has an invalid tree position")) from exc
-
-
-def _rollback_savepoint(savepoint: str, error: Exception) -> None:
-    """Rollback one workflow without masking MariaDB's original deadlock."""
-    try:
-        frappe.db.rollback(save_point=savepoint)
-    except Exception:
-        if not isinstance(error, frappe.QueryDeadlockError):
-            raise
-        # InnoDB has already rolled back the deadlock victim's transaction,
-        # including its savepoints. A full rollback safely resets the handle.
-        frappe.db.rollback()
 
 
 def _validate_parent(

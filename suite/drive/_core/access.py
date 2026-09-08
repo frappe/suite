@@ -18,6 +18,7 @@ from suite.drive._core.errors import (
     DriveLinkExpired,
     DriveLocked,
     DriveNotFound,
+    rollback_savepoint,
 )
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, ROLES
@@ -752,8 +753,8 @@ def grant(
                 "has_password": password_hash is not None,
             },
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -792,8 +793,8 @@ def revoke(node_id: str, principal: str, principals: Principals) -> None:
             principals,
             {"principal": principal, "old_role": existing.role, "new_role": None},
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -835,8 +836,8 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
             principals,
             {"principal": principal, "scope": "below", "rows": deleted},
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -886,8 +887,8 @@ def rotate_link(grant_id: str, principals: Principals) -> dict:
                 "has_password": bool(locked.password_hash),
             },
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
