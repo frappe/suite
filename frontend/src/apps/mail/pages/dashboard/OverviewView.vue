@@ -104,7 +104,10 @@ const stats = computed(() => [
 		label: __('Accounts'),
 		icon: Users,
 		value: count(data.value?.members?.total),
-		sub: disabledSub(data.value?.members),
+		// The limit first, like the other tiles; the disabled count follows when there is one.
+		sub: [limitSub(data.value?.limits?.max_accounts), disabledSub(data.value?.members)]
+			.filter(Boolean)
+			.join(' · '),
 		subTone: 'muted',
 		to: { name: 'mail-accounts' },
 	},
