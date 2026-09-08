@@ -12,9 +12,13 @@ on, with the handle left unreset.
 `suite/drive/tests/test_nodes.py` sweeps `_core`; this module sweeps the
 adapters and the content-app call sites around it, and drives the repaired
 Drive ones into a deadlock. The two content-app runtime cases live in
-`suite/tests/test_content_app_savepoints.py`, because ARCHITECTURE.md rule 2.2
-forbids anything under `suite/drive/` from importing Writer or Slides. The
-sweep below still reaches their files: it reads paths and imports nothing.
+`suite/writer/tests/test_docs_savepoint.py` and
+`suite/slides/tests/test_presentation_savepoint.py`, because ARCHITECTURE.md
+rule 2.4 forbids Drive from importing Writer, Sheets, or Slides
+implementations. Meet's own reservation call site is a third such case and
+lives in `suite/meet/api/test/test_recording_savepoint.py`, for the same
+reason. The sweep below still reaches all of their files: it reads paths and
+imports nothing.
 """
 
 import ast
@@ -35,11 +39,11 @@ from suite.drive.webdav import structure
 
 USER = "actor@example.com"
 
-# Review C's owned surface, plus the two content-app call sites that wrap a
-# Drive workflow in a savepoint of their own. `suite/meet/api/recording.py`
-# holds the same shape around §7.8's reservation workflows and still makes the
-# bare call. It is in no review's file list, so it is reported as a remaining
-# site rather than fixed and swept here.
+# Review C's owned surface, plus the content-app and cross-product call sites
+# that wrap a Drive workflow in a savepoint of their own. `suite/meet/api/
+# recording.py` holds the same shape around §7.8's reservation workflows: it
+# was in no review's file list, so it kept the bare call until this sweep
+# picked it up.
 OWNED_SURFACE = (
     "suite/drive/http",
     "suite/drive/webdav",
@@ -50,6 +54,7 @@ OWNED_SURFACE = (
     "suite/writer",
     "suite/slides",
     "suite/sheets",
+    "suite/meet/api/recording.py",
 )
 
 
@@ -128,6 +133,7 @@ class TestNoBareSavepointRollbackOnTheSurface(UnitTestCase):
             "suite/drive/patches/build/ports.py",
             "suite/writer/api/docs.py",
             "suite/slides/doctype/presentation/presentation.py",
+            "suite/meet/api/recording.py",
         ):
             self.assertIn(expected, swept)
 

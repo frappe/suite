@@ -374,13 +374,21 @@ def _admission_transaction() -> Iterator[None]:
     reservation exist, so a refusal has to remove writes that are already in
     the transaction. A savepoint drops exactly those writes, which keeps the
     contract the same for an HTTP caller and for an in-process one.
+
+    `drive.create_storage_reservation` takes `FOR UPDATE` locks, so this
+    request can be the InnoDB deadlock victim, and InnoDB discards the
+    victim's savepoints along with its transaction. A bare
+    `frappe.db.rollback(save_point=...)` would then raise "SAVEPOINT does not
+    exist" over the `QueryDeadlockError` the caller has to retry on. Drive's
+    shared helper, exported on its package-root interface for exactly this,
+    reports the deadlock instead.
     """
     savepoint = f"meet_recording_admission_{frappe.generate_hash(length=12)}"
     frappe.db.savepoint(savepoint)
     try:
         yield
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as error:
+        drive.rollback_savepoint(savepoint, error)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
