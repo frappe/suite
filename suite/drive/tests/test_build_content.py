@@ -98,10 +98,12 @@ def registered_content_types():
     """
     real_get_hooks = frappe.get_hooks
 
-    def hooks(key=None, *args, **kwargs):
-        if key == "drive_content_types":
+    # `hook`, not `key`: frappe's own signature is `get_hooks(hook=None, ...)`
+    # and three framework call sites pass it by keyword.
+    def hooks(hook=None, *args, **kwargs):
+        if hook == "drive_content_types":
             return list(CONTENT_TYPES)
-        return real_get_hooks(key, *args, **kwargs)
+        return real_get_hooks(hook, *args, **kwargs)
 
     clear_registry_cache()
     try:
