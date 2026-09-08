@@ -107,6 +107,10 @@ def handle(ctx: DavContext) -> Response:
         # §7.3's preflight: a declared overshoot is refused before a byte lands
         ceilings.check(length)
 
+    # `_spool` stores the request body through `put_blob`, so the blob below
+    # is one this request produced. A DAV client never names a blob id - there
+    # is no place in the protocol for one - so neither write is the §11.2 door
+    # `nodes.create` guards with `_client_named_blob`.
     title = row.title if row is not None else ctx.segments[-1]
     blob = _spool(ctx, title, ceilings)
     content_modified = _client_mtime(ctx)
