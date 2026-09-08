@@ -142,7 +142,7 @@ try {
 	}
 	if (values.scenario === "representative-camera" && values.consume === "all") {
 		const deadline = Date.now() + 15_000;
-		while (!cameraDeliveryReady(await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status()))), cameras, count)) {
+		while (!cameraDeliveryReady(await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.endpointCounts()))), cameras, count)) {
 			if (Date.now() >= deadline) throw new Error("Camera delivery did not converge before the hold sample");
 			await wait(100);
 		}

@@ -180,6 +180,10 @@ async function status() {
 		capture: stream?.getTracks().map((track) => ({ kind: track.kind, settings: track.getSettings() })) || [] };
 }
 
+function endpointCounts() {
+	return { producerCount: producers.size, consumerCount: consumers.size };
+}
+
 function setAudioActive(active: boolean) {
 	if (!audioGain || !audioContext) throw new Error("rotating audio source is unavailable");
 	audioGain.gain.setValueAtTime(active ? 0.15 : 0, audioContext.currentTime);
@@ -199,6 +203,6 @@ async function stop() {
 
 declare global {
 	interface HTMLVideoElement { webkitDecodedFrameCount?: number }
-	interface Window { meetLoad: { start: typeof start; status: typeof status; stop: typeof stop; setAudioActive: typeof setAudioActive } }
+	interface Window { meetLoad: { start: typeof start; status: typeof status; endpointCounts: typeof endpointCounts; stop: typeof stop; setAudioActive: typeof setAudioActive } }
 }
-window.meetLoad = { start, status, stop, setAudioActive };
+window.meetLoad = { start, status, endpointCounts, stop, setAudioActive };
