@@ -67,7 +67,7 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(writer_templates=[source_row], users={"Administrator": True, OWNER: True})
         env, target = self.environment(source)
 
-        folder = convert_templates(env)
+        folder = convert_templates(env, env.state.content())
 
         self.assertEqual(target.node_rows[folder]["title"], "Templates")
         document = target.writer_rows[source_row.name]
@@ -83,7 +83,7 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(target.grant_roles(source_row.name, (OWNER,))[OWNER], MANAGE)
         self.assertEqual(source.writer_template_rows, [source_row])
 
-        convert_templates(env)
+        convert_templates(env, env.state.content())
         self.assertEqual(len(target.writer_rows), 1)
 
     def test_administrator_owned_template_has_no_redundant_owner_grant(self):
@@ -91,7 +91,7 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(writer_templates=[row], users={"Administrator": True})
         env, target = self.environment(source)
 
-        convert_templates(env)
+        convert_templates(env, env.state.content())
 
         self.assertEqual(target.grant_roles(row.name, (GENERAL,))[GENERAL], READ)
         self.assertNotIn("Administrator", target.grant_roles(row.name, ("Administrator",)))
@@ -101,7 +101,7 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
         env, target = self.environment(source)
 
-        folder = convert_templates(env)
+        folder = convert_templates(env, env.state.content())
 
         node = target.node_rows[row.name]
         self.assertEqual(node["parent"], folder)
@@ -118,11 +118,31 @@ class TemplateTest(unittest.TestCase):
         )
         env, target = self.environment(source)
 
-        convert_templates(env)
+        convert_templates(env, env.state.content())
 
         self.assertEqual(target.node_rows["writer-a"]["title"], "Common")
         self.assertEqual(target.node_rows["writer-b"]["title"], "Common (2)")
         self.assertEqual(env.state.content().template_title_renames, 1)
+
+    def test_template_nodes_carry_the_folder_child_path(self):
+        writer = writer_template("writer-template")
+        presentation = presentation_template("deck-template")
+        source = FakeContent(
+            writer_templates=[writer],
+            documents=[presentation],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+
+        folder = convert_templates(env, env.state.content())
+
+        # `_core/nodes.child_path` is `f"{path or '/'}{name}/"`. Without the
+        # leading slash `_check_tree_position` refuses the node on every
+        # later save, move, restore, or copy.
+        self.assertEqual(target.node_rows[folder]["path"], "")
+        for name in ("writer-template", "deck-template"):
+            self.assertEqual(target.node_rows[name]["path"], f"/{folder}/")
+            self.assertEqual(target.node_rows[name]["root"], target.node_rows[folder]["root"])
 
     def test_case_only_templates_folder_collision_is_refused(self):
         source = FakeContent(users={"Administrator": True})
@@ -147,7 +167,7 @@ class TemplateTest(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(InvalidLegacyContent, "ambiguous Templates"):
-            convert_templates(env)
+            convert_templates(env, env.state.content())
 
     def test_template_logical_unit_rolls_back_after_interruption(self):
         row = writer_template("writer-template")
@@ -156,7 +176,7 @@ class TemplateTest(unittest.TestCase):
         target.fail_unit = row.name
 
         with self.assertRaises(InterruptedRun):
-            convert_templates(env)
+            convert_templates(env, env.state.content())
         self.assertNotIn(row.name, target.writer_rows)
         self.assertNotIn(row.name, target.node_rows)
         self.assertFalse(target.grant_roles(row.name, (GENERAL, OWNER)))
@@ -167,7 +187,7 @@ class TemplateTest(unittest.TestCase):
         env, _ = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "has no User row"):
-            convert_templates(env)
+            convert_templates(env, env.state.content())
 
 
 if __name__ == "__main__":
