@@ -87,7 +87,7 @@ def filter_drive_favourite(user):
 
 @common_filters
 def filter_drive_recent(user):
-    return f"""(`tabDrive Entity Log`.`user` = {frappe.db.escape(user)})"""
+    return f"""(`tabDrive Recent`.`user` = {frappe.db.escape(user)})"""
 
 
 @common_filters

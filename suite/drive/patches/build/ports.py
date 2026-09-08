@@ -830,6 +830,26 @@ GRANT_COLUMNS = (
     "idx",
 )
 
+# §3.8. `detail` is a JSON column, so the value handed to `bulk_insert` is
+# already a JSON string; `at` is the moment the act happened, not the moment
+# Build copied it.
+ACTIVITY_COLUMNS = (
+    "name",
+    "node",
+    "action",
+    "actor",
+    "at",
+    "via_link",
+    "client",
+    "detail",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+)
+
 # What a bulk-inserted row reads back as. `owner`/`modified_by` are Drive's
 # own bookkeeping, not access: §3.1 says `owner` "Grants no access".
 NODE_READ_COLUMNS = (
@@ -1767,3 +1787,474 @@ class SiteContentTarget:
             _rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
+
+
+# --- §14.2 step 9: favourites, recents, activity, routes, and DAV rows ------
+
+# `Drive Entity Activity Log.action_type`, the nine legacy verbs
+# (`suite/drive/doctype/drive_entity_activity_log/`). Eight map one for one
+# onto `Drive Activity.action`; `delete` is the one §14.6 derives.
+LEGACY_DELETE_VERB = "delete"
+
+# The four legacy payload columns §14.6 folds into `detail`, plus the column
+# that names which field `old_value` and `new_value` describe.
+ACTIVITY_DETAIL_COLUMNS = ("message", "document_field", "old_value", "new_value", "meta_value")
+
+
+@dataclass(frozen=True)
+class FavouriteRow:
+    """One `Drive Favourite` row, with both the legacy and the new column."""
+
+    name: str
+    user: str
+    entity: str | None = None
+    node: str | None = None
+    creation: str | None = None
+
+
+@dataclass(frozen=True)
+class RecentRow:
+    """One `Drive Recent` row, after the pre-model-sync rename (§14.6)."""
+
+    name: str
+    user: str
+    node: str | None = None
+    opened_at: str | None = None
+
+
+@dataclass(frozen=True)
+class ActivityLogRow:
+    """One `Drive Entity Activity Log` row, with every column §14.6 reads."""
+
+    name: str
+    entity: str | None = None
+    action_type: str | None = None
+    message: str | None = None
+    document_field: str | None = None
+    old_value: str | None = None
+    new_value: str | None = None
+    meta_value: str | None = None
+    owner: str | None = None
+    creation: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+
+@dataclass(frozen=True)
+class EntityRow:
+    """A retargeted side-table row: its id and the node id it names."""
+
+    name: str
+    entity: str | None = None
+
+
+class LegacyRecords(Protocol):
+    """The record tables §14.6 retargets. Reads only, like `LegacyTree`."""
+
+    def favourites(self, after: str, limit: int) -> list[FavouriteRow]:
+        """`Drive Favourite` rows, `name` ascending."""
+
+    def recents(self, after: str, limit: int) -> list[RecentRow]:
+        """`Drive Recent` rows, `name` ascending."""
+
+    def activity_log(self, after: str, limit: int) -> list[ActivityLogRow]:
+        """`Drive Entity Activity Log` rows, `name` ascending."""
+
+    def notifications(self) -> tuple[int, int]:
+        """`(rows, rows with no activity pointer)` on `Drive Notification`."""
+
+    def legacy_routes(self, after: str, limit: int) -> list[EntityRow]:
+        """`Drive Legacy Route` rows, `name` ascending."""
+
+    def dav_locks(self, after: str, limit: int) -> list[EntityRow]:
+        """`Drive DAV Lock` rows, `name` ascending."""
+
+    def dav_properties(self, after: str, limit: int) -> list[EntityRow]:
+        """`Drive DAV Property` rows, `name` ascending."""
+
+
+class RecordsTarget(Protocol):
+    """The three writes step 9 makes, and the reads that decide them."""
+
+    def nodes_present(self, names: tuple[str, ...]) -> set[str]:
+        """Which of these ids exist as `Drive Node` rows."""
+
+    def favourite_nodes(self, pairs: tuple[tuple[str, str], ...]) -> set[tuple[str, str]]:
+        """Which `(user, node)` pairs `Drive Favourite` already holds.
+
+        `fav_user_node` is unique, so a legacy table with two rows for one
+        pair can retarget only the first of them."""
+
+    def set_favourite_node(self, name: str, node: str) -> None:
+        """Fill `node` from `entity`, leaving the legacy column in place."""
+
+    def activity_present(self, names: tuple[str, ...]) -> set[str]:
+        """Which of these `Drive Activity` rows a previous run already wrote."""
+
+    def insert_activity(self, rows: list[dict]) -> None:
+        """Bulk-insert mapped `Drive Activity` rows, source ids kept."""
+
+    def commit(self) -> None:
+        """End the current batch."""
+
+
+# --- §14.2 step 11: settings, quotas, and reservations ---------------------
+
+
+@dataclass(frozen=True)
+class UserQuotaRow:
+    """One `Drive Settings` row that carries a per-user quota in MB."""
+
+    name: str
+    user: str | None = None
+    quota: int = 0
+
+
+@dataclass(frozen=True)
+class ReservationRow:
+    """One `Drive Storage Reservation`, mid-move from owner to root (§3.12)."""
+
+    name: str
+    root: str | None = None
+    storage_owner: str | None = None
+    reserved_bytes: int = 0
+
+
+class LegacySettings(Protocol):
+    """The settings §14.8 reads. Reads only."""
+
+    def disk_quota_mb(self) -> int:
+        """`Drive Disk Settings.quota`, the legacy site default in MB."""
+
+    def user_quotas(self, after: str, limit: int) -> list[UserQuotaRow]:
+        """`Drive Settings` rows, `name` ascending."""
+
+    def reservations(self, after: str, limit: int) -> list[ReservationRow]:
+        """`Drive Storage Reservation` rows, `name` ascending."""
+
+
+class SettingsTarget(Protocol):
+    """The byte-denominated targets §14.8 writes."""
+
+    def site_quotas(self) -> tuple[int, int]:
+        """`(default_personal_quota, shared_quota)` in bytes."""
+
+    def set_site_quotas(self, default_personal: int, shared: int) -> None:
+        """Write both site defaults, in bytes."""
+
+    def root_quota(self, root: str) -> int | None:
+        """One root's `quota_bytes`, or None when the root is gone."""
+
+    def set_root_quota(self, root: str, quota_bytes: int) -> None:
+        """Write one root's byte override."""
+
+    def bind_reservation(self, name: str, root: str) -> None:
+        """Move one reservation from `storage_owner` to `root` (§3.12)."""
+
+    def commit(self) -> None:
+        """End the current batch."""
+
+
+# --- §14.2 step 12: the usage recompute, and its independent check ---------
+
+
+@dataclass(frozen=True)
+class RootUsageRow:
+    """One accounting root, as the recompute reads it."""
+
+    name: str
+    kind: str | None = None
+    state: str | None = None
+    used_bytes: int = 0
+
+
+class UsageLedger(Protocol):
+    """Two ways to total a root's charged bytes, and the write between them."""
+
+    def roots(self, after: str, limit: int) -> list[RootUsageRow]:
+        """Every `Drive Root`, `name` ascending. State is filtered by the caller."""
+
+    def totals(self, root: str) -> dict:
+        """§7.7's three correlated sums for one root."""
+
+    def grouped_totals(self) -> dict[str, dict]:
+        """The same three sums for every root, as three grouped passes.
+
+        Independent of `totals`: different SQL, different access path, and
+        computed for the whole site at once rather than one root at a time.
+        §14.9 needs the reconciliation to be a second opinion, not a second
+        call to the same statement."""
+
+    def set_used_bytes(self, root: str, value: int) -> None:
+        """Write the corrected counter without a `modified` bump."""
+
+    def commit(self) -> None:
+        """End the current batch."""
+
+
+class SiteRecords:
+    """`LegacyRecords` over the real record tables."""
+
+    def __init__(self, name_prefix: str | None = None):
+        self.name_prefix = name_prefix
+
+    def favourites(self, after: str, limit: int) -> list[FavouriteRow]:
+        return [
+            FavouriteRow(**row)
+            for row in self._page(
+                "Drive Favourite", ("name", "user", "entity", "node", "creation"), after, limit
+            )
+        ]
+
+    def recents(self, after: str, limit: int) -> list[RecentRow]:
+        return [
+            RecentRow(**row)
+            for row in self._page("Drive Recent", ("name", "user", "node", "opened_at"), after, limit)
+        ]
+
+    def activity_log(self, after: str, limit: int) -> list[ActivityLogRow]:
+        columns = (
+            "name",
+            "entity",
+            "action_type",
+            *ACTIVITY_DETAIL_COLUMNS,
+            "owner",
+            "creation",
+            "modified",
+            "modified_by",
+        )
+        return [
+            ActivityLogRow(**row) for row in self._page("Drive Entity Activity Log", columns, after, limit)
+        ]
+
+    def notifications(self) -> tuple[int, int]:
+        # §14.6 drops these rows rather than mapping them, so the report says
+        # how many were left behind. Two counts, not a page: the evidence is
+        # the size of the inbox that does not migrate.
+        return (
+            frappe.db.count("Drive Notification", self._count_filters({})),
+            frappe.db.count("Drive Notification", self._count_filters({"activity": ["is", "not set"]})),
+        )
+
+    def legacy_routes(self, after: str, limit: int) -> list[EntityRow]:
+        return [
+            EntityRow(**row) for row in self._page("Drive Legacy Route", ("name", "entity"), after, limit)
+        ]
+
+    def dav_locks(self, after: str, limit: int) -> list[EntityRow]:
+        return [EntityRow(**row) for row in self._page("Drive DAV Lock", ("name", "entity"), after, limit)]
+
+    def dav_properties(self, after: str, limit: int) -> list[EntityRow]:
+        return [
+            EntityRow(**row) for row in self._page("Drive DAV Property", ("name", "entity"), after, limit)
+        ]
+
+    def _page(self, doctype: str, columns: tuple[str, ...], after: str, limit: int) -> list[dict]:
+        filters = [[doctype, "name", ">", after]]
+        if self.name_prefix:
+            filters.append([doctype, "name", "like", f"{self.name_prefix}%"])
+        rows = frappe.get_all(
+            doctype, filters=filters, fields=list(columns), order_by="name asc", limit=limit
+        )
+        return [{column: row.get(column) for column in columns} for row in rows]
+
+    def _count_filters(self, filters: dict) -> dict:
+        if self.name_prefix:
+            filters = {**filters, "name": ["like", f"{self.name_prefix}%"]}
+        return filters
+
+
+class SiteRecordsTarget:
+    """`RecordsTarget` over `Drive Node`, `Drive Favourite`, `Drive Activity`."""
+
+    def nodes_present(self, names: tuple[str, ...]) -> set[str]:
+        if not names:
+            return set()
+        return set(
+            frappe.get_all(
+                "Drive Node", filters=[["name", "in", list(names)]], pluck="name", limit_page_length=0
+            )
+        )
+
+    def favourite_nodes(self, pairs: tuple[tuple[str, str], ...]) -> set[tuple[str, str]]:
+        if not pairs:
+            return set()
+        users = sorted({user for user, _node in pairs})
+        nodes = sorted({node for _user, node in pairs})
+        rows = frappe.get_all(
+            "Drive Favourite",
+            filters=[["user", "in", users], ["node", "in", nodes]],
+            fields=["user", "node"],
+            limit_page_length=0,
+        )
+        held = {(row.user, row.node) for row in rows}
+        return held & set(pairs)
+
+    def set_favourite_node(self, name: str, node: str) -> None:
+        frappe.db.set_value("Drive Favourite", name, "node", node, update_modified=False)
+
+    def activity_present(self, names: tuple[str, ...]) -> set[str]:
+        if not names:
+            return set()
+        return set(
+            frappe.get_all(
+                "Drive Activity", filters=[["name", "in", list(names)]], pluck="name", limit_page_length=0
+            )
+        )
+
+    def insert_activity(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        frappe.db.bulk_insert(
+            "Drive Activity",
+            fields=list(ACTIVITY_COLUMNS),
+            values=[_values(ACTIVITY_COLUMNS, row) for row in rows],
+        )
+
+    def commit(self) -> None:
+        if not frappe.flags.in_test:
+            frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
+
+
+class SiteSettings:
+    """`LegacySettings` over `Drive Disk Settings`, `Drive Settings`, reservations."""
+
+    def __init__(self, name_prefix: str | None = None):
+        self.name_prefix = name_prefix
+
+    def disk_quota_mb(self) -> int:
+        return cint(frappe.db.get_single_value("Drive Disk Settings", "quota"))
+
+    def user_quotas(self, after: str, limit: int) -> list[UserQuotaRow]:
+        return [
+            UserQuotaRow(name=row.name, user=row.user, quota=cint(row.quota))
+            for row in self._page("Drive Settings", ("name", "user", "quota"), after, limit)
+        ]
+
+    def reservations(self, after: str, limit: int) -> list[ReservationRow]:
+        return [
+            ReservationRow(
+                name=row.name,
+                root=row.root,
+                storage_owner=row.storage_owner,
+                reserved_bytes=cint(row.reserved_bytes),
+            )
+            for row in self._page(
+                "Drive Storage Reservation", ("name", "root", "storage_owner", "reserved_bytes"), after, limit
+            )
+        ]
+
+    def _page(self, doctype: str, columns: tuple[str, ...], after: str, limit: int):
+        filters = [[doctype, "name", ">", after]]
+        if self.name_prefix:
+            filters.append([doctype, "name", "like", f"{self.name_prefix}%"])
+        return frappe.get_all(
+            doctype, filters=filters, fields=list(columns), order_by="name asc", limit=limit
+        )
+
+
+class SiteSettingsTarget:
+    """`SettingsTarget` over the byte columns §14.8 fills."""
+
+    def site_quotas(self) -> tuple[int, int]:
+        settings = frappe.get_cached_doc("Drive Disk Settings")
+        from suite.drive._core.quota import site_quota_bytes
+
+        return (
+            site_quota_bytes(settings.get("default_personal_quota"), "default_personal_quota"),
+            site_quota_bytes(settings.get("shared_quota"), "shared_quota"),
+        )
+
+    def set_site_quotas(self, default_personal: int, shared: int) -> None:
+        frappe.db.set_single_value(
+            "Drive Disk Settings",
+            {"default_personal_quota": default_personal, "shared_quota": shared},
+        )
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+
+    def root_quota(self, root: str) -> int | None:
+        value = frappe.db.get_value("Drive Root", root, "quota_bytes")
+        return None if value is None else cint(value)
+
+    def set_root_quota(self, root: str, quota_bytes: int) -> None:
+        frappe.db.set_value("Drive Root", root, "quota_bytes", quota_bytes, update_modified=False)
+
+    def bind_reservation(self, name: str, root: str) -> None:
+        # §3.12 and `DriveStorageReservation.validate`: exactly one accounting
+        # owner. The legacy column is emptied on the row it moves, which is
+        # what `_core.quota.bind_legacy_storage_reservation` does at runtime;
+        # the column itself stays until Cleanup drops it (§14.10).
+        frappe.db.set_value(
+            "Drive Storage Reservation",
+            name,
+            {"root": root, "storage_owner": None},
+            update_modified=False,
+        )
+
+    def commit(self) -> None:
+        if not frappe.flags.in_test:
+            frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
+
+
+class SiteUsage:
+    """`UsageLedger` over `Drive Root`, `Drive Node`, versions, reservations."""
+
+    def __init__(self, name_prefix: str | None = None):
+        self.name_prefix = name_prefix
+
+    def roots(self, after: str, limit: int) -> list[RootUsageRow]:
+        filters = [["Drive Root", "name", ">", after]]
+        if self.name_prefix:
+            filters.append(["Drive Root", "name", "like", f"{self.name_prefix}%"])
+        return [
+            RootUsageRow(name=row.name, kind=row.kind, state=row.state, used_bytes=cint(row.used_bytes))
+            for row in frappe.get_all(
+                "Drive Root",
+                filters=filters,
+                fields=["name", "kind", "state", "used_bytes"],
+                order_by="name asc",
+                limit=limit,
+            )
+        ]
+
+    def totals(self, root: str) -> dict:
+        row = frappe.db.sql(
+            """
+            SELECT
+              (SELECT COALESCE(SUM(size), 0) FROM `tabDrive Node`
+                WHERE root = %(root)s) AS nodes,
+              (SELECT COALESCE(SUM(v.size), 0) FROM `tabDrive Node Version` v
+                 JOIN `tabDrive Node` n ON n.name = v.node
+                WHERE n.root = %(root)s) AS versions,
+              (SELECT COALESCE(SUM(reserved_bytes), 0)
+                 FROM `tabDrive Storage Reservation` WHERE root = %(root)s) AS reserved
+            """,
+            {"root": root},
+            as_dict=True,
+        )[0]
+        return {field: cint(row.get(field)) for field in ("nodes", "versions", "reserved")}
+
+    def grouped_totals(self) -> dict[str, dict]:
+        totals: dict[str, dict] = defaultdict(lambda: {"nodes": 0, "versions": 0, "reserved": 0})
+        for root, value in frappe.db.sql(
+            "SELECT root, COALESCE(SUM(size), 0) FROM `tabDrive Node` WHERE root IS NOT NULL GROUP BY root"
+        ):
+            totals[root]["nodes"] = cint(value)
+        for root, value in frappe.db.sql(
+            "SELECT n.root, COALESCE(SUM(v.size), 0) FROM `tabDrive Node Version` v "
+            "JOIN `tabDrive Node` n ON n.name = v.node WHERE n.root IS NOT NULL GROUP BY n.root"
+        ):
+            totals[root]["versions"] = cint(value)
+        for root, value in frappe.db.sql(
+            "SELECT root, COALESCE(SUM(reserved_bytes), 0) FROM `tabDrive Storage Reservation` "
+            "WHERE root IS NOT NULL GROUP BY root"
+        ):
+            totals[root]["reserved"] = cint(value)
+        return dict(totals)
+
+    def set_used_bytes(self, root: str, value: int) -> None:
+        frappe.db.set_value("Drive Root", root, "used_bytes", value, update_modified=False)
+
+    def commit(self) -> None:
+        if not frappe.flags.in_test:
+            frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep

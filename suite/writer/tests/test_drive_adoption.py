@@ -1,27 +1,27 @@
 """Writer's adoption of the Drive content contract (ticket 17, §10.7).
 
-Adoption is an expand phase, not a switch. Writer declares its `ContentTypeSpec`
-and `Writer Document` gains the `node` Link, but `suite/hooks.py` leaves
-`drive_content_types` empty and keeps both `Writer Document` permission entries
-on `suite.writer.overrides`. The README stages registry activation and
-permission-hook changes until the node links exist, and ticket 29 makes all
-three changes together, after Build.
+Adoption was an expand phase. Writer declared its `ContentTypeSpec` at ticket
+17 and `Writer Document` gained the `node` Link; ticket 28 linked every row,
+and ticket 29 made the registry entry and the two hook changes together. So
+`suite/hooks.py` now names `suite.writer.drive.SPEC` and points
+`Writer Document` at `suite.drive.framework`.
 
-So the three classes here split along that seam:
+The three classes here:
 
-`TestWriterDeclaration`   the declaration and the body callbacks, no rows. It
-                          also proves the hooks are dormant and that activation
-                          registers exactly what ticket 29 will install.
-`TestWriterBeforeActivation`
-                          what a site running this commit does: legacy rows,
-                          the legacy `create_document`, and a `DocShare` that
-                          must not fail `migrate`.
+`TestWriterDeclaration`   the declaration, the version envelope, and the two
+                          body readers, on no rows. It also proves the shipped
+                          hook entries.
+`TestWriterAfterActivation`
+                          what activation settled: the declaration the boot
+                          check accepts against the real doctype.
 `TestWriterInDrive`       the Drive-native lifecycle, history, media,
-                          permissions, and failure rollback, under `activated()`.
+                          permissions, and failure rollback.
 
-`activated()` injects the registry and the two hook targets rather than shipping
-them, so nothing here depends on the site being activated and nothing here
-activates it.
+**A document with no node cannot exist any more.** `require_node` holds §5.13
+for a registered doctype, so `suite.writer.api.docs.create_document` and a bare
+`insert` both refuse one, and the legacy-row cases this module used to carry are
+gone with the state they described. `activated()` stays as a name so every
+call site reads the same, and it is now only the registry cache drop.
 
 The integration classes reach `suite.drive._core` for the workflows the package
 root does not expose yet: roots, trash, media upload, and version restore. Those
@@ -42,9 +42,6 @@ import pycrdt
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime
-from werkzeug.datastructures import FileStorage
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -55,29 +52,10 @@ from suite.drive._core.nodes import create_folder as create_node_folder
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api.files import (
-    create_folder,
-    create_link,
-    delete_entities,
-    does_entity_exist,
-    get_file_content,
-    move,
-    remove_or_restore,
-    rename,
-    set_favourite,
-    track_visit,
-    update_access,
-    upload_file,
-)
-from suite.drive.api.list import files as legacy_files
-from suite.drive.api.notifications import create_notification
-from suite.drive.api.permissions import get_general_access, get_shared_with_list, get_user_access
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
 from suite.writer import overrides
-from suite.writer.api import docs, embed
-from suite.writer.api.general import get_document_list
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
@@ -85,13 +63,8 @@ OTHER = "writer-adoption-other@example.com"
 
 DOCTYPE = "Writer Document"
 
-# The smallest real PNG, so the upload path sniffs a mime rather than guessing.
-PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-)
-
-# The three entries ticket 29 installs together, once Build has linked every
-# `Writer Document` row. `suite/hooks.py` carries none of them yet.
+# The three entries ticket 29 installed together, once Build had linked every
+# `Writer Document` row. `suite/hooks.py` carries all of them.
 ACTIVATION = {
     "drive_content_types": ["suite.writer.drive.SPEC"],
     "has_permission": ["suite.drive.framework.doc_has_permission"],
@@ -101,30 +74,30 @@ ACTIVATION = {
 
 @contextmanager
 def activated():
-    """Register Writer for the block, exactly the way ticket 29 will register it.
+    """Read the registry `suite/hooks.py` ships, and leave nothing behind.
 
-    The registry is built from `drive_content_types` and the framework reads
-    both permission hooks from the same hook map, so injecting the map is the
-    whole activation. Nothing is written and nothing survives the block: the
-    per-request registry cache is dropped on the way in and on the way out.
+    Ticket 29 installed every entry in `ACTIVATION`, so there is nothing to
+    inject. The registry is built from `drive_content_types` and cached per
+    request, and the cache is dropped on the way in and on the way out.
     """
-    real_get_hooks = frappe.get_hooks
-
-    def hooks(key=None, *args, **kwargs):
-        if key == "drive_content_types":
-            return list(ACTIVATION[key])
-        if key in ("has_permission", "permission_query_conditions"):
-            wired = dict(real_get_hooks(key, *args, **kwargs) or {})
-            wired[DOCTYPE] = list(ACTIVATION[key])
-            return wired
-        return real_get_hooks(key, *args, **kwargs)
-
     clear_registry_cache()
     try:
-        with patch("frappe.get_hooks", hooks):
-            yield
+        yield
     finally:
         clear_registry_cache()
+
+
+@contextmanager
+def linked():
+    """Answer the Build link check the way a migrated site would.
+
+    `slides.localhost` still holds pre-Build rows, so
+    `validate_content_registry` refuses it on the count of unlinked rows. This
+    case is about the declaration, not about the site's data;
+    `suite/drive/tests/test_content.py` covers the link check itself.
+    """
+    with patch("suite.drive.framework.refuse_unlinked_documents"):
+        yield
 
 
 # Valid base64, but not a Yjs update: pycrdt panics on it.
@@ -217,30 +190,27 @@ class TestWriterDeclaration(UnitTestCase):
 
     # staged activation
 
-    def test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were(self):
+    def test_the_declaration_is_registered_and_both_hooks_moved(self):
         """README execution rules: stage the registry and the permission hooks
-        after the required node links exist. Build writes them at ticket 28 and
-        ticket 29 activates. Registering now would 409 every legacy row on its
-        next permission check."""
+        after the required node links exist. Ticket 28 wrote the links, ticket
+        29 activated, and `refuse_unlinked_documents` is what proves the
+        ordering on a real migration."""
         from suite import hooks
 
-        self.assertEqual(hooks.drive_content_types, [], "activation waits for ticket 29")
-        self.assertEqual(hooks.has_permission[DOCTYPE], "suite.writer.overrides.document_has_permission")
+        self.assertIn("suite.writer.drive.SPEC", hooks.drive_content_types)
+        self.assertEqual(hooks.has_permission[DOCTYPE], "suite.drive.framework.doc_has_permission")
         self.assertEqual(
-            hooks.permission_query_conditions[DOCTYPE],
-            "suite.writer.overrides.document_query_conditions",
+            hooks.permission_query_conditions[DOCTYPE], "suite.drive.framework.doc_query_conditions"
         )
         clear_registry_cache()
-        self.assertFalse(governs(DOCTYPE), "Drive governs nothing while the registry is empty")
+        self.assertTrue(governs(DOCTYPE), "Drive governs the type the registry names")
 
-    def test_a_dormant_registry_leaves_a_docshare_alone(self):
-        """The one thing that would fail `migrate` on a site with real Writer
-        data. Desk assignment writes a `DocShare` (`frappe.share.add`), and no
-        tool rewrites those rows as grants before Build."""
+    def test_a_registered_document_refuses_a_docshare(self):
+        """`Drive Grant` is the only permission table for a governed row, and a
+        `DocShare` grants around both permission hooks. Desk assignment is what
+        writes one, so it is refused where it is written."""
         share = frappe._dict(share_doctype=DOCTYPE, share_name="anything")
-        refuse_governed_share(share)
-
-        with activated(), self.assertRaises(DriveForbidden):
+        with self.assertRaises(DriveForbidden):
             refuse_governed_share(share)
 
     def test_activation_registers_the_declaration_and_moves_both_hooks(self):
@@ -252,7 +222,6 @@ class TestWriterDeclaration(UnitTestCase):
                 frappe.get_hooks("permission_query_conditions")[DOCTYPE],
                 ACTIVATION["permission_query_conditions"],
             )
-        self.assertFalse(governs(DOCTYPE), "the injection leaves nothing behind")
 
     # the version envelope
 
@@ -405,701 +374,27 @@ class TestWriterDeclaration(UnitTestCase):
         self.assertIsNone(writer._remap_body(None, {"old": "new"}))
 
 
-class TestWriterBeforeActivation(IntegrationTestCase):
-    """What a site running this commit actually does: nothing Drive-native.
+class TestWriterAfterActivation(IntegrationTestCase):
+    """What activation settled, on the real `Writer Document` doctype.
 
-    `drive_content_types` is empty here, as it is on a site. These are the two
-    outcomes the staged activation buys: a legacy document stays reachable, and
-    a `DocShare` no longer fails `migrate`.
+    A row with no node cannot exist here: `require_node` holds §5.13 for a
+    registered doctype, so the legacy-row cases this class used to carry
+    describe a state Build and ticket 29 removed together. What is left is the
+    declaration the boot check reads against the doctype.
     """
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        ensure_user(USER)
-        ensure_user(OTHER)
-        frappe.db.commit()
-
-    def setUp(self):
-        super().setUp()
-        frappe.set_user("Administrator")
-        # Registered first, so it runs last: after every `delete_doc` cleanup a
-        # test queues, and after the rows those cleanups missed are swept.
-        self._documents_before = set(frappe.get_all(DOCTYPE, pluck="name"))
-        self._shares_before = self._shares_now()
-        self.addCleanup(self._remove_fixture_rows)
-        clear_registry_cache()
-        self.addCleanup(clear_registry_cache)
-
-    def _remove_fixture_rows(self):
-        """Commit the removals, because a test in this class commits.
-
-        `IntegrationTestCase` rolls back once per class, not once per test, so
-        a `frappe.db.commit()` inside a test makes its rows permanent. The
-        per-test `delete_doc` cleanups then delete them inside the transaction
-        that rollback throws away, and the committed rows come back.
-
-        A `Writer Document` that survives carries a `DocShare` with it, and
-        that share is poison: `_refuse_shared_list` refuses the whole list for
-        the user who holds it, and `validate_content_registry` refuses to
-        activate the type at all. Both are correct fail-closed answers, so the
-        row is what has to go.
-        """
-        frappe.set_user("Administrator")
-        for share in self._shares_now() - self._shares_before:
-            frappe.delete_doc("DocShare", share, force=1, ignore_permissions=True, ignore_missing=True)
-        for document in set(frappe.get_all(DOCTYPE, pluck="name")) - self._documents_before:
-            frappe.delete_doc(DOCTYPE, document, force=1, ignore_permissions=True, ignore_missing=True)
-        frappe.db.commit()
-
-    @staticmethod
-    def _shares_now() -> set[str]:
-        return set(frappe.get_all("DocShare", filters={"share_doctype": DOCTYPE}, pluck="name"))
-
-    def _legacy_document(self) -> str:
-        document = frappe.new_doc(DOCTYPE)
-        document.insert(ignore_permissions=True)
-        self.addCleanup(
-            frappe.delete_doc, DOCTYPE, document.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        return document.name
-
-    def test_a_committed_fixture_row_does_not_outlive_the_class_rollback(self):
-        """The leak `_remove_fixture_rows` exists to stop, asserted in the run
-        that causes it.
-
-        Without this the leak is invisible here and lands on the next run of
-        this module: one surviving share makes `_refuse_shared_list` refuse the
-        whole list for its user and makes `validate_content_registry` refuse to
-        activate the type, so three tests that share nothing with the leak fail.
-        """
-        docname = self._legacy_document()
-        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
-        frappe.db.commit()
-
-        self._remove_fixture_rows()
-        # What `_rollback_db` does at class teardown. A removal that is only
-        # queued and not committed does not survive it.
-        frappe.db.rollback()
-
-        self.assertFalse(frappe.db.exists("DocShare", share.name), "the share is gone for good")
-        self.assertFalse(frappe.db.exists(DOCTYPE, docname), "and so is the row it was written against")
-
-    def test_a_document_the_api_creates_is_reachable_by_the_legacy_read_path(self):
-        """The whole point of not activating. `create_document` writes a `File`
-        and a node-less document, and `get_document`, the row check, and the
-        list all still find it. A Drive-native document would have no `File`,
-        and every one of those reads is still `File`-based until ticket 23."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-
-        entity = docs.create_document(title=f"Legacy {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        docname = entity.content_docname
-
-        self.assertEqual(entity.content_doctype, DOCTYPE)
-        self.assertIsNone(frappe.db.get_value(DOCTYPE, docname, "node"), "no node before Build")
-        self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname))
-        self.assertIn(docname, frappe.get_list(DOCTYPE, pluck="name"))
-
-        docs.get_document(entity.name)
-        self.assertEqual(frappe.response["data"]["content_docname"], docname)
-
-    def test_the_legacy_read_path_publishes_the_page_payload_the_editor_reads(self):
-        """`get_document` merges the document onto the payload
-        `get_entity_with_permissions` published, and §10.2 keeps that row on
-        the `File` store while the type is in the expand phase. The page reads
-        the permission bits to hide its buttons and the trail to draw the
-        breadcrumb, so the whole payload is what has to arrive, not the id."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-
-        entity = docs.create_document(title=f"Payload {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        docs.get_document(entity.name)
-        payload = frappe.response["data"]
-
-        self.assertEqual(payload["name"], entity.name)
-        self.assertEqual(payload["content_doctype"], DOCTYPE)
-        self.assertEqual(payload["read"], 1)
-        self.assertEqual(payload["write"], 1)
-        self.assertEqual(payload["kind"], "native")
-        # The creator owns the row, so the trail reaches their own Home.
-        self.assertTrue(payload["breadcrumbs"])
-        self.assertEqual(payload["breadcrumbs"][-1]["name"], entity.name)
-        # `hide_storage_key`: the raw storage key leaks the owner's path.
-        self.assertIsNone(payload["file_url"])
-        self.assertEqual(payload["share_count"], 0, "a new document is shared with nobody")
-
-    def test_a_stranger_is_refused_the_document_by_the_rule_that_wrote_it(self):
-        """The legacy gate still decides. No node carries this row, so the
-        answer comes from `generate_upward_path` - the rule `create_document`
-        checked on the way in - and it refuses with the class `ErrorPage.vue`
-        sends a signed-out visitor to the login page on."""
-        frappe.set_user(USER)
-        entity = docs.create_document(title=f"Private {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        # `frappe.response` outlives one test, so the refusal is asked to
-        # leave an empty envelope rather than merely not to fill this one.
-        frappe.response.pop("data", None)
-        with self.assertRaises(frappe.PermissionError):
-            docs.get_document(entity.name)
-        self.assertIsNone(frappe.response.get("data"))
-
-    def test_a_removed_row_is_not_found_by_the_legacy_read_path(self):
-        """The old query filtered `status: STATUS_ACTIVE`, so a document in
-        the trash opened as a page said it was gone rather than rendering."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-
-        entity = docs.create_document(title=f"Removed {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        frappe.db.set_value("File", entity.name, "status", "Removed", update_modified=False)
-
-        with self.assertRaises(DriveNotFound):
-            docs.get_document(entity.name)
-
-    def test_a_document_the_api_creates_appears_in_the_folder_that_holds_it(self):
-        """`create_document` writes into `Users/<email>`, and the trail
-        `get_entity_with_permissions` publishes for the document names that
-        folder. Opening it met `node_core.children`, which refuses a parent
-        no node holds, so the folder page was an error page."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = docs.create_document(title=f"Listed {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        self.assertFalse(frappe.db.exists("Drive Node", entity.folder), "no node before Build")
-
-        rows = {row["name"]: row for row in legacy_files(entity_name=entity.folder)}
-
-        self.assertIn(entity.name, rows)
-        row = rows[entity.name]
-        self.assertEqual(row["file_name"], entity.file_name)
-        self.assertEqual(row["read"], 1)
-        self.assertEqual(row["file_type"], "Document")
-        self.assertEqual(row["content_doctype"], DOCTYPE)
-
-    def test_the_folder_page_pages_the_way_the_old_one_did(self):
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        made = []
-        for index in range(3):
-            entity = docs.create_document(title=f"Paged {index} {frappe.generate_hash(6)}")
-            made.append(entity.name)
-            self.addCleanup(
-                frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-            )
-
-        page = legacy_files(entity_name=entity.folder, limit=2, paginated=True)
-
-        self.assertEqual(len(page["rows"]), 2)
-        self.assertEqual(page["next_start"], 2)
-        self.assertTrue(page["has_next"])
-        # Walked to the end, because the folder is the fixture user's own and
-        # holds whatever the rest of the class put there.
-        seen = {row["name"] for row in page["rows"]}
-        for _ in range(20):
-            if not page["has_next"]:
-                break
-            page = legacy_files(entity_name=entity.folder, start=page["next_start"], limit=2, paginated=True)
-            seen |= {row["name"] for row in page["rows"]}
-        self.assertTrue(set(made) <= seen, "every document is on one of the pages")
-
-    def test_a_stranger_is_refused_the_folder_the_document_is_in(self):
-        """The gate is the old body's, on the store that holds the folder."""
-        frappe.set_user(USER)
-        entity = docs.create_document(title=f"Shut {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        with self.assertRaises(frappe.PermissionError):
-            legacy_files(entity_name=entity.folder)
-
-    @staticmethod
-    def _drop_rows(*names: str):
-        frappe.set_user("Administrator")
-        for name in names:
-            frappe.delete_doc("File", name, force=1, ignore_permissions=True, ignore_missing=True)
-
-    def _opened(self, title: str):
-        """One document `create_document` writes, with no node behind it."""
-        entity = docs.create_document(title=title)
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        self.addCleanup(frappe.db.delete, "Drive Entity Log", {"entity_name": entity.name})
-        self.assertFalse(frappe.db.exists("Drive Node", entity.name), "no node before Build")
-        return entity
-
-    def test_opening_a_document_the_api_creates_records_when_it_was_opened(self):
-        """`useDocument` calls `track_visit` on every open, and nothing else
-        writes `Drive Entity Log`. `get_document_list` orders the caller's own
-        documents by that row and publishes it as `accessed`, so a forwarder
-        that only visits nodes left every document with neither."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Opened {frappe.generate_hash(6)}")
-
-        track_visit(entity_name=entity.name)
-
-        self.assertTrue(
-            frappe.db.get_value(
-                "Drive Entity Log", {"entity_name": entity.name, "user": USER}, "last_interaction"
-            ),
-            "the open is on the log the list reads",
-        )
-        frappe.response.pop("data", None)
-        get_document_list()
-        rows = {row["name"]: row for row in frappe.response["data"]}
-        self.assertTrue(rows[entity.name]["accessed"], "and the list publishes it")
-
-    def test_opening_a_document_clears_the_badge_it_was_announced_with(self):
-        """The visible half. `writer_document.notify_comments` still writes a
-        pointerless `Drive Notification` naming the `File`, and the old body
-        marked every unread row about the file it opened as read."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Announced {frappe.generate_hash(6)}")
-        row = frappe.get_doc("File", entity.name)
-        # The notifier runs as the site, not as the reader it announces to.
-        frappe.set_user("Administrator")
-        self.assertTrue(create_notification(OTHER, USER, "Comment", row, "somebody said something"))
-        frappe.set_user(USER)
-        announced = frappe.get_all(
-            "Drive Notification", filters={"notif_doctype_name": entity.name}, pluck="name"
-        )
-        for row in announced:
-            self.addCleanup(
-                frappe.delete_doc,
-                "Drive Notification",
-                row,
-                force=1,
-                ignore_permissions=True,
-                ignore_missing=True,
-            )
-
-        track_visit(entity_name=entity.name)
-
-        self.assertEqual(
-            frappe.get_all("Drive Notification", filters={"notif_doctype_name": entity.name}, pluck="read"),
-            [1],
-        )
-
-    def test_a_stranger_cannot_record_a_visit_to_somebody_elses_document(self):
-        """The gate is the `File` hook, as the old body's was."""
-        frappe.set_user(USER)
-        entity = self._opened(f"Unopened {frappe.generate_hash(6)}")
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        with self.assertRaises(frappe.PermissionError):
-            track_visit(entity_name=entity.name)
-        self.assertFalse(
-            frappe.db.exists("Drive Entity Log", {"entity_name": entity.name, "user": OTHER}),
-            "a refused visit writes nothing",
-        )
-
-    def test_renaming_a_document_the_api_creates_keeps_the_title_it_was_given(self):
-        """`CoreEditor.vue` renames an untitled document from its first line on
-        the first Enter, so this ran without any gesture the reader chose."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Untitled {frappe.generate_hash(6)}")
-
-        answer = rename(entity.name, "A better title")
-
-        self.assertEqual(answer["file_name"], "A better title")
-        self.assertEqual(frappe.db.get_value("File", entity.name, "file_name"), "A better title")
-
-    def test_a_stranger_cannot_rename_somebody_elses_document(self):
-        """The gate is `File.rename`'s own Write check, the rule that named
-        the row."""
-        frappe.set_user(USER)
-        entity = self._opened(f"Untouched {frappe.generate_hash(6)}")
-        before = frappe.db.get_value("File", entity.name, "file_name")
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        with self.assertRaises(frappe.PermissionError):
-            rename(entity.name, "Mine now")
-        self.assertEqual(frappe.db.get_value("File", entity.name, "file_name"), before)
-
-    def test_a_document_the_api_creates_goes_to_the_trash_and_comes_back(self):
-        """Writer's own `RemoveDialog.vue` names the document the editor has
-        open, for both halves of the gesture."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Doomed {frappe.generate_hash(6)}")
-
-        remove_or_restore([entity.name])
-        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Trashed")
-        with self.assertRaises(DriveNotFound):
-            docs.get_document(entity.name)
-
-        remove_or_restore([entity.name])
-        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Active")
-        frappe.response.pop("data", None)
-        docs.get_document(entity.name)
-        self.assertEqual(frappe.response["data"]["name"], entity.name)
-
-    def test_a_stranger_cannot_trash_somebody_elses_document(self):
-        """The gate is `toggle_entity_status`'s own Write check."""
-        frappe.set_user(USER)
-        entity = self._opened(f"Kept {frappe.generate_hash(6)}")
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        with self.assertRaises(frappe.PermissionError):
-            remove_or_restore([entity.name])
-        self.assertEqual(frappe.db.get_value("File", entity.name, "status"), "Active")
-
-    def test_sharing_a_document_the_api_creates_lets_the_other_reader_in(self):
-        """Writer's `ShareDialog.vue` names the document the editor has open."""
-        frappe.set_user(USER)
-        entity = self._opened(f"Shared {frappe.generate_hash(6)}")
-
-        update_access(entity.name, "share", user=OTHER, read=1, comment=1)
-
-        self.assertEqual([person["user"] for person in get_shared_with_list(entity.name)], [USER, OTHER])
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        self.assertEqual(get_user_access(entity.name)["read"], 1)
-        self.assertEqual(get_user_access(entity.name)["write"], 0)
-
-    def test_publishing_a_document_the_api_creates_reads_back_as_published(self):
-        """`InfoDialog.vue` reads `get_general_access` for the same document."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Published {frappe.generate_hash(6)}")
-        self.assertEqual(get_general_access(entity.name)["type"], "restricted")
-
-        update_access(entity.name, "share", user="", read=1)
-
-        self.assertEqual(get_general_access(entity.name)["type"], "public")
-
-    def test_unsharing_a_document_the_api_creates_takes_the_reader_back_out(self):
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Unshared {frappe.generate_hash(6)}")
-        update_access(entity.name, "share", user=OTHER, read=1)
-
-        update_access(entity.name, "unshare", user=OTHER)
-
-        self.assertEqual([person["user"] for person in get_shared_with_list(entity.name)], [USER])
-
-    def test_a_stranger_cannot_share_somebody_elses_document(self):
-        """The gate is `File.share`'s own share check, the rule that wrote the
-        rows."""
-        frappe.set_user(USER)
-        entity = self._opened(f"Unshareable {frappe.generate_hash(6)}")
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        with self.assertRaises(frappe.PermissionError):
-            update_access(entity.name, "share", user=OTHER, read=1)
-        with self.assertRaises(frappe.PermissionError):
-            get_shared_with_list(entity.name)
-
-    def test_favouriting_a_document_the_api_creates_keeps_the_mark(self):
-        """Writer's navbar and the Drive row menu both offer Favourite."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Favourite {frappe.generate_hash(6)}")
-        self.addCleanup(frappe.db.delete, "Drive Favourite", {"entity": entity.name})
-
-        set_favourite([{"name": entity.name, "is_favourite": True}])
-        self.assertTrue(
-            frappe.db.exists("Drive Favourite", {"entity": entity.name, "user": USER}),
-            "the mark is on the caller's own row",
-        )
-
-        set_favourite([{"name": entity.name, "is_favourite": False}])
-        self.assertFalse(frappe.db.exists("Drive Favourite", {"entity": entity.name, "user": USER}))
-
-    def test_moving_a_document_the_api_creates_lands_it_in_the_named_folder(self):
-        """Writer's `MoveDialog` names the document the editor has open. The
-        destination is a legacy folder, because the two trees are separate
-        until Build joins them."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Moved {frappe.generate_hash(6)}")
-        home = frappe.db.get_value("File", entity.name, "folder")
-        folder = create_folder(f"Box {frappe.generate_hash(6)}", home)
-        # Registered after `_opened`, so it runs first: the folder cannot go
-        # while it still holds the document.
-        self.addCleanup(self._drop_rows, entity.name, folder["name"])
-        self.assertFalse(frappe.db.exists("Drive Node", folder["name"]), "no node before Build")
-
-        answer = move([entity.name], folder["name"])
-
-        self.assertEqual(answer["name"], folder["name"])
-        self.assertEqual(frappe.db.get_value("File", entity.name, "folder"), folder["name"])
-
-    def test_a_folder_made_in_the_folder_that_holds_the_document_lands_there(self):
-        """`list.files` serves that folder now, so Drive's New menu opens on
-        it and names it as the parent."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Neighbour {frappe.generate_hash(6)}")
-        home = frappe.db.get_value("File", entity.name, "folder")
-
-        folder = create_folder(f"Box {frappe.generate_hash(6)}", home)
-        self.addCleanup(self._drop_rows, folder["name"])
-
-        self.assertEqual(folder["folder"], home)
-        self.assertEqual(folder["file_type"], "Folder")
-        self.assertFalse(frappe.db.exists("Drive Node", folder["name"]), "and no node was created")
-        self.assertIn(folder["name"], {row["name"] for row in legacy_files(entity_name=home)})
-
-    def test_a_link_made_in_the_folder_that_holds_the_document_lands_there(self):
-        """`NewLinkDialog.vue` names the folder its page is showing."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Linked {frappe.generate_hash(6)}")
-        home = frappe.db.get_value("File", entity.name, "folder")
-
-        link = create_link(f"Site {frappe.generate_hash(6)}", "https://example.com", home)
-        self.addCleanup(self._drop_rows, link["name"])
-
-        self.assertEqual(link["file_type"], "Link")
-        self.assertEqual(link["folder"], home)
-        self.assertFalse(frappe.db.exists("Drive Node", link["name"]), "and no node was created")
-
-    def test_a_document_the_api_creates_will_not_move_into_the_node_tree(self):
-        """The two stores are two trees until Build joins them, so this is
-        refused by name rather than moved on a guess."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Unmovable {frappe.generate_hash(6)}")
-        frappe.set_user("Administrator")
-        root = create_root(kind="Personal", title=f"Root {frappe.generate_hash(6)}", user=USER)
-        self.addCleanup(_purge_fixture_roots)
-        frappe.set_user(USER)
-        home = frappe.db.get_value("File", entity.name, "folder")
-
-        with self.assertRaises(frappe.ValidationError) as refusal:
-            move([entity.name], root.node)
-        # Named, not the workflow's 404 for a row it cannot see.
-        self.assertIn("cannot move this into that folder yet", str(refusal.exception))
-        self.assertEqual(frappe.db.get_value("File", entity.name, "folder"), home)
-
-    def _posted(self, body: bytes, filename: str = "cat.png"):
-        """One multipart POST, the way `embed.add` reads it."""
-        upload = FileStorage(stream=io.BytesIO(body), filename=filename, content_type="image/png")
-        # `framework._request_credentials` reads `X-Drive-Links` off the
-        # request, so the stand-in needs headers as well as files.
-        request = frappe._dict(files={"file": upload}, headers=frappe._dict())
-        self.enterContext(patch.object(frappe.local, "request", request, create=True))
-        self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
-
-    @staticmethod
-    def _got() -> Request:
-        """One GET, the way `send_file` reads it."""
-        return Request(EnvironBuilder(path="/api/method/drive.api.files.get_file_content").get_environ())
-
-    def test_a_picture_added_to_a_legacy_document_lands_beside_it(self):
-        """`embed.add` uploads into the document the editor has open, and a
-        document `create_document` writes is a `File` with no node.
-        `upload_core.create_upload` reads that parent as a node and refuses,
-        so no picture could be added to any document the product creates."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = docs.create_document(title=f"Pictures {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        self._posted(PNG)
-
-        answer = embed.add(entity.name)
-
-        picture = answer["file_url"].split("id=")[-1]
-        self.addCleanup(
-            frappe.delete_doc, "File", picture, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        row = frappe.db.get_value("File", picture, ["folder", "owner", "file_size"], as_dict=True)
-        self.assertEqual(row.folder, entity.name, "the picture hangs off the document")
-        self.assertEqual(row.owner, USER)
-        self.assertEqual(row.file_size, len(PNG))
-        self.assertFalse(frappe.db.exists("Drive Node", picture), "and no node was created")
-
-    def test_a_picture_a_failed_import_uploaded_can_be_taken_back(self):
-        """`writer/utils/docximporter.js` rolls back every picture it uploaded
-        when an import fails, and each one is a `File` under the document."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Rolled back {frappe.generate_hash(6)}")
-        self._posted(PNG)
-        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
-        self.addCleanup(self._drop_rows, picture)
-        self.assertFalse(frappe.db.exists("Drive Node", picture), "no node before Build")
-
-        delete_entities([picture])
-
-        # `File.permanent_delete` tombstones the row, as it always did.
-        self.assertEqual(frappe.db.get_value("File", picture, "status"), "Removed")
-
-    def test_the_uploader_can_ask_whether_that_folder_holds_the_name(self):
-        """`FileUploader.vue` asks before it writes, about the folder whose
-        page `list.files` now opens."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Named {frappe.generate_hash(6)}")
-        home = frappe.db.get_value("File", entity.name, "folder")
-
-        self.assertTrue(does_entity_exist(entity.file_name, home))
-        self.assertFalse(does_entity_exist(f"Nothing {frappe.generate_hash(6)}", home))
-
-    def test_a_folder_dropped_on_a_legacy_folder_page_lands_whole(self):
-        """`FileUploader.vue` sends one `fullpath` per file, and the folder
-        page it drops onto is a legacy folder now that `list.files` opens one.
-        `ensure_path` is the old walk, and `create_folder` answers a legacy
-        parent again, so every part of the path is made."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Dropped {frappe.generate_hash(6)}")
-        home = frappe.db.get_value("File", entity.name, "folder")
-        box = f"Box {frappe.generate_hash(6)}"
-        self._posted(PNG)
-
-        answer = upload_file(fullpath=f"{box}/inner/cat.png", parent=home)
-
-        outer = frappe.db.get_value("File", {"file_name": box, "folder": home}, "name")
-        inner = frappe.db.get_value("File", {"file_name": "inner", "folder": outer}, "name")
-        self.addCleanup(self._drop_rows, answer["name"], inner, outer)
-        self.assertEqual(frappe.db.get_value("File", answer["name"], "folder"), inner)
-        self.assertFalse(frappe.db.exists("Drive Node", answer["name"]), "and no node was created")
-
-    def test_a_picture_in_that_folder_can_still_be_opened(self):
-        """`list.files` puts the pictures a legacy folder already held back on
-        a page, and clicking one asks for its bytes. §6.8 has nothing to sign
-        for a row with no node, so the old reader serves it."""
-        frappe.set_user(USER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        entity = self._opened(f"Illustrated {frappe.generate_hash(6)}")
-        self._posted(PNG)
-        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
-        self.addCleanup(self._drop_rows, picture)
-
-        # `_posted` holds the patch; this only swaps what it points at.
-        frappe.local.request = self._got()
-        answer = get_file_content(picture)
-
-        self.assertEqual(answer.status_code, 200)
-        self.assertEqual(b"".join(answer.response), PNG)
-
-    def test_a_stranger_cannot_open_a_picture_in_somebody_elses_folder(self):
-        frappe.set_user(USER)
-        entity = self._opened(f"Private art {frappe.generate_hash(6)}")
-        self._posted(PNG)
-        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
-        self.addCleanup(self._drop_rows, picture)
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        frappe.local.request = self._got()
-        with self.assertRaises(frappe.PermissionError):
-            get_file_content(picture)
-
-    def test_a_stranger_cannot_add_a_picture_to_somebody_elses_document(self):
-        """The gate is the old body's, `user_has_permission(parent, "upload")`,
-        and it is the rule that wrote the row."""
-        frappe.set_user(USER)
-        entity = docs.create_document(title=f"Private pictures {frappe.generate_hash(6)}")
-        self.addCleanup(
-            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-        self._posted(PNG)
-        before = set(frappe.get_all("File", filters={"folder": entity.name}, pluck="name"))
-        with self.assertRaises(frappe.PermissionError):
-            embed.add(entity.name)
-        self.assertEqual(
-            set(frappe.get_all("File", filters={"folder": entity.name}, pluck="name")),
-            before,
-            "a refused upload writes nothing",
-        )
-
-    def test_a_legacy_document_still_takes_its_private_history(self):
-        docname = self._legacy_document()
-        document = frappe.get_doc(DOCTYPE, docname)
-
-        document.new_version("<p>a draft</p>", title="first")
-
-        self.assertTrue(frappe.db.exists("Writer Version", {"doc": docname, "title": "first"}))
-        with self.assertRaises(frappe.ValidationError):
-            document.take_version()
-
-    def test_a_docshare_on_a_writer_document_does_not_fail_a_migration(self):
-        """`after_migrate` runs `validate_content_registry`. Desk assignment
-        writes a `DocShare` (`frappe/desk/form/assign_to.py` calls
-        `frappe.share.add`) and no tool rewrites those rows as grants before
-        Build, so activating now would refuse the site."""
-        docname = self._legacy_document()
-        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
-        self.addCleanup(
-            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-
-        validate_content_registry()
-
-        # And the reason it has to stay dormant: activation refuses the site
-        # while that row exists. Ticket 28 owes the rewrite.
-        with activated(), self.assertRaises(DriveConflict):
-            validate_content_registry()
-
-    def test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it(self):
-        """The two refusals are scoped to a row that carries a node. No row
-        carries one before Build, so a site with Desk assignments reads and
-        lists exactly what it always did: `false_if_not_shared` answers the row
-        check the staged hook denied, and the shared names are ORed into the
-        list around the staged predicate.
-        """
-        docname = self._legacy_document()
-        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
-        self.addCleanup(
-            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
-        )
-        frappe.db.commit()
-
-        frappe.set_user(OTHER)
-        self.addCleanup(frappe.set_user, "Administrator")
-
-        self.assertIn("`tabWriter Document`.`node` IS NULL", overrides.document_query_conditions(OTHER))
-        self.assertFalse(overrides.document_has_permission(frappe.get_doc(DOCTYPE, docname), "read", OTHER))
-        self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname))
-        self.assertIn(docname, frappe.get_list(DOCTYPE, pluck="name"))
-
-    def test_activation_would_accept_the_declaration_itself(self):
+    def test_activation_accepts_the_declaration_itself(self):
         # Every check `validate_registry` makes that needs a database: the node
         # Link, the mixin, the node field name, and the fields §10.2 forbids.
-        with activated():
+        with activated(), linked():
             validate_content_registry()
 
 
 class TestWriterInDrive(IntegrationTestCase):
     """Lifecycle, history, media, permissions, and legacy rows, on real rows.
 
-    Every test runs under `activated()`, because none of these workflows exist
-    on a site until ticket 29 registers the declaration.
+    Every test runs under `activated()`, which now only drops the per-request
+    registry cache: ticket 29 registered the declaration in `suite/hooks.py`.
     """
 
     @classmethod
@@ -1179,9 +474,9 @@ class TestWriterInDrive(IntegrationTestCase):
     def _share_row(self, docname: str, **columns) -> None:
         """Write one `DocShare` the way a site carried it before adoption.
 
-        `refuse_governed_share` refuses a new one under `activated()`, and
-        nothing rewrites the rows a site already had before Build, so the row
-        the staged guards have to answer for is always a hand-written one.
+        `refuse_governed_share` refuses a new one now, and nothing rewrites
+        the rows a site already had before Build, so the row the guards have to
+        answer for is always a hand-written one.
         `ignore_validate` also keeps `cascade_permissions_downwards` off, so a
         write-only row stays write-only.
         """

@@ -13,9 +13,14 @@ from suite.drive.patches.build.ports import (
     DriveTarget,
     LegacyContent,
     LegacyFiles,
+    LegacyRecords,
+    LegacySettings,
     LegacyTree,
+    RecordsTarget,
     S3Bucket,
+    SettingsTarget,
     StorageGateway,
+    UsageLedger,
 )
 from suite.drive.patches.build.state import BuildState
 
@@ -60,6 +65,13 @@ class BuildEnvironment:
     content: LegacyContent | None = None
     content_target: ContentTarget | None = None
     slide_journal: object | None = None
+    # Steps 9, 11, and 12. Optional for the same reason: a test of one step
+    # builds only the ports that step reads.
+    records: LegacyRecords | None = None
+    records_target: RecordsTarget | None = None
+    settings: LegacySettings | None = None
+    settings_target: SettingsTarget | None = None
+    usage: UsageLedger | None = None
     # Two values every written row needs and no rule should invent: the id a
     # hash-named row gets, and the moment Build wrote it. A test supplies
     # both, so a fixture's output is a fixed string rather than a clock.
@@ -75,8 +87,13 @@ class BuildEnvironment:
             SiteContentTarget,
             SiteDrive,
             SiteFiles,
+            SiteRecords,
+            SiteRecordsTarget,
+            SiteSettings,
+            SiteSettingsTarget,
             SiteStorage,
             SiteTree,
+            SiteUsage,
         )
         from suite.drive.patches.build.slide_journal import SlidePreimageJournal
         from suite.drive.utils.files import S3_URL_PREFIX
@@ -94,6 +111,11 @@ class BuildEnvironment:
             content=SiteContentSource(),
             content_target=SiteContentTarget(),
             slide_journal=SlidePreimageJournal.for_site(),
+            records=SiteRecords(),
+            records_target=SiteRecordsTarget(),
+            settings=SiteSettings(),
+            settings_target=SiteSettingsTarget(),
+            usage=SiteUsage(),
         )
 
     def bucket(self) -> S3Bucket:

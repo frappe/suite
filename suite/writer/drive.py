@@ -200,6 +200,17 @@ def restore_version(docname: str, stream) -> None:
     )
 
 
+def version_html(stream) -> str:
+    """Answer the rendered HTML one stored version carries.
+
+    Writer wrote the bytes with `version_bytes`, so Writer is the only reader
+    that can turn them back into a snapshot. `suite.writer.api.general.
+    get_versions` publishes the legacy history shape from them; the migrated
+    HTML form §14.6 copies is read by the same fork `restore_version` uses.
+    """
+    return _version_payload(_read_bounded(stream))["html"]
+
+
 def on_purge(docname: str) -> None:
     """Delete the document and the app-owned rows behind it.
 

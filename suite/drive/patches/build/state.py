@@ -40,6 +40,14 @@ CUMULATIVE_FIELDS = frozenset(
         # kill on either side of the database commit can be reconciled from
         # the target table without counting a link twice or losing it.
         "pending_link_nodes",
+        # §14.9 counts the Personal Roots Build had to create for a
+        # reservation owner. A root is created once ever, and no later run
+        # can tell a root Build minted from one the site already had, so the
+        # total may not reset on the rerun that finishes an interrupted
+        # migration. `pending_reservation_roots` is its write-ahead ledger,
+        # for the same reason `pending_link_nodes` is one.
+        "personal_roots_created_for_reservations",
+        "pending_reservation_roots",
     }
 )
 
@@ -397,6 +405,241 @@ class ContentConversion:
         return content
 
 
+@dataclass
+class RecordConversion:
+    """The result of §14.2 step 9: the personal and side-table records.
+
+    Every number is decided from the source rows, so a rerun over a finished
+    site reports the same census. Build writes no delete here: a favourite,
+    recent, route, lock, or property whose entity did not migrate keeps its
+    legacy value and is counted, which is what leaves §14.11's "ship the old
+    code" rollback intact.
+    """
+
+    completed: bool = False
+    favourites_seen: int = 0
+    favourites_retargeted: int = 0
+    favourites_already_linked: int = 0
+    favourites_unmigrated: int = 0
+    favourites_collapsed: int = 0
+    recents_seen: int = 0
+    recents_unmigrated: int = 0
+    activity_rows_seen: int = 0
+    activity_rows_written: int = 0
+    activity_rows_already_present: int = 0
+    # §14.9's two activity keys.
+    activity_rows_dropped: int = 0
+    activity_verbs_derived: int = 0
+    # Evidence, not a §14.9 key: how the derived verb actually landed.
+    derived_verbs: dict[str, int] = field(default_factory=dict)
+    # A mapped row whose `owner` names no live `User`. §14.6 drops a row that
+    # names no migrated node and says nothing about a dead actor, so the row
+    # is kept and counted rather than thrown away with its history.
+    activity_actors_missing: int = 0
+    notification_rows: int = 0
+    notification_rows_dropped: int = 0
+    legacy_routes_seen: int = 0
+    legacy_routes_unmigrated: int = 0
+    dav_locks_seen: int = 0
+    dav_locks_unmigrated: int = 0
+    dav_properties_seen: int = 0
+    dav_properties_unmigrated: int = 0
+    skipped: list[SkippedRow] = field(default_factory=list)
+    skipped_total: int = 0
+
+    def record_skip(self, entry: SkippedRow) -> None:
+        """Keep a bounded sample; the counters above stay exact."""
+        self.skipped_total += 1
+        if len(self.skipped) < SAMPLE_KEPT:
+            self.skipped.append(entry)
+
+    def derive(self, action: str) -> None:
+        self.activity_verbs_derived += 1
+        self.derived_verbs[action] = self.derived_verbs.get(action, 0) + 1
+
+    def begin_run(self) -> None:
+        blank = RecordConversion()
+        for name in self.__dataclass_fields__:
+            if name not in CUMULATIVE_FIELDS:
+                setattr(self, name, getattr(blank, name))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> RecordConversion:
+        known = {f for f in cls.__dataclass_fields__ if f != "skipped"}
+        record = cls(**{k: v for k, v in data.items() if k in known})
+        record.skipped = _rebuild(SkippedRow, data.get("skipped"))
+        record.derived_verbs = {
+            str(key): int(value)
+            for key, value in (data.get("derived_verbs") or {}).items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+        return record
+
+
+@dataclass
+class SettingsConversion:
+    """The result of §14.2 step 11: quotas in bytes, reservations on roots."""
+
+    completed: bool = False
+    # What the mapping read and what it wrote, so the report can show the
+    # MB-to-bytes conversion rather than assert it.
+    disk_quota_mb: int = 0
+    default_personal_quota: int = 0
+    shared_quota: int = 0
+    user_quota_rows_seen: int = 0
+    user_quotas_applied: int = 0
+    user_quotas_already_set: int = 0
+    user_quotas_without_root: int = 0
+    reservations_seen: int = 0
+    reservations_bound: int = 0
+    reservations_already_bound: int = 0
+    reservations_unowned: int = 0
+    # §14.9.
+    personal_roots_created_for_reservations: int = 0
+    pending_reservation_roots: list[str] = field(default_factory=list)
+    skipped: list[SkippedRow] = field(default_factory=list)
+    skipped_total: int = 0
+
+    def record_skip(self, entry: SkippedRow) -> None:
+        self.skipped_total += 1
+        if len(self.skipped) < SAMPLE_KEPT:
+            self.skipped.append(entry)
+
+    def prepare_root(self, node: str) -> None:
+        """Describe a Personal Root the next database commit intends to add."""
+        if node not in self.pending_reservation_roots:
+            self.pending_reservation_roots.append(node)
+
+    def finish_roots(self, nodes) -> None:
+        """Count committed intents exactly once, then drop their ledger rows."""
+        finishing = set(nodes)
+        pending = set(self.pending_reservation_roots)
+        self.personal_roots_created_for_reservations += len(finishing & pending)
+        self.pending_reservation_roots = [
+            node for node in self.pending_reservation_roots if node not in finishing
+        ]
+
+    def begin_run(self) -> None:
+        blank = SettingsConversion()
+        for name in self.__dataclass_fields__:
+            if name not in CUMULATIVE_FIELDS:
+                setattr(self, name, getattr(blank, name))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> SettingsConversion:
+        lists = {"skipped", "pending_reservation_roots"}
+        known = {f for f in cls.__dataclass_fields__ if f not in lists}
+        settings = cls(**{k: v for k, v in data.items() if k in known})
+        settings.skipped = _rebuild(SkippedRow, data.get("skipped"))
+        settings.pending_reservation_roots = [
+            row for row in data.get("pending_reservation_roots") or [] if isinstance(row, str)
+        ]
+        return settings
+
+
+@dataclass
+class UsageMismatch:
+    """One root whose two independent totals disagree."""
+
+    root: str
+    recomputed: int
+    reconciled: int
+
+
+@dataclass
+class UsageConversion:
+    """The result of §14.2 step 12: the recompute, and its second opinion.
+
+    §7.7 gives the recompute one statement per root. §14.9 asks for the
+    totals to be reconciled, and a second call to that statement would only
+    prove the database is deterministic. The reconciliation therefore sums
+    the same three tables again through three grouped passes over the whole
+    site, and compares the answers root by root.
+    """
+
+    completed: bool = False
+    roots_seen: int = 0
+    roots_recomputed: int = 0
+    roots_corrected: int = 0
+    roots_skipped: int = 0
+    node_bytes: int = 0
+    version_bytes: int = 0
+    reserved_bytes: int = 0
+    used_bytes: int = 0
+    reconciled_roots: int = 0
+    reconciliation_mismatches: int = 0
+    # Bytes the grouped pass found under a `root` value that no `Drive Root`
+    # row explains. Zero on a healthy site; anything else is charged to
+    # nobody and would never be recomputed away.
+    unattributed_roots: int = 0
+    unattributed_bytes: int = 0
+    mismatches: list[UsageMismatch] = field(default_factory=list)
+    mismatches_total: int = 0
+
+    def record_mismatch(self, entry: UsageMismatch) -> None:
+        self.reconciliation_mismatches += 1
+        self.mismatches_total += 1
+        if len(self.mismatches) < SAMPLE_KEPT:
+            self.mismatches.append(entry)
+
+    def begin_run(self) -> None:
+        blank = UsageConversion()
+        for name in self.__dataclass_fields__:
+            if name not in CUMULATIVE_FIELDS:
+                setattr(self, name, getattr(blank, name))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> UsageConversion:
+        known = {f for f in cls.__dataclass_fields__ if f != "mismatches"}
+        usage = cls(**{k: v for k, v in data.items() if k in known})
+        usage.mismatches = _rebuild(UsageMismatch, data.get("mismatches"))
+        return usage
+
+
+@dataclass
+class ReportRun:
+    """One saved report: when it was written, and the file that holds it."""
+
+    at: str
+    path: str
+
+
+@dataclass
+class ReportRecord:
+    """§14.9's evidence trail. Every run appends; no run overwrites.
+
+    §14.2 lets a rerun skip complete records, so two runs of one migration
+    produce two reports whose numbers differ. Keeping only the last one would
+    throw away the evidence of the run that did the work.
+    """
+
+    runs: list[ReportRun] = field(default_factory=list)
+    runs_total: int = 0
+
+    def record(self, at: str, path: str) -> None:
+        self.runs_total += 1
+        if len(self.runs) < SAMPLE_KEPT:
+            self.runs.append(ReportRun(at, path))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ReportRecord:
+        record = cls(runs_total=int(data.get("runs_total") or 0))
+        record.runs = _rebuild(ReportRun, data.get("runs"))
+        return record
+
+
 class BuildState:
     """The JSON document at `<site>/private/drive-build-state.json`."""
 
@@ -469,6 +712,34 @@ class BuildState:
 
     def put_content(self, content: ContentConversion) -> None:
         self.save({**self.load(), "content": content.as_dict()})
+
+    def records(self) -> RecordConversion:
+        stored = self.load().get("records")
+        return RecordConversion.from_dict(stored if isinstance(stored, dict) else {})
+
+    def put_records(self, records: RecordConversion) -> None:
+        self.save({**self.load(), "records": records.as_dict()})
+
+    def settings(self) -> SettingsConversion:
+        stored = self.load().get("settings")
+        return SettingsConversion.from_dict(stored if isinstance(stored, dict) else {})
+
+    def put_settings(self, settings: SettingsConversion) -> None:
+        self.save({**self.load(), "settings": settings.as_dict()})
+
+    def usage(self) -> UsageConversion:
+        stored = self.load().get("usage")
+        return UsageConversion.from_dict(stored if isinstance(stored, dict) else {})
+
+    def put_usage(self, usage: UsageConversion) -> None:
+        self.save({**self.load(), "usage": usage.as_dict()})
+
+    def report(self) -> ReportRecord:
+        stored = self.load().get("report")
+        return ReportRecord.from_dict(stored if isinstance(stored, dict) else {})
+
+    def put_report(self, report: ReportRecord) -> None:
+        self.save({**self.load(), "report": report.as_dict()})
 
     def _quarantine(self) -> None:
         """Move an unreadable record aside instead of overwriting it.

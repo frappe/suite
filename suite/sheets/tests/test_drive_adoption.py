@@ -2,28 +2,31 @@
 # See license.txt
 """Sheets' adoption of the Drive content contract (ticket 19, §6.7, §10.7, §14.6).
 
-Adoption is an expand phase, not a switch. Sheets declares its `ContentTypeSpec`
-and `Sheet` gains the `node` Link, but `suite/hooks.py` leaves
-`drive_content_types` empty and keeps every `Sheet` permission entry on
-`suite.sheets.permissions`. Build links the rows and ticket 29 makes the
-registry and the hook changes together.
+Adoption was an expand phase. Sheets declared its `ContentTypeSpec` at ticket
+19 and `Sheet` gained the `node` Link; ticket 28 linked every row, and ticket
+29 made the registry entry and the hook changes together. So `suite/hooks.py`
+now names `suite.sheets.drive.SPEC` and points `Sheet`, `Sheet Op Log`, and
+`Sheet Collab State` at `suite.drive.framework`. `Sheet Snapshot` keeps its own
+guard: §14.6 migrates its rows into `Drive Node Version`, so it stays a Build
+source until Cleanup.
 
-So the classes here split along that seam:
+The classes here:
 
-`TestSheetsDeclaration`   the declaration itself, and the proof that the hooks
-                          are dormant. No rows and no database.
+`TestSheetsDeclaration`   the declaration itself, and the hook entries the app
+                          ships. No rows and no database.
 `TestSheetsWorkbook`      the xlsx importer, the version envelope, and the media
                           scan, exercised as the pure functions they are.
-`TestSheetsBeforeActivation`
-                          what a site running this commit does: legacy sheets
-                          keep working, and every legacy path refuses a sheet
-                          Build has linked.
+`TestSheetsAfterActivation`
+                          what activation settled: a sheet needs its node, and
+                          every legacy path refuses a linked one.
 `TestSheetsInDrive`       the Drive-native lifecycle, versions, purge, media,
-                          and satellites, under `activated()`.
+                          and satellites.
 
-`activated()` injects the registry and the hook targets rather than shipping
-them, so nothing here depends on the site being activated and nothing here
-activates it.
+**A sheet with no node cannot exist any more.** `require_node` holds §5.13 for
+a registered doctype (`content.py:757-770`), so the legacy-sheet cases this
+module used to carry are gone with the state they described. `activated()`
+stays as a name so every call site reads the same, and it is now only the
+registry cache drop.
 
 The first two classes are plain `unittest.TestCase`: they mock `frappe.db` where
 they need it and run without a site. The last two need real rows.
@@ -66,54 +69,21 @@ DOCTYPE = "Sheet"
 OP_LOG = "Sheet Op Log"
 COLLAB_STATE = "Sheet Collab State"
 
-# The entries ticket 29 installs together, once Build has linked every `Sheet`
-# row. `suite/hooks.py` carries none of them yet.
-ACTIVATION = {
-    "drive_content_types": ["suite.sheets.drive.SPEC"],
-    "has_permission": {
-        DOCTYPE: ["suite.drive.framework.doc_has_permission"],
-        OP_LOG: ["suite.drive.framework.satellite_has_permission"],
-        COLLAB_STATE: ["suite.drive.framework.satellite_has_permission"],
-    },
-    "permission_query_conditions": {
-        DOCTYPE: ["suite.drive.framework.doc_query_conditions"],
-        OP_LOG: ["suite.drive.framework.satellite_query_conditions"],
-        COLLAB_STATE: ["suite.drive.framework.satellite_query_conditions"],
-    },
-}
-
 
 @contextmanager
 def activated():
-    """Register Sheets for the block, exactly the way ticket 29 will register it.
+    """Read the registry `suite/hooks.py` ships, and leave nothing behind.
 
-    The registry is built from `drive_content_types` and the framework reads
-    both permission hooks from the same hook map, so injecting the map is the
-    whole activation. Nothing is written and nothing survives the block.
+    Ticket 29 registered `suite.sheets.drive.SPEC` and moved the permission
+    hooks with it, so there is nothing to inject. The registry is built from
+    `drive_content_types` and cached per request, and the cache is dropped on
+    the way in and on the way out.
     """
-    real_get_hooks = frappe.get_hooks
-
-    # `hook`, not `key`: frappe's own signature is `get_hooks(hook=None, ...)`
-    # and three framework call sites pass it by keyword.
-    def hooks(hook=None, *args, **kwargs):
-        if hook == "drive_content_types":
-            return list(ACTIVATION[hook])
-        if hook in ("has_permission", "permission_query_conditions"):
-            wired = dict(real_get_hooks(hook, *args, **kwargs) or {})
-            wired.update({name: list(paths) for name, paths in ACTIVATION[hook].items()})
-            return wired
-        return real_get_hooks(hook, *args, **kwargs)
-
     clear_registry_cache()
     try:
-        with patch_hooks(hooks):
-            yield
+        yield
     finally:
         clear_registry_cache()
-
-
-def patch_hooks(hooks):
-    return mock.patch("frappe.get_hooks", hooks)
 
 
 # ── xlsx fixtures ────────────────────────────────────────────────────────────
@@ -210,7 +180,7 @@ def worksheet_xml(body: str) -> bytes:
 
 
 class TestSheetsDeclaration(unittest.TestCase):
-    """What §10.7 fixes about Sheets, and the proof nothing is switched on."""
+    """What §10.7 fixes about Sheets, and the hook entries ticket 29 installed."""
 
     def test_it_declares_the_identity_section_ten_seven_fixes(self):
         self.assertEqual(sheets.SPEC.doctype, DOCTYPE)
@@ -256,9 +226,7 @@ class TestSheetsDeclaration(unittest.TestCase):
         self.assertIsNone(sheets.SPEC.remap_media)
 
     def test_the_four_cleanup_pending_columns_are_declared(self):
-        self.assertEqual(
-            sheets.SPEC.legacy_fields, ("title", "trashed", "trashed_on", "trashed_by")
-        )
+        self.assertEqual(sheets.SPEC.legacy_fields, ("title", "trashed", "trashed_on", "trashed_by"))
 
     def test_head_snapshot_needs_no_exemption_because_ten_two_allows_it(self):
         from suite.drive._core.content import FORBIDDEN_FIELD_NAMES
@@ -270,12 +238,12 @@ class TestSheetsDeclaration(unittest.TestCase):
     def test_the_open_baseline_row_still_carries_every_legacy_right(self):
         """§10.4 needs the row open; it does not need it narrower than before.
 
-        A Frappe permission hook can only deny, so `sheet_has_permission` is
-        what puts the owner rule back. A right this row drops is a right the
-        hook can never return: `share_sheet` asks `ptype="share"` and
+        A Frappe permission hook can only deny, so the owner rule comes from
+        the MANAGE grant Build wrote on the owner's own node, and
+        `doc_has_permission` reads it. A right this row drops is a right no
+        hook can return: `share_sheet` asks `ptype="share"` and
         `frappe.share.check_share_permission` asks it again
-        (`frappe/share.py:239`), so dropping `share` here refuses the owner of
-        a legacy sheet, which ticket 23 still owns.
+        (`frappe/share.py:239`), so dropping `share` here refuses the owner.
         """
         baseline = _doc_perm("All")
         for right in ("read", "write", "create", "delete", "share", "export", "print", "email", "report"):
@@ -290,37 +258,56 @@ class TestSheetsDeclaration(unittest.TestCase):
         for right in ("write", "create", "delete", "share"):
             self.assertNotIn(right, guest)
 
-    # the hooks stay dormant until ticket 29
+    # the hooks ticket 29 moved
 
     # Read from `suite.hooks` rather than `frappe.get_hooks`: the module is what
     # the site ships, and reading it directly means these assertions hold with
     # no site bound.
 
-    def test_the_registry_is_still_empty(self):
-        self.assertEqual(suite_hooks.drive_content_types, [])
+    def test_the_declaration_is_registered(self):
+        """README execution rules: stage the registry after the node links
+        exist. Ticket 28 wrote them and `refuse_unlinked_documents` is what
+        holds the ordering on a real migration."""
+        self.assertIn("suite.sheets.drive.SPEC", suite_hooks.drive_content_types)
 
-    def test_both_sheet_permission_hooks_are_still_the_app_s_own(self):
-        self.assertEqual(
-            suite_hooks.has_permission[DOCTYPE],
-            "suite.sheets.permissions.sheet_has_permission",
-        )
+    def test_both_sheet_permission_hooks_are_now_the_framework_s(self):
+        self.assertEqual(suite_hooks.has_permission[DOCTYPE], "suite.drive.framework.doc_has_permission")
         self.assertEqual(
             suite_hooks.permission_query_conditions[DOCTYPE],
-            "suite.sheets.permissions.sheet_query_conditions",
+            "suite.drive.framework.doc_query_conditions",
         )
 
-    def test_neither_satellite_is_wired_to_the_framework_yet(self):
-        self.assertNotIn(COLLAB_STATE, suite_hooks.has_permission)
+    def test_both_satellites_take_the_framework_s_satellite_hooks(self):
+        """`Sheet Collab State` had no entry at all before ticket 29, so it
+        gains both rather than moving them."""
+        for doctype in (OP_LOG, COLLAB_STATE):
+            with self.subTest(doctype=doctype):
+                self.assertEqual(
+                    suite_hooks.has_permission[doctype],
+                    "suite.drive.framework.satellite_has_permission",
+                )
+                self.assertEqual(
+                    suite_hooks.permission_query_conditions[doctype],
+                    "suite.drive.framework.satellite_query_conditions",
+                )
+
+    def test_sheet_snapshot_keeps_its_own_guard(self):
+        """No spec declares it and its role rows are open, so the guard is the
+        only thing holding the migrated history back. §14.6 reads the rows into
+        `Drive Node Version` and §14.10 drops the doctype with the guard."""
         self.assertEqual(
-            suite_hooks.has_permission[OP_LOG],
-            "suite.sheets.permissions.sheet_op_log_has_permission",
+            suite_hooks.has_permission["Sheet Snapshot"],
+            "suite.sheets.permissions.sheet_snapshot_has_permission",
+        )
+        self.assertEqual(
+            suite_hooks.permission_query_conditions["Sheet Snapshot"],
+            "suite.sheets.permissions.sheet_snapshot_query",
         )
 
-    def test_activation_registers_exactly_this_declaration(self):
+    def test_the_registry_answers_with_exactly_this_declaration(self):
         with activated():
             self.assertTrue(governs(DOCTYPE))
             self.assertIs(spec_for(DOCTYPE), sheets.SPEC)
-        self.assertFalse(governs(DOCTYPE))
 
     def test_the_declaration_is_frozen_so_nothing_can_edit_it_at_runtime(self):
         with self.assertRaises(dataclasses.FrozenInstanceError):
@@ -413,9 +400,7 @@ class TestSheetsWorkbook(unittest.TestCase):
     def test_a_valid_payload_survives_the_round_trip(self):
         self._frappe()
         raw = json.dumps({"schema": "sheet/1", "sheets_data": '{"a":1}', "head_seq": 3}).encode()
-        self.assertEqual(
-            sheets._version_payload(raw), {"sheets_data": '{"a":1}', "head_seq": 3}
-        )
+        self.assertEqual(sheets._version_payload(raw), {"sheets_data": '{"a":1}', "head_seq": 3})
 
     def test_a_missing_head_seq_reads_as_zero_rather_than_failing(self):
         self._frappe()
@@ -430,9 +415,7 @@ class TestSheetsWorkbook(unittest.TestCase):
         return sheets.used_nodes("SH-1")
 
     def test_it_reports_every_id_shaped_token_at_every_depth(self):
-        found = self._used(
-            {"sheet": {"sheets": {"Data": {"rows": {"0": ["nodeone", {"src": "nodetwo"}]}}}}}
-        )
+        found = self._used({"sheet": {"sheets": {"Data": {"rows": {"0": ["nodeone", {"src": "nodetwo"}]}}}}})
         self.assertIn("nodeone", found)
         self.assertIn("nodetwo", found)
 
@@ -522,9 +505,7 @@ class TestSheetsWorkbook(unittest.TestCase):
 
         merged = self._import(workbook_bytes(build))["merge"]["Data"]
         self.assertEqual(merged["masterMap"], {"A1": {"rowSpan": 2, "colSpan": 3, "r": 0, "c": 0}})
-        self.assertEqual(
-            sorted(merged["slaveMap"]), ["A2", "B1", "B2", "C1", "C2"]
-        )
+        self.assertEqual(sorted(merged["slaveMap"]), ["A2", "B1", "B2", "C1", "C2"])
         self.assertEqual(set(merged["slaveMap"].values()), {"A1"})
 
     def test_a_workbook_with_no_merges_writes_null_like_the_client_does(self):
@@ -630,6 +611,7 @@ class TestSheetsWorkbook(unittest.TestCase):
 
     def test_an_ordinary_merge_still_comes_across(self):
         """The bound must refuse the bomb and nothing a person would send."""
+
         def build(book):
             book.active.title = "Data"
             book.active["A1"] = "x"
@@ -646,8 +628,7 @@ class TestSheetsWorkbook(unittest.TestCase):
         file allocated 327 million of them: measured, past 2 GB in 8 seconds.
         """
         rows = "".join(
-            f'<row r="{r}"><c r="XFD{r}" t="inlineStr"><is><t>v</t></is></c></row>'
-            for r in range(1, 501)
+            f'<row r="{r}"><c r="XFD{r}" t="inlineStr"><is><t>v</t></is></c></row>' for r in range(1, 501)
         )
         evil = respliced_workbook(
             **{"xl/worksheets/sheet1.xml": worksheet_xml(f"<sheetData>{rows}</sheetData>")}
@@ -699,6 +680,7 @@ class TestSheetsWorkbook(unittest.TestCase):
         Pairing `sheetnames` with the parts sorted by suffix gave Beta's merge
         to Gamma. The workbook's own relationship is the authority.
         """
+
         def build(book):
             book.active.title = "Gamma"
             book.active["A1"] = "g"
@@ -727,9 +709,7 @@ class TestSheetsWorkbook(unittest.TestCase):
         patched.db.delete.assert_called_once_with("Sheet Collab State", {"sheet": "SH-1"})
 
     def test_a_workbook_that_declares_too_many_merge_ranges_is_refused(self):
-        many = "".join(
-            f'<mergeCell ref="A{r}:B{r}"/>' for r in range(1, 12)
-        )
+        many = "".join(f'<mergeCell ref="A{r}:B{r}"/>' for r in range(1, 12))
         evil = respliced_workbook(
             **{
                 "xl/worksheets/sheet1.xml": worksheet_xml(
@@ -754,11 +734,16 @@ class TestSheetsWorkbook(unittest.TestCase):
                 self.assertEqual(sheets._column_index(sheets._column_label(index)), index)
 
 
-# ── a site running this commit ───────────────────────────────────────────────
+# ── what activation settled ──────────────────────────────────────────────────
 
 
-class TestSheetsBeforeActivation(IntegrationTestCase):
-    """Legacy sheets keep working, and a linked sheet refuses every legacy path."""
+class TestSheetsAfterActivation(IntegrationTestCase):
+    """A sheet needs its node, and every legacy path refuses a linked one.
+
+    A sheet with no node cannot exist here: `require_node` holds §5.13 for a
+    registered doctype (`content.py:757-770`), so the legacy-sheet cases this
+    class used to carry describe a state Build and ticket 29 removed together.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -785,9 +770,6 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
             _drop_backing_file(name)
         frappe.db.commit()
 
-    def _legacy_sheet(self, title="adoption-legacy") -> str:
-        return frappe.get_doc({"doctype": DOCTYPE, "title": title, "sheets_data": "{}"}).insert().name
-
     def _linked_sheet(self) -> tuple[str, str]:
         """One sheet linked the way Build links it: through Drive, then read back."""
         with activated():
@@ -795,30 +777,16 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
             node = drive.create_document(root.node, "adoption-linked", content_doctype=DOCTYPE)
         return node, frappe.db.get_value("Drive Node", node, "content_docname")
 
-    # the legacy row is untouched
+    # the row Build left behind cannot be written again
 
-    def test_a_legacy_sheet_still_requires_a_title(self):
-        with self.assertRaises(frappe.ValidationError):
-            frappe.get_doc({"doctype": DOCTYPE, "sheets_data": "{}"}).insert()
+    def test_a_sheet_with_no_node_is_refused_on_insert(self):
+        """The state every deleted case in this class described. Registration
+        is what makes the node mandatory, and `DriveContent.before_insert` is
+        where the refusal lands (`content.py:606-607`)."""
+        with self.assertRaises(DriveConflict):
+            frappe.get_doc({"doctype": DOCTYPE, "title": "adoption-orphan", "sheets_data": "{}"}).insert()
 
-    def test_a_legacy_sheet_still_gets_its_backing_drive_file(self):
-        from suite.drive.overrides.file import File as DriveFile
-
-        name = self._legacy_sheet()
-        self.assertTrue(DriveFile.get_for_doc(DOCTYPE, name))
-
-    def test_a_legacy_sheet_can_still_be_renamed_shared_and_trashed(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        api.rename_sheet(name, "adoption-renamed")
-        self.assertEqual(frappe.db.get_value(DOCTYPE, name, "title"), "adoption-renamed")
-        api.delete_sheet(name)
-        self.assertTrue(frappe.db.get_value(DOCTYPE, name, "trashed"))
-        api.restore_sheet(name)
-        self.assertFalse(frappe.db.get_value(DOCTYPE, name, "trashed"))
-
-    # a linked row refuses every one of them
+    # a linked row refuses every legacy path
 
     def test_a_linked_sheet_gets_no_backing_file(self):
         """A second backing row would be a second answer to "who may open this"."""
@@ -866,45 +834,6 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
         purge_trashed_sheets()
         self.assertTrue(frappe.db.exists(DOCTYPE, docname))
 
-    def test_a_linked_sheet_never_answers_from_a_docshare(self):
-        """Frappe widens a denied row check; Drive refuses instead (§1)."""
-        import frappe.share
-
-        _node, docname = self._linked_sheet()
-        ensure_user(OTHER)
-        frappe.share.add(DOCTYPE, docname, OTHER, write=1, notify=False)
-        self.addCleanup(frappe.db.delete, "DocShare", {"share_doctype": DOCTYPE, "share_name": docname})
-
-        frappe.set_user(OTHER)
-        with self.assertRaises(DriveForbidden):
-            frappe.has_permission(DOCTYPE, doc=docname, ptype="read")
-
-    def test_a_legacy_sheet_is_still_readable_through_a_docshare(self):
-        import frappe.share
-
-        name = self._legacy_sheet()
-        ensure_user(OTHER)
-        frappe.share.add(DOCTYPE, name, OTHER, write=0, notify=False)
-        self.addCleanup(frappe.db.delete, "DocShare", {"share_doctype": DOCTYPE, "share_name": name})
-
-        frappe.set_user(OTHER)
-        self.assertTrue(frappe.has_permission(DOCTYPE, doc=name, ptype="read"))
-        self.assertFalse(frappe.has_permission(DOCTYPE, doc=name, ptype="write"))
-
-    def test_a_stranger_still_cannot_read_a_legacy_sheet(self):
-        """The `All` DocPerm lost `if_owner`; the guard is what puts it back."""
-        name = self._legacy_sheet()
-        ensure_user(OTHER)
-        frappe.set_user(OTHER)
-        self.assertFalse(frappe.has_permission(DOCTYPE, doc=name, ptype="read"))
-
-    def test_a_linked_sheet_is_not_in_the_legacy_list(self):
-        _node, docname = self._linked_sheet()
-        self._legacy_sheet()
-        frappe.set_user(USER)
-        listed = frappe.get_list(DOCTYPE, pluck="name", limit_page_length=0)
-        self.assertNotIn(docname, listed)
-
 
 # ── the Drive-native lifecycle ───────────────────────────────────────────────
 
@@ -912,8 +841,8 @@ class TestSheetsBeforeActivation(IntegrationTestCase):
 class TestSheetsInDrive(IntegrationTestCase):
     """Create, copy, import, version, restore, purge, media, and satellites.
 
-    Every test runs under `activated()`, because none of these workflows exist
-    on a site until ticket 29 registers the declaration.
+    Every test runs under `activated()`, which is now the registry cache drop
+    alone: ticket 29 registered the declaration these workflows read.
     """
 
     @classmethod
@@ -930,7 +859,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         frappe.set_user("Administrator")
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
         # Entered first, so its exit runs last: the fixture purge below is a
-        # Drive workflow and needs the registry it injects.
+        # Drive workflow and reads the registry this drops the cache for.
         activation = activated()
         activation.__enter__()
         self.addCleanup(activation.__exit__, None, None, None)
@@ -959,9 +888,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         return decode_sheets_data(frappe.db.get_value(DOCTYPE, self._docname(node), "sheets_data"))
 
     def _write_body(self, node: str, body: dict) -> None:
-        frappe.db.set_value(
-            DOCTYPE, self._docname(node), "sheets_data", encode_sheets_data(json.dumps(body))
-        )
+        frappe.db.set_value(DOCTYPE, self._docname(node), "sheets_data", encode_sheets_data(json.dumps(body)))
 
     def _ops(self, node: str) -> list[dict]:
         return frappe.get_all(
@@ -1009,9 +936,7 @@ class TestSheetsInDrive(IntegrationTestCase):
     def test_the_head_seq_names_the_op_that_wrote_the_body(self):
         node = self._sheet()
         ops = self._ops(node)
-        self.assertEqual(
-            frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"]
-        )
+        self.assertEqual(frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"])
 
     def test_a_linked_sheet_cannot_write_the_frozen_legacy_title(self):
         node = self._sheet()
@@ -1079,9 +1004,7 @@ class TestSheetsInDrive(IntegrationTestCase):
 
     def test_an_xlsx_becomes_a_sheet_under_the_folder_the_caller_chose(self):
         source = self._xlsx_node(simple_workbook())
-        node = drive.import_document(
-            self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source
-        )
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
         row = frappe.db.get_value("Drive Node", node, ("kind", "mime", "title"), as_dict=True)
         self.assertEqual(row.kind, "document")
         self.assertEqual(row.mime, "frappe/sheet")
@@ -1089,17 +1012,13 @@ class TestSheetsInDrive(IntegrationTestCase):
 
     def test_an_import_carries_the_workbook_the_file_held(self):
         source = self._xlsx_node(simple_workbook())
-        node = drive.import_document(
-            self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source
-        )
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
         rows = json.loads(self._body(node))["sheet"]["sheets"]["Data"]["rows"]
         self.assertEqual(rows["0"], ["Name", "Amount"])
 
     def test_an_import_says_so_in_the_history(self):
         source = self._xlsx_node(simple_workbook())
-        node = drive.import_document(
-            self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source
-        )
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
         self.assertEqual([op["op_type"] for op in self._ops(node)], ["import"])
 
     def test_an_import_leaves_the_source_file_exactly_as_it_was(self):
@@ -1114,17 +1033,13 @@ class TestSheetsInDrive(IntegrationTestCase):
         source = self._xlsx_node(simple_workbook())
         self._as(OTHER)
         with self.assertRaises((DriveNotFound, DriveForbidden)):
-            drive.import_document(
-                self.other_root.node, "Imported", content_doctype=DOCTYPE, from_node=source
-            )
+            drive.import_document(self.other_root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
 
     def test_a_file_that_is_not_a_workbook_is_refused_and_leaves_no_node(self):
         source = self._xlsx_node(b"not a spreadsheet", title="notes.txt")
         before = frappe.db.count("Drive Node")
         with self.assertRaises(Exception):
-            drive.import_document(
-                self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source
-            )
+            drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
         self.assertEqual(frappe.db.count("Drive Node"), before)
 
     # versions
@@ -1171,9 +1086,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         ops = self._ops(node)
         self.assertEqual(ops[-1]["op_type"], "restore")
         self.assertGreater(ops[-1]["seq"], before, "head_seq never regresses")
-        self.assertEqual(
-            frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"]
-        )
+        self.assertEqual(frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"])
 
     def test_a_restore_takes_a_version_of_what_it_replaces(self):
         node = self._sheet()
@@ -1286,12 +1199,11 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.assertFalse(satellite_has_permission(document, "write", OTHER))
 
 
-# ── the two probes the site gate ran by hand ─────────────────────────────────
+# ── the probe the site gate ran by hand ──────────────────────────────────────
 
 GATE_OWNER = "sheets-gate-owner@example.com"
 GATE_VICTIM = "sheets-gate-victim@example.com"
-GATE_STRANGER = "sheets-gate-stranger@example.com"
-GATE_USERS = (GATE_OWNER, GATE_VICTIM, GATE_STRANGER)
+GATE_USERS = (GATE_OWNER, GATE_VICTIM)
 
 # What a gate fixture writes and has to hand back. Rows in `_GATE_ADDED` are
 # deleted outright after each test. Rows in `_GATE_WITNESS` are only counted,
@@ -1357,28 +1269,27 @@ def _listed(doctype: str, field: str = "name") -> list[str]:
 
 
 class TestTheGateProbes(IntegrationTestCase):
-    """Gate steps 6 and 9, as tests rather than two `bench console` scripts.
+    """Gate step 6, as tests rather than a `bench console` script.
 
     Step 6 is the `DocShare` bypass. Frappe widens a denied row check with
     `false_if_not_shared` (`frappe/permissions.py:214-216`) and ORs the
     caller's shared names around a list predicate
     (`frappe/database/query.py:1737-1742`). Neither can be answered from inside
     a hook, so both guards refuse instead. The ticket called this unreachable
-    by test. It is reachable: the sheet is created under `activated()`, the
-    share is added while the hooks are the ones the site actually ships, and
-    the read runs through `frappe.client.get` and `frappe.get_list`.
+    by test. It is reachable: the sheet is created through Drive, the share is
+    written the way Build inherited one, and the read runs through
+    `frappe.client.get` and `frappe.get_list`.
 
-    Step 9 is the legacy arm. Every guard answers on two sides, and a sheet
-    Build has not linked has to keep the behaviour it always had: its owner
-    opens, shares, renames, trashes, and restores it through the legacy
-    endpoints.
+    Every share here is hand-written, because ticket 29 refuses a new one
+    (`refuse_governed_share`). A row Build inherited is the only kind the
+    guards can ever meet, so it is the only kind the fixtures make.
 
-    Each refusal test has a control that runs the same share against a legacy
-    sheet and proves it does widen there. Without one, a refusal test passes
-    for a site where nothing is shared at all.
+    Gate step 9 was the legacy arm, on a sheet with no node. That state is
+    gone: `require_node` holds §5.13 for a registered doctype, so the legacy
+    endpoints have no row left to answer for.
 
-    The three users, their roots, and every row a test writes are taken back
-    off the site afterwards, and `_assert_no_residue` is what checks it.
+    The two users, their roots, and every row a test writes are taken back off
+    the site afterwards, and `_assert_no_residue` is what checks it.
     """
 
     @classmethod
@@ -1404,37 +1315,27 @@ class TestTheGateProbes(IntegrationTestCase):
     # fixtures
 
     def _linked_sheet(self) -> tuple[str, str]:
-        """One sheet linked the way Build links it, under a registered SPEC.
-
-        `activated()` injects the registry for the two calls that need it and
-        nothing else. `suite/hooks.py` is untouched, so every read below runs
-        against the hooks the site ships today.
-        """
+        """One sheet linked the way Build links it: through Drive, then read back."""
         with activated():
             root = create_root(kind="Personal", title="Gate Root", user=GATE_OWNER)
             node = drive.create_document(root.node, "gate-linked", content_doctype=DOCTYPE)
         return node, frappe.db.get_value("Drive Node", node, "content_docname")
 
-    def _legacy_sheet(self, title="gate-legacy") -> str:
-        """One sheet with no node, owned by `GATE_OWNER` rather than by an admin."""
-        self._as(GATE_OWNER)
-        name = frappe.get_doc({"doctype": DOCTYPE, "title": title, "sheets_data": "{}"}).insert().name
-        frappe.set_user("Administrator")
-        return name
-
-    def _op_row(self, sheet: str) -> str:
-        return (
-            frappe.get_doc({"doctype": OP_LOG, "sheet": sheet, "seq": 1, "op_type": "edit"})
-            .insert(ignore_permissions=True)
-            .name
-        )
-
     def _share(self, doctype: str, name: str, user: str | None = None, **rights) -> None:
-        """One `DocShare`, added as Administrator so the share right is not the test."""
-        import frappe.share
+        """One `DocShare` the way a site carried it before adoption.
 
+        `frappe.share.add` saves through `doc.save()` (`frappe/share.py:82`),
+        so `refuse_governed_share` refuses it on a governed doctype.
+        `ignore_validate` is what a Build-inherited row skipped, and it also
+        keeps `cascade_permissions_downwards` off, so a read-only row stays
+        read-only. `_drop_gate_rows` takes the row back.
+        """
         frappe.set_user("Administrator")
-        frappe.share.add(doctype, name, user, notify=False, **rights)
+        share = frappe.get_doc(
+            {"doctype": "DocShare", "share_doctype": doctype, "share_name": name, "user": user, **rights}
+        )
+        share.flags.ignore_validate = True
+        share.insert(ignore_permissions=True)
 
     def _as(self, user: str) -> None:
         frappe.set_user(user)
@@ -1491,9 +1392,8 @@ class TestTheGateProbes(IntegrationTestCase):
         """The share is on the sheet, so the child list has nothing to OR.
 
         It answers rather than refusing, and what it answers must not name the
-        linked sheet. `test_the_same_share_widens_a_legacy_op_log_list` is the
-        control that proves an empty answer here is the guard, not an empty
-        table.
+        linked sheet. The row count below is the control: it proves an empty
+        answer is the guard, not an empty table.
         """
         _node, docname = self._linked_sheet()
         self._share(DOCTYPE, docname, GATE_VICTIM, read=1)
@@ -1589,229 +1489,18 @@ class TestTheGateProbes(IntegrationTestCase):
         row.flags.ignore_validate = True
         return row.insert(ignore_permissions=True).name
 
-    # the controls: the same share, against a sheet Build has not linked
+    # the one share that cannot be written at all
 
-    def test_the_same_share_opens_and_lists_a_legacy_sheet(self):
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
-
-        self._as(GATE_VICTIM)
-        self.assertEqual(_open(name)["name"], name)
-        self.assertIn(name, _listed(DOCTYPE))
-
-    def test_the_same_everyone_share_opens_a_legacy_sheet(self):
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, None, read=1, everyone=1)
-
-        self._as(GATE_VICTIM)
-        self.assertEqual(_open(name)["name"], name)
-        self.assertIn(name, _listed(DOCTYPE))
-
-    def test_the_same_share_widens_a_legacy_op_log_list(self):
-        name = self._legacy_sheet()
-        self._op_row(name)
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
-
-        self._as(GATE_VICTIM)
-        self.assertIn(name, _listed(OP_LOG, "sheet"))
-
-    def test_an_unshared_stranger_sees_no_legacy_sheet_either(self):
-        """The other half of the control: the share is what widens, not the row."""
-        name = self._legacy_sheet()
-
-        self._as(GATE_STRANGER)
-        with self.assertRaises(frappe.PermissionError):
-            _open(name)
-        self.assertNotIn(name, _listed(DOCTYPE))
-
-    # the same probes once ticket 29 has moved the hooks
-
-    def test_activation_answers_a_named_share_the_same_way(self):
-        _node, docname = self._linked_sheet()
-        self._share(DOCTYPE, docname, GATE_VICTIM, read=1, write=1)
-
-        self._as(GATE_VICTIM)
-        with activated():
-            with self.assertRaises(DriveForbidden):
-                _open(docname)
-            with self.assertRaises(DriveForbidden):
-                _listed(DOCTYPE)
-            self.assertNotIn(docname, _listed(OP_LOG, "sheet"))
-
-    def test_activation_answers_an_everyone_share_the_same_way(self):
-        _node, docname = self._linked_sheet()
-        self._share(DOCTYPE, docname, None, read=1, everyone=1)
-
-        self._as(GATE_VICTIM)
-        with activated():
-            with self.assertRaises(DriveForbidden):
-                _open(docname)
-            with self.assertRaises(DriveForbidden):
-                _listed(DOCTYPE)
-
-    def test_activation_refuses_a_new_share_outright(self):
+    def test_a_new_share_on_a_linked_sheet_is_refused_outright(self):
         """`refuse_governed_share` is why a share on a linked sheet can only be
-        one Build inherited, never one written after ticket 29."""
+        one Build inherited, never one written after ticket 29. Through
+        `frappe.share.add`, because that is the call Desk assignment makes."""
+        import frappe.share
+
         _node, docname = self._linked_sheet()
 
-        with activated(), self.assertRaises(DriveForbidden):
-            self._share(DOCTYPE, docname, GATE_VICTIM, read=1)
-
-    # ── gate step 9: the legacy arm, on a sheet with no node ─────────────────
-
-    def test_an_owner_opens_shares_renames_trashes_and_restores_a_node_less_sheet(self):
-        """Gate step 9, end to end, through the endpoints the client calls.
-
-        The owner is an ordinary `Suite User`, not an operator: the
-        Administrator is answered before any hook runs
-        (`frappe/permissions.py:109`), so a round trip as one proves nothing.
-        """
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self.assertIsNone(frappe.db.get_value(DOCTYPE, name, sheets.NODE_FIELD))
-
-        self._as(GATE_OWNER)
-        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
-        self.assertTrue(api.get_sheet(name)["can_write"])
-
-        api.share_sheet(name, GATE_VICTIM, write=0)
-        self.assertEqual([row["user"] for row in api.get_sheet_shares(name)], [GATE_VICTIM])
-
-        api.rename_sheet(name, "gate-renamed")
-        self.assertEqual(api.get_sheet(name)["title"], "gate-renamed")
-
-        api.delete_sheet(name)
-        self.assertTrue(frappe.db.get_value(DOCTYPE, name, "trashed"))
-        api.restore_sheet(name)
-        self.assertFalse(frappe.db.get_value(DOCTYPE, name, "trashed"))
-
-        api.unshare_sheet(name, GATE_VICTIM)
-        self.assertEqual(api.get_sheet_shares(name), [])
-
-    def test_an_owner_can_take_back_a_named_share(self):
-        """`DocShare` carries a System Manager DocPerm and nothing else, so the
-        delete has to be ignored the way `frappe.share.add` ignores the insert
-        (`frappe/share.py:82`). Without that an owner grants and never revokes."""
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._as(GATE_OWNER)
-        api.share_sheet(name, GATE_VICTIM, write=1)
-        api.unshare_sheet(name, GATE_VICTIM)
-
-        self.assertEqual(api.get_sheet_shares(name), [])
-        frappe.set_user(GATE_VICTIM)
-        with self.assertRaises(frappe.PermissionError):
-            api.get_sheet(name)
-
-    def test_an_owner_can_take_back_an_everyone_share(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._as(GATE_OWNER)
-        api.share_sheet(name, everyone=1)
-        self.assertTrue(api.get_sheet_shares(name))
-        api.unshare_sheet(name, everyone=1)
-
-        self.assertEqual(api.get_sheet_shares(name), [])
-
-    def test_a_reader_cannot_take_back_someone_else_s_share(self):
-        """The `share` right on the sheet is what revoking costs, and ignoring
-        the `DocShare` DocPerm must not move that gate."""
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
-        self._share(DOCTYPE, name, GATE_STRANGER, read=1)
-
-        self._as(GATE_VICTIM)
-        with self.assertRaises(frappe.PermissionError):
-            api.unshare_sheet(name, GATE_STRANGER)
-        frappe.set_user("Administrator")
-        self.assertEqual(len(api.get_sheet_shares(name)), 2)
-
-    def test_a_stranger_cannot_take_back_a_share(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
-
-        self._as(GATE_STRANGER)
-        with self.assertRaises(frappe.PermissionError):
-            api.unshare_sheet(name, GATE_VICTIM)
-        frappe.set_user("Administrator")
-        self.assertEqual(len(api.get_sheet_shares(name)), 1)
-
-    def test_a_node_less_sheet_keeps_its_backing_drive_file_through_a_rename(self):
-        """The legacy `File` is the other half of the legacy arm: §14.6 keeps it
-        until ticket 23 removes it, and a rename has to carry it along.
-
-        The row is read straight from the table rather than through
-        `File.get_for_doc`, so this class adds no import across the Drive
-        boundary and the debt baseline stays where ticket 19 left it.
-        """
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._as(GATE_OWNER)
-        api.rename_sheet(name, "gate-renamed")
-
-        frappe.set_user("Administrator")
-        backing = frappe.db.get_value(
-            "File", {"content_doctype": DOCTYPE, "content_docname": name}, ("name", "file_name"), as_dict=True
-        )
-        self.assertTrue(backing)
-        self.assertEqual(backing.file_name, "gate-renamed")
-
-    def test_a_sharee_opens_a_node_less_sheet_read_only(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1)
-
-        self._as(GATE_VICTIM)
-        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
-        self.assertFalse(api.get_sheet(name)["can_write"])
-
-    def test_a_sharee_cannot_trash_a_node_less_sheet(self):
-        """`delete` is not a shareable right (`frappe/permissions.py:189`), so
-        the trash stays with the owner however wide the share is."""
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._share(DOCTYPE, name, GATE_VICTIM, read=1, write=1)
-
-        self._as(GATE_VICTIM)
-        with self.assertRaises(frappe.PermissionError):
-            api.delete_sheet(name)
-
-    def test_a_stranger_cannot_open_a_node_less_sheet(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-
-        self._as(GATE_STRANGER)
-        with self.assertRaises(frappe.PermissionError):
-            api.get_sheet(name)
-
-    def test_a_trashed_node_less_sheet_opens_again_only_after_a_restore(self):
-        from suite.sheets import api
-
-        name = self._legacy_sheet()
-        self._as(GATE_OWNER)
-        api.delete_sheet(name)
-        with self.assertRaises(frappe.DoesNotExistError):
-            api.get_sheet(name)
-
-        api.restore_sheet(name)
-        self.assertEqual(api.get_sheet(name)["title"], "gate-legacy")
-
-    def test_a_node_less_sheet_is_in_its_owner_s_list(self):
-        name = self._legacy_sheet()
-
-        self._as(GATE_OWNER)
-        self.assertIn(name, _listed(DOCTYPE))
+        with self.assertRaises(DriveForbidden):
+            frappe.share.add(DOCTYPE, docname, GATE_VICTIM, read=1, notify=False)
 
 
 def _drop_fixture_users(users: tuple[str, ...] = (USER, OTHER)) -> None:
@@ -1856,7 +1545,7 @@ def _purge_fixture_roots(users: tuple[str, ...] = (USER, OTHER)) -> None:
     admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", users]}, pluck="name")
     # Purging a document node calls the app's `on_purge`, which Drive reads from
-    # the registry, so the purge runs registered even when the caller is not.
+    # the registry, so the purge runs against a cache built for this request.
     with activated():
         for root in roots:
             if frappe.db.get_value("Drive Root", root, "state") == "Active":

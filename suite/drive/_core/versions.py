@@ -129,6 +129,25 @@ def list_versions(
     return page_of(rows, offset, len(rows), window)
 
 
+def read_version(principals: Principals, node: str, seq: int):
+    """Answer one readable version's stored bytes as a stream, after a READ check.
+
+    `version_content_url` above mints a signed URL for a browser. An app that
+    wrote the bytes with its own `version_bytes` needs them in the process,
+    to publish its own history without a round trip through `/f/`. The node
+    is checked, not the version row: a version belongs to its node and carries
+    no grant of its own (§9.1), and `_validated_version_blob` refuses bytes
+    that are missing, public, or a different size than the row claims.
+    """
+    _validate_seq(seq)
+    current = _node(node)
+    require(current, READ, principals)
+    _require_version_node(current)
+    version = _version(current.name, seq)
+    blob = _validated_version_blob(version)
+    return get_driver(blob.driver).read(blob.key, is_private=bool(blob.is_private))
+
+
 def version_content_url(
     principals: Principals,
     node: str,

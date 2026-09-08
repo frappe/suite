@@ -12,6 +12,10 @@ suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles
 suite.drive.patches.remove_personal #3
 suite.drive.patches.integrate_with_framework
+# §3.9 and §14.6: `Drive Entity Log` is `Drive Recent` under its real name.
+# Must precede model sync: sync applies the new columns and then adds
+# `UNIQUE recent_user_node`, and both need the rename to have happened.
+suite.drive.patches.rename_entity_log_to_recent
 # --- mail ---
 suite.mail.patches.delete_stale_cluster_stores
 # --- writer ---
@@ -107,3 +111,9 @@ execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frapp
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
 suite.drive.patches.webdav_property_index
+# --- drive (the additive Build migration, spec §14) ---
+# Last in the file. Build reads the legacy Drive tables after every patch
+# above has finished reshaping them, and it writes only new rows: no legacy
+# column is dropped here. The destructive half is `suite.drive.patches.cleanup`
+# and §14.10 puts it one release later, so it is deliberately absent.
+suite.drive.patches.build
