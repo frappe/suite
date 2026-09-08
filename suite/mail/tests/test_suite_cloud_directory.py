@@ -334,6 +334,9 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
         self.assertEqual(member["quota"]["total"], 2 * 1024**3)
         # Usage costs a cluster read per account, so the list carries no quota; the detail page does.
+        requests = admin.get_account_requests(search="carol")
+        self.assertEqual((requests["total"], requests["items"][0]["account"]), (1, self.email))
+        self.assertEqual(admin.get_account_requests(search="carol", start=20, page_length=20)["items"], [])
         page = admin.get_members(search="carol")
         self.assertEqual(page["total"], 1)
         listed = next(u for u in page["items"] if u["name"] == self.email)

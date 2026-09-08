@@ -545,9 +545,13 @@ def get_member(member_id: str) -> dict:
 
 @frappe.whitelist()
 def get_account_requests(
-    search: str | None = None, status: Literal["All", "Pending", "Accepted", "Expired"] = "All"
-) -> list[dict]:
+    search: str | None = None,
+    status: Literal["All", "Pending", "Accepted", "Expired"] = "All",
+    start: int = 0,
+    page_length: int = DEFAULT_PAGE_LENGTH,
+) -> dict:
     check_admin_permission("view account requests")
+    start, page_length = _paging(start, page_length)
 
     ACC_REQ = frappe.qb.DocType("Mail Account Request")
     query = (
@@ -570,7 +574,8 @@ def get_account_requests(
         query = query.where(ACC_REQ.is_verified == 1)
     elif status == "Expired":
         query = query.where((ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at <= frappe.utils.now()))
-    return query.run(as_dict=True)
+    total = frappe.qb.from_(query.as_("requests")).select(Count("*")).run()[0][0]
+    return {"items": query.limit(page_length).offset(start).run(as_dict=True), "total": total}
 
 
 @frappe.whitelist()
