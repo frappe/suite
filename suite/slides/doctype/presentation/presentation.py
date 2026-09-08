@@ -15,7 +15,6 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Count
 
 from suite import drive
-from suite.drive.api.permissions import user_has_permission
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.overrides.file import content_has_permission, content_query_conditions
 from suite.slides import drive as slides_drive
@@ -381,52 +380,6 @@ def remap_element_ids(elements):
             connector[end] = {**bound, "elementId": target_id} if target_id else None
 
 
-def apply_slide_layout(slide, ref_id, parent):
-    layout_slide = frappe.get_doc("Slide", ref_id)
-
-    slide_dict = layout_slide.as_dict()
-    slide_dict = update_slide_attachments(parent, slide_dict)
-
-    for key, value in slide_dict.items():
-        setattr(slide, key, value)
-
-
-def create_new_slide(parent, ref_id):
-    """
-    Creates a new slide with the given reference slide id.
-    """
-    slide = frappe.new_doc("Slide")
-
-    apply_slide_layout(slide, ref_id, parent)
-
-    slide.parent = parent
-    slide.parentfield = "slides"
-    slide.parenttype = "Presentation"
-    slide.save()
-
-    return slide
-
-
-def get_slides_from_ref(parent, theme, duplicate_from):
-    ref_name = duplicate_from or theme or "Light"
-    ref_presentation = frappe.get_doc("Presentation", ref_name)
-
-    slides = []
-
-    if duplicate_from:
-        for slide in ref_presentation.slides:
-            new_slide = create_new_slide(parent, slide.name)
-            new_slide.idx = slide.idx
-            slides.append(new_slide)
-    else:
-        first_index = 2 if ref_presentation.title in ("Light", "Dark") else 0
-        first_slide = create_new_slide(parent, ref_presentation.slides[first_index].name)
-        first_slide.idx = 1
-        slides.append(first_slide)
-
-    return slides
-
-
 def is_system_template(template_title: str) -> bool:
     return template_title in SYSTEM_TEMPLATE_TITLES
 
@@ -436,113 +389,75 @@ def get_template_thumbnail(template_title: str, index: int) -> str:
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
 
 
-def get_template_cover_thumbnail(template):
-    template_title, template_thumbnail = frappe.get_value(
-        "Presentation",
-        template,
-        ["title", "thumbnail"],
-    )
-    return (
-        get_template_thumbnail(template_title, 3)
-        if is_system_template(template_title)
-        else template_thumbnail
-    )
-
-
-def set_duplicate_metadata(presentation, duplicate_from) -> str:
-    src_title, src_theme, src_thumbnail = frappe.get_value(
-        "Presentation",
-        duplicate_from,
-        ["title", "theme", "thumbnail"],
-    )
-    presentation.title = f"Copy of {src_title}"
-    presentation.theme = src_theme
-    return src_thumbnail
-
-
-def set_template_metadata(presentation, template) -> str:
-    presentation.title = "Untitled"
-    presentation.theme = template
-    return get_template_cover_thumbnail(template)
-
-
-def copy_thumbnail_file(presentation_name: str, source_url: str) -> str:
-    source = frappe.db.get_value("File", {"file_url": source_url}, ["name", "file_name"], as_dict=True)
-    if not source:
-        return ""
-
-    try:
-        content = frappe.get_doc("File", source.name).get_content()
-    except FileNotFoundError:
-        # blob is already gone; the editor captures a fresh thumbnail on the next edit
-        return ""
-
-    _, _, ext = source.file_name.rpartition(".")
-    file_name = f"presentation-thumbnail-{presentation_name}.{ext or 'webp'}"
-
-    return create_thumbnail_file(presentation_name, file_name, content)
-
-
-def adopt_thumbnail(presentation: Document, source_url: str) -> None:
-    """Give a new deck its own copy of the thumbnail it started from.
-
-    Sharing the source's URL leaves the field pointing at a File this deck does not
-    own: once the source regenerates or deletes its thumbnail the blob can go with it,
-    and every later save of this deck retries the missing file through frappe's attach
-    hook. System template covers ship with the app, so they have no File to copy.
-    """
-    if not source_url:
-        return
-
-    thumbnail = (
-        copy_thumbnail_file(presentation.name, source_url)
-        if source_url.startswith(("/files/", "/private/files/"))
-        else source_url
-    )
-    presentation.db_set("thumbnail", thumbnail)
-
-
 @frappe.whitelist()
 def create_presentation(
     template: str | None = None, duplicate_from: str | None = None, parent: str | None = None
 ):
-    if parent and not user_has_permission(parent, "upload"):
-        frappe.throw(
-            "Cannot access folder due to insufficient permissions",
-            frappe.PermissionError,
-        )
+    """Create a new deck and return it, so the editor can jump straight in.
 
-    presentation = frappe.new_doc("Presentation")
+    An atomic adapter over `drive.create_document`: the node and the deck are
+    written together, in Drive's own savepoint, so `content.require_node`
+    never sees a fresh deck with no node — the `DriveConflict` every call
+    raised once `Presentation` joined `drive_content_types`. Duplicate-from
+    and new-from-template are both a `from_node` copy: Drive runs the deck's
+    `duplicate` factory, copies every slide and its media node for node, and
+    charges the destination root (§8.9). There is no template verb (§8.10) —
+    the two differ only in the title `create_document` is given and which
+    source it names. Drive also runs the UPLOAD check on `parent` itself, so
+    there is no separate pre-check here the way the legacy
+    `user_has_permission` call used to be one.
+
+    `parent` is the Drive folder the caller is looking at. Empty means "my
+    Drive": resolve the caller's own root, provisioned on first use, the same
+    fallback `suite.sheets.api.create_sheet` and
+    `suite.drive.http.shims._home` use.
+    """
+    parent_node = parent or _home_folder()
+
     if duplicate_from:
-        # A linked source is copied by `drive.create_document(from_node=...)`,
-        # which runs the `duplicate` factory, copies the media per blob, and
-        # charges the destination root (§8.9). Ticket 21 exposes it.
-        refuse_drive_native(duplicate_from, "the Drive copy")
         if not frappe.has_permission("Presentation", "read", duplicate_from):
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
-        source_thumbnail = set_duplicate_metadata(presentation, duplicate_from)
+        source_node = slides_drive.node_of(duplicate_from)
+        title = f"Copy of {slides_drive.node_title_of(source_node)}"
     else:
-        # New-from-template is the same Drive call for a linked template, with
-        # `is_template` left false; there is no template verb (§8.10). Refused
-        # before the flag check, because a linked deck carries `is_template` on
-        # its node and the legacy column would answer "does not exist".
-        if template:
-            refuse_drive_native(template, "the Drive copy")
-        if not template or not frappe.db.get_value("Presentation", template, "is_template"):
+        # A linked template carries `is_template` on its node, never on the
+        # legacy column (§8.10): reading the column here would answer "does
+        # not exist" for every template Build has already linked.
+        template_node = template and frappe.db.get_value("Presentation", template, NODE_FIELD)
+        if not template_node or not slides_drive.node_is_template(template_node):
             frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
         if not frappe.has_permission("Presentation", "read", template):
             frappe.throw("You cannot create a presentation from this template", frappe.PermissionError)
-        source_thumbnail = set_template_metadata(presentation, template)
-    presentation.flags.drive_parent = parent
-    presentation.insert()
+        source_node = template_node
+        title = "Untitled"
 
-    # only now does the deck have a name to attach its own thumbnail File to
-    adopt_thumbnail(presentation, source_thumbnail)
+    node = drive.create_document(
+        parent_node, title, content_doctype=slides_drive.DOCTYPE, from_node=source_node
+    )
+    docname = slides_drive.docname_for_node(node)
+    if not docname:
+        frappe.throw(_("The new presentation could not be found"), frappe.ValidationError)
 
-    presentation.slides = get_slides_from_ref(presentation.name, template, duplicate_from)
-
-    presentation.save()
+    presentation = frappe.get_doc("Presentation", docname)
+    # Drive owns the title and keeps no mirror (§10.2): `presentation.title`
+    # is the frozen legacy column and stays blank on a fresh deck. This is an
+    # in-memory read for the response only, never saved.
+    presentation.title = presentation.node_title
     return presentation
+
+
+def _home_folder() -> str:
+    """The caller's own Drive root, provisioned on first use.
+
+    Mirrors `suite.sheets.api._home_folder` and `suite.drive.http.shims._home`:
+    a fresh user has no Personal root until something asks for one, and Guest
+    and Administrator never get one.
+    """
+    user = frappe.session.user
+    home = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+    if not home:
+        frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
+    return home
 
 
 @frappe.whitelist()
