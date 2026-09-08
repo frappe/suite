@@ -88,7 +88,6 @@ BASELINE_DEBT = {
             "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils.files",
             "suite/meet/recording/ingest.py|import|suite.drive.utils",
             "suite/meet/recording/ingest.py|import|suite.drive.utils.files",
-            "suite/sheets/api.py|import|suite.drive.api.permissions",
             "suite/sheets/doctype/sheet/sheet.py|import|suite.drive.overrides.file",
             "suite/sheets/patches/integrate_with_drive.py|import|suite.drive.utils",
             "suite/slides/api/test_file.py|import|suite.drive.overrides.file",

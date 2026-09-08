@@ -1,10 +1,12 @@
 import json
 
 import frappe
+from frappe import _
 
+from suite import drive
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
-from suite.sheets.drive import refuse_drive_native
+from suite.sheets.drive import DOCTYPE, docname_for_node, refuse_drive_native
 from suite.sheets.versioning import save as save_mod
 
 MAX_TITLE_LEN = 280
@@ -414,21 +416,38 @@ def save_sheet(
 @frappe.whitelist()
 def create_sheet(title: str = "", parent: str = "") -> str:
     # Create a blank sheet and return its id. Used by Drive's "New > Spreadsheet"
-    # so the sheet is born inside the folder the user is looking at — `parent`
-    # is the Drive folder its backing File should land in (validated for upload
-    # access here, then threaded to Sheet.after_insert). Mirrors Writer's
-    # create_document. "{}" is a valid empty workbook — the editor's loader
-    # falls back to a fresh Sheet1 when the packed payload is absent.
-    if parent:
-        from suite.drive.api.permissions import user_has_permission
+    # so the sheet is born inside the folder the user is looking at.
+    #
+    # An atomic adapter over `drive.create_document`: the node and the Sheet
+    # are written together, in Drive's own savepoint, so `content.require_node`
+    # never sees a Sheet with no node — the source of the `DriveConflict` this
+    # endpoint used to raise once `Sheet` joined `drive_content_types`. Drive
+    # also runs the UPLOAD check on `parent` itself, so there is no separate
+    # pre-check here the way the legacy `File`-folder check used to be one.
+    #
+    # `parent` is the Drive folder the caller is looking at. Empty means "my
+    # Drive": resolve the caller's own root, provisioning it on first use, the
+    # same fallback `suite.drive.http.shims._home` uses for every other
+    # node-based create.
+    parent_node = parent or _home_folder()
+    node = drive.create_document(parent_node, _clean_title(title), content_doctype=DOCTYPE)
+    docname = docname_for_node(node)
+    if not docname:
+        frappe.throw(_("The new sheet could not be found"), frappe.ValidationError)
+    return docname
 
-        if not user_has_permission(parent, "upload"):
-            frappe.throw(
-                "Cannot access folder due to insufficient permissions",
-                frappe.PermissionError,
-            )
-    result = save_mod.save_sheet(title or "Untitled Spreadsheet", "{}", name=None, parent=parent or None)
-    return result["name"]
+
+def _home_folder() -> str:
+    """The caller's own Drive root, provisioned on first use.
+
+    Mirrors `suite.drive.http.shims._home`: a fresh user has no Personal root
+    until something asks for one, and Guest and Administrator never get one.
+    """
+    user = frappe.session.user
+    home = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+    if not home:
+        frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
+    return home
 
 
 @frappe.whitelist()
