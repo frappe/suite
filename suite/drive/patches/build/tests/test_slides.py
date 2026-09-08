@@ -659,6 +659,30 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.issues_total, 1)
         self.assertIn("no Ready blob", result.issues[0].reason)
 
+    def test_a_second_slides_run_clears_only_its_own_evidence(self):
+        """The three phases share one record, so a rerun may drop only its rows."""
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        template_url = "/private/files/template-logo.png"
+        source = FakeContent(
+            documents=[consumer, template],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": template_url}]))],
+            media=[media("template-file", deck_name=template.name, url=template_url)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        seeded = env.state.content()
+        seeded.record_issue("Sheet:sheet-1", "history said no", phase="history")
+        env.state.put_content(seeded)
+
+        convert_slides_and_templates(env)
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.issues_by_phase, {"history": 1, "slides": 1})
+        self.assertEqual(result.issues_total, 2)
+        self.assertEqual([issue.phase for issue in result.issues], ["history", "slides"])
+
     # -- defect 6: a borrowed background
 
     def test_a_borrowed_background_resolves_to_the_adopted_node(self):

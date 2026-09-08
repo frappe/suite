@@ -38,6 +38,19 @@ NODE_FIELDS = (
 )
 
 
+# The counters and evidence this phase owns. A rerun clears its own rows and
+# leaves the history and link phases' record alone.
+SLIDE_FIELDS = (
+    "slides_completed",
+    "media_nodes_created",
+    "media_duplicates_collapsed",
+    "slide_elements_rewritten",
+    "deck_previews_created",
+    "blobless_nodes",
+    "slides_deferred",
+)
+
+
 class BuildSlidesError(RuntimeError):
     """A deck cannot be converted without guessing."""
 
@@ -50,13 +63,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
     if env.slide_journal is None:
         raise RuntimeError("Build has no Slide preimage journal")
     result = env.state.content()
-    result.slides_completed = False
-    result.media_nodes_created = 0
-    result.media_duplicates_collapsed = 0
-    result.slide_elements_rewritten = 0
-    result.deck_previews_created = 0
-    result.blobless_nodes = 0
-    result.slides_deferred = 0
+    result.begin_phase("slides", SLIDE_FIELDS)
 
     try:
         convert_templates(env, batch_size=batch_size, result=result)
@@ -88,7 +95,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
     # `SlideJournalError` is a `RuntimeError`, so §12's journal conflicts would
     # otherwise leave the phase with no diagnostic and no state write.
     except (InvalidLegacyContent, ValueError, OSError, SlideJournalError) as error:
-        result.record_issue("slides", str(error))
+        result.record_issue("slides", str(error), phase="slides")
         env.state.put_content(result)
         raise BuildSlidesError(str(error)) from error
 
@@ -139,6 +146,7 @@ def _convert_deck(env, deck, batch_size, result):
             result.record_issue(
                 f"Slide:{slide.name}",
                 f"{disagreements} attachmentName value(s) disagreed with src; src won",
+                phase="slides",
             )
         if after == before:
             continue
@@ -316,6 +324,7 @@ def _borrowed_mapping(env, deck, parsed, slides, local, result, host, writer):
                 result.record_issue(
                     f"Presentation:{deck.name}",
                     f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
+                    phase="slides",
                 )
             continue
         # §3: one unambiguous Ready blob. A reference with none is unresolved
@@ -325,6 +334,7 @@ def _borrowed_mapping(env, deck, parsed, slides, local, result, host, writer):
             result.record_issue(
                 f"Presentation:{deck.name}",
                 f"media reference {value!r} has no Ready blob and was not adopted",
+                phase="slides",
             )
             continue
         if len(blobs) != 1:
