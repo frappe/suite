@@ -72,8 +72,6 @@ BASELINE_DEBT = {
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.File",
             "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache",
             "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache#2",
-            "suite/hooks.py|dotted-string|suite.drive.api.scripts.auto_delete_from_trash",
-            "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_deleted_files",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_download_archives",
             "suite/hooks.py|dotted-string|suite.drive.webdav.locks.purge_expired_locks",
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.after_file_upload",
