@@ -868,10 +868,10 @@ class FakeContentTarget:
 
         self._unit(node["name"], write)
 
-    def write_writer_template(self, document, node, grants):
-        if document is None and node is None and not grants:
+    def write_writer_template(self, document, node, grants, *, link=""):
+        if document is None and node is None and not grants and not link:
             return
-        name = (document or node)["name"]
+        name = (document or node)["name"] if (document or node) else link
 
         def write():
             if document:
@@ -883,6 +883,11 @@ class FakeContentTarget:
             if node:
                 self.insert_nodes([node])
             self.insert_grants(grants)
+            if link:
+                # One `tabWriter Document` on a site, two tables here: a
+                # template's document is a row this fake target wrote, not a
+                # legacy row the fake source holds.
+                self.writer_rows[link]["node"] = link
 
         self._unit(name, write)
 

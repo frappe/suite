@@ -59,7 +59,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
     result.slides_deferred = 0
 
     try:
-        convert_templates(env, batch_size=batch_size)
+        convert_templates(env, batch_size=batch_size, result=result)
         after = ""
         while True:
             decks = source.documents("Presentation", after, batch_size)
