@@ -104,7 +104,9 @@ class StubbedDatabase(UnitTestCase):
 
 
 class TestReadableBlobProof(StubbedDatabase):
-    """The proof itself, with the two queries it costs stubbed."""
+    """The proof itself: an own-tier scan, then a shared-tier scan, each
+    bounded per page and bounded in page count, with those queries stubbed.
+    """
 
     def test_a_blob_no_readable_node_holds_is_refused(self):
         self.db.sql.return_value = []
@@ -112,15 +114,43 @@ class TestReadableBlobProof(StubbedDatabase):
         with self.assertRaises(DriveForbidden):
             node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
 
-    def test_a_blob_a_readable_node_holds_is_admitted(self):
-        self.db.sql.side_effect = [[source_row()], [grant_row("their-root", READ)]]
+    def test_an_owned_reference_is_admitted_by_the_own_tier_alone(self):
+        """The common case: the caller already owns a copy of these bytes.
+
+        The own-tier scan finds it and admits the caller without ever
+        querying the shared-tier scan, which is the expensive one for a
+        heavily deduplicated blob.
+        """
+        self.db.sql.side_effect = [[source_row(name="my-node", root="my-root")], [grant_row("my-root", READ)]]
 
         node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 2)
+        own_tier_statement = self.db.sql.call_args_list[0].args[0]
+        self.assertIn("`owner` = %(user)s", own_tier_statement)
+
+    def test_a_readable_version_reference_is_admitted(self):
+        """A version, not a live head, can be the caller's only proof.
+
+        `GET /nodes/<id>/versions` mints the same signed `/f/` URL a head
+        blob gets, so a version-sourced row has to clear the same bar. The
+        query returns the owning node's identity either way, and permission
+        resolves through that node's grant chain.
+        """
+        self.db.sql.side_effect = [
+            [],
+            [source_row(name="their-node", root="their-root")],
+            [grant_row("their-root", READ)],
+        ]
+
+        node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 3)
 
     def test_a_source_the_caller_cannot_read_is_refused(self):
         # The row exists and holds the bytes. No grant reaches the caller, so
         # learning the id from a §6.8 URL buys nothing.
-        self.db.sql.side_effect = [[source_row()], []]
+        self.db.sql.side_effect = [[], [source_row()], []]
 
         with self.assertRaises(DriveForbidden):
             node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
@@ -128,6 +158,7 @@ class TestReadableBlobProof(StubbedDatabase):
     def test_a_denied_source_is_refused_even_under_an_inherited_grant(self):
         # role 0 is §4.1's deny, and nearest-wins makes it final.
         self.db.sql.side_effect = [
+            [],
             [source_row(path="/their-folder/")],
             [grant_row("their-root", EDIT), grant_row("their-node", 0)],
         ]
@@ -146,19 +177,13 @@ class TestReadableBlobProof(StubbedDatabase):
         with self.assertRaises(DriveForbidden) as unknown:
             node_workflows._require_readable_blob(principals(), "no-such-blob")
 
-        self.db.sql.side_effect = [[source_row()], []]
+        self.db.sql.side_effect = [[], [source_row()], []]
         with self.assertRaises(DriveForbidden) as unreadable:
             node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
 
         self.assertEqual(str(unknown.exception), str(unreadable.exception))
 
-    def test_the_sources_query_reads_nodes_and_versions_one_page_at_a_time(self):
-        """Version bytes are readable too, so a version blob is a real source.
-
-        `GET /nodes/<id>/versions` mints a signed `/f/` URL per row, which is
-        the same disclosure the head blob gets. Both `blob` columns carry
-        `search_index: 1` (§3.1, §3.4), so each arm is an index range scan.
-        """
+    def test_the_own_tier_query_reads_nodes_and_versions_scoped_to_the_caller(self):
         self.db.sql.return_value = []
 
         with self.assertRaises(DriveForbidden):
@@ -167,43 +192,88 @@ class TestReadableBlobProof(StubbedDatabase):
         statement, values = self.db.sql.call_args_list[0].args
         self.assertIn("tabDrive Node", statement)
         self.assertIn("tabDrive Node Version", statement)
+        self.assertIn("`owner` = %(user)s", statement)
+        self.assertEqual(values["blob"], STRANGER_BLOB)
+        self.assertEqual(values["user"], USER)
+        self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_PAGE_SIZE)
+        self.assertEqual(values["after"], "")
+
+    def test_the_shared_tier_query_reads_nodes_and_versions_one_page_at_a_time(self):
+        """Version bytes are readable too, so a version blob is a real source.
+
+        Both `blob` columns carry `search_index: 1` (§3.1, §3.4), so each arm
+        of both tiers is an index range scan.
+        """
+        self.db.sql.return_value = []
+
+        with self.assertRaises(DriveForbidden):
+            node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        # Call 0 is the empty own-tier scan; call 1 is the shared-tier scan.
+        statement, values = self.db.sql.call_args_list[1].args
+        self.assertIn("tabDrive Node", statement)
+        self.assertIn("tabDrive Node Version", statement)
         self.assertEqual(values["blob"], STRANGER_BLOB)
         self.assertEqual(values["user"], USER)
         self.assertEqual(values["limit"], node_workflows.BLOB_SOURCE_PAGE_SIZE)
         self.assertEqual(values["after"], "")
 
     def test_a_readable_source_past_a_full_page_of_strangers_is_still_admitted(self):
-        """The page size must bound one query's cost, not the proof's reach.
+        """The page size must bound one query's cost, not the whole bound's reach.
 
-        A first page entirely full of unreadable rows used to be the whole
-        search: a single `LIMIT` on an "own DESC" order could strand a
-        caller's own readable-but-not-owned copy behind it forever. The scan
-        now keeps paging past a full, unreadable page instead of stopping.
+        A first page entirely full of unreadable rows must not be the whole
+        search: the scan keeps paging past a full, unreadable page, up to
+        `BLOB_SOURCE_MAX_PAGES`, instead of stopping at the first one.
         """
         full_page = [source_row(name=f"stranger-{i}") for i in range(node_workflows.BLOB_SOURCE_PAGE_SIZE)]
         second_page = [source_row(name="their-node", root="their-root")]
         self.db.sql.side_effect = [
+            [],  # own tier: nothing owned
             full_page,
-            [],  # `_readable_rows` over the first page: nothing granted
+            [],  # `_readable_rows` over the first shared-tier page: nothing granted
             second_page,
             [grant_row("their-root", READ)],
         ]
 
         node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
 
-        self.assertEqual(self.db.sql.call_count, 4)
-        second_call_values = self.db.sql.call_args_list[2].args[1]
-        self.assertEqual(second_call_values["after"], "stranger-49")
+        self.assertEqual(self.db.sql.call_count, 5)
+        second_page_call_values = self.db.sql.call_args_list[3].args[1]
+        self.assertEqual(second_page_call_values["after"], "stranger-49")
 
     def test_an_exhausted_scan_with_no_readable_page_is_refused(self):
         """A blob with only unreadable sources must not page forever."""
         short_unreadable_page = [source_row()]
-        self.db.sql.side_effect = [short_unreadable_page, []]
+        self.db.sql.side_effect = [[], short_unreadable_page, []]
 
         with self.assertRaises(DriveForbidden):
             node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
 
-        self.assertEqual(self.db.sql.call_count, 2)
+        self.assertEqual(self.db.sql.call_count, 3)
+
+    def test_a_pathological_fanout_is_bounded_in_query_count(self):
+        """A blob with thousands of references must cost a fixed number of
+        queries, not one page's worth per reference.
+
+        Every page returned here is full (never the short, last page) and
+        never readable, so an unbounded scan would keep paging forever while
+        `create_file` still holds the parent row locked. Each tier's `for`
+        loop stops itself at `BLOB_SOURCE_MAX_PAGES`; the mock's `side_effect`
+        list is sized to exactly that many page-plus-grant pairs per tier, so
+        a scan that read even one page past the bound would exhaust the list
+        and fail the test with `StopIteration` instead of hanging.
+        """
+        max_pages = node_workflows.BLOB_SOURCE_MAX_PAGES
+        full_unreadable_page = [
+            source_row(name=f"stranger-{i}") for i in range(node_workflows.BLOB_SOURCE_PAGE_SIZE)
+        ]
+        one_tier = [full_unreadable_page, []] * max_pages
+        self.db.sql.side_effect = one_tier + one_tier  # own tier, then shared tier
+
+        with self.assertRaises(DriveForbidden):
+            node_workflows._require_readable_blob(principals(), STRANGER_BLOB)
+
+        self.assertEqual(self.db.sql.call_count, 4 * max_pages)
 
     def test_a_suite_admin_still_needs_the_blob_to_be_in_drive(self):
         """MANAGE everywhere is not a licence to name bytes Drive does not hold.
