@@ -139,6 +139,29 @@ BASELINE_DEBT = {
         ),
     ),
     **_debt(
+        "Suite Writer",
+        "Remove with the Cleanup release (36), which drops the legacy `Writer Version` "
+        "rows this fixture stands in for.",
+        # §14.6 copies a `Writer Version` snapshot into a `Drive Node Version`
+        # as raw HTML. No public Drive call writes a version from caller-supplied
+        # bytes, so proving that a migrated version restores means writing the
+        # row the way Build writes it.
+        ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite migration",
+        "Remove when ticket 29 registers `drive_content_types` in `suite/hooks.py`; "
+        "the fixture then reads the hook instead of naming both specs.",
+        # The Build content site fixture has to run against the real Writer and
+        # Sheets adapters, and a spec is registered by its dotted path. `hooks.py`
+        # keeps `drive_content_types` empty until ticket 29, so until then the
+        # fixture supplies the two paths itself.
+        (
+            "suite/drive/tests/test_build_content.py|dotted-string|suite.sheets.drive.SPEC",
+            "suite/drive/tests/test_build_content.py|dotted-string|suite.writer.drive.SPEC",
+        ),
+    ),
+    **_debt(
         "Suite Slides",
         "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
         (
@@ -520,6 +543,7 @@ class TestArchitecture(unittest.TestCase):
                 "push_preview",
                 "read_file",
                 "reduce_storage_reservation",
+                "refuse_shared_child_rows",
                 "refuse_shared_linked_rows",
                 "refuse_shared_row",
                 "release_storage_reservation",
