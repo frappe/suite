@@ -98,6 +98,26 @@ class TestClient(IntegrationTestCase):
         self.assertEqual(client.session.headers["Authorization"], "token k:s")
 
 
+class TestMailSettings(SuiteCloudTestCase):
+    def test_validate_credentials_pings_and_flags_jmap_url_mismatch(self) -> None:
+        settings = frappe.get_doc("Mail Settings")
+        site = settings.validate_suite_cloud_credentials()
+        self.assertEqual(site["site"], "acme.frappe.test")
+        self.assertEqual(self.fake.calls[-1][0], "ping")
+        # The fake's cluster answers https://mail.test while the settings point elsewhere.
+        self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
+
+    def test_validate_credentials_needs_configuration(self) -> None:
+        with self.change_settings("Mail Settings", site_api_secret=""):
+            frappe.local.request_cache.clear()
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "not configured",
+                frappe.get_doc("Mail Settings").validate_suite_cloud_credentials,
+            )
+        frappe.local.request_cache.clear()
+
+
 class TestDomains(SuiteCloudTestCase):
     def test_domains_are_listed_added_exported_and_deleted(self) -> None:
         rows = admin.get_domains()
