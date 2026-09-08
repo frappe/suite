@@ -493,8 +493,12 @@ def create_presentation(
             # the retired `set_template_metadata` did. It is Slides' own body
             # column, not a Drive mirror.
             frappe.db.set_value(slides_drive.DOCTYPE, docname, "theme", template, update_modified=False)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as failure:
+        # `create_document` takes row locks, so this request can be an InnoDB
+        # deadlock victim, and a victim's savepoints are gone before this arm
+        # runs. Drive's shared helper reports the deadlock the caller has to
+        # retry on instead of the savepoint that went with it.
+        drive.rollback_savepoint(savepoint, failure)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
