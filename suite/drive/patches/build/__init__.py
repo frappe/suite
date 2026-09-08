@@ -19,6 +19,20 @@ Implemented dormant phases now cover §14.2 steps 1 to 8 and 10:
 - `grants.convert_grants` — step 6: `Drive Permission` and Sheet
   `DocShare` as `Drive Grant` rows, with the §5.9 guardrails applied by
   hand because bulk SQL fires no refusal.
+- `history.convert_history_and_comments` — step 7: Writer and Sheet
+  history as `Drive Node Version` rows, and both comment stores as
+  `Drive Comment Thread` and `Drive Comment` rows.
+- `slides.convert_slides_and_templates` — step 8: templates, deck media
+  children, deck previews, and the journaled Slide body rewrite.
+- `content.link_content_documents` — step 10: the reciprocal `node`
+  links, orphan adoption, and content `DocShare` rows as grants.
+
+The three content phases run in that order, 7 then 8 then 10, and no
+phase runs another. Step 10 adopts orphans and then reruns step 7 for the
+history they carry, so it needs the template nodes step 8 creates. Both
+template kinds reach step 10 with no `File` row, and step 10 validates the
+link step 8 left instead of adopting them. A deck adopted at step 10 has no
+media in the same pass: step 8 defers it and the next pass converts it.
 
 Ticket 29 composes these functions with steps 9 and 11 to 13.
 """

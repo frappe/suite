@@ -1725,6 +1725,10 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
 
     def test_a_direct_version_share_cannot_reopen_linked_history(self):
+        """`DriveForbidden`, not `frappe.PermissionError`: the guard is
+        `drive.refuse_shared_child_rows`, and `frappe.desk.notifications` and
+        `frappe.desk.desktop` swallow a `PermissionError`.
+        """
         docname = self._docname(self._document(title="Preserved history share"))
         version = frappe.get_doc(
             {"doctype": "Writer Version", "doc": docname, "snapshot": "<p>old</p>", "title": "old"}
@@ -1737,6 +1741,11 @@ class TestWriterInDrive(IntegrationTestCase):
             ignore_permissions=True,
             ignore_missing=True,
         )
+        # Control: the preserved row alone refuses nothing, so the refusal
+        # below belongs to the share and not to the linked parent.
+        self._as(OTHER)
+        self.assertNotIn(version.name, frappe.get_list("Writer Version", pluck="name"))
+        frappe.set_user("Administrator")
         share = frappe.get_doc(
             {
                 "doctype": "DocShare",
@@ -1761,7 +1770,7 @@ class TestWriterInDrive(IntegrationTestCase):
         self._as(OTHER)
         with self.assertRaises(DriveForbidden):
             frappe.has_permission("Writer Version", doc=version.name, ptype="read")
-        with self.assertRaises(frappe.PermissionError):
+        with self.assertRaises(DriveForbidden):
             frappe.get_list("Writer Version", pluck="name")
         frappe.set_user("Administrator")
         self.assertTrue(frappe.db.exists("Writer Version", version.name))

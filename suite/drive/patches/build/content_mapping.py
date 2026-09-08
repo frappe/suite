@@ -14,16 +14,39 @@ from suite.drive._core.roles import EDIT, MANAGE, READ
 MAX_SHEETS_DATA_BYTES = 75 * 1024 * 1024
 MAX_VERSION_SEQ = 2_147_483_647
 
+# `Drive Node.path` is `varchar(500)` and a tree stops at 40 levels (§3.1).
+# `tree.py` names both for the ticket 27 walk. A media node and a template
+# node are children too, and bulk SQL fires no validator.
+PATH_CAPACITY = 500
+DEPTH_CAP = 40
+
 
 class InvalidLegacyContent(ValueError):
     """Legacy content cannot fit the accepted target shape."""
 
 
+def path_depth(path: str) -> int:
+    """The depth a node carrying this path sits at, root counted as zero."""
+    return path.count("/") or 1
+
+
+def within_capacity(path: str) -> bool:
+    """Whether a child at this path fits the column and the depth cap."""
+    return len(path) <= PATH_CAPACITY and path_depth(path) <= DEPTH_CAP
+
+
 def docshare_role(row) -> int | None:
-    """Map Frappe sharing rights to Drive's strict role ladder."""
-    if row.share:
+    """Map Frappe sharing rights to Drive's strict role ladder.
+
+    §14.5, one line each: `share` and `write` is MANAGE, `write` is EDIT,
+    `read` only is READ, and `share` without `write` leaves the highest
+    content flag to win. `submit` is not on the ladder and no content
+    doctype here is submittable, so a submit-only row falls to its own
+    `read` flag, which Frappe always sets alongside.
+    """
+    if row.share and row.write:
         return MANAGE
-    if row.write or row.submit:
+    if row.write:
         return EDIT
     if row.read:
         return READ
@@ -95,6 +118,34 @@ def epoch_millis(value, timezone: str) -> str:
     return converted.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
+STAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
+# What MariaDB hands back for a `datetime(6)`, in the two renderings the
+# driver produces: with microseconds, and without them when they are zero.
+STAMP_TEXT_FORMATS = (STAMP_FORMAT, "%Y-%m-%d %H:%M:%S")
+
+
+def normalized_stamp(value):
+    """Render one stamp the same way whatever produced it.
+
+    A planned stamp is text with microseconds. The same row read back is a
+    `datetime`, and `str()` on one whose microsecond is zero drops the
+    `.000000`, so an exact comparison would refuse a row it just wrote.
+    Both sides go through one format, so the comparison is of the instant.
+    A value that is not a stamp is returned unchanged and still mismatches.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime(STAMP_FORMAT)
+    text = str(value)
+    for pattern in STAMP_TEXT_FORMATS:
+        try:
+            return datetime.strptime(text, pattern).strftime(STAMP_FORMAT)
+        except ValueError:
+            continue
+    return text
+
+
 def compact_settings(keymap: str | None) -> str:
     """Preserve a Writer Template shortcut without inventing settings."""
     value = (keymap or "").strip()
@@ -153,14 +204,51 @@ def expected_node(
     }
 
 
+# Every refusal message reaches `drive-build-state.json` through `record_issue`,
+# and plan §13 forbids that file from holding comment text, body bytes, authors,
+# secrets, or blob contents. A mismatch on `html` or `content` would otherwise
+# copy two whole documents into it.
+OPAQUE_FIELDS = frozenset(
+    {
+        "html",
+        "content",
+        "settings",
+        "sheets_data",
+        "text",
+        "anchor",
+        "title",
+        "owner",
+        "modified_by",
+        "actor",
+        "author",
+        "author_name",
+        "resolved_by",
+        "mentions",
+        "user",
+    }
+)
+BOUNDED_VALUE_CHARS = 60
+
+
+def bounded(value, *, opaque: bool = False) -> str:
+    """Describe one field value without reproducing it."""
+    if value is None or isinstance(value, bool | int | float):
+        return repr(value)
+    text = value if isinstance(value, str) else repr(value)
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+    if opaque or len(text) > BOUNDED_VALUE_CHARS:
+        return f"<{len(text)} chars sha256:{digest}>"
+    return repr(text)
+
+
 def exact_fields(actual: dict, expected: dict, fields: tuple[str, ...], label: str) -> None:
     """Refuse the first immutable or semantic mismatch."""
     for field in fields:
         left = actual.get(field)
         right = expected.get(field)
         if field in {"creation", "modified", "content_modified", "trashed_at", "resolved_at"}:
-            left = str(left) if left is not None else None
-            right = str(right) if right is not None else None
+            left = normalized_stamp(left)
+            right = normalized_stamp(right)
         if field in {"pinned", "resolved", "is_template", "collab", "docstatus", "idx"}:
             left = int(left or 0)
             right = int(right or 0)
@@ -171,6 +259,8 @@ def exact_fields(actual: dict, expected: dict, fields: tuple[str, ...], label: s
             except ValueError:
                 pass
         if left != right:
+            opaque = field in OPAQUE_FIELDS
             raise InvalidLegacyContent(
-                f"{label} field {field} is {actual.get(field)!r}, expected {expected.get(field)!r}"
+                f"{label} field {field} is {bounded(actual.get(field), opaque=opaque)}, "
+                f"expected {bounded(expected.get(field), opaque=opaque)}"
             )

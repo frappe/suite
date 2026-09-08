@@ -11,6 +11,7 @@ to 3, then `LegacyTree` for everything Build reads out of the legacy tables
 and `DriveTarget` for everything it writes into Drive's own.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import IO, Protocol
 
@@ -311,6 +312,11 @@ USERS_ROW = "Users"
 # read below needs it here, and a port may not import the module that calls
 # it. `Drive Root.state` reuses ACTIVE above: both columns spell one word.
 PERSONAL = "Personal"
+
+# How many nodes one batched grant read names at once. The read is a cross
+# product of two IN lists, so a short node page keeps the principal list short
+# with it.
+GRANT_PAIR_NODES = 100
 
 # What Build reads off one legacy row. `frappe.get_all` returns `_dict`, so
 # the frozen shape below is what pins the column list in one place.
@@ -656,9 +662,11 @@ class LegacyContent(Protocol):
 
     def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]: ...
 
-    def writer_versions(self, document: str) -> list[WriterVersionRow]: ...
+    def writer_versions(
+        self, document: str, after: tuple[str, str], limit: int
+    ) -> list[WriterVersionRow]: ...
 
-    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]: ...
+    def sheet_snapshots(self, sheet: str, after: tuple[int, str], limit: int) -> list[SheetSnapshotRow]: ...
 
     def residual_writer_versions(self, limit: int) -> list[str]: ...
 
@@ -666,19 +674,23 @@ class LegacyContent(Protocol):
 
     def writer_templates(self, after: str, limit: int) -> list[WriterTemplateRow]: ...
 
-    def slides(self, deck: str) -> list[SlideRow]: ...
+    def slides(self, deck: str, after: tuple[int, str], limit: int) -> list[SlideRow]: ...
 
-    def media_files(self, deck: str) -> list[MediaFileRow]: ...
+    def media_files(self, deck: str, after: tuple[str, str], limit: int) -> list[MediaFileRow]: ...
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
 
     def presentation_is_template(self, deck: str) -> bool: ...
+
+    def writer_document_is_template(self, name: str) -> bool: ...
 
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]: ...
 
     def user_enabled(self, user: str) -> bool | None: ...
 
     def site_timezone(self) -> str: ...
+
+    def site_host(self) -> str: ...
 
 
 class ContentTarget(Protocol):
@@ -692,19 +704,17 @@ class ContentTarget(Protocol):
 
     def root_metadata(self, node: str) -> dict | None: ...
 
+    def lock_root_identity(self, user: str) -> None: ...
+
     def active_roots(self, user: str) -> tuple[str, ...]: ...
 
     def personal_roots(self, user: str) -> tuple[str, ...]: ...
 
-    def versions(self, node: str) -> list[dict]: ...
+    def version_seqs(self, node: str) -> dict[int, str]: ...
 
     def version_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
-    def threads(self, node: str) -> list[dict]: ...
-
     def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
-
-    def comments(self, thread: str) -> list[dict]: ...
 
     def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
@@ -726,6 +736,8 @@ class ContentTarget(Protocol):
 
     def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]: ...
 
+    def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]: ...
+
     def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
 
     def insert_versions(self, rows: list[dict]) -> None: ...
@@ -742,7 +754,9 @@ class ContentTarget(Protocol):
 
     def write_orphan(self, node: dict, doctype: str, docname: str) -> None: ...
 
-    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None: ...
+    def write_writer_template(
+        self, document: dict | None, node: dict | None, grants: list[dict], *, link: str = ""
+    ) -> None: ...
 
     def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None: ...
 
@@ -1180,50 +1194,46 @@ class SiteContentSource:
         )
         return [TreeRow.of(row) for row in rows]
 
-    def writer_versions(self, document: str) -> list[WriterVersionRow]:
-        rows = frappe.get_all(
-            "Writer Version",
-            filters={"doc": document},
-            fields=[
-                "name",
-                "doc",
-                "snapshot",
-                "title",
-                "manual",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-            ],
-            order_by="creation asc, name asc",
+    def writer_versions(self, document: str, after: tuple[str, str], limit: int) -> list[WriterVersionRow]:
+        # Plan §13 keyset: `(doc, creation, name)`. A `snapshot` is the whole
+        # document body, so one page has to be bounded. `Writer Version` has no
+        # index on `(doc, creation, name)`, but `doc` alone narrows the scan to
+        # one document's history, which is what the page walks.
+        creation, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `doc`, `snapshot`, `title`, `manual`,
+                      `owner`, `creation`, `modified`, `modified_by`
+               FROM `tabWriter Version`
+               WHERE `doc` = %(doc)s AND (`creation`, `name`) > (%(creation)s, %(name)s)
+               ORDER BY `creation`, `name` LIMIT %(limit)s""",
+            {"doc": document, "creation": creation or "1000-01-01", "name": name, "limit": limit},
+            as_dict=True,
         )
         return [WriterVersionRow(**dict(row)) for row in rows]
 
-    def sheet_snapshots(self, sheet: str) -> list[SheetSnapshotRow]:
-        rows = frappe.get_all(
-            "Sheet Snapshot",
-            filters={"sheet": sheet},
-            fields=[
-                "name",
-                "sheet",
-                "seq",
-                "kind",
-                "label",
-                "pinned",
-                "actor",
-                "sheets_data",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-            ],
-            order_by="seq asc, name asc",
+    def sheet_snapshots(self, sheet: str, after: tuple[int, str], limit: int) -> list[SheetSnapshotRow]:
+        # Plan §13 keyset: `(sheet, seq, name)`. `sheets_data` reaches 75 MB per
+        # row, so a sheet with hundreds of snapshots must never be materialised
+        # in one list.
+        seq, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `sheet`, `seq`, `kind`, `label`, `pinned`, `actor`,
+                      `sheets_data`, `owner`, `creation`, `modified`, `modified_by`
+               FROM `tabSheet Snapshot`
+               WHERE `sheet` = %(sheet)s AND (`seq`, `name`) > (%(seq)s, %(name)s)
+               ORDER BY `seq`, `name` LIMIT %(limit)s""",
+            {"sheet": sheet, "seq": seq, "name": name, "limit": limit},
+            as_dict=True,
         )
         return [SheetSnapshotRow(**dict(row)) for row in rows]
 
     def residual_writer_versions(self, limit: int) -> list[str]:
         filters = [["parent", "like", self.name_prefix + "%"]] if self.name_prefix else []
-        return frappe.get_all("Writer Doc Version", filters=filters, pluck="name", limit=limit)
+        # Ordered, because these ids are the sample §14.9 prints and a
+        # refusal a run cannot reproduce is a refusal nobody can chase.
+        return frappe.get_all(
+            "Writer Doc Version", filters=filters, pluck="name", limit=limit, order_by="name asc"
+        )
 
     def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None:
         row = frappe.db.get_value(
@@ -1241,33 +1251,37 @@ class SiteContentSource:
         )
         return [WriterTemplateRow(**dict(row)) for row in rows]
 
-    def slides(self, deck: str) -> list[SlideRow]:
-        rows = frappe.get_all(
-            "Slide",
-            filters={"parent": deck, "parenttype": "Presentation"},
-            fields=["name", "parent", "idx", "elements", "background"],
-            order_by="idx asc, name asc",
+    def slides(self, deck: str, after: tuple[int, str], limit: int) -> list[SlideRow]:
+        # Plan §13 keyset: `(deck, idx, name)`. `elements` is a whole slide
+        # body, so the query is bounded even though §12 makes the caller hold
+        # one deck's slides at once to preflight them.
+        idx, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `parent`, `idx`, `elements`, `background`
+               FROM `tabSlide`
+               WHERE `parent` = %(deck)s AND `parenttype` = 'Presentation'
+                 AND (`idx`, `name`) > (%(idx)s, %(name)s)
+               ORDER BY `idx`, `name` LIMIT %(limit)s""",
+            {"deck": deck, "idx": idx, "name": name, "limit": limit},
+            as_dict=True,
         )
         return [SlideRow(**dict(row)) for row in rows]
 
-    def media_files(self, deck: str) -> list[MediaFileRow]:
-        rows = frappe.get_all(
-            "File",
-            filters={"attached_to_doctype": "Presentation", "attached_to_name": deck},
-            fields=[
-                "name",
-                "attached_to_name as deck",
-                "file_name",
-                "file_url",
-                "blob",
-                "attached_to_field",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-                "file_modified",
-            ],
-            order_by="creation asc, name asc",
+    def media_files(self, deck: str, after: tuple[str, str], limit: int) -> list[MediaFileRow]:
+        # Plan §13 keyset: `(deck, creation, name)`. Thumbnail classification
+        # and `(deck, blob)` grouping both need the whole set, so this bounds
+        # the query rather than the caller's memory.
+        creation, name = after
+        rows = frappe.db.sql(
+            """SELECT `name`, `attached_to_name` AS `deck`, `file_name`, `file_url`, `blob`,
+                      `attached_to_field`, `owner`, `creation`, `modified`, `modified_by`,
+                      `file_modified`
+               FROM `tabFile`
+               WHERE `attached_to_doctype` = 'Presentation' AND `attached_to_name` = %(deck)s
+                 AND (`creation`, `name`) > (%(creation)s, %(name)s)
+               ORDER BY `creation`, `name` LIMIT %(limit)s""",
+            {"deck": deck, "creation": creation or "1000-01-01", "name": name, "limit": limit},
+            as_dict=True,
         )
         return [MediaFileRow(**dict(row)) for row in rows]
 
@@ -1300,6 +1314,15 @@ class SiteContentSource:
     def presentation_is_template(self, deck: str) -> bool:
         return bool(frappe.db.get_value("Presentation", deck, "is_template"))
 
+    def writer_document_is_template(self, name: str) -> bool:
+        """Whether §14.7 step 8 minted this `Writer Document` from a template.
+
+        `Writer Document` carries no `is_template` column; the flag lives on
+        the node. The source row keeps the same id, and the doctype is dropped
+        in Cleanup, not in Build, so it still answers here.
+        """
+        return bool(frappe.db.exists("Writer Template", name))
+
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]:
         doctypes = (
             "Writer Document",
@@ -1309,6 +1332,9 @@ class SiteContentSource:
             "Slide",
             "Sheet Op Log",
         )
+        # `share_name` names a content document, not a `File`, so `name_prefix`
+        # cannot narrow this read. A row from outside the fixture is read and
+        # then dropped because no target node carries its content pair.
         rows = frappe.get_all(
             "DocShare",
             filters=[["share_doctype", "in", doctypes], ["name", ">", after]],
@@ -1337,6 +1363,19 @@ class SiteContentSource:
         from frappe.utils import get_system_timezone
 
         return get_system_timezone()
+
+    def site_host(self) -> str:
+        """The one netloc a stored `file_url` may carry and still be local.
+
+        Legacy Drive wrote both `/files/a.png` and the site's own absolute URL
+        into `File.file_url`. The second spelling still names a local file; any
+        other host does not, and §11 forbids localizing it.
+        """
+        from urllib.parse import urlsplit
+
+        from frappe.utils import get_url
+
+        return urlsplit(get_url()).netloc
 
     def _name_filters(self, after: str) -> list:
         return [["name", ">", after], *self._prefix_filters()]
@@ -1453,35 +1492,55 @@ class SiteContentTarget:
         ]
 
     def root_metadata(self, node: str) -> dict | None:
-        row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_COLUMNS), as_dict=True)
+        # The primary key first, for the reason `SiteDrive.root_metadata`
+        # gives: §3.2 names a `Drive Root` after its node, so a row named
+        # this id whose `node` column points elsewhere is invisible to the
+        # filter read. Missing it makes Build call the pair absent and then
+        # die on a duplicate primary key, on this run and on every rerun.
+        row = frappe.db.get_value("Drive Root", node, list(ROOT_COLUMNS), as_dict=True)
+        if not row:
+            row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_COLUMNS), as_dict=True)
         return dict(row) if row else None
 
+    def lock_root_identity(self, user: str) -> None:
+        # The same stable identity `_core/roots.py._lock_identity` and
+        # `SiteDrive` lock. Postgres cannot lock a row that does not exist,
+        # so the User row stands in for the root Build may be about to mint.
+        frappe.db.get_value("User", user, "name", for_update=True)
+
     def active_roots(self, user: str) -> tuple[str, ...]:
-        rows = frappe.get_all(
-            "Drive Root",
-            filters={"kind": PERSONAL, "user": user, "state": ACTIVE},
-            pluck="node",
-            order_by="name asc",
+        # A current read behind that lock. An ordinary consistent read can
+        # hold an older MariaDB snapshot and miss a root a concurrent
+        # creator committed, and Build would mint a second Active one.
+        return tuple(
+            frappe.db.get_values(
+                "Drive Root",
+                {"kind": PERSONAL, "user": user, "state": ACTIVE},
+                "node",
+                order_by="name asc",
+                for_update=True,
+                pluck=True,
+            )
         )
-        return tuple(rows)
 
     def personal_roots(self, user: str) -> tuple[str, ...]:
         return tuple(
-            frappe.get_all(
+            frappe.db.get_values(
                 "Drive Root",
-                filters={"kind": PERSONAL, "user": user},
-                pluck="node",
+                {"kind": PERSONAL, "user": user},
+                "node",
                 order_by="name asc",
+                for_update=True,
+                pluck=True,
             )
         )
 
-    def versions(self, node: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Node Version", filters={"node": node}, fields=list(VERSION_COLUMNS), order_by="seq asc"
-            )
-        ]
+    def version_seqs(self, node: str) -> dict[int, str]:
+        """Which sequences the node already holds, without the whole rows."""
+        rows = frappe.get_all(
+            "Drive Node Version", filters={"node": node}, fields=["name", "seq"], order_by="seq asc"
+        )
+        return {int(row.seq): row.name for row in rows}
 
     def version_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
@@ -1491,17 +1550,6 @@ class SiteContentTarget:
         )
         return {row.name: dict(row) for row in rows}
 
-    def threads(self, node: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Comment Thread",
-                filters={"node": node},
-                fields=list(THREAD_COLUMNS),
-                order_by="name asc",
-            )
-        ]
-
     def thread_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
             return {}
@@ -1509,17 +1557,6 @@ class SiteContentTarget:
             "Drive Comment Thread", filters=[["name", "in", list(names)]], fields=list(THREAD_COLUMNS)
         )
         return {row.name: dict(row) for row in rows}
-
-    def comments(self, thread: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in frappe.get_all(
-                "Drive Comment",
-                filters={"thread": thread},
-                fields=list(COMMENT_COLUMNS),
-                order_by="idx asc, name asc",
-            )
-        ]
 
     def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
@@ -1575,6 +1612,27 @@ class SiteContentTarget:
     def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
         return SiteDrive().grant_roles(node, principals)
 
+    def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]:
+        # One read for a whole share batch, not one per node. The two IN lists
+        # are a cross product, so only the pairs asked for are kept and the
+        # nodes are paged to keep either list short.
+        found: dict[tuple[str, str], int] = {}
+        wanted = set(pairs)
+        nodes = sorted({node for node, _ in pairs})
+        for start in range(0, len(nodes), GRANT_PAIR_NODES):
+            page = set(nodes[start : start + GRANT_PAIR_NODES])
+            principals = sorted({principal for node, principal in pairs if node in page})
+            rows = frappe.get_all(
+                "Drive Grant",
+                filters=[["node", "in", sorted(page)], ["principal", "in", principals]],
+                fields=["node", "principal", "role"],
+            )
+            for row in rows:
+                key = (row.node, row.principal)
+                if key in wanted:
+                    found[key] = cint(row.role)
+        return found
+
     def set_grant_role(self, node: str, principal: str, role: int) -> None:
         SiteDrive().raise_grant(node, principal, role)
 
@@ -1605,11 +1663,17 @@ class SiteContentTarget:
             lambda: (self.insert_nodes([node]), self.write_content_link(doctype, docname, node["name"])),
         )
 
-    def write_writer_template(self, document: dict | None, node: dict | None, grants: list[dict]) -> None:
+    def write_writer_template(
+        self, document: dict | None, node: dict | None, grants: list[dict], *, link: str = ""
+    ) -> None:
         def write():
             self._bulk("Writer Document", WRITER_DOCUMENT_COLUMNS, [document] if document else [])
             self.insert_nodes([node] if node else [])
             self.insert_grants(grants)
+            if link:
+                # Plan §10 repair: a stored document keeps its blank reciprocal
+                # link only because an earlier run stopped inside this unit.
+                self.write_content_link("Writer Document", link, link)
 
         self._unit("drive_build_writer_template", write)
 
@@ -1636,22 +1700,47 @@ class SiteContentTarget:
             )
 
     def versions_to_thin(self, report_at: str) -> int:
+        """Project the runtime ladder deletions at one frozen report time.
+
+        This is a census, not a write. It reads a page of nodes and then one
+        page of their rows, rather than one query per node: after Build every
+        migrated document carries auto versions, so a per-node query would be
+        one round trip per document on the site.
+        """
         from frappe.utils import get_datetime
 
         from suite.drive._core.versions import _normalized_ladder, _pick_deletions
+        from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 
+        frozen = get_datetime(report_at)
+        ladder = _normalized_ladder(None)
         total = 0
-        nodes = frappe.get_all(
-            "Drive Node Version", filters={"kind": "auto", "pinned": 0}, distinct=True, pluck="node"
-        )
-        for node in nodes:
+        after = ""
+        while True:
+            nodes = frappe.get_all(
+                "Drive Node Version",
+                filters=[["kind", "=", "auto"], ["pinned", "=", 0], ["node", ">", after]],
+                distinct=True,
+                pluck="node",
+                order_by="node asc",
+                limit=BUILD_BATCH_SIZE,
+            )
+            if not nodes:
+                break
             rows = frappe.get_all(
                 "Drive Node Version",
-                filters={"node": node, "kind": "auto", "pinned": 0},
-                fields=["name", "seq", "creation", "size"],
-                order_by="creation desc, seq desc",
+                filters=[["kind", "=", "auto"], ["pinned", "=", 0], ["node", "in", nodes]],
+                fields=["name", "node", "seq", "creation", "size"],
+                order_by="node asc, creation desc, seq desc",
             )
-            total += len(_pick_deletions(rows, get_datetime(report_at), _normalized_ladder(None)))
+            grouped = defaultdict(list)
+            for row in rows:
+                grouped[row.node].append(row)
+            for node in nodes:
+                total += len(_pick_deletions(grouped[node], frozen, ladder))
+            after = nodes[-1]
+            if len(nodes) < BUILD_BATCH_SIZE:
+                break
         return total
 
     def commit(self) -> None:
@@ -1668,7 +1757,13 @@ class SiteContentTarget:
         frappe.db.savepoint(savepoint)
         try:
             callback()
-        except Exception:
-            frappe.db.rollback(save_point=savepoint)
+        except Exception as exc:
+            # InnoDB rolls back the whole deadlock victim transaction,
+            # savepoints included, so the narrow rollback would raise over
+            # the original error and leave the handle unusable. The shared
+            # helper keeps the original and resets with a full rollback.
+            from suite.drive._core.nodes import _rollback_savepoint
+
+            _rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
