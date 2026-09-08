@@ -15,6 +15,16 @@ class BuildHistoryError(RuntimeError):
     """History cannot be copied without changing its meaning."""
 
 
+# The counters this phase owns. Every other value in `ContentConversion`
+# belongs to the links or slides phase and must survive a history rerun.
+HISTORY_FIELDS = (
+    "history_completed",
+    "history_existing_complete",
+    "history_deferred",
+    "versions_seen",
+    "comments_seen",
+)
+
 VERSION_FIELDS = (
     "name",
     "node",
@@ -37,17 +47,20 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     _require_ticket27(env)
     source, target = _ports(env)
     content = env.state.content()
-    content.history_completed = False
-    content.history_existing_complete = False
-    content.history_deferred = 0
-    content.versions_seen = 0
-    content.comments_seen = 0
+    # The census the last complete pass froze its `report_at` against. New
+    # source history has to invalidate that timestamp (plan §8), and the source
+    # version count is what says whether any arrived.
+    counted = content.versions_seen if content.report_at else None
+    content.begin_phase("history", HISTORY_FIELDS)
 
-    residual = source.residual_writer_versions(20)
+    residual = source.residual_writer_versions(1)
     if residual:
         _fail(env, content, residual[0], "residual Writer Doc Version rows remain")
 
-    pending = []
+    # Plan §4: leave true orphan history pending without storing an unbounded
+    # id list. One id is the bounded evidence; the count is exact.
+    deferred = 0
+    first_pending = ""
     for doctype in ("Writer Document", "Sheet"):
         after = ""
         while True:
@@ -55,20 +68,25 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
             if not rows:
                 break
             for document in rows:
-                node = _document_node(source, target, document)
-                if node is None:
-                    pending.append(document.name)
-                    continue
+                # `_document_node` refuses a Removed, broken, or multiply
+                # claimed File, and that refusal owes the same bounded evidence
+                # as any other: it fails completion, it does not crash the run
+                # with a bare exception and an unwritten state file.
                 try:
-                    if doctype == "Writer Document":
-                        _writer_versions(env, content, document, node, batch_size)
+                    node = _document_node(source, target, document)
+                    if node is None:
+                        deferred += 1
+                        first_pending = first_pending or document.name
                     else:
-                        _sheet_versions(env, content, document, node, batch_size)
-                    from suite.drive.patches.build.comments import convert_document_comments
+                        if doctype == "Writer Document":
+                            _writer_versions(env, content, document, node, batch_size)
+                        else:
+                            _sheet_versions(env, content, document, node, batch_size)
+                        from suite.drive.patches.build.comments import convert_document_comments
 
-                    content.comments_seen += convert_document_comments(
-                        env, document, node, batch_size=batch_size
-                    )
+                        content.comments_seen += convert_document_comments(
+                            env, document, node, batch_size=batch_size
+                        )
                 except (InvalidLegacyContent, ValueError) as error:
                     _fail(env, content, f"{doctype}:{document.name}", str(error))
                 env.state.put_content(content)
@@ -76,13 +94,16 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
             if len(rows) < batch_size:
                 break
 
-    content.history_deferred = len(pending)
+    content.history_deferred = deferred
     content.history_existing_complete = True
-    if pending and not allow_deferred:
-        _fail(env, content, pending[0], f"{len(pending)} content documents still have no node")
-    content.history_completed = not pending
-    if content.history_completed and not content.report_at:
-        content.report_at = env.now()
+    if deferred and not allow_deferred:
+        _fail(env, content, first_pending, f"{deferred} content documents still have no node")
+    content.history_completed = not deferred
+    if content.history_completed:
+        if counted is not None and counted != content.versions_seen:
+            content.report_at = None
+        if not content.report_at:
+            content.report_at = env.now()
     content.versions_to_thin = target.versions_to_thin(content.report_at) if content.report_at else 0
     content.completed = content.history_completed and content.slides_completed and content.links_completed
     env.state.put_content(content)
@@ -90,72 +111,99 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
 
 
 def _writer_versions(env, content, document, node: str, batch_size: int) -> None:
-    rows = sorted(
-        env.content.writer_versions(document.name), key=lambda row: (str(row.creation or ""), row.name)
-    )
+    # The source page is the keyset the port orders by, so the running index is
+    # the target `seq`: position 1 is the oldest `(creation, name)`.
     expected = []
     target_batch = max(1, batch_size // 2)
-    for seq, row in enumerate(rows, 1):
-        raw = (row.snapshot or "").encode("utf-8")
-        expected.append(
-            _version_row(
+    by_seq = env.content_target.version_seqs(node)
+    after = ("", "")
+    seq = 0
+    while True:
+        rows = env.content.writer_versions(document.name, after, target_batch)
+        if not rows:
+            break
+        for row in rows:
+            seq += 1
+            if seq > MAX_VERSION_SEQ:
+                raise InvalidLegacyContent("Writer Version count does not fit the target positive Int")
+            raw = (row.snapshot or "").encode("utf-8")
+            expected.append(
+                _version_row(
+                    env,
+                    row,
+                    node=node,
+                    seq=seq,
+                    kind="named" if row.manual else "auto",
+                    label=row.title,
+                    pinned=0,
+                    actor=row.owner,
+                    raw=raw,
+                    filename=f"{row.name}.html",
+                )
+            )
+            if len(expected) >= target_batch:
+                _write_versions(env, content, node, expected, by_seq, batch_size)
+                expected = []
+        after = (str(rows[-1].creation or ""), rows[-1].name)
+        if len(rows) < target_batch:
+            break
+    _write_versions(env, content, node, expected, by_seq, batch_size)
+
+
+def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
+    # One `sheets_data` reaches 75 MB, so the source is paged. The port orders
+    # by `(seq, name)`, so a duplicate sequence is always adjacent and the
+    # uniqueness check needs only the previous row, not the whole set.
+    head = document.head_snapshot
+    head_plan = None
+    expected = []
+    target_batch = max(1, batch_size // 2)
+    by_seq = env.content_target.version_seqs(node)
+    after = (0, "")
+    previous = None
+    while True:
+        rows = env.content.sheet_snapshots(document.name, after, target_batch)
+        if not rows:
+            break
+        for row in rows:
+            seq = int(row.seq)
+            if seq < 1 or seq > MAX_VERSION_SEQ:
+                raise InvalidLegacyContent("Sheet Snapshot sequence does not fit the target positive Int")
+            if seq == previous:
+                raise InvalidLegacyContent("Sheet Snapshot sequences are not unique")
+            previous = seq
+            raw = sheet_version_bytes(row.sheets_data, row.seq)
+            planned = _version_row(
                 env,
                 row,
                 node=node,
                 seq=seq,
-                kind="named" if row.manual else "auto",
-                label=row.title,
-                pinned=0,
-                actor=row.owner,
+                kind=row.kind,
+                label=row.label,
+                pinned=int(bool(row.pinned)),
+                actor=row.actor,
                 raw=raw,
-                filename=f"{row.name}.html",
+                filename=f"{row.name}.json",
             )
-        )
-        if len(expected) >= target_batch:
-            _write_versions(env, content, node, expected, batch_size)
-            expected = []
-    _write_versions(env, content, node, expected, batch_size)
+            expected.append(planned)
+            if row.name == head:
+                head_plan = planned
+            if len(expected) >= target_batch:
+                _write_versions(env, content, node, expected, by_seq, batch_size)
+                expected = []
+        after = (int(rows[-1].seq), rows[-1].name)
+        if len(rows) < target_batch:
+            break
+    _write_versions(env, content, node, expected, by_seq, batch_size)
 
-
-def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
-    rows = env.content.sheet_snapshots(document.name)
-    sequences = [int(row.seq) for row in rows]
-    if any(seq < 1 or seq > MAX_VERSION_SEQ for seq in sequences):
-        raise InvalidLegacyContent("Sheet Snapshot sequence does not fit the target positive Int")
-    if len(sequences) != len(set(sequences)):
-        raise InvalidLegacyContent("Sheet Snapshot sequences are not unique")
-    expected = []
-    by_name = {}
-    target_batch = max(1, batch_size // 2)
-    for row in rows:
-        raw = sheet_version_bytes(row.sheets_data, row.seq)
-        planned = _version_row(
-            env,
-            row,
-            node=node,
-            seq=int(row.seq),
-            kind=row.kind,
-            label=row.label,
-            pinned=int(bool(row.pinned)),
-            actor=row.actor,
-            raw=raw,
-            filename=f"{row.name}.json",
-        )
-        expected.append(planned)
-        by_name[row.name] = planned
-        if len(expected) >= target_batch:
-            _write_versions(env, content, node, expected, batch_size)
-            expected = []
-    _write_versions(env, content, node, expected, batch_size)
-
-    head = document.head_snapshot
     if head:
-        source_head = next((row for row in rows if row.name == head), None)
-        planned = by_name.get(head)
+        # §8 keeps the stored head id and repoints it at the migrated row, so
+        # the head must name a snapshot this sheet really had. Every column of
+        # that row is already proved by `_write_versions`; what is not implied
+        # is that the id exists in the source at all.
         stored = env.content_target.version_names((head,)).get(head)
-        if not source_head or not planned or not stored:
+        if not head_plan or not stored:
             raise InvalidLegacyContent("Sheet head_snapshot does not name a migrated source snapshot")
-        exact_fields(stored, planned, ("name", "node", "seq"), f"Sheet head {head}")
 
 
 def _version_row(env, row, *, node, seq, kind, label, pinned, actor, raw, filename) -> dict:
@@ -190,9 +238,8 @@ def _version_row(env, row, *, node, seq, kind, label, pinned, actor, raw, filena
     }
 
 
-def _write_versions(env, content, node: str, expected: list[dict], batch_size: int) -> None:
+def _write_versions(env, content, node: str, expected: list[dict], by_seq: dict, batch_size: int) -> None:
     by_name = env.content_target.version_names(tuple(row["name"] for row in expected))
-    by_seq = {int(row["seq"]): row for row in env.content_target.versions(node)}
     fresh = []
     # A new version can also create one File Blob in this transaction.
     target_batch = max(1, batch_size // 2)
@@ -202,11 +249,12 @@ def _write_versions(env, content, node: str, expected: list[dict], batch_size: i
         occupied = by_seq.get(planned["seq"])
         if stored:
             exact_fields(stored, planned, VERSION_FIELDS, f"version {planned['name']}")
-            if occupied and occupied["name"] != planned["name"]:
+            if occupied and occupied != planned["name"]:
                 raise InvalidLegacyContent(f"version sequence {planned['seq']} is occupied")
             continue
         if occupied:
             raise InvalidLegacyContent(f"version sequence {planned['seq']} is occupied")
+        by_seq[planned["seq"]] = planned["name"]
         fresh.append(planned)
         if len(fresh) >= target_batch:
             env.content_target.insert_versions(fresh)
@@ -256,6 +304,6 @@ def _require_ticket27(env):
 
 
 def _fail(env, content, source: str, reason: str):
-    content.record_issue(source, reason)
+    content.record_issue(source, reason, phase="history")
     env.state.put_content(content)
     raise BuildHistoryError(f"{source}: {reason}")
