@@ -7,6 +7,7 @@ const MAX_AUDIO_LEVEL_ENTRIES = 20;
 export class RoomManager {
 	private rooms = new Map<string, Room>();
 	private routers = new Map<string, mediasoup.types.Router>();
+	private creatingRooms = new Map<string, Promise<Room>>();
 
 	async createRoom(
 		roomId: string,
@@ -19,55 +20,70 @@ export class RoomManager {
 		if (this.rooms.has(roomId)) {
 			return this.rooms.get(roomId)!;
 		}
+		const pending = this.creatingRooms.get(roomId);
+		if (pending) return pending;
 
-		loggers.roomManager.info('Creating room: %s', roomId);
+		const creation = (async () => {
+			loggers.roomManager.info('Creating room: %s', roomId);
 
-		const router = await worker.createRouter({
-			mediaCodecs,
-		});
+			const router = await worker.createRouter({
+				mediaCodecs,
+			});
 
-		const audioLevelObserver = await router.createAudioLevelObserver({
-			maxEntries: MAX_AUDIO_LEVEL_ENTRIES,
-			threshold: -70,
-			interval: 800,
-		});
+			try {
+				const audioLevelObserver = await router.createAudioLevelObserver({
+					maxEntries: MAX_AUDIO_LEVEL_ENTRIES,
+					threshold: -70,
+					interval: 800,
+				});
 
-		if (onActiveSpeaker) {
-			audioLevelObserver.on('volumes', (volumes) => {
-				const activeSpeakerIds: string[] = [];
+				if (onActiveSpeaker) {
+					audioLevelObserver.on('volumes', (volumes) => {
+						const activeSpeakerIds: string[] = [];
 
-				for (const { producer, volume } of volumes) {
-					if (volume > -70) {
-						const peer = Array.from(room.peers.values()).find((p) =>
-							Array.from(p.producers.values()).some(
-								(prod) => prod.id === producer.id,
-							),
-						);
-						if (peer && !activeSpeakerIds.includes(peer.id)) {
-							activeSpeakerIds.push(peer.id);
+						for (const { producer, volume } of volumes) {
+							if (volume > -70) {
+								const peer = Array.from(room.peers.values()).find((p) =>
+									Array.from(p.producers.values()).some(
+										(prod) => prod.id === producer.id,
+									),
+								);
+								if (peer && !activeSpeakerIds.includes(peer.id)) {
+									activeSpeakerIds.push(peer.id);
+								}
+							}
 						}
-					}
+
+						onActiveSpeaker(roomId, activeSpeakerIds);
+					});
 				}
 
-				onActiveSpeaker(roomId, activeSpeakerIds);
-			});
+				const room: Room = {
+					id: roomId,
+					workerId,
+					router,
+					webRtcServer,
+					audioLevelObserver,
+					peers: new Map(),
+					created: new Date(),
+				};
+
+				this.rooms.set(roomId, room);
+				this.routers.set(roomId, router);
+
+				loggers.roomManager.info('Room created: %s', roomId);
+				return room;
+			} catch (error) {
+				router.close();
+				throw error;
+			}
+		})();
+		this.creatingRooms.set(roomId, creation);
+		try {
+			return await creation;
+		} finally {
+			this.creatingRooms.delete(roomId);
 		}
-
-		const room: Room = {
-			id: roomId,
-			workerId,
-			router,
-			webRtcServer,
-			audioLevelObserver,
-			peers: new Map(),
-			created: new Date(),
-		};
-
-		this.rooms.set(roomId, room);
-		this.routers.set(roomId, router);
-
-		loggers.roomManager.info('Room created: %s', roomId);
-		return room;
 	}
 
 	async closeRoom(roomId: string): Promise<void> {
