@@ -825,6 +825,14 @@ class FakeContentTarget:
     def grant_roles(self, node, principals):
         return self.drive.grant_roles(node, principals)
 
+    def grant_pairs(self, pairs):
+        found = {}
+        for node, principal in pairs:
+            role = self.drive.grant_roles(node, (principal,)).get(principal)
+            if role is not None:
+                found[(node, principal)] = role
+        return found
+
     def set_grant_role(self, node, principal, role):
         self.drive.raise_grant(node, principal, role)
 
