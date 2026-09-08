@@ -1,9 +1,9 @@
 <template>
 	<!-- The desk list view's footer: how many rows are shown, the page length, and Load More.
-	     Sticky at the bottom of the scrolling body so it stays in reach while the rows scroll;
-	     the negative margin swallows the body's bottom padding so it sits flush at the edge. -->
+	     The list above it fills the body and scrolls on its own, so this always sits at the
+	     bottom of the screen; the negative margin swallows the body's bottom padding. -->
 	<div
-		class="bg-surface-white text-ink-gray-5 sticky bottom-0 -mb-5 flex flex-wrap items-center justify-between gap-3 border-t px-1 pb-4 pt-2 text-sm"
+		class="text-ink-gray-5 -mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-1 pb-4 pt-2 text-sm"
 	>
 		<span>{{ __('{0} of {1}', [String(count), String(total)]) }}</span>
 		<div class="flex items-center gap-3">

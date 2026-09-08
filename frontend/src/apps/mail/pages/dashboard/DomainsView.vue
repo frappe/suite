@@ -22,7 +22,7 @@
 		</div>
 		<ListView
 			v-if="list.loaded"
-			class="flex-1"
+			class="min-h-0 flex-1 overflow-y-auto [&_[data-slot=list-header]]:sticky [&_[data-slot=list-header]]:top-0 [&_[data-slot=list-header]]:z-10 [&_[data-slot=list-header]]:bg-surface-white"
 			:columns="LIST_COLUMNS"
 			:rows="list.rows"
 			:options="listOptions"
