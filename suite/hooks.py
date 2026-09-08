@@ -173,7 +173,7 @@ permission_query_conditions = {
     "Drive User Invitation": "suite.drive.utils.overrides.filter_drive_invitation",
     "Drive Entity Activity Log": "suite.drive.utils.overrides.filter_activity_log",
     "Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
-    "Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
+    "Drive Recent": "suite.drive.utils.overrides.filter_drive_recent",
     "Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
     # slides
     # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
@@ -462,7 +462,7 @@ ignore_links_on_delete = [
     "Drive Settings",
     "Drive Permission",
     "Drive Favourite",
-    "Drive Entity Log",
+    "Drive Recent",
     "Drive Notification",
     "Drive Entity Activity Log",
     "Drive DAV Property",

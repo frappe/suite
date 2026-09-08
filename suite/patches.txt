@@ -12,6 +12,10 @@ suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles
 suite.drive.patches.remove_personal #3
 suite.drive.patches.integrate_with_framework
+# §3.9 and §14.6: `Drive Entity Log` is `Drive Recent` under its real name.
+# Must precede model sync: sync applies the new columns and then adds
+# `UNIQUE recent_user_node`, and both need the rename to have happened.
+suite.drive.patches.rename_entity_log_to_recent
 # --- mail ---
 suite.mail.patches.delete_stale_cluster_stores
 # --- writer ---

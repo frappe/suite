@@ -1761,7 +1761,7 @@ class TestUnadoptedVisit(ShimCase):
     """`_legacy_visit`: the opened-at row, for an id no node holds.
 
     `writer.api.general.get_document_list` orders the caller's own documents
-    by `Drive Entity Log.last_interaction` and publishes it as `accessed`.
+    by `Drive Recent.opened_at` and publishes it as `accessed`.
     Nothing but this call writes that row, so a forwarder that only visits
     nodes left every document `create_document` writes with no opened-at.
     """
@@ -2067,9 +2067,7 @@ class TestRecordForwarders(ShimCase):
                 with patch.object(
                     shims.frappe,
                     "get_all",
-                    return_value=[
-                        {"name": "n1", "kind": "file", "mime": "text/plain", "title": "Notes.txt"}
-                    ],
+                    return_value=[{"name": "n1", "kind": "file", "mime": "text/plain", "title": "Notes.txt"}],
                 ):
                     with patch.object(shims, "_user_info", return_value={"full_name": "Bea"}):
                         row = shims.get_notifications()[0]
@@ -2909,9 +2907,7 @@ class TestAccessForwarder(ShimCase):
             ]
         }
         shims.update_access("n1", "share", user="b@example.com", read=1, comment=1)
-        self.assertEqual(
-            access.grant.call_args.kwargs["expires_on"], "2026-12-31 00:00:00"
-        )
+        self.assertEqual(access.grant.call_args.kwargs["expires_on"], "2026-12-31 00:00:00")
 
     def test_a_first_share_carries_no_expiry(self):
         access = self.stub("access")

@@ -136,7 +136,7 @@ class File(FrappeFile):
                 frappe.delete_doc("File", child_name, ignore_permissions=True)
 
         frappe.db.delete("Drive Favourite", {"entity": self.name})
-        frappe.db.delete("Drive Entity Log", {"entity_name": self.name})
+        frappe.db.delete("Drive Recent", {"node": self.name})
         frappe.db.delete("Drive Permission", {"entity": self.name})
         frappe.db.delete("Drive Notification", {"notif_doctype_name": self.name})
         frappe.db.delete("Drive Entity Activity Log", {"entity": self.name})
