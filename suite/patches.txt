@@ -74,8 +74,6 @@ suite.mail.patches.rename_user_settings
 suite.mail.patches.remove_mail_admin_role
 suite.mail.patches.remove_mail_user_role
 suite.mail.patches.configure_mail_settings
-suite.mail.patches.configure_inbound_outbound_log
-suite.mail.patches.configure_exchange_log
 suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.copy_sync_history_account_id_to_account
 suite.mail.patches.destroy_data_store

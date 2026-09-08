@@ -27,8 +27,6 @@
   "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
-  "column_break_defaults_2",
-  "default_dns_ttl",
   "limits_section",
   "exchange_max_export",
   "exchange_max_import",
@@ -41,23 +39,11 @@
   "process_pending_emails_batch_size",
   "process_pending_emails_max_batch_size",
   "logs_section",
-  "admin_log_file_count",
-  "push_log_file_count",
-  "inbound_log_file_count",
-  "outbound_log_file_count",
-  "exchange_log_file_count",
-  "column_break_ztzv",
-  "admin_log_level",
-  "push_log_level",
-  "inbound_log_level",
-  "outbound_log_level",
-  "exchange_log_level",
-  "column_break_pvju",
-  "admin_log_max_file_size",
-  "push_log_max_file_size",
-  "inbound_log_max_file_size",
-  "outbound_log_max_file_size",
-  "exchange_log_max_file_size",
+  "log_level",
+  "column_break_logging_1",
+  "log_max_file_size_mb",
+  "column_break_logging_2",
+  "log_file_count",
   "timeouts_seconds_section",
   "exchange_export_timeout",
   "exchange_import_timeout",
@@ -238,17 +224,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_defaults_2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "3600",
-   "fieldname": "default_dns_ttl",
-   "fieldtype": "Int",
-   "label": "Default DNS TTL",
-   "reqd": 1
-  },
-  {
    "collapsible": 1,
    "collapsible_depends_on": "eval: true",
    "fieldname": "limits_section",
@@ -324,124 +299,39 @@
    "collapsible_depends_on": "eval: true",
    "fieldname": "logs_section",
    "fieldtype": "Section Break",
-   "label": "Logs"
+   "label": "Logging"
   },
   {
-   "default": "10",
-   "fieldname": "admin_log_file_count",
-   "fieldtype": "Int",
-   "label": "Admin Log File Count",
+   "default": "INFO",
+   "description": "Applies to every mail log: admin, push, inbound, outbound and exchange. DEBUG traces every step; use it only while investigating a problem.",
+   "fieldname": "log_level",
+   "fieldtype": "Select",
+   "label": "Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
    "reqd": 1
   },
   {
-   "default": "10",
-   "fieldname": "push_log_file_count",
-   "fieldtype": "Int",
-   "label": "Push Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "inbound_log_file_count",
-   "fieldtype": "Int",
-   "label": "Inbound Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "outbound_log_file_count",
-   "fieldtype": "Int",
-   "label": "Outbound Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "exchange_log_file_count",
-   "fieldtype": "Int",
-   "label": "Exchange Log File Count",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_ztzv",
+   "fieldname": "column_break_logging_1",
    "fieldtype": "Column Break"
   },
   {
-   "default": "INFO",
-   "fieldname": "admin_log_level",
-   "fieldtype": "Select",
-   "label": "Admin Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "default": "5",
+   "description": "A log file is rotated once it grows past this size.",
+   "fieldname": "log_max_file_size_mb",
+   "fieldtype": "Int",
+   "label": "Max Log File Size (MB)",
    "reqd": 1
   },
   {
-   "default": "INFO",
-   "fieldname": "push_log_level",
-   "fieldtype": "Select",
-   "label": "Push Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "inbound_log_level",
-   "fieldtype": "Select",
-   "label": "Inbound Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "outbound_log_level",
-   "fieldtype": "Select",
-   "label": "Outbound Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "exchange_log_level",
-   "fieldtype": "Select",
-   "label": "Exchange Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_pvju",
+   "fieldname": "column_break_logging_2",
    "fieldtype": "Column Break"
   },
   {
-   "default": "5000000",
-   "fieldname": "admin_log_max_file_size",
+   "default": "10",
+   "description": "Rotated files kept per log; the oldest is deleted when a new one is started.",
+   "fieldname": "log_file_count",
    "fieldtype": "Int",
-   "label": "Admin Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "push_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Push Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "inbound_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Inbound Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "outbound_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Outbound Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "exchange_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Exchange Log Max File Size",
+   "label": "Log Files Kept",
    "reqd": 1
   },
   {
@@ -588,7 +478,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-01 15:00:00.000000",
+ "modified": "2026-09-08 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

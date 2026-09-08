@@ -3,21 +3,14 @@ import frappe
 CONFIG_KEY_FIELD_MAP = {
     # JMAP
     "server_url": None,
-    "username": None,
-    "password": None,
     # SpamAssassin
     "spamd_host": None,
     "spamd_port": None,
     "spamd_scanning_mode": None,
     "spamd_hybrid_scanning_threshold": None,
     # Defaults
-    "default_dns_ttl": None,
     "default_mail_quota": "default_disk_quota_gb",
     "gravatar_default_avatar": "default_gravatar",
-    # Logs
-    "push_log_file_count": None,
-    "push_log_level": None,
-    "push_log_max_size": "push_log_max_file_size",
     # Limits
     "exchange_max_export": None,
     "exchange_max_import": None,

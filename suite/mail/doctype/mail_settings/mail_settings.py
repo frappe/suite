@@ -25,13 +25,9 @@ class MailSettings(Document):
             MailClientConfiguration,
         )
 
-        admin_log_file_count: DF.Int
-        admin_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        admin_log_max_file_size: DF.Int
         allow_signup: DF.Check
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
-        default_dns_ttl: DF.Int
         default_gravatar: DF.Literal[
             "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]
@@ -40,32 +36,23 @@ class MailSettings(Document):
         exchange_export_batch_size: DF.Int
         exchange_export_timeout: DF.Int
         exchange_import_timeout: DF.Int
-        exchange_log_file_count: DF.Int
-        exchange_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        exchange_log_max_file_size: DF.Int
         exchange_max_export: DF.Int
         exchange_max_import: DF.Int
         expand_mailing_list_participants: DF.Check
-        inbound_log_file_count: DF.Int
-        inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        inbound_log_max_file_size: DF.Int
         jmap_push_auth: DF.Password | None
         jmap_push_p256dh: DF.Data | None
         jmap_push_private_key: DF.Password | None
+        log_file_count: DF.Int
+        log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+        log_max_file_size_mb: DF.Int
         mail_client_configurations: DF.Table[MailClientConfiguration]
         max_email_sync: DF.Int
         max_mailing_list_participants: DF.Int
         max_message_payload_size_mb: DF.Int
         max_push_notifications: DF.Int
-        outbound_log_file_count: DF.Int
-        outbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        outbound_log_max_file_size: DF.Int
         process_pending_emails_batch_size: DF.Int
         process_pending_emails_max_batch_size: DF.Int
         process_pending_emails_timeout: DF.Int
-        push_log_file_count: DF.Int
-        push_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        push_log_max_file_size: DF.Int
         scan_message_timeout: DF.Int
         server_url: DF.Data | None
         site_api_key: DF.Data | None
