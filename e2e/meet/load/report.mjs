@@ -101,10 +101,16 @@ export function evaluateCameras(observations, resourceSamples, expected) {
 			errors.push(`${participant.userId}: received ${participant.receiverCount}/${participant.expectedReceivers} camera tracks`);
 		if (participant.inboundAdvanced !== participant.expectedReceivers)
 			errors.push(`${participant.userId}: inbound RTP advanced for ${participant.inboundAdvanced}/${participant.expectedReceivers} cameras`);
-		if (participant.decodedAvailable && participant.decodedAdvanced !== participant.expectedReceivers)
-			errors.push(`${participant.userId}: decoded frames advanced for ${participant.decodedAdvanced}/${participant.expectedReceivers} cameras`);
+		if (participant.decodedAdvanced !== participant.decodedObserved)
+			errors.push(`${participant.userId}: decoded frames advanced for ${participant.decodedAdvanced}/${participant.decodedObserved} cameras`);
 	}
 	if (resourceSamples.some((sample) => sample.producers !== expected.producers || sample.consumers !== expected.consumers))
 		errors.push("camera Producer or Consumer resources were not stable at expected counts");
 	return errors;
+}
+
+export function cameraDeliveryReady(statuses, cameras, count) {
+	return statuses.length === count && statuses.every((status, index) =>
+		status.producerCount === (index < cameras ? 1 : 0) &&
+		status.consumerCount === cameras - (index < cameras ? 1 : 0));
 }

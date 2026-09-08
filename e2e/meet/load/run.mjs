@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { createServer } from "vite";
-import { boundedInteger, containsJwt, delta, evaluateCameras, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
+import { boundedInteger, cameraDeliveryReady, containsJwt, delta, evaluateCameras, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const { values } = parseArgs({ options: {
@@ -140,6 +140,13 @@ try {
 			representativeCamera, rotatingAudio: values.scenario === "rotating-audio", audioActive: index < talkers });
 		if (rampMs) await wait(rampMs);
 	}
+	if (values.scenario === "representative-camera" && values.consume === "all") {
+		const deadline = Date.now() + 15_000;
+		while (!cameraDeliveryReady(await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status()))), cameras, count)) {
+			if (Date.now() >= deadline) throw new Error("Camera delivery did not converge before the hold sample");
+			await wait(100);
+		}
+	}
 	const hold = await sample("hold");
 	if (hold.health.rooms !== 1 || hold.health.peers !== count) throw new Error("SFU hold counts do not match this run");
 	if (values.scenario === "rotating-audio") {
@@ -194,7 +201,7 @@ try {
 				outboundBytesDelta: afterVideo.reduce((sum, entry) => sum + entry.bytesSent, 0) - beforeVideo.reduce((sum, entry) => sum + entry.bytesSent, 0),
 				framesEncodedDelta: finiteDelta(beforeVideo[0]?.framesEncoded, afterVideo[0]?.framesEncoded), receiverCount: afterConsumers.length,
 				inboundAdvanced: afterConsumers.filter((entry) => entry.bytesReceived > (beforeConsumers.find(({ producerId }) => producerId === entry.producerId)?.bytesReceived ?? 0)).length,
-				decodedAvailable: decoded.every((value) => value !== null), decodedAdvanced: decoded.filter((value) => value > 0).length };
+				decodedObserved: decoded.filter((value) => value !== null).length, decodedAdvanced: decoded.filter((value) => value > 0).length };
 		});
 		report.camera = { requested: { width: 1280, height: 720, framesPerSecond: 30 }, source: "deterministic time-coded moving canvas",
 			window: { durationSeconds, observations }, limitations: "Requested/source and observed sender/receiver stats are separate; unavailable Chromium stats remain null." };
