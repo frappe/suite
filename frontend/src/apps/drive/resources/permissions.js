@@ -95,12 +95,6 @@ export const apps = {
   },
 }
 
-export const diskSettings = createResource({
-  url: 'suite.drive.api.product.disk_settings',
-  method: 'GET',
-  cache: 'disk-settings',
-})
-
 export const getDiskSettings = createResource({
   url: 'suite.drive.api.product.disk_settings',
   method: 'GET',
