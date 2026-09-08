@@ -46,6 +46,18 @@ video probe per Participant Connection drives playback and exposes Chromium's br
 decoded-frame count; this avoids O(N) rendered elements. Full rendering remains off
 unless explicitly requested.
 
+`--scenario representative-screen` publishes the first `--screens` Participant
+Connections (default `min(2, count)`, maximum 2) as distinct moving, time-coded
+1920x1080 canvases captured at requested 30 fps. Producers use screen semantics and
+an encoding `maxBitrate` target of 4,000,000 bps; the configured target is reported
+separately from elapsed-window sender and receiver bitrate observations. Every
+intended receiver renders every screen for a browser decoded-frame probe. Stable
+Producer identity/state, delivery, progress, eager SFU resources, dimensions, fps,
+and nullable WebRTC stats are reported. For windows of at least five seconds an
+observed sender average over the cap plus 10% tolerance fails correctness, but the
+target is not a strict instantaneous network ceiling and a short local run does not
+establish sustained <=4 Mbps.
+
 `--media audio|video|both` uses Chromium's synthetic fake devices. Reports retain
 actual capture settings and observed RTP byte counters, but synthetic devices do not
 model representative speech/cameras and requested settings do not prove delivered
@@ -71,10 +83,10 @@ cleanup outcome.
 
 ## Progressive Scenarios
 
-Admission plus idle hold, uniform synthetic media, rotating audio, and representative
-camera measurement are implemented. The remaining representative suite is two 1080p30 screens
-capped at 4 Mbps, and one Recorder Endpoint. Pinned representative video, actual
-delivered video constraints, screen publication, and recorder support must be
+Admission plus idle hold, uniform synthetic media, rotating audio, representative
+camera, and two-screen measurement are implemented. The remaining representative
+suite includes one Recorder Endpoint. Pinned representative video, actual
+delivered video constraints, and recorder support must be
 implemented and measured before those properties are claimed.
 
 ## Verification

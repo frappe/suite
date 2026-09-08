@@ -8,6 +8,10 @@ export function boundedInteger(value, name, min, max) {
 	return number;
 }
 
+export function screenCount(value, count) {
+	return boundedInteger(value ?? String(Math.min(2, count)), "screens", 1, Math.min(2, count));
+}
+
 export function targetMetadata(value, allowRemote) {
 	const url = new URL(value);
 	if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -56,6 +60,11 @@ export function containsJwt(value) {
 
 export function finiteDelta(before, after) {
 	return Number.isFinite(before) && Number.isFinite(after) ? after - before : null;
+}
+
+export function bitrate(bytesBefore, bytesAfter, elapsedMs) {
+	return Number.isFinite(bytesBefore) && Number.isFinite(bytesAfter) && elapsedMs > 0
+		? Math.max(0, bytesAfter - bytesBefore) * 8000 / elapsedMs : null;
 }
 
 export function rotationWindows(participantIds, talkers, durationMs, intervalMs) {
@@ -113,4 +122,26 @@ export function cameraDeliveryReady(statuses, cameras, count) {
 	return statuses.length === count && statuses.every((status, index) =>
 		status.producerCount === (index < cameras ? 1 : 0) &&
 		status.consumerCount === cameras - (index < cameras ? 1 : 0));
+}
+
+export function evaluateScreens(observations, resourceSamples, expected, capBps) {
+	const errors = [];
+	for (const participant of observations) {
+		if (participant.publisher) {
+			if (participant.producerIdsBefore.join() !== participant.producerIdsAfter.join() || participant.producerIdsAfter.length !== 1)
+				errors.push(`${participant.userId}: screen Producer was not stable`);
+			if (!participant.producerReady) errors.push(`${participant.userId}: screen Producer was not enabled and unpaused`);
+			if (participant.outboundBytesDelta <= 0) errors.push(`${participant.userId}: screen outbound RTP did not advance`);
+			if (participant.framesEncodedDelta !== null && participant.framesEncodedDelta <= 0) errors.push(`${participant.userId}: screen framesEncoded did not advance`);
+			if (participant.outboundBitrateBps !== null && participant.elapsedMs >= 5000 && participant.outboundBitrateBps > capBps * 1.1)
+				errors.push(`${participant.userId}: observed average screen bitrate exceeded configured cap tolerance`);
+		} else if (participant.producerIdsAfter.length) errors.push(`${participant.userId}: idle participant published media`);
+		if (participant.receiverCount !== participant.expectedReceivers) errors.push(`${participant.userId}: received ${participant.receiverCount}/${participant.expectedReceivers} screen tracks`);
+		if (participant.inboundAdvanced !== participant.expectedReceivers) errors.push(`${participant.userId}: inbound RTP advanced for ${participant.inboundAdvanced}/${participant.expectedReceivers} screens`);
+		if (participant.decodedAdvanced !== participant.decodedObserved) errors.push(`${participant.userId}: decoded frames advanced for ${participant.decodedAdvanced}/${participant.decodedObserved} screens`);
+		if (participant.browserDecodedAdvanced !== participant.browserDecodedObserved) errors.push(`${participant.userId}: browser decoded-frame probe advanced for ${participant.browserDecodedAdvanced}/${participant.browserDecodedObserved} screens`);
+	}
+	if (resourceSamples.some((sample) => sample.producers !== expected.producers || sample.consumers !== expected.consumers))
+		errors.push("screen Producer or Consumer resources were not stable at expected counts");
+	return errors;
 }

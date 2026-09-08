@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { boundedInteger, cameraDeliveryReady, containsJwt, delta, evaluateCameras, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
+import { bitrate, boundedInteger, cameraDeliveryReady, containsJwt, delta, evaluateCameras, evaluateRotation, evaluateScreens, finiteDelta, parseResourceMetrics, percentile, rotationWindows, screenCount, targetMetadata } from "./report.mjs";
 
 test("target safety defaults to loopback and rejects shared or remote targets", () => {
 	assert.deepEqual(targetMetadata("http://127.0.0.1:4317/", false), {
@@ -50,6 +50,32 @@ test("camera evaluation independently requires stable progressing publication, d
 test("camera delivery waits for every expected producer and consumer", () => {
 	assert.equal(cameraDeliveryReady([{ producerCount: 1, consumerCount: 1 }, { producerCount: 1, consumerCount: 1 }], 2, 2), true);
 	assert.equal(cameraDeliveryReady([{ producerCount: 1, consumerCount: 0 }, { producerCount: 1, consumerCount: 1 }], 2, 2), false);
+});
+
+test("screen bitrate uses precise elapsed milliseconds and preserves nullable stats", () => {
+	assert.equal(bitrate(100, 5100, 2500), 16_000);
+	assert.equal(bitrate(undefined, 5100, 2500), null);
+	assert.equal(bitrate(100, 5100, 0), null);
+});
+
+test("screen configuration defaults to at most two publishers and rejects larger values", () => {
+	assert.equal(screenCount(undefined, 1), 1);
+	assert.equal(screenCount(undefined, 4), 2);
+	assert.equal(screenCount("2", 4), 2);
+	assert.throws(() => screenCount("3", 4), /screens must be an integer from 1 to 2/);
+});
+
+test("screen evaluation independently checks stable delivery, resources, and meaningful cap windows", () => {
+	const publisher = { userId: "a", publisher: true, producerIdsBefore: ["p1"], producerIdsAfter: ["p1"], producerReady: true,
+		outboundBytesDelta: 100, outboundBitrateBps: 3_900_000, elapsedMs: 6000, framesEncodedDelta: null,
+		expectedReceivers: 1, receiverCount: 1, inboundAdvanced: 1, decodedObserved: 1, decodedAdvanced: 1,
+		browserDecodedObserved: 1, browserDecodedAdvanced: 1 };
+	assert.deepEqual(evaluateScreens([publisher], [{ producers: 2, consumers: 2 }], { producers: 2, consumers: 2 }, 4_000_000), []);
+	assert.match(evaluateScreens([{ ...publisher, producerIdsAfter: ["p2"], outboundBytesDelta: 0, outboundBitrateBps: 4_500_000,
+		receiverCount: 0, inboundAdvanced: 0, decodedAdvanced: 0, browserDecodedAdvanced: 0 }], [{ producers: 1, consumers: 0 }],
+	{ producers: 2, consumers: 2 }, 4_000_000).join("; "), /not stable.*did not advance.*exceeded.*received 0\/1.*inbound RTP.*decoded frames.*resources/);
+	assert.deepEqual(evaluateScreens([{ ...publisher, outboundBitrateBps: 9_000_000, elapsedMs: 4999 }],
+		[{ producers: 2, consumers: 2 }], { producers: 2, consumers: 2 }, 4_000_000), []);
 });
 
 test("bounds reject fractions and values outside the declared range", () => {

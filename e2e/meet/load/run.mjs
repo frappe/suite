@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { createServer } from "vite";
-import { boundedInteger, cameraDeliveryReady, containsJwt, delta, evaluateCameras, evaluateRotation, finiteDelta, parseResourceMetrics, percentile, rotationWindows, targetMetadata } from "./report.mjs";
+import { bitrate, boundedInteger, cameraDeliveryReady, containsJwt, delta, evaluateCameras, evaluateRotation, evaluateScreens, finiteDelta, parseResourceMetrics, percentile, rotationWindows, screenCount, targetMetadata } from "./report.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const { values } = parseArgs({ options: {
@@ -19,6 +19,7 @@ const { values } = parseArgs({ options: {
 	scenario: { type: "string", default: "uniform" },
 	talkers: { type: "string" },
 	cameras: { type: "string" },
+	screens: { type: "string" },
 	"rotation-interval-ms": { type: "string", default: "1000" },
 	consume: { type: "string", default: "all" },
 	"render-media": { type: "boolean", default: false },
@@ -38,10 +39,12 @@ const rampMs = boundedInteger(values["ramp-ms"], "ramp-ms", 0, 5000);
 const rotationIntervalMs = boundedInteger(values["rotation-interval-ms"], "rotation-interval-ms", 250, 60_000);
 const talkers = boundedInteger(values.talkers ?? String(Math.min(10, count)), "talkers", 1, count);
 const cameras = boundedInteger(values.cameras ?? String(Math.min(40, count)), "cameras", 1, Math.min(40, count));
+const screens = screenCount(values.screens, count);
 if (!["none", "audio", "video", "both"].includes(values.media)) throw new Error("media must be none, audio, video, or both");
-if (!["uniform", "rotating-audio", "representative-camera"].includes(values.scenario)) throw new Error("scenario must be uniform, rotating-audio, or representative-camera");
+if (!["uniform", "rotating-audio", "representative-camera", "representative-screen"].includes(values.scenario)) throw new Error("scenario must be uniform, rotating-audio, representative-camera, or representative-screen");
 if (values.scenario === "rotating-audio" && values.media !== "audio") throw new Error("rotating-audio requires --media audio");
 if (values.scenario === "representative-camera" && values.media !== "none") throw new Error("representative-camera determines media; omit --media");
+if (values.scenario === "representative-screen" && values.media !== "none") throw new Error("representative-screen determines media; omit --media");
 if (!["all", "none"].includes(values.consume)) throw new Error("consume must be all or none");
 if (!/^load-[0-9a-f-]{36}$/.test(values["meeting-id"]) || !/^load(?:[.-][a-z0-9-]+)*\.test$/i.test(values.site)) {
 	throw new Error("Use the generated load UUID room and a load*.test site namespace");
@@ -58,7 +61,7 @@ const report = {
 	startedAt: new Date().toISOString(),
 	target,
 	config: { count, durationSeconds, cleanupSeconds, rampMs, media: values.media, consume: values.consume,
-		scenario: values.scenario, talkers, rotationIntervalMs, cameras,
+		scenario: values.scenario, talkers, rotationIntervalMs, cameras, screens,
 		renderMedia: values["render-media"], meetingId: values["meeting-id"], site: values.site,
 		authSource: values["token-file"] ? "token-file" : "environment-signed" },
 	host: { hostname: hostname(), platform: platform(), release: release(), node: process.version,
@@ -135,14 +138,16 @@ try {
 		page.on("pageerror", () => report.errors.push(`participant ${index + 1}: page error`));
 		await page.goto(clientUrl, { waitUntil: "networkidle", timeout: 15_000 });
 		const representativeCamera = values.scenario === "representative-camera" && index < cameras;
+		const representativeScreen = values.scenario === "representative-screen";
 		await page.evaluate((config) => window.meetLoad.start(config), { ...participant, sfuUrl: target.endpoint,
-			meetingId: values["meeting-id"], media: representativeCamera ? "video" : values.media, consume: values.consume === "all", renderMedia: values["render-media"],
-			representativeCamera, rotatingAudio: values.scenario === "rotating-audio", audioActive: index < talkers });
+			meetingId: values["meeting-id"], media: representativeCamera || (representativeScreen && index < screens) ? "video" : values.media, consume: values.consume === "all", renderMedia: values["render-media"],
+			representativeCamera, representativeScreen, rotatingAudio: values.scenario === "rotating-audio", audioActive: index < talkers });
 		if (rampMs) await wait(rampMs);
 	}
-	if (values.scenario === "representative-camera" && values.consume === "all") {
+	if (["representative-camera", "representative-screen"].includes(values.scenario) && values.consume === "all") {
+		const publishers = values.scenario === "representative-screen" ? screens : cameras;
 		const deadline = Date.now() + 15_000;
-		while (!cameraDeliveryReady(await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.endpointCounts()))), cameras, count)) {
+		while (!cameraDeliveryReady(await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.endpointCounts()))), publishers, count)) {
 			if (Date.now() >= deadline) throw new Error("Camera delivery did not converge before the hold sample");
 			await wait(100);
 		}
@@ -182,35 +187,47 @@ try {
 		previousWindow.actualEndedAt = actualEndedAt.toISOString();
 		previousWindow.actualDurationMs = actualEndedAt - new Date(previousWindow.actualStartedAt);
 		report.errors.push(...evaluateRotation(report.rotation.windows, resourceSamples));
-	} else if (values.scenario === "representative-camera") {
+	} else if (["representative-camera", "representative-screen"].includes(values.scenario)) {
+		const isScreen = values.scenario === "representative-screen"; const publishers = isScreen ? screens : cameras;
 		const before = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
 		await wait(durationSeconds * 1000);
 		const after = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
-		const cameraSample = await sample("camera-window");
-		const expectedConsumers = values.consume === "all" ? cameras * (count - 1) : 0;
+		const cameraSample = await sample(isScreen ? "screen-window" : "camera-window");
+		const expectedConsumers = values.consume === "all" ? publishers * (count - 1) : 0;
 		const observations = participants.map((participant, index) => {
 			const beforeVideo = before[index].producerStats.filter(({ kind }) => kind === "video");
 			const afterVideo = after[index].producerStats.filter(({ kind }) => kind === "video");
 			const beforeConsumers = before[index].consumerStats.filter(({ kind }) => kind === "video");
 			const afterConsumers = after[index].consumerStats.filter(({ kind }) => kind === "video");
-			const expectedReceivers = values.consume === "all" ? cameras - (index < cameras ? 1 : 0) : 0;
+			const expectedReceivers = values.consume === "all" ? publishers - (index < publishers ? 1 : 0) : 0;
 			const decoded = afterConsumers.map((entry) => finiteDelta(beforeConsumers.find(({ producerId }) => producerId === entry.producerId)?.framesDecoded, entry.framesDecoded));
-			return { userId: participant.userId, publisher: index < cameras, expectedReceivers,
+			const browserDecoded = afterConsumers.map((entry) => finiteDelta(beforeConsumers.find(({ producerId }) => producerId === entry.producerId)?.browserDecodedFrames, entry.browserDecodedFrames));
+			const elapsedMs = after[index].sampledAtMs - before[index].sampledAtMs;
+			const outboundBytesDelta = afterVideo.reduce((sum, entry) => sum + entry.bytesSent, 0) - beforeVideo.reduce((sum, entry) => sum + entry.bytesSent, 0);
+			return { userId: participant.userId, publisher: index < publishers, expectedReceivers, elapsedMs,
 				producerIdsBefore: beforeVideo.map(({ id }) => id).sort(), producerIdsAfter: afterVideo.map(({ id }) => id).sort(),
 				producerReady: afterVideo.every((entry) => !entry.paused && entry.trackEnabled && entry.trackReadyState === "live"),
-				outboundBytesDelta: afterVideo.reduce((sum, entry) => sum + entry.bytesSent, 0) - beforeVideo.reduce((sum, entry) => sum + entry.bytesSent, 0),
+				outboundBytesDelta, outboundBitrateBps: bitrate(0, outboundBytesDelta, elapsedMs),
 				framesEncodedDelta: finiteDelta(beforeVideo[0]?.framesEncoded, afterVideo[0]?.framesEncoded), receiverCount: afterConsumers.length,
 				inboundAdvanced: afterConsumers.filter((entry) => entry.bytesReceived > (beforeConsumers.find(({ producerId }) => producerId === entry.producerId)?.bytesReceived ?? 0)).length,
-				decodedObserved: decoded.filter((value) => value !== null).length, decodedAdvanced: decoded.filter((value) => value > 0).length };
+				inbound: afterConsumers.map((entry) => { const prior = beforeConsumers.find(({ producerId }) => producerId === entry.producerId); const bytesDelta = entry.bytesReceived - (prior?.bytesReceived ?? 0);
+					return { producerId: entry.producerId, bytesDelta, bitrateBps: bitrate(0, bytesDelta, elapsedMs), framesDecodedDelta: finiteDelta(prior?.framesDecoded, entry.framesDecoded),
+					framesPerSecond: entry.framesPerSecond, width: entry.frameWidth, height: entry.frameHeight, browserDecodedFramesDelta: finiteDelta(prior?.browserDecodedFrames, entry.browserDecodedFrames) }; }),
+				decodedObserved: decoded.filter((value) => value !== null).length, decodedAdvanced: decoded.filter((value) => value > 0).length,
+				browserDecodedObserved: browserDecoded.filter((value) => value !== null).length, browserDecodedAdvanced: browserDecoded.filter((value) => value > 0).length,
+				sender: afterVideo[0] ? { framesPerSecond: afterVideo[0].framesPerSecond, mediaSource: afterVideo[0].mediaSource } : null };
 		});
-		report.camera = { requested: { width: 1280, height: 720, framesPerSecond: 30 }, source: "deterministic time-coded moving canvas",
+		const section = { requested: { width: isScreen ? 1920 : 1280, height: isScreen ? 1080 : 720, framesPerSecond: 30 }, source: "deterministic distinct moving time-coded canvas",
 			window: { durationSeconds, observations }, limitations: "Requested/source and observed sender/receiver stats are separate; unavailable Chromium stats remain null." };
-		report.errors.push(...evaluateCameras(observations, [hold.resources, cameraSample.resources], { producers: cameras, consumers: expectedConsumers }));
+		if (isScreen) { report.screen = { ...section, configuredEncodingMaxBitrateBps: 4_000_000,
+			limitations: `${section.limitations} The encoding maxBitrate is a target cap; a short local run does not establish sustained <=4 Mbps.` };
+			report.errors.push(...evaluateScreens(observations, [hold.resources, cameraSample.resources], { producers: screens, consumers: expectedConsumers }, 4_000_000)); }
+		else { report.camera = section; report.errors.push(...evaluateCameras(observations, [hold.resources, cameraSample.resources], { producers: cameras, consumers: expectedConsumers })); }
 	} else await wait(durationSeconds * 1000);
 	report.participants = await Promise.all(pages.map((page) => page.evaluate(() => window.meetLoad.status())));
 	for (const [index, participant] of report.participants.entries()) {
 		if (participant.phase !== "running") report.errors.push(`participant ${index + 1}: not running`);
-		const publishes = values.media !== "none" || (values.scenario === "representative-camera" && index < cameras);
+		const publishes = values.media !== "none" || (values.scenario === "representative-camera" && index < cameras) || (values.scenario === "representative-screen" && index < screens);
 		if (publishes && participant.bytesSent === 0) report.errors.push(`participant ${index + 1}: no outbound RTP observed`);
 		if (count > 1 && values.consume === "all" && (values.media !== "none" || values.scenario === "representative-camera") && participant.bytesReceived === 0) report.errors.push(`participant ${index + 1}: no inbound RTP observed`);
 		report.errors.push(...participant.errors.map((error) => `participant ${index + 1}: ${error}`));

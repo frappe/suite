@@ -8,6 +8,7 @@ interface Config {
 	sfuUrl: string; meetingId: string; token: string; userId: string; name: string;
 	media: Media; consume: boolean; renderMedia: boolean; rotatingAudio: boolean; audioActive: boolean;
 	representativeCamera: boolean;
+	representativeScreen: boolean;
 }
 interface ProducerEvent { producerId: string; participantId?: string; user_id?: string; id?: string; }
 
@@ -67,7 +68,8 @@ async function subscribe(config: Config, event: ProducerEvent) {
 		const consumer = await transport.consume(options);
 		if (stopping) return consumer.close();
 		consumers.set(producerId, consumer);
-		if (config.renderMedia || (config.representativeCamera && consumer.kind === "video" && !renderedVideos.size)) {
+		if (config.renderMedia || ((config.representativeCamera || config.representativeScreen) && consumer.kind === "video" &&
+			(config.representativeScreen || !renderedVideos.size))) {
 			const element = document.createElement(consumer.kind);
 			element.autoplay = true; element.muted = true; element.srcObject = new MediaStream([consumer.track]);
 			if (consumer.kind === "video") {
@@ -93,13 +95,14 @@ async function publish(config: Config) {
 		oscillator.frequency.value = 440; audioGain.gain.value = config.audioActive ? 0.15 : 0;
 		oscillator.connect(audioGain).connect(destination); oscillator.start();
 		stream = destination.stream;
-	} else if (config.representativeCamera) {
-		cameraCanvas = document.createElement("canvas"); cameraCanvas.width = 1280; cameraCanvas.height = 720;
+	} else if (config.representativeCamera || config.representativeScreen) {
+		cameraCanvas = document.createElement("canvas"); cameraCanvas.width = config.representativeScreen ? 1920 : 1280; cameraCanvas.height = config.representativeScreen ? 1080 : 720;
 		const context = cameraCanvas.getContext("2d")!; let frame = 0;
 		const draw = () => {
-			const hue = frame * 3 % 360; context.fillStyle = `hsl(${hue} 60% 35%)`; context.fillRect(0, 0, 1280, 720);
-			context.fillStyle = "white"; context.font = "48px monospace"; context.fillText(`${config.userId} frame ${frame}`, 40, 80);
-			context.fillRect(frame * 17 % 1180, 300, 100, 100); frame++;
+			const { width, height } = cameraCanvas!; const elapsedMs = Math.round(performance.now() - started);
+			const hue = (frame * 3 + config.userId.charCodeAt(5)) % 360; context.fillStyle = `hsl(${hue} 60% 35%)`; context.fillRect(0, 0, width, height);
+			context.fillStyle = "white"; context.font = "48px monospace"; context.fillText(`${config.userId} frame ${frame} t=${elapsedMs}ms`, 40, 80);
+			context.fillRect(frame * 17 % (width - 100), Math.round(height * 0.42), 100, 100); frame++;
 		};
 		draw(); cameraTimer = window.setInterval(draw, 1000 / 30);
 		stream = cameraCanvas.captureStream(30);
@@ -111,7 +114,9 @@ async function publish(config: Config) {
 			.then(({ id }) => done({ id })).catch(fail);
 	});
 	for (const track of stream.getTracks()) {
-		const producer = await send.produce({ track, stopTracks: false, appData: { type: "camera" } });
+		const producer = await send.produce({ track, stopTracks: false,
+			appData: { type: config.representativeScreen ? "screen" : "camera" },
+			...(config.representativeScreen && track.kind === "video" ? { encodings: [{ maxBitrate: 4_000_000 }] } : {}) });
 		producers.set(producer.id, producer);
 	}
 }
@@ -171,9 +176,10 @@ async function status() {
 			framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
 		} bytesReceived += bytes; consumerStats.push({ producerId, kind: endpoint.kind, paused: endpoint.paused, trackEnabled: endpoint.track.enabled,
 			trackReadyState: endpoint.track.readyState, bytesReceived: bytes, framesDecoded, frameWidth, frameHeight, framesPerSecond,
-			browserDecodedFrames: renderedVideos.get(producerId)?.webkitDecodedFrameCount ?? null }); }
+			browserDecodedFrames: renderedVideos.get(producerId)?.getVideoPlaybackQuality().totalVideoFrames ??
+				renderedVideos.get(producerId)?.webkitDecodedFrameCount ?? null }); }
 	if (bytesReceived && firstRemoteMediaMs === null) firstRemoteMediaMs = performance.now() - started;
-	return { phase, joinMs, firstRemoteMediaMs, producerCount: producers.size, consumerCount: consumers.size,
+	return { phase, sampledAtMs: performance.now(), joinMs, firstRemoteMediaMs, producerCount: producers.size, consumerCount: consumers.size,
 		sendTransportState: send?.connectionState ?? null, receiveTransportState: receive?.connectionState ?? null,
 		bytesSent, bytesReceived, packetsLost, packetsReceived, errors: [...errors],
 		producerStats, consumerStats,
