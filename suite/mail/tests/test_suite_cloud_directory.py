@@ -250,6 +250,11 @@ class TestGroupsAndLists(SuiteCloudTestCase):
 class TestMembers(SuiteCloudTestCase):
     def setUp(self) -> None:
         super().setUp()
+        # Frappe throttles User creation per hour across the site; a dev site that just took a bulk
+        # load would otherwise block these tests for an hour.
+        throttle = patch("frappe.core.doctype.user.user.throttle_user_creation")
+        throttle.start()
+        self.addCleanup(throttle.stop)
         self.email = f"carol@{DOMAIN}"
         frappe.delete_doc("User", self.email, force=True, ignore_permissions=True, ignore_missing=True)
         frappe.db.delete("Mail Account Request", {"account": self.email})
