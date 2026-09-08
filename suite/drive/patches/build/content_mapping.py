@@ -14,16 +14,54 @@ from suite.drive._core.roles import EDIT, MANAGE, READ
 MAX_SHEETS_DATA_BYTES = 75 * 1024 * 1024
 MAX_VERSION_SEQ = 2_147_483_647
 
+# `Drive Node.path` is `varchar(500)` and a tree stops at 40 levels (§3.1).
+# `tree.py` names both for the ticket 27 walk. A media node and a template
+# node are children too, and bulk SQL fires no validator.
+PATH_CAPACITY = 500
+DEPTH_CAP = 40
+
 
 class InvalidLegacyContent(ValueError):
     """Legacy content cannot fit the accepted target shape."""
 
 
+def child_path(parent: dict) -> str:
+    """The `path` every direct child of `parent` must carry.
+
+    One rule, spelled the same way as `_core/nodes.child_path`, which the
+    runtime enforces on every save, move, restore, and copy: a child of a
+    root carries the empty path, and every deeper child carries its parent's
+    path plus the parent id. `parent['path'] or ''` drops the leading slash
+    for a parent that sits directly under a root, and `_check_tree_position`
+    then refuses that node for good.
+    """
+    if parent.get("kind") == "root":
+        return ""
+    return f"{parent.get('path') or '/'}{parent.get('name')}/"
+
+
+def path_depth(path: str) -> int:
+    """The depth a node carrying this path sits at, root counted as zero."""
+    return path.count("/") or 1
+
+
+def within_capacity(path: str) -> bool:
+    """Whether a child at this path fits the column and the depth cap."""
+    return len(path) <= PATH_CAPACITY and path_depth(path) <= DEPTH_CAP
+
+
 def docshare_role(row) -> int | None:
-    """Map Frappe sharing rights to Drive's strict role ladder."""
-    if row.share:
+    """Map Frappe sharing rights to Drive's strict role ladder.
+
+    §14.5, one line each: `share` and `write` is MANAGE, `write` is EDIT,
+    `read` only is READ, and `share` without `write` leaves the highest
+    content flag to win. `submit` is not on the ladder and no content
+    doctype here is submittable, so a submit-only row falls to its own
+    `read` flag, which Frappe always sets alongside.
+    """
+    if row.share and row.write:
         return MANAGE
-    if row.write or row.submit:
+    if row.write:
         return EDIT
     if row.read:
         return READ

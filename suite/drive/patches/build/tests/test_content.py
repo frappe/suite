@@ -7,7 +7,15 @@ from pathlib import Path
 from suite.drive._core.roles import MANAGE, NONE, READ
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
 from suite.drive.patches.build.mapping import GENERAL
-from suite.drive.patches.build.ports import ACTIVE, REMOVED, TRASHED, ContentRow, ContentShareRow, TreeRow
+from suite.drive.patches.build.ports import (
+    ACTIVE,
+    PERSONAL,
+    REMOVED,
+    TRASHED,
+    ContentRow,
+    ContentShareRow,
+    TreeRow,
+)
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
     FakeContentTarget,
@@ -126,7 +134,9 @@ class ContentTest(unittest.TestCase):
 
         link_content_documents(env, batch_size=1000)
 
-        self.assertEqual(target.batches, [1000, 1])
+        # Step 8 runs first, so the Administrator root pair the Templates
+        # folder needs is committed before the first link batch.
+        self.assertEqual(target.batches, [2, 1000, 1])
 
     def test_a_new_root_pair_counts_against_the_batch_and_is_never_split(self):
         linked = [document("Writer Document", f"writer-{index}") for index in range(8)]
@@ -142,25 +152,120 @@ class ContentTest(unittest.TestCase):
 
         link_content_documents(env, batch_size=10)
 
-        # 8 links, then the root node, its metadata, its grant, and the orphan pair together.
-        self.assertEqual(target.batches, [8, 5])
+        # The Administrator root pair for the Templates folder, then 8 links,
+        # then the root node, its metadata, its grant, and the orphan pair
+        # together. A root pair is never split across a batch boundary.
+        self.assertEqual(target.batches, [2, 8, 5])
 
     def test_true_orphan_gets_a_personal_root_and_a_deduped_title(self):
         row = document("Sheet", "sheet-1", title="Budget", trashed=1, trashed_on="2024-02-01")
         source = FakeContent(documents=[row], users={OWNER: True})
         env, target = self.environment(source)
-        target.node_rows["sibling"] = {"name": "sibling", "parent": "id1", "title": "Budget", "state": ACTIVE}
+        # Seed the root, because step 8 now mints the Administrator root
+        # first and the minted ids are no longer predictable from here.
+        target.node_rows["personal"] = {"name": "personal", "kind": "root", "state": ACTIVE, "title": OWNER}
+        target.root_rows["personal"] = {
+            "name": "personal",
+            "node": "personal",
+            "kind": PERSONAL,
+            "user": OWNER,
+            "state": ACTIVE,
+        }
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent": "personal",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
 
         result = link_content_documents(env)
 
         node = target.node_rows["sheet-1"]
-        self.assertEqual(node["parent"], "id1")
+        self.assertEqual(node["parent"], "personal")
         self.assertEqual(node["title"], "Budget (2)")
         self.assertEqual(node["state"], TRASHED)
         self.assertEqual(node["trash_root"], "sheet-1")
         self.assertEqual(node["trashed_at"], "2024-02-01")
         self.assertEqual(result.orphan_content_docs_adopted, 1)
         self.assertEqual(result.title_renames, 1)
+
+    def test_a_template_only_site_links_on_the_first_run_and_on_a_rerun(self):
+        row = document("Presentation", "deck-template", title="Slides", is_template=1)
+        source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        result = link_content_documents(env)
+
+        # A template deck has no `File`, so §14.7 is the only thing that can
+        # give it a node. Run step 10 first and it refuses this deck for
+        # having none, on the first run and on every run after it.
+        self.assertEqual(result.issues, [])
+        self.assertTrue(result.links_completed)
+        self.assertEqual(result.template_nodes_created, 1)
+        self.assertEqual(target.node_rows["deck-template"]["is_template"], 1)
+
+        again = link_content_documents(env)
+
+        self.assertEqual(again.issues, [])
+        self.assertEqual(again.template_nodes_created, 1)
+        self.assertEqual(len(target.content_nodes("Presentation", "deck-template")), 1)
+
+    def test_a_rerun_drops_the_previous_runs_issue_list(self):
+        row = document("Writer Document", "writer-1")
+        source = FakeContent(documents=[row], files=[file_for(row, "file-1")])
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+        state = env.state.content()
+        state.record_issue("Presentation:gone", "a refusal from the run before")
+        env.state.put_content(state)
+
+        result = link_content_documents(env)
+
+        # Issues are evidence for one run. A rerun re-derives them from the
+        # source rows, so inheriting the last list double-counts §14.9.
+        self.assertEqual(result.issues, [])
+        self.assertEqual(result.issues_total, 0)
+
+    def test_a_rerun_reports_the_same_title_rename_count(self):
+        row = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+        target.node_rows["personal"] = {"name": "personal", "kind": "root", "state": ACTIVE, "title": OWNER}
+        target.root_rows["personal"] = {
+            "name": "personal",
+            "node": "personal",
+            "kind": PERSONAL,
+            "user": OWNER,
+            "state": ACTIVE,
+        }
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent": "personal",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
+
+        first = link_content_documents(env)
+        second = link_content_documents(env)
+
+        # The ticket compares every reported count across two identical
+        # runs. The second run adopts nothing new, so it has to read the
+        # rename back off the node the first run wrote.
+        self.assertEqual(first.title_renames, 1)
+        self.assertEqual(second.title_renames, 1)
+        self.assertEqual(second.orphan_content_docs_adopted, first.orphan_content_docs_adopted)
+
+    def test_the_personal_root_identity_is_locked_before_it_is_read(self):
+        row = document("Sheet", "sheet-1", title="Budget")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+
+        link_content_documents(env)
+
+        # `_core/roots.py` and ticket 27 both lock the identity first. Read
+        # first and a root committed in between leaves the user with two
+        # Active Personal Roots, which §3.2 bars and no rerun can repair.
+        self.assertIn(OWNER, target.locked_content_roots)
 
     def test_file_sheet_trash_disagreement_is_counted_without_repair(self):
         row = document("Sheet", "sheet-1", trashed=1)
@@ -197,7 +302,7 @@ class ContentTest(unittest.TestCase):
         row = document("Writer Document", "writer-1", node="node-1")
         shares = [
             ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1),
-            ContentShareRow("share-2", row.doctype, row.name, everyone=1, share=1),
+            ContentShareRow("share-2", row.doctype, row.name, everyone=1, share=1, write=1),
             ContentShareRow("share-3", row.doctype, row.name, user="missing@example.com", write=1),
             ContentShareRow("share-4", "Writer Version", "old-version", user="reader@example.com", read=1),
         ]

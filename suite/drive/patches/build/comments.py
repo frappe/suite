@@ -76,7 +76,10 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     plans = []
     fallback = _container_fallback(document)
     timezone = env.content.site_timezone()
-    for key, value in values.items():
+    # `to_py()` hands back the yrs map order, and yrs hashes with a seed
+    # that changes per process. Sorted keys give one thread order, so an
+    # interrupted run resumes over the same threads it stopped inside.
+    for key, value in sorted(values.items(), key=lambda item: str(item[0])):
         if not isinstance(value, dict) or value.get("id") != key:
             raise InvalidLegacyContent("Writer comment map key and id disagree")
         if not isinstance(key, str) or not key or len(key) > 140:
@@ -87,6 +90,11 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
         if not isinstance(replies, list):
             raise InvalidLegacyContent("Writer comment replies are not a list")
         entries = [value, *replies]
+        if any(not isinstance(entry, dict) for entry in entries):
+            # `entry.get` below runs before `_entry` can check the type. A
+            # string reply would raise `AttributeError`, which no caller
+            # catches, so the run would die with no issue recorded.
+            raise InvalidLegacyContent("Writer comment reply is not an object")
         normalized = [
             _entry(
                 entry,
@@ -179,6 +187,11 @@ def _entry(value, *, identity, owner_key, name_key, time_key, fallback, timezone
         raise InvalidLegacyContent("comment text exceeds the target Text column")
     source_author = value.get(owner_key)
     author = source_author if isinstance(source_author, str) and source_author else "Guest"
+    if len(author) > 140:
+        # `Drive Comment.author` is `varchar(140)`. Over it, MariaDB raises
+        # error 1406, which is neither `InvalidLegacyContent` nor
+        # `ValueError`, so it would escape and repeat on every rerun.
+        raise InvalidLegacyContent("comment author exceeds the target Link column")
     author_name = value.get(name_key) if name_key else None
     if author_name is not None and (not isinstance(author_name, str) or len(author_name) > 140):
         raise InvalidLegacyContent("comment author_name exceeds the target field")

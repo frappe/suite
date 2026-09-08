@@ -202,6 +202,42 @@ class HistoryTest(unittest.TestCase):
             convert_history_and_comments(env)
         self.assertFalse(target.version_rows)
 
+    def test_a_broken_reciprocal_link_is_recorded_before_it_raises(self):
+        document = content_row("Writer Document", "writer-1", "node-1")
+        source = FakeContent(documents=[document])
+        env, _ = self.environment(source)
+
+        with self.assertRaisesRegex(BuildHistoryError, "broken reciprocal link"):
+            convert_history_and_comments(env)
+
+        # Resolving the node ran outside the guard, so this refusal used to
+        # end the run with no issue recorded and no state written.
+        state = env.state.content()
+        self.assertEqual(len(state.issues), 1)
+        self.assertIn("broken reciprocal link", state.issues[0].reason)
+
+    def test_a_missing_sheet_sequence_is_a_content_refusal_not_a_type_error(self):
+        document = content_row("Sheet", "sheet-1", "node-1")
+        snapshot = SheetSnapshotRow(
+            "snapshot-a",
+            "sheet-1",
+            None,
+            "auto",
+            "{}",
+            actor=OWNER,
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+        )
+        source = FakeContent(documents=[document], sheet_snapshots=[snapshot])
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Sheet", "sheet-1")
+
+        # `int(None)` raises `TypeError`, which the guard does not catch.
+        with self.assertRaisesRegex(BuildHistoryError, "does not fit the target positive Int"):
+            convert_history_and_comments(env)
+        self.assertFalse(target.version_rows)
+
     def test_unlinked_history_is_deferred_then_refused_by_the_drain(self):
         source = FakeContent(documents=[content_row("Writer Document", "orphan", None)])
         env, _ = self.environment(source)
