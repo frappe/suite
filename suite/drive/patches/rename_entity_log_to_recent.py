@@ -20,6 +20,16 @@ printed. Nothing else is removed: `Drive Entity Log` becomes
 
 Build's gate runs first. A site that cannot complete Build must be refused
 before its schema is changed, not after.
+
+**The rename is not one transaction.** `DocType.after_rename` runs
+`RENAME TABLE` and commits it (`frappe/core/doctype/doctype/doctype.py:712`),
+and every `ALTER` below commits itself, so a kill part-way through leaves the
+table renamed with some of its old column names. The legacy table is gone by
+then, so a plan read from that fact alone would skip, model sync would add
+`node` and `opened_at` empty beside the full `entity_name` and
+`last_interaction`, and every person's recents would be lost while the
+migration reported success. The plan therefore reads the columns as well, and
+finishes a rename it finds half done.
 """
 
 import frappe
@@ -32,20 +42,51 @@ TARGET_TABLE = f"tab{TARGET}"
 SKIP = "skip"
 RENAME = "rename"
 CLEAR_TARGET = "clear-target"
+RESUME = "resume"
+
+# §14.6: the two columns the rename renames. Finding either one on the target
+# table is what says a previous run was killed part-way through.
+RENAMED_COLUMNS = (
+    ("entity_name", "node", "varchar(140)"),
+    ("last_interaction", "opened_at", "datetime(6)"),
+)
+LEGACY_COLUMNS = tuple(old for old, _new, _type in RENAMED_COLUMNS)
 
 # Verified against MariaDB before this patch was written. The two `name`
 # statements are one change in two steps: MariaDB will not retype a column
 # that is still `AUTO_INCREMENT`, and dropping that attribute is what the
 # first statement does. On a table that never had it the statement is a
 # no-op, which is the case on a site whose legacy table frappe created
-# without one.
-ALTER_STATEMENTS = (
+# without one. All three are safe to repeat on a resumed run: the values are
+# still the integers the legacy autoincrement gave them, because nothing
+# inserts a hash-named row until model sync applies `drive_recent.json`.
+NAME_STATEMENTS = (
     f"ALTER TABLE `{TARGET_TABLE}` ENGINE=InnoDB",
     f"ALTER TABLE `{TARGET_TABLE}` MODIFY COLUMN `name` bigint(20) NOT NULL",
     f"ALTER TABLE `{TARGET_TABLE}` MODIFY COLUMN `name` varchar(140) NOT NULL",
-    f"ALTER TABLE `{TARGET_TABLE}` CHANGE COLUMN `entity_name` `node` varchar(140)",
-    f"ALTER TABLE `{TARGET_TABLE}` CHANGE COLUMN `last_interaction` `opened_at` datetime(6)",
 )
+
+
+def alter_statements(columns) -> tuple[str, ...]:
+    """The `ALTER`s a table with these columns still needs.
+
+    A `CHANGE COLUMN` for a column that is already renamed is an error, not a
+    no-op, so a resumed run has to leave out the ones the killed run landed.
+    """
+    held = set(columns)
+    return (
+        *NAME_STATEMENTS,
+        *(
+            f"ALTER TABLE `{TARGET_TABLE}` CHANGE COLUMN `{old}` `{new}` {column_type}"
+            for old, new, column_type in RENAMED_COLUMNS
+            if old in held
+        ),
+    )
+
+
+# The full first-run sequence, for a site whose table still holds both legacy
+# column names.
+ALTER_STATEMENTS = alter_statements(LEGACY_COLUMNS)
 
 # Keep the newest open per `(user, entity_name)`; break a tie by id so the
 # result does not depend on row order.
@@ -69,10 +110,17 @@ class DriveRecentRenameError(frappe.ValidationError):
     """The rename cannot run without guessing which table holds the truth."""
 
 
-def plan(legacy_table: bool, target_table: bool, target_rows: int) -> str:
-    """Decide what to do from the three facts that describe the site.
+def plan(legacy_table: bool, target_table: bool, target_rows: int, columns=()) -> str:
+    """Decide what to do from the four facts that describe the site.
 
-    - No legacy table: a fresh site, or a site this patch already ran on.
+    `columns` are the columns of whichever of the two tables exists, so the
+    caller reads them off the legacy table before the rename and off the
+    target table after it.
+
+    - No legacy table and no legacy column left: a fresh site, or a site this
+      patch already finished. Skip.
+    - No legacy table but a legacy column still on the target: a killed run
+      renamed the table and did not finish renaming its columns. Resume.
     - No target table: the upgrade path. Rename.
     - An empty target table: a site that synced `drive_recent.json` before
       this patch shipped. The empty table is dropped and the legacy one
@@ -81,6 +129,8 @@ def plan(legacy_table: bool, target_table: bool, target_rows: int) -> str:
       here says which one wins. Refuse.
     """
     if not legacy_table:
+        if target_table and set(columns) & set(LEGACY_COLUMNS):
+            return RESUME
         return SKIP
     if not target_table:
         return RENAME
@@ -96,27 +146,41 @@ def plan(legacy_table: bool, target_table: bool, target_rows: int) -> str:
 def execute() -> None:
     legacy_table = frappe.db.table_exists(LEGACY)
     target_table = frappe.db.table_exists(TARGET)
-    action = plan(legacy_table, target_table, frappe.db.count(TARGET) if target_table else 0)
+    columns = _columns(LEGACY if legacy_table else TARGET) if legacy_table or target_table else ()
+    action = plan(legacy_table, target_table, frappe.db.count(TARGET) if target_table else 0, columns)
     if action == SKIP:
         return
 
     _refuse_a_site_that_cannot_build()
 
-    duplicates = frappe.db.sql(COUNT_DUPLICATES)[0][0] or 0
-    if duplicates:
-        frappe.db.sql(COLLAPSE_DUPLICATES)
+    duplicates = 0
+    if action != RESUME:
+        # The dedupe is committed by the `RENAME TABLE` below, so a resumed
+        # run has already had it. Repeating it would read a column the killed
+        # run may have renamed out from under it.
+        duplicates = frappe.db.sql(COUNT_DUPLICATES)[0][0] or 0
+        if duplicates:
+            frappe.db.sql(COLLAPSE_DUPLICATES)
 
-    if action == CLEAR_TARGET:
-        # Empty, and about to be replaced by the table that has the rows.
-        frappe.delete_doc("DocType", TARGET, force=True, ignore_permissions=True)
+        if action == CLEAR_TARGET:
+            # Empty, and about to be replaced by the table that has the rows.
+            frappe.delete_doc("DocType", TARGET, force=True, ignore_permissions=True)
 
-    frappe.rename_doc("DocType", LEGACY, TARGET, force=True)
-    for statement in ALTER_STATEMENTS:
+        frappe.rename_doc("DocType", LEGACY, TARGET, force=True)
+
+    for statement in alter_statements(columns):
         frappe.db.sql_ddl(statement)
     _rename_docfields()
     frappe.db.commit()
     frappe.clear_cache(doctype=TARGET)
+    if action == RESUME:
+        print(f"Drive: finished a half-done rename of {LEGACY} to {TARGET}")
+        return
     print(f"Drive: renamed {LEGACY} to {TARGET}, collapsing {duplicates} duplicate rows")
+
+
+def _columns(doctype: str) -> tuple[str, ...]:
+    return tuple(frappe.db.get_table_columns(doctype))
 
 
 def _rename_docfields() -> None:
