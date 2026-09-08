@@ -50,7 +50,14 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     # The census the last complete pass froze its `report_at` against. New
     # source history has to invalidate that timestamp (plan §8), and the source
     # version count is what says whether any arrived.
-    counted = content.versions_seen if content.report_at else None
+    #
+    # `history_completed` is what makes the stored count comparable. A pass that
+    # died partway leaves a partial `versions_seen` beside the earlier pass's
+    # `report_at`, because the record is written per document. Comparing that
+    # partial count would read "new history arrived", re-mint `report_at` to
+    # today, and sweep every version live users wrote since the frozen census
+    # into the thinning count.
+    counted = content.versions_seen if content.report_at and content.history_completed else None
     content.begin_phase("history", HISTORY_FIELDS)
 
     residual = source.residual_writer_versions(1)
