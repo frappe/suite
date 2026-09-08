@@ -38,15 +38,17 @@ refuse, exactly as `suite.drive.framework` refuses after activation.
 The Administrator bypasses every guard below: `frappe.has_permission` answers
 for them before any controller hook runs (`frappe/permissions.py:109-111`).
 
-A System Manager is a narrower story, and the two sides do not agree. The child
-guards and both list predicates exempt one, so a System Manager still reads and
-lists a linked sheet's `Sheet Op Log` and `Sheet Snapshot` rows — today's
-behaviour, unchanged, and the reason it is left alone. `sheet_has_permission`
-does not exempt one, because the refusal has to come before any answer this
-module could give. Neither matches §4.9, whose admin is the Administrator or a
-Suite Admin, and a Suite Admin is therefore denied a linked `Sheet` row here.
-Both close at ticket 29, when `suite.drive.framework` answers and
-`is_drive_admin` is the one definition. Recorded, not fixed here: fixing it
+A System Manager is a narrower story. §4.9's admin is the Administrator or a
+Suite Admin, never a role, so no guard over a linked row exempts one: the two
+child guards refuse a linked sheet's `Sheet Op Log` and `Sheet Snapshot` rows
+for a System Manager exactly as they do for anyone else. A System Manager keeps
+every legacy read it has today, because the unlinked side still answers through
+`Sheet`. `sheet_query_conditions` still exempts one from the `Sheet` list; that
+predicate is ticket 19's and stays until ticket 29 replaces it.
+
+A Suite Admin is denied a linked row here, which §4.9 says should not happen.
+That closes at ticket 29, when `suite.drive.framework` answers and
+`is_drive_admin` is the one definition. Recorded, not fixed here: granting it
 would mean this module reading `Drive Grant`, which is ticket 29's job.
 
 Wiring lives in :mod:`suite.hooks`.
@@ -55,7 +57,6 @@ Wiring lives in :mod:`suite.hooks`.
 from __future__ import annotations
 
 import frappe
-from frappe import _
 
 from suite import drive
 
@@ -64,12 +65,11 @@ NODE_FIELD = "node"
 
 _PRIVILEGED_ROLES = frozenset({"Administrator", "System Manager"})
 
-# The two child doctypes these guards answer for, and their tables. A lookup,
-# never interpolation, so no caller can put a name into the SQL below.
-_CHILD_TABLES = {
-    "Sheet Op Log": "`tabSheet Op Log`",
-    "Sheet Snapshot": "`tabSheet Snapshot`",
-}
+# Frappe stores an unset Link as `''`, not NULL
+# (`frappe/model/base_document.py:624-627`), so `node IS NULL` alone reads a
+# legacy sheet as one Drive owns and hides it from its own owner. Every
+# predicate below asks for both spellings, the way `versioning.tasks` does.
+_UNLINKED_SHEET = f"(`tab{DOCTYPE}`.`{NODE_FIELD}` IS NULL OR `tab{DOCTYPE}`.`{NODE_FIELD}` = '')"
 
 
 # ── Sheet ────────────────────────────────────────────────────────────────────
@@ -125,16 +125,17 @@ def _stored_node(doc) -> str | None:
 
 
 def _sheet_predicate(user: str | None) -> str:
-    """The staged `Sheet` predicate, with no share refusal.
+    """The staged `Sheet` predicate on its own, with no share refusal.
 
-    Empty string = no restriction (privileged users). Frappe ORs the caller's
-    shared names around whatever this returns, which is what keeps a legacy
-    `DocShare` working.
+    Always a predicate. The privilege question belongs to the caller: the two
+    callers do not answer it the same way, and answering it here is what let a
+    `System Manager` list every migrated sheet's child rows.
+
+    Frappe ORs the caller's shared names around whatever this returns, which is
+    what keeps a legacy `DocShare` working.
     """
     user = user or frappe.session.user
-    if _is_privileged(user):
-        return ""
-    return f"`tab{DOCTYPE}`.`{NODE_FIELD}` IS NULL AND `tab{DOCTYPE}`.`owner` = {frappe.db.escape(user)}"
+    return f"{_UNLINKED_SHEET} AND `tab{DOCTYPE}`.`owner` = {frappe.db.escape(user)}"
 
 
 # ── permission_query_conditions ──────────────────────────────────────────────
@@ -151,20 +152,29 @@ def sheet_snapshot_query(user: str | None = None) -> str:
 def _scope_to_readable_sheets(doctype: str, table_prefix: str, user: str | None) -> str:
     """Return a SQL fragment restricting child rows to readable parent sheets.
 
-    Empty string = no restriction (privileged users). The fragment is AND'd
-    into the WHERE clause by Frappe's permission machinery.
+    Empty string = no restriction, which only the Administrator gets. The
+    fragment is AND'd into the WHERE clause by Frappe's permission machinery.
 
     It reuses the staged `Sheet` predicate, so the list and the row check agree
     on a linked sheet: both refuse it. Left apart, the row check denied every
     non-admin while the list still returned the owner's rows.
+
+    Only `Administrator` skips it. §4.9 grants a bypass to the Administrator
+    and a Suite Admin, not to a role, and a `System Manager` holds full CRUD on
+    both child doctypes, so the old role bypass listed every migrated sheet's
+    snapshot rows. Same removal as `suite.writer.overrides` in 77a877400.
     """
     user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    drive.refuse_shared_child_rows(doctype, DOCTYPE, "sheet", NODE_FIELD, user)
     if _is_privileged(user):
-        return ""
-    _refuse_shared_linked_children(doctype, user)
+        # A System Manager keeps the site-wide legacy child list `Sheet` still
+        # answers Yes to (`sheet_has_permission`), bounded to the sheets Drive
+        # does not own. Narrowing further would take away a legacy read the row
+        # check still grants, which is ticket 19's rule, not ticket 28's.
+        return f"{table_prefix}.sheet IN (SELECT name FROM `tab{DOCTYPE}` WHERE {_UNLINKED_SHEET})"
     parent = _sheet_predicate(user)
-    if not parent:
-        return ""
     user_lit = frappe.db.escape(user)
     # Readable sheet = owned by caller OR shared with caller via DocShare, and
     # not owned by Drive. The DocShare arm is spelled out here because Frappe
@@ -177,46 +187,9 @@ def _scope_to_readable_sheets(doctype: str, table_prefix: str, user: str | None)
         f"SELECT `tabDocShare`.share_name FROM `tabDocShare` "
         f"JOIN `tab{DOCTYPE}` ON `tab{DOCTYPE}`.name = `tabDocShare`.share_name "
         f"WHERE `tabDocShare`.share_doctype = '{DOCTYPE}' AND `tabDocShare`.user = {user_lit} "
-        f"AND `tabDocShare`.`read` = 1 AND `tab{DOCTYPE}`.`{NODE_FIELD}` IS NULL"
+        f"AND `tabDocShare`.`read` = 1 AND {_UNLINKED_SHEET}"
         f")"
     )
-
-
-def _refuse_shared_linked_children(doctype: str, user: str) -> None:
-    """Refuse a child list a `DocShare` on the child rows would reopen.
-
-    `drive.refuse_shared_linked_rows` cannot answer here: neither child doctype
-    carries a node column, so the link is one hop away through `sheet`. The
-    refusal is the same one, and after activation the `Sheet Op Log` satellite
-    declaration is what makes it Drive's own.
-
-    `Administrator` is skipped, for the reason Drive skips one: the predicate
-    disappears for them, so refusing would only lock out the person who has to
-    remove the row.
-    """
-    from frappe.share import get_shared
-
-    if user == "Administrator":
-        return
-    shared = get_shared(doctype, user)
-    if not shared:
-        return
-    # Bounded by the caller's own shared rows, and it joins rather than reading
-    # the linked sheet names first: after Build that list is every sheet on the
-    # site.
-    child_table = _CHILD_TABLES[doctype]
-    linked = frappe.db.sql(
-        f"""SELECT child.name FROM {child_table} child
-            JOIN `tab{DOCTYPE}` parent ON parent.name = child.sheet
-            WHERE child.name IN %(shared)s AND parent.`{NODE_FIELD}` IS NOT NULL
-            LIMIT 1""",
-        {"shared": tuple(shared)},
-    )
-    if linked:
-        frappe.throw(
-            _("Drive decides who reads {0}. A share cannot grant it.").format(doctype),
-            frappe.PermissionError,
-        )
 
 
 # ── has_permission ───────────────────────────────────────────────────────────
@@ -240,9 +213,13 @@ def _child_has_permission(doc, ptype: str, user: str | None) -> bool:
     A child of a linked sheet is refused rather than denied: `sheet_has_permission`
     refuses the parent's own share, and a `DocShare` on the child row would
     otherwise reopen it through `false_if_not_shared`.
+
+    Only `Administrator` skips it, for the reason `_scope_to_readable_sheets`
+    gives. A `System Manager` still reads an unlinked child: the parent check
+    below is what grants it, and that is `Sheet`'s rule to keep.
     """
     user = user or frappe.session.user
-    if _is_privileged(user):
+    if user == "Administrator":
         return True
     sheet_name = _extract_sheet(doc)
     if not sheet_name:

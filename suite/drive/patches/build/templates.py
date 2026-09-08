@@ -1,5 +1,8 @@
 """Convert Writer and Presentation templates into Drive documents."""
 
+from typing import NamedTuple
+
+from suite.drive._core.nodes import child_path
 from suite.drive._core.roles import MANAGE, READ
 from suite.drive.patches.build.content import _ensure_personal_root, _grant_row
 from suite.drive.patches.build.content_mapping import (
@@ -15,6 +18,13 @@ from suite.drive.patches.build.ports import ACTIVE
 from suite.drive.patches.build.titles import SiblingTitles
 
 ADMINISTRATOR = "Administrator"
+# The counters this phase owns. Every other value in `ContentConversion`
+# belongs to the links or slides phase and must survive a template rerun.
+TEMPLATE_FIELDS = (
+    "template_nodes_created",
+    "writer_templates_converted",
+    "template_title_renames",
+)
 NODE_FIELDS = (
     "name",
     "title",
@@ -56,14 +66,30 @@ class BuildTemplateError(RuntimeError):
     """A template target collision prevents exact conversion."""
 
 
-def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE) -> str:
-    """Create the shared template folder and exact template documents."""
+class Place(NamedTuple):
+    """Where a template node sits: parent folder, root, and canonical path."""
+
+    folder: str
+    root: str
+    path: str
+
+
+def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE, result=None) -> str:
+    """Create the shared template folder and exact template documents.
+
+    `result` is the caller's live `ContentConversion`. A caller that loaded
+    its own copy first must pass it: loading a second copy here and saving it
+    is overwritten when the caller saves its older instance, and every
+    template counter then reports zero.
+    """
     source, target = _ports(env)
-    result = env.state.content()
-    folder = _templates_folder(env)
+    owned = result is None
+    result = env.state.content() if owned else result
+    result.begin_phase("templates", TEMPLATE_FIELDS)
+    place = _folder_place(target, _templates_folder(env))
     templates = _template_rows(source, batch_size)
     template_ids = {row.name for _kind, row in templates}
-    siblings = target.child_nodes(folder)
+    siblings = target.child_nodes(place.folder)
     titles = SiblingTitles(
         {
             row["title"]
@@ -76,15 +102,17 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE) -> str:
     renamed = 0
 
     for kind, row in templates:
+        # `Presentation.title` is `reqd=0`, so NULL is a real source value and
+        # `SiblingTitles.claim` would subscript it. Plan §6 falls back to the
+        # source id for a content document with no title.
+        source_title = row.title or row.name
+        title = titles.claim(source_title)
+        renamed += int(title != source_title)
         if kind == "writer":
             seen += 1
-            title = titles.claim(row.title)
-            renamed += int(title != row.title)
-            created += _writer_template(env, folder, row, title)
+            created += _writer_template(env, place, row, title)
         else:
-            title = titles.claim(row.title)
-            renamed += int(title != row.title)
-            created += _presentation_template(env, folder, row, title)
+            created += _presentation_template(env, place, row, title)
         target.commit()
         env.state.put_content(result)
 
@@ -92,8 +120,9 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE) -> str:
     result.template_nodes_created = created
     result.template_title_renames = renamed
     result.title_renames = result.link_title_renames + renamed
-    env.state.put_content(result)
-    return folder
+    if owned:
+        env.state.put_content(result)
+    return place.folder
 
 
 def _templates_folder(env) -> str:
@@ -162,7 +191,7 @@ def _templates_folder(env) -> str:
     return name
 
 
-def _writer_template(env, folder, row, title) -> int:
+def _writer_template(env, place, row, title) -> int:
     target = env.content_target
     _valid_owner(env, row.owner)
     document = {
@@ -177,9 +206,9 @@ def _writer_template(env, folder, row, title) -> int:
     node = {
         "name": row.name,
         "title": title,
-        "parent": folder,
-        "root": _folder_root(target, folder),
-        "path": f"{folder}/",
+        "parent": place.folder,
+        "root": place.root,
+        "path": place.path,
         "kind": "document",
         "blob": None,
         "size": 0,
@@ -196,25 +225,36 @@ def _writer_template(env, folder, row, title) -> int:
     }
     found_doc = target.writer_document(row.name)
     found_node = target.nodes((row.name,)).get(row.name)
+    repair = ""
     if found_doc:
-        exact_fields(found_doc, document, WRITER_FIELDS, f"Writer template document {row.name}")
+        # Plan §10: repair a blank reciprocal link once both rows match, and
+        # refuse a link that names anything else. The Presentation path already
+        # does this, so a stopped run must not strand the Writer path.
+        repair = row.name if not found_doc.get("node") else ""
+        fields = tuple(name for name in WRITER_FIELDS if name != "node") if repair else WRITER_FIELDS
+        exact_fields(found_doc, document, fields, f"Writer template document {row.name}")
     if found_node:
         exact_fields(found_node, node, NODE_FIELDS, f"Writer template node {row.name}")
     grants = _missing_template_grants(env, row.name, row.owner)
-    target.write_writer_template(None if found_doc else document, None if found_node else node, grants)
+    target.write_writer_template(
+        None if found_doc else document,
+        None if found_node else node,
+        grants,
+        link=repair,
+    )
     return 1
 
 
-def _presentation_template(env, folder, row, title) -> int:
+def _presentation_template(env, place, row, title) -> int:
     target = env.content_target
     _valid_owner(env, row.owner)
     node = expected_node(
         row,
         name=row.name,
         title=title,
-        parent=folder,
-        root=_folder_root(target, folder),
-        path=f"{folder}/",
+        parent=place.folder,
+        root=place.root,
+        path=place.path,
         mime="frappe/slides",
         is_template=1,
     )
@@ -250,11 +290,18 @@ def _valid_owner(env, owner):
         raise InvalidLegacyContent(f"template owner {owner} has no User row")
 
 
-def _folder_root(target, folder):
+def _folder_place(target, folder) -> Place:
+    """Read the folder once and derive the exact path its children must carry.
+
+    `drive_node.py:80` recomputes a child path from its parent on every save,
+    so a hand-built string that omits the leading slash makes `_validate_chain`
+    throw and makes the `path LIKE CONCAT('%/', node, '/%')` ancestor-grant
+    and `revoke_below` queries skip every template node.
+    """
     node = target.nodes((folder,)).get(folder)
     if not node or not node.get("root"):
         raise InvalidLegacyContent("Templates folder is unavailable")
-    return node["root"]
+    return Place(folder, node["root"], child_path(node))
 
 
 def _ports(env):

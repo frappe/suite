@@ -82,10 +82,13 @@ check the session user and they do not require one: `create_storage_reservation`
 and its siblings run under whatever user the caller has set, including a
 background job. The caller owns the decision that the reservation may be made.
 
-`refuse_shared_row` and `refuse_shared_linked_rows` exist for the expand
-phase only. An app whose permission hooks are still its own has to refuse a
-`DocShare` the same way this package does after activation, because Frappe
-widens both a denied row check and a list predicate with shared names.
+`refuse_shared_row`, `refuse_shared_linked_rows`, and
+`refuse_shared_child_rows` exist for the expand phase only. An app whose
+permission hooks are still its own has to refuse a `DocShare` the same way this
+package does after activation, because Frappe widens both a denied row check and
+a list predicate with shared names. The three differ in where the node lives:
+on the shared row itself, on a node column the shared row carries, and on the
+parent document a shared child row points at.
 
 The content workflows do check. `check`, `create_document`,
 `import_document`, `copy`, `adopt_media`, `read_file`, `touch`, `take_version`,
