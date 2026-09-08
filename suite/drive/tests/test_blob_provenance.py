@@ -62,6 +62,24 @@ def forwarded_flags(source: str) -> list:
     ]
 
 
+def _import_aliases(node) -> dict:
+    """Map a local name to the real name `import ... as <local>` gave it.
+
+    `node` may be a whole module or one function: an `import` inside a
+    function body (the public facade's own style) is only visible to a scan
+    that walks that function, not the module's top level.
+    """
+    aliases = {}
+    for child in ast.walk(node):
+        if isinstance(child, ast.ImportFrom):
+            for alias in child.names:
+                aliases[alias.asname or alias.name] = alias.name
+        elif isinstance(child, ast.Import):
+            for alias in child.names:
+                aliases[alias.asname or alias.name.split(".")[0]] = alias.name
+    return aliases
+
+
 class StubbedDatabase(UnitTestCase):
     """`frappe.db` replaced per test, so nothing here runs a query.
 
@@ -299,11 +317,19 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
         proof.assert_not_called()
 
     def test_the_caller_set_of_create_file_is_the_one_that_was_reviewed(self):
-        """A fourth caller must come back through this test.
+        """A fifth caller must come back through this test.
 
         The flag defaults to "already proved", so the guard that keeps it
-        honest is the caller set, not the default. `create` is the client
-        door; the other two hold §8.4's binding.
+        honest is the caller set, not the default. `create` and the
+        public facade are the two client doors; the other two hold §8.4's
+        binding.
+
+        A caller can reach `_core.nodes.create_file` under an alias - the
+        public facade imports it as `_create_file` inside the function body -
+        so the scan resolves both module-level and local `import ... as`
+        aliases before comparing a call's name. A scan that only matched the
+        literal name `create_file` would miss that call site entirely and
+        never notice it forwards no proof.
         """
         root = Path(node_workflows.__file__).parents[3]
         self.assertTrue((root / "suite" / "drive").is_dir(), root)
@@ -313,20 +339,23 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
             if "tests" in parts or source.name.startswith("test_"):
                 continue
             tree = ast.parse(source.read_text())
+            module_aliases = _import_aliases(tree)
             functions = [
                 node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             ]
             for function in functions:
+                aliases = {**module_aliases, **_import_aliases(function)}
                 for node in ast.walk(function):
                     called = node.func if isinstance(node, ast.Call) else None
                     name = getattr(called, "attr", None) or getattr(called, "id", None)
-                    if name == "create_file":
+                    if name and aliases.get(name, name) == "create_file":
                         callers.add(f"{source.relative_to(root)}:{function.name}")
 
         self.assertEqual(
             callers,
             {
                 "suite/drive/_core/nodes.py:create",
+                "suite/drive/__init__.py:create_file",
                 "suite/drive/_core/upload.py:finish_upload",
                 "suite/drive/webdav/put.py:handle",
                 # The legacy `File` adoption helper, a different function of
@@ -334,6 +363,12 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
                 "suite/drive/overrides/file.py:create_for_doc",
             },
         )
+
+    def test_the_public_facade_forwards_the_flag_too(self):
+        """The fifth caller found above must be a proven one, not a silent gap."""
+        import suite.drive as public_facade
+
+        self.assertEqual(forwarded_flags(inspect.getsource(public_facade.create_file)), [True])
 
 
 class TestTheReplacePathHasNoClientDoor(StubbedDatabase):
