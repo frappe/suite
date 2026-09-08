@@ -881,6 +881,51 @@ class TestSlidesInDrive(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             api.update_slide_attachments(self._docname(node), {"elements": "[]"})
 
+    def test_a_pasted_picture_is_readable_by_whoever_may_read_the_destination(self):
+        """The thesis `suite.slides.tests.test_pasted_media` used to carry.
+
+        It asked it of a `File` attached to the destination deck; a linked deck
+        grows no `File` (§14.7), and the adopted node hangs under the
+        destination instead, so it inherits the destination's grants (§8.4).
+        The source's own node is untouched and stays out of reach.
+        """
+        source = self._deck(title="Reader paste source")
+        destination = self._deck(title="Reader paste destination")
+        picture = self._media(source, "one.png", png())
+        poster = self._media(source, "poster.png", png("green"))
+        grant(destination, OTHER, drive.READ, self.admin)
+
+        answered = api.get_updated_json(
+            self._docname(destination), [{"type": "video", "src": picture, "poster": poster}]
+        )
+        adopted = {answered[0]["src"], answered[0]["poster"]}
+        self.assertFalse(adopted & {picture, poster}, "the destination owns its own nodes")
+        frappe.db.commit()
+
+        self._as(OTHER)
+        for node in adopted:
+            self.assertTrue(slides.node_is_readable(node), "the picture came with the deck")
+        for node in (picture, poster):
+            self.assertFalse(slides.node_is_readable(node), "the source's copy did not")
+
+    def test_a_paste_naming_a_legacy_file_url_adopts_nothing_and_shares_nothing(self):
+        """§14.7 rewrites `src` to a node id, so a `/private/files/` path names
+        no media at all. It comes back untouched, no node is created for it, and
+        no `File` is attached to the deck: the way the legacy path used to make
+        one readable is gone with the path."""
+        destination = self._deck(title="Legacy url paste")
+        docname = self._docname(destination)
+        url = "/private/files/pasted-from-nowhere.png"
+
+        answered = api.get_updated_json(docname, [{"type": "image", "src": url}])
+
+        self.assertEqual(answered[0]["src"], url)
+        self.assertIsNone(answered[0].get("attachmentName"))
+        self.assertEqual(frappe.db.count("Drive Node", {"parent": destination, "kind": "file"}), 0)
+        self.assertFalse(
+            frappe.db.exists("File", {"attached_to_doctype": DOCTYPE, "attached_to_name": docname})
+        )
+
     def test_a_reader_cannot_paste_into_a_deck_and_a_stranger_is_not_told_it_exists(self):
         source = self._deck(title="Paste rights source")
         picture = self._media(source, "one.png", png())

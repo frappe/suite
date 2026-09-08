@@ -299,19 +299,58 @@ def get_presentations() -> list[dict]:
     """
     Returns a list of presentation details
     - info and presentation thumbnail
+
+    Drive owns a linked deck's title, its template flag, and its lifecycle,
+    and keeps no mirror on the frozen legacy columns (§10.2). Reading the
+    columns alone listed every deck written since activation with a blank
+    name, and listed trashed decks and templates as ordinary ones. The node
+    half is read for exactly those three answers.
+
+    LIMITATION: `thumbnail` stays empty for a linked deck. Its preview is a
+    `Drive Node Preview` served over §6.8's signed byte path, which this
+    payload has no field for; ticket 34 moves the card onto it.
     """
     presentations = frappe.get_list(
         "Presentation",
-        fields=["name", "title", "owner", "creation", "modified_by", "modified", "thumbnail"],
+        fields=["name", "title", "node", "owner", "creation", "modified_by", "modified", "thumbnail"],
         order_by="modified desc",
         filters=[["owner", "=", frappe.session.user], ["is_template", "=", 0]],
     )
+    presentations = _published_decks(presentations)
 
     counts = get_slide_counts([p["name"] for p in presentations])
     for presentation in presentations:
         presentation["slide_count"] = counts.get(presentation["name"], 0)
 
     return presentations
+
+
+def _published_decks(rows: list[dict]) -> list[dict]:
+    """Fill each linked deck's title from its node, and drop what Drive hides."""
+    nodes = {row["name"]: row[NODE_FIELD] for row in rows if row.get(NODE_FIELD)}
+    published = {}
+    if nodes:
+        published = {
+            row["name"]: row
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"name": ["in", list(nodes.values())], "state": "Active", "is_template": 0},
+                fields=["name", "title"],
+                ignore_permissions=True,
+            )
+        }
+    kept = []
+    for row in rows:
+        node = row.pop(NODE_FIELD, None)
+        if node:
+            listed = published.get(node)
+            if not listed:
+                # Trashed, or a template. Either way Drive hides it here.
+                continue
+            row["title"] = listed["title"]
+            row["thumbnail"] = ""
+        kept.append(row)
+    return kept
 
 
 def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
@@ -412,8 +451,6 @@ def create_presentation(
     fallback `suite.sheets.api.create_sheet` and
     `suite.drive.http.shims._home` use.
     """
-    parent_node = parent or _home_folder()
-
     if duplicate_from:
         if not frappe.has_permission("Presentation", "read", duplicate_from):
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
@@ -431,12 +468,36 @@ def create_presentation(
         source_node = template_node
         title = "Untitled"
 
-    node = drive.create_document(
-        parent_node, title, content_doctype=slides_drive.DOCTYPE, from_node=source_node
-    )
-    docname = slides_drive.docname_for_node(node)
-    if not docname:
-        frappe.throw(_("The new presentation could not be found"), frappe.ValidationError)
+    # Resolved after the source, so a deck named by a caller who has no Drive
+    # root yet is still refused by name ("that template does not exist")
+    # rather than by the root the request would have provisioned for it.
+    parent_node = parent or _home_folder()
+
+    # `create_document` closes its own savepoint before returning, so the
+    # `theme` write below is outside it. This one holds both: a new deck must
+    # never exist without the theme its layouts are resolved through.
+    savepoint = f"slides_create_presentation_{frappe.generate_hash(12)}"
+    frappe.db.savepoint(savepoint)
+    try:
+        node = drive.create_document(
+            parent_node, title, content_doctype=slides_drive.DOCTYPE, from_node=source_node
+        )
+        docname = slides_drive.docname_for_node(node)
+        if not docname:
+            frappe.throw(_("The new presentation could not be found"), frappe.ValidationError)
+        if not duplicate_from:
+            # `theme` names the template the editor resolves layouts through
+            # (`LayoutDialog.vue`, `slide.js:addEmptySlide`). Drive's copy
+            # carries the source's own `theme`, and a template's is empty, so
+            # new-from-template has to name the template it started from — as
+            # the retired `set_template_metadata` did. It is Slides' own body
+            # column, not a Drive mirror.
+            frappe.db.set_value(slides_drive.DOCTYPE, docname, "theme", template, update_modified=False)
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
 
     presentation = frappe.get_doc("Presentation", docname)
     # Drive owns the title and keeps no mirror (§10.2): `presentation.title`
@@ -623,12 +684,15 @@ def get_public_presentation(name: str):
 
 @frappe.whitelist()
 def get_templates():
-    templates = frappe.get_all(
-        "Presentation",
-        filters={"is_template": 1},
-        fields=["name", "title", "slug", "creation", "is_template"],
-        order_by="creation",
-    )
+    """The template picker, off whichever store holds each template.
+
+    Drive owns a linked deck's template flag and its title (§8.10, §10.2), so
+    the legacy `is_template` column alone stopped seeing any template made
+    after activation. The linked half is scoped by READ, which is what §8.10
+    makes the whole rule: "who may use a template is the grant on its node".
+    """
+    templates = _legacy_templates() + _linked_templates()
+    templates.sort(key=lambda template: str(template["creation"]))
 
     slides = frappe.get_all(
         "Slide",
@@ -656,6 +720,46 @@ def get_templates():
             )
 
     return templates
+
+
+def _legacy_templates() -> list[dict]:
+    """The `Presentation` rows no node holds. Build links them; Cleanup drops the column."""
+    return frappe.get_all(
+        "Presentation",
+        filters={"is_template": 1, NODE_FIELD: ["is", "not set"]},
+        fields=["name", "title", "slug", "creation", "is_template"],
+        order_by="creation",
+    )
+
+
+def _linked_templates() -> list[dict]:
+    """The readable template nodes, published under the legacy template keys."""
+    nodes = frappe.get_all(
+        "Drive Node",
+        filters={"content_doctype": slides_drive.DOCTYPE, "is_template": 1, "state": "Active"},
+        fields=["name", "title", "content_docname", "creation"],
+        ignore_permissions=True,
+    )
+    if not nodes:
+        return []
+    readable = set(
+        frappe.get_list(
+            "Presentation",
+            filters={NODE_FIELD: ["in", [node["name"] for node in nodes]]},
+            pluck="name",
+        )
+    )
+    return [
+        {
+            "name": node["content_docname"],
+            "title": node["title"],
+            "slug": slug(node["title"] or ""),
+            "creation": node["creation"],
+            "is_template": 1,
+        }
+        for node in nodes
+        if node["content_docname"] in readable
+    ]
 
 
 @frappe.whitelist(allow_guest=True)
