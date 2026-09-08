@@ -19,14 +19,14 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Perform the pre-model-sync Recent rename without losing source values. Retarget favourites, legacy routes, DAV locks, and properties.
-- [ ] Migrate activity payloads and derived verbs with detail.migrated. Start the notification inbox empty as specified.
-- [ ] Migrate quota settings from MB to bytes and reservation owners to roots. Create missing reservation roots as pairs.
-- [ ] Recompute usage last from nodes, versions, and reservations. Reconcile totals independently.
-- [ ] Produce every specified report key and preserve evidence across reruns. Save reports privately; do not log link secrets.
-- [ ] Compose the complete Build patch and registration order. Retain legacy source columns until Cleanup.
+- [x] Perform the pre-model-sync Recent rename without losing source values. Retarget favourites, legacy routes, DAV locks, and properties.
+- [x] Migrate activity payloads and derived verbs with detail.migrated. Start the notification inbox empty as specified.
+- [x] Migrate quota settings from MB to bytes and reservation owners to roots. Create missing reservation roots as pairs.
+- [x] Recompute usage last from nodes, versions, and reservations. Reconcile totals independently.
+- [x] Produce every specified report key and preserve evidence across reruns. Save reports privately; do not log link secrets.
+- [x] Compose the complete Build patch and registration order. Retain legacy source columns until Cleanup.
 - [ ] Coordinate content registry activation and compatibility routing only after required links exist.
-- [ ] Prove restart behavior at each batch boundary. Keep destructive Cleanup unregistered.
+- [x] Prove restart behavior at each batch boundary. Keep destructive Cleanup unregistered.
 
 ## Verification
 
@@ -69,7 +69,7 @@ defects, fixed four with regression tests, and proved the fifth against the site
 | 2 | The Recent rename lost every person's recents on a retried migration. `DocType.after_rename` commits `RENAME TABLE` before the `ALTER`s, so a kill in between left the table renamed with legacy column names; the plan read only table existence, so the rerun skipped, model sync added `node` and `opened_at` empty beside the full columns, and `UNIQUE recent_user_node` accepted the NULLs. | `4bbf82d64`: the plan reads the columns as well and resumes a half-done rename, emitting only the `CHANGE COLUMN`s the killed run had not landed. 17 → 25 cases. |
 | 3 | §14.9's `activity_verbs_derived` and `activity_rows_dropped` counted only the rows a run inserted, so a rerun over a finished site reported zero derived verbs. Both keys are a census of the source rows. | `6b71283d8`: every source row is mapped before the already-present check. Proved by probe (2 → 0 before, stable after) and mutation-tested. |
 | 4 | The dormancy package proved Cleanup is unregistered and that Build removes nothing, and checked nothing else §14.10 deletes. | `47e86ff6d`: `TestCleanupHasRemovedNothingYet` walks the whole §14.10 list. Mutation-checked with three separate removals. |
-| 5 | **Activation stops document creation.** Open. See the gate below. |
+| 5 | **Activation stops document creation** in Writer, Slides, and Sheets. | Open. See the gate below. |
 
 ### Results
 
