@@ -4,6 +4,7 @@ from suite.drive._core.roles import MANAGE, READ
 from suite.drive.patches.build.content import _ensure_personal_root, _grant_row
 from suite.drive.patches.build.content_mapping import (
     InvalidLegacyContent,
+    child_path,
     compact_settings,
     exact_fields,
     expected_node,
@@ -56,10 +57,15 @@ class BuildTemplateError(RuntimeError):
     """A template target collision prevents exact conversion."""
 
 
-def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE) -> str:
-    """Create the shared template folder and exact template documents."""
+def convert_templates(env, result, *, batch_size: int = BUILD_BATCH_SIZE) -> str:
+    """Create the shared template folder and exact template documents.
+
+    The counters land on the caller's record. `BuildState.content()` builds
+    a fresh object per call, so a private copy here would be overwritten by
+    the caller's next `put_content` and §14.9 would print zero templates for
+    a run that converted them.
+    """
     source, target = _ports(env)
-    result = env.state.content()
     folder = _templates_folder(env)
     templates = _template_rows(source, batch_size)
     template_ids = {row.name for _kind, row in templates}
@@ -164,6 +170,7 @@ def _templates_folder(env) -> str:
 
 def _writer_template(env, folder, row, title) -> int:
     target = env.content_target
+    parent = _folder_node(target, folder)
     _valid_owner(env, row.owner)
     document = {
         "name": row.name,
@@ -178,8 +185,8 @@ def _writer_template(env, folder, row, title) -> int:
         "name": row.name,
         "title": title,
         "parent": folder,
-        "root": _folder_root(target, folder),
-        "path": f"{folder}/",
+        "root": parent["root"],
+        "path": child_path(parent),
         "kind": "document",
         "blob": None,
         "size": 0,
@@ -207,14 +214,15 @@ def _writer_template(env, folder, row, title) -> int:
 
 def _presentation_template(env, folder, row, title) -> int:
     target = env.content_target
+    parent = _folder_node(target, folder)
     _valid_owner(env, row.owner)
     node = expected_node(
         row,
         name=row.name,
         title=title,
         parent=folder,
-        root=_folder_root(target, folder),
-        path=f"{folder}/",
+        root=parent["root"],
+        path=child_path(parent),
         mime="frappe/slides",
         is_template=1,
     )
@@ -250,11 +258,18 @@ def _valid_owner(env, owner):
         raise InvalidLegacyContent(f"template owner {owner} has no User row")
 
 
-def _folder_root(target, folder):
+def _folder_node(target, folder):
+    """The stored Templates folder, which supplies the child root and path.
+
+    A template node is a child of this folder, so `path` must be the folder's
+    own `child_path`. A bare `f"{folder}/"` drops the leading slash that
+    `_core/nodes._check_tree_position` demands, and the runtime then refuses
+    the node on every later save or move.
+    """
     node = target.nodes((folder,)).get(folder)
     if not node or not node.get("root"):
         raise InvalidLegacyContent("Templates folder is unavailable")
-    return node["root"]
+    return node
 
 
 def _ports(env):

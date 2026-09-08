@@ -691,6 +691,7 @@ class FakeContentTarget:
         self.commits = 0
         self.thin_count = 0
         self.fail_unit = None
+        self.locked_content_roots = []
 
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
@@ -707,6 +708,9 @@ class FakeContentTarget:
 
     def root_metadata(self, node):
         return self.drive.root_metadata(node)
+
+    def lock_root_identity(self, user):
+        self.locked_content_roots.append(user)
 
     def active_roots(self, user):
         return tuple(

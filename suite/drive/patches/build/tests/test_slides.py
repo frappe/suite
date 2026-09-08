@@ -126,6 +126,137 @@ class SlidesTest(unittest.TestCase):
         convert_slides_and_templates(env)
         self.assertEqual(len(env.slide_journal.records), 1)
 
+    def test_media_nodes_carry_the_deck_child_path(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": "/files/media-a.png"}]))],
+            media=[media("media-a", blob="blob-1"), media("media-b")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", b"media", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        # `_core/nodes.child_path` is `f"{path or '/'}{name}/"`. A node stored
+        # without the leading slash is refused by `_check_tree_position` on
+        # every later save, move, restore, or copy.
+        for name in ("media-a", "media-b"):
+            self.assertEqual(target.node_rows[name]["path"], "/deck-node/")
+            self.assertEqual(target.node_rows[name]["parent"], "deck-node")
+            self.assertEqual(target.node_rows[name]["root"], "root")
+
+    def test_media_inserts_are_held_to_the_batch_size(self):
+        rows = [media(f"media-{index}", blob=f"blob-{index}") for index in range(5)]
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, "[]")],
+            media=rows,
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        for row in rows:
+            target.add_blob(row.blob, row.name.encode(), mime_type="image/png")
+        sizes = []
+        original = target.insert_nodes
+
+        def record(nodes):
+            media_rows = [row for row in nodes if row["parent"] == "deck-node"]
+            if media_rows:
+                sizes.append(len(media_rows))
+            original(nodes)
+
+        target.insert_nodes = record
+
+        convert_slides_and_templates(env, batch_size=2)
+
+        # §14.2 holds a Build write to the batch size. One insert per node
+        # would put a whole deck's media in a single transaction.
+        self.assertEqual(sizes, [2, 2, 1])
+        self.assertEqual(len(self.media_children(target, "deck-node")), 5)
+
+    def test_media_files_sharing_a_file_name_get_deduped_sibling_titles(self):
+        first = replace(media("media-a", blob="blob-a"), file_name="picture.png")
+        second = replace(media("media-b", blob="blob-b"), file_name="picture.png")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, "[]")],
+            media=[first, second],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-b", b"b", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        # `_refuse_sibling_collision` bars two Active siblings from sharing a
+        # title, and bulk SQL fires no validator. The rename happens here or
+        # the pair lands in a state the runtime cannot produce or repair.
+        titles = sorted(row["title"] for row in self.media_children(target, "deck-node"))
+        self.assertEqual(titles, ["picture (2).png", "picture.png"])
+
+        convert_slides_and_templates(env)
+
+        again = sorted(row["title"] for row in self.media_children(target, "deck-node"))
+        self.assertEqual(again, titles)
+
+    def test_an_untouched_slide_keeps_its_stored_bytes(self):
+        stored = json.dumps([{"src": "https://cdn.example.com/a.png", "text": "keep"}], indent=2)
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, stored)],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        # Nothing resolved, so nothing is a rewrite. Dumping the parsed body
+        # back would compact the stored JSON, fill the journal, and edit a
+        # source row the ticket says to preserve.
+        self.assertEqual(source.slide_rows["slide-1"].elements, stored)
+        self.assertEqual(result.slide_elements_rewritten, 0)
+        self.assertEqual(env.slide_journal.records, [])
+
+    def test_an_unmatched_thumbnail_is_reported_and_the_deck_still_converts(self):
+        source = FakeContent(
+            documents=[deck(thumbnail="/files/gone.webp")],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": "/files/media-a.png"}]))],
+            media=[media("media-a", blob="blob-1")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", b"media", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        # A preview is derived data. Refusing the whole Build over one is
+        # worse than losing it, so the run reports and carries on.
+        self.assertTrue(result.slides_completed)
+        self.assertEqual(result.deck_previews_created, 0)
+        self.assertEqual(len(result.issues), 1)
+        self.assertIn("matches no File row", result.issues[0].reason)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements)[0]["src"], "media-a")
+
+    def test_a_private_thumbnail_matches_a_public_thumbnail_url(self):
+        row = replace(media("thumb", url="/private/files/thumb.webp", field="thumbnail"), blob="blob-1")
+        source = FakeContent(
+            documents=[deck(thumbnail="/files/thumb.webp")],
+            slides=[SlideRow("slide-1", "deck-1", 1, "[]")],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", webp_bytes(), mime_type="image/webp", is_private=1)
+
+        result = convert_slides_and_templates(env)
+
+        # A deck made private after its thumbnail was written keeps the old
+        # public URL on the `Presentation` row and the private one on `File`.
+        self.assertEqual(result.deck_previews_created, 1)
+        self.assertEqual(result.issues, [])
+
     def test_blobless_media_creates_a_placeholder_but_does_not_resolve_body(self):
         source = FakeContent(
             documents=[deck()],

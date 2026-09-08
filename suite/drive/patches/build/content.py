@@ -24,11 +24,22 @@ class BuildContentError(RuntimeError):
 
 
 def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
-    """Implement §14.2 step 10, then drain deferred history."""
+    """Implement §14.2 step 8 and step 10, then drain deferred history.
+
+    Step 8 runs first. A template deck has no `File` and therefore no node
+    until §14.7 creates one (`presentation.py`: `after_insert` returns early
+    for `is_template`), and step 10 refuses a template that has no node. In
+    the other order the first run of a site that holds one template refuses
+    before it writes anything, and so does every rerun.
+    """
     if not env.state.tree().completed or not env.state.grants().completed:
         raise BuildContentError("ticket 27 tree and grants must complete first")
     source, target = _ports(env)
     result = env.state.content()
+    # Refusals are evidence for one run. A rerun re-derives them from the
+    # source rows, so the previous run's list must not be inherited.
+    result.issues = []
+    result.issues_total = 0
     result.links_completed = False
     result.documents_seen = 0
     result.trash_disagreements = 0
@@ -44,6 +55,10 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
             env.state.put_content(result)
             writes = 0
         writes += target_rows
+
+    from suite.drive.patches.build.slides import convert_slides_and_templates
+
+    convert_slides_and_templates(env, result, batch_size=batch_size)
 
     for doctype in MIMES:
         after = ""
@@ -75,12 +90,6 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     result.links_completed = True
     env.state.put_content(result)
 
-    if not result.slides_completed or result.slides_deferred:
-        from suite.drive.patches.build.slides import convert_slides_and_templates
-
-        result = convert_slides_and_templates(env, batch_size=batch_size)
-    result.link_title_renames = link_renames
-    result.title_renames = result.template_title_renames + result.link_title_renames
     _convert_content_shares(env, result, batch_size)
     env.state.put_content(result)
 
@@ -139,7 +148,10 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
         if not row.node:
             reserve(1)
             target.write_content_link(row.doctype, row.name, node["name"])
-        return True, False, False
+        # An orphan adopted by an earlier run keeps whatever title that run
+        # claimed for it. Reporting no rename here would make the second run
+        # print a different §14.9 count than the first for the same site.
+        return True, node.get("title") != _source_title(row), False
 
     if row.node:
         raise InvalidLegacyContent("the orphan names a missing Drive Node")
@@ -149,7 +161,7 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     root = _ensure_personal_root(env, row.owner, reserve)
     siblings = target.child_nodes(root)
     titles = SiblingTitles({child["title"] for child in siblings if child.get("state") == ACTIVE})
-    source_title = row.title or ("Untitled Document" if row.doctype == "Writer Document" else row.name)
+    source_title = _source_title(row)
     title = titles.claim(source_title)
     state = TRASHED if row.doctype == "Sheet" and row.trashed else ACTIVE
     trashed_at = (row.trashed_on or row.modified or row.creation) if state == TRASHED else None
@@ -170,8 +182,18 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     return True, title != source_title, False
 
 
+def _source_title(row) -> str:
+    """The title an orphan carries before sibling deduplication."""
+    return row.title or ("Untitled Document" if row.doctype == "Writer Document" else row.name)
+
+
 def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
     target = env.content_target
+    # Lock the identity before the read, the way `_core/roots.py` and ticket
+    # 27 both do. Read first and a root committed between the read and the
+    # write leaves the user with two Active Personal Roots, which §3.2 bars
+    # and no later run can repair.
+    target.lock_root_identity(user)
     found = target.active_roots(user)
     if len(found) > 1:
         raise InvalidLegacyContent(f"user {user} has multiple Active Personal Roots")

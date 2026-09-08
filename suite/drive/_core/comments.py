@@ -264,11 +264,13 @@ def threads(
             "creation",
             "modified",
         ],
-        # The same tie-break, and only that one. `idx` is not a third key here:
-        # neither doctype is a child table, so `frappe.model.base_document`
-        # forces every row's `idx` to 0 and nothing in Build or at runtime ever
-        # writes it. Sorting on it breaks no tie and drops the read off
-        # `comment_thread (thread, creation)` into a filesort.
+        # The same tie-break, and only that one. `idx` is not a third key
+        # here: neither doctype is a child table, so `frappe.model.base_document`
+        # forces every row's `idx` to 0 on save, and no runtime path writes
+        # it. Build does write a positional `idx` through `bulk_insert`, and
+        # the first ordinary save of that row erases it, so it is not an
+        # order this query can lean on. Sorting on it would drop the read
+        # off `comment_thread (thread, creation)` into a filesort.
         order_by="creation asc, name asc",
     )
     for comment in comments:

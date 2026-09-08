@@ -55,11 +55,15 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
             if not rows:
                 break
             for document in rows:
-                node = _document_node(source, target, document)
-                if node is None:
-                    pending.append(document.name)
-                    continue
                 try:
+                    # Inside the guard: a broken reciprocal link, a Removed
+                    # File, or two Files for one document all raise here, and
+                    # outside it the run would end with no issue recorded and
+                    # no state written.
+                    node = _document_node(source, target, document)
+                    if node is None:
+                        pending.append(document.name)
+                        continue
                     if doctype == "Writer Document":
                         _writer_versions(env, content, document, node, batch_size)
                     else:
@@ -119,7 +123,9 @@ def _writer_versions(env, content, document, node: str, batch_size: int) -> None
 
 def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
     rows = env.content.sheet_snapshots(document.name)
-    sequences = [int(row.seq) for row in rows]
+    # `int(None)` raises `TypeError`, which no caller catches. Zero fails the
+    # bound below and is reported like any other unusable sequence.
+    sequences = [int(row.seq or 0) for row in rows]
     if any(seq < 1 or seq > MAX_VERSION_SEQ for seq in sequences):
         raise InvalidLegacyContent("Sheet Snapshot sequence does not fit the target positive Int")
     if len(sequences) != len(set(sequences)):
@@ -133,7 +139,7 @@ def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
             env,
             row,
             node=node,
-            seq=int(row.seq),
+            seq=int(row.seq or 0),
             kind=row.kind,
             label=row.label,
             pinned=int(bool(row.pinned)),

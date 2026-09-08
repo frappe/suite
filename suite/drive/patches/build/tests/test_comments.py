@@ -84,6 +84,71 @@ class CommentTest(unittest.TestCase):
         self.assertEqual(target.comment_rows["reply"]["idx"], 2)
         self.assertEqual(json.loads(target.comment_rows["top"]["mentions"]), ["a@example.com"])
 
+    def test_threads_are_written_in_sorted_id_order(self):
+        keys = ["zz", "mm", "aa", "qq", "bb", "kk", "cc", "yy"]
+        ycomments = writer_update(
+            {key: {"id": key, "text": key, "owner": OWNER, "creation": 1_000} for key in keys}
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, target = self.environment(source)
+        written = []
+        original = target.write_thread
+
+        def record(thread, comments):
+            written.append(thread["name"])
+            original(thread, comments)
+
+        target.write_thread = record
+
+        convert_document_comments(env, document, "node-1", batch_size=100)
+
+        # `to_py()` hands back the yrs map order, and that is a fresh hash
+        # order on every read. Each thread is its own commit, so an
+        # interrupted run must resume over the order it stopped inside.
+        self.assertEqual(written, sorted(keys))
+
+    def test_a_reply_that_is_not_an_object_is_refused(self):
+        ycomments = writer_update(
+            {
+                "top": {
+                    "id": "top",
+                    "text": "First",
+                    "owner": OWNER,
+                    "creation": 1_000,
+                    "replies": ["not an object"],
+                }
+            }
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, _ = self.environment(source)
+
+        # No caller catches `AttributeError`, so the run would end with no
+        # issue recorded and no state written.
+        with self.assertRaisesRegex(InvalidLegacyContent, "reply is not an object"):
+            convert_document_comments(env, document, "node-1", batch_size=100)
+
+    def test_an_over_long_author_is_refused_before_the_insert(self):
+        ycomments = writer_update(
+            {"top": {"id": "top", "text": "First", "owner": "a" * 141, "creation": 1_000}}
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, _ = self.environment(source)
+
+        # `Drive Comment.author` is `varchar(140)`. MariaDB error 1406 is
+        # neither `InvalidLegacyContent` nor `ValueError`, so it would escape
+        # the guard and repeat on every rerun.
+        with self.assertRaisesRegex(InvalidLegacyContent, "author exceeds"):
+            convert_document_comments(env, document, "node-1", batch_size=100)
+
     def test_blank_writer_author_uses_guest_and_container_fallback(self):
         ycomments = writer_update(
             {"top": {"id": "top", "text": "Text", "owner": "", "creation": "bad", "replies": []}}

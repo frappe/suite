@@ -692,6 +692,8 @@ class ContentTarget(Protocol):
 
     def root_metadata(self, node: str) -> dict | None: ...
 
+    def lock_root_identity(self, user: str) -> None: ...
+
     def active_roots(self, user: str) -> tuple[str, ...]: ...
 
     def personal_roots(self, user: str) -> tuple[str, ...]: ...
@@ -1223,7 +1225,11 @@ class SiteContentSource:
 
     def residual_writer_versions(self, limit: int) -> list[str]:
         filters = [["parent", "like", self.name_prefix + "%"]] if self.name_prefix else []
-        return frappe.get_all("Writer Doc Version", filters=filters, pluck="name", limit=limit)
+        # Ordered, because these ids are the sample §14.9 prints and a
+        # refusal a run cannot reproduce is a refusal nobody can chase.
+        return frappe.get_all(
+            "Writer Doc Version", filters=filters, pluck="name", limit=limit, order_by="name asc"
+        )
 
     def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None:
         row = frappe.db.get_value(
@@ -1453,25 +1459,46 @@ class SiteContentTarget:
         ]
 
     def root_metadata(self, node: str) -> dict | None:
-        row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_COLUMNS), as_dict=True)
+        # The primary key first, for the reason `SiteDrive.root_metadata`
+        # gives: §3.2 names a `Drive Root` after its node, so a row named
+        # this id whose `node` column points elsewhere is invisible to the
+        # filter read. Missing it makes Build call the pair absent and then
+        # die on a duplicate primary key, on this run and on every rerun.
+        row = frappe.db.get_value("Drive Root", node, list(ROOT_COLUMNS), as_dict=True)
+        if not row:
+            row = frappe.db.get_value("Drive Root", {"node": node}, list(ROOT_COLUMNS), as_dict=True)
         return dict(row) if row else None
 
+    def lock_root_identity(self, user: str) -> None:
+        # The same stable identity `_core/roots.py._lock_identity` and
+        # `SiteDrive` lock. Postgres cannot lock a row that does not exist,
+        # so the User row stands in for the root Build may be about to mint.
+        frappe.db.get_value("User", user, "name", for_update=True)
+
     def active_roots(self, user: str) -> tuple[str, ...]:
-        rows = frappe.get_all(
-            "Drive Root",
-            filters={"kind": PERSONAL, "user": user, "state": ACTIVE},
-            pluck="node",
-            order_by="name asc",
+        # A current read behind that lock. An ordinary consistent read can
+        # hold an older MariaDB snapshot and miss a root a concurrent
+        # creator committed, and Build would mint a second Active one.
+        return tuple(
+            frappe.db.get_values(
+                "Drive Root",
+                {"kind": PERSONAL, "user": user, "state": ACTIVE},
+                "node",
+                order_by="name asc",
+                for_update=True,
+                pluck=True,
+            )
         )
-        return tuple(rows)
 
     def personal_roots(self, user: str) -> tuple[str, ...]:
         return tuple(
-            frappe.get_all(
+            frappe.db.get_values(
                 "Drive Root",
-                filters={"kind": PERSONAL, "user": user},
-                pluck="node",
+                {"kind": PERSONAL, "user": user},
+                "node",
                 order_by="name asc",
+                for_update=True,
+                pluck=True,
             )
         )
 
@@ -1668,7 +1695,13 @@ class SiteContentTarget:
         frappe.db.savepoint(savepoint)
         try:
             callback()
-        except Exception:
-            frappe.db.rollback(save_point=savepoint)
+        except Exception as exc:
+            # InnoDB rolls back the whole deadlock victim transaction,
+            # savepoints included, so the narrow rollback would raise over
+            # the original error and leave the handle unusable. The shared
+            # helper keeps the original and resets with a full rollback.
+            from suite.drive._core.nodes import _rollback_savepoint
+
+            _rollback_savepoint(savepoint, exc)
             raise
         frappe.db.release_savepoint(savepoint)
