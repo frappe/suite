@@ -15,7 +15,9 @@ import hashlib
 import io
 import json
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import frappe
 import pycrdt
@@ -23,7 +25,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import get_datetime
 from PIL import Image
 
-from suite.drive._core.content import spec_for
+from suite.drive._core.content import clear_registry_cache, spec_for
 from suite.drive._core.nodes import views
 from suite.drive._core.roles import MANAGE, READ
 from suite.drive.framework import principals_for_principal
@@ -78,6 +80,35 @@ SOURCE_DOCTYPES = (
     "Presentation",
     "Slide",
 )
+
+
+# The two specs ticket 29 registers. `suite/hooks.py` keeps
+# `drive_content_types` empty until that release, so a test that reads a spec
+# registers them for its own block and drops them again.
+CONTENT_TYPES = ("suite.writer.drive.SPEC", "suite.sheets.drive.SPEC")
+
+
+@contextmanager
+def registered_content_types():
+    """Build the content registry from both specs, and leave nothing behind.
+
+    The registry is built from `drive_content_types` and cached per request,
+    so injecting the hook is the whole registration. The cache is dropped on
+    the way in and on the way out, and nothing is written.
+    """
+    real_get_hooks = frappe.get_hooks
+
+    def hooks(key=None, *args, **kwargs):
+        if key == "drive_content_types":
+            return list(CONTENT_TYPES)
+        return real_get_hooks(key, *args, **kwargs)
+
+    clear_registry_cache()
+    try:
+        with patch("frappe.get_hooks", hooks):
+            yield
+    finally:
+        clear_registry_cache()
 
 
 class InterruptedRun(RuntimeError):
@@ -670,10 +701,11 @@ class TestMigratedHistory(BuildContentCase):
         writer_blob = frappe.db.get_value("Drive Node Version", self.prefix + "a", "blob")
         sheet_blob = frappe.db.get_value("Drive Node Version", self.prefix + "snap", "blob")
         self.blobs.update((writer_blob, sheet_blob))
-        spec_for("Writer Document").restore_version(
-            self.prefix + "wdoc", io.BytesIO(target.read_blob(writer_blob))
-        )
-        spec_for("Sheet").restore_version(self.prefix + "sheet", io.BytesIO(target.read_blob(sheet_blob)))
+        with registered_content_types():
+            spec_for("Writer Document").restore_version(
+                self.prefix + "wdoc", io.BytesIO(target.read_blob(writer_blob))
+            )
+            spec_for("Sheet").restore_version(self.prefix + "sheet", io.BytesIO(target.read_blob(sheet_blob)))
 
         restored = frappe.db.get_value(
             "Writer Document", self.prefix + "wdoc", ["content", "html", "collab"], as_dict=True
