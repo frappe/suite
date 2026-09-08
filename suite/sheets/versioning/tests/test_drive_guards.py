@@ -79,8 +79,10 @@ class LegacyMutationGuards(unittest.TestCase):
 
     def test_op_log_truncation_still_covers_a_linked_sheet(self):
         # `Sheet Op Log` is a satellite, not a version. §14.6 does not migrate
-        # it and Drive prunes nothing, so skipping linked sheets here would let
-        # every migrated sheet's op log grow without a bound.
+        # it and Drive prunes nothing, so this job stays the only one that can
+        # reach a migrated sheet's backlog. It clears that backlog once; the
+        # frozen `min_keep_seq` then puts later ops out of its reach, and
+        # `tasks._iter_sheets` records why nothing here can pass them.
         with ExitStack() as stack:
             frappe = self._job_frappe(stack, [[("SH-1",)], None, [(0,)], []])
             tasks.truncate_op_log()

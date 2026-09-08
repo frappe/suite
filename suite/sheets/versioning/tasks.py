@@ -110,8 +110,16 @@ def _iter_sheets(*, legacy_only: bool = False):
 
     `truncate_op_log` takes every sheet. `Sheet Op Log` is a satellite, not a
     version: §10.7 leaves it app-owned, §14.6 does not migrate it, and Drive has
-    no job that prunes it. Skipping linked sheets there would let the op log of
-    every migrated sheet grow without a bound.
+    no job that prunes it, so this job stays the only one that can.
+
+    It prunes a linked sheet's backlog once and then stops. `min_keep_seq` is
+    the oldest surviving snapshot's seq, and a linked sheet takes no new
+    snapshot (`snapshots.maybe_snapshot` declines, `snapshots.create` refuses)
+    and loses no old one (`rollup_snapshots` skips it), so that seq is frozen.
+    Ops written after the link all sit above it and no `seq <` test reaches
+    them. Pruning them by the time backstop alone is not available here:
+    `ops.between`, `ops.for_cell`, and `timeline` still read a linked sheet's
+    op log, so those rows are still shown. Cleanup (36) owns the disposal.
 
     An unset Link is `NULL` or `''` — Frappe stores an empty Link as `''`
     (`frappe/model/base_document.py:624-627`) — so both spellings count as
