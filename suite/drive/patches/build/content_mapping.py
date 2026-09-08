@@ -153,6 +153,43 @@ def expected_node(
     }
 
 
+# Every refusal message reaches `drive-build-state.json` through `record_issue`,
+# and plan §13 forbids that file from holding comment text, body bytes, authors,
+# secrets, or blob contents. A mismatch on `html` or `content` would otherwise
+# copy two whole documents into it.
+OPAQUE_FIELDS = frozenset(
+    {
+        "html",
+        "content",
+        "settings",
+        "sheets_data",
+        "text",
+        "anchor",
+        "title",
+        "owner",
+        "modified_by",
+        "actor",
+        "author",
+        "author_name",
+        "resolved_by",
+        "mentions",
+        "user",
+    }
+)
+BOUNDED_VALUE_CHARS = 60
+
+
+def bounded(value, *, opaque: bool = False) -> str:
+    """Describe one field value without reproducing it."""
+    if value is None or isinstance(value, bool | int | float):
+        return repr(value)
+    text = value if isinstance(value, str) else repr(value)
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+    if opaque or len(text) > BOUNDED_VALUE_CHARS:
+        return f"<{len(text)} chars sha256:{digest}>"
+    return repr(text)
+
+
 def exact_fields(actual: dict, expected: dict, fields: tuple[str, ...], label: str) -> None:
     """Refuse the first immutable or semantic mismatch."""
     for field in fields:
@@ -171,6 +208,8 @@ def exact_fields(actual: dict, expected: dict, fields: tuple[str, ...], label: s
             except ValueError:
                 pass
         if left != right:
+            opaque = field in OPAQUE_FIELDS
             raise InvalidLegacyContent(
-                f"{label} field {field} is {actual.get(field)!r}, expected {expected.get(field)!r}"
+                f"{label} field {field} is {bounded(actual.get(field), opaque=opaque)}, "
+                f"expected {bounded(expected.get(field), opaque=opaque)}"
             )
