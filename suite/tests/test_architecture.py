@@ -75,10 +75,6 @@ BASELINE_DEBT = {
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.File",
             "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache",
             "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache#2",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#2",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#3",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#4",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.auto_delete_from_trash",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_deleted_files",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_download_archives",
@@ -147,19 +143,6 @@ BASELINE_DEBT = {
         # bytes, so proving that a migrated version restores means writing the
         # row the way Build writes it.
         ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
-    ),
-    **_debt(
-        "Suite migration",
-        "Remove when ticket 29 registers `drive_content_types` in `suite/hooks.py`; "
-        "the fixture then reads the hook instead of naming both specs.",
-        # The Build content site fixture has to run against the real Writer and
-        # Sheets adapters, and a spec is registered by its dotted path. `hooks.py`
-        # keeps `drive_content_types` empty until ticket 29, so until then the
-        # fixture supplies the two paths itself.
-        (
-            "suite/drive/tests/test_build_content.py|dotted-string|suite.sheets.drive.SPEC",
-            "suite/drive/tests/test_build_content.py|dotted-string|suite.writer.drive.SPEC",
-        ),
     ),
     **_debt(
         "Suite Slides",

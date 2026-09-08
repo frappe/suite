@@ -126,17 +126,21 @@ ignore_file_permissions = True
 # Dotted paths to `suite.drive.ContentTypeSpec` objects, one per content app.
 # Registration is staged: an app declares its spec in its own adoption ticket
 # and joins this list only once every row of its doctype carries a `node`
-# Link. Ticket 29 does that, after Build has written the links and checked
-# them. The `has_permission` and `permission_query_conditions` entries below
-# move to `suite.drive.framework.doc_has_permission` and `.doc_query_conditions`
-# in the same step, never before it.
+# Link. Ticket 29 does that here, together with the `has_permission` and
+# `permission_query_conditions` entries below. The three changes land in one
+# commit because the framework reads the registry and both hook maps.
 #
-# Writer declares `suite.writer.drive.SPEC` (ticket 17) and Slides declares
+# Writer declares `suite.writer.drive.SPEC` (ticket 17), Slides declares
 # `suite.slides.drive.SPEC` (ticket 18), and Sheets declares
-# `suite.sheets.drive.SPEC` (ticket 19); none of the three is listed here yet. While the list is empty Drive governs no
-# doctype: `refuse_governed_share` is a no-op, and `validate_content_registry`
-# inspects no `DocShare`, so a site with assigned Writer documents or shared
-# Presentations still migrates.
+# `suite.sheets.drive.SPEC` (ticket 19). All three are listed now.
+#
+# **What proves the links exist.** `validate_content_registry` runs on
+# `after_migrate`, and `suite.drive.patches.build` is the last line of
+# `patches.txt`, so Build has written every node link before the registry is
+# checked. `refuse_unlinked_documents` counts the rows that still have none
+# and stops the migration naming the doctype, so an incomplete Build cannot
+# leave a document nobody can read (§5.13, README "stage content registry
+# activation after required node links exist").
 #
 # On activation each doctype needs an open baseline role DocPerm, because a
 # Frappe permission hook can only deny (`frappe/permissions.py:244-246`);
@@ -160,7 +164,24 @@ ignore_file_permissions = True
 # it instead: nothing reads it, nothing may write it, and the Build value stays
 # for the §14.11 rollback. Ticket 29 has no column to drop first. `Sheet` does
 # the same for `title`, `trashed`, `trashed_on`, and `trashed_by`.
-drive_content_types = []
+#
+# **Three legacy guards stay past activation**, against §10.4's deletion list.
+# `Writer Template`, `Writer Version`, and `Sheet Snapshot` are Build sources
+# §14.10 drops at Cleanup, one release later, so their rows outlive activation
+# and Drive governs none of them: no `ContentTypeSpec` declares them, as a
+# doctype or as a satellite. Their role rows are open (`Suite User` on the two
+# Writer doctypes, `All` read on `Sheet Snapshot`), and a Frappe permission
+# hook can only deny, so deleting the guards would publish every migrated
+# template, version, and snapshot to every signed-in user. §10.4 is the
+# post-Cleanup end state, which is the same reading §10.7 states in as many
+# words: "App must delete ... `Writer Version` ... `Writer Template` ...
+# `filter_templates` and `template_has_permission`". Ticket 35 deletes the
+# guards with the doctypes they read.
+drive_content_types = [
+    "suite.writer.drive.SPEC",
+    "suite.slides.drive.SPEC",
+    "suite.sheets.drive.SPEC",
+]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
@@ -175,23 +196,25 @@ permission_query_conditions = {
     "Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
     "Drive Recent": "suite.drive.utils.overrides.filter_drive_recent",
     "Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
-    # slides
-    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
-    "Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
+    # slides — governed by Drive (§10.4). `Slide` is the deck's satellite and
+    # takes its rights from the deck's node.
+    "Presentation": "suite.drive.framework.doc_query_conditions",
+    "Slide": "suite.drive.framework.satellite_query_conditions",
     # writer
+    # `Writer Template` and `Writer Version` are Build sources until Cleanup,
+    # so their legacy guards stay; see the note above `drive_content_types`.
     "Writer Template": "suite.writer.overrides.filter_templates",
-    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
-    "Writer Document": "suite.writer.overrides.document_query_conditions",
+    "Writer Document": "suite.drive.framework.doc_query_conditions",
     "Writer Version": "suite.writer.overrides.version_query_conditions",
     # sheets
-    # Staged: becomes `suite.drive.framework.doc_query_conditions` at ticket 29.
-    "Sheet": "suite.sheets.permissions.sheet_query_conditions",
-    # Staged: `Sheet Op Log` becomes `suite.drive.framework.satellite_query_conditions`
-    # at ticket 29. `Sheet Snapshot` keeps its own guard past activation: §14.6
-    # migrates its rows into `Drive Node Version`, so it is a Build source until
-    # Cleanup drops the doctype (§14.10), and a satellite declaration would
-    # freeze rows Build still has to read.
-    "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
+    "Sheet": "suite.drive.framework.doc_query_conditions",
+    # `Sheet Op Log` and `Sheet Collab State` are the two satellites
+    # `suite.sheets.drive.SPEC` declares. `Sheet Snapshot` keeps its own guard
+    # past activation: §14.6 migrates its rows into `Drive Node Version`, so it
+    # is a Build source until Cleanup drops the doctype (§14.10), and a
+    # satellite declaration would freeze rows Build still has to read.
+    "Sheet Op Log": "suite.drive.framework.satellite_query_conditions",
+    "Sheet Collab State": "suite.drive.framework.satellite_query_conditions",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
@@ -213,21 +236,18 @@ has_permission = {
     "Drive Entity Activity Log": "suite.drive.api.permissions.activity_log_has_permission",
     "Drive Settings": "suite.drive.api.permissions.drive_settings_has_permission",
     "Drive User Invitation": "suite.drive.api.permissions.drive_invitation_has_permission",
-    # slides
-    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29,
-    # with `suite.drive.framework.satellite_*` added for the `Slide` satellite.
-    "Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
+    # slides — governed by Drive (§10.4).
+    "Presentation": "suite.drive.framework.doc_has_permission",
+    "Slide": "suite.drive.framework.satellite_has_permission",
     # writer
-    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29.
-    "Writer Document": "suite.writer.overrides.document_has_permission",
+    "Writer Document": "suite.drive.framework.doc_has_permission",
+    # Build sources until Cleanup; see the note above `drive_content_types`.
     "Writer Version": "suite.writer.overrides.version_has_permission",
     "Writer Template": "suite.writer.overrides.template_has_permission",
     # sheets
-    # Staged: becomes `suite.drive.framework.doc_has_permission` at ticket 29,
-    # with `suite.drive.framework.satellite_has_permission` added for the
-    # `Sheet Op Log` and `Sheet Collab State` satellites.
-    "Sheet": "suite.sheets.permissions.sheet_has_permission",
-    "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
+    "Sheet": "suite.drive.framework.doc_has_permission",
+    "Sheet Op Log": "suite.drive.framework.satellite_has_permission",
+    "Sheet Collab State": "suite.drive.framework.satellite_has_permission",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
@@ -289,8 +309,9 @@ doc_events = {
     # both permission hooks (frappe/permissions.py:214-216 and
     # frappe/database/query.py:1739-1742). A governed doctype therefore
     # carries no share at all. Deleting a row is left alone, so a legacy share
-    # can still be cleaned up. A no-op while `drive_content_types` is empty,
-    # which is what keeps Desk assignment working until ticket 29.
+    # can still be cleaned up. Live from ticket 29: the three content doctypes
+    # and their satellites now refuse a new share, and `Writer Template`,
+    # `Writer Version`, and `Sheet Snapshot` still take one.
     "DocShare": {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },
@@ -301,28 +322,13 @@ doc_events = {
         "on_update": "suite.drive.utils.clear_user_group_cache",
         "on_trash": "suite.drive.utils.clear_user_group_cache",
     },
-    "Presentation": {
-        # Legacy title and trash mirroring onto the backing Drive `File`. A deck
-        # created through Drive has no `File`, so `sync_content_file` returns at
-        # once (`overrides/file.py:561-563`). A deck Build linked still has one
-        # until §14.10 removes it at Cleanup, so there the handler runs on and
-        # renames the `File` to `doc.get_title()` (`overrides/file.py:607-613`).
-        # That is a no-op only because `title` is frozen on both sides: it is in
-        # `legacy_fields`, so `refuse_legacy_field_write` refuses every write to
-        # it and the name cannot drift. §10.4 deletes these two entries at
-        # activation.
-        "on_update": ["suite.drive.overrides.file.sync_content_file"],
-        "on_trash": ["suite.drive.overrides.file.sync_content_file"],
-    },
-    "Sheet": {
-        # Same content-app wiring as Presentation: on_update mirrors title +
-        # soft-trash onto the backing Drive File, on_trash removes it on hard
-        # delete. Sheets routes its rename and trash/restore through doc.save so
-        # these fire; the high-frequency cell-data autosave stays on db.set_value
-        # (Drive doesn't track cell data) and deliberately fires nothing.
-        "on_update": ["suite.drive.overrides.file.sync_content_file"],
-        "on_trash": ["suite.drive.overrides.file.sync_content_file"],
-    },
+    # `Presentation` and `Sheet` mirrored their title and trash state onto the
+    # backing Drive `File` here. §10.4 deletes both entries at activation and
+    # ticket 29 did: the node is the only truth (§10.2), `title`, `trashed`,
+    # `trashed_on`, and `trashed_by` are frozen `legacy_fields` no caller may
+    # write, and a governed row is trashed through Drive. The `File` row Build
+    # copied stays untouched until §14.10 drops it, which is what the §14.11
+    # rollback needs.
     "User": {
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious

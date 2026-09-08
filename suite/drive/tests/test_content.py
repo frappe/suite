@@ -1016,7 +1016,54 @@ class TestContentContract(UnitTestCase):
                 framework.validate_content_registry()
             self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
             db.exists.return_value = False
+            db.count.return_value = 0
             framework.validate_content_registry()
+
+    # §14: activation waits for Build's links
+
+    @contextmanager
+    def _counting(self, unlinked: dict):
+        """Register a spec with one satellite, and answer `count` from `unlinked`."""
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        with (
+            registered(declared),
+            patch("suite.drive._core.content.validate_registry"),
+            stub_db(MagicMock()) as db,
+        ):
+            db.exists.return_value = False
+            db.count.side_effect = lambda doctype, filters=None: unlinked.get(doctype, 0)
+            yield db
+
+    def test_boot_validation_refuses_a_document_that_build_did_not_link(self):
+        """§5.13: a document with no node cannot exist, so activation stops.
+
+        The count is read on the doctype, not on one row at a time, because
+        the migration that produced it is the last moment it can be seen.
+        """
+        with self._counting({CONTENT_DOCTYPE: 3}), self.assertRaises(DriveConflict) as raised:
+            framework.validate_content_registry()
+        self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
+        self.assertIn("3", str(raised.exception))
+
+    def test_boot_validation_refuses_a_satellite_that_names_no_document(self):
+        with self._counting({SATELLITE_DOCTYPE: 2}), self.assertRaises(DriveConflict) as raised:
+            framework.validate_content_registry()
+        self.assertIn(SATELLITE_DOCTYPE, str(raised.exception))
+
+    def test_boot_validation_accepts_a_fully_linked_type(self):
+        with self._counting({}) as db:
+            framework.validate_content_registry()
+        self.assertEqual(
+            [call.args[0] for call in db.count.call_args_list], [CONTENT_DOCTYPE, SATELLITE_DOCTYPE]
+        )
+
+    def test_the_link_check_reads_the_declared_field_of_each_side(self):
+        with self._counting({}) as db:
+            framework.refuse_unlinked_documents()
+        self.assertEqual(
+            [call.kwargs.get("filters") or call.args[1] for call in db.count.call_args_list],
+            [{"node": ["is", "not set"]}, {"content": ["is", "not set"]}],
+        )
 
 
 class TestTheAppFacingCheck(unittest.TestCase):
