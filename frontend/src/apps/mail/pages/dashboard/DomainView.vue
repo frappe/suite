@@ -5,9 +5,16 @@
 				:title="domain.data.name"
 				:badge-label="badge.label"
 				:badge-theme="badge.theme"
-				:meta="[domain.data.description, addedAgo]"
 			>
 				<template #icon><Globe class="h-5 w-5" /></template>
+				<template #meta>
+					<template v-for="(entry, index) in metaEntries" :key="entry.text">
+						<span v-if="index" class="text-ink-gray-4">·</span>
+						<Tooltip :text="entry.tooltip" :disabled="!entry.tooltip">
+							<span class="truncate" :class="{ 'cursor-help': entry.tooltip }">{{ entry.text }}</span>
+						</Tooltip>
+					</template>
+				</template>
 				<template #actions>
 					<Button :label="__('Edit')" @click="showEdit = true" />
 					<Button
@@ -33,32 +40,6 @@
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
 			</div>
-			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-				<DashboardCard :title="__('General Information')">
-					<div>
-						<InformationField :label="__('Description')" :value="domain.data.description" />
-						<InformationField
-							:label="__('Catch-All Address')"
-							:value="domain.data.catch_all_address || __('None')"
-						/>
-						<InformationField
-							:label="__('Sub-addressing')"
-							:value="domain.data.sub_addressing ? __('Enabled') : __('Disabled')"
-						/>
-						<InformationField :label="__('Added')" :value="createdAt" />
-					</div>
-				</DashboardCard>
-				<DashboardCard :title="__('Verification')">
-					<div>
-						<InformationField :label="__('Status')">
-							<Badge :label="badge.label" :theme="badge.theme" />
-						</InformationField>
-						<InformationField :label="__('Required Records')" :value="requiredRecords" />
-						<InformationField :label="__('Last Verified')" :value="lastVerified" />
-						<InformationField :label="__('Mail Flow')" :value="mailFlow" />
-					</div>
-				</DashboardCard>
-			</div>
 			<div class="rounded-4 border">
 				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
@@ -80,7 +61,7 @@
 import { computed, ref } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
-import { Badge, Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
@@ -89,8 +70,6 @@ import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { type DomainStatus, domainStatusBadge } from '@/apps/mail/utils/domainStatus'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
 import EditDomainModal from '@/apps/mail/components/Modals/EditDomainModal.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -248,33 +227,29 @@ const confirmDialogOptions = computed(() => {
 
 const isEnabled = computed(() => !!(domain.data as DomainData | undefined)?.is_enabled)
 
-const createdAt = computed(() => {
-	const at = (domain.data as DomainData | undefined)?.created_at
-	return at ? formatDateTime(at) : undefined
-})
-
-// "3 of 4" reads the state at a glance; the tables below say which record is still missing.
-const requiredRecords = computed(() => {
-	const required = domainRecords.value.filter((record) => record.is_mandatory)
-	const verified = required.filter((record) => record.is_verified).length
-	return __('{0} of {1} verified', [verified, required.length])
-})
-
-const mailFlow = computed(() => {
+// Facts under the domain name: the description, when it was added (exact time on hover), and
+// the two delivery settings, each explained on hover since a bare "Sub-addressing on" says little.
+const metaEntries = computed(() => {
 	const data = domain.data as DomainData | undefined
-	if (data?.status === 'Active') return __('Sending and receiving')
-	if (data?.status === 'Disabled') return __('Stopped: domain disabled')
-	return __('Stopped until the required records verify')
-})
-
-const lastVerified = computed(() => {
-	const at = (domain.data as DomainData | undefined)?.last_verified_at
-	return at ? fromNow(at) : __('Never')
-})
-
-const addedAgo = computed(() => {
-	const createdAt = (domain.data as DomainData | undefined)?.created_at
-	return createdAt ? __('Added {0}', [fromNow(createdAt)]) : undefined
+	const entries: { text: string; tooltip?: string }[] = []
+	if (data?.description) entries.push({ text: data.description })
+	if (data?.created_at) {
+		entries.push({ text: __('Added {0}', [fromNow(data.created_at)]), tooltip: formatDateTime(data.created_at) })
+	}
+	entries.push(
+		data?.catch_all_address
+			? {
+					text: __('Catch-all: {0}', [data.catch_all_address]),
+					tooltip: __('Mail to an address that does not exist on this domain is delivered here.'),
+				}
+			: { text: __('No catch-all'), tooltip: __('Mail to an address that does not exist on this domain is rejected.') },
+	)
+	entries.push(
+		data?.sub_addressing
+			? { text: __('Sub-addressing on'), tooltip: __('Mail to user+tag@{0} reaches user@{0}.', [data?.name || '']) }
+			: { text: __('Sub-addressing off'), tooltip: __('Mail to user+tag@{0} is rejected.', [data?.name || '']) },
+	)
+	return entries
 })
 
 const exportOptions = [
