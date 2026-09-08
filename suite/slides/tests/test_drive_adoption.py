@@ -1427,10 +1427,16 @@ class TestSlidesInDrive(IntegrationTestCase):
 
     def test_a_linked_deck_refuses_every_legacy_method(self):
         """A linked deck never falls back to the `File`: that would be a way
-        around `Drive Grant` (§1)."""
+        around `Drive Grant` (§1).
+
+        `create_presentation(duplicate_from=...)` and `create_presentation(
+        template=...)` are not in this list any more: ticket 29 wired
+        `create_presentation` itself onto `drive.create_document(from_node=...)`,
+        so naming a linked deck as the source is the primary path now, not a
+        legacy one. `TestSlidesInDrive` covers that call directly.
+        """
         node = self._deck(title="No legacy writes")
         docname = self._docname(node)
-        template = self._deck(title="No legacy template", is_template=True)
 
         for legacy in (
             lambda: api.save_base64_image("data:image/png;base64,AAAA", docname, "img"),
@@ -1439,8 +1445,6 @@ class TestSlidesInDrive(IntegrationTestCase):
             lambda: api.is_public_presentation(docname),
             lambda: api.get_webp_doc(docname, {}),
             lambda: api.optimize_images(docname),
-            lambda: api.create_presentation(duplicate_from=docname),
-            lambda: api.create_presentation(template=self._docname(template)),
         ):
             with self.subTest(legacy=legacy), self.assertRaises(frappe.ValidationError):
                 legacy()
