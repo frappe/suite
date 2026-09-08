@@ -112,14 +112,18 @@ def _domain_row(domain: dict) -> dict:
 def _dns_record_row(record: dict) -> dict:
     """The record as Suite Cloud's Mail Domain holds it: relative host, raw value, SRV fields apart."""
 
+    # The integer fields default to 0 on Suite Cloud; they only mean something for MX and SRV.
+    record_type = record.get("type")
+    has_priority = record_type in ("MX", "SRV")
+    has_srv_fields = record_type == "SRV"
     return {
-        "type": record.get("type"),
+        "type": record_type,
         "host": record.get("host") or "@",
         "fqdn": record.get("fqdn") or record.get("host"),
         "value": record.get("value") or "",
-        "priority": record.get("priority"),
-        "weight": record.get("weight"),
-        "port": record.get("port"),
+        "priority": record.get("priority") if has_priority else None,
+        "weight": record.get("weight") if has_srv_fields else None,
+        "port": record.get("port") if has_srv_fields else None,
         "ttl": record.get("ttl"),
         "category": record.get("category"),
         "group": record.get("group"),

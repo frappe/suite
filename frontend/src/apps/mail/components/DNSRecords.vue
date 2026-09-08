@@ -68,17 +68,19 @@ const rows = computed(() =>
 	records.map((record, index) => ({ ...record, key: `${record.type}-${record.fqdn}-${index}` })),
 )
 
-// Priority, weight and port only mean something for MX and SRV records, so a table without them
-// (SPF, DKIM, DMARC) leaves those columns out instead of showing a column of dashes.
+// Priority belongs to MX and SRV records and weight and port to SRV alone, so a table of TXT
+// records (SPF, DKIM, DMARC) leaves those columns out instead of showing a column of dashes.
 const columns = computed(() => {
-	const has = (key: string) => records.some((record) => record[key] !== null && record[key] !== undefined)
+	const types = new Set(records.map((record) => record.type))
+	const hasPriority = types.has('MX') || types.has('SRV')
+	const hasSrv = types.has('SRV')
 	return [
 		{ label: __('Type'), key: 'type', width: '8%' },
 		{ label: __('Host'), key: 'host', width: '18%' },
 		{ label: __('Value'), key: 'value' },
-		...(has('priority') ? [{ label: __('Priority'), key: 'priority', width: '8%' }] : []),
-		...(has('weight') ? [{ label: __('Weight'), key: 'weight', width: '8%' }] : []),
-		...(has('port') ? [{ label: __('Port'), key: 'port', width: '8%' }] : []),
+		...(hasPriority ? [{ label: __('Priority'), key: 'priority', width: '8%' }] : []),
+		...(hasSrv ? [{ label: __('Weight'), key: 'weight', width: '8%' }] : []),
+		...(hasSrv ? [{ label: __('Port'), key: 'port', width: '8%' }] : []),
 		{ label: __('TTL'), key: 'ttl', width: '8%' },
 		{ label: __('Status'), key: 'is_verified', width: '12%' },
 	]

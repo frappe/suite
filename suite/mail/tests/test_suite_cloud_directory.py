@@ -139,6 +139,7 @@ class TestDomains(SuiteCloudTestCase):
         )
         spf, srv = domain["dns_records"]
         self.assertEqual((spf["host"], spf["fqdn"], spf["is_mandatory"]), ("@", DOMAIN, True))
+        self.assertEqual((spf["priority"], spf["weight"], spf["port"]), (None, None, None))
         self.assertEqual(
             (srv["host"], srv["value"], srv["priority"], srv["weight"], srv["port"]),
             ("_imaps._tcp", "mail.blr.example.test.", 0, 1, 993),
