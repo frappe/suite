@@ -61,7 +61,7 @@ import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
-type DNSRecord = Record<string, string>
+type DNSRecord = Record<string, string | number | boolean | null | undefined>
 type RecordGroup = { key: string; label: string; description: string; is_mandatory: boolean }
 
 type DomainData = {

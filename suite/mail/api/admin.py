@@ -110,23 +110,36 @@ def _domain_row(domain: dict) -> dict:
 
 
 def _dns_record_row(record: dict) -> dict:
-    """The shape the domain page renders: one line per record, SRV data joined like a zone file."""
+    """The record as Suite Cloud's Mail Domain holds it: relative host, raw value, SRV fields apart."""
 
-    value = record.get("value") or ""
-    if record.get("type") == "SRV":
-        value = f"{record.get('priority') or 0} {record.get('weight') or 0} {record.get('port') or 0} {value}"
     return {
-        "name": record.get("fqdn") or record.get("host"),
-        "ttl": record.get("ttl"),
-        "class": "IN",
         "type": record.get("type"),
-        "value": value,
+        "host": record.get("host") or "@",
+        "fqdn": record.get("fqdn") or record.get("host"),
+        "value": record.get("value") or "",
         "priority": record.get("priority"),
+        "weight": record.get("weight"),
+        "port": record.get("port"),
+        "ttl": record.get("ttl"),
         "category": record.get("category"),
         "group": record.get("group"),
-        "mandatory": bool(record.get("is_mandatory")),
-        "verified": bool(record.get("is_verified")),
+        "is_mandatory": bool(record.get("is_mandatory")),
+        "is_verified": bool(record.get("is_verified")),
+        "last_checked_at": to_utc_z(record.get("last_checked_at")),
     }
+
+
+def _zone_rdata(record: dict) -> str:
+    """The record's data the way a zone file line carries it."""
+
+    value = record["value"]
+    if record["type"] == "MX":
+        return f"{record.get('priority') or 10} {value}"
+    if record["type"] == "SRV":
+        return f"{record.get('priority') or 0} {record.get('weight') or 0} {record.get('port') or 0} {value}"
+    if record["type"] == "TXT":
+        return json.dumps(value)
+    return value
 
 
 @frappe.whitelist()
@@ -213,12 +226,9 @@ def get_domain_dns_zone(domain_id: str) -> str:
     check_admin_permission("view domains")
     lines = []
     for record in _domain_records(domain_id):
-        value = record["value"]
-        if record["type"] == "MX":
-            value = f"{record.get('priority') or 10} {value}"
-        elif record["type"] == "TXT":
-            value = json.dumps(value)
-        lines.append(f"{record['name']}.\t{record.get('ttl') or ''}\tIN\t{record['type']}\t{value}")
+        lines.append(
+            f"{record['fqdn']}.\t{record.get('ttl') or ''}\tIN\t{record['type']}\t{_zone_rdata(record)}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -227,7 +237,9 @@ def get_domain_dns_csv(domain_id: str) -> str:
     check_admin_permission("view domains")
     output = io.StringIO()
     writer = csv.DictWriter(
-        output, fieldnames=["name", "ttl", "class", "type", "value"], extrasaction="ignore"
+        output,
+        fieldnames=["type", "host", "fqdn", "value", "priority", "weight", "port", "ttl"],
+        extrasaction="ignore",
     )
     writer.writeheader()
     for record in _domain_records(domain_id):

@@ -137,9 +137,12 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual(
             [g["key"] for g in domain["dns_record_groups"]], ["authentication_records", "discovery_records"]
         )
-        self.assertEqual(domain["dns_records"][0]["name"], DOMAIN)
-        self.assertEqual(domain["dns_records"][1]["value"], "0 1 993 mail.blr.example.test.")
-        self.assertTrue(domain["dns_records"][0]["mandatory"])
+        spf, srv = domain["dns_records"]
+        self.assertEqual((spf["host"], spf["fqdn"], spf["is_mandatory"]), ("@", DOMAIN, True))
+        self.assertEqual(
+            (srv["host"], srv["value"], srv["priority"], srv["weight"], srv["port"]),
+            ("_imaps._tcp", "mail.blr.example.test.", 0, 1, 993),
+        )
 
         self.assertIn(
             f"_imaps._tcp.{DOMAIN}.\t300\tIN\tSRV\t0 1 993 mail.blr.example.test.",
