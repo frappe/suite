@@ -9,11 +9,17 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveOverQuota
+from suite.drive._core.access import grant
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+    DriveOverQuota,
+)
 from suite.drive._core.nodes import create_file, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit
-from suite.drive._core.roles import EDIT
+from suite.drive._core.roles import EDIT, READ
 from suite.drive._core.roots import create_root
 from suite.drive._core.versions import (
     DEFAULT_LADDER,
@@ -25,6 +31,7 @@ from suite.drive._core.versions import (
     delete_version,
     label_version,
     list_versions,
+    read_version,
     restore_version,
     take_version,
     thin,
@@ -226,6 +233,43 @@ class TestVersionWorkflows(IntegrationTestCase):
         blob = frappe.get_doc("File Blob", blob_name)
         with get_driver(blob.driver).read(blob.key, is_private=bool(blob.is_private)) as stream:
             return stream.read()
+
+    def test_a_stored_version_is_read_back_in_process_by_whoever_may_read_it(self):
+        """`read_version` is what an app publishes its own history through.
+
+        `version_content_url` mints a signed URL for a browser (§6.8). An app
+        that wrote the bytes needs them in the process instead, so this answers
+        a stream and the caller reads it.
+        """
+        node = self._file(b"head")
+        take_version(self.admin, node, kind="named", label="First")
+
+        with read_version(self.admin, node, 1) as stream:
+            self.assertEqual(stream.read(), b"head")
+
+    def test_a_stranger_is_not_told_the_version_exists(self):
+        """The node is checked, not the version row: a version carries no grant
+        of its own (§9.1). Below Read §5.4 refuses to say the node is there."""
+        node = self._file(b"head")
+        take_version(self.admin, node, kind="named", label="First")
+        stranger = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
+
+        with self.assertRaises(DriveNotFound):
+            read_version(stranger, node, 1)
+
+    def test_a_reader_is_given_the_bytes(self):
+        node = self._file(b"head")
+        take_version(self.admin, node, kind="named", label="First")
+        grant(node, OTHER, READ, self.admin)
+        reader = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
+
+        with read_version(reader, node, 1) as stream:
+            self.assertEqual(stream.read(), b"head")
+
+    def test_a_sequence_that_was_never_taken_is_refused(self):
+        node = self._file(b"head")
+        with self.assertRaises(frappe.ValidationError):
+            read_version(self.admin, node, 7)
 
     def test_take_list_label_pin_delete_and_immutable_bytes(self):
         node = self._file(b"head")
