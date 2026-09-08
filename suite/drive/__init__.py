@@ -62,6 +62,16 @@ None of them commits: they join the caller's transaction, and the caller
 decides when to commit. A caller that must not keep a reservation on failure
 therefore needs no compensation step of its own.
 
+A caller that opens its own savepoint around a Drive workflow rolls it back
+through `rollback_savepoint(savepoint, error)`, not through
+`frappe.db.rollback(save_point=...)`. Drive workflows take `FOR UPDATE` locks,
+so any of them can be the InnoDB deadlock victim, and InnoDB rolls the victim's
+whole transaction back including its savepoints. The bare call then fails with
+"SAVEPOINT does not exist" and that second error replaces the
+`QueryDeadlockError` the caller has to retry on. The helper keeps the original
+error and resets the handle with a full rollback; every other failure keeps the
+narrow rollback unchanged. This is the same helper every Drive workflow uses.
+
 Ordering, which callers must respect to stay deadlock-free: each workflow
 locks the `Drive Root` row (through its root pair) before the
 `Drive Storage Reservation` row. Drive itself locks the `User` row before the
@@ -126,7 +136,7 @@ from suite.drive._core.content import (
     DriveContent,
     Satellite,
 )
-from suite.drive._core.errors import DriveError
+from suite.drive._core.errors import DriveError, rollback_savepoint
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -340,6 +350,7 @@ __all__ = (
     "refuse_shared_row",
     "release_storage_reservation",
     "resolve_share_link",
+    "rollback_savepoint",
     "take_version",
     "touch",
 )

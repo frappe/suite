@@ -589,6 +589,7 @@ class TestArchitecture(unittest.TestCase):
                 "refuse_shared_row",
                 "release_storage_reservation",
                 "resolve_share_link",
+                "rollback_savepoint",
                 "take_version",
                 "touch",
             ),
