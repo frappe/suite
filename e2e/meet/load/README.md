@@ -84,10 +84,32 @@ cleanup outcome.
 ## Progressive Scenarios
 
 Admission plus idle hold, uniform synthetic media, rotating audio, representative
-camera, and two-screen measurement are implemented. The remaining representative
-suite includes one Recorder Endpoint. Pinned representative video, actual
-delivered video constraints, and recorder support must be
-implemented and measured before those properties are claimed.
+camera, two-screen, and Recorder Endpoint measurement are implemented. Pinned
+representative video and actual delivered video constraints remain before those
+properties are claimed.
+
+The focused Recorder Endpoint measurement uses the existing containerized recorder
+integration service because recorder capture requires Linux Xvfb and PulseAudio:
+
+```bash
+yarn --cwd suite/meet/recorder-server measure:recorder
+```
+
+It starts only Compose-owned SFU and recorder integration containers, uses an
+ephemeral proof-bound Recording Grant, and composes four human Participant
+Connections: two alternating synthetic talkers with one camera each, plus two screen
+publishers. The Recorder Endpoint attaches through production WebRTC and is excluded
+from the human participant count. The ignored `integration/output/shared-stage`
+report records grant-to-ready and ready-to-capture latency, capture and encoded
+duration, interruption count, artifact size, ffprobe video resolution/fps and audio
+presence, full decode warnings, content samples, and process cleanup.
+
+This is designed as an honest local integration scenario, not a production result. Deterministic
+publishers use development-only plain RTP ingress, and the fixture drives current
+recorder classes rather than the HTTP control endpoint because that endpoint's stop
+path finalizes through authenticated Frappe/Drive callbacks unavailable in this
+standalone harness. SFU attachment, browser composition, capture, and the artifact
+are real and are not mocked when the scenario completes successfully.
 
 ## Verification
 

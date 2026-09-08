@@ -13,7 +13,8 @@
 		"test": "vitest run",
 		"test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
 		"test:integration": "./integration/run.sh",
-		"test:integration:shared-stage": "./integration/run.sh shared-stage"
+		"test:integration:shared-stage": "./integration/run.sh shared-stage",
+		"measure:recorder": "./integration/run.sh shared-stage"
 	},
 	"packageManager": "yarn@1.22.22",
 	"license": "AGPL-3.0",

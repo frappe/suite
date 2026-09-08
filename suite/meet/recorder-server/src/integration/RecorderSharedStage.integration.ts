@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import jwt from 'jsonwebtoken';
 import { io, type Socket } from 'socket.io-client';
 import { CaptureWorker } from '../CaptureWorker.js';
+import { FfmpegMediaTools } from '../Finalizer.js';
 import {
 	ChromiumRendererBridge,
 	type RendererLifecycleEvent,
@@ -19,7 +20,6 @@ const secret = process.env.JWT_SECRET ?? 'integration-secret';
 const site = 'integration.local';
 const room = 'adr-0011';
 const job = 'integration-shared-stage';
-const producerId = 'producer@example.com';
 const started = performance.now();
 const socketTimeoutMs = 10_000;
 
@@ -221,128 +221,156 @@ function recordingGrant(publicJwk: PublicJwk): string {
 	);
 }
 
-async function startProducer(): Promise<{
-	socket: Socket;
+async function startProducers(): Promise<{
+	sockets: Socket[];
 	processes: ChildProcess[];
 	producerIds: string[];
 }> {
-	const now = Math.floor(Date.now() / 1000);
-	const token = jwt.sign(
-		{
-			user_id: producerId,
-			user_name: 'Pattern Producer',
-			meeting_id: room,
-			is_host: true,
-			scope: 'full',
-			site,
-			iat: now,
-			exp: now + 600,
-		},
-		secret,
-	);
-	const socket = io(sfuOrigin, {
-		auth: { token },
-		transports: ['websocket'],
-		reconnection: false,
-		timeout: socketTimeoutMs,
-	});
-	await connect(socket);
-	await request(socket, 'join_room', {
-		roomId: room,
-		connectionId: 'producer-connection',
-		userData: { name: 'Pattern Producer', userId: producerId },
-		mediaState: { audio_enabled: true, video_enabled: true },
-	});
-	const audioTransport = await request<PlainTransport>(
-		socket,
-		'create_plain_transport',
-		{},
-	);
-	const videoTransport = await request<PlainTransport>(
-		socket,
-		'create_plain_transport',
-		{},
-	);
-	const audio = await request<Producer>(socket, 'create_producer', {
-		transportId: audioTransport.id,
-		kind: 'audio',
-		rtpParameters: {
-			codecs: [
-				{
-					mimeType: 'audio/opus',
-					clockRate: 48000,
-					payloadType: 111,
-					channels: 2,
+	const profiles: Array<{
+		video: 'webcam' | 'screen';
+		audio?: string;
+	}> = [
+		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,0\\,2.2)' },
+		{ video: 'webcam', audio: 'between(mod(t\\,4)\\,1.8\\,4)' },
+		{ video: 'screen' },
+		{ video: 'screen' },
+	] as const;
+	const sockets: Socket[] = [];
+	const processes: ChildProcess[] = [];
+	const producerIds: string[] = [];
+	for (const [index, profile] of profiles.entries()) {
+		const userId = `load-${index + 1}@example.invalid`;
+		const now = Math.floor(Date.now() / 1000);
+		const token = jwt.sign(
+			{
+				user_id: userId,
+				user_name: `Load ${index + 1}`,
+				meeting_id: room,
+				is_host: index === 0,
+				scope: 'full',
+				site,
+				iat: now,
+				exp: now + 600,
+			},
+			secret,
+		);
+		const socket = io(sfuOrigin, {
+			auth: { token },
+			transports: ['websocket'],
+			reconnection: false,
+			timeout: socketTimeoutMs,
+		});
+		await connect(socket);
+		sockets.push(socket);
+		await request(socket, 'join_room', {
+			roomId: room,
+			connectionId: `producer-${index + 1}`,
+			userData: { name: `Load ${index + 1}`, userId },
+			mediaState: {
+				audio_enabled: Boolean(profile.audio),
+				video_enabled: true,
+			},
+		});
+		if (profile.audio) {
+			const transport = await request<PlainTransport>(
+				socket,
+				'create_plain_transport',
+				{},
+			);
+			const audio = await request<Producer>(socket, 'create_producer', {
+				transportId: transport.id,
+				kind: 'audio',
+				rtpParameters: {
+					codecs: [
+						{
+							mimeType: 'audio/opus',
+							clockRate: 48000,
+							payloadType: 111,
+							channels: 2,
+						},
+					],
+					encodings: [{ ssrc: 111111 + index }],
 				},
-			],
-			encodings: [{ ssrc: 111111 }],
-		},
-		appData: { source: 'mic' },
-	});
-	const video = await request<Producer>(socket, 'create_producer', {
-		transportId: videoTransport.id,
-		kind: 'video',
-		rtpParameters: {
-			codecs: [{ mimeType: 'video/VP8', clockRate: 90000, payloadType: 96 }],
-			encodings: [{ ssrc: 222222 }],
-		},
-		appData: { source: 'webcam' },
-	});
-	const processes = [
-		startFfmpeg([
-			'-re',
-			'-f',
-			'lavfi',
-			'-i',
-			'sine=frequency=997:sample_rate=48000',
-			'-ac',
-			'2',
-			'-c:a',
-			'libopus',
-			'-b:a',
-			'96k',
-			'-payload_type',
-			'111',
-			'-ssrc',
-			'111111',
-			'-f',
-			'rtp',
-			`rtp://${mediaHost}:${audioTransport.port}?pkt_size=1200`,
-		]),
-		startFfmpeg([
-			'-re',
-			'-f',
-			'lavfi',
-			'-i',
-			"color=c=red:size=640x360:rate=30,drawbox=color=blue:t=fill:enable='gte(mod(t\\,2)\\,1)'",
-			'-c:v',
-			'libvpx',
-			'-deadline',
-			'realtime',
-			'-cpu-used',
-			'8',
-			'-g',
-			'30',
-			'-b:v',
-			'800k',
-			'-payload_type',
-			'96',
-			'-ssrc',
-			'222222',
-			'-f',
-			'rtp',
-			`rtp://${mediaHost}:${videoTransport.port}?pkt_size=1200`,
-		]),
-	];
+				appData: { source: 'mic' },
+			});
+			producerIds.push(audio.id);
+			processes.push(
+				startFfmpeg([
+					'-re',
+					'-f',
+					'lavfi',
+					'-i',
+					'sine=frequency=997:sample_rate=48000',
+					'-af',
+					`volume='if(${profile.audio}\\,0.7\\,0)':eval=frame`,
+					'-ac',
+					'2',
+					'-c:a',
+					'libopus',
+					'-b:a',
+					'96k',
+					'-payload_type',
+					'111',
+					'-ssrc',
+					String(111111 + index),
+					'-f',
+					'rtp',
+					`rtp://${mediaHost}:${transport.port}?pkt_size=1200`,
+				]),
+			);
+		}
+		const transport = await request<PlainTransport>(
+			socket,
+			'create_plain_transport',
+			{},
+		);
+		const video = await request<Producer>(socket, 'create_producer', {
+			transportId: transport.id,
+			kind: 'video',
+			rtpParameters: {
+				codecs: [{ mimeType: 'video/VP8', clockRate: 90000, payloadType: 96 }],
+				encodings: [{ ssrc: 222222 + index }],
+			},
+			appData: { source: profile.video },
+		});
+		producerIds.push(video.id);
+		const size = '320x180';
+		processes.push(
+			startFfmpeg([
+				'-re',
+				'-f',
+				'lavfi',
+				'-i',
+				`testsrc2=size=${size}:rate=2`,
+				'-c:v',
+				'libvpx',
+				'-deadline',
+				'realtime',
+				'-cpu-used',
+				'8',
+				'-g',
+				'2',
+				'-b:v',
+				'300k',
+				'-payload_type',
+				'96',
+				'-ssrc',
+				String(222222 + index),
+				'-f',
+				'rtp',
+				`rtp://${mediaHost}:${transport.port}?pkt_size=1200`,
+			]),
+		);
+	}
 	await new Promise((resolve) => setTimeout(resolve, 1500));
 	assertProducerProcessesAlive(processes, 'recorder startup');
-	return { socket, processes, producerIds: [audio.id, video.id] };
+	return { sockets, processes, producerIds };
 }
 
 await rm(scenarioRoot, { recursive: true, force: true });
 await mkdir(scenarioRoot, { recursive: true });
 const events: RendererLifecycleEvent[] = [];
-let producer: Awaited<ReturnType<typeof startProducer>> | undefined;
+let producer: Awaited<ReturnType<typeof startProducers>> | undefined;
 let bridge: ChromiumRendererBridge | undefined;
 let worker: CaptureWorker | undefined;
 const renderer = (): ChromiumRendererBridge => {
@@ -350,27 +378,37 @@ const renderer = (): ChromiumRendererBridge => {
 	return bridge;
 };
 try {
-	producer = await startProducer();
-	worker = new CaptureWorker(job, {
-		dataRoot: scenarioRoot,
-		display: 93,
-		segmentSeconds: 2,
-		ffmpeg: '/usr/bin/ffmpeg',
-		xvfb: '/usr/bin/Xvfb',
-		pulseaudio: '/usr/bin/pulseaudio',
-		pactl: '/usr/bin/pactl',
-		gracefulTimeoutMs: 10_000,
-		recoveryTimeoutMs: 20_000,
-		onCapturePreparing: (epoch) => renderer().prepareCapture(job, 0, epoch),
-		onCaptureLaunched: (launch) =>
-			renderer().captureStarted(
-				job,
-				0,
-				launch.epoch,
-				launch.capture_started_at,
+	producer = await startProducers();
+	worker = new CaptureWorker(
+		job,
+		{
+			dataRoot: scenarioRoot,
+			display: 93,
+			segmentSeconds: 4,
+			ffmpeg: '/usr/bin/ffmpeg',
+			xvfb: '/usr/bin/Xvfb',
+			pulseaudio: '/usr/bin/pulseaudio',
+			pactl: '/usr/bin/pactl',
+			gracefulTimeoutMs: 10_000,
+			recoveryTimeoutMs: 20_000,
+			onCapturePreparing: (epoch) => renderer().prepareCapture(job, 0, epoch),
+			onCaptureLaunched: (launch) =>
+				renderer().captureStarted(
+					job,
+					0,
+					launch.epoch,
+					launch.capture_started_at,
+				),
+			onCaptureAborted: (epoch) => renderer().cancelCapture(job, 0, epoch),
+		},
+		{
+			tools: new FfmpegMediaTools(
+				'/usr/bin/ffmpeg',
+				'/usr/bin/ffprobe',
+				20_000,
 			),
-		onCaptureAborted: (epoch) => renderer().cancelCapture(job, 0, epoch),
-	});
+		},
+	);
 	await worker.initialize();
 	const workerEnvironment = worker.env;
 	bridge = new ChromiumRendererBridge({
@@ -417,6 +455,7 @@ try {
 		exp: now + 300,
 	};
 	const publicJwk = await bridge.reserve(command);
+	const grantDeliveredAt = performance.now();
 	await bridge.deliverGrant(
 		job,
 		recordingGrant(publicJwk),
@@ -424,12 +463,38 @@ try {
 		0,
 	);
 	await waitForEvent(events, 'capture_ready');
+	const captureReadyAt = performance.now();
+	const holdHealth = (await (await fetch(`${sfuOrigin}/health`)).json()) as {
+		rooms: number;
+		peers: number;
+	};
+	if (holdHealth.rooms !== 1 || holdHealth.peers !== 4)
+		throw new Error(
+			`Recorder Endpoint affected human SFU counts (rooms=${holdHealth.rooms}, peers=${holdHealth.peers})`,
+		);
 	await worker.startCapture();
-	const segmentDeadline = Date.now() + 30_000;
+	const captureStartedAt = performance.now();
+	const segmentDeadline = Date.now() + 60_000;
 	while (worker.manifest.get().segments.length < 3) {
 		if (Date.now() >= segmentDeadline)
 			throw new Error('timed out waiting for three captured segments');
 		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+	for (;;) {
+		const liveSegments = (await readdir(worker.manifest.directory))
+			.filter((file) => file.endsWith('.ts'))
+			.sort();
+		const currentSegment = liveSegments.at(-1);
+		if (
+			currentSegment &&
+			Date.now() -
+				(await stat(join(worker.manifest.directory, currentSegment))).mtimeMs >=
+				3_000
+		)
+			break;
+		if (Date.now() >= segmentDeadline)
+			throw new Error('timed out waiting for a probeable final segment');
+		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
 	assertProducerProcessesAlive(producer.processes, 'artifact finalization');
 	const state = await worker.stop();
@@ -441,6 +506,46 @@ try {
 		worker.manifest.directory,
 		manifest.artifact?.file ?? '',
 	);
+	const artifactStat = await stat(artifact);
+	if (!artifactStat.isFile() || artifactStat.size === 0)
+		throw new Error('recording artifact is missing or empty');
+	const probe = JSON.parse(
+		(
+			await run('/usr/bin/ffprobe', [
+				'-v',
+				'error',
+				'-show_entries',
+				'stream=codec_type,width,height,avg_frame_rate:format=duration',
+				'-of',
+				'json',
+				artifact,
+			])
+		).stdout,
+	);
+	const videoStream = probe.streams.find(
+		(stream: { codec_type: string }) => stream.codec_type === 'video',
+	);
+	const audioStream = probe.streams.find(
+		(stream: { codec_type: string }) => stream.codec_type === 'audio',
+	);
+	const [fpsNumerator = 0, fpsDenominator = 0] = String(
+		videoStream?.avg_frame_rate,
+	)
+		.split('/')
+		.map(Number);
+	const encodedDurationSeconds = Number(probe.format.duration);
+	if (
+		videoStream?.width !== 1920 ||
+		videoStream?.height !== 1080 ||
+		!audioStream ||
+		fpsDenominator <= 0 ||
+		fpsNumerator / fpsDenominator < 29 ||
+		!Number.isFinite(encodedDurationSeconds) ||
+		encodedDurationSeconds <= 0
+	)
+		throw new Error(
+			'ffprobe did not find valid 1920x1080 30fps video and audio streams',
+		);
 	const decoded = await run('/usr/bin/ffmpeg', [
 		'-v',
 		'warning',
@@ -458,27 +563,43 @@ try {
 		'-i',
 		artifact,
 		'-vf',
-		'crop=64:64:(iw-64)/2:(ih-64)/2,fps=4,scale=1:1,format=rgb24',
+		'fps=4,scale=8:8,format=rgb24',
 		'-f',
 		'rawvideo',
 		'-',
 	]);
-	const centerSamples = Array.from(
-		{ length: Math.floor(frames.stdout.length / 3) },
-		(_, index) => [...frames.stdout.subarray(index * 3, index * 3 + 3)],
+	const frameBytes = 8 * 8 * 3;
+	const contentSamples = Array.from(
+		{ length: Math.floor(frames.stdout.length / frameBytes) },
+		(_, index) =>
+			frames.stdout.subarray(index * frameBytes, (index + 1) * frameBytes),
 	);
-	const redFrames = centerSamples.filter(
-		([red = 0, green = 0, blue = 0]) =>
-			red > 120 && red > green * 1.5 && red > blue * 1.5,
+	const pixels = contentSamples.flatMap((sample) =>
+		Array.from(
+			{ length: sample.length / 3 },
+			(_, index): [number, number, number] => [
+				sample[index * 3] ?? 0,
+				sample[index * 3 + 1] ?? 0,
+				sample[index * 3 + 2] ?? 0,
+			],
+		),
+	);
+	const brightPixels = pixels.filter(
+		([red, green, blue]) => red + green + blue > 650,
 	).length;
-	const blueFrames = centerSamples.filter(
-		([red = 0, green = 0, blue = 0]) =>
-			blue > 120 && blue > green * 1.5 && blue > red * 1.5,
+	const coloredPixels = pixels.filter(
+		([red, green, blue]) =>
+			Math.max(red, green, blue) - Math.min(red, green, blue) > 50,
 	).length;
-	if (redFrames === 0 || blueFrames === 0)
+	const distinctContentSamples = new Set(
+		contentSamples.map((sample) =>
+			createHash('sha256').update(sample).digest('hex'),
+		),
+	).size;
+	if (coloredPixels === 0 || distinctContentSamples < 2)
 		throw new Error(
-			`central MeetingLayout samples did not contain both producer colors ` +
-				`(red=${redFrames}, blue=${blueFrames}, total=${centerSamples.length})`,
+			`MeetingLayout samples did not contain moving colored content ` +
+				`(bright=${brightPixels}, colored=${coloredPixels}, distinct=${distinctContentSamples}, total=${contentSamples.length})`,
 		);
 	const frequencyEnergy = await run('/usr/bin/ffmpeg', [
 		'-v',
@@ -524,19 +645,57 @@ try {
 			`997 Hz energy was not sustained across the artifact ` +
 				`(energetic=${energeticSamples.length}/${energySamples.length}, quarters=${coveredQuarters}/4)`,
 		);
+	await Promise.all(
+		producer.processes.map((process) => stopProducerProcess(process)),
+	);
+	for (const socket of producer.sockets) socket.disconnect();
+	await bridge.stop(job);
+	const cleanupStartedAt = performance.now();
+	let cleanupHealth = holdHealth;
+	while (performance.now() - cleanupStartedAt < 65_000) {
+		cleanupHealth = (await (
+			await fetch(`${sfuOrigin}/health`)
+		).json()) as typeof holdHealth;
+		if (cleanupHealth.rooms === 0 && cleanupHealth.peers === 0) break;
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+	if (cleanupHealth.rooms !== 0 || cleanupHealth.peers !== 0)
+		throw new Error('Recorder Endpoint kept the human-empty room occupied');
 	const result = {
 		state,
 		elapsed_ms: Math.round(performance.now() - started),
 		artifact,
-		artifact_bytes: manifest.artifact?.bytes,
+		artifact_bytes: artifactStat.size,
 		duration_ms: manifest.artifact?.duration_ms,
+		encoded_duration_seconds: encodedDurationSeconds,
+		video: {
+			width: videoStream.width,
+			height: videoStream.height,
+			average_frame_rate: videoStream.avg_frame_rate,
+		},
+		audio_stream: true,
+		startup_to_ready_ms: Math.round(captureReadyAt - grantDeliveredAt),
+		ready_to_capture_ms: Math.round(captureStartedAt - captureReadyAt),
+		capture_elapsed_ms: Math.round(performance.now() - captureStartedAt),
+		interruption_events: events.filter(({ type }) => type === 'interrupted')
+			.length,
+		human_participant_connections: 4,
+		camera_publishers: 2,
+		screen_publishers: 2,
+		rotating_talkers: 2,
+		sfu_hold: holdHealth,
+		cleanup: {
+			...cleanupHealth,
+			elapsed_ms: Math.round(performance.now() - cleanupStartedAt),
+		},
 		segments: manifest.segments.length,
 		producer_ids: producer.producerIds,
 		producer_ingress:
 			'development-only plain RTP test injection; production media uses WebRTC',
-		center_samples: centerSamples.length,
-		red_dominant_samples: redFrames,
-		blue_dominant_samples: blueFrames,
+		content_samples: contentSamples.length,
+		bright_content_pixels: brightPixels,
+		colored_content_pixels: coloredPixels,
+		distinct_content_samples: distinctContentSamples,
 		frequency_hz: 997,
 		frequency_energy_samples: energySamples.length,
 		frequency_energetic_samples: energeticSamples.length,
@@ -552,7 +711,7 @@ try {
 	await Promise.all(
 		(producer?.processes ?? []).map((process) => stopProducerProcess(process)),
 	).catch((error) => console.error('producer FFmpeg cleanup failed', error));
-	producer?.socket.disconnect();
+	for (const socket of producer?.sockets ?? []) socket.disconnect();
 	await bridge?.stop(job).catch(() => undefined);
 	await bridge?.close().catch(() => undefined);
 	if (
