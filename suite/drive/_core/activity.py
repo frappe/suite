@@ -337,7 +337,10 @@ def _visible_notifications(
 ) -> tuple[list[dict], int]:
     """Return the visible pointers, and how many rows the SQL window held."""
     _require_person(principals)
-    filters: dict[str, Any] = {"to_user": principals.user}
+    # §14.6 drops the legacy inbox: those rows carry no activity pointer, so
+    # the inbox starts empty after Build. Saying so in SQL is what keeps
+    # `unread_count` from reading every one of them to reach the same answer.
+    filters: dict[str, Any] = {"to_user": principals.user, "activity": ["is", "set"]}
     if only_unread:
         filters["read"] = 0
     options = {

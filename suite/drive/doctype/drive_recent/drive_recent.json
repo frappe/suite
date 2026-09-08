@@ -37,8 +37,18 @@
  "naming_rule": "Random",
  "permissions": [
   {
+   "create": 1,
+   "delete": 1,
    "read": 1,
-   "role": "System Manager"
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Suite User",
+   "write": 1
   }
  ],
  "sort_field": "opened_at",

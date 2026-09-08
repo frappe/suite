@@ -4,6 +4,8 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.drive._core.errors import DriveConflict
+
 # On IntegrationTestCase, the doctype's schema is already installed by
 # the test runner. Use `self.get_doc` to access the document.
 
@@ -12,40 +14,28 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class IntegrationTestWriterDocument(IntegrationTestCase):
-    """A Writer document during the expand phase, with no node of its own.
+    """A Writer document after ticket 29 registered the declaration.
 
-    Adoption is staged: `Writer Document` carries the `node` Link and the
-    `DriveContent` mixin from ticket 17, but `drive_content_types` stays empty
-    until ticket 29. So a legacy row still inserts, saves, and cascades exactly
-    as it did. The Drive-native side, which does require a node, is covered in
+    Adoption was staged: `Writer Document` carried the `node` Link and the
+    `DriveContent` mixin from ticket 17 while `drive_content_types` stayed
+    empty, so a bare insert wrote a legacy row. Build linked every one of those
+    rows (§14.6) and ticket 29 registered the type, so §5.13 now holds here:
+    a document with no node cannot exist. `require_node` is what refuses one
+    (`suite/drive/_core/content.py:769-772`).
+
+    The Drive-native lifecycle, the version cascade included, is covered in
     `suite/writer/tests/test_drive_adoption.py`, where the Drive fixtures live.
     """
 
-    def test_delete_purges_versions(self):
-        doc = frappe.new_doc("Writer Document")
-        doc.save()
-        version = frappe.get_doc(
-            {
-                "doctype": "Writer Version",
-                "doc": doc.name,
-                "snapshot": "<p>hello</p>",
-                "title": "2026-01-01 00:00",
-            }
-        ).insert()
+    def test_a_document_with_no_node_is_refused(self):
+        with self.assertRaises(DriveConflict):
+            frappe.new_doc("Writer Document").save()
 
-        # a version links back to the document — without the cascade the
-        # framework's link check refuses the delete
-        doc.delete()
+    def test_the_node_column_is_still_the_declared_one(self):
+        # `drive_node_field` names the column until the declaration does, and
+        # `_validate_mixin` refuses an activation where the two disagree.
+        from suite.writer import drive as writer
+        from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
-        self.assertFalse(frappe.db.exists("Writer Document", doc.name))
-        self.assertFalse(frappe.db.exists("Writer Version", version.name))
-
-    def test_a_legacy_row_still_has_no_node_and_stays_legacy(self):
-        # The node column exists from ticket 17 and stays empty until Build
-        # links the row (§14.6). Nothing about a bare insert may change.
-        doc = frappe.new_doc("Writer Document")
-        doc.save()
-        self.addCleanup(frappe.delete_doc, "Writer Document", doc.name, force=1, ignore_missing=True)
-
-        self.assertIsNone(frappe.db.get_value("Writer Document", doc.name, "node"))
-        self.assertFalse(frappe.get_doc("Writer Document", doc.name).drive_native)
+        self.assertEqual(WriterDocument.drive_node_field, writer.SPEC.node_field)
+        self.assertTrue(frappe.get_meta("Writer Document").get_field(writer.SPEC.node_field))

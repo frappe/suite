@@ -137,13 +137,89 @@ class OwnerFilter(_ListSheetsBase):
 
 
 class Search(_ListSheetsBase):
-    def test_search_is_trimmed_like_filter(self):
+    """Two columns hold a title now, so the search reads both.
+
+    Drive owns a linked sheet's title and `Sheet.title` is frozen there
+    (§10.2), so the legacy column alone matched nothing written since the
+    declaration was registered.
+    """
+
+    def test_the_legacy_column_is_still_searched(self):
+        self.frappe.get_all.side_effect = [[], []]
         self.call(search="  foo  ")
-        self.assertEqual(self.rows_kwargs()["filters"]["title"], ["like", "%foo%"])
+        self.assertIn(["title", "like", "%foo%"], self.rows_kwargs()["or_filters"])
+        self.assertNotIn("title", self.rows_kwargs()["filters"])
+
+    def test_a_node_title_match_is_searched_by_sheet_id(self):
+        self.frappe.get_all.side_effect = [["n1"], ["SH-9"]]
+        self.call(search="foo")
+        self.assertIn(["name", "in", ["SH-9"]], self.rows_kwargs()["or_filters"])
+
+    def test_the_node_half_matches_on_drives_own_title(self):
+        self.frappe.get_all.side_effect = [["n1"], ["SH-9"]]
+        self.call(search="  foo  ")
+        first = self.frappe.get_all.call_args_list[0]
+        self.assertEqual(first.args[0], "Drive Node")
+        self.assertEqual(first.kwargs["filters"]["title"], ["like", "%foo%"])
+        self.assertEqual(first.kwargs["filters"]["content_doctype"], "Sheet")
+
+    def test_no_node_match_still_names_an_id_rather_than_an_empty_set(self):
+        # An empty `IN ()` is not portable: one backend reads it as match
+        # nothing, another drops the clause and matches everything. An id no
+        # sheet can carry says match nothing in one way.
+        self.frappe.get_all.side_effect = [[], []]
+        self.call(search="foo")
+        self.assertIn(["name", "in", [""]], self.rows_kwargs()["or_filters"])
+
+    def test_the_permission_query_still_runs_over_the_matched_ids(self):
+        # `_sheets_titled_like` reads Drive's column with permissions off, so
+        # the refusal has to come from somewhere: `get_list` on `Sheet`.
+        self.frappe.get_all.side_effect = [["n1"], ["SH-9"]]
+        self.call(search="foo")
+        self.assertEqual(self.frappe.get_list.call_args_list[0].args[0], "Sheet")
+
+    def test_the_count_is_taken_over_the_same_two_columns(self):
+        self.frappe.get_all.side_effect = [["n1"], ["SH-9"]]
+        self.call(search="foo")
+        self.assertEqual(self.count_kwargs()["or_filters"], self.rows_kwargs()["or_filters"])
 
     def test_blank_search_adds_no_filter(self):
         self.call(search="   ")
         self.assertNotIn("title", self.rows_kwargs()["filters"])
+        self.assertIsNone(self.rows_kwargs()["or_filters"])
+
+
+class PublishedTitles(_ListSheetsBase):
+    """A listed sheet is named by whichever store owns its name."""
+
+    def test_a_linked_sheet_is_named_by_its_node(self):
+        self.rows[0]["node"] = "n1"
+        self.frappe.get_all.return_value = [{"name": "n1", "title": "Budget"}]
+        rows = self.call()["sheets"]
+        self.assertEqual(rows[0]["title"], "Budget")
+
+    def test_a_legacy_sheet_keeps_the_title_on_its_own_row(self):
+        self.rows[0]["node"] = None
+        rows = self.call()["sheets"]
+        self.assertEqual(rows[0]["title"], "Mine")
+        self.frappe.get_all.assert_not_called()
+
+    def test_the_node_id_is_not_published(self):
+        # §6.8 keeps Drive's own ids off a legacy payload; the column is only
+        # selected so the title can be resolved.
+        self.rows[0]["node"] = "n1"
+        self.frappe.get_all.return_value = [{"name": "n1", "title": "Budget"}]
+        rows = self.call()["sheets"]
+        for row in rows:
+            self.assertNotIn("node", row)
+
+    def test_a_node_that_answers_nothing_leaves_a_blank_name_not_a_stale_one(self):
+        # The frozen column can hold whatever it held before activation. It is
+        # not the sheet's name any more, so it is not shown as one.
+        self.rows[0]["node"] = "n1"
+        self.frappe.get_all.return_value = []
+        rows = self.call()["sheets"]
+        self.assertEqual(rows[0]["title"], "")
 
 
 class WindowClamping(_ListSheetsBase):

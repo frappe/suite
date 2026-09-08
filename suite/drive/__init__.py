@@ -183,6 +183,28 @@ def create_document(
     )
 
 
+def list_versions(node: str, *, cursor: str | None = None, limit: int | None = None) -> dict:
+    """Page one readable node's versions, newest sequence first (§9.1)."""
+    from suite.drive._core.nodes import DEFAULT_PAGE_SIZE
+    from suite.drive._core.versions import list_versions as _list_versions
+
+    return _list_versions(
+        _principals(), node, cursor=cursor, limit=DEFAULT_PAGE_SIZE if limit is None else limit
+    )
+
+
+def read_version(node: str, seq: int) -> IO[bytes]:
+    """Answer one readable version's stored bytes as a stream (§9.1).
+
+    The bytes are whatever the app's own `version_bytes` wrote, so only that
+    app can read them back. This is the in-process counterpart of §11.4's
+    version download, for an app publishing its own history.
+    """
+    from suite.drive._core.versions import read_version as _read_version
+
+    return _read_version(_principals(), node, seq)
+
+
 def copy(node: str, parent: str, *, title: str | None = None) -> str:
     """Copy one readable tree, sharing blobs but no authority and no history."""
     from suite.drive._core.nodes import copy as _copy

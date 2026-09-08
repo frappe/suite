@@ -1058,9 +1058,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
                 "from_user": sender,
                 "read": int(row.get("read") or 0),
                 "type": NOTIFICATION_TYPE.get(record.get("action"), "Share"),
-                "message": _notification_message(
-                    record.get("action"), node, people[sender].get("full_name")
-                ),
+                "message": _notification_message(record.get("action"), node, people[sender].get("full_name")),
                 "entity_type": (node or {}).get("entity_type"),
                 "notif_doctype": "Drive Node",
                 "notif_doctype_name": record.get("node"),
@@ -2402,9 +2400,9 @@ def _legacy_visit(principals, entity_name: str) -> bool:
 
     `writer.api.docs.create_document` writes a `File` and no node, and
     `writer.api.general.get_document_list` orders the caller's documents by
-    `Drive Entity Log.last_interaction` and publishes it as `accessed`. That
-    row is only ever written here, so forwarding alone left every document
-    the product creates with no opened-at and no recency order at all.
+    `Drive Recent.opened_at` and publishes it as `accessed`. That row is only
+    ever written here, so forwarding alone left every document the product
+    creates with no opened-at and no recency order at all.
 
     The gate is `frappe.get_doc`, as the old body's was: `File` carries a
     `has_permission` hook, so a reader with no access is refused by the rule

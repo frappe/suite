@@ -1016,7 +1016,54 @@ class TestContentContract(UnitTestCase):
                 framework.validate_content_registry()
             self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
             db.exists.return_value = False
+            db.count.return_value = 0
             framework.validate_content_registry()
+
+    # §14: activation waits for Build's links
+
+    @contextmanager
+    def _counting(self, unlinked: dict):
+        """Register a spec with one satellite, and answer `count` from `unlinked`."""
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        with (
+            registered(declared),
+            patch("suite.drive._core.content.validate_registry"),
+            stub_db(MagicMock()) as db,
+        ):
+            db.exists.return_value = False
+            db.count.side_effect = lambda doctype, filters=None: unlinked.get(doctype, 0)
+            yield db
+
+    def test_boot_validation_refuses_a_document_that_build_did_not_link(self):
+        """§5.13: a document with no node cannot exist, so activation stops.
+
+        The count is read on the doctype, not on one row at a time, because
+        the migration that produced it is the last moment it can be seen.
+        """
+        with self._counting({CONTENT_DOCTYPE: 3}), self.assertRaises(DriveConflict) as raised:
+            framework.validate_content_registry()
+        self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
+        self.assertIn("3", str(raised.exception))
+
+    def test_boot_validation_refuses_a_satellite_that_names_no_document(self):
+        with self._counting({SATELLITE_DOCTYPE: 2}), self.assertRaises(DriveConflict) as raised:
+            framework.validate_content_registry()
+        self.assertIn(SATELLITE_DOCTYPE, str(raised.exception))
+
+    def test_boot_validation_accepts_a_fully_linked_type(self):
+        with self._counting({}) as db:
+            framework.validate_content_registry()
+        self.assertEqual(
+            [call.args[0] for call in db.count.call_args_list], [CONTENT_DOCTYPE, SATELLITE_DOCTYPE]
+        )
+
+    def test_the_link_check_reads_the_declared_field_of_each_side(self):
+        with self._counting({}) as db:
+            framework.refuse_unlinked_documents()
+        self.assertEqual(
+            [call.kwargs.get("filters") or call.args[1] for call in db.count.call_args_list],
+            [{"node": ["is", "not set"]}, {"content": ["is", "not set"]}],
+        )
 
 
 class TestTheAppFacingCheck(unittest.TestCase):
@@ -1891,18 +1938,26 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec(satellites=(wrong,))), self.assertRaises(DriveConflict):
             validate_registry()
 
-    def test_the_registry_is_empty_until_activation_stages_an_app_into_it(self):
+    def test_the_registry_holds_the_three_apps_activation_staged_into_it(self):
         """Staged activation (§10.3, README execution rules).
 
         An app declares its spec in its own adoption ticket — Writer at 17,
-        Slides at 18, Sheets at 19 — and joins `drive_content_types` only at
-        ticket 29, once Build has linked every row. Until then Drive governs no
-        doctype: no permission hook moves, and `validate_content_registry`
-        inspects no `DocShare`, so a site with real content data still
-        migrates.
+        Slides at 18, Sheets at 19 — and joins `drive_content_types` at ticket
+        29, once Build has linked every row. All three are in now, and every
+        declaration is the one its app ships.
         """
         content.clear_registry_cache()
-        self.assertEqual(registry(), {}, "staged activation: no app is registered yet")
+        self.assertEqual(
+            sorted(registry()),
+            ["Presentation", "Sheet", "Writer Document"],
+        )
+        for doctype, dotted in (
+            ("Writer Document", "suite.writer.drive.SPEC"),
+            ("Presentation", "suite.slides.drive.SPEC"),
+            ("Sheet", "suite.sheets.drive.SPEC"),
+        ):
+            with self.subTest(doctype=doctype):
+                self.assertIs(registry()[doctype], frappe.get_attr(dotted))
 
 
 def _purge_fixture_roots() -> None:

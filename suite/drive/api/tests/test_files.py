@@ -28,6 +28,7 @@ from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from suite import drive
 from suite.drive._core import nodes as node_core
 from suite.drive._core import quota
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound, DriveOverQuota
@@ -162,6 +163,32 @@ class TestDriveFileRules(IntegrationTestCase):
         finally:
             self.file.db_set({"attached_to_doctype": None, "attached_to_name": None})
 
+    def _migrated_document(self):
+        """One `Writer Document` in the shape Build leaves: a node, and a `File`.
+
+        Ticket 29 registered the doctype, so `require_node` refuses a document
+        with no node and the bare insert this used to make is impossible.
+        §14.3 gives a migrated document the same id in both stores and §14.10
+        keeps the legacy `File` until Cleanup, so the row these two cases guard
+        is a linked document that still carries one.
+        """
+        home = personal_root_for(frappe.session.user) or provision_personal_root(frappe.session.user)
+        node = drive.create_document(
+            home, f"Victim {frappe.generate_hash(6)}", content_doctype="Writer Document"
+        )
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        self.addCleanup(self._purge_document, node)
+        return frappe.get_doc("Writer Document", docname)
+
+    @staticmethod
+    def _purge_document(node: str):
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("Drive Node", node):
+            return
+        admin = principals_for()
+        node_core.update(admin, node, state="Trashed")
+        node_core.purge(admin, node)
+
     def test_content_link_cannot_be_forged_to_hijack_another_users_document(self):
         """content_doctype/content_docname are the sole permission delegation
         point for content documents like Writer Document (see
@@ -170,7 +197,7 @@ class TestDriveFileRules(IntegrationTestCase):
         creation flow may ever set these fields — a user must not be able to
         point their own File at someone else's document and hijack it."""
         with self.set_user(OWNER):
-            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            victim_doc = self._migrated_document()
             DriveFile.create_for_doc(victim_doc)
 
         with self.set_user(OTHER_USER):
@@ -212,7 +239,7 @@ class TestDriveFileRules(IntegrationTestCase):
         doing so would sever content_has_permission's delegation and orphan
         the document relative to after_delete's cascade-delete."""
         with self.set_user(OWNER):
-            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            victim_doc = self._migrated_document()
             backing_file = DriveFile.create_for_doc(victim_doc)
             backing_file.share(user=MEMBER, write=True)
 

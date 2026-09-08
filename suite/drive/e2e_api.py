@@ -98,7 +98,7 @@ def _delete_user_drive_data(email: str) -> None:
         for doctype, field in (
             ("Drive Permission", "entity"),
             ("Drive Favourite", "entity"),
-            ("Drive Entity Log", "entity_name"),
+            ("Drive Recent", "node"),
             ("Drive Entity Activity Log", "entity"),
             ("Drive Token", "file"),
         ):
@@ -106,7 +106,7 @@ def _delete_user_drive_data(email: str) -> None:
 
     frappe.db.delete("Drive Permission", {"user": email})
     frappe.db.delete("Drive Favourite", {"user": email})
-    frappe.db.delete("Drive Entity Log", {"user": email})
+    frappe.db.delete("Drive Recent", {"user": email})
     frappe.db.delete("Drive Token", {"user": email})
     frappe.db.delete("Drive Notification", {"from_user": email})
     frappe.db.delete("Drive Notification", {"to_user": email})
