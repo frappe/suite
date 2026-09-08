@@ -8,7 +8,7 @@
 		<!-- iconLeft, not icon: `icon` makes an icon-only trigger and drops the label. -->
 		<Tabs
 			v-model="tab"
-			class="[&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5"
+			class="min-h-0 flex-1 [&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5 [&>[data-slot=tab-panel]]:flex [&>[data-slot=tab-panel]]:min-h-0 [&>[data-slot=tab-panel]]:flex-1 [&>[data-slot=tab-panel]]:flex-col"
 			:tabs="[
 				{ value: 'users', label: __('Accounts'), iconLeft: Users },
 				{ value: 'invites', label: __('Invites'), iconLeft: Mails },
@@ -17,7 +17,7 @@
 			<template #tab-panel="{ tab: panel }">
 				<!-- Match DashboardLayout's body spacing so the tabbed page doesn't sit
 				     at a different offset than its sibling pages. -->
-				<div class="flex flex-1 flex-col space-y-5 overflow-y-auto px-3 py-5 sm:px-5">
+				<div class="flex min-h-0 flex-1 flex-col space-y-5 overflow-y-auto px-3 py-5 sm:px-5">
 					<UsersView v-if="panel.value === 'users'" ref="usersView" />
 					<InvitesView v-else ref="invitesView" />
 				</div>
