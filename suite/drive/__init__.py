@@ -40,10 +40,11 @@ exactly as it was: an import is neither a move nor a copy.
 ## Errors
 
 Every workflow raises a `DriveError` subclass. They are caught by type, not by
-message, and the base class is exported here so an app can catch every refusal
-in one `except` without reaching below this package. `DriveError` subclasses
-`frappe.ValidationError` and carries an `http_status_code`, so an unhandled one
-still aborts the request with the right status.
+message, and every documented subclass is exported here so an app can catch
+one refusal, or the base class to catch them all, without reaching below this
+package. `DriveError` subclasses `frappe.ValidationError` and carries an
+`http_status_code`, so an unhandled one still aborts the request with the
+right status.
 
 | Error | Raised when |
 |---|---|
@@ -51,6 +52,8 @@ still aborts the request with the right status.
 | `DriveOverQuota` | the admission UPDATE would push `used_bytes` past the effective quota |
 | `DriveForbidden` | the caller's role at the node is below the one the workflow needs |
 | `DriveConflict` | a reservation exists with different values, names another root, or a resize runs in the wrong direction; a content type is unregistered, invalid, or already linked to another node |
+| `DriveLinkExpired` | the share link a caller presents has expired or been revoked |
+| `DriveLocked` | a share link needs its password, or the caller's password guess was wrong |
 | `frappe.ValidationError` | an argument is malformed: a negative or non-integer byte count, an empty key, a key longer than 140 characters |
 
 ## Transactions
@@ -119,6 +122,7 @@ until the caller commits, so a caller must not keep a Drive transaction open
 across a network call.
 """
 
+from datetime import datetime
 from typing import IO
 
 from suite.drive._core.content import (
@@ -126,7 +130,15 @@ from suite.drive._core.content import (
     DriveContent,
     Satellite,
 )
-from suite.drive._core.errors import DriveError
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveError,
+    DriveForbidden,
+    DriveLinkExpired,
+    DriveLocked,
+    DriveNotFound,
+    DriveOverQuota,
+)
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -180,6 +192,29 @@ def create_document(
         content_doctype=content_doctype,
         from_node=from_node,
         is_template=is_template,
+    )
+
+
+def create_file(
+    parent: str,
+    title: str,
+    *,
+    blob: str,
+    size: int,
+    mime: str,
+    content_modified: datetime | int | float | str | None = None,
+) -> str:
+    """Create one private blob-backed file, already stored, and charge its root."""
+    from suite.drive._core.nodes import create_file as _create_file
+
+    return _create_file(
+        _principals(),
+        parent,
+        title,
+        blob=blob,
+        size=size,
+        mime=mime,
+        content_modified=content_modified,
     )
 
 
@@ -317,23 +352,32 @@ __all__ = (
     "READ",
     "UPLOAD",
     "ContentTypeSpec",
+    "DriveConflict",
     "DriveContent",
     "DriveError",
+    "DriveForbidden",
+    "DriveLinkExpired",
+    "DriveLocked",
+    "DriveNotFound",
+    "DriveOverQuota",
     "Satellite",
     "adopt_media",
     "bind_legacy_storage_reservation",
     "check",
     "copy",
     "create_document",
+    "create_file",
     "create_storage_reservation",
     "ensure_personal_root",
     "get_storage_reservation",
     "get_storage_usage",
     "grow_storage_reservation",
     "import_document",
+    "list_versions",
     "personal_root_for",
     "push_preview",
     "read_file",
+    "read_version",
     "reduce_storage_reservation",
     "refuse_shared_child_rows",
     "refuse_shared_linked_rows",

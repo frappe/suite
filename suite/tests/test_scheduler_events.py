@@ -26,3 +26,28 @@ class TestSchedulerEvents(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, SCHEDULER_SMOKE_METHOD),
         ):
             _scheduler_smoke_job_name()
+
+    def test_exactly_five_drive_daily_jobs_are_wired(self):
+        """§2.2: `suite/drive/jobs.py` is the sole scheduler adapter.
+
+        The legacy File-status sweeps in `suite.drive.api.scripts` are
+        superseded by `jobs.purge_trashed_nodes` and must not be scheduled.
+        """
+        from suite.drive import jobs
+
+        drive_package = jobs.__name__.rsplit(".", 1)[0] + "."
+        daily_drive_jobs = [
+            method for method in hooks.scheduler_events["daily"] if method.startswith(drive_package)
+        ]
+        expected_targets = {
+            name
+            for name, value in vars(jobs).items()
+            if callable(value) and getattr(value, "__module__", None) == jobs.__name__
+        }
+        self.assertEqual(len(daily_drive_jobs), 5)
+        for method in daily_drive_jobs:
+            module_name, _, attr = method.rpartition(".")
+            with self.subTest(method=method):
+                self.assertEqual(module_name, jobs.__name__)
+                self.assertIn(attr, expected_targets)
+        self.assertEqual({method.rpartition(".")[2] for method in daily_drive_jobs}, expected_targets)

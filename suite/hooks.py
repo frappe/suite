@@ -378,8 +378,6 @@ scheduler_events = {
         "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
         "suite.drive.jobs.sweep_unused_document_media",
-        "suite.drive.api.scripts.auto_delete_from_trash",
-        "suite.drive.api.scripts.clear_deleted_files",
         # sheets
         "suite.sheets.versioning.tasks.rollup_snapshots",
         "suite.sheets.versioning.tasks.truncate_op_log",
