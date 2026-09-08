@@ -8,7 +8,7 @@
 		<!-- iconLeft, not icon: `icon` makes an icon-only trigger and drops the label. -->
 		<Tabs
 			v-model="tab"
-			class="min-h-0 flex-1 [&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5 [&>[data-slot=tab-panel]]:flex [&>[data-slot=tab-panel]]:min-h-0 [&>[data-slot=tab-panel]]:flex-1 [&>[data-slot=tab-panel]]:flex-col"
+			class="min-h-0 flex-1 [&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5 [&>[data-slot=tab-panel]:not([hidden])]:flex [&>[data-slot=tab-panel]:not([hidden])]:min-h-0 [&>[data-slot=tab-panel]:not([hidden])]:flex-1 [&>[data-slot=tab-panel]:not([hidden])]:flex-col"
 			:tabs="[
 				{ value: 'users', label: __('Accounts'), iconLeft: Users },
 				{ value: 'invites', label: __('Invites'), iconLeft: Mails },

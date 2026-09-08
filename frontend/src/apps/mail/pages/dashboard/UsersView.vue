@@ -25,7 +25,7 @@
 	<ListView
 		v-if="list.loaded"
 		ref="listView"
-		class="min-h-0 flex-1 overflow-y-auto [&_[data-slot=list-header]]:sticky [&_[data-slot=list-header]]:top-0 [&_[data-slot=list-header]]:z-10 [&_[data-slot=list-header]]:bg-surface-white"
+		class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
 		:columns="LIST_COLUMNS"
 		:rows="normalizedMembers"
 		:options="listOptions"
