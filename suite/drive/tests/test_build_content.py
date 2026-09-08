@@ -1272,12 +1272,13 @@ class TestTemplates(BuildContentCase):
             self.assert_controller_accepts("Drive Node", name)
         self.assertEqual(frappe.db.get_value("Writer Document", writer, "node"), writer)
         self.assertEqual(frappe.db.get_value("Presentation", deck, "node"), deck)
-        # No Personal Root was minted for the template owner on the way past.
+        # The template owner keeps the one root `setUp` wrote. Adopting a
+        # template document would have put it under a root of its owner's.
         self.assertEqual(
             frappe.get_all(
                 "Drive Root", filters={"user": self.owner, "name": ("like", self.prefix + "%")}, pluck="name"
             ),
-            [],
+            [self.root],
         )
 
         again = link_content_documents(self.environment())
