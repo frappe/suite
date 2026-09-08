@@ -1252,6 +1252,100 @@ class SlidesTest(unittest.TestCase):
         with self.assertRaisesRegex(BuildSlidesError, "preview blob is invalid"):
             convert_slides_and_templates(env)
 
+    # -- defect 12: a borrowed reference is looked up through its spellings
+
+    def test_a_site_absolute_reference_borrows_a_relative_template_file(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[
+                SlideRow(
+                    "slide-a",
+                    consumer.name,
+                    1,
+                    json.dumps([{"src": "https://site.example/private/files/logo.png"}]),
+                )
+            ],
+            media=[
+                media(
+                    "template-file",
+                    deck_name=template.name,
+                    blob="blob-a",
+                    url="/private/files/logo.png",
+                )
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        adopted = self.media_children(target, consumer.node)
+        self.assertEqual(len(adopted), 1)
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": adopted[0]["name"]}])
+        # The adopted node and the template deck's own node for the same File.
+        self.assertEqual(result.media_nodes_created, 2)
+        self.assertEqual(result.issues_total, 0)
+
+    def test_a_relative_reference_borrows_a_site_absolute_template_file(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": "/private/files/logo.png"}]))],
+            media=[
+                media(
+                    "template-file",
+                    deck_name=template.name,
+                    blob="blob-a",
+                    url="https://site.example/private/files/logo.png",
+                )
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        adopted = self.media_children(target, consumer.node)
+        self.assertEqual(len(adopted), 1)
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": adopted[0]["name"]}])
+        # The adopted node and the template deck's own node for the same File.
+        self.assertEqual(result.media_nodes_created, 2)
+        self.assertEqual(result.issues_total, 0)
+
+    def test_a_site_absolute_reference_to_a_non_template_file_is_reported(self):
+        other = deck("other", node="other-node", title="Other")
+        source = FakeContent(
+            documents=[deck(), other],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "https://site.example/private/files/pasted.png"}]),
+                ),
+                SlideRow("slide-2", other.name, 1, json.dumps([])),
+            ],
+            media=[media("other-file", deck_name=other.name, blob="blob-a", url="/private/files/pasted.png")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, other.node, other.name, other.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(self.media_children(target, "deck-node"), [])
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(result.issues[0].source, "Presentation:deck-1")
+        self.assertIn("non-template", result.issues[0].reason)
+
 
 if __name__ == "__main__":
     unittest.main()
