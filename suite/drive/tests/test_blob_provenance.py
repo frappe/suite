@@ -92,6 +92,20 @@ class StubbedDatabase(UnitTestCase):
         missing = object()
         previous = getattr(frappe.local, "db", missing)
         self.db = MagicMock()
+        # An unconfigured `MagicMock` answers every call, including ones
+        # none of the tests below ever intend to make, with a fresh child
+        # mock rather than a value that reads as "nothing here". Every proof
+        # this module exercises reads through `db.sql` alone (each test sets
+        # its own `return_value`/`side_effect` for that), but constructing a
+        # Drive exception still touches unrelated framework internals
+        # (translation, doctype meta) that read through `db.get_value`. Its
+        # own mocked return, subscripted (`d["doctype"]`, `d["fieldtype"]`,
+        # ...), is itself a mock and reads as present, not missing, so a
+        # meta bootstrap that expects `None` on a genuine miss instead
+        # recurses forever rebuilding a "doctype" from a value that is
+        # never anything but another mock of itself. Answering the standard
+        # "no such row" `None` here keeps that path a normal, harmless miss.
+        self.db.get_value.return_value = None
         frappe.local.db = self.db
 
         def restore():
