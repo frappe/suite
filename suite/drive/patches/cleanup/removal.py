@@ -283,7 +283,14 @@ def phase_legacy_doctypes(env) -> PhaseResult:
 
 
 def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
-    """§14.10 step 4: Sheet `DocShare`, Writer/Sheet history doctypes, comments.
+    """§14.10 step 4: governed `DocShare`, Writer/Sheet history doctypes, comments.
+
+    §14.10 lists the Sheet `DocShare` rows here, but Build no longer leaves
+    any: it rewrites each one as a grant and deletes it in the same commit,
+    because §5.13's read guards fail closed on a surviving row and
+    `validate_content_registry` refuses the migration while one is left. So
+    this phase verifies the rows are gone and refuses if they are not,
+    rather than doing a release late what Build must already have done.
 
     Drops `Writer Document.versions` before `Writer Doc Version`, the child
     doctype that field's `Table` type points at: dropping the doctype first
@@ -294,7 +301,7 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
     stays `NotImplementedError` until Ticket 36 makes it.
     """
     result = PhaseResult()
-    result.docshares_deleted = env.content.delete_sheet_docshares()
+    _verify_gone(env.content.governed_docshares_remaining(), "the governed DocShare rows")
     env.schema.drop_child_table_field("Writer Document", "versions")
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_4)
     _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes")

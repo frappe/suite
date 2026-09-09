@@ -258,6 +258,12 @@ class GrantConversion:
     docshare_rows_seen: int = 0
     docshare_rows_dropped: int = 0
     docshare_dropped_by_reason: dict = field(default_factory=_blank_drops)
+    # Not in §14.9. A Sheet `DocShare` row is deleted once its grant exists,
+    # because §5.13's read guards fail closed on a surviving one and
+    # `validate_content_registry` refuses the migration while any governed
+    # doctype still carries a share. Per run and data-derived: a rerun finds
+    # only the rows still there and counts those.
+    docshare_rows_deleted: int = 0
     grant_rows_dropped: dict = field(default_factory=_blank_drops)
     # The §3.2 floor: a Shared root node whose legacy row mapped to nothing
     # still has to carry a `$GENERAL` grant.
@@ -414,6 +420,10 @@ class ContentConversion:
     template_title_renames: int = 0
     link_title_renames: int = 0
     docshare_rows_dropped: int = 0
+    # Not in §14.9. The step-6 counter's twin, for the rows step 10 owns:
+    # `Writer Document` and `Presentation` shares, and the history-table
+    # shares it drops and counts. Per run and data-derived the same way.
+    docshare_rows_deleted: int = 0
     # Not in §14.9. §14.4 skips a `File` row whose status is `Removed`, so a
     # content document whose only `File` row is Removed has no node and no
     # step can mint one. The spec names no behaviour for the document left

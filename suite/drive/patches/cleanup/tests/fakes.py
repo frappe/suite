@@ -369,15 +369,17 @@ class FakeNotificationWriterReadiness:
 class FakeContent:
     """`ContentRows` over plain in-memory counters/flags."""
 
-    def __init__(self, docshares: int = 0, ycomments: int = 0, sheets_with_comments: int = 0):
-        self.docshares = docshares
+    def __init__(self, docshares=(), ycomments: int = 0, sheets_with_comments: int = 0):
+        # The governed doctypes that still carry a `DocShare` row. Build
+        # deletes them, so on a site that ran it this is empty and Cleanup
+        # only verifies that.
+        self.docshares = frozenset(docshares)
         self.ycomments = ycomments
         self.sheets_with_comments = sheets_with_comments
         self.strip_calls = 0
 
-    def delete_sheet_docshares(self) -> int:
-        deleted, self.docshares = self.docshares, 0
-        return deleted
+    def governed_docshares_remaining(self) -> frozenset[str]:
+        return self.docshares
 
     def clear_writer_ycomments(self) -> int:
         cleared, self.ycomments = self.ycomments, 0

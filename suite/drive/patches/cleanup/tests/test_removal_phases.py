@@ -293,9 +293,8 @@ class TestPhaseContentHistory(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
 
-    def test_docshares_ycomments_and_sheet_comments_are_cleared(self):
-        content = FakeContent(docshares=3, ycomments=2, sheets_with_comments=5)
-        schema = FakeSchema(
+    def _step_four_schema(self):
+        return FakeSchema(
             doctypes={
                 "writer/doctype/writer_version",
                 "writer/doctype/writer_doc_version",
@@ -303,14 +302,33 @@ class TestPhaseContentHistory(unittest.TestCase):
                 "sheets/doctype/sheet_snapshot",
             }
         )
+
+    def test_ycomments_and_sheet_comments_are_cleared(self):
+        content = FakeContent(ycomments=2, sheets_with_comments=5)
+        schema = self._step_four_schema()
         result = phase_content_history(cleanup_environment(self.path, content=content, schema=schema))
-        self.assertEqual(result.docshares_deleted, 3)
         self.assertEqual(result.ycomments_cleared, 2)
         self.assertEqual(result.sheet_comments_stripped, 5)
         self.assertEqual(result.doctypes_dropped, 4)
-        self.assertEqual(content.docshares, 0)
         self.assertEqual(schema.doctypes, set())
         self.assertEqual(content.strip_calls, 1)
+
+    def test_a_governed_docshare_that_survived_build_refuses_the_phase(self):
+        """§14.10 lists the delete here, but Build already had to do it.
+
+        §5.13's read guards fail closed on a surviving row and
+        `validate_content_registry` refuses the migration while one is left,
+        so a site that reaches Cleanup with one never ran that Build. This
+        phase says so rather than finishing the job a release late.
+        """
+        content = FakeContent(docshares=("Sheet", "Sheet Op Log"))
+        env = cleanup_environment(self.path, content=content, schema=self._step_four_schema())
+
+        with self.assertRaises(CleanupPatchError) as caught:
+            phase_content_history(env)
+
+        self.assertIn("Sheet Op Log", str(caught.exception))
+        self.assertEqual(content.strip_calls, 0)
 
     def test_writer_document_versions_drops_before_writer_doc_version(self):
         schema = FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))

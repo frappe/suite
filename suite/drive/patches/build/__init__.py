@@ -1,7 +1,9 @@
 """The additive Build patch (spec §14).
 
-Build converts legacy Drive `File` rows into `Drive Node` trees without
-deleting anything. Cleanup removes the old data one release later (§14.10).
+Build converts legacy Drive `File` rows into `Drive Node` trees. It deletes
+one kind of legacy row and only one: the `DocShare` rows it rewrites as
+grants, which §5.13's read guards and `validate_content_registry` do not
+let it leave behind. Cleanup removes the rest one release later (§14.10).
 
 **Build is live; Cleanup is not.** `suite/patches.txt` names this package,
 so `bench migrate` runs the whole additive migration. `cleanup` stays
