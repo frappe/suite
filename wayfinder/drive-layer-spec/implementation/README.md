@@ -144,7 +144,7 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [28 — Migrate content history, comments, templates, and media](issues/28-build-content-and-media.md) | Suite migration and content adapters | [27](issues/27-build-tree-and-grants.md) | ready-for-agent |
 | [29 — Complete Build records, accounting, and reporting](issues/29-build-records-and-report.md) | Suite migration | [28](issues/28-build-content-and-media.md) | ready-for-agent |
 | [30 — Verify the complete backend before migration rehearsal](issues/30-backend-integration-review.md) | Suite integration | [05](issues/05-file-upload-hook.md), [29](issues/29-build-records-and-report.md) | ready-for-agent |
-| [31 — Rehearse Build on an approved export and verify rollback](issues/31-migration-rehearsal.md) | Suite migration operations | [30](issues/30-backend-integration-review.md) | blocked |
+| [31 — Rehearse Build on an approved export and verify rollback](issues/31-migration-rehearsal.md) | Suite migration operations | [30](issues/30-backend-integration-review.md) | in-progress |
 | [32 — Adopt Drive routes and explicit restore selection in the SPA](issues/32-frontend-drive-adoption.md) | Suite frontend Drive | [30](issues/30-backend-integration-review.md) | superseded |
 | [33 — Make sharing actions and relevant link credentials explicit](issues/33-frontend-sharing-and-links.md) | Suite frontend Drive sharing | [32](issues/32-frontend-drive-adoption.md) | superseded |
 | [34 — Adopt document media, grouped composites, and collab credentials](issues/34-frontend-content-adoption.md) | Suite frontend Writer, Slides, and Sheets | [33](issues/33-frontend-sharing-and-links.md) | superseded |
