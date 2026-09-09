@@ -16,14 +16,19 @@ from dataclasses import dataclass
 
 from suite.drive.patches.cleanup.ports import (
     BlobColumnDiscovery,
+    ClientCallerEvidence,
     ContentRows,
+    DiskSettingsSnapshot,
     ForwarderRegistry,
     LegacyFileRows,
     NodeLookup,
+    NotificationWriterReadiness,
     ReachabilityTree,
     S3LegacyPrefix,
     SchemaGateway,
+    SourceSchemaReadiness,
     ThumbnailStore,
+    TransactionGateway,
 )
 from suite.drive.patches.cleanup.state import CleanupState
 
@@ -38,11 +43,16 @@ class CleanupEnvironment:
     drive: NodeLookup
     blob_columns: BlobColumnDiscovery
     forwarders: ForwarderRegistry
+    callers: ClientCallerEvidence
     files: LegacyFileRows
     schema: SchemaGateway
+    source_schema: SourceSchemaReadiness
+    notification_writers: NotificationWriterReadiness
     content: ContentRows
     thumbnails: ThumbnailStore
+    disk_settings: DiskSettingsSnapshot
     s3: S3LegacyPrefix
+    transaction: TransactionGateway
     state: CleanupState
     authorized: bool = False
     backup_ref: str | None = None
@@ -50,14 +60,19 @@ class CleanupEnvironment:
     @classmethod
     def for_site(cls) -> CleanupEnvironment:
         from suite.drive.patches.cleanup.ports import (
+            SiteClientCallerEvidence,
             SiteContentRows,
+            SiteDiskSettingsSnapshot,
             SiteForwarderRegistry,
             SiteLegacyFileRows,
             SiteNodeLookup,
+            SiteNotificationWriterReadiness,
             SiteReachabilityTree,
             SiteS3LegacyPrefix,
             SiteSchemaGateway,
+            SiteSourceSchema,
             SiteThumbnailStore,
+            SiteTransactionGateway,
             site_blob_columns,
         )
 
@@ -66,10 +81,15 @@ class CleanupEnvironment:
             drive=SiteNodeLookup(),
             blob_columns=site_blob_columns,
             forwarders=SiteForwarderRegistry(),
+            callers=SiteClientCallerEvidence(),
             files=SiteLegacyFileRows(),
             schema=SiteSchemaGateway(),
+            source_schema=SiteSourceSchema(),
+            notification_writers=SiteNotificationWriterReadiness(),
             content=SiteContentRows(),
             thumbnails=SiteThumbnailStore(),
+            disk_settings=SiteDiskSettingsSnapshot(),
             s3=SiteS3LegacyPrefix(),
+            transaction=SiteTransactionGateway(),
             state=CleanupState.for_site(),
         )

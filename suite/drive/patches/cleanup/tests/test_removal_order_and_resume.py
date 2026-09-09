@@ -7,10 +7,22 @@ from unittest.mock import patch
 
 from suite.drive.patches.cleanup.gate import CleanupAuthorizationError, LegacyCallerGateError
 from suite.drive.patches.cleanup.patch import PHASES, run_cleanup
-from suite.drive.patches.cleanup.removal import CleanupPatchError
+from suite.drive.patches.cleanup.readiness import PortNotReadyError
+from suite.drive.patches.cleanup.removal import (
+    RETAINED_FILE_CUSTOM_FIELDS,
+    CleanupPatchError,
+    phase_file_rows,
+)
+from suite.drive.patches.cleanup.state import CleanupState, CorruptCleanupStateError
 from suite.drive.patches.cleanup.tests.fakes import (
+    FakeClientCallerEvidence,
     FakeFileTable,
     FakeForwarders,
+    FakeSchema,
+    FakeSourceSchema,
+    FakeThumbnails,
+    FakeTransaction,
+    RaisingSchema,
     cleanup_environment,
     fake_blob_columns,
 )
@@ -37,7 +49,11 @@ class TestRunCleanupRefusals(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_a_failing_gate_refuses_before_any_phase_runs(self):
-        env = _healthy_env(self.path, forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}))
+        env = _healthy_env(
+            self.path,
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
         with self.assertRaises(LegacyCallerGateError):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
@@ -56,6 +72,223 @@ class TestRunCleanupRefusals(unittest.TestCase):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
 
+    def test_an_unready_port_refuses_before_any_phase_runs(self):
+        # `RaisingSchema` mimics the real `SiteSchemaGateway`'s honest
+        # `NotImplementedError` for `drop_child_table_field`/
+        # `remove_permission_hooks`: activation must fail here, in
+        # preflight, not partway through phase 3 or 4 after rows and
+        # doctypes are already gone.
+        env = _healthy_env(self.path, schema=RaisingSchema())
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_source_schema_still_declared_refuses_before_any_phase_runs(self):
+        env = _healthy_env(
+            self.path,
+            source_schema=FakeSourceSchema(still_declared={"Drive Notification": {"from_user"}}),
+        )
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_permission_hooks_still_present_refuses_before_any_phase_runs(self):
+        env = _healthy_env(self.path, source_schema=FakeSourceSchema(still_hooked={"Drive Permission"}))
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_preflight_runs_before_the_gates(self):
+        # An unready port and a failing gate both present: preflight's
+        # refusal must win, since gates passing on a site that cannot
+        # finish the run is not actually safe to start.
+        env = _healthy_env(
+            self.path,
+            schema=RaisingSchema(),
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+
+
+class TestRunCleanupCorruptState(unittest.TestCase):
+    """Finding: a corrupt state file was quarantined and then silently
+    treated as a fresh site with no prior run, so a resumed call could
+    rescan a table phase 1 already emptied and overwrite the durable census
+    with an empty one. `run_cleanup` must refuse outright, before preflight,
+    the gates, or any mutation — the only recovery is a database restore or
+    an operator manually reconstructing the record."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+
+    def test_corrupt_state_before_any_phase_wins_over_a_failing_gate(self):
+        # Rigged to fail gate 3 if ever reached, so a `CorruptCleanupStateError`
+        # (not `LegacyCallerGateError`) proves the corruption check runs first.
+        env = _healthy_env(
+            self.path,
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
+        env.state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        self.assertEqual(env.files.deleted, [])
+        quarantined = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(quarantined), 1)
+
+    def test_corrupt_state_after_phase1_commit_refuses_before_any_further_work(self):
+        schema = FakeSchema(custom_fields=set(RETAINED_FILE_CUSTOM_FIELDS))
+        thumbnails = FakeThumbnails(existing={"a"})
+        env = _healthy_env(self.path, schema=schema, thumbnails=thumbnails)
+
+        # Phase 1 runs and commits for real (its own `DELETE`s land, exactly
+        # as they would durably in a real database), and its checkpoint is
+        # written — this is "after phase1 commit," not a mid-phase crash.
+        result = phase_file_rows(env)
+        env.transaction.commit()
+        env.state.put("file_rows", result)
+        self.assertTrue(env.state.get("file_rows").completed)
+
+        # The record phase 1 itself just wrote becomes unreadable.
+        env.state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        # No phase past 1 ran: no sidecar or S3 work, no schema mutation.
+        self.assertEqual(schema.custom_fields, set(RETAINED_FILE_CUSTOM_FIELDS))
+        self.assertEqual(thumbnails.existing, {"a"})
+        self.assertEqual(env.s3.enqueued, [])
+
+        # The corrupt record is quarantined for forensics, not deleted: the
+        # spoiled file still holds the bytes we wrote (evidence preserved),
+        # even though they no longer parse as JSON.
+        quarantined = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(quarantined), 1)
+        self.assertEqual(quarantined[0].read_text(encoding="utf-8"), "{not json")
+        self.assertFalse(env.state.path.exists())
+
+    def test_corrupt_state_refuses_again_on_a_second_call_instead_of_starting_fresh(self):
+        # Finding: `_quarantine()` renames the record away, so a first call's
+        # `FileNotFoundError` on the *second* `load()` used to be read as
+        # "no run has reached here yet" and `run_cleanup` started fresh —
+        # exactly the silent reset `CorruptCleanupStateError` exists to rule
+        # out. A quarantine marker for this exact record must keep every
+        # later call refusing, not just the one that created it.
+        schema = FakeSchema(custom_fields=set(RETAINED_FILE_CUSTOM_FIELDS))
+        thumbnails = FakeThumbnails(existing={"a"})
+        env = _healthy_env(self.path, schema=schema, thumbnails=thumbnails)
+
+        result = phase_file_rows(env)
+        env.transaction.commit()
+        env.state.put("file_rows", result)
+        census_before_corruption = env.state.get_census()
+        self.assertIsNotNone(census_before_corruption)
+
+        env.state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        first_quarantine = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(first_quarantine), 1)
+        first_bytes = first_quarantine[0].read_bytes()
+
+        # A second call, a fresh process picking the site back up: it must
+        # refuse the same way, not see the missing file and start over.
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        # No new state file, no second marker, the original marker's bytes
+        # untouched: the second call did no work at all, quarantine included.
+        self.assertFalse(env.state.path.exists())
+        second_quarantine = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(second_quarantine), 1)
+        self.assertEqual(second_quarantine[0], first_quarantine[0])
+        self.assertEqual(second_quarantine[0].read_bytes(), first_bytes)
+
+        # The census phase 1 persisted is only ever readable off the
+        # quarantined sidecar now; a third, direct read must refuse the
+        # same way rather than silently answering `None` (which callers
+        # read as "no run has reached phase 1 yet").
+        with self.assertRaises(CorruptCleanupStateError):
+            env.state.get_census()
+
+        # Still no phase past 1 ran, across both calls: no sidecar or S3
+        # work, no schema mutation.
+        self.assertEqual(schema.custom_fields, set(RETAINED_FILE_CUSTOM_FIELDS))
+        self.assertEqual(thumbnails.existing, {"a"})
+        self.assertEqual(env.s3.enqueued, [])
+
+
+class TestCleanupStateQuarantinePersistence(unittest.TestCase):
+    """Direct `CleanupState` coverage for the marker check itself, without
+    going through `run_cleanup`."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "drive-cleanup-state.json"
+
+    def test_a_genuinely_absent_state_still_initializes_fresh(self):
+        # No file, no directory even, no quarantine marker anywhere: this is
+        # what a real never-run site looks like, and it must still work.
+        state = CleanupState(self.path)
+        self.assertEqual(state.load(), {"version": 1})
+        self.assertIsNone(state.get_census())
+        self.assertIsNone(state.get_settings_snapshot())
+
+    def test_an_absent_state_with_a_quarantine_marker_refuses_not_initializes(self):
+        state = CleanupState(self.path)
+        state.save({"file_rows": {"completed": True}})
+        state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+        self.assertFalse(state.path.exists())
+
+        # `load()` quarantined and raised once; every later call on the same
+        # `CleanupState` — a fresh instance pointed at the same path stands
+        # in for a fresh process — must refuse the same way, not see the
+        # missing path and answer fresh.
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+        with self.assertRaises(CorruptCleanupStateError):
+            CleanupState(self.path).load()
+        with self.assertRaises(CorruptCleanupStateError):
+            state.get_census()
+        with self.assertRaises(CorruptCleanupStateError):
+            state.get_settings_snapshot()
+
+        markers = list(state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(markers), 1)
+
+    def test_removing_the_marker_lets_a_fresh_state_initialize_again(self):
+        # The one documented way out short of a database restore: an
+        # operator who has manually reconstructed the record removes the
+        # marker themselves. This is not automatic recovery, just proof the
+        # refusal is keyed on the marker's presence, not on some permanent
+        # flag.
+        state = CleanupState(self.path)
+        state.save({"file_rows": {"completed": True}})
+        state.path.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+
+        for marker in state.path.parent.glob("*.corrupt-*"):
+            marker.unlink()
+
+        self.assertEqual(state.load(), {"version": 1})
+
 
 class TestRunCleanupOrder(unittest.TestCase):
     def setUp(self):
@@ -71,7 +304,12 @@ class TestRunCleanupOrder(unittest.TestCase):
         for name in names:
             self.assertTrue(env.state.get(name).completed, msg=name)
 
-    def test_gates_rerun_before_every_phase(self):
+    def test_gates_run_once_per_call_not_once_per_phase(self):
+        # Re-checking before every one of eight phases bought no real
+        # safety over checking once per call (Cleanup is single-actor and
+        # serial within a run) for the cost of up to ten full `File` scans
+        # a run; a genuine resume still gets a fully fresh check, because
+        # that is a new call to `run_cleanup`.
         env = _healthy_env(self.path)
         calls = []
         from suite.drive.patches.cleanup import patch as patch_module
@@ -84,8 +322,59 @@ class TestRunCleanupOrder(unittest.TestCase):
 
         with patch.object(patch_module, "check_gates", side_effect=counting):
             run_cleanup(env)
-        # Once before the loop, then once per phase.
-        self.assertEqual(len(calls), 1 + len(PHASES))
+        self.assertEqual(len(calls), 1)
+
+    def test_preflight_and_gates_run_before_the_first_mutation(self):
+        env = _healthy_env(self.path)
+        order = []
+        from suite.drive.patches.cleanup import patch as patch_module
+
+        original_preflight = patch_module.run_preflight
+        original_gates = patch_module.check_gates
+        original_phase = patch_module.phase_file_rows
+
+        def tracking_preflight(*args, **kwargs):
+            order.append("preflight")
+            return original_preflight(*args, **kwargs)
+
+        def tracking_gates(*args, **kwargs):
+            order.append("gates")
+            return original_gates(*args, **kwargs)
+
+        def tracking_phase(*args, **kwargs):
+            order.append("phase_file_rows")
+            return original_phase(*args, **kwargs)
+
+        with (
+            patch.object(patch_module, "run_preflight", side_effect=tracking_preflight),
+            patch.object(patch_module, "check_gates", side_effect=tracking_gates),
+            patch.object(patch_module, "phase_file_rows", side_effect=tracking_phase),
+        ):
+            run_cleanup(env)
+        self.assertEqual(order, ["preflight", "gates", "phase_file_rows"])
+
+    def test_each_phase_commits_before_its_checkpoint_is_written(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+        self.assertEqual(env.transaction.commits, len(PHASES))
+
+    def test_a_commit_failure_leaves_no_checkpoint_for_that_phase(self):
+        transaction = FakeTransaction()
+        env = _healthy_env(self.path, transaction=transaction)
+        transaction.fail_next = True
+        with self.assertRaises(RuntimeError):
+            run_cleanup(env)
+        # `file_rows`' own `DELETE`s already landed (a real DB commit
+        # failure does not undo prior statements in the same transaction),
+        # but with no checkpoint recorded, a resume must redo this phase
+        # rather than skip it as already done.
+        self.assertFalse(env.state.get("file_rows").completed)
+        self.assertEqual(transaction.commits, 0)
+
+        # Resuming re-runs the phase whose commit failed; its ports are
+        # idempotent, so replaying it against already-mutated fakes is safe.
+        run_cleanup(env)
+        self.assertTrue(env.state.get("file_rows").completed)
 
 
 class TestRunCleanupResume(unittest.TestCase):
@@ -131,14 +420,47 @@ class TestRunCleanupResume(unittest.TestCase):
         self.assertTrue(env.state.get("legacy_doctypes").completed)
         self.assertTrue(env.state.get("content_history").completed)
 
-    def test_a_corrupt_state_file_is_quarantined_not_silently_reset(self):
+    def test_a_crash_after_phase_ones_commit_but_before_its_checkpoint_still_lets_sidecars_delete_on_resume(
+        self,
+    ):
+        """The exact crash window: `phase_file_rows`' own `DELETE`s land (the
+        fake mutates unconditionally, standing in for a real DB commit that
+        already landed), but `env.transaction.commit()` itself fails, so
+        `patch.run_cleanup` never reaches `env.state.put("file_rows", ...)`.
+        A resumed call must reuse the census/settings this phase already
+        persisted before the crash, not rescan the now-empty File table and
+        overwrite them with an empty one — proven not by checking the
+        checkpoint alone, but by running all the way through phase 7 and
+        confirming the sidecar for a name phase 1 already deleted is still
+        found and removed.
+        """
+        thumbnails = FakeThumbnails(existing={"a"})
+        transaction = FakeTransaction()
+        env = _healthy_env(self.path, thumbnails=thumbnails, transaction=transaction)
+        transaction.fail_next = True
+        with self.assertRaises(RuntimeError):
+            run_cleanup(env)
+        self.assertFalse(env.state.get("file_rows").completed)
+        census_after_crash = env.state.get_census()
+        self.assertIsNotNone(census_after_crash)
+        self.assertIn("a", census_after_crash)
+        self.assertEqual(env.files.rows, {})  # phase 1's DELETEs already landed
+
+        run_cleanup(env)  # resume
+
+        self.assertTrue(env.state.get("file_rows").completed)
+        self.assertEqual(env.state.get_census(), census_after_crash)  # not overwritten empty
+        self.assertEqual(thumbnails.existing, set())  # "a"'s sidecar was actually deleted
+
+    def test_a_corrupt_state_file_refuses_a_resume_instead_of_resetting(self):
+        # Superseded finding: this used to treat the phase as not-yet-recorded
+        # (a silent, unsafe reset). `TestRunCleanupCorruptState` covers the
+        # fixed, fail-closed behavior at the `run_cleanup` level.
         env = _healthy_env(self.path)
         run_cleanup(env)
         env.state.path.write_text("{not json", encoding="utf-8")
-        # A fresh read quarantines the corrupt file instead of losing it,
-        # and treats the phase as not-yet-recorded (safe: rerunning a
-        # completed phase against an empty fixture is a no-op).
-        self.assertFalse(env.state.get("file_rows").completed)
+        with self.assertRaises(CorruptCleanupStateError):
+            env.state.get("file_rows")
         quarantined = list(env.state.path.parent.glob("*.corrupt-*"))
         self.assertEqual(len(quarantined), 1)
 

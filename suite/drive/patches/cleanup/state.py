@@ -13,11 +13,51 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 STATE_FILENAME = "drive-cleanup-state.json"
 STATE_VERSION = 1
+
+
+class CorruptCleanupStateError(RuntimeError):
+    """Cleanup's on-disk record exists but cannot be trusted, so this refuses
+    outright rather than starting a fresh run in its place.
+
+    An unreadable state file is not the same fact as "no run has reached
+    here yet": the census and disk-settings snapshot `phase_file_rows`
+    persists exist nowhere else once step 1's `DELETE`s and step 5's DDL
+    have committed, so silently resetting to a fresh, empty record after
+    that point would make a resumed run rescan a table already missing the
+    rows it just deleted, and orphan whatever later phases needed the
+    original answer to find. There is no automatic safe recovery from that:
+    the only way back is restoring this site's database from a backup taken
+    before the corruption, or an operator manually reconstructing the state
+    file's `census`/`disk_settings_snapshot`/per-phase records by hand from
+    other evidence before Cleanup may run again."""
+
+
+def _quarantine_message(path: Path, spoiled: Path | None) -> str:
+    where = f"quarantined at {spoiled}" if spoiled is not None else "left in place (quarantine itself failed)"
+    return (
+        f"{path} could not be read as Cleanup's state record; the unreadable file has been "
+        f"{where}, preserved for forensics rather than deleted. This record is Cleanup's only "
+        "copy of what earlier phases already committed, so an automatic fresh run is not safe: "
+        "restore this site's database from a backup taken before the corruption, or have an "
+        "operator manually reconstruct this file, before Cleanup may run again."
+    )
+
+
+def _marker_message(path: Path, markers: list[Path]) -> str:
+    found = ", ".join(str(marker) for marker in markers)
+    return (
+        f"{path} is absent, but this exact state record was already quarantined once "
+        f"({found}) and never cleared: a missing file here is corruption's aftermath, not a "
+        "fresh site. This record is Cleanup's only copy of what earlier phases already "
+        "committed, so an automatic fresh run is not safe: restore this site's database from "
+        "a backup taken before the corruption, or have an operator manually reconstruct this "
+        "file, before Cleanup may run again."
+    )
 
 
 @dataclass
@@ -30,6 +70,7 @@ class PhaseResult:
     property_setters_dropped: int = 0
     doctypes_dropped: int = 0
     columns_dropped: int = 0
+    single_values_dropped: int = 0
     docshares_deleted: int = 0
     ycomments_cleared: int = 0
     sheet_comments_stripped: int = 0
@@ -38,7 +79,7 @@ class PhaseResult:
     sidecars_deleted: int = 0
     candidates_found: int = 0
     referenced_excluded: int = 0
-    job_id: str | None = None
+    job_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -62,17 +103,40 @@ class CleanupState:
         return cls(Path(frappe.get_site_path("private", STATE_FILENAME)))
 
     def load(self) -> dict:
+        """The state dict, or `{"version": STATE_VERSION}` if genuinely no
+        run has reached this site yet (the file has never existed and no
+        quarantine marker for it does either). An existing-but-unreadable
+        file is a different fact entirely and is never conflated with a
+        fresh start: it is quarantined for forensics and
+        `CorruptCleanupStateError` is raised. Quarantining renames the
+        record away, so a later `load()` would otherwise see plain
+        `FileNotFoundError` and start fresh — silently undoing the refusal
+        the first call just raised. `_quarantine_markers()` closes that:
+        the refusal holds for as long as a `*.corrupt-*` sidecar for this
+        exact path exists, through every caller — direct or through
+        `get`/`get_census`/`get_settings_snapshot`."""
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
         except FileNotFoundError:
+            markers = self._quarantine_markers()
+            if markers:
+                raise CorruptCleanupStateError(_marker_message(self.path, markers))
             return {"version": STATE_VERSION}
         except (json.JSONDecodeError, UnicodeDecodeError):
             data = None
         if not isinstance(data, dict):
-            self._quarantine()
-            return {"version": STATE_VERSION}
+            spoiled = self._quarantine()
+            raise CorruptCleanupStateError(_quarantine_message(self.path, spoiled))
         return data
+
+    def refuse_if_corrupt(self) -> None:
+        """`run_cleanup`'s first action, before preflight, the gates, or any
+        phase: `load()` already raises on an unreadable existing record, so
+        this exists to give that one required check an explicit name at the
+        call site, rather than relying on some later, incidental `load()`
+        call (inside preflight or the phase loop) to have caught it first."""
+        self.load()
 
     def save(self, data: dict) -> None:
         data = {**data, "version": STATE_VERSION}
@@ -92,19 +156,51 @@ class CleanupState:
     def put(self, phase: str, result: PhaseResult) -> None:
         self.save({**self.load(), phase: result.as_dict()})
 
+    def get_census(self) -> list[str] | None:
+        """The drive-owned name census `phase_file_rows` persists, read by
+        `phase_thumbnails`. `None` means no run has reached phase 1 yet;
+        an empty list is a legitimate census (nothing was drive-owned)."""
+        census = self.load().get("census")
+        return list(census) if isinstance(census, list) else None
+
+    def put_census(self, names: list[str]) -> None:
+        self.save({**self.load(), "census": list(names)})
+
+    def get_settings_snapshot(self) -> dict | None:
+        """The `DISK_SETTINGS_FIELDS` snapshot `phase_file_rows` persists
+        before step 5 drops the live columns, read by `phase_thumbnails` and
+        `phase_s3_prefix`. `None` means no run has reached phase 1 yet."""
+        snapshot = self.load().get("disk_settings_snapshot")
+        return dict(snapshot) if isinstance(snapshot, dict) else None
+
+    def put_settings_snapshot(self, settings: dict) -> None:
+        self.save({**self.load(), "disk_settings_snapshot": dict(settings)})
+
     def _temp_path(self) -> Path:
         return self.path.with_suffix(f"{self.path.suffix}.{os.getpid()}.tmp")
 
-    def _quarantine(self) -> None:
+    def _quarantine_markers(self) -> list[Path]:
+        """Every `*.corrupt-*` sidecar this exact record's path has ever
+        been quarantined to. A single non-recursive listing of the state
+        file's own directory, filtered to this file's own name prefix: a
+        genuinely fresh site has no directory yet, or one with no such
+        name in it, and pays for one bounded `scandir`, never a tree
+        walk."""
+        if not self.path.parent.is_dir():
+            return []
+        return sorted(self.path.parent.glob(f"{self.path.name}.corrupt-*"))
+
+    def _quarantine(self) -> Path | None:
         if not self.path.exists():
-            return
+            return None
         stamp = time.strftime("%Y%m%d-%H%M%S")
         spoiled = self.path.with_name(f"{self.path.name}.corrupt-{stamp}-{os.getpid()}")
         try:
             os.replace(self.path, spoiled)
             self._sync_directory()
         except OSError:
-            pass
+            return None
+        return spoiled
 
     def _sync_directory(self) -> None:
         try:
