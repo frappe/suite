@@ -37,12 +37,20 @@ CUMULATIVE_FIELDS = frozenset(
         # on the rerun that finishes an interrupted migration.
         "links_minted",
         # Governed DocShare rows and content documents whose every File is
-        # Removed are deleted once. A later pass cannot derive these totals
-        # from source rows that no longer exist.
+        # Removed are deleted once. A later pass cannot derive the deleted or
+        # dropped totals from source rows that no longer exist.
+        "docshare_rows_dropped",
+        "docshare_dropped_by_reason",
         "docshare_rows_deleted",
         "removed_file_documents",
         "removed_file_docs",
         "removed_file_documents_purged",
+        # A double-encoded slide body is normalized once. The next slides pass
+        # sees the repaired array, so it cannot derive this repair count.
+        "slide_elements_repaired",
+        # An existing deck node is flagged, granted, and linked once when Build
+        # adopts it as a template. A settled rerun has no adoption to count.
+        "template_nodes_adopted",
         # Write-ahead intents for a grant batch. They survive begin_run so a
         # kill on either side of the database commit can be reconciled from
         # the target table without counting a link twice or losing it.
@@ -264,6 +272,9 @@ class GrantConversion:
     public_grants_written: int = 0
     composite_rows_dropped: int = 0
     docshare_rows_seen: int = 0
+    # A dropped Sheet `DocShare` is deleted with the rows that produce grants.
+    # The total and reason breakdown are cumulative because a rerun cannot
+    # classify a source row already deleted.
     docshare_rows_dropped: int = 0
     docshare_dropped_by_reason: dict = field(default_factory=_blank_drops)
     # Not in §14.9. A Sheet `DocShare` row is deleted once its grant exists,
@@ -417,7 +428,7 @@ class ContentConversion:
     # `slide_elements_rewritten` counts the bodies whose media references
     # became node ids. This counts the legacy bodies stored as a JSON string
     # holding the JSON array, which Build decodes twice and stores back as a
-    # plain array. A rerun reads a list and counts none.
+    # plain array. Cumulative because a rerun reads a list and counts none.
     slide_elements_repaired: int = 0
     deck_previews_created: int = 0
     template_nodes_created: int = 0
@@ -425,14 +436,16 @@ class ContentConversion:
     # it. §14.7's `template_nodes_created` counts the nodes step 8 mints under
     # `Templates`. This counts the template decks that already had a §14.4
     # node from a legacy `File` row and were flagged where they stand instead.
-    # A rerun meets the flag, the grant, and the link already written, so it
-    # counts none.
+    # Cumulative because a rerun meets the flag, grant, and link already
+    # written, so it counts none.
     template_nodes_adopted: int = 0
     writer_templates_converted: int = 0
     blobless_nodes: int = 0
     title_renames: int = 0
     template_title_renames: int = 0
     link_title_renames: int = 0
+    # Every governed content `DocShare` is deleted after it is mapped or
+    # dropped. Cumulative because a rerun cannot classify a deleted row.
     docshare_rows_dropped: int = 0
     # Not in §14.9. The step-6 counter's twin, for the rows step 10 owns:
     # `Writer Document` and `Presentation` shares, and the history-table

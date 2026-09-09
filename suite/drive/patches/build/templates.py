@@ -130,7 +130,7 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE, result=None) -
 
     result.writer_templates_converted = seen
     result.template_nodes_created = created
-    result.template_nodes_adopted = adopted
+    result.template_nodes_adopted += adopted
     result.template_title_renames = renamed
     result.title_renames = result.link_title_renames + renamed
     if owned:
