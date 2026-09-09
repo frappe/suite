@@ -209,6 +209,9 @@ const count = (value: number | null | undefined) => (value == null ? '—' : Str
 // Suite Cloud caps how many of each the site may hold; 0 means no cap.
 const limitSub = (limit: number | undefined) => (limit ? __('of {0}', [String(limit)]) : '')
 
+// "1 disabled account" but "3 disabled accounts".
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : __(many, [String(n)]))
+
 const gb = (value: number | null | undefined) =>
 	value == null ? '—' : __('{0} GB', [String(Math.round(value * 10) / 10)])
 
@@ -233,8 +236,6 @@ const serviceRows = computed(() => {
 	]
 })
 
-// "1 disabled account" but "3 disabled accounts".
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : __(many, [String(n)]))
 
 const stats = computed(() => {
 	const members = data.value?.members
@@ -263,10 +264,8 @@ const stats = computed(() => {
 			label: __('Domains'),
 			icon: Globe,
 			value: count(data.value?.domains),
-			sub: attentionDomains.value.length
-				? __('{0} not active', [String(attentionDomains.value.length)])
-				: limitSub(limits?.max_domains),
-			warn: attentionDomains.value.length > 0,
+			sub: domainsSub.value || limitSub(limits?.max_domains),
+			warn: !!domainsSub.value,
 			to: { name: 'mail-domains' },
 		},
 		{
@@ -298,6 +297,18 @@ const stats = computed(() => {
 })
 
 const attentionDomains = computed(() => data.value?.domains_needing_attention || [])
+
+// Unverified domains need the admin to act; disabled ones were switched off on purpose.
+const domainsSub = computed(() => {
+	const pending = attentionDomains.value.filter((d) => d.status !== 'Disabled').length
+	const disabled = attentionDomains.value.length - pending
+	return [
+		pending ? plural(pending, __('1 needs action'), '{0} need action') : '',
+		disabled ? plural(disabled, __('1 not active'), '{0} not active') : '',
+	]
+		.filter(Boolean)
+		.join(' · ')
+})
 
 // Ordered by what blocks mail first: dark domains, then invites going stale, then quota pressure.
 const attention = computed(() => {
