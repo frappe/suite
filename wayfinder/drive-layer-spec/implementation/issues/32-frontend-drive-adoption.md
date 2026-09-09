@@ -4,7 +4,9 @@
 
 **Blocked by:** [30 — Verify the complete backend before migration rehearsal](30-backend-integration-review.md)
 
-**Status:** ready-for-human
+**Status:** superseded
+
+Superseded 2026-09-09. Faris decided the Drive frontend is rebuilt from scratch inside a unified suite frontend, starting from route design. That effort gets its own wayfinder map. This ticket's acceptance criteria are input for that map, not work in this backlog.
 
 **Owner:** Suite frontend Drive
 

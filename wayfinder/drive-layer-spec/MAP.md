@@ -193,7 +193,9 @@ and Node-only grant/activity targets.
 ## Out of scope
 
 - Frontend/UI changes (share dialog, upload client, list views). Backend +
-  HTTP API only; UI is a later effort.
+  HTTP API only; UI is a later effort. Decided 2026-09-09: that effort is a
+  from-scratch rebuild inside a unified suite frontend, starting from route
+  design, and gets its own wayfinder map.
 - Standalone frappe/drive migration (Drive Team model). This spec covers
   suite sites only.
 - Many shared spaces (a `Space` root kind with its own quota and member list).
