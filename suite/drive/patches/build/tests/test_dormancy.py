@@ -142,13 +142,29 @@ RETAINED_PROPERTY_SETTERS = (
     ("File", "folder", "depends_on"),
 )
 
-# Doctype JSON, and the fields on it Cleanup drops.
+# Doctype JSON, and the fields on it Cleanup drops. §3.13's ten `Drive Disk
+# Settings` fields and all three of Sheet's trash columns, in full: a
+# partial list here would let one of them go missing early and still pass.
 RETAINED_FIELDS = (
     ("drive/doctype/drive_settings", ("user_folder", "quota")),
-    ("drive/doctype/drive_disk_settings", ("quota", "aws_key", "aws_secret", "bucket", "endpoint_url")),
+    (
+        "drive/doctype/drive_disk_settings",
+        (
+            "quota",
+            "root_folder",
+            "thumbnail_prefix",
+            "flat",
+            "enabled",
+            "aws_key",
+            "aws_secret",
+            "bucket",
+            "endpoint_url",
+            "signature_version",
+        ),
+    ),
     ("drive/doctype/drive_storage_reservation", ("storage_owner",)),
     ("slides/doctype/presentation", ("title",)),
-    ("sheets/doctype/sheet", ("title", "trashed", "sheets_data")),
+    ("sheets/doctype/sheet", ("title", "trashed", "trashed_on", "trashed_by", "sheets_data")),
     ("writer/doctype/writer_document", ("ycomments", "versions")),
 )
 
