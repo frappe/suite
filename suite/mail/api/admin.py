@@ -179,16 +179,11 @@ def get_domains(
     check_admin_permission("view domains")
     if status and status not in DOMAIN_STATUSES:
         frappe.throw(_("Unknown domain status {0}.").format(status))
-    rows = []
-    with suppress(Exception):
-        for domain in get_site_domains():
-            row = _domain_row(domain)
-            if txt and txt.lower() not in row["name"] and txt.lower() not in row["description"].lower():
-                continue
-            if status and row["status"] != status:
-                continue
-            rows.append(row)
-    return _page(rows, start, page_length)
+    # No suppress here: a Suite Cloud refusal must reach the page, not read as "no domains".
+    rows = [_domain_row(domain) for domain in get_site_domains()]
+    if status:
+        rows = [row for row in rows if row["status"] == status]
+    return _page(_search(rows, txt, ("name", "description")), start, page_length)
 
 
 @frappe.whitelist()
