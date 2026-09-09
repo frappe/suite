@@ -15,7 +15,9 @@
 claimed files. Repairs verified and closed in commit `dd9d54a3d` on that
 branch. Reopened a third time on the same branch (starting revision
 `67590e5db`) to repair the 6 findings below that; same claimed files.
-Repairs verified and closed in commit `caeeccadb` on that branch.
+Repairs verified and closed in commit `caeeccadb` on that branch. Reopened a
+fourth time on the same branch (starting revision `ca576d640`) to repair one
+final safety blocker below; same claimed files.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -139,6 +141,22 @@ connection, no push or merge.
   `suite/drive/patches/cleanup/`.
 - This entry supersedes the invalidated closeout below it, and every
   invalidated closeout below that.
+
+### 2026-09-09 — one final safety blocker found; closeout above is invalidated
+
+One remaining blocker in `CleanupState.load()`, found after commit
+`caeeccadb`'s closeout above: quarantining a corrupt state file renames it
+away, so a first `run_cleanup` refuses correctly with
+`CorruptCleanupStateError`, but a *second* call sees plain
+`FileNotFoundError` on the now-missing path and silently answers a fresh,
+empty record — exactly the unsafe reset `CorruptCleanupStateError` exists
+to rule out, just delayed by one call instead of prevented. The closeout
+above no longer describes what is safe and must not be trusted until
+superseded.
+
+This same branch (`fix/drive-35-final-safety`) repairs this in production
+code and tests. See the closeout above for what actually changed,
+superseding everything below it.
 
 ### 2026-09-09 — 9 second-review findings repaired, verified (branch `fix/drive-35-final-safety`)
 
