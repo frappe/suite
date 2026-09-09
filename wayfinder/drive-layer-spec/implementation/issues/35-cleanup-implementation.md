@@ -4,7 +4,7 @@
 
 **Blocked by:** [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite migration (starting revision `6e6906176`, worktree
 `integrate/drive-35-cleanup`, claimed files: `suite/drive/patches/cleanup/**`,
@@ -33,7 +33,133 @@ Run Cleanup against isolated fixtures only. Prove every missing gate leaves data
 
 ## Completion evidence
 
-### 2026-09-09 — Cleanup implemented, unregistered, fixture-tested (commit `a6622e4b1`)
+### 2026-09-09 — 11 review findings repaired, verified (branch `fix/drive-35-review-findings`)
+
+This entry supersedes every closeout below it. The 2026-09-09 "Cleanup
+implemented" entry described real code and real tests, but review found 11
+defects in both (listed in the "review found 11 defects" entry below). All 11
+are fixed in production code and tests, on this branch, commits `ba2b2476a`
+(reopen) and `220006721` (repair).
+
+**What changed, by finding.**
+1. `SiteLegacyFileRows.delete` issues a plain `frappe.db.delete`, never
+   `frappe.delete_doc`. Proven by `test_site_ports.
+   TestSiteLegacyFileRowsBypassesHooks` (spies on `frappe.delete_doc`,
+   asserts it is never called).
+2. New `TransactionGateway` port (`SiteTransactionGateway` over
+   `frappe.db.commit()`, gated on `frappe.flags.in_test`). `run_cleanup`
+   commits each phase before writing its checkpoint. Proven by
+   `test_removal_order_and_resume.
+   test_each_phase_commits_before_its_checkpoint_is_written` and
+   `test_a_commit_failure_leaves_no_checkpoint_for_that_phase` (a failed
+   commit leaves the phase not-completed, and idempotently re-runs on the
+   next call).
+3. `phase_file_rows` persists the name census and a `DiskSettingsSnapshot`
+   once, before deleting rows. Phases 7 and 8 read only that snapshot.
+   Proven by `test_the_name_census_and_settings_snapshot_are_persisted_
+   before_deletion` and, more strongly, by
+   `test_never_reads_the_live_disk_settings_port`/`test_reads_the_census_
+   and_settings_from_state_not_a_live_rescan`, which assert the live
+   `DiskSettingsSnapshot` port's read counter stays at zero.
+4. New `ClientCallerEvidence` port (`SiteClientCallerEvidence` scans the
+   checked-in SPA source tree for `suite.drive.<name>` literals). Gate 3
+   now blocks on that evidence, not on the forwarder classification label
+   phase 6 reads to decide what to remove. Proven by
+   `test_gate_legacy_callers.
+   test_a_forwarder_label_alone_does_not_refuse_once_evidence_clears_it`
+   and `test_a_forwarder_still_referenced_by_evidence_refuses`.
+5. Gates run once per `run_cleanup` call, not once per phase. Proven by
+   `test_gates_run_once_per_call_not_once_per_phase`.
+6. New `readiness.run_preflight`, called before the gates, probes every
+   port a pending phase needs — including the honestly-`NotImplementedError`
+   ones — with a no-op payload. Proven by
+   `test_an_unready_port_refuses_before_any_phase_runs` and
+   `test_preflight_and_gates_run_before_the_first_mutation`.
+7. `SETTINGS_DROPPED_COLUMNS`'s `Drive Disk Settings` entry now lists all
+   ten §3.13 fields (`DISK_SETTINGS_FIELDS`); `CONTENT_DROPPED_COLUMNS`'s
+   `Sheet` entry adds `trashed_on`/`trashed_by`; `Writer Document.versions`
+   drops before `Writer Doc Version`; `SchemaGateway.remove_permission_hooks`
+   is a new prepared (not executed) source-edit port for step 3's now-dead
+   `suite/hooks.py` entries. `suite/hooks.py` itself is untouched. Proven by
+   `test_drops_title_trashed_and_the_settings_columns_only`,
+   `test_writer_document_versions_drops_before_writer_doc_version`, and the
+   corresponding exhaustive field list in `suite.drive.patches.build.tests.
+   test_dormancy.RETAINED_FIELDS`.
+8. `SiteContentRows.strip_sheet_comments` decodes the gzip envelope before
+   inspecting it, removes only the top-level `comments` key, and pages in
+   `batch_size` chunks. Proven directly (not through a fake) by
+   `test_site_ports.TestSiteContentRowsCommentStripping` (6 cases: targeted
+   key only, gzip round trip, no-op on a sheet with no comments, null-data
+   skip, pagination, stall guard).
+9. S3 enumeration and deletion stay batch-bounded and dangerous-prefix-
+   checked (unchanged from the prior implementation, still covered by
+   `test_removal_phases.TestPhaseS3Prefix`); `SiteS3LegacyPrefix.
+   enqueue_delete`'s docstring states the re-check-at-execution contract
+   for the worker Ticket 36 must write.
+10. `require_authorization`'s refusal messages already matched §14.11
+    ("the only rollback past this point is a database restore... and
+    nothing smaller"); the misleading "Ticket 36 owns the two
+    `NotImplementedError` ports" wording is corrected below to name all of
+    them.
+11. New `test_full_run.py` runs a complete `run_cleanup` chain against one
+    fixture and asserts final state directly: rows gone, custom
+    fields/property setters/doctypes gone, permission-hook removal planned,
+    `Writer Document.versions` dropped first, docshares/ycomments/comments
+    cleared, all ten disk-settings fields gone, only forwarder-labeled API
+    names and the wildcard prefix removed, only Drive-owned sidecars gone,
+    referenced S3 objects untouched. New `test_site_ports.py` exercises the
+    real `Site*` classes directly (not fakes) for every port whose
+    correctness was not obvious from its contract alone.
+
+**Commands and results (this worktree, `PYTHONPATH` pointed at it, bench's
+Python 3.14 interpreter):**
+- `python -m unittest discover -s suite/drive/patches/cleanup/tests -t .` →
+  **107/107 passed**, no site, fakes and direct port spies only (up from 69;
+  +19 in `test_site_ports.py`, +2 in `test_full_run.py`, +16 in the updated
+  phase/gate/resume/dormancy files).
+- `frappe.init(site="slides.localhost")` (no connect), `frappe.local.db`
+  mocked per `verify-suite-backend-without-a-database`'s recipe, then
+  `unittest` over every `suite/drive/patches/{build,cleanup}/tests` module
+  plus `suite.tests.test_architecture` and
+  `suite.drive.tests.test_build_{content,storage,tree}` → **925/925 passed**,
+  zero import failures.
+- `python -m py_compile` over every new/edited file → clean.
+- `ruff check`/`ruff format` (pre-commit's pinned `v0.12.3`) → clean after
+  one import-sort autofix and a reformat; re-ran the full Cleanup suite
+  after to confirm the reformat changed nothing behaviorally.
+- Eight mutations, each applied, confirmed caught by a test failure, then
+  reverted: hookful `File` delete (`test_uses_a_plain_delete_never_
+  delete_doc` fails, spies show `delete_doc` called); checkpoint written
+  before commit (`test_a_commit_failure_leaves_no_checkpoint_for_that_phase`
+  fails); gate 3 reverted to classification-only (2 `test_gate_legacy_
+  callers` cases fail); phase-1 census write removed (census test errors on
+  `None`); `phase_s3_prefix` reverted to a live settings read (5
+  `TestPhaseS3Prefix` cases fail); the schema-source-edit preflight probe
+  removed (`test_an_unready_port_refuses_before_any_phase_runs` errors
+  uncaught); comment stripping reverted to a recursive, non-decoding scrub
+  (2 `test_site_ports` cases fail); the S3-backed thumbnail path reverted to
+  swallowing `AttributeError` (`test_s3_enabled_raises_honestly_never_
+  swallows_the_error` fails).
+
+**Still not live, on purpose (unchanged from the prior closeout — this is
+Ticket 36's scope, not a gap in this one).** Nothing here runs against a
+real site, `bench migrate` was never invoked, and no live data, schema, or
+S3 object was touched. `suite.drive.patches.cleanup.tests.test_dormancy`
+still proves the package has no `execute()`, no scheduler entry, and no
+`patches.txt`/`hooks.py` reference. Ticket 36 still owns, as source-code
+changes with no honest fixture-testable "real" implementation possible
+under this ticket: `SiteForwarderRegistry.remove`/`remove_wildcard_prefix`
+(editing `suite/drive/http/shims.py`/`suite/hooks.py`),
+`SiteSchemaGateway.drop_child_table_field`/`remove_permission_hooks`
+(editing shipped doctype JSON/`suite/hooks.py`), and
+`SiteS3LegacyPrefix.list_prefix`/`enqueue_delete` plus
+`SiteThumbnailStore`'s S3-enabled path (a real bucket client `Drive Disk
+Settings` has never had). `readiness.run_preflight` now refuses activation
+against any of these before phase 1 runs, on any site where they would
+matter (S3-backed ports are only probed when a site's disk settings show
+`enabled`).
+
+### 2026-09-09 — Cleanup implemented, unregistered, fixture-tested (commit `a6622e4b1`) — INVALIDATED, see above
 
 **What shipped.** `suite/drive/patches/cleanup/` (`ports.py`, `state.py`,
 `environment.py`, `gate.py`, `removal.py`, `patch.py`, `__init__.py`, plus
