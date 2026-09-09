@@ -712,6 +712,17 @@ class RerunTest(GrantCase):
 
         self.assertEqual(stored.docshare_rows_deleted, 7)
 
+    def test_dropped_docshare_breakdown_survives_the_start_of_a_rerun(self):
+        stored = GrantConversion(
+            docshare_rows_dropped=2,
+            docshare_dropped_by_reason={"dead_principal": 2},
+        )
+
+        stored.begin_run()
+
+        self.assertEqual(stored.docshare_rows_dropped, 2)
+        self.assertEqual(stored.docshare_dropped_by_reason, {"dead_principal": 2})
+
 
 class LinkInterruptionTest(GrantCase):
     """The exact auto-flush boundary cannot lose the cumulative link count."""

@@ -936,6 +936,21 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(target.docshares_deleted, ["share-1"])
         self.assertEqual(target.grant_roles("file-1", ("reader@example.com",))["reader@example.com"], READ)
 
+    def test_a_rerun_keeps_the_count_of_governed_shares_it_dropped(self):
+        row = document("Writer Document", "writer-1")
+        share = ContentShareRow("share-1", row.doctype, row.name, user="missing@example.com", read=1)
+        source = FakeContent(documents=[row], files=[file_for(row, "file-1")], shares=[share])
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+
+        first = link_content_documents(env)
+        self.assertEqual(first.docshare_rows_dropped, 1)
+
+        second = link_content_documents(env)
+
+        self.assertEqual(second.docshare_rows_dropped, 1)
+        self.assertEqual(target.docshares_deleted, ["share-1"])
+
     def test_a_completed_record_still_deletes_a_row_that_is_still_there(self):
         """§14.2 lets a rerun skip a complete record; this work is not skipped.
 
