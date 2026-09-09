@@ -3741,6 +3741,12 @@ Sheet `DocShare` rows become grants on the sheet's node: `read` to READ,
 `write` to EDIT, the `everyone` row to `$GENERAL` at the same level. Rows
 for missing users are dropped and counted [011 §11].
 
+Presentation and Writer Document `DocShare` rows become grants the same way
+in step 10. Every converted or dropped `DocShare` row on a governed doctype
+is then deleted, after its columns are journaled under the site's private
+directory. `Drive Grant` is the only permission table (§1), and the read
+guards refuse every list while a share row survives.
+
 Dropped and counted: rows naming a User or User Group that no longer
 exists; rows on an unmigrated entity; rows with no flags; rows invalid
 under the root guardrails. Duplicate `(entity, user)` rows collapse as
@@ -3788,7 +3794,10 @@ afterwards, and the report counts what it will thin. Each content doc gets
 its `node` link from its File row. When `File.status` and `Sheet.trashed`
 disagree, File wins and the case is reported. A content doc with no File
 row, Presentation templates excepted, gets a node created in its owner's
-Personal Root and is reported [011 §11].
+Personal Root and is reported [011 §11]. A content doc whose File rows are
+all Removed is purged through the app's `on_purge`, satellites included, and
+reported; the old Drive deleted such documents in a nightly sweep, and §5.13
+allows no governed row without a node.
 
 ### 14.7 Slides media, previews, and templates
 
@@ -3871,8 +3880,9 @@ Then, in order:
   (`suite/fixtures/property_setter.json`).
 - Drop `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`, and
   the old notification columns.
-- Delete Sheet `DocShare` rows; drop `Writer Version`, `Writer Doc Version`,
-  `Writer Template`, and `Sheet Snapshot`; clear `ycomments`; strip cell
+- Check that no `DocShare` row remains on a governed doctype (Build deleted
+  them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
+  `Sheet Snapshot`; clear `ycomments`; strip cell
   comments from `sheets_data`. `Writer Doc Version` is the child table
   behind `Writer Document.versions`, so dropping the field drops it.
 - Drop the title and trashed columns on content doctypes; `user_folder` and
@@ -3899,6 +3909,10 @@ time. Build and Cleanup do not depend on it [011 amendment].
 |---|---|
 | after Build | truncate the new tables and ship the old code |
 | after Cleanup | a database restore, and nothing smaller |
+
+The `DocShare` preimage journal (§14.5) restores the share rows Build
+deleted. Content documents purged for Removed-only File rows are not
+restored: their bytes were already gone.
 
 ---
 
