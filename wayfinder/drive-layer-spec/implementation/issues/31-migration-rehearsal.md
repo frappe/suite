@@ -109,9 +109,16 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Rollback note for §14.11: the spec's rollback truncates the new tables. `tabDrive Comment` is a reused table holding 254 legacy child rows, so that rollback is lossy. The database snapshot restore used by this rehearsal is not.
 - Artifacts: `pass5-migrate.log`, `pass5-migrate-clean.log`, `pass5-traceback.txt`, `drive-build-state-after-pass5-failure.json`, `pass5-progress.tsv` under `/home/faris/backups/suite-frappe/build/`. Source-side expected counts: `source-inventory.md` in the same directory.
 
+### Build pass 6, resume after the slides-media fix (2026-09-09, failed on data)
+
+- Fix merged as 27b515e5b. Quantified: 11,715 media Files on 462 decks; 2,277 already had a tree node; 2,245 of those sat under a folder other than the deck (2,239 directly in a personal root), across 102 decks; 74 Files are drawn by more than one deck. Rule: spec §14.7, "slide media File rows become child nodes of the deck node, one node per deck per blob", and decision 012 §1, read on the deck covers its media by the path walk. Step 8 now adopts such a node under the deck and rewrites title, parent, root, path, size, mime and trash columns (`media_nodes_relocated`, `relocated_media_nodes`). 835 build tests pass without a database. Follow-up noted: deck `acbfa9f1f3` is Trashed and holds 2 Active media; step 8 already mints Active media under Trashed decks, so this is pre-existing shape, not new.
+- Same migrate command on the partial state, 5 min 13 s. Step 8 progressed: `media_nodes_relocated` 65, `media_nodes_created` 104, `media_duplicates_collapsed` 31, `deck_previews_created` 6. Failed at `_borrowed_mapping` (`slides.py:514`): `InvalidLegacyContent: borrowed media '/files/Screenshot 2025-09-08 at 3.22.37 PM.png' is ambiguous`.
+- Cause: three images on template deck `52us7f3rb0` exist as a public and a private File row with two `File Blob` rows of identical checksum and size, differing only in `is_private`. The borrowed path compares blob identity, not content, and has no duplicate collapse. 72 of 522 decks borrow one of the three (71 via `frappeverse-logo-55yk789.png`). Fix in progress on branch `forge/ticket-31-borrowed-media`.
+- Artifacts: `pass6-migrate.log`, `pass6-migrate-clean.log`, `pass6-traceback.txt`, `drive-build-state-after-pass6-failure.json`, `pass6-progress.tsv` under `/home/faris/backups/suite-frappe/build/`.
+
 ### Plan for the Build rerun
 
-- Pass 1, the storage_v2 setup, and the index, Removed-content and legacy-comment fixes are done above. After the slides-media fix merges: flush redis, same migrate command, expect Build to resume at step 8 and finish; then read the report and reconcile against `source-inventory.md`.
+- Pass 1, the storage_v2 setup, and the index, Removed-content, legacy-comment and slides-media fixes are done above. After the borrowed-media fix merges: flush redis, same migrate command, expect Build to resume at step 8 and finish; then read the report and reconcile against `source-inventory.md`.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
