@@ -216,6 +216,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         detail = admin.get_group(group)
         self.assertEqual([m["email"] for m in detail["members"]], [f"alice@{DOMAIN}"])
         self.assertEqual(detail["quota"]["total"], 2 * 1024**3)
+        self.assertEqual(admin.get_groups()["items"][0]["quota_gb"], 2)
 
         admin.add_group_members(group, [f"bob@{DOMAIN}"])
         admin.remove_group_member(group, f"alice@{DOMAIN}")
@@ -357,6 +358,7 @@ class TestMembers(SuiteCloudTestCase):
         page = admin.get_members(search="carol")
         self.assertEqual(page["total"], 1)
         listed = next(u for u in page["items"] if u["name"] == self.email)
+        self.assertEqual(listed["quota_gb"], 2)  # the allotment, fetched for the page in one call
         self.assertEqual(admin.get_members(search="carol", start=20, page_length=20)["items"], [])
         self.assertNotIn("quota", listed)
 

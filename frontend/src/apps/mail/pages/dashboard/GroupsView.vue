@@ -31,13 +31,16 @@
 					>
 						<ListRowItem :item="item">
 							<span v-if="column.key === 'created_at'">{{ formatCreatedAt(item) }}</span>
+							<span v-else-if="column.key === 'quota_gb'" class="text-ink-gray-5 text-sm">
+								{{ item == null ? '—' : __('{0} GB', [String(item)]) }}
+							</span>
 						</ListRowItem>
 					</ListRow>
 				</template>
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
-		<DashboardListSkeleton v-else :columns="3" />
+		<DashboardListSkeleton v-else :columns="4" />
 		<DashboardPager
 			v-if="list.loaded && list.total"
 			:count="list.rows.length"
@@ -77,11 +80,19 @@ const list = usePagedList<GroupRow>('suite.mail.api.admin.get_groups', () => ({ 
 
 watchDebounced(() => search.value, list.reload, { debounce: 300 })
 
-type GroupRow = { id: string; name: string; email?: string; description?: string; created_at?: string }
+type GroupRow = {
+	id: string
+	name: string
+	email?: string
+	description?: string
+	quota_gb?: number | null
+	created_at?: string
+}
 
 const LIST_COLUMNS = [
 	{ label: __('Email'), key: 'email' },
 	{ label: __('Description'), key: 'description' },
+	{ label: __('Quota'), key: 'quota_gb' },
 	{ label: __('Created At'), key: 'created_at' },
 ]
 

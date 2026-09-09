@@ -64,6 +64,9 @@
 								:theme="row.enabled ? 'green' : 'gray'"
 							/>
 						</template>
+						<template v-else-if="column.key === 'quota'">
+							<span class="text-ink-gray-5 text-sm">{{ formatQuota(row.quota_gb) }}</span>
+						</template>
 						<template v-else-if="column.key === 'last_active'">
 							<span class="text-ink-gray-5 text-sm">
 								{{
@@ -99,7 +102,7 @@
 			</template>
 		</ListSelectBanner>
 	</ListView>
-	<DashboardListSkeleton v-else :columns="5" />
+	<DashboardListSkeleton v-else :columns="6" />
 	<DashboardPager
 		v-if="list.loaded && list.total"
 		:count="list.rows.length"
@@ -153,6 +156,7 @@ type MemberRow = {
 	last_active?: string | null
 	is_admin: boolean
 	enabled: boolean
+	quota_gb?: number | null
 }
 
 const search = ref('')
@@ -220,10 +224,14 @@ watch(
 const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
 
+// The allotment only; usage would cost a cluster call per row and lives on the account page.
+const formatQuota = (gb?: number | null) => (gb == null ? '—' : __('{0} GB', [String(gb)]))
+
 const LIST_COLUMNS = [
 	{ label: __('User'), key: 'user' },
 	{ label: __('Role'), key: 'role' },
 	{ label: __('Status'), key: 'status' },
+	{ label: __('Quota'), key: 'quota' },
 	{ label: __('Last Active'), key: 'last_active' },
 ]
 

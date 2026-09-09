@@ -416,7 +416,23 @@ def get_members(
         # Stored in system time; the API speaks UTC, like every other timestamp it returns.
         user["last_active"] = to_utc_z(user.get("last_active"))
 
+    _attach_quotas(users)
     return {"items": users, "total": total}
+
+
+def _attach_quotas(users: list[dict]) -> None:
+    """The allotted quota per listed account, one Suite Cloud call for the page; None when unknown."""
+
+    for user in users:
+        user["quota_gb"] = None
+    emails = [user["account"] for user in users if user.get("account")]
+    if not emails:
+        return
+    with suppress(Exception):
+        quotas = get_client().call("accounts.get_quotas", emails=emails)
+        for user in users:
+            if user.get("account") in quotas:
+                user["quota_gb"] = flt(quotas[user["account"]])
 
 
 def _all_accounts() -> dict[str, dict]:
@@ -856,6 +872,7 @@ def _group_row(group: dict) -> dict:
         "name": group["email"].split("@", 1)[0],
         "email": group["email"],
         "description": group.get("description"),
+        "quota_gb": flt(group.get("disk_quota_gb")),
         "created_at": to_utc_z(group.get("created_at")),
     }
 

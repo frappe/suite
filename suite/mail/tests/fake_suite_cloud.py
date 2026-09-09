@@ -173,6 +173,9 @@ class FakeSuiteCloud:
         emails = sorted(self.accounts)
         return {"items": [self._account(e) for e in emails[start : start + limit]], "total": len(emails)}
 
+    def accounts__get_quotas(self, emails) -> dict:
+        return {e: self.accounts[e]["disk_quota_gb"] for e in emails if e in self.accounts}
+
     def accounts__get_account(self, email: str) -> dict:
         return self._account(self._require(self.accounts, email)["email"])
 
