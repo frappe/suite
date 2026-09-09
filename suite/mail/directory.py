@@ -94,12 +94,6 @@ def create_account(
     )
 
 
-def create_app_password(email: str, description: str | None = None) -> str:
-    return get_client().call(
-        "mail.accounts.create_app_password", email=email, description=description or "Suite"
-    )["secret"]
-
-
 def update_password(user: str | None = None, new_password: str | None = None) -> None:
     """Sets the password of the user's mail account (no-op if they have none)."""
 
