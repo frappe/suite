@@ -723,5 +723,197 @@ class LegacyCommentTest(unittest.TestCase):
             port_legacy_comments(env, self.record, batch_size=10)
 
 
+class CopiedDocumentIdTest(unittest.TestCase):
+    """Two Writer Documents that carry one `ycomments` between them.
+
+    A copied document keeps its source's Yjs ids verbatim, and §14.6 makes
+    those ids the thread *anchor*. `name` is the primary key, so the second
+    node cannot have them: it takes a name derived from `(node, id)` and
+    keeps the source id in the anchor (`comments._renamed_id`).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        self.record = ContentConversion()
+
+    def environment(self, source):
+        target = FakeContentTarget(content=source)
+        return build_environment(self.path, content=source, content_target=target), target
+
+    def copies(self, values):
+        """One `ycomments` on two documents, the way a Drive copy leaves it."""
+        ycomments = writer_update(values)
+        return [
+            ContentRow("Writer Document", name, ycomments=ycomments, modified=STAMP, modified_by=OWNER)
+            for name in ("writer-source", "writer-copy")
+        ]
+
+    def thread_and_reply(self):
+        return {
+            "top": {
+                "id": "top",
+                "text": "First",
+                "owner": OWNER,
+                "creation": 1_000,
+                "replies": [{"id": "reply", "text": "Later", "owner": OWNER, "creation": 2_000}],
+            }
+        }
+
+    def test_a_copy_takes_its_own_names_and_keeps_the_source_ids_as_anchors(self):
+        source_doc, copy = self.copies(self.thread_and_reply())
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, target = self.environment(source)
+        convert_document_comments(env, self.record, source_doc, "node-a", batch_size=100)
+        before = (dict(target.thread_rows), dict(target.comment_rows))
+
+        count = convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+
+        self.assertEqual(count, 2)
+        thread_id = derived_name("drive-comment-rename/1", "node-b", "top")
+        reply_id = derived_name("drive-comment-rename/1", "node-b", "reply")
+        thread = target.thread_rows[thread_id]
+        # The anchor is what the app resolves, so the source id stays on it.
+        self.assertEqual((thread["node"], thread["anchor"]), ("node-b", "top"))
+        self.assertEqual(target.comment_rows[thread_id]["thread"], thread_id)
+        self.assertEqual(target.comment_rows[reply_id]["thread"], thread_id)
+        self.assertEqual(target.comment_rows[reply_id]["node"], "node-b")
+        # The source node keeps every row exactly as its own pass wrote it.
+        self.assertEqual(before[0]["top"], target.thread_rows["top"])
+        self.assertEqual(before[1]["reply"], target.comment_rows["reply"])
+
+    def test_the_renamed_rows_are_counted_and_reported_once_for_the_document(self):
+        source_doc, copy = self.copies(self.thread_and_reply())
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, _ = self.environment(source)
+        convert_document_comments(env, self.record, source_doc, "node-a", batch_size=100)
+
+        convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+
+        # One thread, and both of its comments: the top-level entry shares its
+        # id with the thread, and the reply has its own.
+        self.assertEqual(self.record.comment_threads_renamed, 1)
+        self.assertEqual(self.record.comments_renamed, 2)
+        self.assertEqual(len(self.record.issues), 1)
+        issue = self.record.issues[0]
+        self.assertEqual((issue.source, issue.phase), ("Writer Document:writer-copy", "history"))
+        self.assertIn("already belong to node node-a", issue.reason)
+        self.assertIn("renamed on this node", issue.reason)
+
+    def test_a_comment_id_alone_is_renamed_when_its_thread_id_is_free(self):
+        values = {
+            "thread-a": {
+                "id": "thread-a",
+                "text": "First",
+                "owner": OWNER,
+                "creation": 1_000,
+                "replies": [{"id": "shared", "text": "Later", "owner": OWNER, "creation": 2_000}],
+            }
+        }
+        source_doc = ContentRow(
+            "Writer Document",
+            "writer-source",
+            ycomments=writer_update(values),
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        values["thread-b"] = values.pop("thread-a")
+        values["thread-b"]["id"] = "thread-b"
+        copy = ContentRow(
+            "Writer Document",
+            "writer-copy",
+            ycomments=writer_update(values),
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, target = self.environment(source)
+        convert_document_comments(env, self.record, source_doc, "node-a", batch_size=100)
+
+        convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+
+        renamed = derived_name("drive-comment-rename/1", "node-b", "shared")
+        self.assertEqual((self.record.comment_threads_renamed, self.record.comments_renamed), (0, 1))
+        # The free thread id is left where the source put it.
+        self.assertEqual(target.thread_rows["thread-b"]["node"], "node-b")
+        self.assertEqual(target.comment_rows["thread-b"]["thread"], "thread-b")
+        self.assertEqual(target.comment_rows[renamed]["thread"], "thread-b")
+        self.assertEqual(target.comment_rows["shared"]["node"], "node-a")
+
+    def test_a_rerun_derives_the_same_names_counts_the_same_and_writes_nothing(self):
+        source_doc, copy = self.copies(self.thread_and_reply())
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, target = self.environment(source)
+        convert_document_comments(env, self.record, source_doc, "node-a", batch_size=100)
+        convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+        before = (dict(target.thread_rows), dict(target.comment_rows))
+        writes = target.commits
+
+        # A fresh record is what `begin_phase` leaves the next pass, so the
+        # second run's counters are its own census, not a running total.
+        again = ContentConversion()
+        count = convert_document_comments(env, again, copy, "node-b", batch_size=100)
+
+        self.assertEqual(count, 2)
+        self.assertEqual((dict(target.thread_rows), dict(target.comment_rows)), before)
+        self.assertEqual(target.commits, writes)
+        self.assertEqual(again.comment_threads_renamed, self.record.comment_threads_renamed)
+        self.assertEqual(again.comments_renamed, self.record.comments_renamed)
+
+    def test_one_document_holding_one_id_twice_is_still_refused(self):
+        # The rename answers a second *node*. Inside one document the id is
+        # unreadable however it is named, so the refusal comes first.
+        values = {
+            "first": {
+                "id": "first",
+                "text": "First",
+                "owner": OWNER,
+                "creation": 1,
+                "replies": [{"id": "same", "text": "One", "owner": OWNER, "creation": 2}],
+            },
+            "second": {
+                "id": "second",
+                "text": "Second",
+                "owner": OWNER,
+                "creation": 3,
+                "replies": [{"id": "same", "text": "Two", "owner": OWNER, "creation": 4}],
+            },
+        }
+        source_doc, copy = self.copies(values)
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, target = self.environment(source)
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "comment ids collide"):
+            convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+
+        self.assertEqual((target.thread_rows, target.comment_rows), ({}, {}))
+        self.assertEqual((self.record.comment_threads_renamed, self.record.comments_renamed), (0, 0))
+
+    def test_a_legacy_row_under_a_copied_id_is_still_completed_in_place(self):
+        # `_is_legacy` wins over the rename: a row from the old
+        # `Drive File.comments` grid carries no `thread` and no `node`, and
+        # it is this comment rather than another node's claim on the id.
+        source_doc, copy = self.copies({"top": {"id": "top", "text": "First", "owner": OWNER, "creation": 1}})
+        source = FakeContent(documents=[source_doc, copy], timezone="UTC")
+        env, target = self.environment(source)
+        target.comment_rows["top"] = {
+            "name": "top",
+            "parent": "file-1",
+            "content": "<p>old</p>",
+            "resolved": 0,
+            "owner": "old@example.com",
+            "creation": LEGACY_STAMP,
+            "modified": LEGACY_STAMP,
+            "modified_by": "old@example.com",
+        }
+
+        convert_document_comments(env, self.record, copy, "node-b", batch_size=100)
+
+        self.assertEqual(self.record.legacy_comments_superseded, 1)
+        self.assertEqual((self.record.comment_threads_renamed, self.record.comments_renamed), (0, 0))
+        self.assertEqual(target.comment_rows["top"]["node"], "node-b")
+
+
 if __name__ == "__main__":
     unittest.main()
