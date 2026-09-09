@@ -8,7 +8,7 @@ from suite.drive._core.roles import EDIT, MANAGE, READ
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL
-from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, WriterTemplateRow
+from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, TreeRow, WriterTemplateRow
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.patches.build.tests.fakes import (
@@ -107,6 +107,38 @@ class TemplateTest(unittest.TestCase):
             "creation": STAMP,
             "modified": STAMP,
             "modified_by": "Administrator",
+        }
+        row.update(values)
+        target.node_rows[name] = row
+        return name
+
+    def node_grants(self, target, node):
+        return len([row for row in target.grant_rows.values() if row["node"] == node])
+
+    def tree_node(self, target, deck, name="file-1", **values):
+        """The document node §14.4 builds from a legacy `File` row."""
+        row = {
+            "name": name,
+            "title": "Deck",
+            "parent": "old-folder",
+            "root": "old-root",
+            "path": "/old-folder/",
+            "kind": "document",
+            "blob": None,
+            "size": 0,
+            "mime": "frappe/slides",
+            "url": None,
+            "content_doctype": "Presentation",
+            "content_docname": deck,
+            "state": ACTIVE,
+            "trashed_at": None,
+            "trash_root": None,
+            "content_modified": STAMP,
+            "is_template": 0,
+            "owner": OWNER,
+            "creation": STAMP,
+            "modified": STAMP,
+            "modified_by": OWNER,
         }
         row.update(values)
         target.node_rows[name] = row
@@ -597,6 +629,137 @@ class TemplateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BuildContentError, "which is not one"):
             link_content_documents(env)
+
+    # -- a template deck that already has a §14.4 node
+
+    def test_a_template_deck_with_an_existing_node_adopts_it_in_place(self):
+        """§14.6 gives one content document one node; §14.7 must not mint a second."""
+        deck = presentation_template("deck-template")
+        source = FakeContent(documents=[deck], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        before = dict(target.node_rows[node])
+
+        folder = convert_templates(env)
+
+        result = env.state.content()
+        self.assertEqual(result.template_nodes_adopted, 1)
+        self.assertEqual(result.template_nodes_created, 0)
+        # No second node, and nothing new under `Templates`.
+        self.assertNotIn(deck.name, target.node_rows)
+        self.assertEqual(target.child_nodes(folder), [])
+        stored = target.node_rows[node]
+        self.assertEqual(stored["is_template"], 1)
+        # §8.10: the flag and the grant are the whole conversion. The node
+        # keeps the place, the title, and the stamps §14.4 gave it.
+        self.assertEqual(
+            {key: value for key, value in stored.items() if key != "is_template"},
+            {key: value for key, value in before.items() if key != "is_template"},
+        )
+        self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
+        self.assertEqual(target.grant_roles(node, (GENERAL,))[GENERAL], READ)
+        self.assertEqual(target.grant_roles(node, (OWNER,))[OWNER], MANAGE)
+        self.assertEqual(self.node_grants(target, node), 2)
+        self.assertEqual(
+            [(issue.source, issue.reason, issue.phase) for issue in result.issues],
+            [
+                (
+                    f"Presentation:{deck.name}",
+                    f"template Presentation {deck.name} already had node {node}; adopted in place",
+                    "templates",
+                )
+            ],
+        )
+
+    def test_a_second_run_over_an_adopted_template_deck_writes_nothing(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(documents=[deck], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+
+        convert_templates(env)
+        rows = (dict(target.node_rows), dict(target.grant_rows))
+
+        convert_templates(env)
+
+        again = env.state.content()
+        self.assertEqual((dict(target.node_rows), dict(target.grant_rows)), rows)
+        self.assertEqual(self.node_grants(target, node), 2)
+        self.assertEqual(again.template_nodes_adopted, 0)
+        self.assertEqual(again.template_nodes_created, 0)
+        self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
+        # `begin_phase` drops the templates phase's evidence first, so the
+        # standing shape is reported once per run and never accumulates.
+        self.assertEqual(len(again.issues), 1)
+        self.assertEqual(again.issues_by_phase, {"templates": 1})
+
+    def test_an_adopted_deck_claims_no_title_under_the_templates_folder(self):
+        adopted = presentation_template("deck-a", title="Common")
+        minted = presentation_template("deck-b", title="Common")
+        source = FakeContent(
+            documents=[adopted, minted],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.tree_node(target, adopted.name)
+
+        convert_templates(env)
+
+        self.assertEqual(target.node_rows["deck-b"]["title"], "Common")
+        self.assertEqual(env.state.content().template_title_renames, 0)
+
+    def test_an_adopted_deck_survives_the_slides_and_link_steps(self):
+        """The defect: `history._document_node` refused the second node."""
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[
+                TreeRow(
+                    "file-1",
+                    content_doctype="Presentation",
+                    content_docname="deck-template",
+                )
+            ],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.template_nodes_adopted, 1)
+        self.assertTrue(result.slides_completed)
+
+        linked = link_content_documents(env)
+
+        self.assertTrue(linked.links_completed)
+        self.assertEqual(linked.orphan_content_docs_adopted, 0)
+        self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
+
+    def test_two_nodes_for_one_template_deck_are_refused(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(documents=[deck], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        self.tree_node(target, deck.name, name="file-1")
+        self.tree_node(target, deck.name, name="file-2")
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "deck-template has multiple target nodes"):
+            convert_templates(env)
+
+    def test_a_template_deck_with_no_node_is_still_created_under_templates(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(documents=[deck], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        folder = convert_templates(env)
+
+        result = env.state.content()
+        self.assertEqual(result.template_nodes_created, 1)
+        self.assertEqual(result.template_nodes_adopted, 0)
+        self.assertEqual(result.issues, [])
+        self.assertEqual(target.node_rows[deck.name]["parent"], folder)
+        self.assertEqual(target.node_rows[deck.name]["is_template"], 1)
+        self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, deck.name)
 
     def test_a_second_run_changes_no_row_and_no_counter(self):
         writer = writer_template("writer-template")

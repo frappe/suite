@@ -773,7 +773,9 @@ class ContentTarget(Protocol):
         self, document: dict | None, node: dict | None, grants: list[dict], *, link: str = ""
     ) -> None: ...
 
-    def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None: ...
+    def write_presentation_template(
+        self, deck: str, node: dict | None, grants: list[dict], *, adopt: str = ""
+    ) -> None: ...
 
     def update_media_node(self, name: str, blob: str, size: int, mime: str) -> None: ...
 
@@ -1753,11 +1755,24 @@ class SiteContentTarget:
 
         self._unit("drive_build_writer_template", write)
 
-    def write_presentation_template(self, deck: str, node: dict | None, grants: list[dict]) -> None:
+    def write_presentation_template(
+        self, deck: str, node: dict | None, grants: list[dict], *, adopt: str = ""
+    ) -> None:
+        """Write one template deck. `adopt` names a node §14.4 already wrote.
+
+        `templates._adopt_presentation_template` passes it instead of a node
+        to insert: the row stays where it is, and the only column this write
+        touches on it is the flag. `update_modified` stays off for the reason
+        every other Build write keeps it off: §14.7 preserves the source
+        stamps.
+        """
+
         def write():
             self.insert_nodes([node] if node else [])
+            if adopt:
+                frappe.db.set_value("Drive Node", adopt, {"is_template": 1}, update_modified=False)
             self.insert_grants(grants)
-            self.write_content_link("Presentation", deck, node["name"] if node else deck)
+            self.write_content_link("Presentation", deck, adopt or (node["name"] if node else deck))
 
         self._unit("drive_build_presentation_template", write)
 
