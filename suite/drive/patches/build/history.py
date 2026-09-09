@@ -24,6 +24,8 @@ HISTORY_FIELDS = (
     "history_deferred",
     "versions_seen",
     "comments_seen",
+    "comment_threads_renamed",
+    "comments_renamed",
 )
 
 VERSION_FIELDS = (
