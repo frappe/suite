@@ -4,11 +4,13 @@
 
 **Blocked by:** [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** done
+**Status:** in-progress
 
 **Owner:** Suite migration (starting revision `6e6906176`, worktree
 `integrate/drive-35-cleanup`, claimed files: `suite/drive/patches/cleanup/**`,
-`suite/drive/patches/build/tests/test_dormancy.py`)
+`suite/drive/patches/build/tests/test_dormancy.py`). Reopened on branch
+`fix/drive-35-review-findings` (starting revision `5e6130d07`) to repair the
+review findings below; same claimed files.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -141,6 +143,44 @@ the two `NotImplementedError` ports (`SiteForwarderRegistry.remove`/
 `remove_wildcard_prefix`, `SiteS3LegacyPrefix.list_prefix`/`enqueue_delete`),
 which are source-code changes rather than runtime operations and so have no
 honest fixture-testable "real" implementation to write under this ticket.
+
+### 2026-09-09 — review found 11 defects; closeout above is invalidated
+
+A review of commit `a6622e4b1` (recorded in docs commit `5e6130d07`) found 11
+defects in production code and tests, not just in the evidence prose above.
+The closeout above no longer describes what shipped and must not be trusted
+until superseded. Findings, by area:
+
+1. `SiteLegacyFileRows.delete` used `frappe.delete_doc`, which runs
+   `File.on_trash`/`after_delete` and would delete linked Writer/
+   Presentation/Sheet bodies, local bytes, and satellite rows exactly when
+   step 1 must preserve them.
+2. No transaction port existed. A checkpoint could be written with no
+   guarantee the phase's own writes had committed first.
+3. Phase 1 did not persist the Drive-owned name census or the disk-settings
+   snapshot before deleting rows; steps 7 and 8 re-queried tables and
+   columns already gone by the time they ran.
+4. Gate 3 read the same forwarder classification label that phase 6 acts
+   on, so it could never find anything left to block once it "passed."
+5. Gates re-ran once per phase (up to 10 full `File` scans a run) instead
+   of once per call.
+6. No preflight step existed for the ports that honestly raise
+   `NotImplementedError`; an activation attempt would destroy rows in
+   phases 1–5 before failing in phase 6, 7, or 8.
+7. `Drive Disk Settings`' dropped-field list named 5 of §3.13's 10 fields;
+   Sheet's dropped-column list omitted `trashed_on`/`trashed_by`.
+8. Sheet comment stripping recursively deleted any key spelled "comment"
+   anywhere in `sheets_data`, and never decoded the gzip envelope first, so
+   compressed rows were a silent no-op.
+9. The old `SiteThumbnailStore` S3 path caught `AttributeError` from a
+   nonexistent `get_s3_connection()` and returned a quiet "not deleted."
+10. §14.11's evidence and Ticket 36 hand-off wording needed correcting.
+11. No test exercised a full `run_cleanup` chain's end state, and no test
+    exercised the real `Site*` ports directly (only fakes).
+
+This branch (`fix/drive-35-review-findings`) repairs all 11 in production
+code and tests. See the closeout below for what actually changed, superseding
+everything above it.
 
 ### 2026-09-09 — noted from Ticket 30's final review pass
 
