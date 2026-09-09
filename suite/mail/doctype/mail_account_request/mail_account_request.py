@@ -424,6 +424,8 @@ class MailAccountRequest(Document):
 
         if not wanted:
             return wanted
+        from suite.mail.suite_cloud import get_client
+
         existing = {row["email"] for row in get_client().call(method)}
         missing = [address for address in wanted if address.lower() not in existing]
         if missing:
