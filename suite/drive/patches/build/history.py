@@ -93,7 +93,7 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
                         from suite.drive.patches.build.comments import convert_document_comments
 
                         content.comments_seen += convert_document_comments(
-                            env, document, node, batch_size=batch_size
+                            env, content, document, node, batch_size=batch_size
                         )
                 except RemovedLegacyFile:
                     # No node, and none is coming: §14.4 skipped the File row.
@@ -114,6 +114,16 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
         _fail(env, content, first_pending, f"{deferred} content documents still have no node")
     content.history_completed = not deferred
     if content.history_completed:
+        # Only now. Every document that owns a legacy `Drive Comment` row has
+        # had its Yjs entries written, so what is still legacy is a row no
+        # Yjs entry claims. Run it while documents are deferred and a later
+        # pass would meet a thread it did not write.
+        from suite.drive.patches.build.comments import port_legacy_comments
+
+        try:
+            port_legacy_comments(env, content, batch_size=batch_size)
+        except InvalidLegacyContent as error:
+            _fail(env, content, "Drive Comment", str(error))
         if counted is not None and counted != content.versions_seen:
             content.report_at = None
         if not content.report_at:

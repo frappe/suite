@@ -341,6 +341,14 @@ class RemovedFileDocument:
 
 
 @dataclass
+class LegacyComment:
+    """A legacy `Drive Comment` child row Build could not give a node."""
+
+    name: str
+    file: str
+
+
+@dataclass
 class ContentConversion:
     """The durable outcome of §14.2 steps 7, 8, and 10."""
 
@@ -376,6 +384,16 @@ class ContentConversion:
     # only phase that walks all three content doctypes.
     removed_file_documents: int = 0
     removed_file_docs: list[RemovedFileDocument] = field(default_factory=list)
+    # Not in §14.9 either, and owned by no phase: `begin_phase` must not
+    # reset them. Every other counter is recomputed from sources Build never
+    # writes, so a rerun reproduces it. The first two count rows Build
+    # rewrote in the reused `Drive Comment` table, which no later pass sees
+    # as legacy, so they are cumulative. `port_legacy_comments` recounts the
+    # third itself: those rows stay legacy, and every sweep meets them.
+    legacy_comments_superseded: int = 0
+    legacy_comments_ported: int = 0
+    legacy_comments_unported: int = 0
+    legacy_comment_rows: list[LegacyComment] = field(default_factory=list)
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0
@@ -386,6 +404,12 @@ class ContentConversion:
         self.removed_file_documents += 1
         if len(self.removed_file_docs) < SAMPLE_KEPT:
             self.removed_file_docs.append(entry)
+
+    def record_legacy_comment(self, entry: LegacyComment) -> None:
+        """Keep a bounded list; the counter above stays exact."""
+        self.legacy_comments_unported += 1
+        if len(self.legacy_comment_rows) < SAMPLE_KEPT:
+            self.legacy_comment_rows.append(entry)
 
     def record_issue(self, source: str, reason: str, *, phase: str = "") -> None:
         self.issues_total += 1
@@ -417,11 +441,12 @@ class ContentConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentConversion:
-        samples = {"issues", "removed_file_docs"}
+        samples = {"issues", "removed_file_docs", "legacy_comment_rows"}
         known = {f for f in cls.__dataclass_fields__ if f not in samples}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
         content.removed_file_docs = _rebuild(RemovedFileDocument, data.get("removed_file_docs"))
+        content.legacy_comment_rows = _rebuild(LegacyComment, data.get("legacy_comment_rows"))
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()

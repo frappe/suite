@@ -746,6 +746,40 @@ class HistoryTest(unittest.TestCase):
         )
         self.assertEqual(after.media_nodes_created, 3)
 
+    def test_the_legacy_comment_sweep_waits_for_a_complete_history(self):
+        # A deferred document may still claim a legacy row, so the sweep runs
+        # only on the pass that completes the phase.
+        document = content_row("Writer Document", "writer-1", None)
+        source = FakeContent(documents=[document])
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", "Writer Document", "writer-2")
+        target.comment_rows["legacy-1"] = {
+            "name": "legacy-1",
+            "parent": "file-1",
+            "content": "<p>old</p>",
+            "resolved": 0,
+            "owner": OWNER,
+            "creation": STAMP,
+            "modified": STAMP,
+            "modified_by": OWNER,
+        }
+
+        deferred = convert_history_and_comments(env)
+
+        self.assertFalse(deferred.history_completed)
+        self.assertEqual(target.thread_rows, {})
+
+        source.document_rows[("Writer Document", "writer-1")] = content_row(
+            "Writer Document", "writer-1", "node-1"
+        )
+        add_document_node(target, "node-1", "Writer Document", "writer-1")
+        content = convert_history_and_comments(env)
+
+        self.assertTrue(content.history_completed)
+        self.assertEqual(content.legacy_comments_ported, 1)
+        self.assertEqual(target.thread_rows["legacy-1"]["node"], "file-1")
+        self.assertEqual(target.comment_rows["legacy-1"]["thread"], "legacy-1")
+
 
 if __name__ == "__main__":
     unittest.main()
