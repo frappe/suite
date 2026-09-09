@@ -13,7 +13,8 @@
 11 findings below it. Reopened again on branch `fix/drive-35-final-safety`
 (starting revision `4c9d48fcd`) to repair the 9 findings below that; same
 claimed files. Repairs verified and closed in commit `dd9d54a3d` on that
-branch.
+branch. Reopened a third time on the same branch (starting revision
+`67590e5db`) to repair the 6 findings below that; same claimed files.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -116,6 +117,43 @@ site connection, no push or merge.
   `_encode_sheets_data` always gzip-encoding) — each one broke a specific
   existing test, confirmed, then reverted byte-identical (`git diff --stat`
   matched before and after).
+
+### 2026-09-09 — a third review found 6 more findings; closeout above is invalidated
+
+A third review, on this same branch at commit `67590e5db`, found 6 more
+defects the closeout above did not cover. The closeout above no longer
+describes what is safe and must not be trusted until superseded.
+
+1. A corrupt or unreadable Cleanup state file was quarantined by `load()`
+   but then silently treated as a fresh, no-prior-run site: a resumed
+   `run_cleanup` could rescan a table phase 1 already emptied and overwrite
+   the durable census with an empty one, with no automatic safe recovery
+   from that state.
+2. Nothing proved the two legacy notification writers
+   (`suite.drive.api.notifications.create_notification`,
+   `DriveUserInvitation.after_insert`) had stopped naming a step-3 dropped
+   column, or building a row with no `activity` set, before phase 3 could
+   drop those columns and require `activity`.
+3. `phase_s3_prefix` queried `blob_references` and enqueued a delete job
+   once per whole prefix, not once per listing page: a large prefix could
+   still build one unbounded `IN` clause and one unbounded deletion job.
+4. `_require_exact_or_already_done`'s all-or-nothing count check treated a
+   legitimate partially-applied phase (MariaDB commits each DDL statement,
+   and each Single-value delete, independently of this package's own
+   `env.transaction.commit()`) the same as a genuine mismatch, so a crash
+   between two drop calls in one phase could make a safe resume refuse.
+5. `SiteThumbnailStore.delete_sidecars` joined `thumbnail_prefix` onto
+   `root_folder` with plain string concatenation
+   (`f"{root_folder}/{thumbnail_prefix}/{name}.thumbnail"`); an absolute or
+   `..`-escaping `thumbnail_prefix` could delete outside Drive's storage.
+6. `drop_custom_fields` deleting a `Custom Field` row never drops the
+   physical `tabFile` column behind it (Frappe's own `CustomField.on_trash`
+   never runs DDL); this was undocumented, reading like an oversight rather
+   than an intentional, spec-outside limit.
+
+This same branch (`fix/drive-35-final-safety`) repairs all 6 in production
+code and tests. See the closeout below for what actually changed,
+superseding everything above it.
 
 ### 2026-09-09 — a second review found 9 more findings; closeout below is invalidated
 
