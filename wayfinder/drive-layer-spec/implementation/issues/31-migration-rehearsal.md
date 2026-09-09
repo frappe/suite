@@ -184,9 +184,16 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Not rolled back: blob bytes on disk from versions and previews (no file deleted or moved), the journals, `drive-build-state.json` (still says completed; a Build rerun on this database would trust it, so the snapshot restore must move it aside), the report JSONs.
 - Artifacts under `/home/faris/backups/suite-frappe/build/`: `rollback-steps.md`, `rollback-checksums-before.tsv`, `rollback-checksums-after.tsv`, `rollback-counts.tsv`, `rollback-delete.sql`, `rollback-delete.log`, `rollback-docshare-restore.py`, `rollback-slide-restore.py`, `rollback-simulate-write.py`, `rollback-checksums.sh`, `rollback-sql.sh`, `rollback-q.sh`.
 
+### Snapshot restore and media-bytes check (2026-09-10)
+
+- Rollback by database restore: the pre-Build snapshot `pre-build/20260909_174224-suite-frappe_localhost-database.sql.gz` restored through the MariaDB root socket with `--max-allowed-packet=1G` and `@@global.max_allowed_packet` raised to 1 GiB for the run and reset to 16,777,216 after. The script drops and recreates the site database, re-grants the bench user, and verifies a bench-user login. No temporary admin user was needed. Exit code 0, wall 2 min 14 s. Script `restore-prebuild.sh`, log `restore-prebuild.log`, counts `restore-prebuild-counts-before.tsv` and `restore-prebuild-counts-after.tsv`.
+- Verified after restore: Build Patch Log rows 0; DocShare 297 (User 247, Sheet 49, Presentation 1); Presentation 522; Writer Document 2,469; Sheet 109; File 25,335; Slide 5,891; `tabDrive Node` and `tabFile Blob` absent (the snapshot predates the model sync). Guard keys `maintenance_mode`, `pause_scheduler`, `disable_scheduler`, `mute_emails` still 1.
+- Build state, report, and both journal directories moved out of the site private directory to `pass12-prebuild-reset/20260910_021325/` (state 2,018,011 bytes, report 2,132,757 bytes, 50 DocShare preimages, 2,791 slide preimages). A Build on this database now starts from scratch.
+- Media bytes of the 5 purged decks (`2d06oh9846`, `6rld98jms1`, `a6c3g1kuf3`, `dgda477so2`, `fg1ottss6n`): 77 File rows, all private, 68 unique disk paths, 77 present on disk, 0 missing. Six paths are shared with 15 File rows on other documents. Storage v2 is on for the site and `FileV2._delete_file_on_disk` never deletes bytes synchronously; the framework garbage collector owns unreferenced blobs. So the purge deleted File rows, not bytes. A snapshot restore brings the rows back; the in-place rollback does not. Rows saved in `restore-prebuild-purged-deck-media.tsv`.
+
 ### Plan for the Build rerun
 
-- Passes 11 and 11b and the in-place rollback rehearsal completed. Next: a database restore from the pre-Build snapshot, a check of the media bytes of the 5 purged decks, a clean full Build run with every fix in one pass, a client exercise on the result, then the acceptance ticks.
+- Passes 11 and 11b, the in-place rollback rehearsal, and the snapshot restore completed. Next: pass 12, a clean full Build run with every fix in one pass, a client exercise on the result, then the acceptance ticks.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
