@@ -4,15 +4,16 @@
 
 **Blocked by:** [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite migration (starting revision `6e6906176`, worktree
 `integrate/drive-35-cleanup`, claimed files: `suite/drive/patches/cleanup/**`,
 `suite/drive/patches/build/tests/test_dormancy.py`). Reopened on branch
 `fix/drive-35-review-findings` (starting revision `5e6130d07`) to repair the
 11 findings below it. Reopened again on branch `fix/drive-35-final-safety`
-(starting revision `4c9d48fcd`) to repair the 9 findings immediately below;
-same claimed files.
+(starting revision `4c9d48fcd`) to repair the 9 findings below that; same
+claimed files. Repairs verified and closed in commit `dd9d54a3d` on that
+branch.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -34,6 +35,87 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 Run Cleanup against isolated fixtures only. Prove every missing gate leaves data unchanged and valid fixtures retain all referenced bytes.
 
 ## Completion evidence
+
+### 2026-09-09 — 9 second-review findings repaired, verified (branch `fix/drive-35-final-safety`)
+
+Commit `dd9d54a3d` on this branch repairs all 9 findings below in the real
+`Site*` ports and the phases that call them. Cleanup stayed unregistered
+throughout: no `patches.txt`/`hooks.py` entry, no live `bench migrate`, no
+site connection, no push or merge.
+
+1. `SiteSchemaGateway.drop_columns` now calls `frappe.db.has_column(doctype,
+   fieldname)` with the bare doctype name; `table = f"tab{doctype}"` is kept
+   only for the DDL string itself. A direct spy test asserts the exact
+   `has_column` call arguments against a mocked `frappe.db`.
+2. Added `SiteSchemaGateway.drop_single_values`: deletes the named
+   `(doctype, field)` rows from `tabSingles` directly (`frappe.db.sql` to
+   find what is present, `frappe.db.delete("Singles", ...)` to remove it),
+   idempotent on an already-absent field, and clears the Single's own
+   document cache. `phase_content_fields` now calls this for `Drive Disk
+   Settings`' 10 fields separately from the ordinary `drop_columns` loop.
+   Source JSON for those fields is untouched; a new `SourceSchemaReadiness`
+   port (finding 4) checks it is gone from source before any drop runs.
+3. `phase_file_rows` now reads `env.state.get_census()`/
+   `get_settings_snapshot()` first and only computes+persists the census and
+   the `Drive Disk Settings` snapshot when one is genuinely absent (`None`).
+   A resumed call after a commit-but-no-checkpoint crash reuses the durable
+   copy instead of rescanning the now-empty `File` table and overwriting it
+   with an empty answer. A new integration test drives the exact crash
+   window — `env.transaction.commit()` fails after phase 1's `DELETE`s have
+   already landed in the fake — and confirms a resumed run still finds and
+   deletes the thumbnail sidecar for a name phase 1 already removed.
+4. Added `SiteSourceSchema` (`fields_declared`, `permission_hooks_present`),
+   a new preflight probe (`_probe_source_schema_readiness`) that refuses
+   before phase 1 if shipped doctype JSON still declares a field a phase is
+   about to drop, or `suite/hooks.py` still names a doctype Cleanup plans to
+   remove permission hooks for. `readiness.run_preflight` also now probes
+   `s3.enqueue_delete` independently of `s3.list_prefix`, so a site with a
+   working lister and a still-`NotImplementedError` deletion job refuses
+   before phase 1, not inside phase 8.
+5. Added `TestSiteSchemaGateway` (direct `frappe.db`/`frappe.get_all` spy
+   tests: bare-doctype `has_column` calls, absent-column no-op, custom-field
+   deleted before DDL, `drop_single_values` exact/no-op/idempotent/DB-error)
+   and `TestSiteSourceSchema` (reads the real checked-in doctype JSON and
+   `suite/hooks.py`, mocking only `frappe.get_app_path`).
+6. `SiteThumbnailStore.delete_sidecars` now treats a missing `root_folder` or
+   `thumbnail_prefix` as "location unknown," not "filesystem root," and
+   no-ops rather than building a leading- or doubled-slash path. Three new
+   tests spy on `os.path.exists`/`os.unlink` to prove neither is called.
+7. `_decode_sheets_data`/`_encode_sheets_data` now thread a `was_gzip` flag
+   through `strip_sheet_comments`, so a plain-JSON row stays plain and a
+   gzip-enveloped row stays gzip after comment stripping. Batches remain
+   bounded as before.
+8. Added a direct test proving `SiteS3LegacyPrefix.blob_references`
+   propagates a `frappe.get_all` error instead of swallowing it. The
+   referenced-object worker recheck contract in `phase_s3_prefix` was
+   already correct and is unchanged; finding 4's `s3.enqueue_delete` probe
+   closes the other half of this gap.
+9. This entry supersedes the invalidated closeout below it, and the one
+   before that.
+
+**Verified:**
+- Cleanup fixture/spy suite: 138 tests, 0 failures (`unittest discover -s
+  suite/drive/patches/cleanup/tests`, no DB connection).
+- Build/architecture/dormancy suite: 956 tests via `frappe.init` with no
+  `connect()`, covering `suite/drive/patches/{build,cleanup}/tests`,
+  `suite.tests.test_architecture`, `suite.drive.tests.test_build_{content,
+  storage,tree}`; 0 assertion failures. 12 `setUpClass` errors are
+  `IntegrationTestCase`s that require a live DB connection this run
+  deliberately does not make (`AttributeError: db` in
+  `frappe.local.db`) — pre-existing, unrelated to any file this branch
+  touches.
+- `py_compile` and `ruff check`/`ruff format` (pinned `v0.12.3`) clean on
+  every changed file; tests re-run after the one `ruff --fix`-equivalent
+  edit (iterable unpacking instead of concatenation) to confirm no
+  behavior change.
+- Manual mutation of each of the 7 findings with a production-code repair
+  (double-tab `has_column`; `drop_single_values` routed through the
+  ordinary `drop_columns` DDL path; `phase_file_rows` always recomputing
+  the census/settings; the `s3.enqueue_delete` probe removed; the
+  source-schema readiness probe removed; the thumbnail path guard removed;
+  `_encode_sheets_data` always gzip-encoding) — each one broke a specific
+  existing test, confirmed, then reverted byte-identical (`git diff --stat`
+  matched before and after).
 
 ### 2026-09-09 — a second review found 9 more findings; closeout below is invalidated
 
