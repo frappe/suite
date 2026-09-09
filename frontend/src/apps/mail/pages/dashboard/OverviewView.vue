@@ -195,6 +195,7 @@ type OverviewData = {
 	domains_needing_attention?: AttentionDomain[]
 	invites?: InviteCounts | null
 	recent_accounts?: RecentAccount[]
+	disabled_accounts?: { name: string; full_name: string }[]
 	workspace?: Workspace | null
 }
 
@@ -309,22 +310,41 @@ const domainsPending = computed(
 )
 const domainsDisabled = computed(() => attentionDomains.value.length - domainsPending.value)
 
-// Ordered by what blocks mail first: dark domains, then invites going stale, then quota pressure.
+// Weighted by what the admin must do: unverified domains first (the most recently checked on
+// top), then domains switched off on purpose by name, then accounts that cannot sign in by
+// address, and only then invites going stale and quota pressure.
 const attention = computed(() => {
 	const items = []
-	for (const domain of attentionDomains.value) {
-		const disabled = domain.status === 'Disabled'
+	const byNewestCheck = (a: AttentionDomain, b: AttentionDomain) =>
+		(b.last_verified_at || '').localeCompare(a.last_verified_at || '') || a.name.localeCompare(b.name)
+	const pending = attentionDomains.value.filter((d) => d.status !== 'Disabled').sort(byNewestCheck)
+	const disabled = attentionDomains.value
+		.filter((d) => d.status === 'Disabled')
+		.sort((a, b) => a.name.localeCompare(b.name))
+	for (const domain of [...pending, ...disabled]) {
+		const off = domain.status === 'Disabled'
 		items.push({
 			key: `domain:${domain.name}`,
 			icon: Globe,
 			// Amber asks for action; a domain someone disabled on purpose is listed in grey.
-			tone: disabled ? 'gray' : 'amber',
+			tone: off ? 'gray' : 'amber',
 			title: domain.name,
-			description: disabled
+			description: off
 				? __('The domain is disabled, so no mail flows for it.')
 				: __('DNS records are not verified yet, so no mail flows for it.'),
-			action: disabled ? __('Open') : __('Verify DNS'),
+			action: off ? __('Open') : __('Verify DNS'),
 			to: { name: 'mail-domain', params: { domainId: domain.name } },
+		})
+	}
+	for (const account of data.value?.disabled_accounts || []) {
+		items.push({
+			key: `account:${account.name}`,
+			icon: UserX,
+			tone: 'gray',
+			title: account.name,
+			description: __('{0} is disabled and cannot sign in; the mail is kept.', [account.full_name || account.name]),
+			action: __('Open'),
+			to: { name: 'mail-account', params: { accountId: account.name } },
 		})
 	}
 	const invites = data.value?.invites
@@ -348,18 +368,6 @@ const attention = computed(() => {
 			description: __('Extend them if the people have not had a chance to accept.'),
 			action: __('Review'),
 			to: { name: 'mail-invites', query: { status: 'Pending' } },
-		})
-	}
-	const disabled = data.value?.members?.disabled
-	if (disabled) {
-		items.push({
-			key: 'accounts:disabled',
-			icon: UserX,
-			tone: 'gray',
-			title: plural(disabled, __('1 disabled account'), '{0} disabled accounts'),
-			description: __('They cannot sign in; their mail is kept.'),
-			action: __('Review'),
-			to: { name: 'mail-accounts', query: { status: 'disabled' } },
 		})
 	}
 	if ((storagePercent.value ?? 0) >= 80) {

@@ -1137,6 +1137,9 @@ def get_overview() -> dict:
         overview["recent_accounts"] = _recent_accounts(RECENT_ACCOUNTS)
 
     with suppress(Exception):
+        overview["disabled_accounts"] = _disabled_accounts()
+
+    with suppress(Exception):
         settings = frappe.get_cached_doc("Suite Settings")
         overview["workspace"] = {"name": settings.workspace_name, "logo": settings.workspace_logo}
 
@@ -1157,6 +1160,21 @@ def _invite_counts() -> dict:
         ),
         "expired": frappe.db.count("Mail Account Request", {"is_verified": 0, "expires_at": ["<=", now]}),
     }
+
+
+def _disabled_accounts() -> list[dict]:
+    """Members with a mailbox who cannot sign in, by address, for the overview's attention list."""
+
+    USER = frappe.qb.DocType("User")
+    USER_SETTINGS = frappe.qb.DocType("User Settings")
+    return (
+        frappe.qb.from_(USER)
+        .join(USER_SETTINGS)
+        .on(USER.name == USER_SETTINGS.user)
+        .select(USER.name, USER.full_name)
+        .where(USER_SETTINGS.username.isnotnull() & (USER.enabled == 0))
+        .orderby(USER.name, order=Order.asc)
+    ).run(as_dict=True)
 
 
 def _recent_accounts(limit: int) -> list[dict]:

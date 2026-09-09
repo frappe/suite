@@ -401,6 +401,12 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(overview["domains_needing_attention"], [])
         self.assertEqual(overview["invites"], {"pending": 0, "expiring_soon": 0, "expired": 0})
         self.assertEqual(overview["recent_accounts"][0]["name"], self.email)
+        admin.disable_members([self.email])
+        # The dev site may hold disabled accounts of its own; ours must be among them, in address order.
+        disabled = [a["name"] for a in admin.get_overview()["disabled_accounts"]]
+        self.assertIn(self.email, disabled)
+        self.assertEqual(disabled, sorted(disabled))
+        admin.enable_members([self.email])
 
         admin.delete_members([self.email])
         self.assertNotIn(self.email, self.fake.accounts)
