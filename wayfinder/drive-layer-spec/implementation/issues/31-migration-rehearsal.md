@@ -116,9 +116,17 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Cause: three images on template deck `52us7f3rb0` exist as a public and a private File row with two `File Blob` rows of identical checksum and size, differing only in `is_private`. The borrowed path compares blob identity, not content, and has no duplicate collapse. 72 of 522 decks borrow one of the three (71 via `frappeverse-logo-55yk789.png`). Fix in progress on branch `forge/ticket-31-borrowed-media`.
 - Artifacts: `pass6-migrate.log`, `pass6-migrate-clean.log`, `pass6-traceback.txt`, `drive-build-state-after-pass6-failure.json`, `pass6-progress.tsv` under `/home/faris/backups/suite-frappe/build/`.
 
+### Build pass 7, resume after the borrowed-media fix (2026-09-09, failed on data)
+
+- Fix merged as 3be1e611f. Rule: `File Blob` is unique on `(checksum, is_private, driver)`, so one picture uploaded public and later made private is two blob rows with one checksum. Candidates with one checksum and size collapse to one blob (exact `file_url` match first, then private, then lowest name); differing checksums still raise. Local path gets the same fold (`_one_blob_per_content`, feeds `media_duplicates_collapsed`); borrowed path counts `borrowed_duplicates_collapsed`, kept out of the fixed `REPORT_KEYS`. 838 build tests pass without a database.
+- Same migrate command on the partial state, 5 min 25 s (four minutes of that is doctype sync). Step 8 progressed to deck 70 of 522: `borrowed_duplicates_collapsed` 9, `media_nodes_created` 986, `media_duplicates_collapsed` 292, `media_nodes_relocated` 121, `slide_elements_rewritten` 429, `deck_previews_created` 59. 43 recorded warnings: "media reference belongs to a non-template Presentation and was not adopted". Drive Node 13,499 to 14,325.
+- Failed at `_parse_elements` (`slides.py:326`): `InvalidLegacyContent: Slide 29t9jfmql3 elements are not a list`. Exactly one `tabSlide` row of 5,891 stores `elements` as a JSON string wrapping the array (double-encoded), deck `29t99rpjgj`, modified 2026-08-17 by a user. 5,880 rows are arrays, 10 are NULL or empty and handled, 0 invalid JSON. Legacy data, not written by Build. Fix in progress on branch `forge/ticket-31-slide-elements`: decode one extra layer when it yields a list, count the repair, write the array back.
+- Note: `Drive Node.creation` is copied from the legacy File row, so "created today" queries do not count Build writes. Use the state counters.
+- Artifacts: `pass7-migrate.log`, `pass7-migrate-clean.log`, `pass7-migrate-clean-full.log`, `pass7-traceback.txt`, `drive-build-state-after-pass7-failure.json`, `pass7-progress.tsv` under `/home/faris/backups/suite-frappe/build/`.
+
 ### Plan for the Build rerun
 
-- Pass 1, the storage_v2 setup, and the index, Removed-content, legacy-comment and slides-media fixes are done above. After the borrowed-media fix merges: flush redis, same migrate command, expect Build to resume at step 8 and finish; then read the report and reconcile against `source-inventory.md`.
+- Pass 1, the storage_v2 setup, and the index, Removed-content, legacy-comment, slides-media and borrowed-media fixes are done above. After the slide-elements fix merges: flush redis, same migrate command, expect Build to resume at step 8 and finish; then read the report and reconcile against `source-inventory.md`.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
