@@ -237,30 +237,6 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
 
 
 @frappe.whitelist()
-def retry_delivery_now(account: str, id: str) -> None:
-    """Tells the MTA to attempt a released, still-queued (retrying) delivery again right away.
-
-    A release mid-retry is still undoStatus "pending" (it can be cancelled until it concludes),
-    so this gates on the hold — not on the submission being final; an unreleased hold must go
-    through send-now instead, which replaces the submission."""
-
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
-
-    service = get_email_submission_service(account)
-    submission = _get_submission(service, id)
-
-    if submission.get("undoStatus") == "canceled":
-        frappe.throw(_("This scheduled delivery has been cancelled."))
-    if _hold_active(submission):
-        frappe.throw(_("This delivery is still scheduled — use send now instead."))
-
-    # The outbound queue belongs to the shared cluster and is not exposed to sites; the MTA
-    # retries on its own schedule.
-    frappe.throw(_("Retrying a queued delivery is not available; the server retries it on its own."))
-
-
-@frappe.whitelist()
 def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
     record so the listing shows only the live attempt."""
