@@ -4,7 +4,9 @@
 
 **Blocked by:** [33 — Make sharing actions and relevant link credentials explicit](33-frontend-sharing-and-links.md)
 
-**Status:** ready-for-human
+**Status:** superseded
+
+Superseded 2026-09-09. Faris decided the Drive frontend is rebuilt from scratch inside a unified suite frontend, starting from route design. That effort gets its own wayfinder map. This ticket's acceptance criteria are input for that map, not work in this backlog.
 
 **Owner:** Suite frontend Writer, Slides, and Sheets
 

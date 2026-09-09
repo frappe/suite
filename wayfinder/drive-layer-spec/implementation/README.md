@@ -5,7 +5,7 @@ Created: 2026-09-05. Implementation has not started.
 Keep all Drive planning and tracking documents under `wayfinder/drive-layer-spec/`.
 This directory holds implementation tickets; `../tickets/` holds historical design decisions.
 
-37 local tickets: 31 agent-ready implementation tickets and six gated follow-ups.
+37 local tickets: 31 done, three superseded, and three gated follow-ups (31, 36, 37).
 `ready-for-agent` describes triage. Blocking edges and execution gates still apply.
 
 ## Sources
@@ -99,12 +99,12 @@ Record required measurements and remaining risks. Keep acceptance boxes unchecke
 |---|---|
 | Backend implementation and isolated tests | Completed blocking tickets; existing execution scope |
 | Real migration rehearsal | Approved export, selected target, backup, and authority to overwrite that target |
-| Frontend adoption | Separate implementation scope; these tickets capture dependencies without starting that effort |
+| Frontend adoption | Separate wayfinder map for the unified suite frontend. Does not block backend work. Still blocks Cleanup activation (ticket 36) |
 | Cleanup preparation | Fixture tests only; patch stays inactive |
 | Cleanup activation | A release after Build, migrated clients, all runtime gates, backup, and destructive-deployment authority |
 | Actual blob relocation | Verified Build, configured destination, and relocation/source-deletion authority |
 
-Frontend adoption does not block backend implementation. It does block Cleanup.
+Frontend adoption moved to a separate wayfinder map for the unified suite frontend. It does not block backend implementation. It does block Cleanup.
 Framework relocation implementation and its later execution do not block Build or Cleanup.
 Frappe Cloud allowlisting remains an external prerequisite if the eventual deployment target needs it.
 
@@ -145,11 +145,11 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [29 — Complete Build records, accounting, and reporting](issues/29-build-records-and-report.md) | Suite migration | [28](issues/28-build-content-and-media.md) | ready-for-agent |
 | [30 — Verify the complete backend before migration rehearsal](issues/30-backend-integration-review.md) | Suite integration | [05](issues/05-file-upload-hook.md), [29](issues/29-build-records-and-report.md) | ready-for-agent |
 | [31 — Rehearse Build on an approved export and verify rollback](issues/31-migration-rehearsal.md) | Suite migration operations | [30](issues/30-backend-integration-review.md) | blocked |
-| [32 — Adopt Drive routes and explicit restore selection in the SPA](issues/32-frontend-drive-adoption.md) | Suite frontend Drive | [30](issues/30-backend-integration-review.md) | ready-for-human |
-| [33 — Make sharing actions and relevant link credentials explicit](issues/33-frontend-sharing-and-links.md) | Suite frontend Drive sharing | [32](issues/32-frontend-drive-adoption.md) | ready-for-human |
-| [34 — Adopt document media, grouped composites, and collab credentials](issues/34-frontend-content-adoption.md) | Suite frontend Writer, Slides, and Sheets | [33](issues/33-frontend-sharing-and-links.md) | ready-for-human |
+| [32 — Adopt Drive routes and explicit restore selection in the SPA](issues/32-frontend-drive-adoption.md) | Suite frontend Drive | [30](issues/30-backend-integration-review.md) | superseded |
+| [33 — Make sharing actions and relevant link credentials explicit](issues/33-frontend-sharing-and-links.md) | Suite frontend Drive sharing | [32](issues/32-frontend-drive-adoption.md) | superseded |
+| [34 — Adopt document media, grouped composites, and collab credentials](issues/34-frontend-content-adoption.md) | Suite frontend Writer, Slides, and Sheets | [33](issues/33-frontend-sharing-and-links.md) | superseded |
 | [35 — Implement Cleanup with refusal gates and fixture tests](issues/35-cleanup-implementation.md) | Suite migration | [29](issues/29-build-records-and-report.md) | ready-for-agent |
-| [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [34](issues/34-frontend-content-adoption.md), [35](issues/35-cleanup-implementation.md) | blocked |
+| [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [35](issues/35-cleanup-implementation.md), unified suite frontend map (not yet charted) | blocked |
 | [37 — Consolidate storage after a successful Build](issues/37-relocation-execution.md) | Frappe storage operations | [06](issues/06-relocation-implementation.md), [31](issues/31-migration-rehearsal.md) | blocked |
 
 ## Coverage
