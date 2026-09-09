@@ -33,12 +33,13 @@
 			<div class="flex flex-col gap-5 lg:col-span-2">
 				<!-- What is not working yet, with the shortest path to fixing it. -->
 				<DashboardCard :title="__('Needs Attention')">
-					<div v-if="attention.length" class="flex flex-col">
+					<!-- Four rows tall like Quick Actions beside it; further rows scroll inside. -->
+					<div v-if="attention.length" class="flex h-56 flex-col overflow-y-auto">
 						<RouterLink
 							v-for="item in attention"
 							:key="item.key"
 							:to="item.to"
-							class="hover:bg-surface-gray-1 group flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
+							class="hover:bg-surface-gray-1 group flex h-14 shrink-0 items-center gap-3 border-b px-5 last:border-b-0"
 						>
 							<div
 								class="flex h-8 w-8 shrink-0 items-center justify-center rounded-4"
@@ -54,7 +55,7 @@
 							<FeatherIcon name="chevron-right" class="text-ink-gray-4 h-4 w-4 shrink-0" />
 						</RouterLink>
 					</div>
-					<div v-else class="text-ink-gray-5 flex items-center gap-3 px-5 py-4 text-sm">
+					<div v-else class="text-ink-gray-5 flex h-56 items-center justify-center gap-3 px-5 text-sm">
 						<CheckCircle class="text-ink-green-5 h-4 w-4 shrink-0" />
 						{{ __('Every domain is active and no invite is waiting. Nothing needs your attention.') }}
 					</div>
@@ -96,7 +97,7 @@
 							v-for="action in QUICK_ACTIONS"
 							:key="action.label"
 							:to="action.to"
-							class="hover:bg-surface-gray-1 group flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
+							class="hover:bg-surface-gray-1 group flex h-14 items-center gap-3 border-b px-5 last:border-b-0"
 						>
 							<div class="bg-surface-gray-2 text-ink-gray-6 flex h-8 w-8 shrink-0 items-center justify-center rounded-4">
 								<component :is="action.icon" class="h-4 w-4" />
