@@ -30,6 +30,7 @@ class PortNotReadyError(frappe.ValidationError):
 def run_preflight(env) -> None:
     _probe_forwarders(env)
     _probe_schema_source_edits(env)
+    _probe_source_schema_readiness(env)
     _probe_s3_backed_phases(env)
 
 
@@ -41,6 +42,50 @@ def _probe_forwarders(env) -> None:
 def _probe_schema_source_edits(env) -> None:
     _probe("schema.drop_child_table_field", lambda: env.schema.drop_child_table_field("", ""))
     _probe("schema.remove_permission_hooks", lambda: env.schema.remove_permission_hooks(()))
+
+
+def _probe_source_schema_readiness(env) -> None:
+    """Step 3's and step 5's column/Single-value drops are real, implemented
+    runtime operations, not `NotImplementedError` stubs, so `_probe`'s
+    catch-a-stub-error shape does not apply to them. What can still make one
+    unsafe to run is the doctype JSON (or, for step 3, `suite/hooks.py`)
+    still declaring what a phase is about to drop: the next `bench migrate`
+    recreates a dropped column from JSON still naming it, and any later save
+    of a Single doctype rewrites all of its declared fields back into
+    `tabSingles`. This must fail before phase 1, not after phases 1-4 have
+    already deleted rows and doctypes on a site where Ticket 36's source
+    edits have not actually landed yet.
+    """
+    from suite.drive.patches.cleanup.ports import _doctype_name_from_path
+    from suite.drive.patches.cleanup.removal import (
+        CONTENT_DROPPED_COLUMNS,
+        NOTIFICATION_LEGACY_COLUMNS,
+        RETAINED_DOCTYPES_STEP_3,
+        SETTINGS_DROPPED_COLUMNS,
+        SINGLE_DROPPED_VALUES,
+    )
+
+    targets = (
+        ("Drive Notification", NOTIFICATION_LEGACY_COLUMNS),
+        *CONTENT_DROPPED_COLUMNS,
+        *SETTINGS_DROPPED_COLUMNS,
+        *SINGLE_DROPPED_VALUES,
+    )
+    for doctype, fields in targets:
+        declared = env.source_schema.fields_declared(doctype, fields)
+        if declared:
+            raise PortNotReadyError(
+                f"{doctype}'s shipped doctype JSON still declares {sorted(declared)}; dropping "
+                "them now would be recreated (or, for a Single, rewritten) by the next source "
+                "sync. Ticket 36 must remove them from source before Cleanup can run."
+            )
+    step_3_doctype_names = tuple(_doctype_name_from_path(path) for path in RETAINED_DOCTYPES_STEP_3)
+    hooked = env.source_schema.permission_hooks_present(step_3_doctype_names)
+    if hooked:
+        raise PortNotReadyError(
+            f"suite/hooks.py still names {sorted(hooked)} in permission_query_conditions/"
+            "has_permission; Ticket 36 must remove those entries before Cleanup can run."
+        )
 
 
 def _probe_s3_backed_phases(env) -> None:
@@ -60,6 +105,12 @@ def _probe_s3_backed_phases(env) -> None:
         return
     _probe("thumbnails.delete_sidecars", lambda: env.thumbnails.delete_sidecars((), settings=settings))
     _probe("s3.list_prefix", lambda: env.s3.list_prefix("", "", 0))
+    # Probed independently of `list_prefix`: a site could have a working
+    # bucket lister and a still-`NotImplementedError` deletion job (or vice
+    # versa). Without this, phase 8 could enumerate and subtract references
+    # correctly and then crash on `enqueue_delete` after phases 1-7 already
+    # ran to completion.
+    _probe("s3.enqueue_delete", lambda: env.s3.enqueue_delete(()))
 
 
 def _probe(name: str, call) -> None:

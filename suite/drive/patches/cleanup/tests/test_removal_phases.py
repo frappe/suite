@@ -60,6 +60,48 @@ class TestPhaseFileRows(unittest.TestCase):
         self.assertEqual(set(env.state.get_census()), {"Drive", "a"})
         self.assertEqual(env.state.get_settings_snapshot(), env.disk_settings.values)
 
+    def test_a_resumed_call_reuses_the_persisted_census_not_a_fresh_empty_scan(self):
+        """The crash window: phase 1's own `DELETE`s land (a real commit, or
+        here, the fake's unconditional mutation), but the process dies before
+        `patch.run_cleanup` writes this phase's checkpoint. A resumed call is
+        a second call to this same function, with the rows it censused
+        already gone. It must not re-derive an empty census from that and
+        overwrite the correct one — the whole point of persisting it here at
+        all is that phase 7 still needs the real names afterwards."""
+        files = FakeFileTable().add("Drive").add("a", folder="Drive", has_node=True)
+        env = cleanup_environment(self.path, files=files)
+        phase_file_rows(env)
+        first_census = env.state.get_census()
+        first_settings = env.state.get_settings_snapshot()
+        self.assertEqual(set(first_census), {"Drive", "a"})
+
+        # Simulate the crash: the checkpoint for this phase was never
+        # written (nothing in this test writes one), and every row phase 1
+        # touched is already gone, exactly as a resumed process would find.
+        self.assertEqual(set(files.rows), set())
+        second_result = phase_file_rows(env)
+
+        self.assertEqual(env.state.get_census(), first_census)
+        self.assertEqual(env.state.get_settings_snapshot(), first_settings)
+        self.assertEqual(second_result.rows_deleted, 0)  # idempotent: nothing left to delete
+        self.assertTrue(second_result.completed)
+
+    def test_a_resumed_call_never_recomputes_the_census_or_rereads_settings(self):
+        from unittest.mock import patch
+
+        from suite.drive.patches.cleanup import removal as removal_module
+
+        files = FakeFileTable().add("Drive").add("a", folder="Drive", has_node=True)
+        env = cleanup_environment(self.path, files=files)
+        phase_file_rows(env)
+        self.assertEqual(env.disk_settings.read_calls, 1)
+
+        with patch.object(
+            removal_module, "collect_drive_owned_names", side_effect=AssertionError("must not rescan")
+        ):
+            phase_file_rows(env)  # the resumed call
+        self.assertEqual(env.disk_settings.read_calls, 1)
+
     def test_home_attachments_are_never_deleted(self):
         files = FakeFileTable().add("Drive").add("attachment", folder="Home", has_node=False)
         env = cleanup_environment(self.path, files=files)
@@ -213,6 +255,9 @@ class TestPhaseContentFields(unittest.TestCase):
                 "Presentation": {"title", "body"},
                 "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
                 "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
+                "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+            },
+            singles={
                 "Drive Disk Settings": {
                     "quota",
                     "root_folder",
@@ -226,17 +271,20 @@ class TestPhaseContentFields(unittest.TestCase):
                     "signature_version",
                     "unrelated_field",
                 },
-                "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
-            }
+            },
         )
         result = phase_content_fields(cleanup_environment(self.path, schema=schema))
         self.assertEqual(schema.columns["Presentation"], {"body"})
         self.assertEqual(schema.columns["Sheet"], {"sheets_data"})
         self.assertEqual(schema.columns["Drive Settings"], {"webdav_enabled"})
-        # All ten §3.13 fields drop; nothing outside that list is touched.
-        self.assertEqual(schema.columns["Drive Disk Settings"], {"unrelated_field"})
         self.assertEqual(schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
-        self.assertEqual(result.columns_dropped, 1 + 4 + 2 + 10 + 1)
+        # All ten §3.13 fields drop as tabSingles rows, never as DDL; nothing
+        # outside that list, and no `columns["Drive Disk Settings"]` entry at
+        # all, is touched.
+        self.assertEqual(schema.singles["Drive Disk Settings"], {"unrelated_field"})
+        self.assertNotIn("Drive Disk Settings", schema.columns)
+        self.assertEqual(result.columns_dropped, 1 + 4 + 2 + 1)
+        self.assertEqual(result.single_values_dropped, 10)
 
 
 class TestPhaseLegacyApi(unittest.TestCase):

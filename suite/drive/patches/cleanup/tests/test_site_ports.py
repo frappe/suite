@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+import suite.drive.patches.cleanup as cleanup
 from suite.drive.patches.cleanup.ports import (
     DISK_SETTINGS_FIELDS,
     SiteClientCallerEvidence,
@@ -22,9 +23,17 @@ from suite.drive.patches.cleanup.ports import (
     SiteDiskSettingsSnapshot,
     SiteLegacyFileRows,
     SiteS3LegacyPrefix,
+    SiteSchemaGateway,
+    SiteSourceSchema,
     SiteThumbnailStore,
     SiteTransactionGateway,
 )
+
+# The real, checked-in `suite` app root: one level above `patches/cleanup/`'s
+# grandparent (`drive`), the same directory `frappe.get_app_path("suite")`
+# would return on a real site. Computed from this package's own file, not
+# hardcoded, so it stays correct if the repository moves.
+SUITE_APP_ROOT = Path(cleanup.__file__).resolve().parents[3]
 
 
 def _gz_envelope(plain: dict) -> str:
@@ -33,8 +42,10 @@ def _gz_envelope(plain: dict) -> str:
 
 
 def _decode_written(stored: str) -> dict:
-    """`_encode_sheets_data` always writes the gzip envelope, regardless of
-    whether the row it read was plain JSON or already gzip-encoded."""
+    """Decodes a gzip-envelope write-back. Only valid when the row that was
+    read was itself gzip-encoded: `_encode_sheets_data` now preserves the
+    format it read, so a plain-JSON row's write-back is plain JSON, not this
+    envelope."""
     from base64 import b64decode
 
     envelope = json.loads(stored)
@@ -104,7 +115,12 @@ class TestSiteContentRowsCommentStripping(unittest.TestCase):
             ]
             stripped = SiteContentRows().strip_sheet_comments(batch_size=10)
         self.assertEqual(stripped, 1)
-        written = _decode_written(db.set_value.call_args.args[3])
+        written_raw = db.set_value.call_args.args[3]
+        # Finding: the old encoder always wrote the gzip envelope, even for a
+        # row that was plain JSON on the way in. Stripping a key must not
+        # change the row's storage format as a side effect.
+        self.assertNotEqual(json.loads(written_raw).get("_z"), "gzip")
+        written = json.loads(written_raw)
         self.assertNotIn("comments", written)
         # A cell whose own text happens to contain the word "comment" is
         # untouched: this is not a key-name scrub.
@@ -192,6 +208,165 @@ class TestSiteThumbnailStore(unittest.TestCase):
             deleted = SiteThumbnailStore().delete_sidecars(("a", "b"), settings=settings)
             self.assertEqual(deleted, 1)
             self.assertFalse((thumbs / "a.thumbnail").exists())
+
+    def test_an_empty_root_folder_is_a_safe_no_op_never_an_absolute_path(self):
+        """Finding: `f"{root_folder}/{thumbnail_prefix}/{name}.thumbnail"`
+        with an empty `root_folder` builds a leading-`/` path anchored at
+        the filesystem root, not Drive's storage. `os.path.exists`/
+        `os.unlink` are spied directly so a regression to that shape is
+        caught even though it would coincidentally no-op on a filesystem
+        with no matching root-level file."""
+        with patch("os.path.exists") as exists, patch("os.unlink") as unlink:
+            settings = {"enabled": False, "root_folder": "", "thumbnail_prefix": ".thumbnails"}
+            deleted = SiteThumbnailStore().delete_sidecars(("a",), settings=settings)
+        self.assertEqual(deleted, 0)
+        exists.assert_not_called()
+        unlink.assert_not_called()
+
+    def test_an_empty_thumbnail_prefix_is_also_a_safe_no_op(self):
+        with patch("os.path.exists") as exists, patch("os.unlink") as unlink:
+            settings = {"enabled": False, "root_folder": "/var/drive-files", "thumbnail_prefix": ""}
+            deleted = SiteThumbnailStore().delete_sidecars(("a",), settings=settings)
+        self.assertEqual(deleted, 0)
+        exists.assert_not_called()
+        unlink.assert_not_called()
+
+    def test_both_settings_empty_is_also_a_safe_no_op(self):
+        with patch("os.path.exists") as exists, patch("os.unlink") as unlink:
+            deleted = SiteThumbnailStore().delete_sidecars(("a",), settings={})
+        self.assertEqual(deleted, 0)
+        exists.assert_not_called()
+        unlink.assert_not_called()
+
+
+class TestSiteSchemaGateway(unittest.TestCase):
+    """Finding: `drop_columns` built `table = f"tab{doctype}"` and then
+    called `frappe.db.has_column(table, fieldname)` — but `has_column`'s own
+    `doctype` parameter prepends `"tab"` itself, so the old code queried
+    `tabtab<doctype>` and would raise `TableMissingError` on the first real
+    column drop. `frappe.db.has_column` is spied directly here so a
+    regression to the wrong call shape fails this test even though a fake
+    `SchemaGateway` (which never sees the real signature) could not catch
+    it."""
+
+    def test_drop_columns_calls_has_column_with_the_bare_doctype_not_the_table_name(self):
+        with (
+            patch("frappe.db", new=MagicMock()) as db,
+            patch("frappe.get_all", return_value=[]),
+            patch("frappe.clear_cache"),
+        ):
+            db.has_column.return_value = True
+            dropped = SiteSchemaGateway().drop_columns("Drive Notification", ("from_user", "type"))
+        self.assertEqual(dropped, 2)
+        db.has_column.assert_any_call("Drive Notification", "from_user")
+        db.has_column.assert_any_call("Drive Notification", "type")
+        # Never the tab-prefixed form: that call shape is exactly what
+        # `has_column` itself doubles into `tabtabDrive Notification`.
+        for call in db.has_column.call_args_list:
+            self.assertNotIn("tabDrive Notification", call.args)
+        db.sql_ddl.assert_any_call("alter table `tabDrive Notification` drop column `from_user`")
+        db.sql_ddl.assert_any_call("alter table `tabDrive Notification` drop column `type`")
+
+    def test_drop_columns_absent_column_is_a_no_op(self):
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.get_all", return_value=[]):
+            db.has_column.return_value = False
+            dropped = SiteSchemaGateway().drop_columns("Sheet", ("already_gone",))
+        self.assertEqual(dropped, 0)
+        db.sql_ddl.assert_not_called()
+
+    def test_drop_columns_deletes_the_matching_custom_field_first(self):
+        with (
+            patch("frappe.db", new=MagicMock()) as db,
+            patch("frappe.get_all", return_value=["CF-001"]) as get_all,
+            patch("frappe.delete_doc") as delete_doc,
+            patch("frappe.clear_cache"),
+        ):
+            db.has_column.return_value = True
+            SiteSchemaGateway().drop_columns("Sheet", ("title",))
+        get_all.assert_called_once_with(
+            "Custom Field", filters={"dt": "Sheet", "fieldname": "title"}, pluck="name"
+        )
+        delete_doc.assert_called_once_with("Custom Field", "CF-001", ignore_permissions=True)
+
+    def test_drop_single_values_deletes_exactly_the_present_fields(self):
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.clear_document_cache") as clear_cache:
+            db.sql.return_value = [("quota",), ("bucket",)]
+            dropped = SiteSchemaGateway().drop_single_values(
+                "Drive Disk Settings", ("quota", "bucket", "never_was_set")
+            )
+        self.assertEqual(dropped, 2)
+        db.delete.assert_called_once_with(
+            "Singles", {"doctype": "Drive Disk Settings", "field": ["in", ["quota", "bucket"]]}
+        )
+        clear_cache.assert_called_once_with("Drive Disk Settings", "Drive Disk Settings")
+
+    def test_drop_single_values_nothing_present_is_a_no_op(self):
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.clear_document_cache") as clear_cache:
+            db.sql.return_value = []
+            dropped = SiteSchemaGateway().drop_single_values("Drive Disk Settings", ("quota",))
+        self.assertEqual(dropped, 0)
+        db.delete.assert_not_called()
+        clear_cache.assert_not_called()
+
+    def test_drop_single_values_an_empty_fieldname_tuple_never_queries(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            dropped = SiteSchemaGateway().drop_single_values("Drive Disk Settings", ())
+        self.assertEqual(dropped, 0)
+        db.sql.assert_not_called()
+
+    def test_drop_single_values_rerun_after_success_is_idempotent(self):
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.clear_document_cache"):
+            db.sql.return_value = [("quota",)]
+            first = SiteSchemaGateway().drop_single_values("Drive Disk Settings", ("quota",))
+            db.sql.return_value = []  # the row is gone now, a real rerun would see this
+            second = SiteSchemaGateway().drop_single_values("Drive Disk Settings", ("quota",))
+        self.assertEqual((first, second), (1, 0))
+        db.delete.assert_called_once()
+
+    def test_drop_single_values_a_database_error_propagates(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.sql.side_effect = RuntimeError("connection lost")
+            with self.assertRaises(RuntimeError):
+                SiteSchemaGateway().drop_single_values("Drive Disk Settings", ("quota",))
+
+
+class TestSiteSourceSchema(unittest.TestCase):
+    """Finding: nothing probed whether Ticket 36's source edits (removing a
+    dropped field from a doctype's shipped JSON, or a permission-hook entry
+    from `suite/hooks.py`) had actually landed before a runtime column/
+    Single-value drop ran. These tests read the real, checked-in source tree
+    in this worktree (only `frappe.get_app_path` is mocked, to point at it),
+    so they prove today's honest "not ready" answer directly, not through a
+    fixture that could assert anything."""
+
+    def test_fields_declared_reports_the_real_undropped_fields_today(self):
+        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
+            declared = SiteSourceSchema().fields_declared(
+                "Sheet", ("title", "trashed", "trashed_on", "trashed_by", "made_up_field")
+            )
+        self.assertEqual(declared, {"title", "trashed", "trashed_on", "trashed_by"})
+
+    def test_fields_declared_reports_all_ten_single_fields_today(self):
+        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
+            declared = SiteSourceSchema().fields_declared("Drive Disk Settings", DISK_SETTINGS_FIELDS)
+        self.assertEqual(declared, set(DISK_SETTINGS_FIELDS))
+
+    def test_fields_declared_an_unknown_doctype_raises_rather_than_reporting_clear(self):
+        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
+            with self.assertRaises(RuntimeError):
+                SiteSourceSchema().fields_declared("Doctype Nobody Ships", ("field",))
+
+    def test_permission_hooks_present_reports_the_real_entries_today(self):
+        # `Drive Token` carries no permission_query_conditions/has_permission
+        # entry in `suite/hooks.py`; the other two do.
+        present = SiteSourceSchema().permission_hooks_present(
+            ("Drive Permission", "Drive Entity Activity Log", "Drive Token")
+        )
+        self.assertEqual(present, {"Drive Permission", "Drive Entity Activity Log"})
+
+    def test_permission_hooks_present_narrows_to_only_the_requested_names(self):
+        present = SiteSourceSchema().permission_hooks_present(("Drive Token",))
+        self.assertEqual(present, set())
 
 
 class TestSiteDiskSettingsSnapshot(unittest.TestCase):
@@ -281,6 +456,11 @@ class TestSiteS3LegacyPrefix(unittest.TestCase):
             s3.list_prefix("team", "", 100)
         with self.assertRaises(NotImplementedError):
             s3.enqueue_delete(("team/a",))
+
+    def test_blob_references_propagates_a_database_error_rather_than_swallowing_it(self):
+        with patch("frappe.get_all", side_effect=RuntimeError("connection lost")):
+            with self.assertRaises(RuntimeError):
+                SiteS3LegacyPrefix().blob_references(("team/a",))
 
 
 if __name__ == "__main__":

@@ -130,7 +130,15 @@ class SchemaGateway(Protocol):
         e.g. `"drive/doctype/drive_permission"`."""
 
     def drop_columns(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
-        """Drop these columns (standard or custom) from one doctype's table."""
+        """Drop these columns (standard or custom) from one doctype's table.
+        Not for a Single doctype: a Single has no table of its own for DDL to
+        touch (`drop_single_values` is the Single-doctype equivalent)."""
+
+    def drop_single_values(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        """Delete these fieldnames' rows from `tabSingles` for one Single
+        doctype. A Single stores its field values as `(doctype, field, value)`
+        rows, never as columns, so this is the Single-doctype counterpart to
+        `drop_columns`, not an alternate implementation of it."""
 
     def require_field(self, doctype: str, fieldname: str) -> None:
         """Make a field `reqd: 1` without touching the shipped doctype JSON."""
@@ -145,6 +153,28 @@ class SchemaGateway(Protocol):
         """Remove `permission_query_conditions`/`has_permission` entries for
         these doctypes out of `suite/hooks.py`. A source change made once the
         doctypes themselves are gone, not a runtime operation."""
+
+
+class SourceSchemaReadiness(Protocol):
+    """Whether Ticket 36's source edits have actually landed, checked before
+    phase 1 runs at all (`readiness.run_preflight`). A `drop_columns` or
+    `drop_single_values` call can succeed as a runtime operation while the
+    shipped doctype JSON still declares the field: the next `bench migrate`
+    recreates a dropped column from that JSON, and any subsequent save of a
+    Single doctype rewrites all of its declared fields back into
+    `tabSingles` (`frappe.model.document.Document.update_single` always
+    replaces the whole row set). Neither failure mode is visible until well
+    after Cleanup reports success, so this is a readiness check, not an
+    afterthought."""
+
+    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        """The subset of `fieldnames` doctype `doctype`'s shipped JSON still
+        declares as fields. Non-empty means Ticket 36 has not removed them
+        from source yet."""
+
+    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
+        """The subset of `doctypes` `suite/hooks.py` still names in
+        `permission_query_conditions` or `has_permission`."""
 
 
 class ContentRows(Protocol):
@@ -408,6 +438,13 @@ class SiteSchemaGateway:
         return removed
 
     def drop_columns(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        """Not for a Single doctype: `frappe.db.has_column(doctype, ...)`
+        prepends `"tab"` itself (`get_table_columns` does `"tab" + doctype`),
+        so `doctype` here must be the bare name, never a `table` variable
+        already carrying that prefix — passing the prefixed form queries
+        `tabtab<doctype>` and raises `TableMissingError`. A Single has no
+        table of its own for this DDL to touch at all; use
+        `drop_single_values` for one."""
         import frappe
 
         table = f"tab{doctype}"
@@ -418,12 +455,34 @@ class SiteSchemaGateway:
             )
             for name in custom:
                 frappe.delete_doc("Custom Field", name, ignore_permissions=True)
-            if frappe.db.has_column(table, fieldname):
+            if frappe.db.has_column(doctype, fieldname):
                 frappe.db.sql_ddl(f"alter table `{table}` drop column `{fieldname}`")
                 dropped += 1
         if dropped:
             frappe.clear_cache(doctype=doctype)
         return dropped
+
+    def drop_single_values(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        """A Single doctype's fields live as `(doctype, field, value)` rows in
+        `tabSingles`, never as columns (`frappe.model.document.Document.
+        update_single`'s own read/write path), so this is a row delete, not
+        DDL. Idempotent: a fieldname already gone is simply absent from
+        `existing` and is not counted or re-deleted."""
+        import frappe
+
+        if not fieldnames:
+            return 0
+        placeholders = ", ".join(["%s"] * len(fieldnames))
+        rows = frappe.db.sql(
+            f"select field from `tabSingles` where doctype=%s and field in ({placeholders})",
+            (doctype, *fieldnames),
+        )
+        existing = [row[0] for row in rows]
+        if not existing:
+            return 0
+        frappe.db.delete("Singles", {"doctype": doctype, "field": ["in", existing]})
+        frappe.clear_document_cache(doctype, doctype)
+        return len(existing)
 
     def require_field(self, doctype: str, fieldname: str) -> None:
         import frappe
@@ -454,6 +513,40 @@ class SiteSchemaGateway:
         )
 
 
+class SiteSourceSchema:
+    """`SourceSchemaReadiness` over the shipped doctype JSON and `suite/hooks.py`.
+
+    Reads the checked-in source tree directly, the same way
+    `SiteClientCallerEvidence` does, rather than through `frappe.get_meta`:
+    that keeps this port callable with no live site underneath it, and a
+    file on disk is exactly what the next `bench migrate` would actually
+    read. Honestly reports "not ready" today: this ticket touches no doctype
+    JSON and no `suite/hooks.py` entry.
+    """
+
+    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        import json
+        from pathlib import Path
+
+        import frappe
+
+        slug = doctype.lower().replace(" ", "_")
+        app_path = Path(frappe.get_app_path("suite"))
+        matches = list(app_path.rglob(f"doctype/{slug}/{slug}.json"))
+        if not matches:
+            raise RuntimeError(f"no shipped doctype JSON found for {doctype!r} under {app_path}")
+        data = json.loads(matches[0].read_text(encoding="utf-8"))
+        declared = {field.get("fieldname") for field in data.get("fields", [])}
+        return frozenset(name for name in fieldnames if name in declared)
+
+    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
+        from suite import hooks
+
+        wanted = set(doctypes)
+        present = set(hooks.permission_query_conditions) | set(hooks.has_permission)
+        return frozenset(wanted & present)
+
+
 # Mirrors `suite.drive.patches.build.content_mapping.decode_sheets_data` and
 # `suite.sheets.doctype.sheet.storage`'s wire format, duplicated rather than
 # imported: `suite/tests/test_architecture.py` forbids Drive from importing a
@@ -465,35 +558,41 @@ _GZ_KIND = "gzip"
 _DATA_KEY = "data"
 
 
-def _decode_sheets_data(stored: str | None) -> str:
+def _decode_sheets_data(stored: str | None) -> tuple[str, bool]:
+    """Returns `(json_text, was_gzip)`. `was_gzip` is what `_encode_sheets_data`
+    must be told, so a write-back never changes a row's storage format as a
+    side effect of stripping a key out of it: a plain row must stay plain, a
+    gzip row must stay gzip."""
     import base64
     import gzip
     import io
     import json
 
     if not stored:
-        return "{}"
+        return "{}", False
     try:
         envelope = json.loads(stored)
     except (TypeError, ValueError):
-        return stored
+        return stored, False
     if not (
         isinstance(envelope, dict)
         and envelope.get(_GZ_MARKER) == _GZ_KIND
         and isinstance(envelope.get(_DATA_KEY), str)
     ):
-        return stored
+        return stored, False
     compressed = base64.b64decode(envelope[_DATA_KEY], validate=True)
     with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as stream:
         raw = stream.read(_SHEETS_DATA_BOUND)
-    return raw.decode("utf-8")
+    return raw.decode("utf-8"), True
 
 
-def _encode_sheets_data(plain: str) -> str:
+def _encode_sheets_data(plain: str, *, gzip_encoded: bool) -> str:
     import base64
     import gzip
     import json
 
+    if not gzip_encoded:
+        return plain
     compressed = gzip.compress(plain.encode("utf-8"), compresslevel=6)
     return json.dumps({_GZ_MARKER: _GZ_KIND, _DATA_KEY: base64.b64encode(compressed).decode("ascii")})
 
@@ -550,14 +649,15 @@ class SiteContentRows:
             for row in rows:
                 if not row.sheets_data:
                     continue
-                data = json.loads(_decode_sheets_data(row.sheets_data))
+                decoded, was_gzip = _decode_sheets_data(row.sheets_data)
+                data = json.loads(decoded)
                 if isinstance(data, dict) and data.get("comments"):
                     del data["comments"]
                     frappe.db.set_value(
                         "Sheet",
                         row.name,
                         "sheets_data",
-                        _encode_sheets_data(json.dumps(data)),
+                        _encode_sheets_data(json.dumps(data), gzip_encoded=was_gzip),
                         update_modified=False,
                     )
                     stripped += 1
@@ -584,6 +684,13 @@ class SiteThumbnailStore:
     """
 
     def delete_sidecars(self, names: tuple[str, ...], *, settings: dict) -> int:
+        """A missing `root_folder` or `thumbnail_prefix` means this site's
+        local sidecar location is unknown, not that it lives at the
+        filesystem root: an empty string in an f-string path joins into a
+        leading or doubled `/`, which would anchor `os.path.exists`/
+        `os.unlink` outside Drive's storage entirely. Refuse to build that
+        path at all and no-op instead — never touching local legacy bytes is
+        always the safe outcome here, not a best-effort guess at one."""
         import os
 
         if settings.get("enabled"):
@@ -594,9 +701,11 @@ class SiteThumbnailStore:
             )
         root_folder = settings.get("root_folder") or ""
         thumbnail_prefix = settings.get("thumbnail_prefix") or ""
+        if not root_folder or not thumbnail_prefix:
+            return 0
         deleted = 0
         for name in names:
-            path = f"{root_folder}/{thumbnail_prefix}/{name}.thumbnail"
+            path = os.path.join(root_folder, thumbnail_prefix, f"{name}.thumbnail")
             if os.path.exists(path):
                 os.unlink(path)
                 deleted += 1

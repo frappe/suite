@@ -13,6 +13,8 @@ from suite.drive.patches.cleanup.tests.fakes import (
     FakeClientCallerEvidence,
     FakeFileTable,
     FakeForwarders,
+    FakeSourceSchema,
+    FakeThumbnails,
     FakeTransaction,
     RaisingSchema,
     cleanup_environment,
@@ -71,6 +73,23 @@ class TestRunCleanupRefusals(unittest.TestCase):
         # preflight, not partway through phase 3 or 4 after rows and
         # doctypes are already gone.
         env = _healthy_env(self.path, schema=RaisingSchema())
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_source_schema_still_declared_refuses_before_any_phase_runs(self):
+        env = _healthy_env(
+            self.path,
+            source_schema=FakeSourceSchema(still_declared={"Drive Notification": {"from_user"}}),
+        )
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_permission_hooks_still_present_refuses_before_any_phase_runs(self):
+        env = _healthy_env(self.path, source_schema=FakeSourceSchema(still_hooked={"Drive Permission"}))
         with self.assertRaises(PortNotReadyError):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
@@ -219,6 +238,38 @@ class TestRunCleanupResume(unittest.TestCase):
         run_cleanup(env)
         self.assertTrue(env.state.get("legacy_doctypes").completed)
         self.assertTrue(env.state.get("content_history").completed)
+
+    def test_a_crash_after_phase_ones_commit_but_before_its_checkpoint_still_lets_sidecars_delete_on_resume(
+        self,
+    ):
+        """The exact crash window: `phase_file_rows`' own `DELETE`s land (the
+        fake mutates unconditionally, standing in for a real DB commit that
+        already landed), but `env.transaction.commit()` itself fails, so
+        `patch.run_cleanup` never reaches `env.state.put("file_rows", ...)`.
+        A resumed call must reuse the census/settings this phase already
+        persisted before the crash, not rescan the now-empty File table and
+        overwrite them with an empty one — proven not by checking the
+        checkpoint alone, but by running all the way through phase 7 and
+        confirming the sidecar for a name phase 1 already deleted is still
+        found and removed.
+        """
+        thumbnails = FakeThumbnails(existing={"a"})
+        transaction = FakeTransaction()
+        env = _healthy_env(self.path, thumbnails=thumbnails, transaction=transaction)
+        transaction.fail_next = True
+        with self.assertRaises(RuntimeError):
+            run_cleanup(env)
+        self.assertFalse(env.state.get("file_rows").completed)
+        census_after_crash = env.state.get_census()
+        self.assertIsNotNone(census_after_crash)
+        self.assertIn("a", census_after_crash)
+        self.assertEqual(env.files.rows, {})  # phase 1's DELETEs already landed
+
+        run_cleanup(env)  # resume
+
+        self.assertTrue(env.state.get("file_rows").completed)
+        self.assertEqual(env.state.get_census(), census_after_crash)  # not overwritten empty
+        self.assertEqual(thumbnails.existing, set())  # "a"'s sidecar was actually deleted
 
     def test_a_corrupt_state_file_is_quarantined_not_silently_reset(self):
         env = _healthy_env(self.path)
