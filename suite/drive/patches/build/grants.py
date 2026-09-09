@@ -39,6 +39,7 @@ from suite.drive.patches.build.mapping import (
     clamp_public,
     collapse,
     docshare_role,
+    legacy_principal,
     merged_role,
     principal_kind,
     role_for_flags,
@@ -133,6 +134,9 @@ def _permission_pairs(env, grants: GrantConversion, batch_size: int):
 
 def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
     (entity, user), rows = pair
+    # One place, so the classification, the `User` lookup, the refusal 11
+    # owner test, and the written principal all read the same value.
+    user = legacy_principal(user)
     node = nodes.get(entity)
     if node is None:
         # §14.5: "rows on an unmigrated entity" are dropped. The entity is
