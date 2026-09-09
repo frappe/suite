@@ -177,7 +177,7 @@ class MailSettings(Document):
 
         frappe.only_for("System Manager")
         suite_cloud.is_suite_cloud_configured(raise_exception=True)
-        site = suite_cloud.get_client().call("ping")
+        site = suite_cloud.get_client().call("site.ping")
 
         message = _("Connected to Suite Cloud as site {0} on cluster {1}.").format(
             frappe.bold(site.get("site")), frappe.bold(site.get("cluster") or site.get("jmap_url"))

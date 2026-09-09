@@ -24,8 +24,12 @@ class FakeSuiteCloud:
     # --- dispatch ---------------------------------------------------------------------------
 
     def call(self, method: str, **params):
+        """``site.<call>`` or ``mail.<resource>.<call>``, as the real client addresses them."""
+
         self.calls.append((method, params))
-        handler = getattr(self, method.replace(".", "__"))
+        api, _, name = method.partition(".")
+        assert api in ("site", "mail"), method
+        handler = getattr(self, name.replace(".", "__"))
         return handler(**params)
 
     site_title = "Acme"

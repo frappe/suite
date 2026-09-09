@@ -17,7 +17,7 @@ from frappe.utils.caching import request_cache
 
 from suite.mail.utils import get_config, log_mail_error
 
-API_PREFIX = "/api/method/suite_cloud.api.site."
+API_PREFIX = "/api/method/suite_cloud.api."
 DEFAULT_TIMEOUT = (5, 60)
 
 
@@ -43,7 +43,10 @@ class SuiteCloudClient:
         )
 
     def call(self, method: str, **params: Any) -> Any:
-        """Calls ``suite_cloud.api.site.<method>`` and returns its result.
+        """Calls ``suite_cloud.api.<method>`` and returns its result.
+
+        ``method`` names the API and the call: ``site.ping`` for what any hosted product has, and
+        ``mail.domains.list_domains`` and friends for the mail directory.
 
         Refusals come back as the Frappe exception they correspond to: not found (another site's
         object, or none), validation (limits, duplicates, a Stalwart refusal) and permission

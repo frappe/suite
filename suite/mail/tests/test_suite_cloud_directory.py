@@ -89,7 +89,7 @@ class TestClient(IntegrationTestCase):
         with patch.object(client.session, "post", return_value=response(403, {})):
             self.assertRaises(frappe.PermissionError, client.call, "ping")
         with patch.object(client.session, "post", return_value=response(200, {"message": {"site": "acme"}})):
-            self.assertEqual(client.call("ping"), {"site": "acme"})
+            self.assertEqual(client.call("site.ping"), {"site": "acme"})
             body = json.loads(client.session.post.call_args.kwargs["data"])
             self.assertEqual(body, {})
         self.assertEqual(client.session.headers["Frappe-Authorization-Source"], "Suite Site")
@@ -101,7 +101,7 @@ class TestMailSettings(SuiteCloudTestCase):
         settings = frappe.get_doc("Mail Settings")
         site = settings.validate_suite_cloud_credentials()
         self.assertEqual(site["site"], "acme.frappe.test")
-        self.assertEqual(self.fake.calls[-1][0], "ping")
+        self.assertEqual(self.fake.calls[-1][0], "site.ping")
         # The fake's cluster answers https://mail.test while the settings point elsewhere.
         self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
 
@@ -120,7 +120,7 @@ class TestMailSettings(SuiteCloudTestCase):
         calls = len(self.fake.calls)
         with self.change_settings("Suite Settings", is_onboarded=1):
             pass
-        self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "update_site_profile"], [])
+        self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "site.update_site_profile"], [])
 
     def test_validate_credentials_needs_configuration(self) -> None:
         with self.change_settings("Mail Settings", site_api_secret=""):

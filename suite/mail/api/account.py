@@ -334,7 +334,7 @@ def _get_client_config_from_dns() -> list[dict]:
 
         # Every domain of the site points at the same cluster, so their SRV records resolve to
         # identical client endpoints. Any one domain's records are enough.
-        records = get_client().call("domains.get_dns_records", domain=domains[0]["domain"])["records"]
+        records = get_client().call("mail.domains.get_dns_records", domain=domains[0]["domain"])["records"]
 
         for record in records:
             if record["type"] != "SRV" or not record.get("value") or record["value"] == ".":

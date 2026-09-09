@@ -159,7 +159,7 @@ def get_domain_ownership_record(name: str) -> dict:
     """The DNS record the site must publish before ``name`` can be added, and whether it is free."""
 
     check_admin_permission("view domains")
-    return get_client().call("domains.check_domain", domain=name)
+    return get_client().call("mail.domains.check_domain", domain=name)
 
 
 @frappe.whitelist()
@@ -168,7 +168,7 @@ def add_domain(name: str, description: str | None = None) -> str:
     """Adds the domain to the site; Suite Cloud requires its ownership record to resolve first."""
 
     check_admin_permission("add domains", name)
-    domain = get_client().call("domains.create_domain", domain=name, description=description)
+    domain = get_client().call("mail.domains.create_domain", domain=name, description=description)
     return domain["domain"]
 
 
@@ -196,7 +196,7 @@ def get_domain(domain_id: str) -> dict:
     """The domain with the DNS records its owner has to publish, as Suite Cloud lists them."""
 
     check_admin_permission("view domains")
-    domain = get_client().call("domains.get_domain", domain=domain_id)
+    domain = get_client().call("mail.domains.get_domain", domain=domain_id)
     return {
         **_domain_row(domain),
         "dns_record_groups": domain.get("dns_record_groups") or [],
@@ -209,7 +209,7 @@ def verify_domain(domain_id: str) -> dict:
     """Asks Suite Cloud to resolve the domain's records now instead of at the next hourly check."""
 
     check_admin_permission("verify domains", domain_id)
-    result = get_client().call("domains.verify_dns_records", domain=domain_id)
+    result = get_client().call("mail.domains.verify_dns_records", domain=domain_id)
     return result
 
 
@@ -235,7 +235,7 @@ def update_domain(
         changes["sub_addressing"] = bool(sub_addressing)
     if not changes:
         return get_domain(domain_id)
-    return _domain_row(get_client().call("domains.update_domain", domain=domain_id, **changes))
+    return _domain_row(get_client().call("mail.domains.update_domain", domain=domain_id, **changes))
 
 
 @frappe.whitelist()
@@ -243,13 +243,15 @@ def set_domain_enabled(domain_id: str, enabled: bool) -> dict:
     """Disabling also drops the domain's verification on Suite Cloud; enabling needs a fresh verify."""
 
     check_admin_permission("enable domains" if enabled else "disable domains", domain_id)
-    return _domain_row(get_client().call("domains.update_domain", domain=domain_id, enabled=bool(enabled)))
+    return _domain_row(
+        get_client().call("mail.domains.update_domain", domain=domain_id, enabled=bool(enabled))
+    )
 
 
 @frappe.whitelist()
 def delete_domain(domain_id: str) -> None:
     check_admin_permission("delete domains", domain_id)
-    get_client().call("domains.delete_domain", domain=domain_id)
+    get_client().call("mail.domains.delete_domain", domain=domain_id)
 
 
 @frappe.whitelist()
@@ -264,7 +266,7 @@ def get_enabled_domains() -> list[str]:
 
 
 def _domain_records(domain_id: str) -> list[dict]:
-    domain = get_client().call("domains.get_domain", domain=domain_id)
+    domain = get_client().call("mail.domains.get_domain", domain=domain_id)
     return [_dns_record_row(r) for r in domain.get("dns_records") or []]
 
 
@@ -430,7 +432,7 @@ def _attach_quotas(users: list[dict]) -> None:
     if not emails:
         return
     with suppress(Exception):
-        quotas = get_client().call("accounts.get_quotas", emails=emails)
+        quotas = get_client().call("mail.accounts.get_quotas", emails=emails)
         for user in users:
             if user.get("account") in quotas:
                 user["quota_gb"] = flt(quotas[user["account"]])
@@ -443,7 +445,7 @@ def _all_accounts() -> dict[str, dict]:
     accounts: dict[str, dict] = {}
     start = 0
     while True:
-        page = client.call("accounts.list_accounts", start=start, limit=ACCOUNT_PAGE)
+        page = client.call("mail.accounts.list_accounts", start=start, limit=ACCOUNT_PAGE)
         for account in page["items"]:
             accounts[account["email"]] = account
         start += ACCOUNT_PAGE
@@ -548,7 +550,7 @@ def get_member(member_id: str) -> dict:
     result["account"] = email
 
     with suppress(Exception):
-        account = get_client().call("accounts.get_account", email=email)
+        account = get_client().call("mail.accounts.get_account", email=email)
         result["locale"] = account.get("locale")
         result["time_zone"] = account.get("time_zone")
         result["email_addresses"] = _email_addresses(
@@ -706,7 +708,7 @@ def update_member(
     if time_zone is not None:
         changes["time_zone"] = time_zone or ""
     if changes:
-        get_client().call("accounts.update_account", email=email, **changes)
+        get_client().call("mail.accounts.update_account", email=email, **changes)
 
 
 # --- aliases (accounts, groups and lists alike) ------------------------------------------------------
@@ -723,7 +725,7 @@ def _add_alias(kind: str, email_id: str, alias: str, description: str | None) ->
     alias = (alias or "").strip().lower()
     validate_email_address(alias, throw=True)
     is_subaddressed_email(alias, raise_exception=True)
-    obj = get_client().call(f"{kind}.get_{kind[:-1]}", email=email_id)
+    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
     if alias == obj["email"]:
         frappe.throw(_("{0} is already the primary address.").format(alias))
     rows = _alias_rows(obj)
@@ -735,7 +737,7 @@ def _add_alias(kind: str, email_id: str, alias: str, description: str | None) ->
 
 def _remove_alias(kind: str, email_id: str, alias: str) -> None:
     alias = (alias or "").strip().lower()
-    obj = get_client().call(f"{kind}.get_{kind[:-1]}", email=email_id)
+    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
     if alias == obj["email"]:
         frappe.throw(_("The primary address cannot be removed."))
     _set_aliases(kind, email_id, [r for r in _alias_rows(obj) if r["email"] != alias])
@@ -743,7 +745,7 @@ def _remove_alias(kind: str, email_id: str, alias: str) -> None:
 
 def _set_alias_enabled(kind: str, email_id: str, alias: str, enabled: bool) -> None:
     alias = (alias or "").strip().lower()
-    obj = get_client().call(f"{kind}.get_{kind[:-1]}", email=email_id)
+    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
     rows = _alias_rows(obj)
     for row in rows:
         if row["email"] == alias:
@@ -752,9 +754,9 @@ def _set_alias_enabled(kind: str, email_id: str, alias: str, enabled: bool) -> N
 
 
 _SET_ALIASES = {
-    "accounts": "accounts.set_aliases",
-    "groups": "groups.set_group_aliases",
-    "mailing_lists": "mailing_lists.set_mailing_list_aliases",
+    "accounts": "mail.accounts.set_aliases",
+    "groups": "mail.groups.set_group_aliases",
+    "mailing_lists": "mail.mailing_lists.set_mailing_list_aliases",
 }
 
 
@@ -787,18 +789,18 @@ def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
 def add_member_to_groups(member_id: str, group_ids: list) -> None:
     check_admin_permission("update members", member_id)
     email = _require_member_account(member_id)
-    account = get_client().call("accounts.get_account", email=email)
+    account = get_client().call("mail.accounts.get_account", email=email)
     groups = list(dict.fromkeys([*(account.get("groups") or []), *_listify(group_ids)]))
-    get_client().call("accounts.set_groups", email=email, groups=groups)
+    get_client().call("mail.accounts.set_groups", email=email, groups=groups)
 
 
 @frappe.whitelist()
 def remove_member_from_group(member_id: str, group_id: str) -> None:
     check_admin_permission("update members", f"{member_id} ({group_id})")
     email = _require_member_account(member_id)
-    account = get_client().call("accounts.get_account", email=email)
+    account = get_client().call("mail.accounts.get_account", email=email)
     groups = [g for g in account.get("groups") or [] if g != group_id]
-    get_client().call("accounts.set_groups", email=email, groups=groups)
+    get_client().call("mail.accounts.set_groups", email=email, groups=groups)
 
 
 @frappe.whitelist()
@@ -806,7 +808,7 @@ def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
     check_admin_permission("update members", member_id)
     email = _require_member_account(member_id)
     for list_id in _listify(list_ids):
-        get_client().call("mailing_lists.add_recipients", email=list_id, recipients=[email])
+        get_client().call("mail.mailing_lists.add_recipients", email=list_id, recipients=[email])
 
 
 @frappe.whitelist()
@@ -815,9 +817,9 @@ def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
 
     check_admin_permission("update members", f"{member_id} ({list_id})")
     email = _require_member_account(member_id)
-    account = get_client().call("accounts.get_account", email=email)
+    account = get_client().call("mail.accounts.get_account", email=email)
     addresses = [email, *[a["email"] for a in account.get("aliases") or []]]
-    get_client().call("mailing_lists.remove_recipients", email=list_id, recipients=addresses)
+    get_client().call("mail.mailing_lists.remove_recipients", email=list_id, recipients=addresses)
 
 
 # --- helpers ----------------------------------------------------------------------------------------------
@@ -881,14 +883,14 @@ def _group_row(group: dict) -> dict:
 @frappe.whitelist()
 def get_groups(search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH) -> dict:
     check_admin_permission("view groups")
-    rows = [_group_row(g) for g in get_client().call("groups.list_groups")]
+    rows = [_group_row(g) for g in get_client().call("mail.groups.list_groups")]
     return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
 
 
 @frappe.whitelist()
 def get_group(group_id: str) -> dict:
     check_admin_permission("view groups")
-    group = get_client().call("groups.get_group", email=group_id)
+    group = get_client().call("mail.groups.get_group", email=group_id)
     return {
         **_group_row(group),
         "email_addresses": _email_addresses(
@@ -911,7 +913,7 @@ def add_group(
     email = f"{name}@{domain}"
     check_admin_permission("add groups", email)
     group = get_client().call(
-        "groups.create_group",
+        "mail.groups.create_group",
         email=email,
         description=description,
         members=_listify(members) or None,
@@ -931,7 +933,7 @@ def update_group(group_id: str, description: str | None = None, quota_gb: float 
     if quota_gb is not None:
         changes["disk_quota_gb"] = flt(quota_gb)
     if changes:
-        get_client().call("groups.update_group", email=group_id, **changes)
+        get_client().call("mail.groups.update_group", email=group_id, **changes)
 
 
 @frappe.whitelist()
@@ -955,24 +957,24 @@ def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
 @frappe.whitelist()
 def add_group_members(group_id: str, account_ids: list) -> None:
     check_admin_permission("update groups", group_id)
-    group = get_client().call("groups.get_group", email=group_id)
+    group = get_client().call("mail.groups.get_group", email=group_id)
     members = list(dict.fromkeys([*(group.get("members") or []), *_listify(account_ids)]))
-    get_client().call("groups.set_group_members", email=group_id, members=members)
+    get_client().call("mail.groups.set_group_members", email=group_id, members=members)
 
 
 @frappe.whitelist()
 def remove_group_member(group_id: str, account_id: str) -> None:
     check_admin_permission("update groups", f"{group_id} ({account_id})")
-    group = get_client().call("groups.get_group", email=group_id)
+    group = get_client().call("mail.groups.get_group", email=group_id)
     members = [m for m in group.get("members") or [] if m != account_id]
-    get_client().call("groups.set_group_members", email=group_id, members=members)
+    get_client().call("mail.groups.set_group_members", email=group_id, members=members)
 
 
 @frappe.whitelist()
 def delete_groups(ids: list) -> None:
     check_admin_permission("delete groups", ids)
     for group_id in _listify(ids):
-        get_client().call("groups.delete_group", email=group_id)
+        get_client().call("mail.groups.delete_group", email=group_id)
 
 
 # --- mailing lists ----------------------------------------------------------------------------------------------
@@ -993,7 +995,7 @@ def get_mailing_lists(
     search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH
 ) -> dict:
     check_admin_permission("view mailing lists")
-    rows = [_list_row(ml) for ml in get_client().call("mailing_lists.list_mailing_lists")]
+    rows = [_list_row(ml) for ml in get_client().call("mail.mailing_lists.list_mailing_lists")]
     return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
 
 
@@ -1003,9 +1005,9 @@ def get_mailing_list(list_id: str, start: int = 0, limit: int = 200, search: str
 
     check_admin_permission("view mailing lists")
     client = get_client()
-    mailing_list = client.call("mailing_lists.get_mailing_list", email=list_id)
+    mailing_list = client.call("mail.mailing_lists.get_mailing_list", email=list_id)
     page = client.call(
-        "mailing_lists.list_recipients",
+        "mail.mailing_lists.list_recipients",
         email=list_id,
         start=cint(start),
         limit=cint(limit) or 200,
@@ -1030,7 +1032,7 @@ def add_mailing_list(
     email = f"{name}@{domain}"
     check_admin_permission("add mailing lists", email)
     mailing_list = get_client().call(
-        "mailing_lists.create_mailing_list",
+        "mail.mailing_lists.create_mailing_list",
         email=email,
         description=description,
         recipients=_listify(recipients) or None,
@@ -1042,7 +1044,7 @@ def add_mailing_list(
 def update_mailing_list(list_id: str, description: str | None = None) -> None:
     check_admin_permission("update mailing lists", list_id)
     if description is not None:
-        get_client().call("mailing_lists.update_mailing_list", email=list_id, description=description)
+        get_client().call("mail.mailing_lists.update_mailing_list", email=list_id, description=description)
 
 
 @frappe.whitelist()
@@ -1068,20 +1070,22 @@ def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
     check_admin_permission("update mailing lists", list_id)
     emails = [e.strip() for e in _listify(recipients) if e and str(e).strip()]
     if emails:
-        get_client().call("mailing_lists.add_recipients", email=list_id, recipients=emails)
+        get_client().call("mail.mailing_lists.add_recipients", email=list_id, recipients=emails)
 
 
 @frappe.whitelist()
 def remove_mailing_list_recipient(list_id: str, email: str) -> None:
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
-    get_client().call("mailing_lists.remove_recipients", email=list_id, recipients=[(email or "").strip()])
+    get_client().call(
+        "mail.mailing_lists.remove_recipients", email=list_id, recipients=[(email or "").strip()]
+    )
 
 
 @frappe.whitelist()
 def delete_mailing_lists(ids: list) -> None:
     check_admin_permission("delete mailing lists", ids)
     for list_id in _listify(ids):
-        get_client().call("mailing_lists.delete_mailing_list", email=list_id)
+        get_client().call("mail.mailing_lists.delete_mailing_list", email=list_id)
 
 
 # --- overview ------------------------------------------------------------------------------------------------------
@@ -1125,7 +1129,7 @@ def get_overview() -> dict:
         )
 
     with suppress(Exception):
-        site = get_client().call("ping")
+        site = get_client().call("site.ping")
         usage = site.get("usage") or {}
         limits = site.get("limits") or {}
         overview["domains"] = usage.get("domains")

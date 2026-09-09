@@ -218,7 +218,7 @@ class MailAccountRequest(Document):
         from suite.mail.suite_cloud import get_client
 
         groups = [g.strip().lower() for g in self._groups]
-        site_groups = {g["email"] for g in get_client().call("groups.list_groups")}
+        site_groups = {g["email"] for g in get_client().call("mail.groups.list_groups")}
         for group in groups:
             if group not in site_groups:
                 frappe.throw(_("Group {0} does not exist.").format(frappe.bold(group)))
@@ -233,7 +233,7 @@ class MailAccountRequest(Document):
         from suite.mail.suite_cloud import get_client
 
         lists = [ml.strip().lower() for ml in self._mailing_lists]
-        site_lists = {ml["email"] for ml in get_client().call("mailing_lists.list_mailing_lists")}
+        site_lists = {ml["email"] for ml in get_client().call("mail.mailing_lists.list_mailing_lists")}
         for mailing_list in lists:
             if mailing_list not in site_lists:
                 frappe.throw(_("Mailing list {0} does not exist.").format(frappe.bold(mailing_list)))
