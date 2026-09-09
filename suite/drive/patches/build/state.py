@@ -432,6 +432,12 @@ class ContentConversion:
     # only phase that walks all three content doctypes.
     removed_file_documents: int = 0
     removed_file_docs: list[RemovedFileDocument] = field(default_factory=list)
+    # Not in §14.9 either. §5.13 has no "document without a node" state, so a
+    # document whose every `File` row is Removed cannot stay: `Drive` would
+    # refuse to govern the doctype and no request could read the row. It is
+    # purged through the app's own `on_purge`, which takes the satellites
+    # with it. A rerun finds no such document and counts none.
+    removed_file_documents_purged: int = 0
     # Not in §14.9 either, and owned by no phase: `begin_phase` must not
     # reset them. Every other counter is recomputed from sources Build never
     # writes, so a rerun reproduces it. The first two count rows Build
