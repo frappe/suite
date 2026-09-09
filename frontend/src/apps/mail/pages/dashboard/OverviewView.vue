@@ -79,7 +79,7 @@
 								:theme="account.enabled ? 'green' : 'gray'"
 								class="shrink-0"
 							/>
-							<span class="text-ink-gray-5 w-28 shrink-0 text-right text-xs">
+							<span class="text-ink-gray-5 w-36 shrink-0 whitespace-nowrap text-right text-xs">
 								{{ __('Added {0}', [fromNow(account.joined_on)]) }}
 							</span>
 						</RouterLink>
