@@ -339,7 +339,7 @@ const attention = computed(() => {
 			title: plural(invites.expired, __('1 expired invite'), '{0} expired invites'),
 			description: __('The links no longer work; resend or remove them.'),
 			action: __('Review'),
-			to: { name: 'mail-invites' },
+			to: { name: 'mail-invites', query: { status: 'Expired' } },
 		})
 	}
 	if (invites?.expiring_soon) {
@@ -350,7 +350,7 @@ const attention = computed(() => {
 			title: plural(invites.expiring_soon, __('1 invite expires within a day'), '{0} invites expire within a day'),
 			description: __('Extend them if the people have not had a chance to accept.'),
 			action: __('Review'),
-			to: { name: 'mail-invites' },
+			to: { name: 'mail-invites', query: { status: 'Pending' } },
 		})
 	}
 	const disabled = data.value?.members?.disabled
@@ -362,7 +362,7 @@ const attention = computed(() => {
 			title: plural(disabled, __('1 disabled account'), '{0} disabled accounts'),
 			description: __('They cannot sign in; their mail is kept.'),
 			action: __('Review'),
-			to: { name: 'mail-accounts' },
+			to: { name: 'mail-accounts', query: { status: 'disabled' } },
 		})
 	}
 	if ((storagePercent.value ?? 0) >= 80) {

@@ -117,6 +117,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Avatar,
@@ -156,7 +157,13 @@ type MemberRow = {
 
 const search = ref('')
 const roleFilter = ref<'all' | 'admin' | 'user'>('all')
-const statusFilter = ref<'all' | 'enabled' | 'disabled'>('all')
+// The overview links here with ?status=disabled; the filter follows the query on arrival.
+type StatusFilter = 'all' | 'enabled' | 'disabled'
+const route = useRoute()
+const statusFromQuery = (): StatusFilter =>
+	route.query.status === 'disabled' || route.query.status === 'enabled' ? route.query.status : 'all'
+const statusFilter = ref<StatusFilter>(statusFromQuery())
+watch(() => route.query.status, () => (statusFilter.value = statusFromQuery()))
 const showEnableMembers = ref(false)
 const showDisableMembers = ref(false)
 const showDeleteMembers = ref(false)

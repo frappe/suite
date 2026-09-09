@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Badge, Button, Dialog, FormControl, createResource } from 'frappe-ui'
@@ -110,7 +111,13 @@ type InviteRow = {
 }
 
 const search = ref('')
-const status = ref<InviteStatus>('All')
+// The overview links here with ?status=Expired; the filter follows the query on arrival.
+const route = useRoute()
+const STATUSES: InviteStatus[] = ['All', 'Pending', 'Accepted', 'Expired']
+const statusFromQuery = (): InviteStatus =>
+	STATUSES.find((value) => value === route.query.status) || 'All'
+const status = ref<InviteStatus>(statusFromQuery())
+watch(() => route.query.status, () => (status.value = statusFromQuery()))
 const selectedInvite = ref('')
 const showEditInvite = ref(false)
 const showDeleteInvites = ref(false)
