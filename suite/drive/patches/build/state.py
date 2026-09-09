@@ -7,10 +7,10 @@ leaves the previous version readable.
 
 Two kinds of field live in the conversion records:
 
-- **cumulative** — `CUMULATIVE_FIELDS`. Each object is copied once ever, so
-  a resumed run adds to the total instead of restarting it. These totals
-  exist nowhere else, which is why an unreadable record is quarantined
-  rather than overwritten.
+- **cumulative** — `CUMULATIVE_FIELDS`. Each object is copied, deleted, or
+  purged once ever, so a resumed run adds to the total instead of restarting
+  it. These totals exist nowhere else, which is why an unreadable record is
+  quarantined rather than overwritten.
 - **per run** — everything else. A rerun recomputes them, so bytes that
   came back between two runs stop being reported as missing.
 """
@@ -36,6 +36,13 @@ CUMULATIVE_FIELDS = frozenset(
         # the number owners must be told about, so it may not reset to zero
         # on the rerun that finishes an interrupted migration.
         "links_minted",
+        # Governed DocShare rows and content documents whose every File is
+        # Removed are deleted once. A later pass cannot derive these totals
+        # from source rows that no longer exist.
+        "docshare_rows_deleted",
+        "removed_file_documents",
+        "removed_file_docs",
+        "removed_file_documents_purged",
         # Write-ahead intents for a grant batch. They survive begin_run so a
         # kill on either side of the database commit can be reconciled from
         # the target table without counting a link twice or losing it.
@@ -238,9 +245,10 @@ def _blank_drops() -> dict:
 class GrantConversion:
     """The result of §14.2 step 6: `Drive Permission` and Sheet `DocShare`.
 
-    `links_minted` is cumulative. `pending_link_nodes` is its write-ahead
-    ledger across an interrupted database commit. Everything else is
-    decided from the source rows and recomputed by a rerun.
+    `links_minted` and `docshare_rows_deleted` are cumulative.
+    `pending_link_nodes` is the link counter's write-ahead ledger across an
+    interrupted database commit. Everything else is decided from source rows
+    Build preserves and recomputed by a rerun.
     """
 
     completed: bool = False
@@ -261,8 +269,8 @@ class GrantConversion:
     # Not in §14.9. A Sheet `DocShare` row is deleted once its grant exists,
     # because §5.13's read guards fail closed on a surviving one and
     # `validate_content_registry` refuses the migration while any governed
-    # doctype still carries a share. Per run and data-derived: a rerun finds
-    # only the rows still there and counts those.
+    # doctype still carries a share. Cumulative because a rerun cannot recount
+    # a source row Build already deleted.
     docshare_rows_deleted: int = 0
     grant_rows_dropped: dict = field(default_factory=_blank_drops)
     # The §3.2 floor: a Shared root node whose legacy row mapped to nothing
@@ -335,6 +343,7 @@ class ContentIssue:
     source: str
     reason: str
     phase: str = ""
+    cumulative: bool = False
 
 
 @dataclass
@@ -398,6 +407,11 @@ class ContentConversion:
     # reference named on a template deck, which are nobody's own rows, so the
     # two numbers stay apart.
     borrowed_duplicates_collapsed: int = 0
+    # Not in §14.9, and owned by the slides phase. A legacy media reference
+    # can outlive the File row that used to explain it. The body stays
+    # unchanged, while this counter and its issue keep the unresolved value
+    # visible in the evidence report.
+    media_references_missing_file_rows: int = 0
     slide_elements_rewritten: int = 0
     # Not in §14.9 either, and owned by the slides phase. §14.7's
     # `slide_elements_rewritten` counts the bodies whose media references
@@ -422,21 +436,23 @@ class ContentConversion:
     docshare_rows_dropped: int = 0
     # Not in §14.9. The step-6 counter's twin, for the rows step 10 owns:
     # `Writer Document` and `Presentation` shares, and the history-table
-    # shares it drops and counts. Per run and data-derived the same way.
+    # shares it drops and counts. Cumulative because a rerun cannot recount a
+    # source row Build already deleted.
     docshare_rows_deleted: int = 0
     # Not in §14.9. §14.4 skips a `File` row whose status is `Removed`, so a
     # content document whose only `File` row is Removed has no node and no
     # step can mint one. The spec names no behaviour for the document left
     # behind, so Build skips it too and says which ones: its history and its
     # comments are not ported. Step 10 owns the census, because it is the
-    # only phase that walks all three content doctypes.
+    # only phase that walks all three content doctypes. The census is
+    # cumulative because the same pass purges those documents.
     removed_file_documents: int = 0
     removed_file_docs: list[RemovedFileDocument] = field(default_factory=list)
     # Not in §14.9 either. §5.13 has no "document without a node" state, so a
     # document whose every `File` row is Removed cannot stay: `Drive` would
     # refuse to govern the doctype and no request could read the row. It is
     # purged through the app's own `on_purge`, which takes the satellites
-    # with it. A rerun finds no such document and counts none.
+    # with it. A rerun finds no such document, so the count is cumulative.
     removed_file_documents_purged: int = 0
     # Not in §14.9 either, and owned by no phase: `begin_phase` must not
     # reset them. Every other counter is recomputed from sources Build never
@@ -460,6 +476,7 @@ class ContentConversion:
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0
     issues_by_phase: dict[str, int] = field(default_factory=dict)
+    cumulative_issues_by_phase: dict[str, int] = field(default_factory=dict)
 
     def record_removed_file(self, entry: RemovedFileDocument) -> None:
         """Keep a bounded list; the counter above stays exact."""
@@ -479,24 +496,33 @@ class ContentConversion:
         if len(self.relocated_media_nodes) < SAMPLE_KEPT:
             self.relocated_media_nodes.append(entry)
 
-    def record_issue(self, source: str, reason: str, *, phase: str = "") -> None:
+    def record_issue(self, source: str, reason: str, *, phase: str = "", cumulative: bool = False) -> None:
         self.issues_total += 1
         self.issues_by_phase[phase] = self.issues_by_phase.get(phase, 0) + 1
+        if cumulative:
+            self.cumulative_issues_by_phase[phase] = self.cumulative_issues_by_phase.get(phase, 0) + 1
         if len(self.issues) < SAMPLE_KEPT:
-            self.issues.append(ContentIssue(source, reason, phase))
+            self.issues.append(ContentIssue(source, reason, phase, cumulative))
 
     def begin_phase(self, phase: str, fields: tuple[str, ...]) -> None:
-        """Reset one phase's counters and drop the evidence it recorded.
+        """Reset one phase's recomputable counters and issues.
 
         The three phases share one record, so a phase may only clear its own
-        rows. `issues_by_phase` keeps the subtraction exact even after the
-        sample list hits `SAMPLE_KEPT` and stops growing.
+        rows. Fields in `CUMULATIVE_FIELDS` and issues marked cumulative
+        describe source rows Build deleted, so they survive later passes that
+        cannot derive them again. The issue count maps keep the subtraction
+        exact even after the sample list hits `SAMPLE_KEPT` and stops growing.
         """
         blank = ContentConversion()
         for name in fields:
-            setattr(self, name, getattr(blank, name))
-        self.issues = [issue for issue in self.issues if issue.phase != phase]
-        self.issues_total -= self.issues_by_phase.pop(phase, 0)
+            if name not in CUMULATIVE_FIELDS:
+                setattr(self, name, getattr(blank, name))
+        self.issues = [issue for issue in self.issues if issue.phase != phase or issue.cumulative]
+        phase_total = self.issues_by_phase.pop(phase, 0)
+        cumulative_total = self.cumulative_issues_by_phase.get(phase, 0)
+        self.issues_total -= phase_total - cumulative_total
+        if cumulative_total:
+            self.issues_by_phase[phase] = cumulative_total
 
     def begin_run(self) -> None:
         report_at = self.report_at if self.completed else None
@@ -519,6 +545,11 @@ class ContentConversion:
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+        content.cumulative_issues_by_phase = {
+            str(key): int(value)
+            for key, value in (data.get("cumulative_issues_by_phase") or {}).items()
             if isinstance(value, int) and not isinstance(value, bool)
         }
         return content

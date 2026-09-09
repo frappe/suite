@@ -705,6 +705,13 @@ class RerunTest(GrantCase):
         self.assertEqual(stored.links_minted, 7)
         self.assertEqual(stored.pending_link_nodes, ["doc0000001"])
 
+    def test_deleted_docshare_count_survives_the_start_of_a_rerun(self):
+        stored = GrantConversion(docshare_rows_deleted=7)
+
+        stored.begin_run()
+
+        self.assertEqual(stored.docshare_rows_deleted, 7)
+
 
 class LinkInterruptionTest(GrantCase):
     """The exact auto-flush boundary cannot lose the cumulative link count."""
@@ -884,17 +891,16 @@ class SourceTest(GrantCase):
         self.assertEqual(self.legacy.docshare_rows, [])
         self.assertIsNotNone(self.env.docshare_journal.preimage("d1"))
 
-    def test_a_rerun_finds_no_rows_left_and_counts_none(self):
-        """Data-derived, so the second pass is one empty page read."""
+    def test_a_rerun_keeps_the_count_of_docshares_it_deleted(self):
         self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1)]
         first = self.run_grants()
         self.assertEqual(first.docshare_rows_deleted, 1)
 
-        self.report = GrantConversion()
+        self.report.begin_run()
         second = self.run_grants()
 
         self.assertEqual(second.docshare_rows_seen, 0)
-        self.assertEqual(second.docshare_rows_deleted, 0)
+        self.assertEqual(second.docshare_rows_deleted, 1)
         self.assertEqual(self.roles("sheetnode1"), {FRIEND: READ})
 
     def test_a_completed_record_still_deletes_a_row_that_is_still_there(self):

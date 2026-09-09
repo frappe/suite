@@ -1060,6 +1060,26 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.issues_total, 1)
         self.assertIn("no Ready blob", result.issues[0].reason)
 
+    def test_a_media_reference_without_a_file_row_is_reported_not_rewritten(self):
+        missing = "/files/gone.png"
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-a", "deck-1", 1, json.dumps([{"src": missing}]))],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": missing}])
+        self.assertEqual(self.media_children(target, "deck-node"), [])
+        self.assertEqual(result.media_references_missing_file_rows, 1)
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(
+            result.issues[0].reason,
+            "media reference '/files/gone.png' matches no File row and no media node; was not adopted",
+        )
+
     def test_a_second_slides_run_clears_only_its_own_evidence(self):
         """The three phases share one record, so a rerun may drop only its rows."""
         template = deck("template", node=None, title="Template", is_template=1)
