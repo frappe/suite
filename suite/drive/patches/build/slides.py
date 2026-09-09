@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 from suite.drive._core.nodes import child_path
 from suite.drive.patches.build.content_mapping import (
     InvalidLegacyContent,
+    RemovedLegacyFile,
     exact_fields,
     standard_fields,
     within_capacity,
@@ -79,7 +80,13 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
             if not decks:
                 break
             for deck in decks:
-                node = _document_node(source, target, deck)
+                try:
+                    node = _document_node(source, target, deck)
+                except RemovedLegacyFile:
+                    # §14.4 skipped this deck's only File row, so it has no
+                    # node and no step mints one. Not deferred, and counted
+                    # once by step 10 rather than again here.
+                    continue
                 if node is None:
                     result.slides_deferred += 1
                     continue

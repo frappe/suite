@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from suite.drive.patches.build.ports import ContentRow, MediaFileRow, SlideRow
+from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
 from suite.drive.patches.build.slide_journal import SlideBody
 from suite.drive.patches.build.slides import BuildSlidesError, convert_slides_and_templates
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
@@ -667,6 +667,40 @@ class SlidesTest(unittest.TestCase):
         self.assertFalse(result.slides_completed)
         self.assertEqual(result.slides_deferred, 1)
         self.assertNotIn(orphan.name, target.node_rows)
+
+    def test_a_deck_whose_only_file_is_removed_is_skipped_not_deferred(self):
+        # §14.4 skipped the File row, so the deck has no node and gets none.
+        # Step 8 converts nothing for it and does not stop the migration;
+        # step 10 records it.
+        removed = deck(node=None)
+        source = FakeContent(
+            documents=[removed],
+            files=[
+                TreeRow(
+                    "file-1",
+                    status=REMOVED,
+                    content_doctype="Presentation",
+                    content_docname=removed.name,
+                )
+            ],
+            users={"Administrator": True},
+        )
+        target = FakeContentTarget(content=source)
+        env = build_environment(
+            self.path,
+            content=source,
+            content_target=target,
+            content_ready=True,
+        )
+
+        result = convert_slides_and_templates(env)
+
+        self.assertTrue(result.slides_completed)
+        self.assertEqual(result.slides_deferred, 0)
+        self.assertEqual(result.media_nodes_created, 0)
+        self.assertEqual(result.deck_previews_created, 0)
+        self.assertEqual(result.issues, [])
+        self.assertNotIn(removed.name, target.node_rows)
 
     # -- defect 1: same-site absolute URLs
 

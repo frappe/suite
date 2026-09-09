@@ -3,6 +3,7 @@
 from suite.drive._core.roles import MANAGE
 from suite.drive.patches.build.content_mapping import (
     InvalidLegacyContent,
+    RemovedLegacyFile,
     docshare_role,
     exact_fields,
     expected_node,
@@ -11,6 +12,7 @@ from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.mapping import GENERAL, merged_role
 from suite.drive.patches.build.ports import ACTIVE, PERSONAL, REMOVED, TRASHED
 from suite.drive.patches.build.root_pairs import ARCHIVED
+from suite.drive.patches.build.state import RemovedFileDocument
 from suite.drive.patches.build.titles import SiblingTitles
 
 MIMES = {
@@ -28,6 +30,8 @@ LINK_FIELDS = (
     "orphan_content_docs_adopted",
     "link_title_renames",
     "docshare_rows_dropped",
+    "removed_file_documents",
+    "removed_file_docs",
 )
 
 # Plan §6's whole orphan mapping row. §13 forbids blessing a target "because
@@ -97,6 +101,15 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
                 result.documents_seen += 1
                 try:
                     adopted, renamed, disagreement = _link_one(env, row, reserve)
+                except RemovedLegacyFile as skipped:
+                    # §14.4 skipped the File row, so this document has no node
+                    # and no step can mint one: its bytes are gone. It is not
+                    # an orphan, so it is not adopted, and it is not a defect,
+                    # so it does not stop Build. It is counted and listed.
+                    result.record_removed_file(
+                        RemovedFileDocument(skipped.doctype, skipped.docname, skipped.file)
+                    )
+                    continue
                 except InvalidLegacyContent as error:
                     # `_fail` raises today. The `continue` keeps the three
                     # names below from depending on that for their binding.
@@ -148,7 +161,7 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
             raise InvalidLegacyContent("more than one File claims this content document")
         file = files[0]
         if file.status == REMOVED:
-            raise InvalidLegacyContent("a Removed File still claims this content document")
+            raise RemovedLegacyFile(row.doctype, row.name, file.name)
         stored = target.nodes((file.name,)).get(file.name)
         if not stored:
             raise InvalidLegacyContent("the content File did not produce a Drive Node")
