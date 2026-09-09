@@ -82,8 +82,21 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
         self.assertNotIn(CLEANUP_NAME, patch_lines())
         self.assertNotIn(CLEANUP_NAME, (SUITE_ROOT / "hooks.py").read_text())
 
-    def test_the_module_does_not_exist_yet(self):
-        self.assertFalse((Path(build.__file__).parent.parent / "cleanup.py").exists())
+    def test_the_package_exists_but_stays_unwired(self):
+        # Ticket 35 ships Cleanup as real, tested code (its own dormancy
+        # suite lives at `suite.drive.patches.cleanup.tests.test_dormancy`
+        # and covers the same package in more depth). What this repository's
+        # dormancy guarantee actually rests on is patches.txt/hooks silence
+        # and the absence of `execute`, both checked here directly, so this
+        # suite does not just take the sibling package's word for it.
+        cleanup_dir = Path(build.__file__).parent.parent / "cleanup"
+        self.assertTrue((cleanup_dir / "__init__.py").is_file())
+        cleanup = importlib.import_module(CLEANUP_NAME)
+        self.assertFalse(hasattr(cleanup, "execute"))
+        for path in sorted(cleanup_dir.glob("*.py")):
+            module = importlib.import_module(f"{CLEANUP_NAME}.{path.stem}")
+            with self.subTest(module=path.stem):
+                self.assertFalse(hasattr(module, "execute"))
 
     def test_build_removes_nothing(self):
         """Build is additive. Every statement that is not runs in Cleanup."""
@@ -129,13 +142,29 @@ RETAINED_PROPERTY_SETTERS = (
     ("File", "folder", "depends_on"),
 )
 
-# Doctype JSON, and the fields on it Cleanup drops.
+# Doctype JSON, and the fields on it Cleanup drops. §3.13's ten `Drive Disk
+# Settings` fields and all three of Sheet's trash columns, in full: a
+# partial list here would let one of them go missing early and still pass.
 RETAINED_FIELDS = (
     ("drive/doctype/drive_settings", ("user_folder", "quota")),
-    ("drive/doctype/drive_disk_settings", ("quota", "aws_key", "aws_secret", "bucket", "endpoint_url")),
+    (
+        "drive/doctype/drive_disk_settings",
+        (
+            "quota",
+            "root_folder",
+            "thumbnail_prefix",
+            "flat",
+            "enabled",
+            "aws_key",
+            "aws_secret",
+            "bucket",
+            "endpoint_url",
+            "signature_version",
+        ),
+    ),
     ("drive/doctype/drive_storage_reservation", ("storage_owner",)),
     ("slides/doctype/presentation", ("title",)),
-    ("sheets/doctype/sheet", ("title", "trashed", "sheets_data")),
+    ("sheets/doctype/sheet", ("title", "trashed", "trashed_on", "trashed_by", "sheets_data")),
     ("writer/doctype/writer_document", ("ycomments", "versions")),
 )
 
