@@ -1107,21 +1107,14 @@ def get_overview() -> dict:
     }
 
     with suppress(Exception):
-        USER = frappe.qb.DocType("User")
-        USER_SETTINGS = frappe.qb.DocType("User Settings")
-        rows = (
-            frappe.qb.from_(USER)
-            .join(USER_SETTINGS)
-            .on(USER.name == USER_SETTINGS.user)
-            .select(USER.enabled)
-            .where(USER_SETTINGS.username.isnotnull())
-        ).run(as_dict=True)
-        overview["members"] = {"total": len(rows), "disabled": sum(1 for row in rows if not row.enabled)}
+        disabled = _disabled_accounts()
+        overview["disabled_accounts"] = disabled
+        overview["members"] = {"total": _member_count(), "disabled": len(disabled)}
 
     with suppress(Exception):
-        overview["pending_invites"] = frappe.db.count(
-            "Mail Account Request", {"is_verified": 0, "expires_at": [">", frappe.utils.now()]}
-        )
+        invites = _invite_counts()
+        overview["invites"] = invites
+        overview["pending_invites"] = invites["pending"]
 
     with suppress(Exception):
         site = get_client().call("site.ping")
@@ -1150,13 +1143,7 @@ def get_overview() -> dict:
         ]
 
     with suppress(Exception):
-        overview["invites"] = _invite_counts()
-
-    with suppress(Exception):
         overview["recent_accounts"] = _recent_accounts(RECENT_ACCOUNTS)
-
-    with suppress(Exception):
-        overview["disabled_accounts"] = _disabled_accounts()
 
     with suppress(Exception):
         settings = frappe.get_cached_doc("Suite Settings")
@@ -1166,6 +1153,18 @@ def get_overview() -> dict:
 
 
 RECENT_ACCOUNTS = 6  # matches the six rows of the Mail Service panel beside it
+
+
+def _member_count() -> int:
+    USER = frappe.qb.DocType("User")
+    USER_SETTINGS = frappe.qb.DocType("User Settings")
+    return (
+        frappe.qb.from_(USER)
+        .join(USER_SETTINGS)
+        .on(USER.name == USER_SETTINGS.user)
+        .select(Count("*"))
+        .where(USER_SETTINGS.username.isnotnull())
+    ).run()[0][0]
 
 
 def _invite_counts() -> dict:
