@@ -13,7 +13,8 @@ from PIL import Image
 
 from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
 from suite.drive.patches.build.slide_journal import SlideBody
-from suite.drive.patches.build.slides import BuildSlidesError, convert_slides_and_templates
+from suite.drive.patches.build.slides import SLIDE_FIELDS, BuildSlidesError, convert_slides_and_templates
+from suite.drive.patches.build.state import ContentConversion
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
 
 S3_URL = "/api/method/suite.drive.api.s3.fetch"
@@ -149,6 +150,14 @@ class SlidesTest(unittest.TestCase):
 
     def media_children(self, target, node):
         return [row for row in target.child_nodes(node) if row.get("kind") == "file"]
+
+    def test_a_second_slides_phase_keeps_one_shot_repairs(self):
+        result = ContentConversion(slide_elements_repaired=1)
+
+        result.begin_phase("slides", SLIDE_FIELDS)
+        result.begin_phase("slides", SLIDE_FIELDS)
+
+        self.assertEqual(result.slide_elements_repaired, 1)
 
     def test_same_blob_media_collapses_and_all_exact_aliases_rewrite(self):
         source = FakeContent(
@@ -342,7 +351,7 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(body, [{"src": "media-a", "text": "keep"}])
 
         again = convert_slides_and_templates(env)
-        self.assertEqual(again.slide_elements_repaired, 0)
+        self.assertEqual(again.slide_elements_repaired, 1)
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), body)
         self.assertEqual(len(env.slide_journal.records), 1)
 
@@ -364,7 +373,7 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), elements)
 
         again = convert_slides_and_templates(env)
-        self.assertEqual(again.slide_elements_repaired, 0)
+        self.assertEqual(again.slide_elements_repaired, 1)
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), elements)
         self.assertEqual(len(env.slide_journal.records), 1)
 

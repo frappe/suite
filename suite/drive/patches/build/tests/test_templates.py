@@ -10,7 +10,8 @@ from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL
 from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, TreeRow, WriterTemplateRow
 from suite.drive.patches.build.slides import convert_slides_and_templates
-from suite.drive.patches.build.templates import convert_templates
+from suite.drive.patches.build.state import ContentConversion
+from suite.drive.patches.build.templates import TEMPLATE_FIELDS, convert_templates
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
     FakeContentTarget,
@@ -143,6 +144,14 @@ class TemplateTest(unittest.TestCase):
         row.update(values)
         target.node_rows[name] = row
         return name
+
+    def test_a_second_templates_phase_keeps_one_shot_adoptions(self):
+        result = ContentConversion(template_nodes_adopted=1)
+
+        result.begin_phase("templates", TEMPLATE_FIELDS)
+        result.begin_phase("templates", TEMPLATE_FIELDS)
+
+        self.assertEqual(result.template_nodes_adopted, 1)
 
     def test_writer_template_creates_noncollaborative_document_node_and_grants(self):
         source_row = writer_template("writer-template")
@@ -685,7 +694,7 @@ class TemplateTest(unittest.TestCase):
         again = env.state.content()
         self.assertEqual((dict(target.node_rows), dict(target.grant_rows)), rows)
         self.assertEqual(self.node_grants(target, node), 2)
-        self.assertEqual(again.template_nodes_adopted, 0)
+        self.assertEqual(again.template_nodes_adopted, 1)
         self.assertEqual(again.template_nodes_created, 0)
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
         # `begin_phase` drops the templates phase's evidence first, so the
