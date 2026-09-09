@@ -332,6 +332,15 @@ class ContentIssue:
 
 
 @dataclass
+class RemovedFileDocument:
+    """A content document Build left without a node, its `File` being Removed."""
+
+    doctype: str
+    name: str
+    file: str
+
+
+@dataclass
 class ContentConversion:
     """The durable outcome of §14.2 steps 7, 8, and 10."""
 
@@ -359,10 +368,24 @@ class ContentConversion:
     template_title_renames: int = 0
     link_title_renames: int = 0
     docshare_rows_dropped: int = 0
+    # Not in §14.9. §14.4 skips a `File` row whose status is `Removed`, so a
+    # content document whose only `File` row is Removed has no node and no
+    # step can mint one. The spec names no behaviour for the document left
+    # behind, so Build skips it too and says which ones: its history and its
+    # comments are not ported. Step 10 owns the census, because it is the
+    # only phase that walks all three content doctypes.
+    removed_file_documents: int = 0
+    removed_file_docs: list[RemovedFileDocument] = field(default_factory=list)
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0
     issues_by_phase: dict[str, int] = field(default_factory=dict)
+
+    def record_removed_file(self, entry: RemovedFileDocument) -> None:
+        """Keep a bounded list; the counter above stays exact."""
+        self.removed_file_documents += 1
+        if len(self.removed_file_docs) < SAMPLE_KEPT:
+            self.removed_file_docs.append(entry)
 
     def record_issue(self, source: str, reason: str, *, phase: str = "") -> None:
         self.issues_total += 1
@@ -394,9 +417,11 @@ class ContentConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentConversion:
-        known = {f for f in cls.__dataclass_fields__ if f != "issues"}
+        samples = {"issues", "removed_file_docs"}
+        known = {f for f in cls.__dataclass_fields__ if f not in samples}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
+        content.removed_file_docs = _rebuild(RemovedFileDocument, data.get("removed_file_docs"))
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()

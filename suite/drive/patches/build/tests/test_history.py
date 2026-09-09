@@ -358,7 +358,10 @@ class HistoryTest(unittest.TestCase):
         self.assertNotEqual(second.report_at, first.report_at)
         self.assertEqual(second.versions_seen, 1)
 
-    def test_a_removed_file_fails_completion_with_recorded_evidence(self):
+    def test_a_removed_file_is_skipped_and_never_deferred(self):
+        # §14.4 skipped the File row, so this document has no node and gets
+        # none. Its history and comments stay unported, the phase completes,
+        # and step 7 does not stop the migration over it.
         document = content_row("Writer Document", "writer-1", None)
         source = FakeContent(documents=[document])
         source.file_rows.append(
@@ -369,16 +372,19 @@ class HistoryTest(unittest.TestCase):
                 content_docname="writer-1",
             )
         )
-        env, _ = self.environment(source)
+        env, target = self.environment(source)
 
-        with self.assertRaisesRegex(BuildHistoryError, "Removed"):
-            convert_history_and_comments(env)
+        content = convert_history_and_comments(env, allow_deferred=False)
 
-        # A Removed File is not an orphan and not a crash: the run fails with
-        # bounded evidence in the durable state.
-        stored = env.state.content()
-        self.assertEqual([issue.source for issue in stored.issues], ["Writer Document:writer-1"])
-        self.assertFalse(stored.history_completed)
+        self.assertTrue(content.history_completed)
+        self.assertEqual(content.history_deferred, 0)
+        self.assertEqual(content.versions_seen, 0)
+        self.assertEqual(content.comments_seen, 0)
+        self.assertEqual(content.issues, [])
+        self.assertEqual(target.version_rows, {})
+        # Step 10 walks all three content doctypes and owns the one census,
+        # so step 7 counts nothing itself.
+        self.assertEqual(content.removed_file_documents, 0)
 
     def test_every_writer_version_column_carries_its_source_value(self):
         # `exact_fields` compares a stored row against a plan the same code
@@ -717,8 +723,10 @@ class HistoryTest(unittest.TestCase):
         # history evidence and leave every other phase's numbers alone.
         document = content_row("Writer Document", "writer-1", None)
         source = FakeContent(documents=[document])
+        # An Active File that never became a node: a refusal, unlike a
+        # Removed one, which is a skip.
         source.file_rows.append(
-            TreeRow("file-1", status=REMOVED, content_doctype="Writer Document", content_docname="writer-1")
+            TreeRow("file-1", content_doctype="Writer Document", content_docname="writer-1")
         )
         env, _ = self.environment(source)
         stored = env.state.content()

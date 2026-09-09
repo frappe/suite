@@ -25,6 +25,32 @@ class InvalidLegacyContent(ValueError):
     """Legacy content cannot fit the accepted target shape."""
 
 
+class RemovedLegacyFile(InvalidLegacyContent):
+    """A content document's only legacy `File` row is `Removed`.
+
+    §14.4: "Rows with status Removed, and everything below them, are not
+    migrated and are counted." The tree phase therefore minted no node for
+    that `File`, and no later step can mint one, because §7 of ticket 011
+    rejected treating a Removed row as Trashed: its bytes are gone.
+
+    The spec names no behaviour for the content document left behind, so
+    Build skips it the way it skipped the row. The document keeps no node,
+    its history and its comments are not ported, and step 10 counts and
+    lists it under `removed_file_documents`. It is not deferred: deferral
+    means a later step still owes it a node, and nothing does.
+
+    Subclassing `InvalidLegacyContent` keeps a caller that does not handle
+    the skip failing with bounded evidence, as it does today, rather than
+    running on with no node.
+    """
+
+    def __init__(self, doctype: str, docname: str, file: str):
+        super().__init__(f"legacy File {file} is Removed")
+        self.doctype = doctype
+        self.docname = docname
+        self.file = file
+
+
 def path_depth(path: str) -> int:
     """The depth a node carrying this path sits at, root counted as zero."""
     return path.count("/") or 1
