@@ -95,6 +95,28 @@ def collapse(rows: list[dict]) -> dict:
     return keeper
 
 
+def legacy_principal(user: str) -> str:
+    """A legacy `Drive Permission.user` value with its padding removed.
+
+    Live rows hold addresses with a trailing space, and `Drive Permission`
+    is a plain Link column that never trimmed them. `validate_email_address`
+    answers the trimmed address, so `principal_kind` called the padded value
+    unknown and the row was dropped as a dead principal. §14.5 drops only
+    rows "naming a User or User Group that no longer exists", and these name
+    a live, enabled user, so the padding comes off before anything reads it.
+
+    Only an address is trimmed. The empty string is `ANONYMOUS`, a
+    whitespace-only value is not, and a `$` value is a sentinel: trimming
+    either would change what the row means. The stored row is untouched, and
+    so is `PermissionRow.user`, which the paging cursor compares against the
+    column.
+    """
+    stripped = user.strip()
+    if not stripped or stripped.startswith("$"):
+        return user
+    return stripped
+
+
 def principal_kind(user: str) -> str:
     """Classify a legacy `Drive Permission.user` value.
 
