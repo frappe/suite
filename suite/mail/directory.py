@@ -13,8 +13,8 @@ from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_email
 
 GB = 1024**3
-# Recipients read per list when building the calendar expansion index; larger lists are cut.
-MAILING_LIST_INDEX_LIMIT = 5000
+# Suite Cloud hands out recipients a page at a time; this is its largest page.
+RECIPIENT_PAGE = 1000
 
 
 def get_domains() -> list[dict]:
@@ -40,11 +40,21 @@ def get_mailing_list_index() -> dict[str, list[str]]:
     client = get_client()
     index = {}
     for mailing_list in client.call("mail.mailing_lists.list_mailing_lists"):
-        page = client.call(
-            "mail.mailing_lists.list_recipients", email=mailing_list["email"], limit=MAILING_LIST_INDEX_LIMIT
-        )
-        index[mailing_list["email"]] = [r["email"] for r in page["items"] if r.get("enabled", True)]
+        index[mailing_list["email"]] = _all_recipients(client, mailing_list["email"])
     return index
+
+
+def _all_recipients(client, email: str) -> list[str]:
+    """Every enabled recipient of a list, paged through in full so no list is silently cut."""
+
+    recipients: list[str] = []
+    start = 0
+    while True:
+        page = client.call("mail.mailing_lists.list_recipients", email=email, start=start, limit=RECIPIENT_PAGE)
+        recipients.extend(r["email"] for r in page["items"] if r.get("enabled", True))
+        start += len(page["items"])
+        if not page["items"] or start >= page["total"]:
+            return recipients
 
 
 def get_account_metadata() -> dict:
