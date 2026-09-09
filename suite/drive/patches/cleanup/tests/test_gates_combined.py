@@ -13,6 +13,7 @@ from suite.drive.patches.cleanup.gate import (
     require_authorization,
 )
 from suite.drive.patches.cleanup.tests.fakes import (
+    FakeClientCallerEvidence,
     FakeFileTable,
     FakeForwarders,
     cleanup_environment,
@@ -49,7 +50,11 @@ class TestGatesCombined(unittest.TestCase):
             check_gates(env)
 
     def test_only_gate_three_failing_refuses_with_gate_three(self):
-        env = _healthy_env(self.path, forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}))
+        env = _healthy_env(
+            self.path,
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
         with self.assertRaises(LegacyCallerGateError):
             check_gates(env)
 
@@ -62,6 +67,7 @@ class TestGatesCombined(unittest.TestCase):
             files=files,
             blob_columns=fake_blob_columns([]),
             forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
         )
         with self.assertRaises(ReachableNodesGateError):
             check_gates(env)
@@ -71,6 +77,7 @@ class TestGatesCombined(unittest.TestCase):
             self.path,
             blob_columns=fake_blob_columns([]),
             forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
         )
         with self.assertRaises(GCDiscoveryGateError):
             check_gates(env)

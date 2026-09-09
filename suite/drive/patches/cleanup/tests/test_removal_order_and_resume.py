@@ -7,10 +7,14 @@ from unittest.mock import patch
 
 from suite.drive.patches.cleanup.gate import CleanupAuthorizationError, LegacyCallerGateError
 from suite.drive.patches.cleanup.patch import PHASES, run_cleanup
+from suite.drive.patches.cleanup.readiness import PortNotReadyError
 from suite.drive.patches.cleanup.removal import CleanupPatchError
 from suite.drive.patches.cleanup.tests.fakes import (
+    FakeClientCallerEvidence,
     FakeFileTable,
     FakeForwarders,
+    FakeTransaction,
+    RaisingSchema,
     cleanup_environment,
     fake_blob_columns,
 )
@@ -37,7 +41,11 @@ class TestRunCleanupRefusals(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_a_failing_gate_refuses_before_any_phase_runs(self):
-        env = _healthy_env(self.path, forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}))
+        env = _healthy_env(
+            self.path,
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
         with self.assertRaises(LegacyCallerGateError):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
@@ -56,6 +64,31 @@ class TestRunCleanupRefusals(unittest.TestCase):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
 
+    def test_an_unready_port_refuses_before_any_phase_runs(self):
+        # `RaisingSchema` mimics the real `SiteSchemaGateway`'s honest
+        # `NotImplementedError` for `drop_child_table_field`/
+        # `remove_permission_hooks`: activation must fail here, in
+        # preflight, not partway through phase 3 or 4 after rows and
+        # doctypes are already gone.
+        env = _healthy_env(self.path, schema=RaisingSchema())
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+        self.assertEqual(env.files.deleted, [])
+        self.assertFalse(env.state.path.exists())
+
+    def test_preflight_runs_before_the_gates(self):
+        # An unready port and a failing gate both present: preflight's
+        # refusal must win, since gates passing on a site that cannot
+        # finish the run is not actually safe to start.
+        env = _healthy_env(
+            self.path,
+            schema=RaisingSchema(),
+            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
+            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
+        )
+        with self.assertRaises(PortNotReadyError):
+            run_cleanup(env)
+
 
 class TestRunCleanupOrder(unittest.TestCase):
     def setUp(self):
@@ -71,7 +104,12 @@ class TestRunCleanupOrder(unittest.TestCase):
         for name in names:
             self.assertTrue(env.state.get(name).completed, msg=name)
 
-    def test_gates_rerun_before_every_phase(self):
+    def test_gates_run_once_per_call_not_once_per_phase(self):
+        # Re-checking before every one of eight phases bought no real
+        # safety over checking once per call (Cleanup is single-actor and
+        # serial within a run) for the cost of up to ten full `File` scans
+        # a run; a genuine resume still gets a fully fresh check, because
+        # that is a new call to `run_cleanup`.
         env = _healthy_env(self.path)
         calls = []
         from suite.drive.patches.cleanup import patch as patch_module
@@ -84,8 +122,59 @@ class TestRunCleanupOrder(unittest.TestCase):
 
         with patch.object(patch_module, "check_gates", side_effect=counting):
             run_cleanup(env)
-        # Once before the loop, then once per phase.
-        self.assertEqual(len(calls), 1 + len(PHASES))
+        self.assertEqual(len(calls), 1)
+
+    def test_preflight_and_gates_run_before_the_first_mutation(self):
+        env = _healthy_env(self.path)
+        order = []
+        from suite.drive.patches.cleanup import patch as patch_module
+
+        original_preflight = patch_module.run_preflight
+        original_gates = patch_module.check_gates
+        original_phase = patch_module.phase_file_rows
+
+        def tracking_preflight(*args, **kwargs):
+            order.append("preflight")
+            return original_preflight(*args, **kwargs)
+
+        def tracking_gates(*args, **kwargs):
+            order.append("gates")
+            return original_gates(*args, **kwargs)
+
+        def tracking_phase(*args, **kwargs):
+            order.append("phase_file_rows")
+            return original_phase(*args, **kwargs)
+
+        with (
+            patch.object(patch_module, "run_preflight", side_effect=tracking_preflight),
+            patch.object(patch_module, "check_gates", side_effect=tracking_gates),
+            patch.object(patch_module, "phase_file_rows", side_effect=tracking_phase),
+        ):
+            run_cleanup(env)
+        self.assertEqual(order, ["preflight", "gates", "phase_file_rows"])
+
+    def test_each_phase_commits_before_its_checkpoint_is_written(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+        self.assertEqual(env.transaction.commits, len(PHASES))
+
+    def test_a_commit_failure_leaves_no_checkpoint_for_that_phase(self):
+        transaction = FakeTransaction()
+        env = _healthy_env(self.path, transaction=transaction)
+        transaction.fail_next = True
+        with self.assertRaises(RuntimeError):
+            run_cleanup(env)
+        # `file_rows`' own `DELETE`s already landed (a real DB commit
+        # failure does not undo prior statements in the same transaction),
+        # but with no checkpoint recorded, a resume must redo this phase
+        # rather than skip it as already done.
+        self.assertFalse(env.state.get("file_rows").completed)
+        self.assertEqual(transaction.commits, 0)
+
+        # Resuming re-runs the phase whose commit failed; its ports are
+        # idempotent, so replaying it against already-mutated fakes is safe.
+        run_cleanup(env)
+        self.assertTrue(env.state.get("file_rows").completed)
 
 
 class TestRunCleanupResume(unittest.TestCase):
