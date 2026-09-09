@@ -24,7 +24,12 @@ from suite.drive.patches.build.report import (
     produce_report,
     save_report,
 )
-from suite.drive.patches.build.state import DROP_REASONS, RemovedFileDocument, SkippedRow
+from suite.drive.patches.build.state import (
+    DROP_REASONS,
+    LegacyComment,
+    RemovedFileDocument,
+    SkippedRow,
+)
 from suite.drive.patches.build.tests.fakes import BUILD_STAMP, build_environment
 
 
@@ -142,6 +147,22 @@ class SourceTest(ReportCase):
             evidence["removed_file_docs"],
             [{"doctype": "Sheet", "name": "sheet-1", "file": "file-1"}],
         )
+
+    def test_the_evidence_carries_the_legacy_comment_census(self):
+        # §14.9 names no comment key at all, so the three legacy counters
+        # ride in the evidence block with the count and the list.
+        content = self.env.state.content()
+        content.legacy_comments_superseded = 246
+        content.legacy_comments_ported = 3
+        content.record_legacy_comment(LegacyComment("comment-1", "file-1"))
+        self.env.state.put_content(content)
+
+        evidence = build_report(self.env)["evidence"]["content"]
+
+        self.assertEqual(evidence["legacy_comments_superseded"], 246)
+        self.assertEqual(evidence["legacy_comments_ported"], 3)
+        self.assertEqual(evidence["legacy_comments_unported"], 1)
+        self.assertEqual(evidence["legacy_comment_rows"], [{"name": "comment-1", "file": "file-1"}])
 
     def test_it_is_stamped_with_the_build_clock(self):
         self.assertEqual(build_report(self.env)["generated_at"], BUILD_STAMP)
