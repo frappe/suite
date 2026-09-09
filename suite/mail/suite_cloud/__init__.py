@@ -13,6 +13,7 @@ from typing import Any
 import frappe
 import requests
 from frappe import _
+from frappe.utils import cint
 from frappe.utils.caching import request_cache
 
 from suite.mail.utils import get_config, log_mail_error
@@ -120,6 +121,6 @@ def is_suite_cloud_configured(raise_exception: bool = False) -> bool:
 @request_cache
 def get_client() -> SuiteCloudClient:
     is_suite_cloud_configured(raise_exception=True)
-    url, key, secret = get_config(("suite_cloud_url", "site_api_key", "site_api_secret"))
-    verify_ssl = (frappe.conf.mail or {}).get("suite_cloud_verify_ssl", True)
-    return SuiteCloudClient(url, key, secret, verify_ssl=bool(verify_ssl))
+    url, key, secret, verify_ssl = get_config(("suite_cloud_url", "site_api_key", "site_api_secret", "verify_ssl"))
+    # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.
+    return SuiteCloudClient(url, key, secret, verify_ssl=bool(cint(verify_ssl)))
