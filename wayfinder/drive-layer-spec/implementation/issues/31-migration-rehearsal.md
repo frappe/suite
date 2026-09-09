@@ -101,9 +101,17 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Operational note: the pass 4 agent printed the whole `Drive Disk Settings` single while reading one flag, exposing the S3 access key id and `jwt_key` in its transcript under `/tmp` (the secret key stayed masked). Not written to any kept file. Rotate `jwt_key` if it matters. Rule for later passes: select the one column, never a whole Single.
 - Fix in progress on branch `forge/ticket-31-legacy-comments`.
 
+### Build pass 5, resume after the legacy-comment fix (2026-09-09, failed on data)
+
+- Fix merged as 5e9b646b8. Legacy `Drive Comment` rows came from `new_writer.py`, which inserted one child row per Yjs annotation with the CRDT id as the row name. The spec is silent; the plan lists `drive_comment/` as a new doctype, not a reshaped side table. Chosen rule, from "Build is additive" and ticket 28's "do not erase source content": a legacy row that a Yjs entry claims is rewritten in place by UPDATE; a legacy row nobody claims is ported to the node of its File as a one-comment thread, or counted if that node does not exist. Counters `legacy_comments_ported`, `legacy_comments_superseded`, `legacy_comments_unported`. 826 build tests pass without a database.
+- Same migrate command on the partial state. Step 7 completed: 142,522 `Drive Node Version` (expected 142,707 from the source count; 4 documents deferred), 1,470 `Drive Comment` in 1,099 threads, `legacy_comments_superseded` 245, `legacy_comments_unported` 0. Step 8 started: 5 template nodes, 22 media nodes, 17 media duplicates collapsed, 3 deck previews, 4 Presentations linked. Failed after 7 min 6 s: `BuildSlidesError: media node 0652d873e5 field parent is '6o66ho00mn', expected '5895c84b62'`, raised by `exact_fields` from `slides.py:377 _media_mapping`.
+- Cause, pending quantification: a media File attached to a Presentation already has a tree node under a folder (it was uploaded into the legacy Drive tree), and step 8 expects the media node under the deck node per decision 012. Fix in progress on branch `forge/ticket-31-slides-media`.
+- Rollback note for §14.11: the spec's rollback truncates the new tables. `tabDrive Comment` is a reused table holding 254 legacy child rows, so that rollback is lossy. The database snapshot restore used by this rehearsal is not.
+- Artifacts: `pass5-migrate.log`, `pass5-migrate-clean.log`, `pass5-traceback.txt`, `drive-build-state-after-pass5-failure.json`, `pass5-progress.tsv` under `/home/faris/backups/suite-frappe/build/`. Source-side expected counts: `source-inventory.md` in the same directory.
+
 ### Plan for the Build rerun
 
-- Pass 1, the storage_v2 setup, the index fix and the Removed-content fix are done above. After the legacy-comments fix merges: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
+- Pass 1, the storage_v2 setup, and the index, Removed-content and legacy-comment fixes are done above. After the slides-media fix merges: flush redis, same migrate command, expect Build to resume at step 8 and finish; then read the report and reconcile against `source-inventory.md`.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
