@@ -105,6 +105,12 @@ class TestMailSettings(SuiteCloudTestCase):
         # The fake's cluster answers https://mail.test while the settings point elsewhere.
         self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
 
+    def test_workspace_name_becomes_the_site_title(self) -> None:
+        with self.change_settings("Suite Settings", workspace_name="Acme Corp"):
+            self.assertEqual(self.fake.site_title, "Acme Corp")
+            self.assertEqual(admin.get_overview()["workspace"]["name"], "Acme Corp")
+            self.assertEqual(admin.get_overview()["site"]["title"], "Acme Corp")
+
     def test_validate_credentials_needs_configuration(self) -> None:
         with self.change_settings("Mail Settings", site_api_secret=""):
             frappe.local.request_cache.clear()

@@ -28,10 +28,16 @@ class FakeSuiteCloud:
         handler = getattr(self, method.replace(".", "__"))
         return handler(**params)
 
+    site_title = "Acme"
+
+    def update_site_title(self, title: str) -> dict:
+        self.site_title = title.strip() or "acme.frappe.test"
+        return self.ping()
+
     def ping(self) -> dict:
         return {
             "site": "acme.frappe.test",
-            "title": "Acme",
+            "title": self.site_title,
             "status": "Active",
             "enabled": True,
             "cluster": "mail.blr.example.test",

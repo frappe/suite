@@ -8,7 +8,8 @@ import frappe
 from frappe import _
 from frappe.utils.caching import redis_cache
 
-from suite.mail.suite_cloud import get_client
+from suite.mail.suite_cloud import get_client, is_suite_cloud_configured
+from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_email
 
 GB = 1024**3
@@ -117,3 +118,18 @@ def set_account_enabled(user: str, enabled: bool) -> None:
 
     if email := get_account_email(user):
         get_client().call("accounts.set_account_enabled", email=email, enabled=bool(enabled))
+
+
+def push_workspace_name(name: str) -> None:
+    """Suite Cloud shows the workspace name as the site's title.
+
+    Called from the Suite Settings save; a Suite Cloud that is unreachable or not configured must
+    not stop an admin from renaming the workspace, so failures are logged rather than raised.
+    """
+
+    if not is_suite_cloud_configured():
+        return
+    try:
+        get_client().call("update_site_title", title=name or "")
+    except Exception:
+        log_mail_error("Failed to push the workspace name to Suite Cloud", frappe.get_traceback())

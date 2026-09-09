@@ -1136,6 +1136,10 @@ def get_overview() -> dict:
     with suppress(Exception):
         overview["recent_accounts"] = _recent_accounts(RECENT_ACCOUNTS)
 
+    with suppress(Exception):
+        settings = frappe.get_cached_doc("Suite Settings")
+        overview["workspace"] = {"name": settings.workspace_name, "logo": settings.workspace_logo}
+
     return overview
 
 

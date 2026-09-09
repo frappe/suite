@@ -14,3 +14,10 @@ class SuiteSettings(Document):
         workspace_logo: DF.AttachImage | None
         workspace_name: DF.Data | None
     # end: auto-generated types
+
+    def on_update(self) -> None:
+        before = self.get_doc_before_save()
+        if before and (before.workspace_name or "") != (self.workspace_name or ""):
+            from suite.mail.directory import push_workspace_name
+
+            push_workspace_name(self.workspace_name)

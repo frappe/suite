@@ -115,20 +115,21 @@
 
 				<!-- Where this site's mail lives, for the admin who has to answer "which server?". -->
 				<DashboardCard :title="__('Mail Service')">
-					<div class="flex flex-col gap-3 px-5 py-4 text-sm">
-						<!-- Label beside the value once the column is wide enough; stacked below xl so a
-						     hostname gets the whole width instead of breaking mid-word. -->
-						<div
-							v-for="row in serviceRows"
-							:key="row.label"
-							class="flex flex-col gap-0.5 xl:flex-row xl:items-start xl:gap-3"
-						>
-							<span class="text-ink-gray-5 shrink-0 xl:w-24">{{ row.label }}</span>
-							<Badge v-if="row.badge" :label="row.value" :theme="row.badge" class="self-start" />
-							<span v-else class="text-ink-gray-9 min-w-0 font-medium [overflow-wrap:anywhere]">
-								{{ row.value || '—' }}
+					<div>
+						<InformationField :label="__('Workspace')">
+							<span class="flex min-w-0 items-center gap-2">
+								<Avatar v-if="workspace?.name" :image="workspace.logo" :label="workspace.name" size="sm" />
+								<span class="truncate">{{ workspace?.name || '—' }}</span>
 							</span>
-						</div>
+						</InformationField>
+						<InformationField :label="__('Site')" :value="site?.site" />
+						<InformationField :label="__('Mail Server')" :value="site?.mail_hostname" />
+						<InformationField :label="__('Status')">
+							<Badge v-if="site?.status" :label="site.status" :theme="site.status === 'Active' ? 'green' : 'amber'" />
+							<span v-else>—</span>
+						</InformationField>
+						<InformationField :label="__('Default Quota')" :value="defaultQuota" />
+						<InformationField :label="__('Contact')" :value="site?.contact_email" />
 					</div>
 				</DashboardCard>
 			</div>
@@ -147,6 +148,7 @@ import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import InformationField from '@/apps/mail/components/InformationField.vue'
 
 import CheckCircle from '~icons/lucide/check-circle-2'
 import Clock from '~icons/lucide/clock'
@@ -179,6 +181,7 @@ type Site = {
 type AttentionDomain = { name: string; status: string; last_verified_at?: string | null }
 type InviteCounts = { pending: number; expiring_soon: number; expired: number }
 type RecentAccount = { name: string; full_name: string; user_image?: string; enabled: boolean; joined_on: string }
+type Workspace = { name?: string; logo?: string }
 type OverviewData = {
 	members: CountWithDisabled | null
 	pending_invites: number | null
@@ -191,6 +194,7 @@ type OverviewData = {
 	domains_needing_attention?: AttentionDomain[]
 	invites?: InviteCounts | null
 	recent_accounts?: RecentAccount[]
+	workspace?: Workspace | null
 }
 
 usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
@@ -205,6 +209,7 @@ const overview = createResource({
 const data = computed(() => overview.data as OverviewData | undefined)
 const site = computed(() => data.value?.site || undefined)
 const recentAccounts = computed(() => data.value?.recent_accounts || [])
+const workspace = computed(() => data.value?.workspace || undefined)
 
 // A section whose backing store was unreachable reports null; show an em dash
 // rather than a fake zero.
@@ -225,19 +230,9 @@ const storagePercent = computed(() => {
 	return Math.round((storage.allocated_gb / storage.max_gb) * 100)
 })
 
-const serviceRows = computed(() => {
+const defaultQuota = computed(() => {
 	const quota = data.value?.storage?.default_quota_gb
-	return [
-		{ label: __('Site'), value: site.value?.title || site.value?.site },
-		{ label: __('Mail Server'), value: site.value?.mail_hostname },
-		{
-			label: __('Status'),
-			value: site.value?.status || '',
-			badge: site.value?.status ? (site.value.status === 'Active' ? 'green' : 'amber') : undefined,
-		},
-		{ label: __('Default Quota'), value: quota ? __('{0} GB per account', [String(quota)]) : undefined },
-		{ label: __('Contact'), value: site.value?.contact_email },
-	]
+	return quota ? __('{0} GB per account', [String(quota)]) : undefined
 })
 
 
