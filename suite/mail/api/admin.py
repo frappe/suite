@@ -1146,7 +1146,7 @@ def get_overview() -> dict:
     return overview
 
 
-RECENT_ACCOUNTS = 5
+RECENT_ACCOUNTS = 6  # matches the six rows of the Mail Service panel beside it
 
 
 def _invite_counts() -> dict:

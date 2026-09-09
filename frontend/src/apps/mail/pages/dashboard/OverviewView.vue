@@ -67,7 +67,7 @@
 							v-for="account in recentAccounts"
 							:key="account.name"
 							:to="{ name: 'mail-account', params: { accountId: account.name } }"
-							class="hover:bg-surface-gray-1 flex items-center gap-3 border-b px-5 py-2.5 last:border-b-0"
+							class="hover:bg-surface-gray-1 flex h-14 items-center gap-3 border-b px-5 last:border-b-0"
 						>
 							<Avatar :image="account.user_image" :label="account.full_name" size="lg" />
 							<div class="min-w-0 flex-1">
@@ -116,21 +116,21 @@
 
 				<!-- Where this site's mail lives, for the admin who has to answer "which server?". -->
 				<DashboardCard :title="__('Mail Service')">
-					<div>
-						<InformationField :label="__('Workspace')">
-							<span class="flex min-w-0 items-center gap-2">
+					<!-- Plain rows at the same height as Recent Accounts beside it. -->
+					<div class="flex flex-col">
+						<div
+							v-for="row in serviceRows"
+							:key="row.label"
+							class="flex h-14 items-center gap-3 border-b px-5 text-sm last:border-b-0"
+						>
+							<span class="text-ink-gray-5 w-28 shrink-0">{{ row.label }}</span>
+							<span v-if="row.kind === 'workspace'" class="flex min-w-0 items-center gap-2 font-medium">
 								<Avatar v-if="workspace?.name" :image="workspace.logo" :label="workspace.name" size="sm" />
 								<span class="truncate">{{ workspace?.name || '—' }}</span>
 							</span>
-						</InformationField>
-						<InformationField :label="__('Site')" :value="site?.site" />
-						<InformationField :label="__('Mail Server')" :value="site?.mail_hostname" />
-						<InformationField :label="__('Status')">
-							<Badge v-if="site?.status" :label="site.status" :theme="site.status === 'Active' ? 'green' : 'amber'" />
-							<span v-else>—</span>
-						</InformationField>
-						<InformationField :label="__('Default Quota')" :value="defaultQuota" />
-						<InformationField :label="__('Contact')" :value="site?.contact_email" />
+							<Badge v-else-if="row.kind === 'status' && row.value" :label="row.value" :theme="row.theme" />
+							<span v-else class="truncate font-medium">{{ row.value || '—' }}</span>
+						</div>
 					</div>
 				</DashboardCard>
 			</div>
@@ -149,7 +149,6 @@ import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
 
 import CheckCircle from '~icons/lucide/check-circle-2'
 import Clock from '~icons/lucide/clock'
@@ -232,9 +231,17 @@ const storagePercent = computed(() => {
 	return Math.round((storage.allocated_gb / storage.max_gb) * 100)
 })
 
-const defaultQuota = computed(() => {
+const serviceRows = computed(() => {
 	const quota = data.value?.storage?.default_quota_gb
-	return quota ? __('{0} GB per account', [String(quota)]) : undefined
+	const status = site.value?.status
+	return [
+		{ label: __('Workspace'), kind: 'workspace', value: workspace.value?.name },
+		{ label: __('Site'), value: site.value?.site },
+		{ label: __('Mail Server'), value: site.value?.mail_hostname },
+		{ label: __('Status'), kind: 'status', value: status, theme: status === 'Active' ? 'green' : 'amber' },
+		{ label: __('Default Quota'), value: quota ? __('{0} GB per account', [String(quota)]) : undefined },
+		{ label: __('Contact'), value: site.value?.contact_email },
+	]
 })
 
 
