@@ -7,7 +7,7 @@ from unittest import mock
 
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive.patches.build import content as content_module
-from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive.patches.build.content import LINK_FIELDS, BuildContentError, link_content_documents
 from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
 from suite.drive.patches.build.mapping import GENERAL
 from suite.drive.patches.build.ports import (
@@ -21,6 +21,7 @@ from suite.drive.patches.build.ports import (
     TreeRow,
     WriterTemplateRow,
 )
+from suite.drive.patches.build.state import ContentConversion, RemovedFileDocument
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
     FakeContentTarget,
@@ -160,6 +161,22 @@ class ContentTest(unittest.TestCase):
         return name
 
     # -- file-backed links
+
+    def test_one_shot_link_evidence_survives_the_next_phase_start(self):
+        removed = RemovedFileDocument("Sheet", "sheet-1", "file-1")
+        result = ContentConversion(
+            docshare_rows_deleted=1,
+            removed_file_documents=1,
+            removed_file_docs=[removed],
+            removed_file_documents_purged=1,
+        )
+
+        result.begin_phase("links", LINK_FIELDS)
+
+        self.assertEqual(result.docshare_rows_deleted, 1)
+        self.assertEqual(result.removed_file_documents, 1)
+        self.assertEqual(result.removed_file_docs, [removed])
+        self.assertEqual(result.removed_file_documents_purged, 1)
 
     def test_file_backed_document_gets_only_its_blank_reciprocal_link(self):
         row = document("Writer Document", "writer-1")
@@ -341,7 +358,22 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(target.purged_documents, [])
         self.assertIn((row.doctype, row.name), source.document_rows)
 
-    def test_the_removed_census_and_the_purge_are_recomputed_by_a_rerun(self):
+    def test_a_purge_issue_survives_the_next_links_phase_start(self):
+        row = document("Sheet", "sheet-1")
+        source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
+        env, _target = self.environment(source)
+
+        result = link_content_documents(env)
+        result.begin_phase("links", LINK_FIELDS)
+
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(result.issues_by_phase, {"links": 1})
+        self.assertEqual(
+            [(issue.source, issue.reason, issue.phase) for issue in result.issues],
+            [("Sheet:sheet-1", "every File row is Removed; purged", "links")],
+        )
+
+    def test_a_second_links_pass_keeps_the_one_shot_purge_totals(self):
         row = document("Sheet", "sheet-1")
         source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
         env, target = self.environment(source)
@@ -352,13 +384,13 @@ class ContentTest(unittest.TestCase):
 
         result = link_content_documents(env)
 
-        # The document is gone, so the second pass meets nothing: both
-        # counters recompute to zero rather than doubling, and the issue the
-        # first pass recorded is dropped with the rest of the phase's.
-        self.assertEqual(result.removed_file_documents, 0)
-        self.assertEqual(result.removed_file_docs, [])
-        self.assertEqual(result.removed_file_documents_purged, 0)
-        self.assertEqual(result.issues, [])
+        # The document is gone, so the second pass cannot derive these totals
+        # again. They describe work Build already did and must not double.
+        self.assertEqual(result.removed_file_documents, 1)
+        self.assertEqual([entry.file for entry in result.removed_file_docs], ["file-1"])
+        self.assertEqual(result.removed_file_documents_purged, 1)
+        self.assertEqual(result.issues_total, 1)
+        self.assertEqual(result.issues_by_phase, {"links": 1})
         self.assertEqual(target.purged_documents, [("Sheet", "sheet-1")])
 
     # -- batching
@@ -883,8 +915,7 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(sorted(target.docshares_deleted), ["share-1", "share-2", "share-3", "share-4"])
         self.assertEqual(env.docshare_journal.preimage("share-4"), shares[3].preimage())
 
-    def test_a_rerun_finds_no_governed_share_left_and_counts_none(self):
-        """Data-derived: the second pass reads one empty page and stops."""
+    def test_a_rerun_keeps_the_count_of_governed_shares_it_deleted(self):
         row = document("Writer Document", "writer-1")
         share = ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1)
         source = FakeContent(
@@ -901,7 +932,7 @@ class ContentTest(unittest.TestCase):
 
         second = link_content_documents(env)
 
-        self.assertEqual(second.docshare_rows_deleted, 0)
+        self.assertEqual(second.docshare_rows_deleted, 1)
         self.assertEqual(target.docshares_deleted, ["share-1"])
         self.assertEqual(target.grant_roles("file-1", ("reader@example.com",))["reader@example.com"], READ)
 
