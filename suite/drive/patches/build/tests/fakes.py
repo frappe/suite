@@ -1006,13 +1006,15 @@ class FakeContentTarget:
 
         self._unit(name, write)
 
-    def write_presentation_template(self, deck, node, grants):
+    def write_presentation_template(self, deck, node, grants, *, adopt=""):
         def write():
             if node:
                 self.insert_nodes([node])
+            if adopt:
+                self.node_rows[adopt]["is_template"] = 1
             if self.fail_unit == deck:
                 raise InterruptedRun("killed while writing Presentation template")
-            self.content.link_document("Presentation", deck, deck)
+            self.content.link_document("Presentation", deck, adopt or (node["name"] if node else deck))
             self.insert_grants(grants)
 
         self._unit(deck, write)

@@ -22,6 +22,7 @@ ADMINISTRATOR = "Administrator"
 # belongs to the links or slides phase and must survive a template rerun.
 TEMPLATE_FIELDS = (
     "template_nodes_created",
+    "template_nodes_adopted",
     "writer_templates_converted",
     "template_title_renames",
 )
@@ -100,8 +101,19 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE, result=None) -
     created = 0
     seen = 0
     renamed = 0
+    adopted = 0
 
     for kind, row in templates:
+        if kind == "presentation":
+            stored = _adoptable_node(target, row)
+            if stored is not None:
+                # An adopted deck keeps the node and the title §14.4 gave it,
+                # so it claims no title under `Templates` and a later sibling
+                # is not pushed to ` (2)` by a name nothing occupies.
+                adopted += _adopt_presentation_template(env, row, stored, result)
+                target.commit()
+                env.state.put_content(result)
+                continue
         # `Presentation.title` is `reqd=0`, so NULL is a real source value and
         # `SiblingTitles.claim` would subscript it. Plan §6 falls back to the
         # source id for a content document with no title.
@@ -118,6 +130,7 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE, result=None) -
 
     result.writer_templates_converted = seen
     result.template_nodes_created = created
+    result.template_nodes_adopted = adopted
     result.template_title_renames = renamed
     result.title_renames = result.link_title_renames + renamed
     if owned:
@@ -265,6 +278,55 @@ def _presentation_template(env, place, row, title) -> int:
         raise InvalidLegacyContent(f"Presentation template {row.name} links another node")
     grants = _missing_template_grants(env, row.name, row.owner)
     target.write_presentation_template(row.name, None if found else node, grants)
+    return 1
+
+
+def _adoptable_node(target, row) -> dict | None:
+    """Answer the node §14.4 already wrote for this template deck, or `None`.
+
+    §14.7 says template decks "have no node today, so this is a create, not a
+    move", and §14.6 excepts them from the node it gives a content document
+    with no `File` row. A migrated site can hold one that has both: a legacy
+    `File` row put a document node under its old folder, and minting a second
+    one under `Templates` leaves two nodes for one content document. §14.6
+    gives each content document one `node` link from its `File` row, and
+    `history._document_node` refuses the pair as a broken reciprocal link on
+    that run and on every run after it.
+
+    So the deck is adopted where it stands rather than moved or duplicated.
+    """
+    nodes = target.content_nodes("Presentation", row.name)
+    if len(nodes) > 1:
+        # `history._document_node`'s refusal, raised where the second node
+        # would be minted instead of one step later with no way back.
+        raise InvalidLegacyContent(f"Presentation {row.name} has multiple target nodes")
+    if not nodes or nodes[0]["name"] == row.name:
+        return None
+    return nodes[0]
+
+
+def _adopt_presentation_template(env, row, node, result) -> int:
+    """Flag, grant, and link the node this deck already has. Answer the count.
+
+    §8.10 makes the grant on the node the only rule for who may use a
+    template, and `Drive Node.is_template` the one flag, so those two plus the
+    reciprocal link are the whole conversion. No column that says where the
+    node sits is touched. A rerun meets all three and answers 0.
+    """
+    target = env.content_target
+    _valid_owner(env, row.owner)
+    name = node["name"]
+    if row.node and row.node != name:
+        raise InvalidLegacyContent(f"Presentation template {row.name} links another node")
+    result.record_issue(
+        f"Presentation:{row.name}",
+        f"template Presentation {row.name} already had node {name}; adopted in place",
+        phase="templates",
+    )
+    grants = _missing_template_grants(env, name, row.owner)
+    if not grants and node.get("is_template") and row.node == name:
+        return 0
+    target.write_presentation_template(row.name, None, grants, adopt=name)
     return 1
 
 
