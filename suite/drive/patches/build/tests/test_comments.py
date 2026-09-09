@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pycrdt
 
-from suite.drive.patches.build.comments import convert_document_comments
+from suite.drive.patches.build.comments import convert_document_comments, port_legacy_comments
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent, derived_name, sheet_anchor
 from suite.drive.patches.build.ports import ContentRow
+from suite.drive.patches.build.state import ContentConversion
 from suite.drive.patches.build.tests.fakes import (
     FakeContent,
     FakeContentTarget,
@@ -19,6 +20,7 @@ from suite.drive.patches.build.tests.fakes import (
 )
 
 STAMP = "2024-01-02 03:04:05.000000"
+LEGACY_STAMP = "2023-05-06 07:08:09.000000"
 OWNER = "owner@example.com"
 
 
@@ -35,6 +37,7 @@ class CommentTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
+        self.record = ContentConversion()
 
     def environment(self, source):
         target = FakeContentTarget(content=source)
@@ -73,7 +76,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document], timezone="UTC")
         env, target = self.environment(source)
 
-        count = convert_document_comments(env, document, "node-1", batch_size=1)
+        count = convert_document_comments(env, self.record, document, "node-1", batch_size=1)
 
         self.assertEqual(count, 2)
         thread = target.thread_rows["top"]
@@ -103,7 +106,7 @@ class CommentTest(unittest.TestCase):
 
         target.write_thread = record
 
-        convert_document_comments(env, document, "node-1", batch_size=100)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
 
         # `to_py()` hands back the yrs map order, and that is a fresh hash
         # order on every read. Each thread is its own commit, so an
@@ -131,7 +134,7 @@ class CommentTest(unittest.TestCase):
         # No caller catches `AttributeError`, so the run would end with no
         # issue recorded and no state written.
         with self.assertRaisesRegex(InvalidLegacyContent, "reply is not an object"):
-            convert_document_comments(env, document, "node-1", batch_size=100)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=100)
 
     def test_an_over_long_author_is_refused_before_the_insert(self):
         ycomments = writer_update(
@@ -147,7 +150,7 @@ class CommentTest(unittest.TestCase):
         # neither `InvalidLegacyContent` nor `ValueError`, so it would escape
         # the guard and repeat on every rerun.
         with self.assertRaisesRegex(InvalidLegacyContent, "author exceeds"):
-            convert_document_comments(env, document, "node-1", batch_size=100)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=100)
 
     def test_blank_writer_author_uses_guest_and_container_fallback(self):
         ycomments = writer_update(
@@ -163,7 +166,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document])
         env, target = self.environment(source)
 
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         comment = target.comment_rows["top"]
         self.assertEqual(comment["author"], "Guest")
@@ -198,7 +201,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document])
         env, target = self.environment(source)
 
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         thread_id = derived_name("drive-sheet-thread/1", "sheet-1", "Résumé", "A/1")
         comment_id = derived_name("drive-sheet-comment/1", thread_id, 0)
@@ -217,7 +220,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document])
         env, target = self.environment(source)
 
-        count = convert_document_comments(env, document, "node-1", batch_size=1000)
+        count = convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         self.assertEqual(count, 1)
         comment = next(iter(target.comment_rows.values()))
@@ -249,7 +252,7 @@ class CommentTest(unittest.TestCase):
         source.op_stamps[("sheet-1", 8)] = ("operator@example.com", "2024-03-01 00:00:00")
         env, target = self.environment(source)
 
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         thread = next(iter(target.thread_rows.values()))
         self.assertEqual(thread["resolved_by"], "operator@example.com")
@@ -269,7 +272,7 @@ class CommentTest(unittest.TestCase):
         target.fail_unit = thread_id
 
         with self.assertRaises(InterruptedRun):
-            convert_document_comments(env, document, "node-1", batch_size=1000)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         self.assertFalse(target.thread_rows)
         self.assertFalse(target.comment_rows)
 
@@ -285,7 +288,7 @@ class CommentTest(unittest.TestCase):
         env, target = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "malformed"):
-            convert_document_comments(env, document, "node-1", batch_size=1000)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         self.assertFalse(target.thread_rows)
 
     def test_colliding_reply_ids_refuse_before_an_earlier_thread_is_committed(self):
@@ -318,7 +321,7 @@ class CommentTest(unittest.TestCase):
         env, target = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "comment ids collide"):
-            convert_document_comments(env, document, "node-1", batch_size=1000)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         self.assertFalse(target.thread_rows)
         self.assertFalse(target.comment_rows)
 
@@ -347,7 +350,7 @@ class CommentTest(unittest.TestCase):
                 env, target = self.environment(source)
 
                 with self.assertRaisesRegex(InvalidLegacyContent, "ids are missing or too long"):
-                    convert_document_comments(env, document, "node-1", batch_size=1000)
+                    convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
                 self.assertFalse(target.thread_rows)
 
     def test_legacy_sheet_string_takes_the_sheet_stamp_not_the_head_operation(self):
@@ -366,7 +369,7 @@ class CommentTest(unittest.TestCase):
         source.op_stamps[("sheet-1", 8)] = ("operator@example.com", "2020-05-05 11:11:11")
         env, target = self.environment(source)
 
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         comment = next(iter(target.comment_rows.values()))
         thread = next(iter(target.thread_rows.values()))
@@ -386,7 +389,7 @@ class CommentTest(unittest.TestCase):
         env, target = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "is not an object"):
-            convert_document_comments(env, document, "node-1", batch_size=1000)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         self.assertFalse(target.thread_rows)
 
     def test_stamps_authors_and_mention_order_land_on_every_written_column(self):
@@ -419,7 +422,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document], timezone="UTC")
         env, target = self.environment(source)
 
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         first = target.comment_rows["top"]
         last = target.comment_rows["reply"]
@@ -457,7 +460,7 @@ class CommentTest(unittest.TestCase):
                 env, target = self.environment(source)
 
                 with self.assertRaisesRegex(InvalidLegacyContent, message):
-                    convert_document_comments(env, document, "node-1", batch_size=1000)
+                    convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
                 self.assertFalse(target.comment_rows)
 
     def test_a_second_identical_run_validates_rows_instead_of_repeating_them(self):
@@ -484,9 +487,9 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document], timezone="UTC")
         env, target = self.environment(source)
 
-        first = convert_document_comments(env, document, "node-1", batch_size=1000)
+        first = convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         before = (dict(target.thread_rows), dict(target.comment_rows))
-        second = convert_document_comments(env, document, "node-1", batch_size=1000)
+        second = convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
         self.assertEqual((first, second), (2, 2))
         self.assertEqual((dict(target.thread_rows), dict(target.comment_rows)), before)
@@ -505,12 +508,12 @@ class CommentTest(unittest.TestCase):
         )
         source = FakeContent(documents=[document])
         env, target = self.environment(source)
-        convert_document_comments(env, document, "node-1", batch_size=1000)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
         comment_id = next(iter(target.comment_rows))
         target.comment_rows[comment_id]["idx"] = 7
 
         with self.assertRaisesRegex(InvalidLegacyContent, "field idx"):
-            convert_document_comments(env, document, "node-1", batch_size=1000)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
 
     def test_a_complete_thread_never_reads_the_container_fallback(self):
         # A document whose entries all carry an author and a valid stamp needs
@@ -531,7 +534,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document], timezone="UTC")
         env, target = self.environment(source)
 
-        self.assertEqual(convert_document_comments(env, document, "node-1", batch_size=10), 1)
+        self.assertEqual(convert_document_comments(env, self.record, document, "node-1", batch_size=10), 1)
         self.assertEqual(target.comment_rows["top"]["author"], "a@example.com")
 
     def test_a_sheet_with_no_comments_never_reads_the_container_fallback(self):
@@ -541,7 +544,7 @@ class CommentTest(unittest.TestCase):
         source = FakeContent(documents=[document], timezone="UTC")
         env, _ = self.environment(source)
 
-        self.assertEqual(convert_document_comments(env, document, "node-1", batch_size=10), 0)
+        self.assertEqual(convert_document_comments(env, self.record, document, "node-1", batch_size=10), 0)
 
     def test_an_entry_that_needs_the_fallback_still_refuses_an_incomplete_one(self):
         ycomments = writer_update(
@@ -554,7 +557,170 @@ class CommentTest(unittest.TestCase):
         env, _ = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "timestamp fallback"):
-            convert_document_comments(env, document, "node-1", batch_size=10)
+            convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+
+class LegacyCommentTest(unittest.TestCase):
+    """The rows `new_writer.py` left in the table `Drive Comment` reuses.
+
+    That patch named each child row after the Yjs entry it came from, so the
+    ids Build derives from `ycomments` are ids the table already holds.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        self.record = ContentConversion()
+
+    def environment(self, source):
+        target = FakeContentTarget(content=source)
+        return build_environment(self.path, content=source, content_target=target), target
+
+    def legacy_row(self, target, name, *, file="file-1", text="<p>old</p>", resolved=0):
+        target.comment_rows[name] = {
+            "name": name,
+            "parent": file,
+            "parenttype": "Drive File",
+            "parentfield": "comments",
+            "content": text,
+            "resolved": resolved,
+            "owner": "old@example.com",
+            "creation": LEGACY_STAMP,
+            "modified": LEGACY_STAMP,
+            "modified_by": "old@example.com",
+        }
+        return target.comment_rows[name]
+
+    def writer(self, name="78033a50-d0c3-47e0-9c84-a15ff667ea29"):
+        ycomments = writer_update(
+            {name: {"id": name, "text": "First", "owner": "a@example.com", "creation": 1_000}}
+        )
+        return ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+
+    def test_a_legacy_row_under_a_planned_id_is_completed_in_place(self):
+        document = self.writer()
+        name = "78033a50-d0c3-47e0-9c84-a15ff667ea29"
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        self.legacy_row(target, name)
+
+        count = convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        self.assertEqual((count, self.record.legacy_comments_superseded), (1, 1))
+        row = target.comment_rows[name]
+        self.assertEqual((row["thread"], row["node"], row["idx"]), (name, "node-1", 1))
+        self.assertEqual((row["content"], row["author"]), ("First", "a@example.com"))
+        self.assertEqual(target.thread_rows[name]["anchor"], name)
+        # The old child columns are ticket 35's to drop, not Build's.
+        self.assertEqual((row["parent"], row["parenttype"]), ("file-1", "Drive File"))
+
+    def test_the_document_converts_again_after_the_rewrite(self):
+        document = self.writer()
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        self.legacy_row(target, "78033a50-d0c3-47e0-9c84-a15ff667ea29")
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+        before = (dict(target.thread_rows), dict(target.comment_rows))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        self.assertEqual((dict(target.thread_rows), dict(target.comment_rows)), before)
+        # The row stopped being legacy on the first pass, so the second one
+        # compares it whole and counts nothing.
+        self.assertEqual(self.record.legacy_comments_superseded, 1)
+
+    def test_a_kill_before_the_thread_leaves_the_row_legacy(self):
+        # The rewrite runs after the thread write, so an interrupted run
+        # never leaves a comment whose thread no later pass knows to write.
+        document = self.writer()
+        name = "78033a50-d0c3-47e0-9c84-a15ff667ea29"
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        self.legacy_row(target, name)
+        target.fail_unit = name
+
+        with self.assertRaises(InterruptedRun):
+            convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        self.assertEqual(target.thread_rows, {})
+        self.assertIsNone(target.comment_rows[name].get("thread"))
+        self.assertEqual(self.record.legacy_comments_superseded, 0)
+
+    def test_a_sheet_id_meets_a_legacy_row_the_same_way(self):
+        # Sheet ids are derived, not Yjs, so this collision is not one
+        # production can produce. `_write_thread` answers it identically.
+        workbook = {"comments": {"Sheet 1": {"A1": {"thread": [{"text": "one", "author": OWNER}]}}}}
+        document = ContentRow(
+            "Sheet", "sheet-1", sheets_data=json.dumps(workbook), modified=STAMP, modified_by=OWNER
+        )
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        thread_id = derived_name("drive-sheet-thread/1", "sheet-1", "Sheet 1", "A1")
+        name = derived_name("drive-sheet-comment/1", thread_id, 0)
+        self.legacy_row(target, name)
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        self.assertEqual(self.record.legacy_comments_superseded, 1)
+        self.assertEqual(target.comment_rows[name]["thread"], thread_id)
+        self.assertEqual(target.comment_rows[name]["content"], "one")
+
+    def test_a_row_no_entry_claims_becomes_its_own_thread(self):
+        env, target = self.environment(FakeContent(timezone="UTC"))
+        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+        self.legacy_row(target, "orphan-1", resolved=1)
+
+        port_legacy_comments(env, self.record, batch_size=10)
+
+        self.assertEqual(self.record.legacy_comments_ported, 1)
+        thread = target.thread_rows["orphan-1"]
+        self.assertEqual((thread["node"], thread["anchor"], thread["resolved"]), ("file-1", "orphan-1", 1))
+        self.assertEqual((thread["resolved_by"], thread["owner"]), ("old@example.com", "old@example.com"))
+        row = target.comment_rows["orphan-1"]
+        self.assertEqual((row["thread"], row["node"]), ("orphan-1", "file-1"))
+        self.assertEqual((row["content"], row["author"]), ("<p>old</p>", "old@example.com"))
+        self.assertEqual(row["creation"], LEGACY_STAMP)
+
+    def test_a_row_whose_file_has_no_node_is_counted_and_kept(self):
+        env, target = self.environment(FakeContent(timezone="UTC"))
+        target.node_rows["file-2"] = {"name": "file-2", "kind": "document"}
+        self.legacy_row(target, "a-orphan", file="file-1")
+        self.legacy_row(target, "b-orphan", file="file-2")
+
+        # One row per page, so the keyset has to step over the row it kept.
+        port_legacy_comments(env, self.record, batch_size=1)
+
+        self.assertEqual(self.record.legacy_comments_unported, 1)
+        self.assertEqual(
+            [(entry.name, entry.file) for entry in self.record.legacy_comment_rows],
+            [("a-orphan", "file-1")],
+        )
+        self.assertEqual(self.record.legacy_comments_ported, 1)
+        self.assertIsNone(target.comment_rows["a-orphan"].get("thread"))
+        self.assertNotIn("a-orphan", target.thread_rows)
+
+    def test_porting_the_same_rows_again_changes_nothing(self):
+        env, target = self.environment(FakeContent(timezone="UTC"))
+        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+        self.legacy_row(target, "orphan-1")
+        self.legacy_row(target, "orphan-2", file="gone")
+        port_legacy_comments(env, self.record, batch_size=10)
+        before = (dict(target.thread_rows), dict(target.comment_rows))
+
+        port_legacy_comments(env, self.record, batch_size=10)
+
+        self.assertEqual((dict(target.thread_rows), dict(target.comment_rows)), before)
+        self.assertEqual(self.record.legacy_comments_ported, 1)
+        # The row with no node is still legacy, and the sweep recounts it
+        # rather than adding it to the census the last sweep took.
+        self.assertEqual(self.record.legacy_comments_unported, 1)
+
+    def test_a_blank_legacy_row_is_refused(self):
+        env, target = self.environment(FakeContent(timezone="UTC"))
+        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+        self.legacy_row(target, "orphan-1", text="   ")
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "legacy comment text is blank"):
+            port_legacy_comments(env, self.record, batch_size=10)
 
 
 if __name__ == "__main__":
