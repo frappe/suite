@@ -367,8 +367,8 @@ class MailAccountRequest(Document):
                 password=password,
                 display_name=f"{first_name} {last_name}" if last_name else first_name,
                 aliases=self._aliases,
-                groups=self._groups,
-                mailing_lists=self._mailing_lists,
+                groups=self._surviving("mail.groups.list_groups", self._groups),
+                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
                 disk_quota_gb=self._quota_gb,
                 locale=locale,
                 time_zone=time_zone,
@@ -414,6 +414,24 @@ class MailAccountRequest(Document):
                 title="Failed to create push subscription",
                 module="Mail",
             )
+
+    def _surviving(self, method: str, wanted: list[str]) -> list[str]:
+        """The groups or lists named at invite time that still exist.
+
+        A group deleted between the invitation and its acceptance must not stop the person from
+        getting their mailbox; the missing membership is logged for the admin instead.
+        """
+
+        if not wanted:
+            return wanted
+        existing = {row["email"] for row in get_client().call(method)}
+        missing = [address for address in wanted if address.lower() not in existing]
+        if missing:
+            log_mail_error(
+                title=f"Invite for {self.account} named memberships that no longer exist",
+                message=", ".join(missing),
+            )
+        return [address for address in wanted if address.lower() in existing]
 
     def _discard_cluster_account(self) -> None:
         """Best effort: a failure here is logged, the original error is what the caller sees."""
