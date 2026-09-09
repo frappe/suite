@@ -50,7 +50,9 @@ def _all_recipients(client, email: str) -> list[str]:
     recipients: list[str] = []
     start = 0
     while True:
-        page = client.call("mail.mailing_lists.list_recipients", email=email, start=start, limit=RECIPIENT_PAGE)
+        page = client.call(
+            "mail.mailing_lists.list_recipients", email=email, start=start, limit=RECIPIENT_PAGE
+        )
         recipients.extend(r["email"] for r in page["items"] if r.get("enabled", True))
         start += len(page["items"])
         if not page["items"] or start >= page["total"]:

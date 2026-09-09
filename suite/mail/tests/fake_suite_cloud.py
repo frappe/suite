@@ -231,7 +231,6 @@ class FakeSuiteCloud:
         self._require(self.accounts, email)
         self.passwords[email] = password
 
-
     def accounts__set_aliases(self, email, aliases=None) -> dict:
         self._require(self.accounts, email)["aliases"] = self._alias_rows(aliases)
         return self._account(email)
@@ -369,7 +368,6 @@ class FakeSuiteCloud:
         for r in removed:
             del ml["recipients"][r]
         return {"removed": removed, "recipient_count": len(ml["recipients"])}
-
 
     def mailing_lists__delete_mailing_list(self, email) -> None:
         self._require(self.lists, email)
