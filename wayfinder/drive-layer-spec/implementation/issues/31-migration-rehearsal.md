@@ -202,9 +202,20 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Pass 12b, idempotent rerun: redis flushed, same command, exit code 0, wall 4 s, no `Executing suite.drive.patches.build` line, hook passed, every count unchanged (`diff` of `pass12-counts.tsv` and `pass12b-counts.tsv` empty).
 - After: scheduler disabled and paused, 0 workers, maintenance mode on, guard keys 1, `Drive Disk Settings.enabled` 0, disk free 34 GB. Artifacts: `pass12-precondition.sql`, `pass12-precondition.log`, `pass12-migrate.log`, `pass12-migrate-clean.log`, `pass12-progress.tsv`, `pass12-report.json`, `pass12-state-final.json`, `pass12-counts.sql`, `pass12-counts.tsv`, `pass12-media-bytes.txt`, `pass12b-migrate.log`, `pass12b-migrate-clean.log`, `pass12b-counts.tsv`, `pass12-gate-refused-*`.
 
+### Client exercise on the pass 12 site (2026-09-10)
+
+- No browser and no built frontend on the rehearsal site, so a runner (`client-exercise.py`, written by a codex agent) calls the whitelisted methods in-process as real users, read-only: `frappe.flags.read_only`, `enqueue` blocked, rollback at the end, refuses any other site.
+- Users: the three enabled non-Administrator users owning the most Drive Node rows (redacted `ne..@frappe.io`, `vi..@frappe.io`, `fo..@frappe.io`) plus Guest.
+- New clients, per user: `node_get` on a personal root, a shared root, a Writer Document, a Presentation, and a Sheet node; `node_children` on the root and a folder (first page); `root_usage`; `frappe.client.get` on a Writer Document and a Presentation; `suite.sheets.api.get_sheet`; `node_versions`; `node_threads`; `view_list` for favourites, recents, and search. Guest: `node_get` through `X-Drive-Links` on an unexpired passwordless link grant.
+- Legacy clients, per user: `get_root_folder`, `list.files`, `get_user_access`, `get_entity_with_permissions`, Writer `get_document`, Slides `get_public_presentation`, Sheets `get_sheet`. Guest: `translate_old_name` on a `$PUBLIC`-granted node.
+- Result: 71 calls (new 49, legacy 22), 71 ok, 0 errors, exit code 0, about 1 s wall. No permission refusal for an owner, no missing node, no failed legacy id translation.
+- Nothing written: Drive Node 18,948, Drive Grant 4,839, Drive Activity 15,804, Drive Recent 10,109, Drive Favourite 45, Drive Comment 1,554 before and after.
+- Not covered: the share-link resolver exists only as the `/drive/l/<token>` website route and WebDAV has no whitelisted method, so neither was called; no browser flow.
+- Artifacts: `client-exercise.py`, `client-exercise-README.md`, `client-exercise-run.log`, `client-exercise-results.tsv`, `client-exercise-results-redacted.tsv`, `client-exercise-counts-before.tsv`, `client-exercise-counts-after.tsv`, `client-exercise-summary.md`.
+
 ### Plan for the Build rerun
 
-- Pass 12 (clean full run) and 12b completed with the same tables as pass 11. Next: the client exercise on the pass 12 site, the report-counter fix, then the acceptance ticks.
+- Pass 12, 12b, and the client exercise completed. Next: merge the report-counter fix, restore the snapshot, run pass 13 as the release-candidate run, then the acceptance ticks.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
