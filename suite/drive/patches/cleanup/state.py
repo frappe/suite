@@ -48,6 +48,18 @@ def _quarantine_message(path: Path, spoiled: Path | None) -> str:
     )
 
 
+def _marker_message(path: Path, markers: list[Path]) -> str:
+    found = ", ".join(str(marker) for marker in markers)
+    return (
+        f"{path} is absent, but this exact state record was already quarantined once "
+        f"({found}) and never cleared: a missing file here is corruption's aftermath, not a "
+        "fresh site. This record is Cleanup's only copy of what earlier phases already "
+        "committed, so an automatic fresh run is not safe: restore this site's database from "
+        "a backup taken before the corruption, or have an operator manually reconstruct this "
+        "file, before Cleanup may run again."
+    )
+
+
 @dataclass
 class PhaseResult:
     """One phase's outcome. Only the counters that phase touches are non-zero."""
@@ -92,17 +104,24 @@ class CleanupState:
 
     def load(self) -> dict:
         """The state dict, or `{"version": STATE_VERSION}` if genuinely no
-        run has reached this site yet (the file has never existed). An
-        existing-but-unreadable file is a different fact entirely and is
-        never conflated with a fresh start: it is quarantined for forensics
-        and `CorruptCleanupStateError` is raised, so every caller — direct
-        or through `get`/`get_census`/`get_settings_snapshot` — fails
-        closed instead of silently treating corruption as "nothing has run
-        yet." """
+        run has reached this site yet (the file has never existed and no
+        quarantine marker for it does either). An existing-but-unreadable
+        file is a different fact entirely and is never conflated with a
+        fresh start: it is quarantined for forensics and
+        `CorruptCleanupStateError` is raised. Quarantining renames the
+        record away, so a later `load()` would otherwise see plain
+        `FileNotFoundError` and start fresh — silently undoing the refusal
+        the first call just raised. `_quarantine_markers()` closes that:
+        the refusal holds for as long as a `*.corrupt-*` sidecar for this
+        exact path exists, through every caller — direct or through
+        `get`/`get_census`/`get_settings_snapshot`."""
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
         except FileNotFoundError:
+            markers = self._quarantine_markers()
+            if markers:
+                raise CorruptCleanupStateError(_marker_message(self.path, markers))
             return {"version": STATE_VERSION}
         except (json.JSONDecodeError, UnicodeDecodeError):
             data = None
@@ -159,6 +178,17 @@ class CleanupState:
 
     def _temp_path(self) -> Path:
         return self.path.with_suffix(f"{self.path.suffix}.{os.getpid()}.tmp")
+
+    def _quarantine_markers(self) -> list[Path]:
+        """Every `*.corrupt-*` sidecar this exact record's path has ever
+        been quarantined to. A single non-recursive listing of the state
+        file's own directory, filtered to this file's own name prefix: a
+        genuinely fresh site has no directory yet, or one with no such
+        name in it, and pays for one bounded `scandir`, never a tree
+        walk."""
+        if not self.path.parent.is_dir():
+            return []
+        return sorted(self.path.parent.glob(f"{self.path.name}.corrupt-*"))
 
     def _quarantine(self) -> Path | None:
         if not self.path.exists():

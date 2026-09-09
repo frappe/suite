@@ -13,7 +13,7 @@ from suite.drive.patches.cleanup.removal import (
     CleanupPatchError,
     phase_file_rows,
 )
-from suite.drive.patches.cleanup.state import CorruptCleanupStateError
+from suite.drive.patches.cleanup.state import CleanupState, CorruptCleanupStateError
 from suite.drive.patches.cleanup.tests.fakes import (
     FakeClientCallerEvidence,
     FakeFileTable,
@@ -176,6 +176,118 @@ class TestRunCleanupCorruptState(unittest.TestCase):
         self.assertEqual(len(quarantined), 1)
         self.assertEqual(quarantined[0].read_text(encoding="utf-8"), "{not json")
         self.assertFalse(env.state.path.exists())
+
+    def test_corrupt_state_refuses_again_on_a_second_call_instead_of_starting_fresh(self):
+        # Finding: `_quarantine()` renames the record away, so a first call's
+        # `FileNotFoundError` on the *second* `load()` used to be read as
+        # "no run has reached here yet" and `run_cleanup` started fresh —
+        # exactly the silent reset `CorruptCleanupStateError` exists to rule
+        # out. A quarantine marker for this exact record must keep every
+        # later call refusing, not just the one that created it.
+        schema = FakeSchema(custom_fields=set(RETAINED_FILE_CUSTOM_FIELDS))
+        thumbnails = FakeThumbnails(existing={"a"})
+        env = _healthy_env(self.path, schema=schema, thumbnails=thumbnails)
+
+        result = phase_file_rows(env)
+        env.transaction.commit()
+        env.state.put("file_rows", result)
+        census_before_corruption = env.state.get_census()
+        self.assertIsNotNone(census_before_corruption)
+
+        env.state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        first_quarantine = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(first_quarantine), 1)
+        first_bytes = first_quarantine[0].read_bytes()
+
+        # A second call, a fresh process picking the site back up: it must
+        # refuse the same way, not see the missing file and start over.
+        with self.assertRaises(CorruptCleanupStateError):
+            run_cleanup(env)
+
+        # No new state file, no second marker, the original marker's bytes
+        # untouched: the second call did no work at all, quarantine included.
+        self.assertFalse(env.state.path.exists())
+        second_quarantine = list(env.state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(second_quarantine), 1)
+        self.assertEqual(second_quarantine[0], first_quarantine[0])
+        self.assertEqual(second_quarantine[0].read_bytes(), first_bytes)
+
+        # The census phase 1 persisted is only ever readable off the
+        # quarantined sidecar now; a third, direct read must refuse the
+        # same way rather than silently answering `None` (which callers
+        # read as "no run has reached phase 1 yet").
+        with self.assertRaises(CorruptCleanupStateError):
+            env.state.get_census()
+
+        # Still no phase past 1 ran, across both calls: no sidecar or S3
+        # work, no schema mutation.
+        self.assertEqual(schema.custom_fields, set(RETAINED_FILE_CUSTOM_FIELDS))
+        self.assertEqual(thumbnails.existing, {"a"})
+        self.assertEqual(env.s3.enqueued, [])
+
+
+class TestCleanupStateQuarantinePersistence(unittest.TestCase):
+    """Direct `CleanupState` coverage for the marker check itself, without
+    going through `run_cleanup`."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "drive-cleanup-state.json"
+
+    def test_a_genuinely_absent_state_still_initializes_fresh(self):
+        # No file, no directory even, no quarantine marker anywhere: this is
+        # what a real never-run site looks like, and it must still work.
+        state = CleanupState(self.path)
+        self.assertEqual(state.load(), {"version": 1})
+        self.assertIsNone(state.get_census())
+        self.assertIsNone(state.get_settings_snapshot())
+
+    def test_an_absent_state_with_a_quarantine_marker_refuses_not_initializes(self):
+        state = CleanupState(self.path)
+        state.save({"file_rows": {"completed": True}})
+        state.path.write_text("{not json", encoding="utf-8")
+
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+        self.assertFalse(state.path.exists())
+
+        # `load()` quarantined and raised once; every later call on the same
+        # `CleanupState` — a fresh instance pointed at the same path stands
+        # in for a fresh process — must refuse the same way, not see the
+        # missing path and answer fresh.
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+        with self.assertRaises(CorruptCleanupStateError):
+            CleanupState(self.path).load()
+        with self.assertRaises(CorruptCleanupStateError):
+            state.get_census()
+        with self.assertRaises(CorruptCleanupStateError):
+            state.get_settings_snapshot()
+
+        markers = list(state.path.parent.glob("*.corrupt-*"))
+        self.assertEqual(len(markers), 1)
+
+    def test_removing_the_marker_lets_a_fresh_state_initialize_again(self):
+        # The one documented way out short of a database restore: an
+        # operator who has manually reconstructed the record removes the
+        # marker themselves. This is not automatic recovery, just proof the
+        # refusal is keyed on the marker's presence, not on some permanent
+        # flag.
+        state = CleanupState(self.path)
+        state.save({"file_rows": {"completed": True}})
+        state.path.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(CorruptCleanupStateError):
+            state.load()
+
+        for marker in state.path.parent.glob("*.corrupt-*"):
+            marker.unlink()
+
+        self.assertEqual(state.load(), {"version": 1})
 
 
 class TestRunCleanupOrder(unittest.TestCase):
