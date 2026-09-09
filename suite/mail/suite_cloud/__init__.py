@@ -26,6 +26,36 @@ class SuiteCloudUnavailableError(frappe.ValidationError):
     http_status_code = 503
 
 
+class SuiteCloudCredentialsError(frappe.PermissionError):
+    """Suite Cloud did not accept the site's key and secret (a 403, not a 401: the admin's own
+    session with this site is fine)."""
+
+
+# Suite Cloud names the exception it raised (Frappe's ``exc_type``); the site re-raises the
+# matching class so callers can tell a duplicate from a limit from a refusal. Suite Cloud's own
+# classes map onto the Frappe ones they subclass.
+_EXCEPTIONS_BY_TYPE = {
+    "DuplicateEntryError": frappe.DuplicateEntryError,
+    "DoesNotExistError": frappe.DoesNotExistError,
+    "TooManyRequestsError": frappe.TooManyRequestsError,
+    "ValidationError": frappe.ValidationError,
+    "StalwartRejected": frappe.ValidationError,
+    "SiteAuthError": SuiteCloudCredentialsError,
+    "AuthenticationError": SuiteCloudCredentialsError,
+    "SiteSuspendedError": frappe.PermissionError,
+    "PermissionError": frappe.PermissionError,
+}
+
+# Without a type, the status code decides.
+_EXCEPTIONS_BY_STATUS = {
+    401: SuiteCloudCredentialsError,
+    403: SuiteCloudCredentialsError,
+    404: frappe.DoesNotExistError,
+    409: frappe.DuplicateEntryError,
+    429: frappe.TooManyRequestsError,
+}
+
+
 class SuiteCloudClient:
     def __init__(
         self, base_url: str, api_key: str, api_secret: str, verify_ssl: bool = True, timeout=DEFAULT_TIMEOUT
@@ -49,9 +79,10 @@ class SuiteCloudClient:
         ``method`` names the API and the call: ``site.ping`` for what any hosted product has, and
         ``mail.domains.list_domains`` and friends for the mail directory.
 
-        Refusals come back as the Frappe exception they correspond to: not found (another site's
-        object, or none), validation (limits, duplicates, a Stalwart refusal) and permission
-        (bad credentials or a suspended site). Anything else is logged and reported as unavailable.
+        Refusals come back as the Frappe exception Suite Cloud raised: not found (another site's
+        object, or none), duplicate, too many requests, validation (limits, a Stalwart refusal)
+        and permission (bad credentials, a suspended site). Anything else is logged and reported
+        as unavailable.
         """
 
         url = f"{self.base_url}{API_PREFIX}{method}"
@@ -66,17 +97,22 @@ class SuiteCloudClient:
             payload = response.json() if response.content else {}
             return payload.get("message") if isinstance(payload, dict) else payload
 
-        message = _error_message(response) or _("Suite Cloud refused the request.")
-        if response.status_code == 404:
-            frappe.throw(message, frappe.DoesNotExistError)
-        if response.status_code in (401, 403):
+        self._raise_for(method, response)
+
+    def _raise_for(self, method: str, response: requests.Response) -> None:
+        exc_type, message = _error_payload(response)
+        exc = _EXCEPTIONS_BY_TYPE.get(exc_type) or _EXCEPTIONS_BY_STATUS.get(response.status_code)
+        if exc is None and 400 <= response.status_code < 500:
+            exc = frappe.ValidationError
+
+        if exc is SuiteCloudCredentialsError:
             log_mail_error(f"Suite Cloud rejected the site credentials ({method})", response.text[:2000])
             frappe.throw(
                 _("Suite Cloud rejected this site's credentials; check Mail Settings."),
-                frappe.PermissionError,
+                SuiteCloudCredentialsError,
             )
-        if response.status_code in (417, 422) or 400 <= response.status_code < 500:
-            frappe.throw(message, frappe.ValidationError)
+        if exc is not None:
+            frappe.throw(message or _("Suite Cloud refused the request."), exc)
 
         log_mail_error(f"Suite Cloud error {response.status_code} ({method})", response.text[:4000])
         frappe.throw(
@@ -84,27 +120,33 @@ class SuiteCloudClient:
         )
 
 
-def _error_message(response: requests.Response) -> str | None:
-    """Frappe wraps thrown messages in ``_server_messages``; other errors carry ``exception``."""
+def _error_payload(response: requests.Response) -> tuple[str | None, str | None]:
+    """The exception name and the message of a Frappe error response.
+
+    Thrown messages travel in ``_server_messages``; other errors carry only ``exception``.
+    """
 
     try:
         payload = response.json()
     except ValueError:
-        return None
+        return None, None
     if not isinstance(payload, dict):
-        return None
+        return None, None
+    exc_type = payload.get("exc_type")
+    exc_type = exc_type if isinstance(exc_type, str) else None
+
     messages = payload.get("_server_messages")
     if messages:
         try:
             first = json.loads(messages)[0]
             first = json.loads(first) if isinstance(first, str) else first
-            return frappe.utils.strip_html(str(first.get("message") or ""))
+            return exc_type, frappe.utils.strip_html(str(first.get("message") or ""))
         except (ValueError, IndexError, AttributeError, TypeError):
             pass
     exception = payload.get("exception")
     if exception:
-        return str(exception).split(":", 1)[-1].strip()
-    return None
+        return exc_type, str(exception).split(":", 1)[-1].strip()
+    return exc_type, None
 
 
 def is_suite_cloud_configured(raise_exception: bool = False) -> bool:
