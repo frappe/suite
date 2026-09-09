@@ -61,10 +61,29 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Neutralized after restore by raw SQL: the one Email Account disabled both ways with `awaiting_password=1`; Mail Settings `server_url` and `dns_provider` cleared; Webhook and Notification already off; Email Queue had no pending rows. Administrator password set locally. Redis queue on 11006 flushed (1913 keys). `bench doctor`: scheduler disabled, paused, inactive, maintenance mode on, 0 workers.
 - Not done: `bench migrate` has not run. The site is at the production schema. Build is held for an explicit go.
 
-### Plan for the Build run (from code reading, not yet executed)
+### Build pass 1, gate refusal (2026-09-09)
 
-- `bench migrate --skip-fixtures --skip-search-index` first with `storage_v2` unset. Every earlier patch commits and is logged; the Build gate raises `BuildGateError` and stops migrate before post-schema. This exercises the gate.
-- Then set site_config `storage_v2 1`, leave `storage_driver` unset (defaults to local), set `Drive Disk Settings.enabled = 0` by SQL, flush redis, and rerun the same migrate. Only Build and post-schema run. Every S3 fetch URL lands in `missing_bytes` by design.
+- `bench --site suite-frappe.localhost migrate --skip-fixtures --skip-search-index` with `storage_v2` unset: exit 1 in 1 s. Patch Log stayed at 454 rows. Nothing written.
+- The gate fired at the first unrun suite patch, `suite.drive.patches.rename_entity_log_to_recent` (pre_model_sync), through `_refuse_a_site_that_cannot_build`, not at the Build line. The production schema already carried every earlier patch. A site is refused before any schema change.
+- Error text: `BuildGateError: Drive Build needs File Storage v2. Set storage_v2 in site_config and migrate again; a site must not half-migrate.`
+- Log: `/home/faris/backups/suite-frappe/build/pass1-migrate.log`.
+
+### Pre-Build snapshot
+
+- `bench backup` (database only) to `/home/faris/backups/suite-frappe/build/pre-build/20260909_174224-suite-frappe_localhost-database.sql.gz`, 1.7 GB, 2 min 41 s. Rollback anchor.
+- Defect for the release runbook: `mariadb-dump` fails at the stock 16 MB `max_allowed_packet` on `tabDeleted Document` (one `data` value is 263 MB). Both backup and restore of this site need the packet size raised on server and client. Raised to 1 GB for the run, restored to 16777216 afterward.
+
+### Build pass 2, first attempt (2026-09-09, stopped)
+
+- `storage_v2 1` set, `storage_driver` unset, `Drive Disk Settings.enabled` 1 to 0 by SQL on `tabSingles`, redis flushed. Same migrate command. Log: `/home/faris/backups/suite-frappe/build/pass2-migrate.log`.
+- Progress before the stop: `rename_entity_log_to_recent` 58.8 s (collapsed 1106 duplicate rows); model sync; `frappe.patches.v17_0.backfill_file_blobs` 8434 File Blob rows; Build steps 1 to 6 done with 179 Drive Root, 13454 Drive Node, 4827 Drive Grant; step 7 history reached 273 Drive Node Version rows.
+- Defect, blocking: `ports.py:1221` pages `tabWriter Version` by `doc` once per Writer Document (2469 documents, 142,530 version rows, 2.7 GB). `Writer Version.doc` has no index (`SHOW INDEX`: PRIMARY and creation only; EXPLAIN: `possible_keys NULL`, `key creation`). One page query takes 45 s, so the step needs about 31 hours. The migrate was stopped at 18:01 by SIGTERM then SIGKILL after 8 minutes. Fix in progress on branch `forge/ticket-31-history-index`: `search_index` on the columns Build pages by, so model sync creates the index before Build runs.
+- Rerun plan: merge the fix into forge/drive-layer, rerun the same migrate on the partial state. This doubles as the crash-rerun test (criterion 5): rename, model sync and both backfills are already committed, Build is resumable at batch boundaries.
+- Also seen: redis on 11006 held 3 keys and one queued job during the run, far from the 500 QueueOverloaded limit. `information_schema` row estimate for `tabWriter Version` was 15 percent under the real count.
+
+### Plan for the Build rerun
+
+- Pass 1 and the storage_v2 setup are done above. Rerun: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
