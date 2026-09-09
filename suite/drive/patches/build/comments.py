@@ -58,6 +58,7 @@ def convert_document_comments(env, content, document, node: str, *, batch_size: 
     else:
         plans = _sheet_threads(env, document, node)
     _refuse_colliding_ids(plans)
+    _rename_ids_another_node_holds(env, content, document, node, plans)
     count = 0
     for thread, comments in plans:
         count += len(comments)
@@ -420,6 +421,93 @@ def _refuse_colliding_ids(plans) -> None:
         raise InvalidLegacyContent("comment thread ids collide")
     if len(comment_names) != len(set(comment_names)):
         raise InvalidLegacyContent("comment ids collide")
+
+
+def _rename_ids_another_node_holds(env, content, document, node: str, plans) -> None:
+    """Give this node its own `name` for an id another node already stored.
+
+    §14.6 makes the Yjs comment id the thread *anchor*, and §3.6 keeps that
+    anchor opaque: "Drive stores and returns it; the app resolves it". The
+    `name` carries no such promise. Both DocTypes are `autoname: hash`, the
+    runtime reads a node's threads by `node` and hands back `name` and
+    `anchor` as separate values (`_core/comments.py:238-251`), and nothing at
+    runtime derives one from the other. So the id belongs in the anchor, and
+    the `name` may be anything unique.
+
+    It has to be. A `Writer Document` that is a copy of another carries its
+    source's `ycomments` verbatim, ids and all, and `name` is a primary key.
+    Named after the id, the second node's thread would be the first node's
+    row, `exact_fields` would refuse it as sitting on the wrong node, and
+    every later pass would refuse it again.
+
+    The derivation is `(node, id)`, so it is stable: a rerun plans the same
+    name, finds the row the last pass wrote, and validates it. It happens
+    here, at plan time, on one batched read for the whole document, rather
+    than at write time where a name minted per attempt would never match.
+
+    A collision *inside* one document is still a refusal
+    (`_refuse_colliding_ids`), because one document cannot hold one id twice
+    and still be readable back.
+
+    `port_legacy_comments` does not come through here. Its thread and its
+    comment are both named after the `Drive Comment` row itself, whose name
+    is already unique in the reused table, and the stored row under that name
+    is that same legacy row, which `_write_thread` supersedes in place.
+    """
+    if not plans:
+        return
+    target = env.content_target
+    stored_threads = target.thread_names(tuple(thread["name"] for thread, _rows in plans))
+    stored_comments = target.comment_names(tuple(row["name"] for _thread, rows in plans for row in rows))
+    threads_renamed = 0
+    comments_renamed = 0
+    holders = []
+    for thread, comments in plans:
+        stored = stored_threads.get(thread["name"])
+        if stored and stored.get("node") != node:
+            holders.append(stored.get("node"))
+            thread["name"] = _renamed_id(node, thread["name"])
+            threads_renamed += 1
+        for row in comments:
+            # After the thread, always: a renamed thread renames the link
+            # every one of its comments carries, and the stored comparison
+            # below is against the name this run will really write.
+            row["thread"] = thread["name"]
+            stored = stored_comments.get(row["name"])
+            if not stored or _is_legacy(stored):
+                # A legacy `Drive File.comments` row carries no `thread`.
+                # It is this comment as the old Drive held it, not another
+                # node's claim on the id, and `_write_thread` completes it
+                # where it stands.
+                continue
+            if (stored.get("node"), stored.get("thread")) == (node, row["thread"]):
+                continue
+            holders.append(stored.get("node"))
+            row["name"] = _renamed_id(node, row["name"])
+            comments_renamed += 1
+    if not threads_renamed and not comments_renamed:
+        return
+    content.comment_threads_renamed += threads_renamed
+    content.comments_renamed += comments_renamed
+    held = sorted({holder for holder in holders if holder})
+    content.record_issue(
+        f"{document.doctype}:{document.name}",
+        f"{threads_renamed} thread id(s) and {comments_renamed} comment id(s) already belong to "
+        f"node {held[0] if held else 'no node'}; renamed on this node",
+        phase="history",
+    )
+
+
+def _renamed_id(node: str, source_id: str) -> str:
+    """This node's own primary key for an id another node already holds.
+
+    `derived_name` is the same 64-character sha256 the Sheets threads are
+    named with, so Build has one derivation and one length to reason about,
+    well inside the 140 `name` takes. One domain covers both tables: a
+    top-level Writer comment and its thread share an id in the source, and
+    renaming keeps them equal.
+    """
+    return derived_name("drive-comment-rename/1", node, source_id)
 
 
 def _lazy(compute):

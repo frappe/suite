@@ -371,6 +371,16 @@ class ContentConversion:
     documents_seen: int = 0
     versions_seen: int = 0
     comments_seen: int = 0
+    # Not in §14.9, and owned by the history phase like `comments_seen` above.
+    # §14.6 makes the Yjs comment id the thread `anchor`; §3.6 keeps that
+    # anchor opaque and leaves `name` to `autoname: hash`. A Writer Document
+    # copied with its source's `ycomments` therefore brings ids another node
+    # already stored, and `name` is a primary key. Those rows take a name
+    # derived from `(node, id)` and keep the source id in the anchor. These
+    # count them, per pass: a rerun derives the same names and counts the
+    # same rows without writing any.
+    comment_threads_renamed: int = 0
+    comments_renamed: int = 0
     trash_disagreements: int = 0
     orphan_content_docs_adopted: int = 0
     versions_to_thin: int = 0
