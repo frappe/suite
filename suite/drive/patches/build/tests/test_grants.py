@@ -199,6 +199,59 @@ class PrincipalTest(GrantCase):
         self.assertEqual(self.roles("doc0000001"), {"asleep@example.com": READ})
         self.assertEqual(report.grant_rows_dropped["dead_principal"], 0)
 
+    def test_a_padded_address_grants_the_stripped_user(self):
+        """Live rows hold a trailing space in `user`, and the account is enabled.
+
+        §14.5 drops rows "naming a User or User Group that no longer
+        exists". This one names somebody who does, so the padding comes off
+        and the grant is written for the address the `User` row holds.
+        """
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", FRIEND + " ", read=1, write=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("doc0000001"), {FRIEND: EDIT})
+        self.assertEqual(report.grant_rows_dropped["dead_principal"], 0)
+
+    def test_a_leading_space_is_stripped_too(self):
+        """The column never trimmed either end, so neither does Build."""
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", " " + FRIEND, read=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("doc0000001"), {FRIEND: READ})
+        self.assertEqual(report.grant_rows_dropped["dead_principal"], 0)
+
+    def test_a_padded_address_for_a_missing_user_is_still_dropped(self):
+        """Stripping decides the spelling, not whether the account exists."""
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", " gone@example.com ", read=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("doc0000001"), {})
+        self.assertEqual(report.grant_rows_dropped["dead_principal"], 1)
+
+    def test_a_whitespace_only_user_is_not_an_anonymous_row(self):
+        """`user = ""` is the anonymous row (§14.5). A blank of spaces is not.
+
+        Trimming this one to the empty string would publish the node with a
+        `$PUBLIC` grant nobody asked for. It stays unknown, as before.
+        """
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", "  ", read=1, write=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("doc0000001"), {})
+        self.assertEqual(report.grant_rows_dropped["dead_principal"], 1)
+
+    def test_a_padded_sentinel_is_left_as_it_was(self):
+        """Padding a sentinel is not an address, so nothing about it changes.
+
+        All four spellings were dropped before the strip and are dropped
+        after it: three are unknown, and `$GROUP:Design ` is a group whose
+        name, space included, no `User Group` carries.
+        """
+        self.legacy.groups.add("Design")
+        for value in ("$GENERAL ", " $GENERAL", "$GROUP:Design ", " $GROUP:Design"):
+            with self.subTest(value=value):
+                self.report = GrantConversion()
+                self.legacy.permissions_rows = [permission("p1", "doc0000001", value, read=1)]
+                report = self.run_grants()
+                self.assertEqual(self.roles("doc0000001"), {})
+                self.assertEqual(report.grant_rows_dropped["dead_principal"], 1)
+
     def test_an_unknown_sentinel_is_dropped(self):
         """A `$`-prefixed value Drive never wrote decides nothing for anybody."""
         self.legacy.permissions_rows = [permission("p1", "doc0000001", "$NOBODY", read=1)]
@@ -551,6 +604,18 @@ class RerunTest(GrantCase):
 
     def test_a_rerun_writes_nothing_twice(self):
         self.legacy.permissions_rows = [permission("p1", "doc0000001", FRIEND, read=1)]
+        first = self.run_grants()
+        self.assertEqual(first.grants_written, 1)
+
+        self.report = GrantConversion()
+        second = self.run_grants()
+        self.assertEqual(second.grants_written, 0)
+        self.assertEqual(second.grants_already_present, 1)
+        self.assertEqual(len(self.drive.grant_rows), 1)
+
+    def test_a_rerun_of_a_padded_address_writes_nothing_twice(self):
+        """The stripped principal is what the second run looks up, so it matches."""
+        self.legacy.permissions_rows = [permission("p1", "doc0000001", FRIEND + " ", read=1)]
         first = self.run_grants()
         self.assertEqual(first.grants_written, 1)
 
