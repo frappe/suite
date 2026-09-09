@@ -24,7 +24,7 @@ from suite.drive.patches.build.report import (
     produce_report,
     save_report,
 )
-from suite.drive.patches.build.state import DROP_REASONS, SkippedRow
+from suite.drive.patches.build.state import DROP_REASONS, RemovedFileDocument, SkippedRow
 from suite.drive.patches.build.tests.fakes import BUILD_STAMP, build_environment
 
 
@@ -126,6 +126,21 @@ class SourceTest(ReportCase):
         self.assertEqual(
             sorted(report["evidence"]),
             ["content", "grants", "records", "settings", "storage", "tree", "usage"],
+        )
+
+    def test_the_evidence_carries_the_removed_file_documents(self):
+        # §14.9 names no key for them, so they ride in the evidence block
+        # with the other skips the spec leaves unnamed, count and list.
+        content = self.env.state.content()
+        content.record_removed_file(RemovedFileDocument("Sheet", "sheet-1", "file-1"))
+        self.env.state.put_content(content)
+
+        evidence = build_report(self.env)["evidence"]["content"]
+
+        self.assertEqual(evidence["removed_file_documents"], 1)
+        self.assertEqual(
+            evidence["removed_file_docs"],
+            [{"doctype": "Sheet", "name": "sheet-1", "file": "file-1"}],
         )
 
     def test_it_is_stamped_with_the_build_clock(self):

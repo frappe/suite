@@ -215,12 +215,62 @@ class ContentTest(unittest.TestCase):
             link_content_documents(env)
 
     def test_removed_file_is_not_reclassified_as_an_orphan(self):
+        # §14.4 skipped the File row, so the document has no node. It is not
+        # an orphan either: adopting it would resurrect a deleted document.
         row = document("Writer Document", "writer-1")
+        source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
+        env, target = self.environment(source)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.orphan_content_docs_adopted, 0)
+        self.assertEqual(target.node_rows, {})
+        self.assertIsNone(source.document_rows[(row.doctype, row.name)].node)
+
+    def test_a_document_whose_only_file_is_removed_is_counted_and_listed(self):
+        rows = [
+            document("Writer Document", "writer-1"),
+            document("Sheet", "sheet-1"),
+            document("Presentation", "deck-1"),
+        ]
+        source = FakeContent(
+            documents=rows,
+            files=[file_for(row, f"file-{row.name}", REMOVED) for row in rows],
+        )
+        env, _ = self.environment(source)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.removed_file_documents, 3)
+        self.assertEqual(
+            sorted((entry.doctype, entry.name, entry.file) for entry in result.removed_file_docs),
+            [
+                ("Presentation", "deck-1", "file-deck-1"),
+                ("Sheet", "sheet-1", "file-sheet-1"),
+                ("Writer Document", "writer-1", "file-writer-1"),
+            ],
+        )
+        self.assertEqual(result.issues, [])
+        self.assertTrue(result.completed)
+        # The report reads the record back out of the state file, so the
+        # count and the list have to survive the round trip.
+        stored = env.state.content()
+        self.assertEqual(stored.removed_file_documents, 3)
+        self.assertEqual(
+            sorted(entry.file for entry in stored.removed_file_docs),
+            ["file-deck-1", "file-sheet-1", "file-writer-1"],
+        )
+
+    def test_the_removed_census_is_recomputed_by_a_rerun(self):
+        row = document("Sheet", "sheet-1")
         source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
         env, _ = self.environment(source)
 
-        with self.assertRaisesRegex(BuildContentError, "Removed File"):
-            link_content_documents(env)
+        link_content_documents(env)
+        result = link_content_documents(env)
+
+        self.assertEqual(result.removed_file_documents, 1)
+        self.assertEqual(len(result.removed_file_docs), 1)
 
     # -- batching
 

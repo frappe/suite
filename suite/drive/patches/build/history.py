@@ -3,6 +3,7 @@
 from suite.drive.patches.build.content_mapping import (
     MAX_VERSION_SEQ,
     InvalidLegacyContent,
+    RemovedLegacyFile,
     exact_fields,
     sheet_version_bytes,
     standard_fields,
@@ -75,10 +76,10 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
             if not rows:
                 break
             for document in rows:
-                # `_document_node` refuses a Removed, broken, or multiply
-                # claimed File, and that refusal owes the same bounded evidence
-                # as any other: it fails completion, it does not crash the run
-                # with a bare exception and an unwritten state file.
+                # `_document_node` refuses a broken or multiply claimed File,
+                # and that refusal owes the same bounded evidence as any other:
+                # it fails completion, it does not crash the run with a bare
+                # exception and an unwritten state file.
                 try:
                     node = _document_node(source, target, document)
                     if node is None:
@@ -94,6 +95,12 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
                         content.comments_seen += convert_document_comments(
                             env, document, node, batch_size=batch_size
                         )
+                except RemovedLegacyFile:
+                    # No node, and none is coming: §14.4 skipped the File row.
+                    # Not deferred, so the phase can still complete, and not
+                    # counted here, because step 10 walks all three content
+                    # doctypes and owns the one census.
+                    pass
                 except (InvalidLegacyContent, ValueError) as error:
                     _fail(env, content, f"{doctype}:{document.name}", str(error))
                 env.state.put_content(content)
@@ -277,6 +284,13 @@ def _write_versions(env, content, node: str, expected: list[dict], by_seq: dict,
 
 
 def _document_node(source, target, document) -> str | None:
+    """Resolve one content document's node. Steps 7, 8, and 10 share this.
+
+    Returns the node id, or `None` when the document has no `File` row and
+    no node yet: step 10 can still adopt it. Raises `RemovedLegacyFile` when
+    its only `File` row is Removed, which is a skip and not a defect, and
+    `InvalidLegacyContent` for every shape Build must refuse.
+    """
     if document.node:
         nodes = target.content_nodes(document.doctype, document.name)
         if len(nodes) != 1 or nodes[0]["name"] != document.node:
@@ -292,7 +306,7 @@ def _document_node(source, target, document) -> str | None:
         raise InvalidLegacyContent(f"{document.doctype} {document.name} has multiple legacy Files")
     file = files[0]
     if file.status == REMOVED:
-        raise InvalidLegacyContent(f"legacy File {file.name} is Removed")
+        raise RemovedLegacyFile(document.doctype, document.name, file.name)
     nodes = target.nodes((file.name,))
     node = nodes.get(file.name)
     if not node or node.get("kind") != "document":
