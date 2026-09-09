@@ -4,13 +4,15 @@
 
 **Blocked by:** [29 — Complete Build records, accounting, and reporting](29-build-records-and-report.md)
 
-**Status:** done
+**Status:** in-progress
 
 **Owner:** Suite migration (starting revision `6e6906176`, worktree
 `integrate/drive-35-cleanup`, claimed files: `suite/drive/patches/cleanup/**`,
 `suite/drive/patches/build/tests/test_dormancy.py`). Reopened on branch
 `fix/drive-35-review-findings` (starting revision `5e6130d07`) to repair the
-review findings below; same claimed files.
+11 findings below it. Reopened again on branch `fix/drive-35-final-safety`
+(starting revision `4c9d48fcd`) to repair the 9 findings immediately below;
+same claimed files.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -32,6 +34,64 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 Run Cleanup against isolated fixtures only. Prove every missing gate leaves data unchanged and valid fixtures retain all referenced bytes.
 
 ## Completion evidence
+
+### 2026-09-09 — a second review found 9 more findings; closeout below is invalidated
+
+A second review of commit `220006721` (recorded in docs commit `4c9d48fcd`)
+found 9 further safety defects, all in the "still not live" real `Site*`
+ports and the phases that call them — none caught by the 107 fixture/spy
+tests the first repair added, because every one of them needs either a real
+Frappe API spy with the exact call signature production code uses, or a
+crash-window scenario the existing tests do not construct. The closeout below
+no longer describes what is safe and must not be trusted until superseded.
+
+1. `SiteSchemaGateway.drop_columns` builds `table = f"tab{doctype}"` and then
+   calls `frappe.db.has_column(table, fieldname)` — but `has_column`'s own
+   `doctype` parameter prepends `"tab"` itself, so this queries
+   `tabtabDrive Notification` and raises `TableMissingError` the first time
+   any real column drop runs, not a fixture that could catch it.
+2. `Drive Disk Settings` is a Single: its ten §3.13 fields live as rows in
+   `tabSingles`, not as columns on a `tabDrive Disk Settings` table (Singles
+   have no table of their own). `drop_columns` DDL against it is a category
+   error, not just the finding-1 argument bug.
+3. `phase_file_rows` recomputes `collect_drive_owned_names` and re-reads
+   `env.disk_settings` on every call, including a resumed one, and
+   unconditionally overwrites the persisted census/settings snapshot with
+   whatever it finds. On a crash after phase 1's `DELETE`s commit but before
+   its checkpoint is written, resume reruns `phase_file_rows`, rescans the
+   now-empty `File` table live, and overwrites the correct census with an
+   empty one — silently orphaning every step-7 thumbnail sidecar for names
+   phase 1 already deleted.
+4. `readiness.run_preflight` never probes `s3.enqueue_delete` (only
+   `s3.list_prefix`), and probes no port for whether the doctype JSON/
+   `suite/hooks.py` source edits Ticket 36 must make have actually landed.
+   Either gap lets phases 1 through 7 destroy data before a still-unready
+   port fails in phase 8, or before a column drop the next `bench migrate`
+   would just recreate.
+5. No direct spy test exercises the real `SiteSchemaGateway` against Frappe's
+   actual `has_column`/DDL/Single-value call signatures, for either an
+   ordinary doctype or a Single, so finding 1 and 2 shipped invisibly.
+6. `SiteThumbnailStore.delete_sidecars` builds
+   `f"{root_folder}/{thumbnail_prefix}/{name}.thumbnail"` with no guard: an
+   empty `root_folder` and/or `thumbnail_prefix` (a genuinely unconfigured
+   site) produces a filesystem-root-anchored absolute path, and
+   `os.path.exists`/`os.unlink` run against it unchecked.
+7. `SiteContentRows`'s Sheets encode/decode pair always re-encodes
+   `sheets_data` as the gzip envelope on write, even when the row it read was
+   plain JSON — comment stripping silently upgrades a plain sheet's storage
+   format as a side effect, which is not this phase's job.
+8. No test proves `SiteS3LegacyPrefix.blob_references` propagates a
+   `frappe.get_all` error rather than swallowing it, and the missing
+   `enqueue_delete` preflight probe (finding 4) is itself an S3-phase safety
+   gap.
+9. Ticket 35's evidence closed with the above defects live in "still not
+   live, on purpose" real-port code the closeout treated as inert; being
+   unregistered does not make a port's own logic correct once Ticket 36 does
+   wire it in, and this evidence must say so.
+
+This branch (`fix/drive-35-final-safety`) repairs all 9 in production code
+and tests. See the closeout below for what actually changed, superseding
+everything above it.
 
 ### 2026-09-09 — 11 review findings repaired, verified (branch `fix/drive-35-review-findings`)
 
