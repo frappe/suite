@@ -82,6 +82,7 @@ SLIDE_FIELDS = (
     "media_nodes_created",
     "media_duplicates_collapsed",
     "borrowed_duplicates_collapsed",
+    "media_references_missing_file_rows",
     "slide_elements_rewritten",
     "slide_elements_repaired",
     "deck_previews_created",
@@ -521,9 +522,12 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     parent = writer.parent
     unresolved = tuple(sorted(value for value in references if _resolve(value, local, host) is None))
     candidates = env.content.media_files_by_urls(tuple(sorted(_url_lookup(unresolved, host))))
+    all_files = defaultdict(list)
     by_url = defaultdict(list)
     foreign = defaultdict(list)
     for row in candidates:
+        for alias in _aliases(row, host):
+            all_files[alias].append(row)
         if row.deck == deck.name:
             continue
         adoptable = env.content.presentation_is_template(row.deck)
@@ -531,6 +535,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             foreign[alias].append(row)
             if adoptable:
                 by_url[alias].append(row)
+    media_nodes = {row["name"] for row in writer.children if row.get("kind") == "file"}
     mapping = {}
     nodes = set()
     collapsed = 0
@@ -543,6 +548,17 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
                 result.record_issue(
                     f"Presentation:{deck.name}",
                     f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
+                    phase="slides",
+                )
+            elif (
+                not _named_rows(all_files, value, host)
+                and value not in media_nodes
+                and not _never_media(value, host)
+            ):
+                result.media_references_missing_file_rows += 1
+                result.record_issue(
+                    f"Presentation:{deck.name}",
+                    f"media reference {value!r} matches no File row and no media node; was not adopted",
                     phase="slides",
                 )
             continue

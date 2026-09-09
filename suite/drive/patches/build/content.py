@@ -261,6 +261,7 @@ def _purge_removed(env, result, skipped, reserve) -> None:
         f"{skipped.doctype}:{skipped.docname}",
         "every File row is Removed; purged",
         phase="links",
+        cumulative=True,
     )
 
 
