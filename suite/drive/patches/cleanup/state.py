@@ -92,6 +92,26 @@ class CleanupState:
     def put(self, phase: str, result: PhaseResult) -> None:
         self.save({**self.load(), phase: result.as_dict()})
 
+    def get_census(self) -> list[str] | None:
+        """The drive-owned name census `phase_file_rows` persists, read by
+        `phase_thumbnails`. `None` means no run has reached phase 1 yet;
+        an empty list is a legitimate census (nothing was drive-owned)."""
+        census = self.load().get("census")
+        return list(census) if isinstance(census, list) else None
+
+    def put_census(self, names: list[str]) -> None:
+        self.save({**self.load(), "census": list(names)})
+
+    def get_settings_snapshot(self) -> dict | None:
+        """The `DISK_SETTINGS_FIELDS` snapshot `phase_file_rows` persists
+        before step 5 drops the live columns, read by `phase_thumbnails` and
+        `phase_s3_prefix`. `None` means no run has reached phase 1 yet."""
+        snapshot = self.load().get("disk_settings_snapshot")
+        return dict(snapshot) if isinstance(snapshot, dict) else None
+
+    def put_settings_snapshot(self, settings: dict) -> None:
+        self.save({**self.load(), "disk_settings_snapshot": dict(settings)})
+
     def _temp_path(self) -> Path:
         return self.path.with_suffix(f"{self.path.suffix}.{os.getpid()}.tmp")
 

@@ -61,14 +61,35 @@ RETAINED_DOCTYPES_STEP_4 = (
     "sheets/doctype/sheet_snapshot",
 )
 
+# §14.10: "Drop the title and trashed columns on content doctypes." Sheet
+# carries all three trash columns (`trashed`, `trashed_on`, `trashed_by`,
+# per `suite/sheets/doctype/sheet/sheet.json`); Presentation carries none of
+# them, only `title`.
 CONTENT_DROPPED_COLUMNS = (
     ("Presentation", ("title",)),
-    ("Sheet", ("title", "trashed")),
+    ("Sheet", ("title", "trashed", "trashed_on", "trashed_by")),
 )
 
+# §3.13's complete ten-field list for `Drive Disk Settings`
+# (`ports.DISK_SETTINGS_FIELDS`), plus `Drive Settings`' and `Drive Storage
+# Reservation`'s own dropped fields.
 SETTINGS_DROPPED_COLUMNS = (
     ("Drive Settings", ("user_folder", "quota")),
-    ("Drive Disk Settings", ("quota", "aws_key", "aws_secret", "bucket", "endpoint_url")),
+    (
+        "Drive Disk Settings",
+        (
+            "quota",
+            "root_folder",
+            "thumbnail_prefix",
+            "flat",
+            "enabled",
+            "bucket",
+            "aws_key",
+            "aws_secret",
+            "endpoint_url",
+            "signature_version",
+        ),
+    ),
     ("Drive Storage Reservation", ("storage_owner",)),
 )
 
@@ -82,6 +103,22 @@ DANGEROUS_PREFIXES = ("private", "public")
 
 class CleanupPatchError(frappe.ValidationError):
     """Cleanup cannot finish, and the site must not be left calling it done."""
+
+
+def _require_exact_or_already_done(actual: int, expected: int, what: str) -> None:
+    """§14.10's removal counts are all-or-nothing. A gate already proved
+    every reachable row was migrated and every referenced item was still
+    there when Cleanup started, so a fresh phase must remove exactly
+    `expected`; a resumed phase whose commit landed before an earlier crash
+    (§14's transaction discipline) finds nothing left and removes zero. A
+    count strictly between the two means some of `what` went missing for a
+    reason nothing here can explain, and reporting that phase "completed"
+    would silently accept schema drift instead of refusing to guess at it."""
+    if actual not in (0, expected):
+        raise CleanupPatchError(
+            f"expected to drop {expected} of {what}, actually dropped {actual}; refusing to "
+            "report success on a partial removal"
+        )
 
 
 def collect_drive_owned_names(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> list[str]:
@@ -103,6 +140,12 @@ def collect_drive_owned_names(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> l
     interrupted run only ever removes a Removed row after its Removed
     descendants are already gone, so a fresh scan on resume always finds
     intact chains for whatever is left.
+
+    Called exactly once per `run_cleanup` invocation, by `phase_file_rows`,
+    which persists the result: nothing past phase 1 calls this again.
+    Recomputing it later would either find the very rows phase 1 just
+    deleted (an empty answer, wrong) or force a second full-table scan this
+    package can otherwise avoid entirely.
     """
     memo: dict[str, tuple[str, bool]] = {}
     after = ""
@@ -152,17 +195,25 @@ def _deepest_removed_first(owned: dict) -> list[str]:
     return sorted(owned, key=lambda name: resolved.get(name, 0), reverse=True)
 
 
-def iter_drive_owned_names(env, *, batch_size: int = CLEANUP_BATCH_SIZE):
-    """`collect_drive_owned_names`, chunked into deletion-sized batches."""
-    names = collect_drive_owned_names(env, batch_size=batch_size)
-    for start in range(0, len(names), batch_size):
-        yield names[start : start + batch_size]
+def _chunks(items: list, size: int):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 def phase_file_rows(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
-    """§14.10 step 1: Drive-owned File rows, the two root rows, every Removed row."""
+    """§14.10 step 1: Drive-owned File rows, the two root rows, every Removed row.
+
+    Also takes and persists everything steps 7 and 8 need before their own
+    targets disappear: the ordered name census (`collect_drive_owned_names`
+    would otherwise have to rescan a table this very phase is about to
+    empty), and the ten `Drive Disk Settings` fields step 5 drops. Both are
+    read exactly once, here, and never queried live again.
+    """
     result = PhaseResult()
-    for batch in iter_drive_owned_names(env, batch_size=batch_size):
+    names = collect_drive_owned_names(env, batch_size=batch_size)
+    env.state.put_census(names)
+    env.state.put_settings_snapshot(env.disk_settings.read())
+    for batch in _chunks(names, batch_size):
         result.rows_deleted += env.files.delete(tuple(batch))
     result.completed = True
     return result
@@ -173,28 +224,61 @@ def phase_custom_fields(env) -> PhaseResult:
     result = PhaseResult()
     result.fields_dropped = env.schema.drop_custom_fields(RETAINED_FILE_CUSTOM_FIELDS)
     result.property_setters_dropped = env.schema.drop_property_setters(RETAINED_PROPERTY_SETTERS)
+    _require_exact_or_already_done(
+        result.fields_dropped, len(RETAINED_FILE_CUSTOM_FIELDS), "the File custom fields"
+    )
+    _require_exact_or_already_done(
+        result.property_setters_dropped, len(RETAINED_PROPERTY_SETTERS), "the File property setters"
+    )
     result.completed = True
     return result
 
 
 def phase_legacy_doctypes(env) -> PhaseResult:
     """§14.10 step 3: `Drive Permission`/`Drive Entity Activity Log`/`Drive Token`,
-    the old notification columns, then `Drive Notification.activity` becomes required."""
+    the old notification columns, then `Drive Notification.activity` becomes
+    required.
+
+    Also prepares (but does not perform) removing these three doctypes'
+    now-dead `permission_query_conditions`/`has_permission` entries out of
+    `suite/hooks.py`: a source change Ticket 36 makes once the doctypes
+    themselves are gone, not something this phase can do at runtime.
+    """
     result = PhaseResult()
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_3)
+    _require_exact_or_already_done(
+        result.doctypes_dropped, len(RETAINED_DOCTYPES_STEP_3), "the step-3 doctypes"
+    )
+    env.schema.remove_permission_hooks(RETAINED_DOCTYPES_STEP_3)
     result.columns_dropped = env.schema.drop_columns("Drive Notification", NOTIFICATION_LEGACY_COLUMNS)
+    _require_exact_or_already_done(
+        result.columns_dropped, len(NOTIFICATION_LEGACY_COLUMNS), "Drive Notification's legacy columns"
+    )
     env.schema.require_field("Drive Notification", "activity")
     result.completed = True
     return result
 
 
-def phase_content_history(env) -> PhaseResult:
-    """§14.10 step 4: Sheet `DocShare`, Writer/Sheet history doctypes, comments."""
+def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
+    """§14.10 step 4: Sheet `DocShare`, Writer/Sheet history doctypes, comments.
+
+    Drops `Writer Document.versions` before `Writer Doc Version`, the child
+    doctype that field's `Table` type points at: dropping the doctype first
+    would leave the field's own JSON naming a table that no longer exists.
+    `versions` has no `Custom Field` row and no column of its own to drop by
+    DDL, so removing it is a source change to `writer_document.json`, the
+    same kind of change forwarder removal already is — `drop_child_table_field`
+    stays `NotImplementedError` until Ticket 36 makes it.
+    """
     result = PhaseResult()
     result.docshares_deleted = env.content.delete_sheet_docshares()
+    env.schema.drop_child_table_field("Writer Document", "versions")
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_4)
+    _require_exact_or_already_done(
+        result.doctypes_dropped, len(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes"
+    )
     result.ycomments_cleared = env.content.clear_writer_ycomments()
-    result.sheet_comments_stripped = env.content.strip_sheet_comments()
+    result.sheet_comments_stripped = env.content.strip_sheet_comments(batch_size=batch_size)
     result.completed = True
     return result
 
@@ -203,7 +287,9 @@ def phase_content_fields(env) -> PhaseResult:
     """§14.10 step 5: title/trashed on content doctypes; settings/disk/reservation fields."""
     result = PhaseResult()
     for doctype, columns in CONTENT_DROPPED_COLUMNS + SETTINGS_DROPPED_COLUMNS:
-        result.columns_dropped += env.schema.drop_columns(doctype, columns)
+        dropped = env.schema.drop_columns(doctype, columns)
+        _require_exact_or_already_done(dropped, len(columns), f"{doctype}'s dropped columns")
+        result.columns_dropped += dropped
     result.completed = True
     return result
 
@@ -213,7 +299,12 @@ def phase_legacy_api(env) -> PhaseResult:
 
     PERMANENT and RETAINED names are never in the set this deletes: they are
     excluded by classification, not by a second list this phase would have
-    to keep in sync by hand.
+    to keep in sync by hand. This runs off `classification()` alone, on
+    purpose: gate 3 (`suite.drive.patches.cleanup.gate.
+    check_gate_legacy_callers_removed`) requires real caller evidence before
+    Cleanup starts at all, so by the time this phase runs, every
+    FORWARDER-classified name here is already proven caller-free — whether
+    or not anyone has bothered to relabel it in `shims.py`.
     """
     result = PhaseResult()
     classification = env.forwarders.classification()
@@ -225,10 +316,28 @@ def phase_legacy_api(env) -> PhaseResult:
 
 
 def phase_thumbnails(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
-    """§14.10 step 7: the `.thumbnail` sidecars. Local legacy bytes stay in place."""
+    """§14.10 step 7: the `.thumbnail` sidecars. Local legacy bytes stay in place.
+
+    Reads the census and disk-settings snapshot `phase_file_rows` persisted:
+    by step 7, step 1 has already deleted the File rows a live rescan would
+    need, and step 5 has already dropped the settings columns a live
+    settings read would need. Neither exists to query live any more.
+    """
     result = PhaseResult()
-    for batch in iter_drive_owned_names(env, batch_size=batch_size):
-        result.sidecars_deleted += env.thumbnails.delete_sidecars(tuple(batch))
+    names = env.state.get_census()
+    if names is None:
+        raise CleanupPatchError(
+            "no drive-owned name census on record; phase_file_rows must run and persist one "
+            "before phase_thumbnails can know what to touch"
+        )
+    settings = env.state.get_settings_snapshot()
+    if settings is None:
+        raise CleanupPatchError(
+            "no disk-settings snapshot on record; phase_file_rows must persist one before "
+            "phase_thumbnails can know the thumbnail path"
+        )
+    for batch in _chunks(names, batch_size):
+        result.sidecars_deleted += env.thumbnails.delete_sidecars(tuple(batch), settings=settings)
     result.completed = True
     return result
 
@@ -236,17 +345,30 @@ def phase_thumbnails(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResul
 def phase_s3_prefix(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
     """§14.10 step 8: enqueue the legacy-key deletion job.
 
+    Reads `enabled`/`root_folder` off the disk-settings snapshot
+    `phase_file_rows` persisted, not off a live `Drive Disk Settings` read:
+    step 5 has already dropped both columns by the time step 8 runs.
+
     Never a blind prefix delete: the prefix is refused if it is empty, the
     bucket root, or a private/public parent; every candidate key is listed,
     then subtracted against `File Blob` references re-read at this moment,
-    immediately before anything is queued for deletion.
+    immediately before anything is queued for deletion. That re-check closes
+    the race between listing and enqueueing; the job this enqueues still has
+    to close the separate race between enqueueing and actually running
+    (`SiteS3LegacyPrefix.enqueue_delete`'s docstring is that job's contract).
     """
     result = PhaseResult()
-    if not env.s3.enabled():
+    settings = env.state.get_settings_snapshot()
+    if settings is None:
+        raise CleanupPatchError(
+            "no disk-settings snapshot on record; phase_file_rows must persist one before "
+            "phase_s3_prefix can know whether S3 is even enabled"
+        )
+    if not settings.get("enabled"):
         result.completed = True
         return result
 
-    prefix = env.s3.legacy_prefix()
+    prefix = settings.get("root_folder") or ""
     refuse_dangerous_prefix(prefix)
 
     keys: list[str] = []

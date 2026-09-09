@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 
 from suite.drive.patches.cleanup.ports import REMOVED
 from suite.drive.patches.cleanup.removal import (
+    RETAINED_DOCTYPES_STEP_4,
     CleanupPatchError,
     collect_drive_owned_names,
     phase_content_fields,
@@ -26,6 +27,7 @@ from suite.drive.patches.cleanup.tests.fakes import (
     FakeSchema,
     FakeThumbnails,
     cleanup_environment,
+    seed_snapshot,
 )
 
 
@@ -48,6 +50,15 @@ class TestPhaseFileRows(unittest.TestCase):
         self.assertEqual(set(files.rows), set())
         self.assertEqual(result.rows_deleted, 4)
         self.assertTrue(result.completed)
+
+    def test_the_name_census_and_settings_snapshot_are_persisted_before_deletion(self):
+        files = FakeFileTable().add("Drive").add("a", folder="Drive", has_node=True)
+        env = cleanup_environment(self.path, files=files)
+        phase_file_rows(env)
+        # Persisted from what phase 1 saw, not re-derivable once the rows
+        # (and, after phase 5, the settings columns) are gone.
+        self.assertEqual(set(env.state.get_census()), {"Drive", "a"})
+        self.assertEqual(env.state.get_settings_snapshot(), env.disk_settings.values)
 
     def test_home_attachments_are_never_deleted(self):
         files = FakeFileTable().add("Drive").add("attachment", folder="Home", has_node=False)
@@ -180,6 +191,14 @@ class TestPhaseContentHistory(unittest.TestCase):
         self.assertEqual(result.doctypes_dropped, 4)
         self.assertEqual(content.docshares, 0)
         self.assertEqual(schema.doctypes, set())
+        self.assertEqual(content.strip_calls, 1)
+
+    def test_writer_document_versions_drops_before_writer_doc_version(self):
+        schema = FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))
+        phase_content_history(cleanup_environment(self.path, schema=schema))
+        self.assertEqual(schema.dropped_child_table_fields, [("Writer Document", "versions")])
+        # `drop_doctypes` (including `writer_doc_version`) runs after, per
+        # the same `FakeSchema` — the ordering the docstring requires.
 
 
 class TestPhaseContentFields(unittest.TestCase):
@@ -192,18 +211,32 @@ class TestPhaseContentFields(unittest.TestCase):
         schema = FakeSchema(
             columns={
                 "Presentation": {"title", "body"},
-                "Sheet": {"title", "trashed", "sheets_data"},
+                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
                 "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
-                "Drive Disk Settings": {"quota", "aws_key", "aws_secret", "bucket", "endpoint_url", "flat"},
+                "Drive Disk Settings": {
+                    "quota",
+                    "root_folder",
+                    "thumbnail_prefix",
+                    "flat",
+                    "enabled",
+                    "bucket",
+                    "aws_key",
+                    "aws_secret",
+                    "endpoint_url",
+                    "signature_version",
+                    "unrelated_field",
+                },
                 "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
             }
         )
-        phase_content_fields(cleanup_environment(self.path, schema=schema))
+        result = phase_content_fields(cleanup_environment(self.path, schema=schema))
         self.assertEqual(schema.columns["Presentation"], {"body"})
         self.assertEqual(schema.columns["Sheet"], {"sheets_data"})
         self.assertEqual(schema.columns["Drive Settings"], {"webdav_enabled"})
-        self.assertEqual(schema.columns["Drive Disk Settings"], {"flat"})
+        # All ten §3.13 fields drop; nothing outside that list is touched.
+        self.assertEqual(schema.columns["Drive Disk Settings"], {"unrelated_field"})
         self.assertEqual(schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
+        self.assertEqual(result.columns_dropped, 1 + 4 + 2 + 10 + 1)
 
 
 class TestPhaseLegacyApi(unittest.TestCase):
@@ -247,11 +280,42 @@ class TestPhaseThumbnails(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_only_drive_owned_sidecars_are_deleted(self):
-        files = FakeFileTable().add("Drive").add("a", folder="Drive", has_node=True)
         thumbnails = FakeThumbnails(existing={"a", "unrelated-home-file"})
-        result = phase_thumbnails(cleanup_environment(self.path, files=files, thumbnails=thumbnails))
+        env = cleanup_environment(self.path, thumbnails=thumbnails)
+        seed_snapshot(env, names=("Drive", "a"))
+        result = phase_thumbnails(env)
         self.assertEqual(result.sidecars_deleted, 1)
         self.assertEqual(thumbnails.existing, {"unrelated-home-file"})
+
+    def test_reads_the_census_and_settings_from_state_not_a_live_rescan(self):
+        # By step 7, phase 1 has already deleted the File rows and phase 5
+        # has already dropped the settings columns a live read would need.
+        thumbnails = FakeThumbnails(existing={"a"})
+        env = cleanup_environment(self.path, files=FakeFileTable(), thumbnails=thumbnails)
+        seed_snapshot(env, names=("a",))
+        result = phase_thumbnails(env)
+        self.assertEqual(result.sidecars_deleted, 1)
+        # Not just "it worked despite an empty File table": the live
+        # `DiskSettingsSnapshot` port itself was never even called.
+        self.assertEqual(env.disk_settings.read_calls, 0)
+
+    def test_no_persisted_census_refuses(self):
+        env = cleanup_environment(self.path)
+        with self.assertRaises(CleanupPatchError):
+            phase_thumbnails(env)
+
+    def test_no_persisted_settings_snapshot_refuses(self):
+        env = cleanup_environment(self.path)
+        env.state.put_census(["a"])
+        with self.assertRaises(CleanupPatchError):
+            phase_thumbnails(env)
+
+    def test_s3_backed_sidecars_are_deferred_to_ticket_36(self):
+        thumbnails = FakeThumbnails(existing={"a"})
+        env = cleanup_environment(self.path, thumbnails=thumbnails)
+        seed_snapshot(env, names=("a",), enabled=True)
+        with self.assertRaises(NotImplementedError):
+            phase_thumbnails(env)
 
 
 class TestPhaseS3Prefix(unittest.TestCase):
@@ -261,26 +325,37 @@ class TestPhaseS3Prefix(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_disabled_s3_completes_with_nothing_enqueued(self):
-        s3 = FakeS3(is_enabled=False)
-        result = phase_s3_prefix(cleanup_environment(self.path, s3=s3))
+        s3 = FakeS3()
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env)  # DEFAULT_DISK_SETTINGS: enabled=False
+        result = phase_s3_prefix(env)
         self.assertTrue(result.completed)
         self.assertEqual(s3.enqueued, [])
 
+    def test_no_persisted_settings_snapshot_refuses(self):
+        with self.assertRaises(CleanupPatchError):
+            phase_s3_prefix(cleanup_environment(self.path))
+
+    def test_never_reads_the_live_disk_settings_port(self):
+        env = cleanup_environment(self.path)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        phase_s3_prefix(env)
+        self.assertEqual(env.disk_settings.read_calls, 0)
+
     def test_referenced_keys_are_excluded_from_the_job(self):
-        s3 = FakeS3(
-            is_enabled=True,
-            prefix="team",
-            keys=["team/a", "team/b", "team/c"],
-            referenced_keys={"team/b"},
-        )
-        result = phase_s3_prefix(cleanup_environment(self.path, s3=s3))
+        s3 = FakeS3(keys=["team/a", "team/b", "team/c"], referenced_keys={"team/b"})
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env)
         self.assertEqual(result.candidates_found, 3)
         self.assertEqual(result.referenced_excluded, 1)
         self.assertEqual(s3.enqueued, [("team/a", "team/c")])
 
     def test_every_candidate_referenced_enqueues_nothing(self):
-        s3 = FakeS3(is_enabled=True, prefix="team", keys=["team/a"], referenced_keys={"team/a"})
-        result = phase_s3_prefix(cleanup_environment(self.path, s3=s3))
+        s3 = FakeS3(keys=["team/a"], referenced_keys={"team/a"})
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env)
         self.assertEqual(s3.enqueued, [])
         self.assertIsNone(result.job_id)
 
@@ -296,8 +371,10 @@ class TestPhaseS3Prefix(unittest.TestCase):
                 self.referenced_keys.add("team/b")
                 return super().blob_references(keys)
 
-        s3 = RacingS3(is_enabled=True, prefix="team", keys=["team/a", "team/b"])
-        result = phase_s3_prefix(cleanup_environment(self.path, s3=s3))
+        s3 = RacingS3(keys=["team/a", "team/b"])
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env)
         self.assertEqual(s3.enqueued, [("team/a",)])
         self.assertEqual(result.referenced_excluded, 1)
 
@@ -318,9 +395,11 @@ class TestPhaseS3Prefix(unittest.TestCase):
             def list_prefix(self, prefix, after, limit):
                 raise AssertionError("must not enumerate a dangerous prefix")
 
-        s3 = ExplodingS3(is_enabled=True, prefix="private")
+        s3 = ExplodingS3()
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="private")
         with self.assertRaises(CleanupPatchError):
-            phase_s3_prefix(cleanup_environment(self.path, s3=s3))
+            phase_s3_prefix(env)
 
 
 if __name__ == "__main__":

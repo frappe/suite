@@ -89,19 +89,43 @@ def check_gate_gc_discovery(env) -> None:
 
 
 def check_gate_legacy_callers_removed(env) -> None:
+    """§14.10, §11.7: "the SPA has moved off the old method names."
+
+    Deliberately two separate reads, not one: `env.forwarders.classification()`
+    only names the *candidates* — whichever entries a maintainer still spells
+    "forwarder" in `suite.drive.http.shims.CLASSIFICATION` — and
+    `env.callers.still_referenced(...)` is the actual evidence of whether the
+    SPA still calls any of them. Gating on the classification label alone
+    would be circular: `phase_legacy_api` reads that same label to decide
+    what to remove, so a gate that only re-reads it would always find
+    nothing left to refuse on by the time it had "passed." A caller can be
+    gone from the SPA for months before anyone gets around to relabeling its
+    entry in `shims.py`; this gate must not wait on that source edit, and
+    phase 6 must still remove a still-"forwarder"-labeled name once this
+    gate's own evidence clears it.
+    """
     try:
         classification = env.forwarders.classification()
     except Exception as e:
         raise LegacyCallerGateError(
             f"could not read the legacy caller classification: {type(e).__name__}: {e}. Cleanup fails closed."
         ) from e
-    forwarders = sorted(name for name, category in classification.items() if category == "forwarder")
-    if forwarders:
-        shown = ", ".join(forwarders[:5])
+    forwarders = tuple(sorted(name for name, category in classification.items() if category == "forwarder"))
+    if not forwarders:
+        return
+    try:
+        still_called = env.callers.still_referenced(forwarders)
+    except Exception as e:
         raise LegacyCallerGateError(
-            f"{len(forwarders)} legacy SPA forwarder(s) are still classified as callable "
-            f"(for example: {shown}). The SPA must move off every FORWARDER name before "
-            "Cleanup deletes its module. PERMANENT and RETAINED names do not block this gate."
+            f"could not attest legacy-caller absence: {type(e).__name__}: {e}. Cleanup fails closed."
+        ) from e
+    if still_called:
+        shown = ", ".join(sorted(still_called)[:5])
+        raise LegacyCallerGateError(
+            f"{len(still_called)} FORWARDER-classified name(s) still show a caller in the SPA "
+            f"source (for example: {shown}). Relabeling an entry in shims.py never clears this "
+            "gate by itself; only real evidence that nothing calls it does. PERMANENT and "
+            "RETAINED names are never candidates and do not block this gate."
         )
 
 
