@@ -40,8 +40,9 @@ the seven `File` custom fields and three property setters (step 2);
 `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`, the old
 notification columns, and preparing their now-dead permission hooks for
 removal, in that order because it is what lets `Drive Notification.activity`
-become required (step 3); Sheet `DocShare`, `Writer Document.versions`
-ahead of the `Writer Doc Version` doctype it points at, the rest of the
+become required (step 3); the verification that no governed `DocShare` row
+survived Build, `Writer Document.versions` ahead of the
+`Writer Doc Version` doctype it points at, the rest of the
 Writer/Sheet history doctypes, and the cell-comment schema inside
 `Sheet.sheets_data` (step 4); the title/trashed/settings columns, all ten
 of §3.13's `Drive Disk Settings` fields among them (step 5); the legacy API

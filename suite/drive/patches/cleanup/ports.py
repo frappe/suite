@@ -236,8 +236,21 @@ class SourceSchemaReadiness(Protocol):
 
 
 class ContentRows(Protocol):
-    def delete_sheet_docshares(self) -> int:
-        """Delete every Sheet `DocShare` row (§14.5 superseded them with grants)."""
+    def governed_docshares_remaining(self) -> frozenset[str]:
+        """The governed doctypes that still carry a `DocShare` row.
+
+        §14.10 lists "Delete Sheet `DocShare` rows" under this phase, but
+        Build already deletes them: it rewrites each one as a grant and
+        removes it in the same commit, because §5.13's read guards fail
+        closed on a surviving row and `suite.drive.framework.
+        validate_content_registry` refuses the migration while one is left.
+        A site that reaches Cleanup with any governed doctype still shared
+        never ran that Build, so this phase verifies rather than deletes, and
+        refuses instead of quietly finishing the job a release late.
+
+        Every doctype `suite.drive._core.content.governed_doctypes` names is
+        asked, not only `Sheet`: satellites take their rights from the
+        document's node too."""
 
     def clear_writer_ycomments(self) -> int:
         """Blank `Writer Document.ycomments` on every row that still carries it."""
@@ -765,13 +778,16 @@ def _encode_sheets_data(plain: str, *, gzip_encoded: bool) -> str:
 class SiteContentRows:
     """`ContentRows` over Sheet, Writer, and their side tables."""
 
-    def delete_sheet_docshares(self) -> int:
+    def governed_docshares_remaining(self) -> frozenset[str]:
         import frappe
 
-        names = frappe.get_all("DocShare", filters={"share_doctype": "Sheet"}, pluck="name")
-        for name in names:
-            frappe.delete_doc("DocShare", name, ignore_permissions=True)
-        return len(names)
+        from suite.drive._core.content import governed_doctypes
+
+        return frozenset(
+            doctype
+            for doctype in governed_doctypes()
+            if frappe.db.exists("DocShare", {"share_doctype": doctype})
+        )
 
     def clear_writer_ycomments(self) -> int:
         import frappe

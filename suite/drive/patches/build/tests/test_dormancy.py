@@ -98,8 +98,16 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
             with self.subTest(module=path.stem):
                 self.assertFalse(hasattr(module, "execute"))
 
-    def test_build_removes_nothing(self):
-        """Build is additive. Every statement that is not runs in Cleanup."""
+    def test_build_removes_nothing_but_the_docshares_it_rewrote(self):
+        """Build is additive but for one row. Everything else runs in Cleanup.
+
+        §5.13's read guards fail closed on a `DocShare` for a governed
+        doctype and `framework.validate_content_registry` refuses the
+        migration while one is left, so the rows steps 6 and 10 rewrite as
+        grants go with them. Nothing else may, so the exception is pinned to
+        the exact call: `frappe.db.delete("DocShare", ...)`.
+        """
+        found = []
         for path in TestBuildIsRegistered().modules():
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
@@ -108,8 +116,17 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
                         self.assertIsNone(DESTRUCTIVE_SQL.search(node.value))
                 if isinstance(node, ast.Call):
                     called = ast.unparse(node.func)
+                    if not any(called.endswith(name) for name in DESTRUCTIVE_CALLS):
+                        continue
                     with self.subTest(module=path.name, line=node.lineno, call=called):
-                        self.assertFalse(any(called.endswith(name) for name in DESTRUCTIVE_CALLS))
+                        self.assertEqual(called, "frappe.db.delete")
+                        self.assertTrue(node.args)
+                        self.assertEqual(getattr(node.args[0], "value", None), "DocShare")
+                    found.append(path.name)
+        # Two ports write it: `SiteDrive` for the Sheet rows step 6 owns and
+        # `SiteContentTarget` for the content rows step 10 owns. A third
+        # would be a deletion nobody decided.
+        self.assertEqual(found, ["ports.py", "ports.py"])
 
 
 # §14.10's deletion list, as this repository spells it today. Every name here

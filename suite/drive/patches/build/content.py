@@ -30,8 +30,10 @@ LINK_FIELDS = (
     "orphan_content_docs_adopted",
     "link_title_renames",
     "docshare_rows_dropped",
+    "docshare_rows_deleted",
     "removed_file_documents",
     "removed_file_docs",
+    "removed_file_documents_purged",
 )
 
 # Plan §6's whole orphan mapping row. §13 forbids blessing a target "because
@@ -102,13 +104,18 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
                 try:
                     adopted, renamed, disagreement = _link_one(env, row, reserve)
                 except RemovedLegacyFile as skipped:
-                    # §14.4 skipped the File row, so this document has no node
-                    # and no step can mint one: its bytes are gone. It is not
-                    # an orphan, so it is not adopted, and it is not a defect,
-                    # so it does not stop Build. It is counted and listed.
+                    # §14.4 skipped the File rows, so this document has no
+                    # node and no step can mint one: its bytes are gone. It
+                    # is not an orphan, so adopting it would resurrect a
+                    # deleted document. It cannot stay either: §5.13 has no
+                    # "document without a node" state, so
+                    # `refuse_unlinked_documents` would stop the migration
+                    # and no request could read the row. It is counted,
+                    # listed, and purged.
                     result.record_removed_file(
                         RemovedFileDocument(skipped.doctype, skipped.docname, skipped.file)
                     )
+                    _purge_removed(env, result, skipped, reserve)
                     continue
                 except InvalidLegacyContent as error:
                     # `_fail` raises today. The `continue` keeps the three
@@ -157,11 +164,15 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     nodes = target.content_nodes(row.doctype, row.name)
 
     if files:
+        if all(file.status == REMOVED for file in files):
+            # Every row is Removed, so §14.4 skipped all of them and there is
+            # no live File to argue about. The count is not a defect here,
+            # which is why this is decided before the "more than one File"
+            # refusal below: two Removed rows are two skipped rows.
+            raise RemovedLegacyFile(row.doctype, row.name, min(file.name for file in files))
         if len(files) != 1:
             raise InvalidLegacyContent("more than one File claims this content document")
         file = files[0]
-        if file.status == REMOVED:
-            raise RemovedLegacyFile(row.doctype, row.name, file.name)
         stored = target.nodes((file.name,)).get(file.name)
         if not stored:
             raise InvalidLegacyContent("the content File did not produce a Drive Node")
@@ -224,6 +235,33 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     reserve(2)
     target.write_orphan(node, row.doctype, row.name)
     return True, renamed, False
+
+
+def _purge_removed(env, result, skipped, reserve) -> None:
+    """Delete a document whose every `File` row is Removed, satellites and all.
+
+    Through the app's own `on_purge`, the registry callback `_core/nodes.py`
+    calls on a §8.8 purge: only the app can delete its body and the rows that
+    point at it (`Slide`, `Sheet Op Log`, `Sheet Collab State`,
+    `Sheet Snapshot`, `Writer Version`), and a satellite left behind would
+    fail `refuse_unlinked_documents` on its own link field.
+
+    Inside Build's commit unit, so the purge lands with the batch around it.
+    `frappe.delete_doc` enqueues a `delete_dynamic_links` background job per
+    document; on a site with no worker those sit in the queue.
+
+    Step 7 already skipped this document's history, so nothing was copied
+    that this now orphans, and step 7 reruns at the end of step 10 with the
+    document gone.
+    """
+    reserve(1)
+    env.content_target.purge_content_document(skipped.doctype, skipped.docname)
+    result.removed_file_documents_purged += 1
+    result.record_issue(
+        f"{skipped.doctype}:{skipped.docname}",
+        "every File row is Removed; purged",
+        phase="links",
+    )
 
 
 def _validate_template_link(env, row, stored) -> None:
@@ -380,43 +418,65 @@ def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
 
 
 def _convert_content_shares(env, result, batch_size):
+    """Rewrite every legacy `DocShare` on governed content, then remove it.
+
+    Every row this walk reads is terminal: it becomes a grant, or it decides
+    nothing Drive can act on and is dropped and counted. Neither may stay.
+    §5.13's read guards fail closed on a share for a governed doctype, and
+    `framework.validate_content_registry` refuses the whole migration while
+    one is left, so the row is deleted in the commit that writes its grant.
+    Its full column set is journaled and fsynced first, for §14.11.
+
+    Idempotent because it is data-derived: a rerun reads the rows that are
+    still there, which after a complete pass is none, at the cost of one
+    empty page read.
+    """
     target = env.content_target
     pending = {}
+    removals = []
     after = ""
     while True:
         rows = env.content.content_shares(after, batch_size)
         if not rows:
             break
         for row in rows:
+            removals.append(row.preimage())
             if row.share_doctype not in ("Writer Document", "Presentation"):
                 result.docshare_rows_dropped += 1
-                continue
-            nodes = target.content_nodes(row.share_doctype, row.share_name)
-            if len(nodes) != 1:
+            elif (nodes := target.content_nodes(row.share_doctype, row.share_name)) and len(nodes) == 1:
+                _stage_content_share(env, result, pending, row, nodes[0]["name"])
+            else:
                 result.docshare_rows_dropped += 1
-                continue
-            role = docshare_role(row)
-            if role is None:
-                result.docshare_rows_dropped += 1
-                continue
-            principal = GENERAL if row.everyone else row.user
-            if not principal or (not row.everyone and env.content.user_enabled(principal) is None):
-                result.docshare_rows_dropped += 1
-                continue
-            key = (nodes[0]["name"], principal)
-            pending[key] = merged_role(pending.get(key), role)
-            if len(pending) >= batch_size:
-                _flush_grants(env, pending)
-                pending = {}
+            # At the row boundary: the grant and the removal of the row it
+            # came from land in one commit, or a kill between them loses
+            # both the grant and the source it was derived from.
+            if len(pending) >= batch_size or len(removals) >= batch_size:
+                _flush_grants(env, result, pending, removals)
+                pending, removals = {}, []
                 env.state.put_content(result)
         after = rows[-1].name
         if len(rows) < batch_size:
             break
-    _flush_grants(env, pending)
+    _flush_grants(env, result, pending, removals)
 
 
-def _flush_grants(env, pending):
+def _stage_content_share(env, result, pending, row, node) -> None:
+    role = docshare_role(row)
+    if role is None:
+        result.docshare_rows_dropped += 1
+        return
+    principal = GENERAL if row.everyone else row.user
+    if not principal or (not row.everyone and env.content.user_enabled(principal) is None):
+        result.docshare_rows_dropped += 1
+        return
+    key = (node, principal)
+    pending[key] = merged_role(pending.get(key), role)
+
+
+def _flush_grants(env, result, pending, removals):
     target = env.content_target
+    if not pending and not removals:
+        return
     # One read for the whole batch, not one per `(node, principal)` pair and
     # not one per node: a site with 200k content shares would otherwise pay a
     # round trip for every document it shares.
@@ -431,8 +491,27 @@ def _flush_grants(env, pending):
         if wanted != stored[key]:
             target.set_grant_role(node, principal, wanted)
     target.insert_grants(fresh)
-    if pending:
-        target.commit()
+    _delete_docshares(env, result, removals)
+    target.commit()
+
+
+def _delete_docshares(env, result, removals):
+    """Journal each row durably, then delete it, inside this commit unit.
+
+    The journal is the write-ahead side: the preimage is fsynced before the
+    `DELETE`, so §14.11 can restore a row whatever the run does next. A kill
+    before the commit rolls the deletes back and leaves a published
+    preimage, which the rerun re-reads and reuses.
+    """
+    if not removals:
+        return
+    journal = env.docshare_journal
+    if journal is None:
+        raise RuntimeError("Build has no DocShare journal, but step 10 deletes rewritten rows")
+    for row in removals:
+        journal.append(row, created_at=env.now())
+        env.content_target.delete_docshare(row["name"])
+        result.docshare_rows_deleted += 1
 
 
 def _grant_row(env, node, principal, role):

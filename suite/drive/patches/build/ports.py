@@ -413,7 +413,13 @@ class PermissionRow:
 
 @dataclass(frozen=True)
 class DocShareRow:
-    """One Sheet `DocShare` row (§14.5)."""
+    """One Sheet `DocShare` row (§14.5).
+
+    Every column `docshare_journal.DOCSHARE_COLUMNS` needs is carried, not
+    only the ones the mapping reads: step 6 deletes the row once it has
+    rewritten it, and §14.11 restores it from the journal, not from a
+    table that no longer holds it.
+    """
 
     name: str
     share_name: str
@@ -422,6 +428,30 @@ class DocShareRow:
     write: int = 0
     everyone: int = 0
     creation: str | None = None
+    share_doctype: str = "Sheet"
+    share: int = 0
+    submit: int = 0
+    owner: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+    def preimage(self) -> dict:
+        """The exact stored row, for the journal that precedes the delete."""
+        return {
+            "name": self.name,
+            "share_doctype": self.share_doctype,
+            "share_name": self.share_name,
+            "user": self.user,
+            "read": self.read,
+            "write": self.write,
+            "share": self.share,
+            "submit": self.submit,
+            "everyone": self.everyone,
+            "owner": self.owner,
+            "creation": self.creation,
+            "modified": self.modified,
+            "modified_by": self.modified_by,
+        }
 
 
 class LegacyTree(Protocol):
@@ -526,6 +556,24 @@ class DriveTarget(Protocol):
         This is how link minting resumes. Before Build no link grant exists
         on the site, so one on the node means a previous run minted it and
         a second token must not be handed out for the same row."""
+
+    def delete_docshare(self, name: str) -> None:
+        """Delete one legacy `DocShare` row step 6 has rewritten as grants.
+
+        The one write on this seam that is not a Drive table, and the reason
+        `LegacyTree` above is still reads only: the row is not a migration
+        source any more once its grant exists. §5.13's read guards fail
+        closed on a surviving row, and `validate_content_registry` refuses
+        the migration while one is left, so keeping it until Cleanup is not
+        a choice Build has.
+
+        Raw, so `DocShare.on_trash` never runs. It calls
+        `check_share_permission`, a `frappe.has_permission` on a doctype
+        Drive already decides, and then writes an "Unshared" `Comment` on
+        the shared document (`frappe/core/doctype/docshare/docshare.py:85`).
+        A migration must not ask Drive's own guards for permission, and 50
+        comments about a rewrite nobody performed are not history. The
+        caller journals the row's full column set first."""
 
     def commit(self) -> None:
         """End the current batch."""
@@ -652,7 +700,11 @@ class BlobRow:
 
 @dataclass(frozen=True)
 class ContentShareRow:
-    """One preserved DocShare row on governed content or history."""
+    """One legacy `DocShare` row on governed content or history.
+
+    Step 10 rewrites it as a grant and then deletes it, so it carries every
+    column `docshare_journal.DOCSHARE_COLUMNS` needs to put it back.
+    """
 
     name: str
     share_doctype: str
@@ -664,6 +716,27 @@ class ContentShareRow:
     submit: int = 0
     everyone: int = 0
     creation: str | None = None
+    owner: str | None = None
+    modified: str | None = None
+    modified_by: str | None = None
+
+    def preimage(self) -> dict:
+        """The exact stored row, for the journal that precedes the delete."""
+        return {
+            "name": self.name,
+            "share_doctype": self.share_doctype,
+            "share_name": self.share_name,
+            "user": self.user,
+            "read": self.read,
+            "write": self.write,
+            "share": self.share,
+            "submit": self.submit,
+            "everyone": self.everyone,
+            "owner": self.owner,
+            "creation": self.creation,
+            "modified": self.modified,
+            "modified_by": self.modified_by,
+        }
 
 
 class LegacyContent(Protocol):
@@ -764,6 +837,23 @@ class ContentTarget(Protocol):
     def write_thread(self, thread: dict, comments: list[dict]) -> None: ...
 
     def insert_previews(self, rows: list[dict]) -> None: ...
+
+    def delete_docshare(self, name: str) -> None:
+        """Delete one legacy `DocShare` row step 10 has rewritten as grants.
+
+        Same rule and same raw write as `DriveTarget.delete_docshare`; step
+        10 owns the rows on the content doctypes and their history tables,
+        step 6 owns the Sheet rows."""
+
+    def purge_content_document(self, doctype: str, docname: str) -> None:
+        """Purge one content document through the app's registered `on_purge`.
+
+        §14.4 skipped the document's `File` rows, so it has no node and no
+        step can mint one, and §5.13 has no "document without a node" state:
+        `refuse_unlinked_documents` would stop the migration and no request
+        could read the row. Only the app can delete its own body and its
+        satellite rows, so this is the registry callback `_core.nodes`
+        already calls on a §8.8 purge, invoked the same way."""
 
     def write_content_link(self, doctype: str, docname: str, node: str) -> None: ...
 
@@ -1011,7 +1101,21 @@ class SiteTree:
         rows = frappe.get_all(
             "DocShare",
             filters=[["share_doctype", "=", "Sheet"], ["name", ">", after]],
-            fields=["name", "share_name", "user", "read", "write", "everyone", "creation"],
+            fields=[
+                "name",
+                "share_doctype",
+                "share_name",
+                "user",
+                "read",
+                "write",
+                "share",
+                "submit",
+                "everyone",
+                "owner",
+                "creation",
+                "modified",
+                "modified_by",
+            ],
             order_by="name asc",
             limit=limit,
         )
@@ -1024,6 +1128,12 @@ class SiteTree:
                 write=cint(row.write),
                 everyone=cint(row.everyone),
                 creation=str(row.creation or ""),
+                share_doctype=row.share_doctype,
+                share=cint(row.share),
+                submit=cint(row.submit),
+                owner=row.owner,
+                modified=str(row.modified) if row.modified else None,
+                modified_by=row.modified_by,
             )
             for row in rows
         ]
@@ -1186,6 +1296,9 @@ class SiteDrive:
                 "Drive Grant", {"node": node, "principal": ["like", "$LINK:%"], "role": [">", NONE]}
             )
         )
+
+    def delete_docshare(self, name: str) -> None:
+        frappe.db.delete("DocShare", {"name": name})
 
     def commit(self) -> None:
         if not frappe.flags.in_test:
@@ -1386,6 +1499,9 @@ class SiteContentSource:
                 "submit",
                 "everyone",
                 "creation",
+                "owner",
+                "modified",
+                "modified_by",
             ],
             order_by="name asc",
             limit=limit,
@@ -1731,6 +1847,18 @@ class SiteContentTarget:
 
     def insert_previews(self, rows: list[dict]) -> None:
         self._bulk("Drive Node Preview", PREVIEW_COLUMNS, rows)
+
+    def delete_docshare(self, name: str) -> None:
+        frappe.db.delete("DocShare", {"name": name})
+
+    def purge_content_document(self, doctype: str, docname: str) -> None:
+        # Exactly `_core/nodes.py:_purge_locked`'s own call: the registered
+        # `on_purge`, through `call_app`, so the callback runs with
+        # transaction control disabled and cannot commit Build's batch or
+        # destroy the savepoint around it.
+        from suite.drive._core import content
+
+        content.call_app(content.spec_for(doctype).on_purge, docname)
 
     def write_content_link(self, doctype: str, docname: str, node: str) -> None:
         frappe.db.set_value(doctype, docname, "node", node, update_modified=False)

@@ -19,9 +19,13 @@ Three things this module owns and no phase does:
   record that is still incomplete after `CONTENT_PASSES` is a defect that
   must stop the migration rather than be retried forever.
 
-Build deletes nothing. Every legacy column it read is still there when it
-returns, which is what §14.10 Cleanup removes one release later and what
-§14.11 needs in place to roll back by shipping the old code.
+Build deletes one thing: the `DocShare` rows it has rewritten as grants
+(steps 6 and 10). §5.13's read guards fail closed on a share for a governed
+doctype and `framework.validate_content_registry` refuses the migration
+while one is left, so they cannot wait for §14.10 Cleanup. Their full
+column set is journaled under the site's private directory first, so §14.11
+can put them back. Every other legacy column Build read is still there when
+it returns.
 """
 
 import frappe
