@@ -35,7 +35,7 @@ PAGE_LENGTHS = (20, 100, 500)
 DEFAULT_PAGE_LENGTH = 100
 
 
-ACCOUNT_PAGE = 200
+PICKER_PAGE = 20  # rows an account picker shows per search
 
 
 # --- permissions ------------------------------------------------------------------------------
@@ -431,21 +431,6 @@ def _attach_quotas(users: list[dict]) -> None:
                 user["quota_gb"] = flt(quotas[user["account"]])
 
 
-def _all_accounts() -> dict[str, dict]:
-    """Every account of the site keyed by address, read page by page."""
-
-    client = get_client()
-    accounts: dict[str, dict] = {}
-    start = 0
-    while True:
-        page = client.call("mail.accounts.list_accounts", start=start, limit=ACCOUNT_PAGE)
-        for account in page["items"]:
-            accounts[account["email"]] = account
-        start += ACCOUNT_PAGE
-        if start >= page["total"] or not page["items"]:
-            return accounts
-
-
 def _quota_usage(account: dict) -> dict:
     return _build_quota_usage(
         int(flt(account.get("disk_quota_gb")) * GB), cint(account.get("used_disk_bytes"))
@@ -707,54 +692,44 @@ def update_member(
 # --- aliases (accounts, groups and lists alike) ------------------------------------------------------
 
 
-def _alias_rows(obj: dict) -> list[dict]:
-    return [
-        {"email": a["email"], "enabled": bool(a.get("enabled", True)), "description": a.get("description")}
-        for a in obj.get("aliases") or []
-    ]
+# Suite Cloud changes one alias at a time under a row lock, so two admins editing the same
+# object never drop each other's rows.
+_ALIAS_CALLS = {
+    "accounts": ("add_alias", "remove_alias", "set_alias_enabled"),
+    "groups": ("add_group_alias", "remove_group_alias", "set_group_alias_enabled"),
+    "mailing_lists": (
+        "add_mailing_list_alias",
+        "remove_mailing_list_alias",
+        "set_mailing_list_alias_enabled",
+    ),
+}
 
 
 def _add_alias(kind: str, email_id: str, alias: str, description: str | None) -> None:
     alias = (alias or "").strip().lower()
     validate_email_address(alias, throw=True)
     is_subaddressed_email(alias, raise_exception=True)
-    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
-    if alias == obj["email"]:
-        frappe.throw(_("{0} is already the primary address.").format(alias))
-    rows = _alias_rows(obj)
-    if alias in {r["email"] for r in rows}:
-        return
-    rows.append({"email": alias, "enabled": True, "description": (description or "").strip() or None})
-    _set_aliases(kind, email_id, rows)
+    get_client().call(
+        f"mail.{kind}.{_ALIAS_CALLS[kind][0]}",
+        email=email_id,
+        alias=alias,
+        description=(description or "").strip() or None,
+    )
 
 
 def _remove_alias(kind: str, email_id: str, alias: str) -> None:
-    alias = (alias or "").strip().lower()
-    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
-    if alias == obj["email"]:
-        frappe.throw(_("The primary address cannot be removed."))
-    _set_aliases(kind, email_id, [r for r in _alias_rows(obj) if r["email"] != alias])
+    get_client().call(
+        f"mail.{kind}.{_ALIAS_CALLS[kind][1]}", email=email_id, alias=(alias or "").strip().lower()
+    )
 
 
 def _set_alias_enabled(kind: str, email_id: str, alias: str, enabled: bool) -> None:
-    alias = (alias or "").strip().lower()
-    obj = get_client().call(f"mail.{kind}.get_{kind[:-1]}", email=email_id)
-    rows = _alias_rows(obj)
-    for row in rows:
-        if row["email"] == alias:
-            row["enabled"] = enabled
-    _set_aliases(kind, email_id, rows)
-
-
-_SET_ALIASES = {
-    "accounts": "mail.accounts.set_aliases",
-    "groups": "mail.groups.set_group_aliases",
-    "mailing_lists": "mail.mailing_lists.set_mailing_list_aliases",
-}
-
-
-def _set_aliases(kind: str, email_id: str, rows: list[dict]) -> None:
-    get_client().call(_SET_ALIASES[kind], email=email_id, aliases=rows)
+    get_client().call(
+        f"mail.{kind}.{_ALIAS_CALLS[kind][2]}",
+        email=email_id,
+        alias=(alias or "").strip().lower(),
+        enabled=bool(enabled),
+    )
 
 
 @frappe.whitelist()
@@ -848,18 +823,17 @@ def _search(rows: list[dict], search: str | None, fields: tuple[str, ...]) -> li
 
 
 @frappe.whitelist()
-def get_accounts(search: str | None = None) -> list[dict]:
-    """Every account of the site, for pickers."""
+def get_accounts(search: str | None = None, limit: int = PICKER_PAGE) -> list[dict]:
+    """The accounts matching ``search``, for pickers; a short page, searched on Suite Cloud."""
 
     check_admin_permission("view accounts")
-    rows = [
+    page = get_client().call(
+        "mail.accounts.list_accounts", search=search, limit=max(1, min(cint(limit) or PICKER_PAGE, 100))
+    )
+    return [
         {"id": a["email"], "name": a.get("display_name") or a["email"].split("@", 1)[0], "email": a["email"]}
-        for a in _all_accounts().values()
+        for a in page["items"]
     ]
-    return _search(rows, search, ("name", "email"))
-
-
-# --- groups -------------------------------------------------------------------------------------------------
 
 
 def _group_row(group: dict) -> dict:
@@ -876,8 +850,9 @@ def _group_row(group: dict) -> dict:
 @frappe.whitelist()
 def get_groups(search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH) -> dict:
     check_admin_permission("view groups")
-    rows = [_group_row(g) for g in get_client().call("mail.groups.list_groups")]
-    return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
+    start, page_length = _paging(start, page_length)
+    page = get_client().call("mail.groups.list_groups", search=search, start=start, limit=page_length)
+    return {"items": [_group_row(g) for g in page["items"]], "total": page["total"]}
 
 
 @frappe.whitelist()
@@ -988,8 +963,11 @@ def get_mailing_lists(
     search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH
 ) -> dict:
     check_admin_permission("view mailing lists")
-    rows = [_list_row(ml) for ml in get_client().call("mail.mailing_lists.list_mailing_lists")]
-    return _page(_search(rows, search, ("name", "email", "description")), start, page_length)
+    start, page_length = _paging(start, page_length)
+    page = get_client().call(
+        "mail.mailing_lists.list_mailing_lists", search=search, start=start, limit=page_length
+    )
+    return {"items": [_list_row(ml) for ml in page["items"]], "total": page["total"]}
 
 
 @frappe.whitelist()

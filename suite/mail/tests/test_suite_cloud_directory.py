@@ -241,6 +241,11 @@ class TestGroupsAndLists(SuiteCloudTestCase):
 
         admin.add_group_email(group, f"Team@{DOMAIN}", description="old name")
         admin.set_group_email_enabled(group, f"team@{DOMAIN}", 0)
+        # One alias per call, never the whole set: concurrent edits cannot drop each other's rows.
+        self.assertEqual(
+            [c[0] for c in self.fake.calls[-2:]],
+            ["mail.groups.add_group_alias", "mail.groups.set_group_alias_enabled"],
+        )
         addresses = admin.get_group(group)["email_addresses"]
         self.assertEqual(
             [(a["email"], a["is_primary"], a["enabled"], a["description"]) for a in addresses],
@@ -258,6 +263,22 @@ class TestGroupsAndLists(SuiteCloudTestCase):
 
         admin.delete_groups([group])
         self.assertEqual(admin.get_groups(), {"items": [], "total": 0})
+
+    def test_lists_and_pickers_search_on_suite_cloud(self) -> None:
+        for name in ("ops", "sales", "support"):
+            self.fake.groups__create_group(f"{name}@{DOMAIN}", description=f"{name.title()} team")
+        page = admin.get_groups(search="Sales team", start=0, page_length=20)
+        self.assertEqual(([g["name"] for g in page["items"]], page["total"]), (["sales"], 3 - 2))
+        self.assertEqual(
+            self.fake.calls[-1],
+            ("mail.groups.list_groups", {"search": "Sales team", "start": 0, "limit": 20}),
+        )
+        self.assertRaisesRegex(frappe.ValidationError, "Page length", admin.get_groups, page_length=7)
+
+        picker = admin.get_accounts(search="Bob")
+        self.assertEqual([a["email"] for a in picker], [f"bob@{DOMAIN}"])
+        self.assertEqual(self.fake.calls[-1][1], {"search": "Bob", "limit": 20})
+        self.assertEqual(len(admin.get_accounts(limit=1)), 1)
 
     def test_mailing_list_crud_and_recipients(self) -> None:
         mailing_list = admin.add_mailing_list(

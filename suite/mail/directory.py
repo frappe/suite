@@ -15,6 +15,7 @@ from suite.mail.utils.user import get_account_email
 GB = 1024**3
 # Suite Cloud hands out recipients a page at a time; this is its largest page.
 RECIPIENT_PAGE = 1000
+LIST_PAGE = 500  # groups and lists per call, the cap Suite Cloud allows
 
 
 def get_domains() -> list[dict]:
@@ -38,25 +39,39 @@ def get_mailing_list_index() -> dict[str, list[str]]:
     """
 
     client = get_client()
-    index = {}
-    for mailing_list in client.call("mail.mailing_lists.list_mailing_lists"):
-        index[mailing_list["email"]] = _all_recipients(client, mailing_list["email"])
-    return index
+    return {
+        ml["email"]: _all_recipients(client, ml["email"])
+        for ml in all_pages("mail.mailing_lists.list_mailing_lists")
+    }
 
 
 def _all_recipients(client, email: str) -> list[str]:
     """Every enabled recipient of a list, paged through in full so no list is silently cut."""
 
-    recipients: list[str] = []
+    rows = all_pages("mail.mailing_lists.list_recipients", email=email, limit=RECIPIENT_PAGE)
+    return [r["email"] for r in rows if r.get("enabled", True)]
+
+
+def all_pages(method: str, limit: int = LIST_PAGE, **params) -> list[dict]:
+    """Every item of a paged listing (``{items, total}``), read page by page."""
+
+    client = get_client()
+    items: list[dict] = []
     start = 0
     while True:
-        page = client.call(
-            "mail.mailing_lists.list_recipients", email=email, start=start, limit=RECIPIENT_PAGE
-        )
-        recipients.extend(r["email"] for r in page["items"] if r.get("enabled", True))
+        page = client.call(method, start=start, limit=limit, **params)
+        items.extend(page["items"])
         start += len(page["items"])
         if not page["items"] or start >= page["total"]:
-            return recipients
+            return items
+
+
+def get_group_addresses() -> set[str]:
+    return {g["email"] for g in all_pages("mail.groups.list_groups")}
+
+
+def get_mailing_list_addresses() -> set[str]:
+    return {ml["email"] for ml in all_pages("mail.mailing_lists.list_mailing_lists")}
 
 
 def get_account_metadata() -> dict:

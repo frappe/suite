@@ -39,7 +39,13 @@
 				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
-					<MultiSelect v-model="memberIds" :options="accountOptions" />
+					<MultiSelect
+						v-model="memberIds"
+						v-model:query="picker.query"
+						:options="picker.options"
+						:filterable="false"
+						:placeholder="__('Search accounts')"
+					/>
 				</div>
 				<ErrorMessage
 					:message="addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.'))"
@@ -55,6 +61,7 @@ import { useRouter } from 'vue-router'
 import { Dialog, ErrorMessage, FormControl, MultiSelect, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -67,12 +74,9 @@ const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
+const picker = useAccountPicker(memberIds)
 
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
-const accountOptions = computed(() =>
-	(accounts.data || []).map((a: { id: string; email: string }) => ({ label: a.email, value: a.id })),
-)
 
 watch(show, () => {
 	if (show.value) {
@@ -81,6 +85,7 @@ watch(show, () => {
 		description.value = ''
 		quotaGb.value = ''
 		memberIds.value = []
+		picker.reset()
 		addGroup.reset()
 	}
 })

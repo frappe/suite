@@ -174,8 +174,20 @@ class FakeSuiteCloud:
     # --- accounts ---------------------------------------------------------------------------
 
     def accounts__list_accounts(self, domain=None, search=None, start=0, limit=50) -> dict:
-        emails = sorted(self.accounts)
+        emails = self._matching(self.accounts, search, ("email", "display_name"))
         return {"items": [self._account(e) for e in emails[start : start + limit]], "total": len(emails)}
+
+    def accounts__add_alias(self, email, alias, description=None) -> dict:
+        self._alias_add(self.accounts, email, alias, description)
+        return self._account(email)
+
+    def accounts__remove_alias(self, email, alias) -> dict:
+        self._alias_remove(self.accounts, email, alias)
+        return self._account(email)
+
+    def accounts__set_alias_enabled(self, email, alias, enabled) -> dict:
+        self._alias_set_enabled(self.accounts, email, alias, enabled)
+        return self._account(email)
 
     def accounts__get_quotas(self, emails) -> dict:
         return {e: self.accounts[e]["disk_quota_gb"] for e in emails if e in self.accounts}
@@ -262,8 +274,21 @@ class FakeSuiteCloud:
 
     # --- groups ---------------------------------------------------------------------------------
 
-    def groups__list_groups(self) -> list[dict]:
-        return [self._group(g) for g in sorted(self.groups)]
+    def groups__list_groups(self, search=None, start=0, limit=100) -> dict:
+        emails = self._matching(self.groups, search, ("email", "description"))
+        return {"items": [self._group(e) for e in emails[start : start + limit]], "total": len(emails)}
+
+    def groups__add_group_alias(self, email, alias, description=None) -> dict:
+        self._alias_add(self.groups, email, alias, description)
+        return self._group(email)
+
+    def groups__remove_group_alias(self, email, alias) -> dict:
+        self._alias_remove(self.groups, email, alias)
+        return self._group(email)
+
+    def groups__set_group_alias_enabled(self, email, alias, enabled) -> dict:
+        self._alias_set_enabled(self.groups, email, alias, enabled)
+        return self._group(email)
 
     def groups__get_group(self, email) -> dict:
         return self._group(self._require(self.groups, email)["email"])
@@ -317,8 +342,21 @@ class FakeSuiteCloud:
 
     # --- mailing lists ---------------------------------------------------------------------------
 
-    def mailing_lists__list_mailing_lists(self) -> list[dict]:
-        return [self._list(n) for n in sorted(self.lists)]
+    def mailing_lists__list_mailing_lists(self, search=None, start=0, limit=100) -> dict:
+        emails = self._matching(self.lists, search, ("email", "description"))
+        return {"items": [self._list(e) for e in emails[start : start + limit]], "total": len(emails)}
+
+    def mailing_lists__add_mailing_list_alias(self, email, alias, description=None) -> dict:
+        self._alias_add(self.lists, email, alias, description)
+        return self._list(email)
+
+    def mailing_lists__remove_mailing_list_alias(self, email, alias) -> dict:
+        self._alias_remove(self.lists, email, alias)
+        return self._list(email)
+
+    def mailing_lists__set_mailing_list_alias_enabled(self, email, alias, enabled) -> dict:
+        self._alias_set_enabled(self.lists, email, alias, enabled)
+        return self._list(email)
 
     def mailing_lists__get_mailing_list(self, email) -> dict:
         return self._list(self._require(self.lists, email)["email"])
@@ -404,6 +442,35 @@ class FakeSuiteCloud:
                 f"Domain {name} is not active: enable it and verify its DNS records first.",
                 frappe.ValidationError,
             )
+
+    @staticmethod
+    def _matching(store: dict, search, fields: tuple[str, ...]) -> list[str]:
+        needle = (search or "").strip().lower()
+        return sorted(
+            key
+            for key, obj in store.items()
+            if not needle or any(needle in str(obj.get(f) or "").lower() for f in fields)
+        )
+
+    def _alias_add(self, store: dict, email: str, alias: str, description) -> None:
+        obj = self._require(store, email)
+        alias = alias.strip().lower()
+        if alias == email:
+            frappe.throw(f"{alias} is already the primary address.")
+        if all(a["email"] != alias for a in obj["aliases"]):
+            obj["aliases"].append({"email": alias, "enabled": True, "description": description})
+
+    def _alias_remove(self, store: dict, email: str, alias: str) -> None:
+        obj = self._require(store, email)
+        if alias == email:
+            frappe.throw("The primary address cannot be removed.")
+        obj["aliases"] = [a for a in obj["aliases"] if a["email"] != alias]
+
+    def _alias_set_enabled(self, store: dict, email: str, alias: str, enabled) -> None:
+        rows = [a for a in self._require(store, email)["aliases"] if a["email"] == alias]
+        if not rows:
+            frappe.throw(f"Alias {alias} not found.", frappe.DoesNotExistError)
+        rows[0]["enabled"] = bool(enabled)
 
     @staticmethod
     def _require(store: dict, key: str) -> dict:
