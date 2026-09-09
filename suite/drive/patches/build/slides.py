@@ -558,7 +558,8 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
                 result.media_references_missing_file_rows += 1
                 result.record_issue(
                     f"Presentation:{deck.name}",
-                    f"media reference {value!r} matches no File row and no media node; was not adopted",
+                    f"media reference {value!r} matches no File row attached to a Presentation "
+                    "and no media node; was not adopted",
                     phase="slides",
                 )
             continue
@@ -907,13 +908,22 @@ def _canonical(value, host=""):
 
 
 def _never_media(value, host=""):
-    """A colour, data URL, bundled asset, or foreign host is never deck media.
+    """Whether a value cannot identify deck media.
 
-    §11 keeps a same-site absolute URL resolvable, because legacy Slides stored
-    one whenever the browser handed back a whole `file_url`.
+    Blank values and CSS colours cannot name a File URL or media node, so
+    `_resolve`, thumbnail matching, and missing-reference reporting may all
+    discard them. Bare colours have 3, 4, 6, or 8 hex digits; excluding only
+    those lengths leaves 10-character node ids resolvable. Data URLs, bundled
+    assets, and foreign hosts are likewise never media. §11 keeps a same-site
+    absolute URL resolvable because legacy Slides stored one whenever the
+    browser handed back a whole `file_url`.
     """
     text = str(value or "")
-    if text.startswith(("data:", "/assets/", "#")):
+    if (
+        not text.strip()
+        or text.startswith(("data:", "/assets/", "#"))
+        or (len(text) in (3, 4, 6, 8) and all(character in "0123456789abcdefABCDEF" for character in text))
+    ):
         return True
     netloc = urlsplit(text).netloc
     return bool(netloc) and netloc != host
