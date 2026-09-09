@@ -120,16 +120,16 @@ def set_account_enabled(user: str, enabled: bool) -> None:
         get_client().call("accounts.set_account_enabled", email=email, enabled=bool(enabled))
 
 
-def push_workspace_name(name: str) -> None:
-    """Suite Cloud shows the workspace name as the site's title.
+def push_site_profile(**changes: str) -> None:
+    """Sends the workspace name (as the site's title) and contact email to Suite Cloud.
 
     Called from the Suite Settings save; a Suite Cloud that is unreachable or not configured must
-    not stop an admin from renaming the workspace, so failures are logged rather than raised.
+    not stop an admin from editing the settings, so failures are logged rather than raised.
     """
 
-    if not is_suite_cloud_configured():
+    if not changes or not is_suite_cloud_configured():
         return
     try:
-        get_client().call("update_site_title", title=name or "")
+        get_client().call("update_site_profile", **changes)
     except Exception:
-        log_mail_error("Failed to push the workspace name to Suite Cloud", frappe.get_traceback())
+        log_mail_error("Failed to push the site profile to Suite Cloud", frappe.get_traceback())

@@ -6,6 +6,7 @@
  "field_order": [
   "workspace_name",
   "workspace_logo",
+  "contact_email",
   "is_onboarded"
  ],
  "fields": [
@@ -20,6 +21,13 @@
    "label": "Workspace Logo"
   },
   {
+   "fieldname": "contact_email",
+   "fieldtype": "Data",
+   "label": "Contact Email",
+   "options": "Email",
+   "description": "Where Suite Cloud sends notices about this site's mail service, such as planned downtime or quota warnings."
+  },
+  {
    "default": "0",
    "fieldname": "is_onboarded",
    "fieldtype": "Check",
@@ -29,7 +37,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 18:26:27.000000",
+ "modified": "2026-09-09 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",

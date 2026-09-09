@@ -105,11 +105,22 @@ class TestMailSettings(SuiteCloudTestCase):
         # The fake's cluster answers https://mail.test while the settings point elsewhere.
         self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
 
-    def test_workspace_name_becomes_the_site_title(self) -> None:
-        with self.change_settings("Suite Settings", workspace_name="Acme Corp"):
-            self.assertEqual(self.fake.site_title, "Acme Corp")
-            self.assertEqual(admin.get_overview()["workspace"]["name"], "Acme Corp")
-            self.assertEqual(admin.get_overview()["site"]["title"], "Acme Corp")
+    def test_workspace_name_and_contact_reach_suite_cloud(self) -> None:
+        with self.change_settings(
+            "Suite Settings", workspace_name="Acme Corp", contact_email="Admin@Acme.test"
+        ):
+            self.assertEqual((self.fake.site_title, self.fake.site_contact), ("Acme Corp", "admin@acme.test"))
+            overview = admin.get_overview()
+            self.assertEqual(overview["workspace"]["name"], "Acme Corp")
+            self.assertEqual(
+                (overview["site"]["title"], overview["site"]["contact_email"]),
+                ("Acme Corp", "admin@acme.test"),
+            )
+        # Only the fields that changed travel: a save that touches neither sends nothing.
+        calls = len(self.fake.calls)
+        with self.change_settings("Suite Settings", is_onboarded=1):
+            pass
+        self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "update_site_profile"], [])
 
     def test_validate_credentials_needs_configuration(self) -> None:
         with self.change_settings("Mail Settings", site_api_secret=""):

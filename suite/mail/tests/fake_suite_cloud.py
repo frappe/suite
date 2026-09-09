@@ -29,9 +29,13 @@ class FakeSuiteCloud:
         return handler(**params)
 
     site_title = "Acme"
+    site_contact = "ops@acme.test"
 
-    def update_site_title(self, title: str) -> dict:
-        self.site_title = title.strip() or "acme.frappe.test"
+    def update_site_profile(self, title=None, contact_email=None) -> dict:
+        if title is not None:
+            self.site_title = title.strip() or "acme.frappe.test"
+        if contact_email is not None:
+            self.site_contact = contact_email.strip().lower() or None
         return self.ping()
 
     def ping(self) -> dict:
@@ -43,7 +47,7 @@ class FakeSuiteCloud:
             "cluster": "mail.blr.example.test",
             "mail_hostname": "mail.blr.example.test",
             "jmap_url": "https://mail.test",
-            "contact_email": "ops@acme.test",
+            "contact_email": self.site_contact,
             "limits": {
                 "max_domains": 10,
                 "max_accounts": 500,
