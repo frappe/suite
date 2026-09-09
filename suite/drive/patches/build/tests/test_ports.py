@@ -7,7 +7,9 @@ the check that it still copies it belongs here too, beside the port it
 stands in for.
 """
 
+import json
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -923,6 +925,23 @@ class TestSiteContentHistory(StubbedDatabase):
         self.assertEqual(values, {"sheet": "sheet-1", "seq": 7, "name": "s-2", "limit": 100})
         # `sheets_data` is the 75 MB column, so it is read one page at a time.
         self.assertIn("`sheets_data`", query)
+
+    def test_every_column_the_history_pages_filter_on_is_indexed(self):
+        """Ticket 31: the page reads a Link column, so that column needs an index.
+
+        Without it MariaDB scans the `creation` index end to end for every
+        document. On the rehearsal restore that was 45 s a page over 142,530
+        rows, once per Writer Document.
+        """
+        for doctype, path, column in (
+            ("Writer Version", ("writer", "writer_version"), "doc"),
+            ("Sheet Snapshot", ("sheets", "sheet_snapshot"), "sheet"),
+        ):
+            with self.subTest(doctype=doctype):
+                folder, name = path
+                schema = Path(__file__).parents[4] / folder / "doctype" / name / f"{name}.json"
+                fields = {field["fieldname"]: field for field in json.loads(schema.read_text())["fields"]}
+                self.assertEqual(fields[column].get("search_index"), 1)
 
 
 class TestGrantPairs(StubbedDatabase):
