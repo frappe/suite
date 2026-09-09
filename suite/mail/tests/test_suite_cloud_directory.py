@@ -379,6 +379,11 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(
             (overview["domains"], overview["groups"], overview["limits"]["max_domains"]), (1, 1, 10)
         )
+        self.assertEqual(overview["site"]["cluster"], "mail.blr.example.test")
+        self.assertEqual(overview["storage"]["max_gb"], 100)
+        self.assertEqual(overview["domains_needing_attention"], [])
+        self.assertEqual(overview["invites"], {"pending": 0, "expiring_soon": 0, "expired": 0})
+        self.assertEqual(overview["recent_accounts"][0]["name"], self.email)
 
         admin.delete_members([self.email])
         self.assertNotIn(self.email, self.fake.accounts)

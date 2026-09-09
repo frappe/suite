@@ -1107,9 +1107,70 @@ def get_overview() -> dict:
     with suppress(Exception):
         site = get_client().call("ping")
         usage = site.get("usage") or {}
+        limits = site.get("limits") or {}
         overview["domains"] = usage.get("domains")
         overview["groups"] = usage.get("groups")
         overview["mailing_lists"] = usage.get("mailing_lists")
-        overview["limits"] = site.get("limits")
+        overview["limits"] = limits
+        overview["storage"] = {
+            "allocated_gb": usage.get("allocated_disk_gb"),
+            "max_gb": limits.get("max_disk_gb"),
+            "default_quota_gb": limits.get("default_disk_quota_gb"),
+        }
+        overview["site"] = {
+            k: site.get(k)
+            for k in ("site", "title", "status", "cluster", "mail_hostname", "jmap_url", "contact_email")
+        }
+
+    with suppress(Exception):
+        # Domains that are not sending or receiving: the admin's first job on a fresh site.
+        overview["domains_needing_attention"] = [
+            {"name": row["name"], "status": row["status"], "last_verified_at": row["last_verified_at"]}
+            for row in (_domain_row(d) for d in get_site_domains())
+            if row["status"] != "Active"
+        ]
+
+    with suppress(Exception):
+        overview["invites"] = _invite_counts()
+
+    with suppress(Exception):
+        overview["recent_accounts"] = _recent_accounts(RECENT_ACCOUNTS)
 
     return overview
+
+
+RECENT_ACCOUNTS = 5
+
+
+def _invite_counts() -> dict:
+    now = frappe.utils.now()
+    soon = frappe.utils.add_to_date(now, hours=24)
+    open_filters = {"is_verified": 0, "expires_at": [">", now]}
+    return {
+        "pending": frappe.db.count("Mail Account Request", open_filters),
+        "expiring_soon": frappe.db.count(
+            "Mail Account Request", {"is_verified": 0, "expires_at": ["between", [now, soon]]}
+        ),
+        "expired": frappe.db.count("Mail Account Request", {"is_verified": 0, "expires_at": ["<=", now]}),
+    }
+
+
+def _recent_accounts(limit: int) -> list[dict]:
+    """The newest members with a mailbox, as the accounts list shows them."""
+
+    USER = frappe.qb.DocType("User")
+    USER_SETTINGS = frappe.qb.DocType("User Settings")
+    rows = (
+        frappe.qb.from_(USER)
+        .join(USER_SETTINGS)
+        .on(USER.name == USER_SETTINGS.user)
+        .select(USER.name, USER.full_name, USER.user_image, USER.enabled, USER.creation)
+        .where(USER_SETTINGS.username.isnotnull())
+        .orderby(USER.creation, order=Order.desc)
+        .limit(limit)
+    ).run(as_dict=True)
+    for row in rows:
+        row["user_image"] = row.get("user_image") or get_avatar_url(row["name"])
+        row["enabled"] = bool(row["enabled"])
+        row["joined_on"] = to_utc_z(row.pop("creation"))
+    return rows

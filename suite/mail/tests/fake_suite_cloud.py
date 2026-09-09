@@ -31,13 +31,27 @@ class FakeSuiteCloud:
     def ping(self) -> dict:
         return {
             "site": "acme.frappe.test",
+            "title": "Acme",
+            "status": "Active",
+            "enabled": True,
+            "cluster": "mail.blr.example.test",
+            "mail_hostname": "mail.blr.example.test",
             "jmap_url": "https://mail.test",
-            "limits": {"max_domains": 10, "max_groups": 50, "max_mailing_lists": 50},
+            "contact_email": "ops@acme.test",
+            "limits": {
+                "max_domains": 10,
+                "max_accounts": 500,
+                "max_groups": 50,
+                "max_mailing_lists": 50,
+                "max_disk_gb": 100,
+                "default_disk_quota_gb": DEFAULT_QUOTA_GB,
+            },
             "usage": {
                 "domains": len(self.domains),
                 "accounts": len(self.accounts),
                 "groups": len(self.groups),
                 "mailing_lists": len(self.lists),
+                "allocated_disk_gb": sum(a["disk_quota_gb"] for a in self.accounts.values()),
             },
         }
 

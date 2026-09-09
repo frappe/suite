@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
-		<!-- KPI tiles: one glanceable number per section, each a link into it. -->
-		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+		<!-- One glanceable number per section, each a link into it. -->
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
 			<RouterLink
 				v-for="stat in stats"
 				:key="stat.label"
@@ -9,42 +9,126 @@
 				class="hover:bg-surface-gray-1 group flex flex-col gap-1 rounded-4 border p-4 transition-colors"
 			>
 				<span class="text-ink-gray-5 flex items-center gap-1.5 text-sm">
-					<component :is="stat.icon" class="h-4 w-4" />
+					<component :is="stat.icon" class="h-4 w-4 shrink-0" />
 					{{ stat.label }}
 				</span>
-				<span class="text-ink-gray-9 text-xl font-semibold">{{ stat.value }}</span>
-				<span class="text-xs" :class="stat.subTone === 'warning' && stat.sub ? 'text-ink-amber-6' : 'text-ink-gray-5'">
+				<span class="text-ink-gray-9 text-xl font-semibold leading-7">{{ stat.value }}</span>
+				<span class="text-xs" :class="stat.warn ? 'text-ink-amber-6' : 'text-ink-gray-5'">
 					{{ stat.sub || ' ' }}
 				</span>
+				<div v-if="stat.bar !== undefined" class="bg-surface-gray-3 mt-1 h-1 w-full rounded-full">
+					<div
+						class="h-1 rounded-full"
+						:class="stat.warn ? 'bg-surface-amber-5' : 'bg-surface-gray-7'"
+						:style="{ width: `${Math.min(100, Math.max(2, stat.bar))}%` }"
+					/>
+				</div>
 			</RouterLink>
 		</div>
 
-		<div class="grid grid-cols-1 gap-5">
-			<!-- Quick actions -->
-			<DashboardCard :title="__('Quick Actions')">
-				<div class="flex flex-col">
-					<RouterLink
-						v-for="action in QUICK_ACTIONS"
-						:key="action.label"
-						:to="action.to"
-						class="hover:bg-surface-gray-1 group flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
-					>
-						<div
-							class="bg-surface-gray-2 text-ink-gray-6 flex h-8 w-8 shrink-0 items-center justify-center rounded-4"
+		<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+			<div class="flex flex-col gap-5 lg:col-span-2">
+				<!-- What is not working yet, with the shortest path to fixing it. -->
+				<DashboardCard :title="__('Needs Attention')">
+					<div v-if="attention.length" class="flex flex-col">
+						<RouterLink
+							v-for="item in attention"
+							:key="item.key"
+							:to="item.to"
+							class="hover:bg-surface-gray-1 group flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
 						>
-							<component :is="action.icon" class="h-4 w-4" />
+							<div
+								class="flex h-8 w-8 shrink-0 items-center justify-center rounded-4"
+								:class="item.tone === 'amber' ? 'bg-surface-amber-1 text-ink-amber-6' : 'bg-surface-gray-2 text-ink-gray-6'"
+							>
+								<component :is="item.icon" class="h-4 w-4" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium">{{ item.title }}</p>
+								<p class="text-ink-gray-5 mt-0.5 truncate text-xs">{{ item.description }}</p>
+							</div>
+							<span class="text-ink-gray-6 group-hover:text-ink-gray-9 shrink-0 text-sm">{{ item.action }}</span>
+							<FeatherIcon name="chevron-right" class="text-ink-gray-4 h-4 w-4 shrink-0" />
+						</RouterLink>
+					</div>
+					<div v-else class="text-ink-gray-5 flex items-center gap-3 px-5 py-4 text-sm">
+						<CheckCircle class="text-ink-green-5 h-4 w-4 shrink-0" />
+						{{ __('Every domain is active and no invite is waiting. Nothing needs your attention.') }}
+					</div>
+				</DashboardCard>
+
+				<DashboardCard :title="__('Recent Accounts')" :button-label="__('View All')" @action="router.push({ name: 'mail-accounts' })">
+					<div v-if="recentAccounts.length" class="flex flex-col">
+						<RouterLink
+							v-for="account in recentAccounts"
+							:key="account.name"
+							:to="{ name: 'mail-account', params: { accountId: account.name } }"
+							class="hover:bg-surface-gray-1 flex items-center gap-3 border-b px-5 py-2.5 last:border-b-0"
+						>
+							<Avatar :image="account.user_image" :label="account.full_name" size="lg" />
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium">{{ account.full_name }}</p>
+								<p class="text-ink-gray-5 truncate text-xs">{{ account.name }}</p>
+							</div>
+							<Badge
+								:label="account.enabled ? __('Enabled') : __('Disabled')"
+								:theme="account.enabled ? 'green' : 'gray'"
+								class="shrink-0"
+							/>
+							<span class="text-ink-gray-5 w-28 shrink-0 text-right text-xs">
+								{{ __('Added {0}', [fromNow(account.joined_on)]) }}
+							</span>
+						</RouterLink>
+					</div>
+					<div v-else class="text-ink-gray-5 px-5 py-4 text-sm">
+						{{ __('No accounts yet. Add one to give someone a mailbox on your domains.') }}
+					</div>
+				</DashboardCard>
+			</div>
+
+			<div class="flex flex-col gap-5">
+				<DashboardCard :title="__('Quick Actions')">
+					<div class="flex flex-col">
+						<RouterLink
+							v-for="action in QUICK_ACTIONS"
+							:key="action.label"
+							:to="action.to"
+							class="hover:bg-surface-gray-1 group flex items-center gap-3 border-b px-5 py-3 last:border-b-0"
+						>
+							<div class="bg-surface-gray-2 text-ink-gray-6 flex h-8 w-8 shrink-0 items-center justify-center rounded-4">
+								<component :is="action.icon" class="h-4 w-4" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="text-sm font-medium">{{ action.label }}</p>
+								<p class="text-ink-gray-5 mt-0.5 truncate text-xs">{{ action.description }}</p>
+							</div>
+							<FeatherIcon
+								name="chevron-right"
+								class="text-ink-gray-4 h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+							/>
+						</RouterLink>
+					</div>
+				</DashboardCard>
+
+				<!-- Where this site's mail lives, for the admin who has to answer "which server?". -->
+				<DashboardCard :title="__('Mail Service')">
+					<div class="flex flex-col gap-3 px-5 py-4 text-sm">
+						<!-- Label beside the value once the column is wide enough; stacked below xl so a
+						     hostname gets the whole width instead of breaking mid-word. -->
+						<div
+							v-for="row in serviceRows"
+							:key="row.label"
+							class="flex flex-col gap-0.5 xl:flex-row xl:items-start xl:gap-3"
+						>
+							<span class="text-ink-gray-5 shrink-0 xl:w-24">{{ row.label }}</span>
+							<Badge v-if="row.badge" :label="row.value" :theme="row.badge" class="self-start" />
+							<span v-else class="text-ink-gray-9 min-w-0 font-medium [overflow-wrap:anywhere]">
+								{{ row.value || '—' }}
+							</span>
 						</div>
-						<div class="min-w-0 flex-1">
-							<p class="text-sm font-medium">{{ action.label }}</p>
-							<p class="text-ink-gray-5 mt-0.5 truncate text-xs">{{ action.description }}</p>
-						</div>
-						<FeatherIcon
-							name="chevron-right"
-							class="text-ink-gray-4 h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
-						/>
-					</RouterLink>
-				</div>
-			</DashboardCard>
+					</div>
+				</DashboardCard>
+			</div>
 		</div>
 	</DashboardLayout>
 </template>
@@ -52,15 +136,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
-import { createResource, usePageMeta } from 'frappe-ui'
+import { useRouter } from 'vue-router'
+import { Avatar, Badge, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
+import CheckCircle from '~icons/lucide/check-circle-2'
+import Clock from '~icons/lucide/clock'
 import Globe from '~icons/lucide/globe'
+import HardDrive from '~icons/lucide/hard-drive'
 import Megaphone from '~icons/lucide/megaphone'
 import UserPlus from '~icons/lucide/user-plus'
+import UserX from '~icons/lucide/user-x'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 
@@ -70,7 +160,21 @@ type Limits = {
 	max_accounts?: number
 	max_groups?: number
 	max_mailing_lists?: number
+	max_disk_gb?: number
 }
+type Storage = { allocated_gb: number | null; max_gb: number | null; default_quota_gb: number | null }
+type Site = {
+	site?: string
+	title?: string
+	status?: string
+	cluster?: string
+	mail_hostname?: string
+	jmap_url?: string
+	contact_email?: string
+}
+type AttentionDomain = { name: string; status: string; last_verified_at?: string | null }
+type InviteCounts = { pending: number; expiring_soon: number; expired: number }
+type RecentAccount = { name: string; full_name: string; user_image?: string; enabled: boolean; joined_on: string }
 type OverviewData = {
 	members: CountWithDisabled | null
 	pending_invites: number | null
@@ -78,9 +182,16 @@ type OverviewData = {
 	groups: number | null
 	mailing_lists: number | null
 	limits: Limits | null
+	storage?: Storage | null
+	site?: Site | null
+	domains_needing_attention?: AttentionDomain[]
+	invites?: InviteCounts | null
+	recent_accounts?: RecentAccount[]
 }
 
 usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
+
+const router = useRouter()
 
 const overview = createResource({
 	url: 'suite.mail.api.admin.get_overview',
@@ -88,75 +199,196 @@ const overview = createResource({
 })
 
 const data = computed(() => overview.data as OverviewData | undefined)
+const site = computed(() => data.value?.site || undefined)
+const recentAccounts = computed(() => data.value?.recent_accounts || [])
 
 // A section whose backing store was unreachable reports null; show an em dash
 // rather than a fake zero.
 const count = (value: number | null | undefined) => (value == null ? '—' : String(value))
 
-const disabledSub = (value: CountWithDisabled | null | undefined) =>
-	value?.disabled ? __('{0} disabled', [String(value.disabled)]) : ''
-
 // Suite Cloud caps how many of each the site may hold; 0 means no cap.
 const limitSub = (limit: number | undefined) => (limit ? __('of {0}', [String(limit)]) : '')
 
-const stats = computed(() => [
-	{
-		label: __('Accounts'),
-		icon: Users,
-		value: count(data.value?.members?.total),
-		// The limit first, like the other tiles; the disabled count follows when there is one.
-		sub: [limitSub(data.value?.limits?.max_accounts), disabledSub(data.value?.members)]
-			.filter(Boolean)
-			.join(' · '),
-		subTone: 'muted',
-		to: { name: 'mail-accounts' },
-	},
-	{
-		label: __('Invites'),
-		icon: UserPlus,
-		value: count(data.value?.pending_invites),
-		sub: data.value?.pending_invites ? __('awaiting acceptance') : '',
-		subTone: 'muted',
-		to: { name: 'mail-invites' },
-	},
-	{
-		label: __('Domains'),
-		icon: Globe,
-		value: count(data.value?.domains),
-		sub: limitSub(data.value?.limits?.max_domains),
-		subTone: 'muted',
-		to: { name: 'mail-domains' },
-	},
-	{
-		label: __('Groups'),
-		icon: UsersRound,
-		value: count(data.value?.groups),
-		sub: limitSub(data.value?.limits?.max_groups),
-		subTone: 'muted',
-		to: { name: 'mail-groups' },
-	},
-	{
-		label: __('Mailing Lists'),
-		icon: Megaphone,
-		value: count(data.value?.mailing_lists),
-		sub: limitSub(data.value?.limits?.max_mailing_lists),
-		subTone: 'muted',
-		to: { name: 'mail-mailing-lists' },
-	},
-])
+const gb = (value: number | null | undefined) =>
+	value == null ? '—' : __('{0} GB', [String(Math.round(value * 10) / 10)])
+
+const storagePercent = computed(() => {
+	const storage = data.value?.storage
+	if (!storage?.max_gb || storage.allocated_gb == null) return undefined
+	return Math.round((storage.allocated_gb / storage.max_gb) * 100)
+})
+
+const serviceRows = computed(() => {
+	const quota = data.value?.storage?.default_quota_gb
+	return [
+		{ label: __('Site'), value: site.value?.title || site.value?.site },
+		{ label: __('Mail Server'), value: site.value?.mail_hostname },
+		{
+			label: __('Status'),
+			value: site.value?.status || '',
+			badge: site.value?.status ? (site.value.status === 'Active' ? 'green' : 'amber') : undefined,
+		},
+		{ label: __('Default Quota'), value: quota ? __('{0} GB per account', [String(quota)]) : undefined },
+		{ label: __('Contact'), value: site.value?.contact_email },
+	]
+})
+
+// "1 disabled account" but "3 disabled accounts".
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : __(many, [String(n)]))
+
+const stats = computed(() => {
+	const members = data.value?.members
+	const limits = data.value?.limits
+	const storage = data.value?.storage
+	return [
+		{
+			label: __('Accounts'),
+			icon: Users,
+			value: count(members?.total),
+			sub: [limitSub(limits?.max_accounts), members?.disabled ? __('{0} disabled', [String(members.disabled)]) : '']
+				.filter(Boolean)
+				.join(' · '),
+			warn: false,
+			to: { name: 'mail-accounts' },
+		},
+		{
+			label: __('Invites'),
+			icon: UserPlus,
+			value: count(data.value?.invites?.pending ?? data.value?.pending_invites),
+			sub: data.value?.invites?.expired ? __('{0} expired', [String(data.value.invites.expired)]) : __('pending'),
+			warn: !!data.value?.invites?.expired,
+			to: { name: 'mail-invites' },
+		},
+		{
+			label: __('Domains'),
+			icon: Globe,
+			value: count(data.value?.domains),
+			sub: attentionDomains.value.length
+				? __('{0} not active', [String(attentionDomains.value.length)])
+				: limitSub(limits?.max_domains),
+			warn: attentionDomains.value.length > 0,
+			to: { name: 'mail-domains' },
+		},
+		{
+			label: __('Groups'),
+			icon: UsersRound,
+			value: count(data.value?.groups),
+			sub: limitSub(limits?.max_groups),
+			warn: false,
+			to: { name: 'mail-groups' },
+		},
+		{
+			label: __('Mailing Lists'),
+			icon: Megaphone,
+			value: count(data.value?.mailing_lists),
+			sub: limitSub(limits?.max_mailing_lists),
+			warn: false,
+			to: { name: 'mail-mailing-lists' },
+		},
+		{
+			label: __('Storage'),
+			icon: HardDrive,
+			value: gb(storage?.allocated_gb),
+			sub: storage?.max_gb ? __('of {0} allocated', [gb(storage.max_gb)]) : __('allocated, no cap'),
+			warn: (storagePercent.value ?? 0) >= 80,
+			bar: storagePercent.value,
+			to: { name: 'mail-accounts' },
+		},
+	]
+})
+
+const attentionDomains = computed(() => data.value?.domains_needing_attention || [])
+
+// Ordered by what blocks mail first: dark domains, then invites going stale, then quota pressure.
+const attention = computed(() => {
+	const items = []
+	for (const domain of attentionDomains.value) {
+		const disabled = domain.status === 'Disabled'
+		items.push({
+			key: `domain:${domain.name}`,
+			icon: Globe,
+			tone: 'amber',
+			title: domain.name,
+			description: disabled
+				? __('The domain is disabled, so no mail flows for it.')
+				: __('DNS records are not verified yet, so no mail flows for it.'),
+			action: disabled ? __('Open') : __('Verify DNS'),
+			to: { name: 'mail-domain', params: { domainId: domain.name } },
+		})
+	}
+	const invites = data.value?.invites
+	if (invites?.expired) {
+		items.push({
+			key: 'invites:expired',
+			icon: Clock,
+			tone: 'gray',
+			title: plural(invites.expired, __('1 expired invite'), '{0} expired invites'),
+			description: __('The links no longer work; resend or remove them.'),
+			action: __('Review'),
+			to: { name: 'mail-invites' },
+		})
+	}
+	if (invites?.expiring_soon) {
+		items.push({
+			key: 'invites:soon',
+			icon: Clock,
+			tone: 'amber',
+			title: plural(invites.expiring_soon, __('1 invite expires within a day'), '{0} invites expire within a day'),
+			description: __('Extend them if the people have not had a chance to accept.'),
+			action: __('Review'),
+			to: { name: 'mail-invites' },
+		})
+	}
+	const disabled = data.value?.members?.disabled
+	if (disabled) {
+		items.push({
+			key: 'accounts:disabled',
+			icon: UserX,
+			tone: 'gray',
+			title: plural(disabled, __('1 disabled account'), '{0} disabled accounts'),
+			description: __('They cannot sign in; their mail is kept.'),
+			action: __('Review'),
+			to: { name: 'mail-accounts' },
+		})
+	}
+	if ((storagePercent.value ?? 0) >= 80) {
+		items.push({
+			key: 'storage',
+			icon: HardDrive,
+			tone: 'amber',
+			title: __('Storage is {0}% allocated', [String(storagePercent.value)]),
+			description: __('New accounts will be refused once the site quota is fully allocated.'),
+			action: __('Review'),
+			to: { name: 'mail-accounts' },
+		})
+	}
+	return items
+})
 
 const QUICK_ACTIONS = [
-	{
-		label: __('Add a domain'),
-		description: __('Connect a domain and set up its DNS records.'),
-		icon: Globe,
-		to: { name: 'mail-domains' },
-	},
 	{
 		label: __('Add an account'),
 		description: __('Give someone a mailbox on your domains.'),
 		icon: UserPlus,
 		to: { name: 'mail-accounts' },
+	},
+	{
+		label: __('Add a domain'),
+		description: __('Connect a domain and set up its DNS.'),
+		icon: Globe,
+		to: { name: 'mail-domains' },
+	},
+	{
+		label: __('Add a group'),
+		description: __('A shared address for a team.'),
+		icon: UsersRound,
+		to: { name: 'mail-groups' },
+	},
+	{
+		label: __('Add a mailing list'),
+		description: __('Broadcast mail to many recipients.'),
+		icon: Megaphone,
+		to: { name: 'mail-mailing-lists' },
 	},
 ]
 </script>
