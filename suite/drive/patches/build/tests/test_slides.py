@@ -1077,8 +1077,69 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.issues_total, 1)
         self.assertEqual(
             result.issues[0].reason,
-            "media reference '/files/gone.png' matches no File row and no media node; was not adopted",
+            "media reference '/files/gone.png' matches no File row attached to a Presentation "
+            "and no media node; was not adopted",
         )
+
+    def test_empty_media_references_are_not_reported(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-a",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "", "poster": "   "}]),
+                    "",
+                )
+            ],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.media_references_missing_file_rows, 0)
+        self.assertEqual(result.issues, [])
+
+    def test_a_bare_hex_colour_is_not_reported_as_media(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-a", "deck-1", 1, "[]", "ffffff")],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.media_references_missing_file_rows, 0)
+        self.assertEqual(result.issues, [])
+
+    def test_a_hash_prefixed_colour_is_still_not_reported_as_media(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-a", "deck-1", 1, "[]", "#ffffff")],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.media_references_missing_file_rows, 0)
+        self.assertEqual(result.issues, [])
+
+    def test_a_ten_character_hex_reference_is_not_treated_as_a_colour(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-a", "deck-1", 1, json.dumps([{"src": "abcdef1234"}]))],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.media_references_missing_file_rows, 1)
+        self.assertEqual(result.issues_total, 1)
 
     def test_a_second_slides_run_clears_only_its_own_evidence(self):
         """The three phases share one record, so a rerun may drop only its rows."""
