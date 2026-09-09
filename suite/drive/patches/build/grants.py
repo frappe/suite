@@ -24,7 +24,15 @@ grant at the mapped level. That is a real change for the owner, whose old
 "anyone with the link" URL no longer works, which is why `links_minted` is
 the one counter §14.9 calls out as something owners must be told about.
 
-Nothing here deletes a legacy row. `LegacyTree` has no method that could.
+One legacy row does not survive: the Sheet `DocShare` it just rewrote.
+§5.13's read guards fail closed on a share for a governed doctype, so an
+`everyone = 1` row refuses the whole Sheet list for every non-admin, and
+`framework.validate_content_registry` refuses the migration while any
+governed doctype still carries one. Keeping them until Cleanup (§14.10) is
+not available. The row's full column set is journaled and fsynced first
+(`docshare_journal`), so §14.11 can put it back, and the delete lands in
+the same commit as the grant it produced. `LegacyTree` is still reads only;
+the delete goes through `DriveTarget`.
 """
 
 from suite.drive._core.roles import NONE, READ
@@ -289,12 +297,25 @@ def _convert_docshares(env, grants: GrantConversion, nodes, batch, batch_size: i
         for row in rows:
             grants.docshare_rows_seen += 1
             _convert_docshare(env, grants, nodes, batch, row)
+            # At the row boundary, never inside one: the grant and the
+            # removal of the row it came from have to land in one commit,
+            # or a kill between them loses the grant and the source both.
+            batch.flush_if_full()
         after = rows[-1].name
         if len(rows) < batch_size:
             return
 
 
 def _convert_docshare(env, grants: GrantConversion, nodes, batch, row) -> None:
+    """Map one row, then stage its removal whatever the mapping decided.
+
+    Every arm below is terminal for the legacy row: it has become a grant,
+    or it decided nothing anybody can act on. §5.13's read guards fail
+    closed on a surviving row and `validate_content_registry` refuses the
+    migration while one is left, so the row goes in the same commit as the
+    grant it produced. `batch.remove_docshare` journals the preimage first.
+    """
+    batch.remove_docshare(row)
     entity = nodes.sheet_entity(row.share_name)
     node = nodes.get(entity) if entity else None
     if node is None:
@@ -460,6 +481,7 @@ class _Batch:
         self.size = size
         self.pending: dict[tuple[str, str], int] = {}
         self.links: set[str] = set()
+        self.docshares: list[dict] = []
 
     def has_link(self, node: str) -> bool:
         """Whether this run already minted for `node` and has not flushed yet."""
@@ -473,8 +495,20 @@ class _Batch:
         if len(self.pending) >= self.size:
             self.flush()
 
+    def remove_docshare(self, row) -> None:
+        """Stage one legacy row's removal. Never flushes by itself.
+
+        The caller stages the grant this row produced after this returns, so
+        a flush here would publish a delete whose grant is not written yet.
+        `flush_if_full` is what bounds the list, at the row boundary."""
+        self.docshares.append(row.preimage())
+
+    def flush_if_full(self) -> None:
+        if len(self.pending) >= self.size or len(self.docshares) >= self.size:
+            self.flush()
+
     def flush(self) -> None:
-        if not self.pending:
+        if not self.pending and not self.docshares:
             return
         link_nodes = sorted(self.links)
         if link_nodes:
@@ -507,9 +541,27 @@ class _Batch:
 
         self.env.drive.insert_grants(fresh)
         self.grants.grants_written += len(fresh)
+        self._delete_docshares()
         self.env.drive.commit()
         if link_nodes:
             self.grants.finish_links(link_nodes)
         self.env.state.put_grants(self.grants)
         self.pending = {}
         self.links = set()
+        self.docshares = []
+
+    def _delete_docshares(self) -> None:
+        """Journal each row durably, then delete it, inside this commit.
+
+        The journal is the write-ahead side: the preimage is fsynced before
+        the `DELETE`, so §14.11 can restore a row whatever the run does
+        next. A kill before the commit rolls the deletes back and leaves a
+        published preimage, which the rerun re-reads and reuses.
+        """
+        journal = self.env.docshare_journal
+        if journal is None:
+            raise RuntimeError("Build has no DocShare journal, but step 6 deletes rewritten rows")
+        for row in self.docshares:
+            journal.append(row, created_at=self.env.now())
+            self.env.drive.delete_docshare(row["name"])
+            self.grants.docshare_rows_deleted += 1

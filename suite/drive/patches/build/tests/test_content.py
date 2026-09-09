@@ -8,6 +8,7 @@ from unittest import mock
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive.patches.build import content as content_module
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
 from suite.drive.patches.build.mapping import GENERAL
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -787,7 +788,104 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(target.grant_roles("file-1", (GENERAL,))[GENERAL], MANAGE)
         self.assertEqual(target.grant_roles("version-node", ("reader@example.com",)), {})
         self.assertEqual(result.docshare_rows_dropped, 2)
-        self.assertEqual(len(source.share_rows), 4)
+        # §5.13: every row this walk read is terminal, mapped or dropped, and
+        # a surviving one refuses the list it sits on for every non-admin.
+        self.assertEqual(result.docshare_rows_deleted, 4)
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(sorted(target.docshares_deleted), ["share-1", "share-2", "share-3", "share-4"])
+        self.assertEqual(env.docshare_journal.preimage("share-4"), shares[3].preimage())
+
+    def test_a_rerun_finds_no_governed_share_left_and_counts_none(self):
+        """Data-derived: the second pass reads one empty page and stops."""
+        row = document("Writer Document", "writer-1")
+        share = ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1)
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+
+        first = link_content_documents(env)
+        self.assertEqual(first.docshare_rows_deleted, 1)
+
+        second = link_content_documents(env)
+
+        self.assertEqual(second.docshare_rows_deleted, 0)
+        self.assertEqual(target.docshares_deleted, ["share-1"])
+        self.assertEqual(target.grant_roles("file-1", ("reader@example.com",))["reader@example.com"], READ)
+
+    def test_a_completed_record_still_deletes_a_row_that_is_still_there(self):
+        """§14.2 lets a rerun skip a complete record; this work is not skipped.
+
+        Step 10 has no `completed` short circuit, and `run_build` calls it on
+        every pass, so a site whose Build finished before the delete existed
+        loses its leftover rows on the next migrate.
+        """
+        row = document("Writer Document", "writer-1", node="file-1")
+        share = ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1)
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+        state = env.state.content()
+        state.completed = True
+        state.links_completed = True
+        state.history_completed = True
+        env.state.put_content(state)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.docshare_rows_deleted, 1)
+        self.assertEqual(source.share_rows, [])
+
+    def test_the_preimage_is_published_before_the_row_is_deleted(self):
+        """§14.11 restores the row from the journal, so the file comes first."""
+        row = document("Writer Document", "writer-1")
+        share = ContentShareRow(
+            "share-1",
+            row.doctype,
+            row.name,
+            user="reader@example.com",
+            read=1,
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        journal = DocSharePreimageJournal(self.path / "docshare-preimages")
+        env, target = self.environment(source)
+        env.docshare_journal = journal
+        add_document_node(target, "file-1", row)
+
+        order = []
+
+        def journaling(payload, *, created_at):
+            order.append(("journal", payload["name"]))
+            return DocSharePreimageJournal.append(journal, payload, created_at=created_at)
+
+        def deleting(name):
+            order.append(("delete", name))
+            return FakeContentTarget.delete_docshare(target, name)
+
+        with mock.patch.object(journal, "append", journaling):
+            with mock.patch.object(target, "delete_docshare", deleting):
+                link_content_documents(env)
+
+        self.assertEqual(order, [("journal", "share-1"), ("delete", "share-1")])
+        self.assertEqual(journal.restore_plan(), (share.preimage(),))
 
     def test_a_whole_share_batch_costs_one_grant_read(self):
         """A site with 200k content shares must not issue 200k round trips."""

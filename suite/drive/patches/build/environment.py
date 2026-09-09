@@ -65,6 +65,9 @@ class BuildEnvironment:
     content: LegacyContent | None = None
     content_target: ContentTarget | None = None
     slide_journal: object | None = None
+    # §14.11's rollback evidence for the legacy `DocShare` rows steps 6 and
+    # 10 delete once they have rewritten them as grants.
+    docshare_journal: object | None = None
     # Steps 9, 11, and 12. Optional for the same reason: a test of one step
     # builds only the ports that step reads.
     records: LegacyRecords | None = None
@@ -81,6 +84,7 @@ class BuildEnvironment:
 
     @classmethod
     def for_site(cls) -> BuildEnvironment:
+        from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
         from suite.drive.patches.build.ports import (
             BotoBucket,
             SiteContentSource,
@@ -111,6 +115,7 @@ class BuildEnvironment:
             content=SiteContentSource(),
             content_target=SiteContentTarget(),
             slide_journal=SlidePreimageJournal.for_site(),
+            docshare_journal=DocSharePreimageJournal.for_site(),
             records=SiteRecords(),
             records_target=SiteRecordsTarget(),
             settings=SiteSettings(),

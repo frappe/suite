@@ -85,7 +85,9 @@ def _full_environment(tmp_path):
             },
         },
     )
-    content = FakeContent(docshares=2, ycomments=1, sheets_with_comments=3)
+    # Build deleted the governed `DocShare` rows, so Cleanup only verifies
+    # they are gone. A site that still had one never ran that Build.
+    content = FakeContent(docshares=(), ycomments=1, sheets_with_comments=3)
     thumbnails = FakeThumbnails(existing={"a", "trash", "unrelated-home-file"})
     return cleanup_environment(
         tmp_path,
@@ -126,13 +128,13 @@ class TestFullOrderedRun(unittest.TestCase):
         self.assertEqual(env.schema.columns["Drive Notification"], {"activity", "to_user", "read"})
 
         # Step 4: history doctypes gone, `Writer Document.versions` dropped
-        # before them, docshares/ycomments/sheet-comments all cleared.
+        # before them, no governed share left, ycomments/sheet-comments cleared.
         for path in RETAINED_DOCTYPES_STEP_4:
             self.assertNotIn(path, env.schema.doctypes)
         # (Preflight also probes this port with a no-op `("", "")` call
         # before phase 1 ever runs, so check membership, not exact equality.)
         self.assertIn(("Writer Document", "versions"), env.schema.dropped_child_table_fields)
-        self.assertEqual(env.content.docshares, 0)
+        self.assertEqual(env.content.docshares, frozenset())
         self.assertEqual(env.content.ycomments, 0)
         self.assertEqual(env.content.sheets_with_comments, 0)
 

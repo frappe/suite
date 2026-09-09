@@ -71,7 +71,6 @@ class PhaseResult:
     doctypes_dropped: int = 0
     columns_dropped: int = 0
     single_values_dropped: int = 0
-    docshares_deleted: int = 0
     ycomments_cleared: int = 0
     sheet_comments_stripped: int = 0
     forwarders_removed: int = 0
