@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 from suite.drive.patches.cleanup.readiness import PortNotReadyError, run_preflight
 from suite.drive.patches.cleanup.tests.fakes import (
+    FakeNotificationWriterReadiness,
     FakeSourceSchema,
     FakeThumbnails,
     RaisingS3,
@@ -63,6 +64,42 @@ class TestRunPreflightS3(unittest.TestCase):
         env = cleanup_environment(self.path, s3=RaisingS3())
         seed_snapshot(env)  # DEFAULT_DISK_SETTINGS: enabled=False
         run_preflight(env)  # must not raise
+
+
+class TestRunPreflightNotificationWriters(unittest.TestCase):
+    """Finding: §14.10 step 3 drops the six legacy notification columns and
+    makes `activity` required in the same phase, but nothing checked
+    whether the two writers Ticket 30's addendum named had actually stopped
+    building a row naming those columns, or one with no `activity` set —
+    a defect a doctype-JSON readiness check cannot see, since both writers
+    build their document entirely at the Python call site."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+
+    def test_an_unready_writer_refuses_before_any_phase_runs(self):
+        env = cleanup_environment(
+            self.path,
+            notification_writers=FakeNotificationWriterReadiness({"notifications.create_notification"}),
+        )
+        with self.assertRaises(PortNotReadyError):
+            run_preflight(env)
+
+    def test_fully_ready_writers_do_not_refuse(self):
+        env = cleanup_environment(self.path)  # default: fully ready
+        run_preflight(env)  # must not raise
+
+    def test_runs_before_the_s3_probe(self):
+        env = cleanup_environment(
+            self.path,
+            notification_writers=FakeNotificationWriterReadiness({"DriveUserInvitation.after_insert"}),
+            s3=RaisingS3(),
+        )
+        seed_snapshot(env, enabled=True, root_folder="team")
+        with self.assertRaises(PortNotReadyError):
+            run_preflight(env)
 
 
 class TestRunPreflightSourceSchema(unittest.TestCase):

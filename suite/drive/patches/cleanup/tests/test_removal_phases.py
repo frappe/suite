@@ -6,7 +6,10 @@ from tempfile import TemporaryDirectory
 
 from suite.drive.patches.cleanup.ports import REMOVED
 from suite.drive.patches.cleanup.removal import (
+    NOTIFICATION_LEGACY_COLUMNS,
+    RETAINED_DOCTYPES_STEP_3,
     RETAINED_DOCTYPES_STEP_4,
+    RETAINED_FILE_CUSTOM_FIELDS,
     CleanupPatchError,
     collect_drive_owned_names,
     phase_content_fields,
@@ -20,12 +23,14 @@ from suite.drive.patches.cleanup.removal import (
     refuse_dangerous_prefix,
 )
 from suite.drive.patches.cleanup.tests.fakes import (
+    CrashingSchema,
     FakeContent,
     FakeFileTable,
     FakeForwarders,
     FakeS3,
     FakeSchema,
     FakeThumbnails,
+    RaisingPresenceSchema,
     cleanup_environment,
     seed_snapshot,
 )
@@ -173,6 +178,31 @@ class TestPhaseCustomFields(unittest.TestCase):
         self.assertEqual(schema.custom_fields, {"unrelated_field"})
         self.assertEqual(schema.property_setters, {("File", "is_folder", "hidden")})
 
+    def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
+        # Finding: an earlier attempt already removed 5 of the 7 custom
+        # fields and 2 of the 3 property setters before it was interrupted.
+        # This call must not treat "this call only removed 2 of 7" as a
+        # partial-removal error; it must verify every named target is gone
+        # by the end of it, regardless of who removed the rest.
+        schema = FakeSchema(
+            custom_fields={"content_docname", "column_break_tapww"},
+            property_setters={("File", "folder", "depends_on")},
+        )
+        result = phase_custom_fields(cleanup_environment(self.path, schema=schema))
+        self.assertEqual(result.fields_dropped, 2)
+        self.assertEqual(result.property_setters_dropped, 1)
+        self.assertEqual(schema.custom_fields, set())
+        self.assertEqual(schema.property_setters, set())
+
+    def test_a_target_still_present_after_the_drop_call_refuses(self):
+        class StuckSchema(FakeSchema):
+            def custom_fields_present(self, fieldnames):
+                return frozenset({"mime_type"})
+
+        schema = StuckSchema(custom_fields=set(RETAINED_FILE_CUSTOM_FIELDS))
+        with self.assertRaises(CleanupPatchError):
+            phase_custom_fields(cleanup_environment(self.path, schema=schema))
+
 
 class TestPhaseLegacyDoctypes(unittest.TestCase):
     def setUp(self):
@@ -209,6 +239,53 @@ class TestPhaseLegacyDoctypes(unittest.TestCase):
         self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
         self.assertIn(("Drive Notification", "activity"), schema.required_fields)
 
+    def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
+        # Finding: an earlier attempt already dropped 2 of the 3 step-3
+        # doctypes and 4 of the 6 notification columns before it was
+        # interrupted — each `drop_doctypes`/`drop_columns` call is its own
+        # MariaDB-committed DDL, so this is a legitimate partial state, not
+        # corruption. The old all-or-nothing count check would refuse this
+        # resume outright; verifying presence directly must not.
+        schema = FakeSchema(
+            doctypes={"drive/doctype/drive_token"},
+            columns={"Drive Notification": {"activity", "to_user", "read", "from_user", "type"}},
+        )
+        result = phase_legacy_doctypes(cleanup_environment(self.path, schema=schema))
+        self.assertEqual(result.doctypes_dropped, 1)
+        self.assertEqual(result.columns_dropped, 2)
+        self.assertNotIn("drive/doctype/drive_token", schema.doctypes)
+        self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
+
+    def test_a_crash_between_doctypes_and_columns_resumes_to_completion(self):
+        schema = CrashingSchema(
+            crash_after="drop_doctypes",
+            doctypes=set(RETAINED_DOCTYPES_STEP_3),
+            columns={"Drive Notification": {"activity", "to_user", "read", *NOTIFICATION_LEGACY_COLUMNS}},
+        )
+        env = cleanup_environment(self.path, schema=schema)
+        with self.assertRaises(RuntimeError):
+            phase_legacy_doctypes(env)
+        # The doctype drop already landed for real; the crash only stopped
+        # this call before the column drop.
+        self.assertEqual(schema.doctypes, set())
+        self.assertEqual(
+            schema.columns["Drive Notification"],
+            {"activity", "to_user", "read", *NOTIFICATION_LEGACY_COLUMNS},
+        )
+
+        result = phase_legacy_doctypes(env)  # resume
+        self.assertTrue(result.completed)
+        self.assertEqual(result.doctypes_dropped, 0)  # already gone; this call did none of it
+        self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
+
+    def test_a_target_still_present_after_the_column_drop_refuses(self):
+        schema = RaisingPresenceSchema(
+            doctypes=set(RETAINED_DOCTYPES_STEP_3),
+            columns={"Drive Notification": {"activity", "to_user", "read", *NOTIFICATION_LEGACY_COLUMNS}},
+        )
+        with self.assertRaises(RuntimeError):
+            phase_legacy_doctypes(cleanup_environment(self.path, schema=schema))
+
 
 class TestPhaseContentHistory(unittest.TestCase):
     def setUp(self):
@@ -241,6 +318,13 @@ class TestPhaseContentHistory(unittest.TestCase):
         self.assertEqual(schema.dropped_child_table_fields, [("Writer Document", "versions")])
         # `drop_doctypes` (including `writer_doc_version`) runs after, per
         # the same `FakeSchema` — the ordering the docstring requires.
+
+    def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
+        # An earlier attempt already dropped 3 of the 4 step-4 doctypes.
+        schema = FakeSchema(doctypes={"sheets/doctype/sheet_snapshot"})
+        result = phase_content_history(cleanup_environment(self.path, schema=schema))
+        self.assertEqual(result.doctypes_dropped, 1)
+        self.assertEqual(schema.doctypes, set())
 
 
 class TestPhaseContentFields(unittest.TestCase):
@@ -285,6 +369,65 @@ class TestPhaseContentFields(unittest.TestCase):
         self.assertNotIn("Drive Disk Settings", schema.columns)
         self.assertEqual(result.columns_dropped, 1 + 4 + 2 + 1)
         self.assertEqual(result.single_values_dropped, 10)
+
+    def test_a_partial_pre_state_across_columns_and_singles_completes_cleanly(self):
+        # An earlier interrupted attempt already dropped Presentation's
+        # title, two of Sheet's four columns, and 6 of the 10 Single values.
+        schema = FakeSchema(
+            columns={
+                "Presentation": {"body"},
+                "Sheet": {"trashed", "trashed_on", "sheets_data"},
+                "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
+                "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+            },
+            singles={"Drive Disk Settings": {"quota", "root_folder", "thumbnail_prefix", "flat"}},
+        )
+        result = phase_content_fields(cleanup_environment(self.path, schema=schema))
+        self.assertTrue(result.completed)
+        self.assertEqual(schema.columns["Presentation"], {"body"})
+        self.assertEqual(schema.columns["Sheet"], {"sheets_data"})
+        self.assertEqual(schema.singles["Drive Disk Settings"], set())
+
+    def test_a_crash_between_the_column_loop_and_the_singles_loop_resumes_to_completion(self):
+        schema = CrashingSchema(
+            crash_after="drop_columns:Drive Storage Reservation",
+            columns={
+                "Presentation": {"title", "body"},
+                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
+                "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
+                "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+            },
+            singles={
+                "Drive Disk Settings": {
+                    "quota",
+                    "root_folder",
+                    "thumbnail_prefix",
+                    "flat",
+                    "enabled",
+                    "bucket",
+                    "aws_key",
+                    "aws_secret",
+                    "endpoint_url",
+                    "signature_version",
+                },
+            },
+        )
+        env = cleanup_environment(self.path, schema=schema)
+        with self.assertRaises(RuntimeError):
+            phase_content_fields(env)
+        # Every column drop before the crash point already landed for real;
+        # the singles loop never started.
+        self.assertEqual(schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
+        self.assertEqual(len(schema.singles["Drive Disk Settings"]), 10)
+
+        result = phase_content_fields(env)  # resume
+        self.assertTrue(result.completed)
+        self.assertEqual(schema.singles["Drive Disk Settings"], set())
+
+    def test_a_target_still_present_after_a_column_drop_refuses(self):
+        schema = RaisingPresenceSchema(columns={"Presentation": {"title", "body"}})
+        with self.assertRaises(RuntimeError):
+            phase_content_fields(cleanup_environment(self.path, schema=schema))
 
 
 class TestPhaseLegacyApi(unittest.TestCase):
@@ -405,7 +548,7 @@ class TestPhaseS3Prefix(unittest.TestCase):
         seed_snapshot(env, enabled=True, root_folder="team")
         result = phase_s3_prefix(env)
         self.assertEqual(s3.enqueued, [])
-        self.assertIsNone(result.job_id)
+        self.assertEqual(result.job_ids, [])
 
     def test_a_reference_created_between_listing_and_the_recheck_survives(self):
         """The re-reference race: a new blob claims a legacy key right as
@@ -448,6 +591,60 @@ class TestPhaseS3Prefix(unittest.TestCase):
         seed_snapshot(env, enabled=True, root_folder="private")
         with self.assertRaises(CleanupPatchError):
             phase_s3_prefix(env)
+
+    def test_every_call_stays_within_batch_size_across_multiple_pages(self):
+        # Finding: the old phase accumulated every key from every listing
+        # page into one list, then made one `blob_references` call and one
+        # `enqueue_delete` call sized by however many legacy keys the whole
+        # prefix held. 7 keys with `batch_size=2` forces 4 listing pages;
+        # every `blob_references`/`enqueue_delete` call must stay bounded by
+        # that same page, never by the total across all of them.
+        keys = [f"team/{i:02d}" for i in range(7)]
+        s3 = FakeS3(keys=keys, referenced_keys={"team/02", "team/05"})
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env, batch_size=2)
+
+        self.assertEqual(len(s3.list_prefix_calls), 4)  # 2+2+2+1
+        for call in s3.blob_reference_calls:
+            self.assertLessEqual(len(call), 2)
+        for enqueued in s3.enqueued:
+            self.assertLessEqual(len(enqueued), 2)
+        # Never one call spanning every key: at least as many calls as pages
+        # that actually held an unreferenced candidate.
+        self.assertGreater(len(s3.enqueued), 1)
+
+        # Totals across the bounded calls still add up correctly.
+        self.assertEqual(result.candidates_found, 7)
+        self.assertEqual(result.referenced_excluded, 2)
+        self.assertEqual(sum(len(batch) for batch in s3.enqueued), 5)
+        self.assertEqual(len(result.job_ids), len(s3.enqueued))
+        self.assertEqual(len(set(result.job_ids)), len(result.job_ids))  # every job id distinct
+
+    def test_a_page_wholly_referenced_is_recorded_but_enqueues_nothing_and_pagination_continues(self):
+        keys = ["team/a", "team/b", "team/c", "team/d"]
+        s3 = FakeS3(keys=keys, referenced_keys={"team/a", "team/b"})
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env, batch_size=2)
+
+        self.assertEqual(result.candidates_found, 4)
+        self.assertEqual(result.referenced_excluded, 2)
+        self.assertEqual(s3.enqueued, [("team/c", "team/d")])  # only the second page enqueued
+        self.assertEqual(len(result.job_ids), 1)
+
+    def test_a_duplicate_key_within_one_page_is_not_double_counted_or_double_enqueued(self):
+        class DuplicatingS3(FakeS3):
+            def list_prefix(self, prefix, after, limit):
+                page = super().list_prefix(prefix, after, limit)
+                return list(page) + list(page[-1:]) if page else page
+
+        s3 = DuplicatingS3(keys=["team/a", "team/b"])
+        env = cleanup_environment(self.path, s3=s3)
+        seed_snapshot(env, enabled=True, root_folder="team")
+        result = phase_s3_prefix(env, batch_size=10)
+        self.assertEqual(result.candidates_found, 2)
+        self.assertEqual(s3.enqueued, [("team/a", "team/b")])
 
 
 if __name__ == "__main__":

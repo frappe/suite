@@ -236,6 +236,25 @@ class FakeSchema:
     def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
         self.removed_permission_hooks.append(tuple(doctypes))
 
+    def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        return frozenset(name for name in fieldnames if name in self.custom_fields)
+
+    def property_setters_present(
+        self, keys: tuple[tuple[str, str, str], ...]
+    ) -> frozenset[tuple[str, str, str]]:
+        return frozenset(key for key in keys if key in self.property_setters)
+
+    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
+        return frozenset(path for path in dotted_paths if path in self.doctypes)
+
+    def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        held = self.columns.get(doctype, set())
+        return frozenset(name for name in fieldnames if name in held)
+
+    def single_values_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        held = self.singles.get(doctype, set())
+        return frozenset(name for name in fieldnames if name in held)
+
 
 class RaisingSchema(FakeSchema):
     """A `SchemaGateway` whose source-edit ports raise, like the real one does."""
@@ -245,6 +264,59 @@ class RaisingSchema(FakeSchema):
 
     def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
         raise NotImplementedError("fixture: remove_permission_hooks is not implemented")
+
+
+class CrashingSchema(FakeSchema):
+    """A `SchemaGateway` that raises right after one named call, modeling a
+    real phase's DDL-driven partial application: the mutation before the
+    crash point already landed in `self` (each `drop_*` call above commits
+    its own change immediately, exactly like MariaDB's DDL auto-commit), and
+    only what comes after it is missing when a resumed call re-checks
+    presence. `crash_after` fires once: a resumed call (the same instance,
+    called again) runs every method normally.
+    """
+
+    def __init__(self, *, crash_after: str, **kwargs):
+        super().__init__(**kwargs)
+        self.crash_after = crash_after
+
+    def _maybe_crash(self, name: str) -> None:
+        if self.crash_after == name:
+            self.crash_after = None
+            raise RuntimeError(f"simulated crash right after {name}")
+
+    def drop_doctypes(self, dotted_paths: tuple[str, ...]) -> int:
+        result = super().drop_doctypes(dotted_paths)
+        self._maybe_crash("drop_doctypes")
+        return result
+
+    def drop_columns(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        result = super().drop_columns(doctype, fieldnames)
+        self._maybe_crash(f"drop_columns:{doctype}")
+        return result
+
+    def drop_single_values(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        result = super().drop_single_values(doctype, fieldnames)
+        self._maybe_crash(f"drop_single_values:{doctype}")
+        return result
+
+    def drop_custom_fields(self, fieldnames: tuple[str, ...]) -> int:
+        result = super().drop_custom_fields(fieldnames)
+        self._maybe_crash("drop_custom_fields")
+        return result
+
+
+class RaisingPresenceSchema(FakeSchema):
+    """A `SchemaGateway` whose presence checks raise, like a real database
+    error would, to prove a phase's fail-closed verification propagates
+    that instead of swallowing it."""
+
+    def __init__(self, *, error: Exception | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.error = error or RuntimeError("connection lost")
+
+    def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        raise self.error
 
 
 class FakeSourceSchema:
@@ -275,6 +347,23 @@ class FakeSourceSchema:
     def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
         self.permission_hooks_calls.append(tuple(doctypes))
         return frozenset(self.still_hooked & set(doctypes))
+
+
+class FakeNotificationWriterReadiness:
+    """`NotificationWriterReadiness` over a plain in-memory "still unready"
+    set. Defaults to empty: a fixture that never mentions this models a site
+    where Ticket 36 has already migrated both legacy writers, which is what
+    makes `readiness.run_preflight` pass by default in every existing test
+    that only cares about something else. Pass `still_unready` to model the
+    real, checked-in-source default instead (both writers, today)."""
+
+    def __init__(self, still_unready: set[str] | None = None):
+        self._still_unready = set(still_unready or ())
+        self.calls = 0
+
+    def still_unready(self) -> frozenset[str]:
+        self.calls += 1
+        return frozenset(self._still_unready)
 
 
 class FakeContent:
@@ -350,13 +439,17 @@ class FakeS3:
         self.keys = list(keys or [])
         self.referenced_keys = set(referenced_keys or ())
         self.enqueued: list[tuple[str, ...]] = []
+        self.blob_reference_calls: list[tuple[str, ...]] = []
+        self.list_prefix_calls: list[tuple[str, str, int]] = []
         self._job_seq = 0
 
     def list_prefix(self, prefix: str, after: str, limit: int) -> list[str]:
+        self.list_prefix_calls.append((prefix, after, limit))
         candidates = sorted(key for key in self.keys if key.startswith(prefix) and key > after)
         return candidates[:limit]
 
     def blob_references(self, keys: tuple[str, ...]) -> set[str]:
+        self.blob_reference_calls.append(tuple(keys))
         return {key for key in keys if key in self.referenced_keys}
 
     def enqueue_delete(self, keys: tuple[str, ...]) -> str:
@@ -399,6 +492,7 @@ def cleanup_environment(
     callers: FakeClientCallerEvidence | None = None,
     schema: FakeSchema | None = None,
     source_schema: FakeSourceSchema | None = None,
+    notification_writers: FakeNotificationWriterReadiness | None = None,
     content: FakeContent | None = None,
     thumbnails: FakeThumbnails | None = None,
     disk_settings: FakeDiskSettingsSnapshot | None = None,
@@ -418,6 +512,9 @@ def cleanup_environment(
         files=table,
         schema=schema if schema is not None else FakeSchema(),
         source_schema=source_schema if source_schema is not None else FakeSourceSchema(),
+        notification_writers=notification_writers
+        if notification_writers is not None
+        else FakeNotificationWriterReadiness(),
         content=content if content is not None else FakeContent(),
         thumbnails=thumbnails if thumbnails is not None else FakeThumbnails(),
         disk_settings=disk_settings if disk_settings is not None else FakeDiskSettingsSnapshot(),

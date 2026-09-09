@@ -31,6 +31,7 @@ def run_preflight(env) -> None:
     _probe_forwarders(env)
     _probe_schema_source_edits(env)
     _probe_source_schema_readiness(env)
+    _probe_notification_writer_readiness(env)
     _probe_s3_backed_phases(env)
 
 
@@ -85,6 +86,27 @@ def _probe_source_schema_readiness(env) -> None:
         raise PortNotReadyError(
             f"suite/hooks.py still names {sorted(hooked)} in permission_query_conditions/"
             "has_permission; Ticket 36 must remove those entries before Cleanup can run."
+        )
+
+
+def _probe_notification_writer_readiness(env) -> None:
+    """§14.10 step 3 drops `NOTIFICATION_LEGACY_COLUMNS` and makes
+    `Drive Notification.activity` required in the same phase. Ticket 30's
+    addendum named two writers (`suite.drive.api.notifications.
+    create_notification`, `DriveUserInvitation.after_insert`) that still
+    build a row naming those columns and setting no `activity` at all;
+    letting phase 3 run while either is still unmigrated would make the very
+    next call either resurrect a dropped column as an undeclared attribute
+    or fail outright on the new mandatory-field check. Ticket 35 leaves both
+    writers unchanged, so this probe honestly refuses today, on every site,
+    until Ticket 36 migrates them.
+    """
+    unready = env.notification_writers.still_unready()
+    if unready:
+        raise PortNotReadyError(
+            f"{sorted(unready)} still build a Drive Notification row naming a step-3 dropped "
+            "column, or with no `activity` set; Ticket 36 must migrate these writers before "
+            "phase 3 can drop the legacy columns and require `activity`."
         )
 
 
