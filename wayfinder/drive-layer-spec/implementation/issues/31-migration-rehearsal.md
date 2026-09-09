@@ -224,9 +224,20 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Media bytes: 77 present, 0 missing (`pass13-media-bytes.txt`). Doctor: scheduler disabled and paused, 0 workers, maintenance mode on, guard keys 1, `Drive Disk Settings.enabled` 0, disk free 34 GB.
 - Artifacts: `pass13-restore.log`, `pass13-precondition.sql`, `pass13-precondition.log`, `pass13-preflight.tsv`, `pass13-migrate.log`, `pass13-migrate-clean.log`, `pass13-progress.tsv`, `pass13-report.json`, `pass13-state-final.json`, `pass13-counts.tsv`, `pass13-report-compare.md`, `pass13-media-bytes.txt`, `pass13-doctor.log`, `pass13-final-checks.tsv`, `pass13b-migrate.log`, `pass13b-counts.tsv`, `pass13b-counts-diff.txt`, `pass13-analysis.md`, `pass13-analysis-missing-refs.tsv`.
 
+### Build pass 14, run after the missing-media prefilter fix (2026-09-10, completed)
+
+- Fix 12 merged as c844f83bc (branch `forge/ticket-31-missing-media-prefilter`, commit 6377c483e, written by a codex agent): `_never_media` also excludes blank values and bare 3, 4, 6, or 8 hex-digit colours (10-character node ids stay resolvable), and the missing-media message now reads "matches no File row attached to a Presentation and no media node". 897 Build tests pass without a database.
+- Snapshot restored by `restore-prebuild.sh` from the session shell (exit 0, three PASS lines), `pass14-precondition.sql` (`enabled` 1 to 0), `bench clear-cache`, redis flushed. The codex run agent stopped polling mid-run; the migrate itself kept running under `setsid` and the orchestrator watched the log to its end.
+- Same migrate command on HEAD c844f83bc. Exit code 0, wall 24 min 2 s, Build `Success: Done in 1300.671s`, no traceback, hook passed. Pass 14b: exit code 0, wall 3 s, Build skipped, counts unchanged (`pass14b-counts.diff` empty).
+- Every table count equals pass 13 apart from the Patch Log row identity (`pass14-counts.diff` empty otherwise): Drive Node 18,948, Drive Grant 4,839, File Blob 27,559, DocShare 247 all User, NULL `node` 0, no whitespace principal, journals 50 and 2,791.
+- Report: 21 of 22 `REPORT_KEYS` counters equal pass 13; `versions_to_thin` 140,019 (time-based). `issues_by_phase` links 44, slides 298, history 2, templates 1; `issues_total` 345; `media_references_missing_file_rows` 179 (230 minus 50 blank values and 1 bare colour); one-shot counters intact (44, 44, 1, 49, 54, 84). No issue text contains an empty value or `ffffff`; all 179 missing-media messages carry the new wording. Grouped issue texts: 44 purged documents, 179 missing media references, 102 non-template media references, 17 missing thumbnails, 2 comment id collisions, 1 template adoption.
+- Two more one-shot counters found reset by the second content pass: `slide_elements_repaired` (mid-run 1, final 0; the repair of slide `29t9jfmql3` is a one-time body rewrite) and `template_nodes_adopted` (mid-run 1, final 0; deck `5dffeaaf6a` adopted once). Same defect class as fix 11. Fix 13 on branch `forge/ticket-31-oneshot-counters`; it changes no data.
+- Media bytes: 77 present, 0 missing, 142,517,717 bytes (`pass14-media-bytes.txt`). Doctor: scheduler disabled and paused, 0 workers, maintenance mode on, guard keys 1, `Drive Disk Settings.enabled` 0, disk free 34 GB.
+- Artifacts: `pass14-restore.log`, `pass14-precondition.sql`, `pass14-precondition.log`, `pass14-preflight.txt`, `pass14-migrate.log`, `pass14-migrate-clean.log`, `pass14-progress.tsv`, `pass14-report.json`, `pass14-state-final.json`, `pass14-counts.tsv`, `pass14-counts.diff`, `pass14-report-compare.md`, `pass14-media-bytes.txt`, `pass14-doctor.log`, `pass14-guard-keys.tsv`, `pass14b-migrate.log`, `pass14b-counts.tsv`, `pass14b-counts.diff`.
+
 ### Plan for the Build rerun
 
-- Pass 13 and 13b completed on e0796f96b with the same tables as pass 12. Next: merge fix 12, restore the snapshot, run pass 14 as the release-candidate run, then the acceptance ticks.
+- Pass 14 and 14b completed on c844f83bc with the same tables as pass 13. Next: merge fix 13, restore the snapshot, run pass 15 as the release-candidate run, then the acceptance ticks.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
