@@ -145,6 +145,7 @@ import { useRouter } from 'vue-router'
 import { Avatar, Badge, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
+import { formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
@@ -222,8 +223,7 @@ const limitSub = (limit: number | undefined) => (limit ? __('of {0}', [String(li
 // "1 disabled account" but "3 disabled accounts".
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : __(many, [String(n)]))
 
-const gb = (value: number | null | undefined) =>
-	value == null ? '—' : __('{0} GB', [String(Math.round(value * 10) / 10)])
+const gb = formatGb
 
 const storagePercent = computed(() => {
 	const storage = data.value?.storage

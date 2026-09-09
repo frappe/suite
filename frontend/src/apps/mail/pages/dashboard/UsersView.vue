@@ -141,7 +141,7 @@ import {
 	ListView,
 } from 'frappe-ui/experimental'
 
-import { raiseToast } from '@/apps/mail/utils'
+import { formatGb, raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
@@ -225,7 +225,7 @@ const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
 
 // The allotment only; usage would cost a cluster call per row and lives on the account page.
-const formatQuota = (gb?: number | null) => (gb == null ? '—' : __('{0} GB', [String(gb)]))
+const formatQuota = formatGb
 
 const LIST_COLUMNS = [
 	{ label: __('User'), key: 'user' },

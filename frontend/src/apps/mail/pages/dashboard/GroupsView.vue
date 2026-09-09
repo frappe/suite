@@ -32,7 +32,7 @@
 						<ListRowItem :item="item">
 							<span v-if="column.key === 'created_at'">{{ formatCreatedAt(item) }}</span>
 							<span v-else-if="column.key === 'quota_gb'" class="text-ink-gray-5 text-sm">
-								{{ item == null ? '—' : __('{0} GB', [String(item)]) }}
+								{{ formatGb(item) }}
 							</span>
 						</ListRowItem>
 					</ListRow>
@@ -62,6 +62,7 @@ import { FormControl, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
+import { formatGb } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
