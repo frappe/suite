@@ -129,7 +129,7 @@ def set_account_enabled(user: str, enabled: bool) -> None:
 def push_site_profile(**changes: str) -> None:
     """Sends the workspace name (as the site's title) and contact email to Suite Cloud.
 
-    Called from the Suite Settings save; a Suite Cloud that is unreachable or not configured must
+    Queued by the Suite Settings save; a Suite Cloud that is unreachable or not configured must
     not stop an admin from editing the settings, so failures are logged rather than raised.
     """
 

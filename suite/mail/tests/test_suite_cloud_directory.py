@@ -16,6 +16,13 @@ from suite.mail.tests.fake_suite_cloud import FakeSuiteCloud, fake_suite_cloud
 DOMAIN = "acme.test"
 
 
+_enqueue = frappe.enqueue
+
+
+def run_queued_job_now(method, **kwargs):
+    return _enqueue(method, **{**kwargs, "now": True, "enqueue_after_commit": False})
+
+
 class SuiteCloudTestCase(IntegrationTestCase):
     """Mail Settings point at a Suite Cloud, and every call lands on an in-memory fake."""
 
@@ -34,6 +41,10 @@ class SuiteCloudTestCase(IntegrationTestCase):
         self.fake: FakeSuiteCloud = self._fake_context.__enter__()
         self.fake.domains__create_domain(DOMAIN, description="Acme")
         self.fake.domains[DOMAIN]["is_verified"] = 1  # live: takes accounts, groups and lists
+        # Queued work runs at once: an after-commit hook never fires inside a rolled-back test.
+        enqueue = patch("frappe.enqueue", side_effect=run_queued_job_now)
+        enqueue.start()
+        self.addCleanup(enqueue.stop)
         frappe.set_user("Administrator")
 
     def tearDown(self) -> None:
