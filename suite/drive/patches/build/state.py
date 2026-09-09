@@ -391,6 +391,13 @@ class ContentConversion:
     slide_elements_repaired: int = 0
     deck_previews_created: int = 0
     template_nodes_created: int = 0
+    # Not in §14.9, and owned by the templates phase like the counter above
+    # it. §14.7's `template_nodes_created` counts the nodes step 8 mints under
+    # `Templates`. This counts the template decks that already had a §14.4
+    # node from a legacy `File` row and were flagged where they stand instead.
+    # A rerun meets the flag, the grant, and the link already written, so it
+    # counts none.
+    template_nodes_adopted: int = 0
     writer_templates_converted: int = 0
     blobless_nodes: int = 0
     title_renames: int = 0
