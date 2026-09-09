@@ -8,6 +8,7 @@ from unittest import mock
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive.patches.build import content as content_module
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
 from suite.drive.patches.build.mapping import GENERAL
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -16,6 +17,7 @@ from suite.drive.patches.build.ports import (
     TRASHED,
     ContentRow,
     ContentShareRow,
+    SheetSnapshotRow,
     TreeRow,
     WriterTemplateRow,
 )
@@ -225,9 +227,9 @@ class ContentTest(unittest.TestCase):
 
         self.assertEqual(result.orphan_content_docs_adopted, 0)
         self.assertEqual(target.node_rows, {})
-        self.assertIsNone(source.document_rows[(row.doctype, row.name)].node)
+        self.assertNotIn((row.doctype, row.name), source.document_rows)
 
-    def test_a_document_whose_only_file_is_removed_is_counted_and_listed(self):
+    def test_a_document_whose_only_file_is_removed_is_counted_listed_and_purged(self):
         rows = [
             document("Writer Document", "writer-1"),
             document("Sheet", "sheet-1"),
@@ -237,7 +239,7 @@ class ContentTest(unittest.TestCase):
             documents=rows,
             files=[file_for(row, f"file-{row.name}", REMOVED) for row in rows],
         )
-        env, _ = self.environment(source)
+        env, target = self.environment(source)
 
         result = link_content_documents(env)
 
@@ -250,27 +252,114 @@ class ContentTest(unittest.TestCase):
                 ("Writer Document", "writer-1", "file-writer-1"),
             ],
         )
-        self.assertEqual(result.issues, [])
+        # §5.13 has no "document without a node" state, so the row goes
+        # through the app's own `on_purge` rather than being left for
+        # `refuse_unlinked_documents` to stop the migration on.
+        self.assertEqual(result.removed_file_documents_purged, 3)
+        self.assertEqual(
+            sorted(target.purged_documents),
+            [("Presentation", "deck-1"), ("Sheet", "sheet-1"), ("Writer Document", "writer-1")],
+        )
+        self.assertEqual(source.document_rows, {})
+        self.assertEqual(
+            sorted((issue.source, issue.reason, issue.phase) for issue in result.issues),
+            [
+                ("Presentation:deck-1", "every File row is Removed; purged", "links"),
+                ("Sheet:sheet-1", "every File row is Removed; purged", "links"),
+                ("Writer Document:writer-1", "every File row is Removed; purged", "links"),
+            ],
+        )
         self.assertTrue(result.completed)
         # The report reads the record back out of the state file, so the
         # count and the list have to survive the round trip.
         stored = env.state.content()
         self.assertEqual(stored.removed_file_documents, 3)
+        self.assertEqual(stored.removed_file_documents_purged, 3)
         self.assertEqual(
             sorted(entry.file for entry in stored.removed_file_docs),
             ["file-deck-1", "file-sheet-1", "file-writer-1"],
         )
 
-    def test_the_removed_census_is_recomputed_by_a_rerun(self):
-        row = document("Sheet", "sheet-1")
-        source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
-        env, _ = self.environment(source)
+    def test_the_purge_takes_the_satellite_rows_with_the_document(self):
+        """§8.8: only the app can delete its own history and satellite rows.
 
-        link_content_documents(env)
+        A `Sheet Op Log` row left behind would fail
+        `refuse_unlinked_documents` on its own link field, and a
+        `Sheet Snapshot` row would still be there for the history step.
+        """
+        row = document("Sheet", "sheet-1")
+        snapshot = SheetSnapshotRow(
+            name="snap-1",
+            sheet="sheet-1",
+            seq=1,
+            kind="auto",
+            sheets_data="{}",
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+        )
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1", REMOVED)],
+            sheet_snapshots=[snapshot],
+        )
+        source.op_stamps[("sheet-1", 1)] = (OWNER, STAMP)
+        env, target = self.environment(source)
+
         result = link_content_documents(env)
 
-        self.assertEqual(result.removed_file_documents, 1)
-        self.assertEqual(len(result.removed_file_docs), 1)
+        self.assertEqual(result.removed_file_documents_purged, 1)
+        self.assertEqual(source.sheet_snapshot_rows, [])
+        self.assertEqual(source.op_stamps, {})
+        self.assertEqual(target.version_rows, {})
+
+    def test_a_document_with_one_live_file_among_removed_ones_is_still_refused(self):
+        """Only "every File row is Removed" is the purge. One live row is not."""
+        row = document("Sheet", "sheet-1")
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1", REMOVED), file_for(row, "file-2")],
+        )
+        env, target = self.environment(source)
+
+        with self.assertRaisesRegex(BuildContentError, "more than one File"):
+            link_content_documents(env)
+
+        self.assertEqual(target.purged_documents, [])
+
+    def test_a_document_with_no_file_row_stays_on_the_orphan_path(self):
+        """Zero File rows is an orphan §14.6 adopts, not a purge."""
+        row = document("Writer Document", "writer-1", title="Letter")
+        source = FakeContent(documents=[row], users={OWNER: True})
+        env, target = self.environment(source)
+        self.personal_root(target, "root-1")
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.orphan_content_docs_adopted, 1)
+        self.assertEqual(result.removed_file_documents_purged, 0)
+        self.assertEqual(target.purged_documents, [])
+        self.assertIn((row.doctype, row.name), source.document_rows)
+
+    def test_the_removed_census_and_the_purge_are_recomputed_by_a_rerun(self):
+        row = document("Sheet", "sheet-1")
+        source = FakeContent(documents=[row], files=[file_for(row, "file-1", REMOVED)])
+        env, target = self.environment(source)
+
+        first = link_content_documents(env)
+        self.assertEqual(first.removed_file_documents, 1)
+        self.assertEqual(first.removed_file_documents_purged, 1)
+
+        result = link_content_documents(env)
+
+        # The document is gone, so the second pass meets nothing: both
+        # counters recompute to zero rather than doubling, and the issue the
+        # first pass recorded is dropped with the rest of the phase's.
+        self.assertEqual(result.removed_file_documents, 0)
+        self.assertEqual(result.removed_file_docs, [])
+        self.assertEqual(result.removed_file_documents_purged, 0)
+        self.assertEqual(result.issues, [])
+        self.assertEqual(target.purged_documents, [("Sheet", "sheet-1")])
 
     # -- batching
 
@@ -787,7 +876,104 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(target.grant_roles("file-1", (GENERAL,))[GENERAL], MANAGE)
         self.assertEqual(target.grant_roles("version-node", ("reader@example.com",)), {})
         self.assertEqual(result.docshare_rows_dropped, 2)
-        self.assertEqual(len(source.share_rows), 4)
+        # §5.13: every row this walk read is terminal, mapped or dropped, and
+        # a surviving one refuses the list it sits on for every non-admin.
+        self.assertEqual(result.docshare_rows_deleted, 4)
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(sorted(target.docshares_deleted), ["share-1", "share-2", "share-3", "share-4"])
+        self.assertEqual(env.docshare_journal.preimage("share-4"), shares[3].preimage())
+
+    def test_a_rerun_finds_no_governed_share_left_and_counts_none(self):
+        """Data-derived: the second pass reads one empty page and stops."""
+        row = document("Writer Document", "writer-1")
+        share = ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1)
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+
+        first = link_content_documents(env)
+        self.assertEqual(first.docshare_rows_deleted, 1)
+
+        second = link_content_documents(env)
+
+        self.assertEqual(second.docshare_rows_deleted, 0)
+        self.assertEqual(target.docshares_deleted, ["share-1"])
+        self.assertEqual(target.grant_roles("file-1", ("reader@example.com",))["reader@example.com"], READ)
+
+    def test_a_completed_record_still_deletes_a_row_that_is_still_there(self):
+        """§14.2 lets a rerun skip a complete record; this work is not skipped.
+
+        Step 10 has no `completed` short circuit, and `run_build` calls it on
+        every pass, so a site whose Build finished before the delete existed
+        loses its leftover rows on the next migrate.
+        """
+        row = document("Writer Document", "writer-1", node="file-1")
+        share = ContentShareRow("share-1", row.doctype, row.name, user="reader@example.com", read=1)
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-1", row)
+        state = env.state.content()
+        state.completed = True
+        state.links_completed = True
+        state.history_completed = True
+        env.state.put_content(state)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(result.docshare_rows_deleted, 1)
+        self.assertEqual(source.share_rows, [])
+
+    def test_the_preimage_is_published_before_the_row_is_deleted(self):
+        """§14.11 restores the row from the journal, so the file comes first."""
+        row = document("Writer Document", "writer-1")
+        share = ContentShareRow(
+            "share-1",
+            row.doctype,
+            row.name,
+            user="reader@example.com",
+            read=1,
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=[share],
+            users={"reader@example.com": True},
+        )
+        journal = DocSharePreimageJournal(self.path / "docshare-preimages")
+        env, target = self.environment(source)
+        env.docshare_journal = journal
+        add_document_node(target, "file-1", row)
+
+        order = []
+
+        def journaling(payload, *, created_at):
+            order.append(("journal", payload["name"]))
+            return DocSharePreimageJournal.append(journal, payload, created_at=created_at)
+
+        def deleting(name):
+            order.append(("delete", name))
+            return FakeContentTarget.delete_docshare(target, name)
+
+        with mock.patch.object(journal, "append", journaling):
+            with mock.patch.object(target, "delete_docshare", deleting):
+                link_content_documents(env)
+
+        self.assertEqual(order, [("journal", "share-1"), ("delete", "share-1")])
+        self.assertEqual(journal.restore_plan(), (share.preimage(),))
 
     def test_a_whole_share_batch_costs_one_grant_read(self):
         """A site with 200k content shares must not issue 200k round trips."""

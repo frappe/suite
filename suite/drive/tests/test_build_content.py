@@ -36,6 +36,7 @@ from suite.drive.patches.build.content_mapping import (
     sheet_anchor,
     sheet_version_bytes,
 )
+from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.history import convert_history_and_comments
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
@@ -127,10 +128,14 @@ class BuildContentCase(IntegrationTestCase):
         self.journal = SlidePreimageJournal(
             Path(frappe.get_site_path("private", f"{self.prefix}-slide-preimages"))
         )
+        self.docshare_journal = DocSharePreimageJournal(
+            Path(frappe.get_site_path("private", f"{self.prefix}-docshare-preimages"))
+        )
         # Registered before the first write, and run even when the test or
         # `tearDown` raises. The database has the class rollback behind it;
-        # these two paths under `private/` have nothing.
+        # these paths under `private/` have nothing.
         self.addCleanup(shutil.rmtree, self.journal.root, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.docshare_journal.root, ignore_errors=True)
         self.addCleanup(self.state.path.unlink, missing_ok=True)
         self.state.put_tree(TreeConversion(completed=True))
         self.state.put_grants(GrantConversion(completed=True))
@@ -355,6 +360,7 @@ class BuildContentCase(IntegrationTestCase):
             content=SiteContentSource(self.prefix),
             content_target=target or SiteContentTarget(),
             slide_journal=self.journal,
+            docshare_journal=self.docshare_journal,
             clock=lambda: STAMP,
             make_id=self.gid,
         )
@@ -998,16 +1004,25 @@ class TestContentLinksAndSources(BuildContentCase):
         # least. A silent zero would make this test vacuous.
         self.assertGreaterEqual(checked, 10)
 
-    def test_sources_survive_except_slide_bodies_and_new_links(self):
-        """§16: only `node` links and journaled Slide bodies may change."""
+    def test_sources_survive_except_slide_bodies_new_links_and_docshares(self):
+        """§16: only `node` links, journaled Slide bodies, and shares may change.
+
+        The `DocShare` row is the one source row Build removes. §5.13's read
+        guards fail closed on a share for a governed doctype and
+        `framework.validate_content_registry` refuses the migration while
+        one is left, so it goes with the grant that replaced it, and its
+        full column set is published to the §14.11 journal first.
+        """
         fixture = self.full_fixture()
         deck = fixture["deck"]
         before = self.source_snapshot()
+        share_key = ("DocShare", self.prefix + "share")
+        self.assertIn(share_key, before)
 
         self.convert_all()
 
         after = self.source_snapshot()
-        self.assertEqual(sorted(after), sorted(before))
+        self.assertEqual(sorted(after), sorted(key for key in before if key != share_key))
         changed = {}
         for key, row in after.items():
             difference = {field: value for field, value in row.items() if before[key].get(field) != value}
@@ -1026,12 +1041,15 @@ class TestContentLinksAndSources(BuildContentCase):
             after[("Presentation", deck["docname"])]["modified"],
             before[("Presentation", deck["docname"])]["modified"],
         )
-        preserved = after[("DocShare", self.prefix + "share")]
-        self.assertEqual((preserved["read"], preserved["everyone"]), (1, 1))
         self.assertEqual(
             frappe.db.get_value("Drive Grant", {"node": fixture["writer"], "principal": GENERAL}, "role"),
             READ,
         )
+        journaled = {row["name"]: row for row in self.docshare_journal.restore_plan()}
+        restored = journaled[self.prefix + "share"]
+        self.assertEqual((restored["read"], restored["everyone"]), (1, 1))
+        self.assertEqual(restored["share_doctype"], "Writer Document")
+        self.assertEqual(restored["share_name"], self.prefix + "wdoc")
 
 
 class TestSlideMedia(BuildContentCase):

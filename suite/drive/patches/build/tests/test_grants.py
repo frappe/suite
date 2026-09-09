@@ -500,13 +500,18 @@ class DocShareTest(GrantCase):
         self.assertEqual(report.docshare_rows_dropped, 1)
         self.assertEqual(report.grant_rows_dropped["dead_principal"], 0)
 
-    def test_share_is_not_a_docshare_column_build_reads(self):
+    def test_share_is_carried_for_the_journal_and_ignored_by_the_mapping(self):
         """§14.5's DocShare table has no `share` row, and Sheets never wrote one.
 
-        `suite/sheets/api.py` passes `share=0`. The port does not read the
-        column at all, so a stray one on a site cannot raise anybody.
+        `suite/sheets/api.py` passes `share=0`. The mapping reads `read` and
+        `write` and nothing else, so a stray `share` on a site cannot raise
+        anybody. The column is still carried, because the row is deleted and
+        §14.11 restores it from the journal, not from the mapping.
         """
-        self.assertNotIn("share", DocShareRow.__dataclass_fields__)
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1, share=1)]
+        self.run_grants()
+        self.assertEqual(self.roles("sheetnode1"), {FRIEND: READ})
+        self.assertEqual(self.env.docshare_journal.preimage("d1")["share"], 1)
 
     def test_two_sources_on_one_pair_make_one_row(self):
         """`(node, principal)` is unique, so the higher of the two wins."""
@@ -838,15 +843,87 @@ class StallTest(GrantCase):
 
 
 class SourceTest(GrantCase):
-    """§14.2: Build preserves every migration source table."""
+    """§14.2: Build preserves every migration source table but one row kind."""
 
-    def test_the_legacy_rows_are_untouched(self):
+    def setUp(self):
+        super().setUp()
+        self.add_node("sheetnode1", PERSONAL_ROOT)
+        self.legacy.sheets["sheet-1"] = "sheetnode1"
+
+    def test_the_permission_rows_are_untouched(self):
         self.legacy.permissions_rows = [permission("p1", "doc0000001", FRIEND, read=1)]
-        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1)]
-        before = (list(self.legacy.permissions_rows), list(self.legacy.docshare_rows))
+        before = list(self.legacy.permissions_rows)
         self.run_grants()
-        self.assertEqual(self.legacy.permissions_rows, before[0])
-        self.assertEqual(self.legacy.docshare_rows, before[1])
+        self.assertEqual(self.legacy.permissions_rows, before)
+
+    def test_a_rewritten_docshare_is_journaled_and_then_deleted(self):
+        """§5.13: a share on a governed doctype fails every non-admin read.
+
+        The grant is written and the row that produced it goes, with its
+        full column set published first so §14.11 can put it back.
+        """
+        row = docshare("d1", "sheet-1", user=FRIEND, read=1, write=1, owner=OWNER)
+        self.legacy.docshare_rows = [row]
+
+        report = self.run_grants()
+
+        self.assertEqual(self.roles("sheetnode1"), {FRIEND: EDIT})
+        self.assertEqual(self.legacy.docshare_rows, [])
+        self.assertEqual(self.drive.docshares_deleted, ["d1"])
+        self.assertEqual(report.docshare_rows_deleted, 1)
+        self.assertEqual(self.env.docshare_journal.preimage("d1"), row.preimage())
+
+    def test_a_dropped_docshare_is_journaled_and_deleted_too(self):
+        """A row that decided nothing still refuses the list it sits on."""
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user="gone@example.com", read=1)]
+
+        report = self.run_grants()
+
+        self.assertEqual(report.docshare_rows_dropped, 1)
+        self.assertEqual(report.docshare_rows_deleted, 1)
+        self.assertEqual(self.legacy.docshare_rows, [])
+        self.assertIsNotNone(self.env.docshare_journal.preimage("d1"))
+
+    def test_a_rerun_finds_no_rows_left_and_counts_none(self):
+        """Data-derived, so the second pass is one empty page read."""
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1)]
+        first = self.run_grants()
+        self.assertEqual(first.docshare_rows_deleted, 1)
+
+        self.report = GrantConversion()
+        second = self.run_grants()
+
+        self.assertEqual(second.docshare_rows_seen, 0)
+        self.assertEqual(second.docshare_rows_deleted, 0)
+        self.assertEqual(self.roles("sheetnode1"), {FRIEND: READ})
+
+    def test_a_completed_record_still_deletes_a_row_that_is_still_there(self):
+        """§14.2 lets a rerun skip a complete record; this work is not skipped.
+
+        `run_build` calls step 6 on every pass and the loop is driven by the
+        rows themselves, so a site whose Build finished before the delete
+        existed still loses its leftover rows on the next migrate.
+        """
+        self.report.completed = True
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1)]
+
+        report = self.run_grants()
+
+        self.assertEqual(report.docshare_rows_deleted, 1)
+        self.assertEqual(self.legacy.docshare_rows, [])
+
+    def test_a_kill_before_the_commit_keeps_the_row_and_its_preimage(self):
+        """The journal is the write-ahead side; the delete is not published."""
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", user=FRIEND, read=1)]
+        self.drive.fail_pair = None
+        self.env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        self.drive.commit()
+        self.env.drive.delete_docshare("d1")
+        self.assertEqual(self.legacy.docshare_rows, [])
+
+        self.drive.rollback()
+
+        self.assertEqual([row.name for row in self.legacy.docshare_rows], ["d1"])
 
 
 if __name__ == "__main__":

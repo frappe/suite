@@ -18,6 +18,10 @@ import hashlib
 from copy import deepcopy
 from dataclasses import replace
 
+from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_values
+from suite.drive.patches.build.docshare_journal import (
+    JournalConflictError as DocShareJournalConflictError,
+)
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -308,6 +312,7 @@ def build_environment(
     content=None,
     content_target=None,
     slide_journal=None,
+    docshare_journal=None,
     records=None,
     records_target=None,
     settings=None,
@@ -331,6 +336,12 @@ def build_environment(
         tree = FakeTree(drive=drive)
     elif tree.drive is None:
         tree.drive = drive
+    # Both ways. `FakeTree` holds the `DocShare` rows and `FakeDrive` is the
+    # target that deletes one, so the target needs the source the way the
+    # site's two ports share one database.
+    if drive.tree is None:
+        drive.tree = tree
+        drive.committed_docshares = list(tree.docshare_rows)
     if content is None:
         content = FakeContent()
     if content_target is None:
@@ -339,6 +350,8 @@ def build_environment(
         content_target.content = content
     if slide_journal is None:
         slide_journal = FakeSlideJournal()
+    if docshare_journal is None:
+        docshare_journal = FakeDocShareJournal()
     if records is None:
         records = FakeRecords()
     if records_target is None:
@@ -366,6 +379,7 @@ def build_environment(
         content=content,
         content_target=content_target,
         slide_journal=slide_journal,
+        docshare_journal=docshare_journal,
         records=records,
         records_target=records_target,
         settings=settings,
@@ -502,6 +516,14 @@ class FakeDrive:
         self.fail_pair = None
         self.locked_root_identities = []
         self.root_identity_events = []
+        # The `DocShare` table lives on the `FakeTree` this target is paired
+        # with, the way the real one lives beside the `File` rows step 6
+        # reads. `build_environment` wires the pair both ways so a deleted
+        # row disappears from the source walk, which is what makes the
+        # rerun's "nothing left to convert" real rather than asserted.
+        self.tree = None
+        self.docshares_deleted = []
+        self.committed_docshares = None
 
     # -- reads
 
@@ -598,12 +620,21 @@ class FakeDrive:
                 return
         raise ValueError(f"no Drive Grant for {(node, principal)!r}")
 
+    def delete_docshare(self, name):
+        self.docshares_deleted.append(name)
+        if self.tree is not None:
+            self.tree.docshare_rows = [row for row in self.tree.docshare_rows if row.name != name]
+
     def commit(self):
         self.commits += 1
         self.committed = (dict(self.node_rows), dict(self.root_rows), dict(self.grant_rows))
+        if self.tree is not None:
+            self.committed_docshares = list(self.tree.docshare_rows)
 
     def rollback(self):
         self._restore(self.committed)
+        if self.tree is not None and self.committed_docshares is not None:
+            self.tree.docshare_rows = list(self.committed_docshares)
 
     def _restore(self, snapshot):
         """Put the rows back in place, without rebinding the dictionaries.
@@ -747,6 +778,24 @@ class FakeContent:
         """Register a content document another phase created on the site."""
         self.document_rows[(row.doctype, row.name)] = row
 
+    def purge_document(self, doctype, docname):
+        """Drop the document and every satellite row that points at it.
+
+        `Writer Document.on_trash` clears the `Writer Version` rows,
+        `suite.sheets.drive.on_purge` deletes the `Sheet Snapshot` and
+        `Sheet Op Log` rows before the sheet, and deleting a `Presentation`
+        takes its `Slide` child rows with it.
+        """
+        self.document_rows.pop((doctype, docname), None)
+        if doctype == "Writer Document":
+            self.writer_version_rows = [row for row in self.writer_version_rows if row.doc != docname]
+        elif doctype == "Sheet":
+            self.sheet_snapshot_rows = [row for row in self.sheet_snapshot_rows if row.sheet != docname]
+            self.op_stamps = {key: value for key, value in self.op_stamps.items() if key[0] != docname}
+        elif doctype == "Presentation":
+            self.slide_rows = {name: row for name, row in self.slide_rows.items() if row.parent != docname}
+            self.media_rows = [row for row in self.media_rows if row.deck != docname]
+
     def update_slides(self, rows):
         for row in rows:
             source = self.slide_rows[row["name"]]
@@ -777,6 +826,8 @@ class FakeContentTarget:
         self.thin_count = 0
         self.fail_unit = None
         self.locked_content_roots = []
+        self.docshares_deleted = []
+        self.purged_documents = []
 
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
@@ -952,6 +1003,20 @@ class FakeContentTarget:
                 raise ValueError(f"duplicate Drive Node Preview for {row['node']!r}")
             self.preview_rows[row["node"]] = dict(row)
 
+    def delete_docshare(self, name):
+        self.docshares_deleted.append(name)
+        self.content.share_rows = [row for row in self.content.share_rows if row.name != name]
+
+    def purge_content_document(self, doctype, docname):
+        """Delete what the app's registered `on_purge` deletes.
+
+        The callbacks themselves are site code. What this reproduces is
+        their effect on the source tables a later phase still reads: the
+        document row and every satellite that points at it.
+        """
+        self.purged_documents.append((doctype, docname))
+        self.content.purge_document(doctype, docname)
+
     def write_content_link(self, doctype, docname, node):
         self.content.link_document(doctype, docname, node)
 
@@ -1123,6 +1188,41 @@ class FakeSlideJournal:
                 raise UnknownBodyState(f"Slide {slide} does not match one journal boundary")
             total += sum(row[4] for row in chain[: matches[0]])
         return total
+
+
+class FakeDocShareJournal:
+    """A write-ahead `DocShare` journal held in memory.
+
+    It keeps the same shape the real one publishes on disk: one record per
+    `DocShare.name`, appending the same row twice is a no-op, and appending a
+    different row under a name that already has one is a conflict. Tests that
+    need the durability itself use `DocSharePreimageJournal` against a real
+    directory; this one is what every other phase test runs against.
+    """
+
+    def __init__(self):
+        self.records = {}
+        self.appended = []
+
+    def append(self, row, *, created_at):
+        values = row_values(row)
+        name = values[0]
+        stored = self.records.get(name)
+        if stored is not None and stored[0] != values:
+            raise DocShareJournalConflictError(f"DocShare {name} already has a different preimage")
+        self.appended.append(name)
+        if stored is None:
+            self.records[name] = (values, created_at)
+        return self.records[name]
+
+    def preimage(self, name):
+        stored = self.records.get(name)
+        return dict(zip(DOCSHARE_COLUMNS, stored[0], strict=True)) if stored else None
+
+    def restore_plan(self):
+        return tuple(
+            dict(zip(DOCSHARE_COLUMNS, self.records[name][0], strict=True)) for name in sorted(self.records)
+        )
 
 
 def _page_by_name(rows, after, limit):
