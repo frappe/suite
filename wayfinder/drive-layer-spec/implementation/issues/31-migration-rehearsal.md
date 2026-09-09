@@ -81,9 +81,19 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Rerun plan: merge the fix into forge/drive-layer, rerun the same migrate on the partial state. This doubles as the crash-rerun test (criterion 5): rename, model sync and both backfills are already committed, Build is resumable at batch boundaries.
 - Also seen: redis on 11006 held 3 keys and one queued job during the run, far from the 500 QueueOverloaded limit. `information_schema` row estimate for `tabWriter Version` was 15 percent under the real count.
 
+### Build pass 3, resume after the index fix (2026-09-09, failed on data)
+
+- Index fix merged as ded85af54 (`search_index` on `Writer Version.doc`, test in `test_ports.py`). A query inventory of every Build read found every Drive target table already indexed. Two legacy scans remain on `tabFile` (`content_doctype, content_docname` in `files_for_content` and `sheet_entity`; `folder` in `SiteTree.children`): full scans of 24,782 rows at about 6 ms each, under a minute total, left as is. Custom Fields and the framework `folder` column cannot be indexed from a DocType JSON; a patch with `ALTER TABLE` would be the fix if a larger site needs it.
+- Same migrate command on the partial state. Model sync created `doc_index` on `tabWriter Version` before Build ran. EXPLAIN on the history page query: `key doc_index, key_len 563, ref const`. One 500-row page with `snapshot`: 0.05 s, against 22 to 45 s before.
+- Build resumed at step 7 (storage, tree and grants phases stayed completed) and failed after 21 s: `BuildHistoryError: Writer Document:092fkc4phm: legacy File fd854f785f is Removed`, raised by `_document_node` in `history.py:295`. The tree phase skips Removed File rows (607 skipped), so the document has no node, and the history resolver raises instead of deferring.
+- Systematic, not one row: 109 content documents have a single legacy File row and it is Removed (Presentation 56, Sheet 18, Writer Document 35). `tabFile.status`: Active 24682, Removed 603, Trashed 50.
+- History writes are committed per document: `Drive Node Version` went 273 to 1023 before the failure, `Drive Comment` 266. Patch Log unchanged at 458, Build not recorded. No report JSON (written at the end of `run_build`).
+- Artifacts: `/home/faris/backups/suite-frappe/build/pass3-migrate.log`, `pass3-traceback.txt`, `drive-build-state-after-pass3-failure.json`.
+- Fix in progress on branch `forge/ticket-31-removed-content`: treat a content document whose only File is Removed as skipped, no node, counted and listed in the report.
+
 ### Plan for the Build rerun
 
-- Pass 1 and the storage_v2 setup are done above. Rerun: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
+- Pass 1, the storage_v2 setup, and the index fix are done above. After the Removed-content fix merges: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
