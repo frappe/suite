@@ -172,11 +172,13 @@ class FakeSchema:
         property_setters: set[tuple[str, str, str]] | None = None,
         doctypes: set[str] | None = None,
         columns: dict[str, set[str]] | None = None,
+        singles: dict[str, set[str]] | None = None,
     ):
         self.custom_fields = set(custom_fields or ())
         self.property_setters = set(property_setters or ())
         self.doctypes = set(doctypes or ())
         self.columns: dict[str, set[str]] = {k: set(v) for k, v in (columns or {}).items()}
+        self.singles: dict[str, set[str]] = {k: set(v) for k, v in (singles or {}).items()}
         self.required_fields: set[tuple[str, str]] = set()
         self.dropped_child_table_fields: list[tuple[str, str]] = []
         self.removed_permission_hooks: list[tuple[str, ...]] = []
@@ -215,6 +217,16 @@ class FakeSchema:
         self.columns[doctype] = held
         return dropped
 
+    def drop_single_values(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
+        held = self.singles.get(doctype, set())
+        dropped = 0
+        for fieldname in fieldnames:
+            if fieldname in held:
+                held.discard(fieldname)
+                dropped += 1
+        self.singles[doctype] = held
+        return dropped
+
     def require_field(self, doctype: str, fieldname: str) -> None:
         self.required_fields.add((doctype, fieldname))
 
@@ -233,6 +245,36 @@ class RaisingSchema(FakeSchema):
 
     def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
         raise NotImplementedError("fixture: remove_permission_hooks is not implemented")
+
+
+class FakeSourceSchema:
+    """`SourceSchemaReadiness` over plain in-memory sets.
+
+    Defaults to fully ready (nothing still declared, nothing still hooked):
+    a fixture that never mentions source-schema readiness models a site
+    where Ticket 36's source edits have already landed, which is what makes
+    `readiness.run_preflight` pass by default in every existing test that
+    only cares about something else. Pass `still_declared`/`still_hooked` to
+    model the real, checked-in-source default instead.
+    """
+
+    def __init__(
+        self,
+        still_declared: dict[str, set[str]] | None = None,
+        still_hooked: set[str] | None = None,
+    ):
+        self.still_declared = {k: set(v) for k, v in (still_declared or {}).items()}
+        self.still_hooked = set(still_hooked or ())
+        self.fields_declared_calls: list[tuple[str, tuple[str, ...]]] = []
+        self.permission_hooks_calls: list[tuple[str, ...]] = []
+
+    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        self.fields_declared_calls.append((doctype, tuple(fieldnames)))
+        return frozenset(self.still_declared.get(doctype, set()) & set(fieldnames))
+
+    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
+        self.permission_hooks_calls.append(tuple(doctypes))
+        return frozenset(self.still_hooked & set(doctypes))
 
 
 class FakeContent:
@@ -356,6 +398,7 @@ def cleanup_environment(
     forwarders: FakeForwarders | None = None,
     callers: FakeClientCallerEvidence | None = None,
     schema: FakeSchema | None = None,
+    source_schema: FakeSourceSchema | None = None,
     content: FakeContent | None = None,
     thumbnails: FakeThumbnails | None = None,
     disk_settings: FakeDiskSettingsSnapshot | None = None,
@@ -374,6 +417,7 @@ def cleanup_environment(
         callers=callers if callers is not None else FakeClientCallerEvidence(),
         files=table,
         schema=schema if schema is not None else FakeSchema(),
+        source_schema=source_schema if source_schema is not None else FakeSourceSchema(),
         content=content if content is not None else FakeContent(),
         thumbnails=thumbnails if thumbnails is not None else FakeThumbnails(),
         disk_settings=disk_settings if disk_settings is not None else FakeDiskSettingsSnapshot(),

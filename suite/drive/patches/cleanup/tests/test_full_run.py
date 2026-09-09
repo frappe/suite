@@ -68,6 +68,9 @@ def _full_environment(tmp_path):
             "Presentation": {"title", "body"},
             "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
             "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
+            "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+        },
+        singles={
             "Drive Disk Settings": {
                 "quota",
                 "root_folder",
@@ -80,7 +83,6 @@ def _full_environment(tmp_path):
                 "endpoint_url",
                 "signature_version",
             },
-            "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
         },
     )
     content = FakeContent(docshares=2, ycomments=1, sheets_with_comments=3)
@@ -139,8 +141,11 @@ class TestFullOrderedRun(unittest.TestCase):
         self.assertEqual(env.schema.columns["Presentation"], {"body"})
         self.assertEqual(env.schema.columns["Sheet"], {"sheets_data"})
         self.assertEqual(env.schema.columns["Drive Settings"], {"webdav_enabled"})
-        self.assertEqual(env.schema.columns["Drive Disk Settings"], set())
         self.assertEqual(env.schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
+        # All ten §3.13 fields drop as `tabSingles` rows, never as DDL against
+        # a table a Single doctype does not have.
+        self.assertEqual(env.schema.singles["Drive Disk Settings"], set())
+        self.assertNotIn("Drive Disk Settings", env.schema.columns)
 
         # Step 6: only FORWARDER-labeled names and the wildcard prefix are
         # gone; PERMANENT and RETAINED endpoints survive untouched.

@@ -12,7 +12,7 @@ import frappe
 
 from suite.drive.patches.cleanup.environment import CLEANUP_BATCH_SIZE
 from suite.drive.patches.cleanup.gate import climb
-from suite.drive.patches.cleanup.ports import REMOVED
+from suite.drive.patches.cleanup.ports import DISK_SETTINGS_FIELDS, REMOVED
 from suite.drive.patches.cleanup.state import PhaseResult
 
 # §14.10's frozen deletion list, this package's own copy: `suite.drive.patches.
@@ -70,28 +70,18 @@ CONTENT_DROPPED_COLUMNS = (
     ("Sheet", ("title", "trashed", "trashed_on", "trashed_by")),
 )
 
-# §3.13's complete ten-field list for `Drive Disk Settings`
-# (`ports.DISK_SETTINGS_FIELDS`), plus `Drive Settings`' and `Drive Storage
-# Reservation`'s own dropped fields.
+# `Drive Settings`' and `Drive Storage Reservation`'s own dropped fields.
+# `Drive Disk Settings` is a Single (§3.13) and has no table of its own for
+# `drop_columns`' DDL to touch; its ten fields drop through
+# `SINGLE_DROPPED_VALUES` and `SchemaGateway.drop_single_values` instead.
 SETTINGS_DROPPED_COLUMNS = (
     ("Drive Settings", ("user_folder", "quota")),
-    (
-        "Drive Disk Settings",
-        (
-            "quota",
-            "root_folder",
-            "thumbnail_prefix",
-            "flat",
-            "enabled",
-            "bucket",
-            "aws_key",
-            "aws_secret",
-            "endpoint_url",
-            "signature_version",
-        ),
-    ),
     ("Drive Storage Reservation", ("storage_owner",)),
 )
+
+# §3.13's complete ten-field list for `Drive Disk Settings`
+# (`ports.DISK_SETTINGS_FIELDS`), removed from `tabSingles`, never by DDL.
+SINGLE_DROPPED_VALUES = (("Drive Disk Settings", DISK_SETTINGS_FIELDS),)
 
 LEGACY_METHOD_PREFIX = "/api/method/suite.drive.api."
 
@@ -207,12 +197,32 @@ def phase_file_rows(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult
     targets disappear: the ordered name census (`collect_drive_owned_names`
     would otherwise have to rescan a table this very phase is about to
     empty), and the ten `Drive Disk Settings` fields step 5 drops. Both are
-    read exactly once, here, and never queried live again.
+    read exactly once across this phase's entire life, including a resumed
+    call, and never queried live again once persisted.
+
+    That "once" is load-bearing, not just an optimization: if this phase's
+    own `DELETE`s commit but the crash lands before `patch.run_cleanup`
+    writes this phase's checkpoint, resume calls this function again with
+    the census already on record. A second live rescan at that point would
+    see the very rows this phase just deleted and find nothing — an empty
+    answer that is wrong, not a legitimate re-derivation of the same
+    census — and unconditionally overwriting the durable copy with it would
+    silently orphan step 7's sidecar deletion for every name phase 1 already
+    removed. Reading `env.state.get_census()`/`get_settings_snapshot()`
+    first and only computing+persisting when one is genuinely absent (`None`,
+    never "no run has reached here yet" confused with "an empty census")
+    is what keeps a resumed run's preparation record identical to a fresh
+    run's.
     """
     result = PhaseResult()
-    names = collect_drive_owned_names(env, batch_size=batch_size)
-    env.state.put_census(names)
-    env.state.put_settings_snapshot(env.disk_settings.read())
+    names = env.state.get_census()
+    if names is None:
+        names = collect_drive_owned_names(env, batch_size=batch_size)
+        env.state.put_census(names)
+    settings = env.state.get_settings_snapshot()
+    if settings is None:
+        settings = env.disk_settings.read()
+        env.state.put_settings_snapshot(settings)
     for batch in _chunks(names, batch_size):
         result.rows_deleted += env.files.delete(tuple(batch))
     result.completed = True
@@ -284,12 +294,17 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
 
 
 def phase_content_fields(env) -> PhaseResult:
-    """§14.10 step 5: title/trashed on content doctypes; settings/disk/reservation fields."""
+    """§14.10 step 5: title/trashed on content doctypes; settings/reservation
+    columns; `Drive Disk Settings`' ten Single values."""
     result = PhaseResult()
     for doctype, columns in CONTENT_DROPPED_COLUMNS + SETTINGS_DROPPED_COLUMNS:
         dropped = env.schema.drop_columns(doctype, columns)
         _require_exact_or_already_done(dropped, len(columns), f"{doctype}'s dropped columns")
         result.columns_dropped += dropped
+    for doctype, fields in SINGLE_DROPPED_VALUES:
+        dropped = env.schema.drop_single_values(doctype, fields)
+        _require_exact_or_already_done(dropped, len(fields), f"{doctype}'s dropped single values")
+        result.single_values_dropped += dropped
     result.completed = True
     return result
 

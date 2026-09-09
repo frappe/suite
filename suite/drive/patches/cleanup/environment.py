@@ -25,6 +25,7 @@ from suite.drive.patches.cleanup.ports import (
     ReachabilityTree,
     S3LegacyPrefix,
     SchemaGateway,
+    SourceSchemaReadiness,
     ThumbnailStore,
     TransactionGateway,
 )
@@ -44,6 +45,7 @@ class CleanupEnvironment:
     callers: ClientCallerEvidence
     files: LegacyFileRows
     schema: SchemaGateway
+    source_schema: SourceSchemaReadiness
     content: ContentRows
     thumbnails: ThumbnailStore
     disk_settings: DiskSettingsSnapshot
@@ -65,6 +67,7 @@ class CleanupEnvironment:
             SiteReachabilityTree,
             SiteS3LegacyPrefix,
             SiteSchemaGateway,
+            SiteSourceSchema,
             SiteThumbnailStore,
             SiteTransactionGateway,
             site_blob_columns,
@@ -78,6 +81,7 @@ class CleanupEnvironment:
             callers=SiteClientCallerEvidence(),
             files=SiteLegacyFileRows(),
             schema=SiteSchemaGateway(),
+            source_schema=SiteSourceSchema(),
             content=SiteContentRows(),
             thumbnails=SiteThumbnailStore(),
             disk_settings=SiteDiskSettingsSnapshot(),
