@@ -8,7 +8,7 @@
   "workspace_name",
   "column_break_workspace",
   "workspace_logo",
-  "mail_service_section",
+  "contact_section",
   "contact_email",
   "setup_section",
   "is_onboarded"
@@ -23,7 +23,7 @@
    "fieldname": "workspace_name",
    "fieldtype": "Data",
    "label": "Workspace Name",
-   "description": "Shown in the launcher and, through Suite Cloud, as this site's title on the mail service."
+   "description": "The name of this Suite workspace, shown in the launcher and wherever a connected service names this site."
   },
   {
    "fieldname": "column_break_workspace",
@@ -36,16 +36,16 @@
    "description": "Square image shown beside the workspace name. It is served publicly, so use PNG, JPEG or WebP without anything private."
   },
   {
-   "fieldname": "mail_service_section",
+   "fieldname": "contact_section",
    "fieldtype": "Section Break",
-   "label": "Mail Service"
+   "label": "Contact"
   },
   {
    "fieldname": "contact_email",
    "fieldtype": "Data",
    "label": "Contact Email",
    "options": "Email",
-   "description": "Where Suite Cloud sends notices about this site's mail service, such as planned downtime or quota warnings."
+   "description": "Where connected services send notices about this workspace, such as planned downtime or quota warnings."
   },
   {
    "fieldname": "setup_section",
@@ -63,7 +63,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-09 11:00:00.000000",
+ "modified": "2026-09-09 11:30:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",
