@@ -20,6 +20,7 @@ from suite.drive.patches.build.content_mapping import (
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
 from suite.drive.patches.build.slide_journal import SlideBody, SlideJournalError
+from suite.drive.patches.build.state import RelocatedMediaNode
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.patches.build.titles import SiblingTitles
 from suite.drive.utils.files import S3_URL_PREFIX
@@ -42,6 +43,35 @@ NODE_FIELDS = (
     "creation",
     "modified",
     "modified_by",
+)
+
+# The columns §14.4 and §14.7 can fill differently for one media `File`, and
+# so the columns `_adopt_tree_node` rewrites. Every other column of a media
+# node reads the same either way: `name`, `kind`, `blob`, `content_modified`,
+# and the four standard stamps all come from the `File` row on both sides, so
+# `exact_fields` still validates them instead of overwriting them.
+#
+# - `title`: §14.4 deduplicates against the old sibling group. The suffix it
+#   earned there means nothing under the deck.
+# - `parent`, `root`, `path`: the placement this whole adoption is about.
+# - `size`, `mime`: §14.4 copies `File.file_size` and `File.mime_type`; §14.7
+#   reads the blob, which is the row that says what the stored bytes are and
+#   the one §10 charges.
+# - `state`, `trashed_at`, `trash_root`: a media `File` in the legacy bin got
+#   a Trashed node from §14.4. Step 8 reads media without a status filter, so
+#   every other such `File` becomes an Active media node, and a Trashed child
+#   of an Active deck would be purged out from under a deck that still draws
+#   it.
+ADOPTED_FIELDS = (
+    "title",
+    "parent",
+    "root",
+    "path",
+    "size",
+    "mime",
+    "state",
+    "trashed_at",
+    "trash_root",
 )
 
 
@@ -143,7 +173,7 @@ def _convert_deck(env, deck, batch_size, result):
     _refuse_unreachable_children(deck, deck_node)
     writer = _MediaWriter(target, deck_node, batch_size)
     titles = _sibling_titles(writer, media)
-    mapping, nodes, collapsed, blobless = _media_mapping(env, deck, media, host, writer, titles)
+    mapping, nodes, collapsed, blobless = _media_mapping(env, deck, media, host, writer, titles, result)
     local_mapping = dict(mapping)
     borrowed, borrowed_nodes = {}, set()
     if not deck.is_composite:
@@ -320,6 +350,20 @@ class _MediaWriter:
         self.written += 1
         self._reserve()
 
+    def adopt(self, stored, planned):
+        """Bring one stored node to the media row §14.7 asks for.
+
+        `children` gains the row, because the deck now holds it: §11's
+        borrowed lookup and the duplicate-blob check both read that list.
+        """
+        values = {field: planned[field] for field in ADOPTED_FIELDS}
+        self.target.adopt_media_node(stored["name"], values)
+        adopted = {**stored, **values}
+        self.children.append(adopted)
+        self.written += 1
+        self._reserve()
+        return adopted
+
     def _reserve(self):
         if len(self.pending) + self.written >= self.batch_size:
             self.flush()
@@ -334,7 +378,38 @@ class _MediaWriter:
         self.written = 0
 
 
-def _media_mapping(env, deck, files, host, writer, titles):
+def _adopt_tree_node(writer, result, deck, stored, planned):
+    """Take over a media node §14.4 filed somewhere other than the deck.
+
+    §14.4 gives a node to every `File` reachable by walking `folder` up to
+    `Drive` or a `Users/<email>` folder, parented on that `folder`. §14.7
+    amends that for one class of row: slide media `File` rows "become child
+    nodes of the deck node". A media `File` the old Drive also filed in the
+    tree answers to both rules, and step 4 runs first, so its node stands
+    beside the deck instead of under it.
+
+    §14.7 wins, and the node moves rather than a second one being minted.
+    [012] §1 is why: "Read on the deck covers its media through the same
+    nearest-wins path walk, so Slides keeps no permission code." A media node
+    left outside the deck is read through whatever does hold it, so everyone
+    who may read the deck but not that folder gets a deck full of holes. The
+    tree placement was incidental: the old uploader dropped the embed into
+    the uploader's own root, which is the arrangement [012] §1 rejects by
+    name. A second node would break Build's one `File` row, one node, ids
+    survive rule and charge [010] twice for a picture nobody pasted twice.
+
+    The move carries `ADOPTED_FIELDS`, not `parent` alone, because the row
+    must end up as the row `_media_node` describes or the next run refuses
+    the node this one repaired (§13 exact rerun validation). Returns the node
+    as it now reads, so the caller validates what is stored.
+    """
+    if not stored or stored.get("parent") == writer.parent["name"]:
+        return stored
+    result.record_relocated_media(RelocatedMediaNode(deck.name, stored["name"], stored.get("parent") or ""))
+    return writer.adopt(stored, planned)
+
+
+def _media_mapping(env, deck, files, host, writer, titles, result):
     target = env.content_target
     parent = writer.parent
     groups = defaultdict(list)
@@ -366,6 +441,7 @@ def _media_mapping(env, deck, files, host, writer, titles):
                 if matches and matches[0]["name"] != source.name:
                     raise InvalidLegacyContent(f"media placeholder {source.name} conflicts with a blob node")
                 placeholder = _media_node(source, parent, source.name, None, title)
+                source_node = _adopt_tree_node(writer, result, deck, source_node, placeholder)
                 exact_fields(source_node, placeholder, NODE_FIELDS, f"media placeholder {source.name}")
                 writer.upgrade(source.name, blob.name, int(blob.file_size), _mime(blob))
                 name = source.name
@@ -374,6 +450,9 @@ def _media_mapping(env, deck, files, host, writer, titles):
             planned = _media_node(source, parent, name, blob, title)
             found = target.nodes((name,)).get(name)
             if found and found.get("blob"):
+                # A match is already a child of the deck, so only the
+                # `name == source.name` branch can reach an adoption here.
+                found = _adopt_tree_node(writer, result, deck, found, planned)
                 exact_fields(found, planned, NODE_FIELDS, f"media node {name}")
             elif not found:
                 writer.add(planned)
@@ -385,6 +464,7 @@ def _media_mapping(env, deck, files, host, writer, titles):
             blobless += 1
             planned = _media_node(source, parent, source.name, None, title)
             found = target.nodes((source.name,)).get(source.name)
+            found = _adopt_tree_node(writer, result, deck, found, planned)
             if found:
                 exact_fields(found, planned, NODE_FIELDS, f"blobless media node {source.name}")
             else:

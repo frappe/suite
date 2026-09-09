@@ -349,6 +349,15 @@ class LegacyComment:
 
 
 @dataclass
+class RelocatedMediaNode:
+    """A deck's media node the legacy tree had filed somewhere else."""
+
+    deck: str
+    node: str
+    was_under: str
+
+
+@dataclass
 class ContentConversion:
     """The durable outcome of §14.2 steps 7, 8, and 10."""
 
@@ -394,6 +403,14 @@ class ContentConversion:
     legacy_comments_ported: int = 0
     legacy_comments_unported: int = 0
     legacy_comment_rows: list[LegacyComment] = field(default_factory=list)
+    # Not in §14.9, and owned by no phase either. §14.4 gave a media `File`
+    # reachable from a Drive root a node under its own `folder`, and §14.7
+    # makes the same row a child of the deck node. Step 8 moves the node it
+    # finds, so the next pass meets it already placed and moves nothing. The
+    # counter is cumulative for that reason, like the two comment rewrites
+    # above, and `begin_phase` must not reset it.
+    media_nodes_relocated: int = 0
+    relocated_media_nodes: list[RelocatedMediaNode] = field(default_factory=list)
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0
@@ -410,6 +427,12 @@ class ContentConversion:
         self.legacy_comments_unported += 1
         if len(self.legacy_comment_rows) < SAMPLE_KEPT:
             self.legacy_comment_rows.append(entry)
+
+    def record_relocated_media(self, entry: RelocatedMediaNode) -> None:
+        """Keep a bounded list; the counter above stays exact."""
+        self.media_nodes_relocated += 1
+        if len(self.relocated_media_nodes) < SAMPLE_KEPT:
+            self.relocated_media_nodes.append(entry)
 
     def record_issue(self, source: str, reason: str, *, phase: str = "") -> None:
         self.issues_total += 1
@@ -441,12 +464,13 @@ class ContentConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentConversion:
-        samples = {"issues", "removed_file_docs", "legacy_comment_rows"}
+        samples = {"issues", "removed_file_docs", "legacy_comment_rows", "relocated_media_nodes"}
         known = {f for f in cls.__dataclass_fields__ if f not in samples}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
         content.removed_file_docs = _rebuild(RemovedFileDocument, data.get("removed_file_docs"))
         content.legacy_comment_rows = _rebuild(LegacyComment, data.get("legacy_comment_rows"))
+        content.relocated_media_nodes = _rebuild(RelocatedMediaNode, data.get("relocated_media_nodes"))
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()
