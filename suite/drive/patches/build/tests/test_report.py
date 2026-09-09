@@ -27,6 +27,7 @@ from suite.drive.patches.build.report import (
 from suite.drive.patches.build.state import (
     DROP_REASONS,
     LegacyComment,
+    RelocatedMediaNode,
     RemovedFileDocument,
     SkippedRow,
 )
@@ -163,6 +164,22 @@ class SourceTest(ReportCase):
         self.assertEqual(evidence["legacy_comments_ported"], 3)
         self.assertEqual(evidence["legacy_comments_unported"], 1)
         self.assertEqual(evidence["legacy_comment_rows"], [{"name": "comment-1", "file": "file-1"}])
+
+    def test_the_evidence_carries_the_relocated_media_nodes(self):
+        # §14.9 names no key for them either. A media File the legacy tree
+        # also filed had a node before step 8 ran, and the report says how
+        # many moved under their deck and which ones.
+        content = self.env.state.content()
+        content.record_relocated_media(RelocatedMediaNode("deck-1", "media-a", "personal-root"))
+        self.env.state.put_content(content)
+
+        evidence = build_report(self.env)["evidence"]["content"]
+
+        self.assertEqual(evidence["media_nodes_relocated"], 1)
+        self.assertEqual(
+            evidence["relocated_media_nodes"],
+            [{"deck": "deck-1", "node": "media-a", "was_under": "personal-root"}],
+        )
 
     def test_it_is_stamped_with_the_build_clock(self):
         self.assertEqual(build_report(self.env)["generated_at"], BUILD_STAMP)

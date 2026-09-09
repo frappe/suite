@@ -116,6 +116,37 @@ class SlidesTest(unittest.TestCase):
             "content_docname": docname,
         }
 
+    def tree_node(self, target, name, parent, **values):
+        """The node §14.4 wrote for a media File the legacy tree also held."""
+        row = {
+            "name": name,
+            "title": f"{name}.png",
+            "parent": parent,
+            "root": parent,
+            "path": "",
+            "kind": "file",
+            "blob": None,
+            "size": 0,
+            "mime": None,
+            "url": None,
+            "content_doctype": None,
+            "content_docname": None,
+            "state": "Active",
+            "trashed_at": None,
+            "trash_root": None,
+            "content_modified": STAMP,
+            "is_template": 0,
+            "owner": OWNER,
+            "creation": STAMP,
+            "modified": STAMP,
+            "modified_by": OWNER,
+            "docstatus": 0,
+            "idx": 0,
+        }
+        row.update(values)
+        target.node_rows[name] = row
+        return row
+
     def media_children(self, target, node):
         return [row for row in target.child_nodes(node) if row.get("kind") == "file"]
 
@@ -1435,6 +1466,200 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(first.media_nodes_created, 3)
         self.assertEqual(second.media_nodes_created, first.media_nodes_created)
         self.assertEqual(self.media_children(target, consumer.node), children)
+
+    # -- defect 15: a media File the tree also filed keeps its node, under the deck
+
+    def test_a_media_node_the_tree_filed_elsewhere_moves_under_the_deck(self):
+        row = media("media-a", blob="blob-a")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": row.file_url}]))],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        self.tree_node(target, "media-a", "root", blob="blob-a", size=1, mime="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        stored = target.node_rows["media-a"]
+        self.assertEqual(
+            (stored["parent"], stored["root"], stored["path"]), ("deck-node", "root", "/deck-node/")
+        )
+        self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["media-a"])
+        self.assertEqual(result.media_nodes_created, 1)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements)[0]["src"], "media-a")
+
+    def test_the_move_is_counted_and_listed_and_survives_the_state_file(self):
+        source = FakeContent(
+            documents=[deck()],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        self.tree_node(target, "media-a", "personal-root", blob="blob-a", size=1, mime="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.media_nodes_relocated, 1)
+        self.assertEqual(
+            [(row.deck, row.node, row.was_under) for row in result.relocated_media_nodes],
+            [("deck-1", "media-a", "personal-root")],
+        )
+        # The report reads the record back out of the state file, so the
+        # count and the list have to survive the round trip.
+        stored = env.state.content()
+        self.assertEqual(stored.media_nodes_relocated, 1)
+        self.assertEqual(stored.relocated_media_nodes[0].was_under, "personal-root")
+
+    def test_the_moved_node_drops_the_dedup_suffix_it_earned_in_the_old_folder(self):
+        source = FakeContent(
+            documents=[deck()],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        # §14.4 deduplicated against the personal root's sibling group. Under
+        # the deck the plain title is free, and the plan claims it.
+        self.tree_node(
+            target, "media-a", "root", title="media-a (2).png", blob="blob-a", size=1, mime="image/png"
+        )
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual(target.node_rows["media-a"]["title"], "media-a.png")
+
+    def test_the_moved_node_takes_its_size_and_mime_from_the_blob(self):
+        source = FakeContent(
+            documents=[deck()],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"media bytes", mime_type="image/png")
+        # §14.4 copied `File.file_size` and `File.mime_type`. §14.7 reads the
+        # blob, which is what §10 charges and what the bytes actually are.
+        self.tree_node(target, "media-a", "root", blob="blob-a", size=3, mime="image/heic")
+
+        convert_slides_and_templates(env)
+
+        stored = target.node_rows["media-a"]
+        self.assertEqual((stored["size"], stored["mime"]), (len(b"media bytes"), "image/png"))
+
+    def test_a_trashed_tree_node_becomes_an_active_child_of_the_deck(self):
+        source = FakeContent(
+            documents=[deck()],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        # Step 8 reads media without a status filter, so every other Trashed
+        # media File becomes an Active media node. A Trashed one here would
+        # be purged out from under a deck that still draws it.
+        self.tree_node(
+            target,
+            "media-a",
+            "root",
+            blob="blob-a",
+            size=1,
+            mime="image/png",
+            state="Trashed",
+            trashed_at=STAMP,
+            trash_root="media-a",
+        )
+
+        convert_slides_and_templates(env)
+
+        stored = target.node_rows["media-a"]
+        self.assertEqual(stored["state"], "Active")
+        self.assertEqual((stored["trashed_at"], stored["trash_root"]), (None, None))
+        self.assertEqual(stored["parent"], "deck-node")
+
+    def test_a_second_run_moves_nothing_and_refuses_nothing(self):
+        row = media("media-a", blob="blob-a")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": row.file_url}]))],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        self.tree_node(target, "media-a", "root", blob="blob-a", size=1, mime="image/png")
+
+        first = convert_slides_and_templates(env)
+        placed = dict(target.node_rows["media-a"])
+        second = convert_slides_and_templates(env)
+
+        self.assertEqual(target.node_rows["media-a"], placed)
+        self.assertEqual(second.media_nodes_created, first.media_nodes_created)
+        # The move happened once, so a later pass has nothing to move and the
+        # count is cumulative rather than recomputed. `begin_phase` leaves it.
+        self.assertEqual((first.media_nodes_relocated, second.media_nodes_relocated), (1, 1))
+        self.assertEqual(len(second.relocated_media_nodes), 1)
+
+    def test_a_stray_node_is_left_alone_when_the_deck_already_holds_the_blob(self):
+        source = FakeContent(
+            documents=[deck()],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        self.tree_node(target, "media-a", "root", blob="blob-a", size=1, mime="image/png")
+        # A run that minted the node under another id got there first. Moving
+        # `media-a` in as well would be the duplicate `_media_mapping` refuses.
+        self.tree_node(
+            target,
+            "earlier",
+            "deck-node",
+            title="media-a.png",
+            root="root",
+            path="/deck-node/",
+            blob="blob-a",
+            size=1,
+            mime="image/png",
+        )
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(target.node_rows["media-a"]["parent"], "root")
+        self.assertEqual(result.media_nodes_relocated, 0)
+        self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["earlier"])
+
+    def test_a_second_deck_copies_the_node_it_cannot_move(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        template_url = "/private/files/template-logo.png"
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": template_url}]))],
+            media=[media("template-file", deck_name=template.name, blob="blob-a", url=template_url)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        self.tree_node(target, "template-file", "root", blob="blob-a", size=1, mime="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        # [012] §4: the deck the File belongs to keeps the node, and the deck
+        # that pasted it gets a copy under a new id, the same blob.
+        template_node = target.node_rows["template-file"]["parent"]
+        self.assertEqual(target.node_rows[template_node]["content_docname"], "template")
+        copies = self.media_children(target, consumer.node)
+        self.assertEqual([row["blob"] for row in copies], ["blob-a"])
+        self.assertNotEqual(copies[0]["name"], "template-file")
+        self.assertEqual(result.media_nodes_relocated, 1)
+
+        second = convert_slides_and_templates(env)
+        self.assertEqual(self.media_children(target, consumer.node), copies)
+        self.assertEqual(second.media_nodes_relocated, 1)
 
 
 if __name__ == "__main__":
