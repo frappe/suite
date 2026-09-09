@@ -90,7 +90,7 @@
 					v-model="accountRequest.quota_gb"
 					type="number"
 					:min="0"
-					:label="__('Quota (GB, 0 = unlimited)')"
+					:label="__('Quota (GB)')"
 					:description="__('Leave blank to use the configured default disk quota.')"
 				/>
 				<div class="space-y-1.5">

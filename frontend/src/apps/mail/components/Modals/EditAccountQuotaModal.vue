@@ -19,7 +19,8 @@
 					v-model="quotaGb"
 					type="number"
 					:min="0"
-					:label="__('Quota (GB, 0 = unlimited)')"
+					:label="__('Quota (GB)')"
+					:description="__('Every account has a quota; it must be above zero.')"
 				/>
 				<ErrorMessage
 					:message="updateQuota.error && (updateQuota.error?.messages?.[0] || updateQuota.error?.message || __('Request failed.'))"
