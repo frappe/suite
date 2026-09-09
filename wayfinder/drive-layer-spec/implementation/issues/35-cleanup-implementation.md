@@ -17,7 +17,8 @@ branch. Reopened a third time on the same branch (starting revision
 `67590e5db`) to repair the 6 findings below that; same claimed files.
 Repairs verified and closed in commit `caeeccadb` on that branch. Reopened a
 fourth time on the same branch (starting revision `ca576d640`) to repair one
-final safety blocker below; same claimed files.
+final safety blocker below; same claimed files. Repairs verified and closed
+in commit `d486e51d7` on that branch.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -39,6 +40,73 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 Run Cleanup against isolated fixtures only. Prove every missing gate leaves data unchanged and valid fixtures retain all referenced bytes.
 
 ## Completion evidence
+
+### 2026-09-09 — final safety blocker repaired, verified (branch `fix/drive-35-final-safety`)
+
+Commit `d486e51d7` on this branch repairs the finding below in
+`suite/drive/patches/cleanup/state.py`. Cleanup stayed unregistered
+throughout: no `patches.txt`/`hooks.py` entry, no `run_cleanup()` call
+outside a test, no live `bench migrate`, no site connection, no push or
+merge.
+
+1. `CleanupState.load()` quarantined a corrupt state file by renaming it
+   to a `*.corrupt-<timestamp>-<pid>` sidecar and raising
+   `CorruptCleanupStateError` — but the rename meant a *second* `load()`
+   saw plain `FileNotFoundError` on the now-missing path and silently
+   answered a fresh, empty record, exactly the unsafe reset
+   `CorruptCleanupStateError` exists to rule out, just delayed by one
+   call. `load()`'s `FileNotFoundError` branch now calls a new
+   `_quarantine_markers()`: a single bounded, non-recursive
+   `Path.glob(f"{name}.corrupt-*")` over the state file's own directory
+   (after confirming the directory exists), never a tree walk. If any
+   marker for this exact record is found, `load()` raises
+   `CorruptCleanupStateError` again, with a message that still names the
+   only recovery: a database restore from before the corruption, or an
+   operator manually reconstructing the record. A genuinely fresh site —
+   no directory, or a directory with no such marker — still returns
+   `{"version": STATE_VERSION}` unchanged.
+   `test_corrupt_state_refuses_again_on_a_second_call_instead_of_starting_fresh`
+   drives `run_cleanup` twice after corrupting the state past a real
+   phase-1 commit: both calls raise, the state file is never recreated,
+   only one quarantine marker ever exists and its bytes are identical
+   after the second call, a direct third `get_census()` call refuses the
+   same way instead of answering `None`, and no phase past 1 ever ran
+   (schema/thumbnails/S3 untouched across both calls).
+   `TestCleanupStateQuarantinePersistence` adds direct `CleanupState`
+   coverage: a genuinely absent state with no marker still initializes
+   fresh; an absent state with a marker refuses on every subsequent
+   call — through a fresh `CleanupState` instance and through
+   `get_census()`/`get_settings_snapshot()`, not just the call that
+   created the marker; and removing the marker by hand (the one
+   documented, non-automatic way out) lets a fresh state initialize
+   again.
+
+**Verified:**
+- Cleanup fixture/spy suite: 173 tests, 0 failures (`unittest discover -s
+  suite/drive/patches/cleanup/tests`, no DB connection; up from 169, +4 in
+  `test_removal_order_and_resume.py`).
+- Build/architecture/dormancy suite: 991 tests via `frappe.init` with no
+  `connect()`, covering `suite/drive/patches/{build,cleanup}/tests`,
+  `suite.tests.test_architecture`, `suite.drive.tests.test_build_{content,
+  storage,tree}`; 0 assertion failures. 67 `IntegrationTestCase`s that
+  require a live DB connection were skipped by name, not run — pre-existing,
+  unrelated to any file this branch touches.
+- `py_compile` clean on both changed files.
+- `ruff check`/`ruff format` (pinned `v0.12.3`) clean on both changed
+  files, no autofix needed.
+- One manual mutation, applied to the real production code, confirmed
+  caught by a test failure, then reverted byte-identical (`git diff`
+  against `state.py` matched before and after): removing the
+  `_quarantine_markers()` check from `load()`'s `FileNotFoundError`
+  branch. Caught by exactly the two new tests that drive a second call
+  (`test_corrupt_state_refuses_again_on_a_second_call_instead_of_starting_fresh`,
+  `test_an_absent_state_with_a_quarantine_marker_refuses_not_initializes`);
+  every other test, including the two pre-existing corrupt-state tests
+  that only call `run_cleanup` once, stayed green — confirming this gap
+  was real and specifically about a second call, not a duplicate of
+  prior coverage.
+- This entry supersedes the invalidated reopen note below it, and every
+  invalidated closeout below that.
 
 ### 2026-09-09 — 6 third-review findings repaired, verified (branch `fix/drive-35-final-safety`)
 
