@@ -91,9 +91,19 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Artifacts: `/home/faris/backups/suite-frappe/build/pass3-migrate.log`, `pass3-traceback.txt`, `drive-build-state-after-pass3-failure.json`.
 - Fix in progress on branch `forge/ticket-31-removed-content`: treat a content document whose only File is Removed as skipped, no node, counted and listed in the report.
 
+### Build pass 4, resume after the Removed-content fix (2026-09-09, failed on data)
+
+- Fix merged as caf6db5ef (`RemovedLegacyFile` outcome in `content_mapping.py`; steps 7, 8 skip, step 10 counts and lists under `removed_file_documents` in `evidence.content`; 816 build tests pass without a database). The spec is silent on a content document whose only File row is Removed: §14.4 governs the row, §14.6 needs a document with no File row, and decision 011 rejects Removed as Trashed. Skip and report was the chosen fallback.
+- Same migrate command on the partial state. Build resumed at step 7, walked past the Removed-file documents, and wrote 47,158 `Drive Node Version` rows (from 1023) and 731 `Drive Comment` rows in 2 min 34 s, then failed: `BuildHistoryError: Writer Document:661636if52: comment 78033a50-... field thread is None`, raised by `exact_fields` from `comments.py:302 _write_thread`.
+- Cause: `tabDrive Comment` is a reused table. 254 legacy child-table rows (`parenttype='Drive File'`, `parentfield='comments'`, `thread` and `node` NULL) survive in it. Build derives Writer comment ids from the Yjs `ycomments` entry ids, and 246 of the 1462 planned ids equal a legacy row name (all thread roots, 71 Writer Documents). 8 legacy rows have no Writer counterpart. `_write_thread` sees the legacy row as already stored and refuses it.
+- The 109 Removed-file documents are not yet counted on real data; step 10 owns that census and was not reached.
+- Artifacts: `pass4-migrate.log`, `pass4-migrate-clean.log`, `pass4-traceback.txt`, `drive-build-state-after-pass4-failure.json`, `pass4-progress.tsv` under `/home/faris/backups/suite-frappe/build/`.
+- Operational note: the pass 4 agent printed the whole `Drive Disk Settings` single while reading one flag, exposing the S3 access key id and `jwt_key` in its transcript under `/tmp` (the secret key stayed masked). Not written to any kept file. Rotate `jwt_key` if it matters. Rule for later passes: select the one column, never a whole Single.
+- Fix in progress on branch `forge/ticket-31-legacy-comments`.
+
 ### Plan for the Build rerun
 
-- Pass 1, the storage_v2 setup, and the index fix are done above. After the Removed-content fix merges: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
+- Pass 1, the storage_v2 setup, the index fix and the Removed-content fix are done above. After the legacy-comments fix merges: flush redis, same migrate command, expect Build to resume at step 7 and finish; then read the report.
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
 
