@@ -22,6 +22,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.directory import GB, get_account_metadata, get_active_domain_names
 from suite.mail.directory import get_domains as get_site_domains
 from suite.mail.suite_cloud import get_client
+from suite.mail.utils import get_config
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import get_account_email
@@ -914,7 +915,9 @@ def add_group(
         email=email,
         description=description,
         members=_listify(members) or None,
-        disk_quota_gb=flt(quota_gb) if quota_gb else None,
+        # Unset means the Mail Settings default, as for accounts; Suite Cloud's own default is the
+        # last resort when that is blank too.
+        disk_quota_gb=flt(quota_gb) or flt(get_config("default_disk_quota_gb")) or None,
     )
     return group["email"]
 

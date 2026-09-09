@@ -217,6 +217,12 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         self.assertEqual([m["email"] for m in detail["members"]], [f"alice@{DOMAIN}"])
         self.assertEqual(detail["quota"]["total"], 2 * 1024**3)
         self.assertEqual(admin.get_groups()["items"][0]["quota_gb"], 2)
+        with self.change_settings("Mail Settings", default_disk_quota_gb=7):
+            frappe.local.request_cache.clear()
+            admin.add_group("ops", DOMAIN)
+        frappe.local.request_cache.clear()
+        self.assertEqual(self.fake.groups[f"ops@{DOMAIN}"]["disk_quota_gb"], 7)
+        admin.delete_groups([f"ops@{DOMAIN}"])
 
         admin.add_group_members(group, [f"bob@{DOMAIN}"])
         admin.remove_group_member(group, f"alice@{DOMAIN}")

@@ -30,6 +30,13 @@
 					:options="domainOptions"
 				/>
 				<FormControl v-model="description" :label="__('Description')" />
+				<FormControl
+					v-model="quotaGb"
+					type="number"
+					:min="0"
+					:label="__('Quota (GB)')"
+					:description="__('Leave blank to use the configured default disk quota.')"
+				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
 					<MultiSelect v-model="memberIds" :options="accountOptions" />
@@ -56,6 +63,7 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
+const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
@@ -71,6 +79,7 @@ watch(show, () => {
 		name.value = ''
 		domain.value = ''
 		description.value = ''
+		quotaGb.value = ''
 		memberIds.value = []
 		addGroup.reset()
 	}
@@ -83,6 +92,7 @@ const addGroup = createResource({
 		domain: domain.value,
 		description: description.value?.trim() || undefined,
 		members: memberIds.value,
+		quota_gb: quotaGb.value === '' ? null : Number(quotaGb.value),
 	}),
 	onSuccess: (data: string) => {
 		if (!data) return
