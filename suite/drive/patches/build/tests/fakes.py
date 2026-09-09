@@ -1014,6 +1014,9 @@ class FakeContentTarget:
     def update_media_node(self, name, blob, size, mime):
         self.node_rows[name].update({"blob": blob, "size": size, "mime": mime})
 
+    def adopt_media_node(self, name, values):
+        self.node_rows[name].update(values)
+
     def update_slides(self, rows):
         self.content.update_slides(rows)
 
