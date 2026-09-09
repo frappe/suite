@@ -828,6 +828,14 @@ class FakeContentTarget:
     def comment_names(self, names):
         return {name: dict(self.comment_rows[name]) for name in names if name in self.comment_rows}
 
+    def legacy_comments(self, after, limit):
+        rows = [
+            dict(row)
+            for name, row in sorted(self.comment_rows.items())
+            if not row.get("thread") and name > after
+        ]
+        return rows[:limit]
+
     def writer_document(self, name):
         row = self.writer_rows.get(name)
         return dict(row) if row else None
@@ -914,6 +922,14 @@ class FakeContentTarget:
 
     def insert_comments(self, rows):
         self._insert_unique(self.comment_rows, rows, "Drive Comment")
+
+    def replace_comments(self, rows):
+        for row in rows:
+            if row["name"] not in self.comment_rows:
+                raise ValueError(f"no Drive Comment {row['name']!r} to replace")
+            # `update`, not a fresh dict: the legacy child columns stay on
+            # the row exactly as the site's `UPDATE` leaves them.
+            self.comment_rows[row["name"]].update(deepcopy(row))
 
     def write_thread(self, thread, comments):
         def write():

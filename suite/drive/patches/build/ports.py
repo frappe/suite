@@ -724,6 +724,8 @@ class ContentTarget(Protocol):
 
     def comment_names(self, names: tuple[str, ...]) -> dict[str, dict]: ...
 
+    def legacy_comments(self, after: str, limit: int) -> list[dict]: ...
+
     def writer_document(self, name: str) -> dict | None: ...
 
     def preview(self, node: str) -> dict | None: ...
@@ -751,6 +753,8 @@ class ContentTarget(Protocol):
     def insert_threads(self, rows: list[dict]) -> None: ...
 
     def insert_comments(self, rows: list[dict]) -> None: ...
+
+    def replace_comments(self, rows: list[dict]) -> None: ...
 
     def write_thread(self, thread: dict, comments: list[dict]) -> None: ...
 
@@ -1590,6 +1594,30 @@ class SiteContentTarget:
         )
         return {row.name: dict(row) for row in rows}
 
+    def legacy_comments(self, after: str, limit: int) -> list[dict]:
+        """Page the old `Drive File.comments` child rows the reused table holds.
+
+        `thread` is `reqd` in the new schema and `_bulk` writes it on every
+        row, so an empty one can only be a row from before the rewrite.
+        `parent` and `resolved` are columns the old child table left behind,
+        which is why this is raw SQL: they are not in the new DocType, and a
+        site that never ran the old Drive does not have them at all.
+        """
+        if not frappe.db.has_column("Drive Comment", "parent"):
+            return []
+        return frappe.db.sql(
+            """
+            SELECT `name`, `parent`, `content`, `resolved`, `owner`,
+                   `creation`, `modified`, `modified_by`
+              FROM `tabDrive Comment`
+             WHERE (`thread` IS NULL OR `thread` = '') AND `name` > %(after)s
+             ORDER BY `name` ASC
+             LIMIT %(limit)s
+            """,
+            {"after": after, "limit": limit},
+            as_dict=True,
+        )
+
     def writer_document(self, name: str) -> dict | None:
         row = frappe.db.get_value("Writer Document", name, list(WRITER_DOCUMENT_COLUMNS), as_dict=True)
         return dict(row) if row else None
@@ -1668,6 +1696,23 @@ class SiteContentTarget:
 
     def insert_comments(self, rows: list[dict]) -> None:
         self._bulk("Drive Comment", COMMENT_COLUMNS, rows)
+
+    def replace_comments(self, rows: list[dict]) -> None:
+        """Write the §14 columns onto rows the reused table already holds.
+
+        An update, not a delete and an insert: Build removes nothing
+        (`tests/test_dormancy.py`). `parent`, `parentfield`, `parenttype`,
+        and `resolved` are the old child table's own columns and are left
+        exactly as they are, for ticket 35 to drop with the rest. Each row
+        is complete on its own, so a run killed inside the loop resumes.
+        """
+        columns = [column for column in COMMENT_COLUMNS if column != "name"]
+        assignment = ", ".join(f"`{column}` = %({column})s" for column in columns)
+        for row in rows:
+            frappe.db.sql(
+                f"UPDATE `tabDrive Comment` SET {assignment} WHERE `name` = %(name)s",
+                {column: row.get(column) for column in COMMENT_COLUMNS},
+            )
 
     def write_thread(self, thread: dict, comments: list[dict]) -> None:
         self._unit(

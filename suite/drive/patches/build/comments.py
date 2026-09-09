@@ -13,6 +13,7 @@ from suite.drive.patches.build.content_mapping import (
     exact_fields,
     sheet_anchor,
 )
+from suite.drive.patches.build.state import LegacyComment
 
 MAX_COMMENT_BYTES = 65_535
 
@@ -50,7 +51,7 @@ COMMENT_FIELDS = (
 )
 
 
-def convert_document_comments(env, document, node: str, *, batch_size: int) -> int:
+def convert_document_comments(env, content, document, node: str, *, batch_size: int) -> int:
     """Convert one document atomically per thread and return comment count."""
     if document.doctype == "Writer Document":
         plans = _writer_threads(env, document, node)
@@ -60,8 +61,84 @@ def convert_document_comments(env, document, node: str, *, batch_size: int) -> i
     count = 0
     for thread, comments in plans:
         count += len(comments)
-        _write_thread(env, thread, comments, batch_size)
+        content.legacy_comments_superseded += _write_thread(env, thread, comments, batch_size)
     return count
+
+
+def port_legacy_comments(env, content, *, batch_size: int) -> None:
+    """Give the legacy child rows no Yjs entry claimed a thread and a node.
+
+    §14 names no rule for them. The plan lists `drive_comment/` as a new
+    DocType, so nobody wrote a reshape for the table it reuses. Build loses
+    no comment. A row a Yjs entry claims is the same comment under the same
+    id, and `_write_thread` completes it there. What is left is a Writer
+    annotation the editor no longer holds, so it becomes its own
+    one-comment thread on the node its `File` became. A row whose `File`
+    never became a node has nothing to hang off. It is counted and listed,
+    and left where it is: Build removes nothing (`tests/test_dormancy.py`).
+    """
+    target = env.content_target
+    # A row Build rewrote never looks legacy again, so the two rewrite
+    # counters are cumulative across passes. A row it could not place stays
+    # legacy and every sweep sees it, so this census is taken fresh.
+    content.legacy_comments_unported = 0
+    content.legacy_comment_rows = []
+    after = ""
+    while True:
+        rows = target.legacy_comments(after, batch_size)
+        if not rows:
+            return
+        for row in rows:
+            _port_legacy(env, content, row, batch_size)
+        # Per page, as the document loop does per document: `_write_thread`
+        # has committed these rows, so a kill here must not lose the count
+        # of rows no later sweep can recognise.
+        env.state.put_content(content)
+        # Keyset, not offset: a ported row leaves the legacy set, and a row
+        # left where it is would otherwise be read forever.
+        after = rows[-1]["name"]
+        if len(rows) < batch_size:
+            return
+
+
+def _port_legacy(env, content, row: dict, batch_size: int) -> None:
+    file = row.get("parent") or ""
+    node = env.content_target.nodes((file,)).get(file) if file else None
+    if not node or node.get("kind") != "document":
+        content.record_legacy_comment(LegacyComment(row["name"], file))
+        return
+    thread, comments = _legacy_plan(node["name"], row)
+    _write_thread(env, thread, comments, batch_size)
+    content.legacy_comments_ported += 1
+
+
+def _legacy_plan(node: str, row: dict) -> tuple[dict, list[dict]]:
+    """One thread of one comment, from one `Drive File.comments` child row.
+
+    The old row carried `content` and `resolved` and nothing else of its
+    own, so its `owner` is the author and its `creation` is the stamp.
+    """
+    text = row.get("content")
+    if not isinstance(text, str) or not text.strip():
+        raise InvalidLegacyContent("legacy comment text is blank")
+    if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
+        raise InvalidLegacyContent("legacy comment text exceeds the target Text column")
+    author = row.get("owner") or "Guest"
+    if len(author) > 140:
+        raise InvalidLegacyContent("legacy comment author exceeds the target Link column")
+    stamp = str(row.get("creation") or "")
+    if not stamp:
+        raise InvalidLegacyContent("legacy comment has no creation stamp")
+    entry = {
+        "id": row["name"],
+        "text": text,
+        "author": author,
+        "author_name": None,
+        "stamp": stamp,
+        "mentions": [],
+        "source_complete": True,
+    }
+    return _thread_plan(node, row["name"], bool(row.get("resolved")), [entry], _lazy(lambda: (author, stamp)))
 
 
 def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
@@ -290,15 +367,23 @@ def _thread_plan(node, anchor, resolved, entries, fallback, *, thread_id=None):
     return thread, comments
 
 
-def _write_thread(env, planned, comments, batch_size):
+def _write_thread(env, planned, comments, batch_size) -> int:
+    """Store one thread and return how many legacy rows it rewrote in place."""
     target = env.content_target
     stored_thread = target.thread_names((planned["name"],)).get(planned["name"])
     stored_comments = target.comment_names(tuple(row["name"] for row in comments))
+    # `new_writer.py:34` named each child row after the Yjs entry it came
+    # from, so a stored row under a planned id is this comment as the old
+    # Drive held it. The Yjs entry is the only side that carries the author,
+    # the thread, and the resolution, so it supersedes the row rather than
+    # being refused by it.
+    legacy = [row for row in comments if _is_legacy(stored_comments.get(row["name"]))]
+    superseded = {row["name"] for row in legacy}
     if stored_thread:
         exact_fields(stored_thread, planned, THREAD_FIELDS, f"thread {planned['name']}")
     for row in comments:
         stored = stored_comments.get(row["name"])
-        if stored:
+        if stored and row["name"] not in superseded:
             exact_fields(stored, row, COMMENT_FIELDS, f"comment {row['name']}")
     fresh = [row for row in comments if row["name"] not in stored_comments]
     if not stored_thread:
@@ -306,9 +391,25 @@ def _write_thread(env, planned, comments, batch_size):
         target.write_thread(planned, first)
         target.commit()
         fresh = fresh[len(first) :]
+    # After the thread, never before: a rewritten row stops looking legacy,
+    # so a run killed between the two would leave a comment whose thread no
+    # later pass knows to write.
+    if legacy:
+        target.replace_comments(legacy)
+        target.commit()
     for offset in range(0, len(fresh), batch_size):
         target.insert_comments(fresh[offset : offset + batch_size])
         target.commit()
+    return len(legacy)
+
+
+def _is_legacy(stored) -> bool:
+    """A row from the old `Drive File.comments` grid, kept by the reused table.
+
+    `thread` is `reqd` in the new schema and `_bulk` writes it on every row,
+    so a stored comment with no thread predates the rewrite.
+    """
+    return bool(stored) and not stored.get("thread")
 
 
 def _refuse_colliding_ids(plans) -> None:
