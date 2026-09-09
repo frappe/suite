@@ -605,6 +605,100 @@ class SlidesTest(unittest.TestCase):
 
         self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": shared_url}])
 
+    def one_picture_twice(self, deck_name, *, private_bytes=b"one picture"):
+        """The pair legacy Slides left: one picture stored public and private.
+
+        `/files/logo.png` and `/private/files/logo.png` are two `File` rows on
+        one deck, pointing at two `File Blob` rows of the same bytes. Three
+        such pairs sit on the "Frappeverse 2025" template deck.
+        """
+        return [
+            media("public-file", deck_name=deck_name, blob="blob-public", url="/files/logo.png"),
+            media("private-file", deck_name=deck_name, blob="blob-private", url="/private/files/logo.png"),
+        ], private_bytes
+
+    def add_pair_blobs(self, target, private_bytes):
+        target.add_blob("blob-public", b"one picture", mime_type="image/png", is_private=0)
+        target.add_blob("blob-private", private_bytes, mime_type="image/png")
+
+    def test_a_borrowed_picture_stored_public_and_private_resolves_to_one_node(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        rows, private_bytes = self.one_picture_twice(template.name)
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": "/files/logo.png"}]))],
+            media=rows,
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        self.add_pair_blobs(target, private_bytes)
+
+        result = convert_slides_and_templates(env)
+
+        borrowed = self.media_children(target, consumer.node)
+        self.assertEqual(len(borrowed), 1)
+        # Tier 1: the reference spells the public row's `file_url` exactly.
+        self.assertEqual(borrowed[0]["blob"], "blob-public")
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": borrowed[0]["name"]}])
+        self.assertEqual(result.borrowed_duplicates_collapsed, 1)
+        self.assertEqual(result.issues_total, 0)
+
+        again = convert_slides_and_templates(env)
+
+        self.assertEqual(self.media_children(target, consumer.node), borrowed)
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": borrowed[0]["name"]}])
+        # The rerun reads a node id, adopts nothing, and collapses nothing.
+        # The counter reports the mint, so §14.9 keeps none of it.
+        self.assertEqual(again.borrowed_duplicates_collapsed, 0)
+
+    def test_two_borrowed_blobs_of_different_bytes_still_refuse_the_deck(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        consumer = deck("consumer", node="consumer-node", title="Consumer")
+        rows, _ = self.one_picture_twice(template.name)
+        source = FakeContent(
+            documents=[template, consumer],
+            slides=[SlideRow("slide-a", consumer.name, 1, json.dumps([{"src": "/files/logo.png"}]))],
+            media=rows,
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, consumer.node, consumer.name, consumer.title)
+        self.add_pair_blobs(target, b"another picture")
+
+        with self.assertRaises(BuildSlidesError) as caught:
+            convert_slides_and_templates(env)
+
+        self.assertIn("is ambiguous", str(caught.exception))
+        self.assertEqual(self.media_children(target, consumer.node), [])
+        self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": "/files/logo.png"}])
+
+    def test_a_deck_picture_stored_public_and_private_becomes_one_node(self):
+        rows, private_bytes = self.one_picture_twice("deck-1")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": "/files/logo.png"}]))],
+            media=rows,
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        self.add_pair_blobs(target, private_bytes)
+
+        result = convert_slides_and_templates(env)
+
+        children = self.media_children(target, "deck-node")
+        self.assertEqual([row["name"] for row in children], ["private-file"])
+        # No reference spells one row over the other, so tier 2 wins.
+        self.assertEqual(children[0]["blob"], "blob-private")
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "private-file"}])
+        self.assertEqual((result.media_nodes_created, result.media_duplicates_collapsed), (1, 1))
+
+        again = convert_slides_and_templates(env)
+
+        self.assertEqual(self.media_children(target, "deck-node"), children)
+        self.assertEqual((again.media_nodes_created, again.media_duplicates_collapsed), (1, 1))
+
     def test_a_non_template_borrowed_file_stays_unresolved_and_is_reported(self):
         other = deck("other", node="other-node", title="Other")
         shared_url = "/private/files/pasted.png"

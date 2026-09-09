@@ -14,6 +14,7 @@ reading the rows. Both are covered against the real thing in
 `suite/drive/tests/test_build_storage.py`.
 """
 
+import hashlib
 from copy import deepcopy
 from dataclasses import replace
 
@@ -859,6 +860,7 @@ class FakeContentTarget:
         driver="local",
         is_private=1,
         status="Ready",
+        checksum=None,
     ):
         self.blob_rows[name] = BlobRow(
             name=name,
@@ -868,6 +870,10 @@ class FakeContentTarget:
             is_private=is_private,
             status=status,
             key=f"private/{name}",
+            # `frappe.storage.blob.put_blob` keys a row by the sha256 of its
+            # bytes, so equal bytes here must produce equal checksums or the
+            # fake would hide the public/private pair Build has to collapse.
+            checksum=checksum or hashlib.sha256(data).hexdigest(),
         )
         self.blob_bytes[name] = data
         return self.blob_rows[name]
