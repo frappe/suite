@@ -320,7 +320,8 @@ const attention = computed(() => {
 		items.push({
 			key: `domain:${domain.name}`,
 			icon: Globe,
-			tone: 'amber',
+			// Amber asks for action; a domain someone disabled on purpose is listed in grey.
+			tone: disabled ? 'gray' : 'amber',
 			title: domain.name,
 			description: disabled
 				? __('The domain is disabled, so no mail flows for it.')
