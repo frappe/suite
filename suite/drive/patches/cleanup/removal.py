@@ -17,7 +17,11 @@ from suite.drive.patches.cleanup.state import PhaseResult
 
 # §14.10's frozen deletion list, this package's own copy: `suite.drive.patches.
 # build.tests.test_dormancy` holds the mirror-image list that proves none of
-# this has happened yet.
+# this has happened yet. `env.schema.drop_custom_fields` only removes each
+# field's `Custom Field` metadata row, never the physical column it created
+# on `tabFile` — see that port's docstring (`ports.SiteSchemaGateway.
+# drop_custom_fields`) for why an orphaned column is intentionally outside
+# §14.10's scope, not a gap this phase should add DDL to close.
 RETAINED_FILE_CUSTOM_FIELDS = (
     "section_break_nfot8",
     "mime_type",
@@ -95,19 +99,33 @@ class CleanupPatchError(frappe.ValidationError):
     """Cleanup cannot finish, and the site must not be left calling it done."""
 
 
-def _require_exact_or_already_done(actual: int, expected: int, what: str) -> None:
-    """§14.10's removal counts are all-or-nothing. A gate already proved
-    every reachable row was migrated and every referenced item was still
-    there when Cleanup started, so a fresh phase must remove exactly
-    `expected`; a resumed phase whose commit landed before an earlier crash
-    (§14's transaction discipline) finds nothing left and removes zero. A
-    count strictly between the two means some of `what` went missing for a
-    reason nothing here can explain, and reporting that phase "completed"
-    would silently accept schema drift instead of refusing to guess at it."""
-    if actual not in (0, expected):
+def _verify_gone(remaining: frozenset, what: str) -> None:
+    """§14.10's removal targets must all be gone once a phase reports itself
+    complete — checked by re-reading each named target's own presence, never
+    inferred from how many a `drop_*` call reported removing just now.
+
+    A single call's own count is the wrong signal for this: MariaDB commits
+    a DDL statement (`alter table ... drop column`, and the delete behind a
+    Single's `tabSingles` row) as soon as that statement runs, independent
+    of this package's own `env.transaction.commit()` at the end of the
+    phase. A crash between two such calls in the same phase — say, after
+    `Drive Permission` is dropped but before `Drive Token` is — is a
+    legitimate partially-applied phase, not a corrupted one: on resume,
+    `drop_doctypes` sees one doctype already gone and reports removing only
+    the other, a count that would fail an all-or-nothing check even though
+    every named target really is gone by the end of this call. Re-checking
+    presence directly, target by target, verifies the fact removal.py
+    actually needs and stays correct whether this call did all the work,
+    none of it (a clean rerun of an already-completed phase), or the rest of
+    what an earlier, interrupted call left unfinished.
+
+    Still fails closed: if a target really is still present after the drop
+    call meant to remove it, or the presence check itself errors, that
+    propagates as a real refusal, not a silently accepted mismatch."""
+    if remaining:
         raise CleanupPatchError(
-            f"expected to drop {expected} of {what}, actually dropped {actual}; refusing to "
-            "report success on a partial removal"
+            f"{sorted(remaining)} of {what} still present after the drop call; refusing to "
+            "report this phase complete"
         )
 
 
@@ -234,12 +252,8 @@ def phase_custom_fields(env) -> PhaseResult:
     result = PhaseResult()
     result.fields_dropped = env.schema.drop_custom_fields(RETAINED_FILE_CUSTOM_FIELDS)
     result.property_setters_dropped = env.schema.drop_property_setters(RETAINED_PROPERTY_SETTERS)
-    _require_exact_or_already_done(
-        result.fields_dropped, len(RETAINED_FILE_CUSTOM_FIELDS), "the File custom fields"
-    )
-    _require_exact_or_already_done(
-        result.property_setters_dropped, len(RETAINED_PROPERTY_SETTERS), "the File property setters"
-    )
+    _verify_gone(env.schema.custom_fields_present(RETAINED_FILE_CUSTOM_FIELDS), "the File custom fields")
+    _verify_gone(env.schema.property_setters_present(RETAINED_PROPERTY_SETTERS), "the File property setters")
     result.completed = True
     return result
 
@@ -256,13 +270,12 @@ def phase_legacy_doctypes(env) -> PhaseResult:
     """
     result = PhaseResult()
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_3)
-    _require_exact_or_already_done(
-        result.doctypes_dropped, len(RETAINED_DOCTYPES_STEP_3), "the step-3 doctypes"
-    )
+    _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_3), "the step-3 doctypes")
     env.schema.remove_permission_hooks(RETAINED_DOCTYPES_STEP_3)
     result.columns_dropped = env.schema.drop_columns("Drive Notification", NOTIFICATION_LEGACY_COLUMNS)
-    _require_exact_or_already_done(
-        result.columns_dropped, len(NOTIFICATION_LEGACY_COLUMNS), "Drive Notification's legacy columns"
+    _verify_gone(
+        env.schema.columns_present("Drive Notification", NOTIFICATION_LEGACY_COLUMNS),
+        "Drive Notification's legacy columns",
     )
     env.schema.require_field("Drive Notification", "activity")
     result.completed = True
@@ -284,9 +297,7 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
     result.docshares_deleted = env.content.delete_sheet_docshares()
     env.schema.drop_child_table_field("Writer Document", "versions")
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_4)
-    _require_exact_or_already_done(
-        result.doctypes_dropped, len(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes"
-    )
+    _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes")
     result.ycomments_cleared = env.content.clear_writer_ycomments()
     result.sheet_comments_stripped = env.content.strip_sheet_comments(batch_size=batch_size)
     result.completed = True
@@ -298,13 +309,11 @@ def phase_content_fields(env) -> PhaseResult:
     columns; `Drive Disk Settings`' ten Single values."""
     result = PhaseResult()
     for doctype, columns in CONTENT_DROPPED_COLUMNS + SETTINGS_DROPPED_COLUMNS:
-        dropped = env.schema.drop_columns(doctype, columns)
-        _require_exact_or_already_done(dropped, len(columns), f"{doctype}'s dropped columns")
-        result.columns_dropped += dropped
+        result.columns_dropped += env.schema.drop_columns(doctype, columns)
+        _verify_gone(env.schema.columns_present(doctype, columns), f"{doctype}'s dropped columns")
     for doctype, fields in SINGLE_DROPPED_VALUES:
-        dropped = env.schema.drop_single_values(doctype, fields)
-        _require_exact_or_already_done(dropped, len(fields), f"{doctype}'s dropped single values")
-        result.single_values_dropped += dropped
+        result.single_values_dropped += env.schema.drop_single_values(doctype, fields)
+        _verify_gone(env.schema.single_values_present(doctype, fields), f"{doctype}'s dropped single values")
     result.completed = True
     return result
 
@@ -365,11 +374,19 @@ def phase_s3_prefix(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult
     step 5 has already dropped both columns by the time step 8 runs.
 
     Never a blind prefix delete: the prefix is refused if it is empty, the
-    bucket root, or a private/public parent; every candidate key is listed,
-    then subtracted against `File Blob` references re-read at this moment,
-    immediately before anything is queued for deletion. That re-check closes
-    the race between listing and enqueueing; the job this enqueues still has
-    to close the separate race between enqueueing and actually running
+    bucket root, or a private/public parent. Truly batch-bounded end to end,
+    not just at the listing step: each page from `list_prefix` is
+    immediately deduplicated, checked against `blob_references`, and
+    enqueued on its own, one bounded `enqueue_delete` call per page, rather
+    than accumulating every key from every page into one list and issuing a
+    single call sized by however many legacy keys the whole prefix holds —
+    which could be millions, and would turn `blob_references`' `IN` clause
+    and `enqueue_delete`'s payload into one unbounded query and one
+    unbounded job apiece. This also tightens the listing/enqueueing race
+    `blob_references` closes: each page's recheck happens immediately before
+    that page's own enqueue call, not after every page has already been
+    listed. The job `enqueue_delete` starts still has to close the separate
+    race between enqueueing and actually running
     (`SiteS3LegacyPrefix.enqueue_delete`'s docstring is that job's contract).
     """
     result = PhaseResult()
@@ -386,7 +403,7 @@ def phase_s3_prefix(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult
     prefix = settings.get("root_folder") or ""
     refuse_dangerous_prefix(prefix)
 
-    keys: list[str] = []
+    job_ids: list[str] = []
     after = ""
     previous = None
     while True:
@@ -396,17 +413,20 @@ def phase_s3_prefix(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult
         if page[0] == previous:
             raise RuntimeError(f"the S3 prefix scan stalled at {page[0]!r}; refusing to loop")
         previous = page[0]
-        keys.extend(page)
         after = page[-1]
+
+        deduped = tuple(dict.fromkeys(page))
+        result.candidates_found += len(deduped)
+        referenced = env.s3.blob_references(deduped) if deduped else set()
+        result.referenced_excluded += len(referenced)
+        candidates = tuple(key for key in deduped if key not in referenced)
+        if candidates:
+            job_ids.append(env.s3.enqueue_delete(candidates))
+
         if len(page) < batch_size:
             break
 
-    referenced = env.s3.blob_references(tuple(keys)) if keys else set()
-    candidates = tuple(key for key in keys if key not in referenced)
-    result.candidates_found = len(keys)
-    result.referenced_excluded = len(referenced)
-    if candidates:
-        result.job_id = env.s3.enqueue_delete(candidates)
+    result.job_ids = job_ids
     result.completed = True
     return result
 

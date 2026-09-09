@@ -22,11 +22,13 @@ from suite.drive.patches.cleanup.ports import (
     SiteContentRows,
     SiteDiskSettingsSnapshot,
     SiteLegacyFileRows,
+    SiteNotificationWriterReadiness,
     SiteS3LegacyPrefix,
     SiteSchemaGateway,
     SiteSourceSchema,
     SiteThumbnailStore,
     SiteTransactionGateway,
+    ThumbnailPathError,
 )
 
 # The real, checked-in `suite` app root: one level above `patches/cleanup/`'s
@@ -238,6 +240,45 @@ class TestSiteThumbnailStore(unittest.TestCase):
         exists.assert_not_called()
         unlink.assert_not_called()
 
+    def test_an_absolute_thumbnail_prefix_is_refused_not_joined(self):
+        """Finding: `os.path.join`/`Path.__truediv__` both discard the left
+        side the moment a later component is itself absolute, so an absolute
+        `thumbnail_prefix` would silently escape `root_folder` entirely and
+        delete under `/etc` instead. Nothing on disk is touched."""
+        with TemporaryDirectory() as tmp:
+            settings = {"enabled": False, "root_folder": tmp, "thumbnail_prefix": "/etc"}
+            with self.assertRaises(ThumbnailPathError):
+                SiteThumbnailStore().delete_sidecars(("a",), settings=settings)
+
+    def test_a_traversal_thumbnail_prefix_is_refused_not_joined(self):
+        with TemporaryDirectory() as tmp:
+            settings = {"enabled": False, "root_folder": tmp, "thumbnail_prefix": "../../../etc"}
+            with self.assertRaises(ThumbnailPathError):
+                SiteThumbnailStore().delete_sidecars(("a",), settings=settings)
+
+    def test_an_absolute_root_folder_with_an_ordinary_prefix_still_works(self):
+        """`root_folder` itself is allowed to be absolute — only
+        `thumbnail_prefix` is untrusted here."""
+        with TemporaryDirectory() as tmp:
+            thumbs = Path(tmp) / ".thumbnails"
+            thumbs.mkdir()
+            (thumbs / "a.thumbnail").write_bytes(b"x")
+            settings = {"enabled": False, "root_folder": tmp, "thumbnail_prefix": ".thumbnails"}
+            deleted = SiteThumbnailStore().delete_sidecars(("a", "b"), settings=settings)
+        self.assertEqual(deleted, 1)
+
+    def test_a_prefix_that_resolves_back_inside_root_via_dotdot_is_allowed(self):
+        """A `..`-bearing prefix is not banned outright, only one that
+        actually escapes: `sub/../.thumbnails` resolves to the same place as
+        `.thumbnails` and must behave identically."""
+        with TemporaryDirectory() as tmp:
+            thumbs = Path(tmp) / ".thumbnails"
+            thumbs.mkdir()
+            (thumbs / "a.thumbnail").write_bytes(b"x")
+            settings = {"enabled": False, "root_folder": tmp, "thumbnail_prefix": "sub/../.thumbnails"}
+            deleted = SiteThumbnailStore().delete_sidecars(("a",), settings=settings)
+        self.assertEqual(deleted, 1)
+
 
 class TestSiteSchemaGateway(unittest.TestCase):
     """Finding: `drop_columns` built `table = f"tab{doctype}"` and then
@@ -329,6 +370,61 @@ class TestSiteSchemaGateway(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 SiteSchemaGateway().drop_single_values("Drive Disk Settings", ("quota",))
 
+    def test_custom_fields_present_queries_by_fieldname_not_name(self):
+        """Finding: presence must be checked directly, not inferred from a
+        `drop_*` call's own count — a resumed call after a partially-applied
+        earlier attempt needs to know what is *still there*, which the count
+        a single call reports removing cannot answer on its own."""
+        with patch("frappe.get_all", return_value=["mime_type"]) as get_all:
+            present = SiteSchemaGateway().custom_fields_present(("mime_type", "status"))
+        self.assertEqual(present, {"mime_type"})
+        get_all.assert_called_once_with(
+            "Custom Field",
+            filters={"dt": "File", "fieldname": ["in", ["mime_type", "status"]]},
+            pluck="fieldname",
+        )
+
+    def test_custom_fields_present_an_empty_tuple_never_queries(self):
+        with patch("frappe.get_all") as get_all:
+            present = SiteSchemaGateway().custom_fields_present(())
+        self.assertEqual(present, frozenset())
+        get_all.assert_not_called()
+
+    def test_property_setters_present_checks_each_key_directly(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.exists.side_effect = [True, False]
+            present = SiteSchemaGateway().property_setters_present(
+                (("File", "file_url", "depends_on"), ("File", "folder", "hidden"))
+            )
+        self.assertEqual(present, {("File", "file_url", "depends_on")})
+
+    def test_doctypes_present_checks_the_capitalized_doctype_name(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.exists.return_value = True
+            present = SiteSchemaGateway().doctypes_present(("drive/doctype/drive_permission",))
+        self.assertEqual(present, {"drive/doctype/drive_permission"})
+        db.exists.assert_called_once_with("DocType", "Drive Permission")
+
+    def test_columns_present_calls_has_column_with_the_bare_doctype(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.has_column.side_effect = lambda doctype, field: field == "from_user"
+            present = SiteSchemaGateway().columns_present("Drive Notification", ("from_user", "type"))
+        self.assertEqual(present, {"from_user"})
+        db.has_column.assert_any_call("Drive Notification", "from_user")
+        db.has_column.assert_any_call("Drive Notification", "type")
+
+    def test_single_values_present_queries_tabsingles_directly(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.sql.return_value = [("quota",)]
+            present = SiteSchemaGateway().single_values_present("Drive Disk Settings", ("quota", "bucket"))
+        self.assertEqual(present, {"quota"})
+
+    def test_single_values_present_an_empty_tuple_never_queries(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            present = SiteSchemaGateway().single_values_present("Drive Disk Settings", ())
+        self.assertEqual(present, frozenset())
+        db.sql.assert_not_called()
+
 
 class TestSiteSourceSchema(unittest.TestCase):
     """Finding: nothing probed whether Ticket 36's source edits (removing a
@@ -367,6 +463,46 @@ class TestSiteSourceSchema(unittest.TestCase):
     def test_permission_hooks_present_narrows_to_only_the_requested_names(self):
         present = SiteSourceSchema().permission_hooks_present(("Drive Token",))
         self.assertEqual(present, set())
+
+
+class TestSiteNotificationWriterReadiness(unittest.TestCase):
+    """Finding: nothing probed whether the two legacy `Drive Notification`
+    writers Ticket 30's addendum named had actually stopped building a row
+    naming a step-3-dropped column, or one with no `activity` set. This
+    reads the real, checked-in source of both writers in this worktree
+    (only `frappe.get_app_path` is mocked, to point at it), so it proves
+    today's honest "not ready" answer directly."""
+
+    def test_both_real_writers_are_unready_today(self):
+        # Ticket 35 changes neither writer, so this must fail honestly.
+        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
+            unready = SiteNotificationWriterReadiness().still_unready()
+        self.assertEqual(unready, {"notifications.create_notification", "DriveUserInvitation.after_insert"})
+
+    def test_a_migrated_writer_naming_no_legacy_field_and_setting_activity_is_ready(self):
+        with TemporaryDirectory() as tmp:
+            app_root = Path(tmp)
+            (app_root / "drive" / "api").mkdir(parents=True)
+            (app_root / "drive" / "doctype" / "drive_user_invitation").mkdir(parents=True)
+            (app_root / "drive" / "api" / "notifications.py").write_text(
+                'frappe.get_doc({"doctype": "Drive Notification", "to_user": to_user, "activity": activity}).insert()',
+                encoding="utf-8",
+            )
+            (
+                app_root / "drive" / "doctype" / "drive_user_invitation" / "drive_user_invitation.py"
+            ).write_text(
+                'frappe.get_doc({"doctype": "Drive Notification", "to_user": admin, "activity": activity}).insert()',
+                encoding="utf-8",
+            )
+            with patch("frappe.get_app_path", return_value=str(app_root)):
+                unready = SiteNotificationWriterReadiness().still_unready()
+        self.assertEqual(unready, frozenset())
+
+    def test_a_missing_writer_file_raises_rather_than_reporting_ready(self):
+        with TemporaryDirectory() as tmp:
+            with patch("frappe.get_app_path", return_value=tmp):
+                with self.assertRaises(RuntimeError):
+                    SiteNotificationWriterReadiness().still_unready()
 
 
 class TestSiteDiskSettingsSnapshot(unittest.TestCase):

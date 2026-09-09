@@ -42,9 +42,12 @@ PHASES = (
 def run_cleanup(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> dict:
     """Run every §14.10 phase against `env`, in order, resumably.
 
-    Four refusals, all before phase 1, none of them repeated inside the
-    loop below: `run_preflight` (can every port a pending phase needs
-    actually do its job — the four-plus honestly-`NotImplementedError`
+    Five refusals, all before phase 1, none of them repeated inside the
+    loop below: `env.state.refuse_if_corrupt()` (an unreadable existing
+    state record is quarantined for forensics and refused outright, never
+    silently treated as a fresh site with no prior run — see
+    `CorruptCleanupStateError`); `run_preflight` (can every port a pending
+    phase needs actually do its job — the honestly-`NotImplementedError`
     ports fail here, not partway through a phase that already deleted
     rows); the three §14.10 gates; then explicit authorization and a
     recorded backup reference. Checked once per call, not once per phase:
@@ -65,6 +68,7 @@ def run_cleanup(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> dict:
     check) — rather than the reverse order, where a crash could make a
     checkpoint claim durability the database never actually committed.
     """
+    env.state.refuse_if_corrupt()
     run_preflight(env)
     check_gates(env, batch_size=batch_size)
     require_authorization(env)

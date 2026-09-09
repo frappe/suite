@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+import frappe
+
 ACTIVE = "Active"
 TRASHED = "Trashed"
 REMOVED = "Removed"
@@ -153,6 +155,62 @@ class SchemaGateway(Protocol):
         """Remove `permission_query_conditions`/`has_permission` entries for
         these doctypes out of `suite/hooks.py`. A source change made once the
         doctypes themselves are gone, not a runtime operation."""
+
+    def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        """The subset of these `File` custom-field names that still exist,
+        checked directly against `Custom Field` rows — never inferred from
+        how many a `drop_custom_fields` call reported removing. MariaDB's
+        DDL inside `drop_columns`/`drop_single_values` auto-commits, so a
+        crash between two of this phase's own calls can leave some targets
+        already gone before the phase's own checkpoint is ever written; a
+        resumed call's own `drop_*` count is then legitimately smaller than
+        the full expected count, which is not the same fact as something
+        still being there. This is the fact removal.py's phases actually
+        need: is every named target really gone now, regardless of how much
+        of that this call did versus an earlier, interrupted one."""
+
+    def property_setters_present(
+        self, keys: tuple[tuple[str, str, str], ...]
+    ) -> frozenset[tuple[str, str, str]]:
+        """The subset of these `(doc_type, field_name, property)` keys that
+        still have a `Property Setter` row, checked directly."""
+
+    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
+        """The subset of these dotted doctype paths whose `DocType` still
+        exists, checked directly against `DocType`."""
+
+    def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        """The subset of these fieldnames that are still real columns on
+        `doctype`'s table, checked directly with `frappe.db.has_column`. Not
+        for a Single: use `single_values_present`."""
+
+    def single_values_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        """The subset of these fieldnames that still have a row in
+        `tabSingles` for this Single `doctype`, checked directly."""
+
+
+class NotificationWriterReadiness(Protocol):
+    """Whether the two legacy `Drive Notification` writers Ticket 30's
+    addendum named have actually stopped building a row that names a
+    step-3-dropped column, or a row with no `activity` set at all.
+    `phase_legacy_doctypes` drops `NOTIFICATION_LEGACY_COLUMNS` and makes
+    `activity` required in the same phase (§14.10 step 3); if either writer
+    still builds one of those "pointerless" rows afterwards, the very next
+    call either resurrects a dropped column into a stray attribute no schema
+    declares, or fails outright on the new mandatory-field check — a defect
+    a doctype-JSON readiness check cannot see, because both writers build
+    their `Drive Notification` doc entirely at the Python call site
+    (`suite.drive.api.notifications.create_notification`, `Drive User
+    Invitation.after_insert`), never through a declared field
+    `SourceSchemaReadiness` could inspect. Ticket 35 does not touch either
+    writer; this port exists so activation honestly refuses until Ticket 36
+    does."""
+
+    def still_unready(self) -> frozenset[str]:
+        """The subset of the two known writers that still reference a
+        step-3-dropped column, or still build a `Drive Notification` insert
+        with no `activity` key. Non-empty means those call sites have not
+        been migrated yet, and phase 3 must not run."""
 
 
 class SourceSchemaReadiness(Protocol):
@@ -396,6 +454,17 @@ class SiteSchemaGateway:
     """`SchemaGateway` over Custom Field, Property Setter, and raw DDL."""
 
     def drop_custom_fields(self, fieldnames: tuple[str, ...]) -> int:
+        """Deletes the `Custom Field` metadata row only, matching Frappe's
+        own removal semantics for a Custom Field: `CustomField.on_trash`
+        (frappe/custom/doctype/custom_field/custom_field.py) clears property
+        setters and doctype layouts but never calls `updatedb`/DDL, so the
+        physical column stays behind on `tabFile`, unused and undeclared,
+        exactly as it would after any other Custom Field deletion anywhere
+        in Frappe. §14.10 only asks Cleanup to "delete the seven File custom
+        fields," which this satisfies at the same level Frappe itself
+        considers a Custom Field deleted; leaving its orphaned column in
+        place is intentionally outside spec, not a gap, and this phase adds
+        no DDL of its own to go further than the framework already does."""
         import frappe
 
         names = frappe.get_all(
@@ -512,6 +581,53 @@ class SiteSchemaGateway:
             "doctypes are gone, not a runtime operation; this port exists for fixture tests only"
         )
 
+    def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        import frappe
+
+        if not fieldnames:
+            return frozenset()
+        found = frappe.get_all(
+            "Custom Field", filters={"dt": "File", "fieldname": ["in", list(fieldnames)]}, pluck="fieldname"
+        )
+        return frozenset(found)
+
+    def property_setters_present(
+        self, keys: tuple[tuple[str, str, str], ...]
+    ) -> frozenset[tuple[str, str, str]]:
+        import frappe
+
+        present = set()
+        for doc_type, field_name, prop in keys:
+            if frappe.db.exists(
+                "Property Setter", {"doc_type": doc_type, "field_name": field_name, "property": prop}
+            ):
+                present.add((doc_type, field_name, prop))
+        return frozenset(present)
+
+    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
+        import frappe
+
+        return frozenset(
+            path for path in dotted_paths if frappe.db.exists("DocType", _doctype_name_from_path(path))
+        )
+
+    def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        import frappe
+
+        return frozenset(name for name in fieldnames if frappe.db.has_column(doctype, name))
+
+    def single_values_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
+        import frappe
+
+        if not fieldnames:
+            return frozenset()
+        placeholders = ", ".join(["%s"] * len(fieldnames))
+        rows = frappe.db.sql(
+            f"select field from `tabSingles` where doctype=%s and field in ({placeholders})",
+            (doctype, *fieldnames),
+        )
+        return frozenset(row[0] for row in rows)
+
 
 class SiteSourceSchema:
     """`SourceSchemaReadiness` over the shipped doctype JSON and `suite/hooks.py`.
@@ -545,6 +661,55 @@ class SiteSourceSchema:
         wanted = set(doctypes)
         present = set(hooks.permission_query_conditions) | set(hooks.has_permission)
         return frozenset(wanted & present)
+
+
+class SiteNotificationWriterReadiness:
+    """`NotificationWriterReadiness` over a literal-string scan of the two
+    checked-in writers Ticket 30's addendum named, the same static-source-
+    scan style `SiteClientCallerEvidence` and `SiteSourceSchema` already use
+    for a question no live query can answer: whether a particular Python
+    call site, not a declared schema, still builds the row phase 3 is about
+    to make invalid. Over-cautious by construction, like its siblings: a
+    field-name literal anywhere in a writer's file counts against it, even
+    outside the actual `Drive Notification` construction, and the absence of
+    the literal string `"activity"` anywhere in the file counts as "no
+    writer here ever sets it." Both read as "still unready" more often than
+    a byte-perfect AST check would, never less — the safe direction for a
+    probe that gates six irreversible column drops.
+
+    Honestly reports "not ready" today for both writers: Ticket 35 changes
+    neither `suite/drive/api/notifications.py`'s `create_notification` nor
+    `suite/drive/doctype/drive_user_invitation/drive_user_invitation.py`'s
+    `DriveUserInvitation.after_insert`, which is why `readiness.run_preflight`
+    must refuse activation on every site until Ticket 36 migrates them.
+    """
+
+    _WRITERS = (
+        ("drive/api/notifications.py", "notifications.create_notification"),
+        (
+            "drive/doctype/drive_user_invitation/drive_user_invitation.py",
+            "DriveUserInvitation.after_insert",
+        ),
+    )
+
+    def still_unready(self) -> frozenset[str]:
+        from pathlib import Path
+
+        from suite.drive.patches.cleanup.removal import NOTIFICATION_LEGACY_COLUMNS
+
+        app_path = Path(frappe.get_app_path("suite"))
+        unready = set()
+        for relpath, label in self._WRITERS:
+            path = app_path / relpath
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError as e:
+                raise RuntimeError(f"cannot read {path} to attest notification-writer readiness: {e}") from e
+            still_names_a_column = any(f'"{field}"' in text for field in NOTIFICATION_LEGACY_COLUMNS)
+            never_sets_activity = '"activity"' not in text
+            if still_names_a_column or never_sets_activity:
+                unready.add(label)
+        return frozenset(unready)
 
 
 # Mirrors `suite.drive.patches.build.content_mapping.decode_sheets_data` and
@@ -666,6 +831,10 @@ class SiteContentRows:
                 return stripped
 
 
+class ThumbnailPathError(frappe.ValidationError):
+    """A `thumbnail_prefix` would build a delete path outside `root_folder`."""
+
+
 class SiteThumbnailStore:
     """`ThumbnailStore` over the local-disk `.thumbnail` sidecars.
 
@@ -690,8 +859,20 @@ class SiteThumbnailStore:
         leading or doubled `/`, which would anchor `os.path.exists`/
         `os.unlink` outside Drive's storage entirely. Refuse to build that
         path at all and no-op instead — never touching local legacy bytes is
-        always the safe outcome here, not a best-effort guess at one."""
+        always the safe outcome here, not a best-effort guess at one.
+
+        A configured but hostile `thumbnail_prefix` gets the same refusal,
+        for a sharper reason: `os.path.join`/`Path.__truediv__` both discard
+        everything to their left the moment a later component is itself
+        absolute, so `os.path.join(root_folder, "/etc", name)` silently
+        becomes `/etc/<name>` — string concatenation cannot tell that case
+        apart from an ordinary relative prefix. `root_folder` itself is
+        allowed to be absolute (a real site's disk root usually is); only
+        `thumbnail_prefix` is untrusted here, so the check is containment of
+        the resolved join under the resolved root, not a ban on absolute
+        paths in general."""
         import os
+        from pathlib import Path
 
         if settings.get("enabled"):
             raise NotImplementedError(
@@ -703,11 +884,25 @@ class SiteThumbnailStore:
         thumbnail_prefix = settings.get("thumbnail_prefix") or ""
         if not root_folder or not thumbnail_prefix:
             return 0
+        if os.path.isabs(thumbnail_prefix):
+            raise ThumbnailPathError(
+                f"thumbnail_prefix {thumbnail_prefix!r} is an absolute path; joining it onto "
+                f"root_folder {root_folder!r} would discard root_folder entirely and delete "
+                "outside Drive's storage. Refusing, not deleting anything."
+            )
+        root = Path(root_folder).resolve()
+        base = (root / thumbnail_prefix).resolve()
+        if not base.is_relative_to(root):
+            raise ThumbnailPathError(
+                f"thumbnail_prefix {thumbnail_prefix!r} resolves to {base}, outside root_folder "
+                f"{root_folder!r} (resolved: {root}). A '..'-escaping prefix must never be "
+                "joined into a delete path. Refusing, not deleting anything."
+            )
         deleted = 0
         for name in names:
-            path = os.path.join(root_folder, thumbnail_prefix, f"{name}.thumbnail")
-            if os.path.exists(path):
-                os.unlink(path)
+            path = base / f"{name}.thumbnail"
+            if path.exists():
+                path.unlink()
                 deleted += 1
         return deleted
 
