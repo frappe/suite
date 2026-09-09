@@ -33,7 +33,8 @@
    "fieldname": "doc",
    "fieldtype": "Link",
    "label": "Document",
-   "options": "Writer Document"
+   "options": "Writer Document",
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
