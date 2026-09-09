@@ -703,8 +703,8 @@ def update_member(
         changes["display_name"] = description
     if quota_gb is not None:
         changes["disk_quota_gb"] = flt(quota_gb)
-    if locale:
-        changes["locale"] = locale
+    if locale is not None:
+        changes["locale"] = locale or ""
     if time_zone is not None:
         changes["time_zone"] = time_zone or ""
     if changes:
