@@ -5,7 +5,7 @@ Created: 2026-09-05. Implementation has not started.
 Keep all Drive planning and tracking documents under `wayfinder/drive-layer-spec/`.
 This directory holds implementation tickets; `../tickets/` holds historical design decisions.
 
-37 local tickets: 31 done, three superseded, and three gated follow-ups (31, 36, 37).
+38 local tickets: 31 done, three superseded, three gated follow-ups (31, 36, 37), and one open defect (38).
 `ready-for-agent` describes triage. Blocking edges and execution gates still apply.
 
 ## Sources
@@ -151,6 +151,7 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [35 — Implement Cleanup with refusal gates and fixture tests](issues/35-cleanup-implementation.md) | Suite migration | [29](issues/29-build-records-and-report.md) | ready-for-agent |
 | [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [35](issues/35-cleanup-implementation.md), unified suite frontend map (not yet charted) | blocked |
 | [37 — Consolidate storage after a successful Build](issues/37-relocation-execution.md) | Frappe storage operations | [06](issues/06-relocation-implementation.md), [31](issues/31-migration-rehearsal.md) | blocked |
+| [38 — Make a fresh suite install succeed with the Presentation template fixtures](issues/38-fresh-install-fixture-node.md) | Suite Drive content | None | ready-for-agent |
 
 ## Coverage
 
