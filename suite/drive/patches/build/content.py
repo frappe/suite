@@ -33,6 +33,7 @@ LINK_FIELDS = (
     "docshare_rows_deleted",
     "removed_file_documents",
     "removed_file_docs",
+    "removed_file_documents_purged",
 )
 
 # Plan §6's whole orphan mapping row. §13 forbids blessing a target "because
@@ -103,13 +104,18 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
                 try:
                     adopted, renamed, disagreement = _link_one(env, row, reserve)
                 except RemovedLegacyFile as skipped:
-                    # §14.4 skipped the File row, so this document has no node
-                    # and no step can mint one: its bytes are gone. It is not
-                    # an orphan, so it is not adopted, and it is not a defect,
-                    # so it does not stop Build. It is counted and listed.
+                    # §14.4 skipped the File rows, so this document has no
+                    # node and no step can mint one: its bytes are gone. It
+                    # is not an orphan, so adopting it would resurrect a
+                    # deleted document. It cannot stay either: §5.13 has no
+                    # "document without a node" state, so
+                    # `refuse_unlinked_documents` would stop the migration
+                    # and no request could read the row. It is counted,
+                    # listed, and purged.
                     result.record_removed_file(
                         RemovedFileDocument(skipped.doctype, skipped.docname, skipped.file)
                     )
+                    _purge_removed(env, result, skipped, reserve)
                     continue
                 except InvalidLegacyContent as error:
                     # `_fail` raises today. The `continue` keeps the three
@@ -158,11 +164,15 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     nodes = target.content_nodes(row.doctype, row.name)
 
     if files:
+        if all(file.status == REMOVED for file in files):
+            # Every row is Removed, so §14.4 skipped all of them and there is
+            # no live File to argue about. The count is not a defect here,
+            # which is why this is decided before the "more than one File"
+            # refusal below: two Removed rows are two skipped rows.
+            raise RemovedLegacyFile(row.doctype, row.name, min(file.name for file in files))
         if len(files) != 1:
             raise InvalidLegacyContent("more than one File claims this content document")
         file = files[0]
-        if file.status == REMOVED:
-            raise RemovedLegacyFile(row.doctype, row.name, file.name)
         stored = target.nodes((file.name,)).get(file.name)
         if not stored:
             raise InvalidLegacyContent("the content File did not produce a Drive Node")
@@ -225,6 +235,33 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     reserve(2)
     target.write_orphan(node, row.doctype, row.name)
     return True, renamed, False
+
+
+def _purge_removed(env, result, skipped, reserve) -> None:
+    """Delete a document whose every `File` row is Removed, satellites and all.
+
+    Through the app's own `on_purge`, the registry callback `_core/nodes.py`
+    calls on a §8.8 purge: only the app can delete its body and the rows that
+    point at it (`Slide`, `Sheet Op Log`, `Sheet Collab State`,
+    `Sheet Snapshot`, `Writer Version`), and a satellite left behind would
+    fail `refuse_unlinked_documents` on its own link field.
+
+    Inside Build's commit unit, so the purge lands with the batch around it.
+    `frappe.delete_doc` enqueues a `delete_dynamic_links` background job per
+    document; on a site with no worker those sit in the queue.
+
+    Step 7 already skipped this document's history, so nothing was copied
+    that this now orphans, and step 7 reruns at the end of step 10 with the
+    document gone.
+    """
+    reserve(1)
+    env.content_target.purge_content_document(skipped.doctype, skipped.docname)
+    result.removed_file_documents_purged += 1
+    result.record_issue(
+        f"{skipped.doctype}:{skipped.docname}",
+        "every File row is Removed; purged",
+        phase="links",
+    )
 
 
 def _validate_template_link(env, row, stored) -> None:

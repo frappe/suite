@@ -778,6 +778,24 @@ class FakeContent:
         """Register a content document another phase created on the site."""
         self.document_rows[(row.doctype, row.name)] = row
 
+    def purge_document(self, doctype, docname):
+        """Drop the document and every satellite row that points at it.
+
+        `Writer Document.on_trash` clears the `Writer Version` rows,
+        `suite.sheets.drive.on_purge` deletes the `Sheet Snapshot` and
+        `Sheet Op Log` rows before the sheet, and deleting a `Presentation`
+        takes its `Slide` child rows with it.
+        """
+        self.document_rows.pop((doctype, docname), None)
+        if doctype == "Writer Document":
+            self.writer_version_rows = [row for row in self.writer_version_rows if row.doc != docname]
+        elif doctype == "Sheet":
+            self.sheet_snapshot_rows = [row for row in self.sheet_snapshot_rows if row.sheet != docname]
+            self.op_stamps = {key: value for key, value in self.op_stamps.items() if key[0] != docname}
+        elif doctype == "Presentation":
+            self.slide_rows = {name: row for name, row in self.slide_rows.items() if row.parent != docname}
+            self.media_rows = [row for row in self.media_rows if row.deck != docname]
+
     def update_slides(self, rows):
         for row in rows:
             source = self.slide_rows[row["name"]]
@@ -809,6 +827,7 @@ class FakeContentTarget:
         self.fail_unit = None
         self.locked_content_roots = []
         self.docshares_deleted = []
+        self.purged_documents = []
 
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
@@ -987,6 +1006,16 @@ class FakeContentTarget:
     def delete_docshare(self, name):
         self.docshares_deleted.append(name)
         self.content.share_rows = [row for row in self.content.share_rows if row.name != name]
+
+    def purge_content_document(self, doctype, docname):
+        """Delete what the app's registered `on_purge` deletes.
+
+        The callbacks themselves are site code. What this reproduces is
+        their effect on the source tables a later phase still reads: the
+        document row and every satellite that points at it.
+        """
+        self.purged_documents.append((doctype, docname))
+        self.content.purge_document(doctype, docname)
 
     def write_content_link(self, doctype, docname, node):
         self.content.link_document(doctype, docname, node)

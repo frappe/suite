@@ -845,6 +845,16 @@ class ContentTarget(Protocol):
         10 owns the rows on the content doctypes and their history tables,
         step 6 owns the Sheet rows."""
 
+    def purge_content_document(self, doctype: str, docname: str) -> None:
+        """Purge one content document through the app's registered `on_purge`.
+
+        §14.4 skipped the document's `File` rows, so it has no node and no
+        step can mint one, and §5.13 has no "document without a node" state:
+        `refuse_unlinked_documents` would stop the migration and no request
+        could read the row. Only the app can delete its own body and its
+        satellite rows, so this is the registry callback `_core.nodes`
+        already calls on a §8.8 purge, invoked the same way."""
+
     def write_content_link(self, doctype: str, docname: str, node: str) -> None: ...
 
     def write_orphan(self, node: dict, doctype: str, docname: str) -> None: ...
@@ -1840,6 +1850,15 @@ class SiteContentTarget:
 
     def delete_docshare(self, name: str) -> None:
         frappe.db.delete("DocShare", {"name": name})
+
+    def purge_content_document(self, doctype: str, docname: str) -> None:
+        # Exactly `_core/nodes.py:_purge_locked`'s own call: the registered
+        # `on_purge`, through `call_app`, so the callback runs with
+        # transaction control disabled and cannot commit Build's batch or
+        # destroy the savepoint around it.
+        from suite.drive._core import content
+
+        content.call_app(content.spec_for(doctype).on_purge, docname)
 
     def write_content_link(self, doctype: str, docname: str, node: str) -> None:
         frappe.db.set_value(doctype, docname, "node", node, update_modified=False)

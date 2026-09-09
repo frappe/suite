@@ -26,22 +26,29 @@ class InvalidLegacyContent(ValueError):
 
 
 class RemovedLegacyFile(InvalidLegacyContent):
-    """A content document's only legacy `File` row is `Removed`.
+    """Every legacy `File` row of a content document is `Removed`.
 
     §14.4: "Rows with status Removed, and everything below them, are not
     migrated and are counted." The tree phase therefore minted no node for
-    that `File`, and no later step can mint one, because §7 of ticket 011
-    rejected treating a Removed row as Trashed: its bytes are gone.
+    those `File` rows, and no later step can mint one, because §7 of ticket
+    011 rejected treating a Removed row as Trashed: its bytes are gone.
 
-    The spec names no behaviour for the content document left behind, so
-    Build skips it the way it skipped the row. The document keeps no node,
-    its history and its comments are not ported, and step 10 counts and
-    lists it under `removed_file_documents`. It is not deferred: deferral
-    means a later step still owes it a node, and nothing does.
+    §5.13 leaves no room for the document that is left: "There is no
+    'document without a node' fallback ... that state cannot exist, so it is
+    an error", and `framework.refuse_unlinked_documents` stops the migration
+    on one. So step 10 counts it, lists it under `removed_file_documents`,
+    and purges it through the app's own `on_purge`. It is not deferred:
+    deferral means a later step still owes it a node, and nothing does.
+
+    Step 7 raises this too, and skips: it copies no history for a document
+    with no node, and step 10 owns the census and the purge.
 
     Subclassing `InvalidLegacyContent` keeps a caller that does not handle
     the skip failing with bounded evidence, as it does today, rather than
     running on with no node.
+
+    `file` is the lowest of the Removed `File` ids, so a rerun and a report
+    name the same one.
     """
 
     def __init__(self, doctype: str, docname: str, file: str):
