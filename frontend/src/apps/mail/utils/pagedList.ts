@@ -15,20 +15,23 @@ export function usePagedList<T>(url: string, params: () => Record<string, unknow
 	const total = ref(0)
 	const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 	const loaded = ref(false)
-	let appending = false
+	// A reload starts a new generation; a response from an older one (a Load More still in
+	// flight when the search changed, say) is dropped instead of overwriting the fresh rows.
+	let generation = 0
 
-	const resource = createResource({
-		url,
-		onSuccess: (page: Page<T>) => {
+	const resource = createResource({ url })
+
+	const fetch = (start: number) => {
+		const appending = start > 0
+		if (!appending) generation += 1
+		const mine = generation
+		return resource.submit({ ...params(), start, page_length: pageLength.value }).then((page: Page<T>) => {
+			if (mine !== generation) return page
 			rows.value = appending ? [...rows.value, ...page.items] : page.items
 			total.value = page.total
 			loaded.value = true
-		},
-	})
-
-	const fetch = (start: number) => {
-		appending = start > 0
-		return resource.submit({ ...params(), start, page_length: pageLength.value })
+			return page
+		})
 	}
 	const reload = () => fetch(0)
 	const loadMore = () => fetch(rows.value.length)
