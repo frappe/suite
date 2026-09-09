@@ -13,8 +13,11 @@
 					{{ stat.label }}
 				</span>
 				<span class="text-ink-gray-9 text-xl font-semibold leading-7">{{ stat.value }}</span>
-				<span class="text-xs" :class="stat.warn ? 'text-ink-amber-6' : 'text-ink-gray-5'">
-					{{ stat.sub || ' ' }}
+				<!-- The line is amber only for what the admin must act on; an aside such as
+				     "1 not active" describes a deliberate state and stays muted. -->
+				<span class="text-ink-gray-5 text-xs">
+					<span :class="{ 'text-ink-amber-6': stat.warn }">{{ stat.sub || ' ' }}</span>
+					<template v-if="stat.note"> · {{ stat.note }}</template>
 				</span>
 				<div v-if="stat.bar !== undefined" class="bg-surface-gray-3 mt-1 h-1 w-full rounded-full">
 					<div
@@ -264,8 +267,13 @@ const stats = computed(() => {
 			label: __('Domains'),
 			icon: Globe,
 			value: count(data.value?.domains),
-			sub: domainsSub.value || limitSub(limits?.max_domains),
-			warn: !!domainsSub.value,
+			sub: domainsPending.value
+				? plural(domainsPending.value, __('1 needs action'), '{0} need action')
+				: limitSub(limits?.max_domains),
+			note: domainsDisabled.value
+				? plural(domainsDisabled.value, __('1 not active'), '{0} not active')
+				: '',
+			warn: domainsPending.value > 0,
 			to: { name: 'mail-domains' },
 		},
 		{
@@ -299,16 +307,10 @@ const stats = computed(() => {
 const attentionDomains = computed(() => data.value?.domains_needing_attention || [])
 
 // Unverified domains need the admin to act; disabled ones were switched off on purpose.
-const domainsSub = computed(() => {
-	const pending = attentionDomains.value.filter((d) => d.status !== 'Disabled').length
-	const disabled = attentionDomains.value.length - pending
-	return [
-		pending ? plural(pending, __('1 needs action'), '{0} need action') : '',
-		disabled ? plural(disabled, __('1 not active'), '{0} not active') : '',
-	]
-		.filter(Boolean)
-		.join(' · ')
-})
+const domainsPending = computed(
+	() => attentionDomains.value.filter((d) => d.status !== 'Disabled').length,
+)
+const domainsDisabled = computed(() => attentionDomains.value.length - domainsPending.value)
 
 // Ordered by what blocks mail first: dark domains, then invites going stale, then quota pressure.
 const attention = computed(() => {
