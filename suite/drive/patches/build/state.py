@@ -376,6 +376,12 @@ class ContentConversion:
     versions_to_thin: int = 0
     media_nodes_created: int = 0
     media_duplicates_collapsed: int = 0
+    # Not in §14.9, and owned by the slides phase like the counters above it.
+    # §14.7's `media_duplicates_collapsed` counts a deck's own `File` rows
+    # that share one node. This counts the extra `File Blob` rows a borrowed
+    # reference named on a template deck, which are nobody's own rows, so the
+    # two numbers stay apart.
+    borrowed_duplicates_collapsed: int = 0
     slide_elements_rewritten: int = 0
     deck_previews_created: int = 0
     template_nodes_created: int = 0

@@ -81,6 +81,7 @@ SLIDE_FIELDS = (
     "slides_completed",
     "media_nodes_created",
     "media_duplicates_collapsed",
+    "borrowed_duplicates_collapsed",
     "slide_elements_rewritten",
     "deck_previews_created",
     "blobless_nodes",
@@ -127,6 +128,7 @@ def convert_slides_and_templates(env, *, batch_size: int = BUILD_BATCH_SIZE):
                 result.deck_previews_created += counts[2]
                 result.slide_elements_rewritten += counts[3]
                 result.blobless_nodes += counts[4]
+                result.borrowed_duplicates_collapsed += counts[5]
                 env.state.put_content(result)
             after = decks[-1].name
             if len(decks) < batch_size:
@@ -161,6 +163,7 @@ def _convert_deck(env, deck, batch_size, result):
         batch_size,
         lambda row: (str(row.creation or ""), row.name),
     )
+    files = _one_blob_per_content(env.content_target, files, host)
     thumbnail, excluded = _thumbnail_file(deck, files, result, host)
     references = _references(parsed, slides)
     if any(_named_by(references, row, host) for row in files if row.name in excluded):
@@ -175,11 +178,11 @@ def _convert_deck(env, deck, batch_size, result):
     titles = _sibling_titles(writer, media)
     mapping, nodes, collapsed, blobless = _media_mapping(env, deck, media, host, writer, titles, result)
     local_mapping = dict(mapping)
-    borrowed, borrowed_nodes = {}, set()
+    borrowed, borrowed_nodes, borrowed_collapsed = {}, set(), 0
     if not deck.is_composite:
         # §11: a composite renders the referenced deck's own slides, so that
         # deck keeps the media and this one never copies it.
-        borrowed, borrowed_nodes = _borrowed_mapping(
+        borrowed, borrowed_nodes, borrowed_collapsed = _borrowed_mapping(
             env, deck, references, mapping, result, host, writer, titles
         )
     mapping.update(borrowed)
@@ -228,7 +231,7 @@ def _convert_deck(env, deck, batch_size, result):
         planned = _planned_body(row, parsed[row.name], mapping, local_mapping, host)
         current[row.name] = SlideBody(planned.elements, planned.background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
-    return created, collapsed, preview_created, rewritten, blobless
+    return created, collapsed, preview_created, rewritten, blobless, borrowed_collapsed
 
 
 @dataclass(frozen=True)
@@ -488,6 +491,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
                 by_url[alias].append(row)
     mapping = {}
     nodes = set()
+    collapsed = 0
     for value in unresolved:
         rows = _named_rows(by_url, value, host)
         if not rows:
@@ -511,7 +515,14 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             )
             continue
         if len(blobs) != 1:
-            raise InvalidLegacyContent(f"borrowed media {value!r} is ambiguous")
+            # One picture, two rows: see `_same_content_blob`. The reference
+            # names the same bytes either way, so it resolves instead of
+            # refusing the deck. Different bytes are still ambiguous.
+            chosen = _same_content_blob(env.content_target, blobs, prefer=_exact_url_blobs(rows, value))
+            if chosen is None:
+                raise InvalidLegacyContent(f"borrowed media {value!r} is ambiguous")
+            collapsed += len(blobs) - 1
+            blobs = {chosen}
         blob_name = next(iter(blobs))
         blob = _ready_blob(env.content_target, blob_name)
         matches = [
@@ -533,7 +544,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             writer.add(planned)
         nodes.add(name)
         mapping[value] = name
-    return mapping, nodes
+    return mapping, nodes, collapsed
 
 
 def _media_node(row, parent, name, blob, title):
@@ -879,6 +890,87 @@ def _bind(mapping, alias, node):
 def _blob_is_ready(target, name):
     blob = target.blob(name)
     return bool(blob and blob.status == "Ready")
+
+
+def _same_content_blob(target, names, prefer=()):
+    """The one blob these names stand for, or None when they hold other bytes.
+
+    `File Blob` is unique on `(checksum, is_private, driver)`, and
+    `frappe.storage.blob.put_blob` keys a row by the sha256 of its bytes. So a
+    picture uploaded public and later made private is two `File Blob` rows
+    with one checksum and one size: one picture, stored twice. Legacy Slides
+    left three such pairs on the "Frappeverse 2025" template deck, and §14.11
+    says `relocate_blobs()` folds pairs like them back into one row after
+    Build.
+
+    §14.7 gives a deck "one node per deck per blob", so two rows would be two
+    nodes for one picture, and one reference naming both is what step 8 calls
+    ambiguous. Build reads them as one blob instead and takes a winner, in
+    this order, so a rerun takes the same one:
+
+    1. a blob in `prefer`, the row the reference spells exactly;
+    2. the private row, the state §7 keeps Drive media in;
+    3. the lowest blob name.
+
+    Returns None unless every candidate is Ready and carries one checksum and
+    one size. A blob with no checksum, one that is not Ready, and two rows of
+    different bytes all stay ambiguous, and the caller still refuses the deck.
+    """
+    rows = [target.blob(name) for name in sorted(names)]
+    if not all(row and row.status == "Ready" and row.checksum for row in rows):
+        return None
+    if len({(row.checksum, int(row.file_size)) for row in rows}) != 1:
+        return None
+    wanted = set(prefer)
+    tier = [row for row in rows if row.name in wanted] or [row for row in rows if row.is_private] or rows
+    return min(tier, key=lambda row: row.name).name
+
+
+def _exact_url_blobs(rows, value):
+    """The blobs of the `File` rows whose own `file_url` spells `value`.
+
+    `_url_lookup` asks a widened question, so a candidate can answer a
+    reference it does not spell. The row that does spell it is the one the
+    slide body drew, so it wins the collapse above.
+    """
+    wanted = {value, unquote(value)}
+    return {row.blob for row in rows if row.blob and {row.file_url, unquote(row.file_url or "")} & wanted}
+
+
+def _one_blob_per_content(target, rows, host=""):
+    """Point `File` rows that name one picture through two blobs at one blob.
+
+    The pair `_same_content_blob` describes reaches a deck's own media as
+    well: the public row aliases `/files/x.png` and `/private/files/x.png`,
+    and so does the private one. Left alone, `_media_mapping` gives each blob
+    its own node and `_bind` then refuses the deck, because one alias would
+    resolve to two nodes.
+
+    Only a contested alias is collapsed. Two blobs with the same bytes under
+    two different names are two pictures as far as any reference can tell, and
+    §7.1 charges a root per node, so Build leaves them as two nodes.
+    """
+    contested = defaultdict(set)
+    for row in rows:
+        if row.blob:
+            for alias in _aliases(row, host):
+                contested[alias].add(row.blob)
+    names = {name for group in contested.values() if len(group) > 1 for name in group}
+    if not names:
+        return rows
+    by_content = defaultdict(set)
+    for name in names:
+        blob = target.blob(name)
+        if blob and blob.checksum:
+            by_content[(blob.checksum, int(blob.file_size))].add(name)
+    winners = {}
+    for group in by_content.values():
+        chosen = _same_content_blob(target, group) if len(group) > 1 else None
+        if chosen:
+            winners.update({name: chosen for name in group})
+    if not winners:
+        return rows
+    return [replace(row, blob=winners[row.blob]) if row.blob in winners else row for row in rows]
 
 
 def _rewrite_elements(elements, mapping, local_mapping, host=""):
