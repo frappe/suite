@@ -3,7 +3,8 @@
 	     The list above it fills the body and scrolls on its own, so this always sits at the
 	     bottom of the screen; the negative margin swallows the body's bottom padding. -->
 	<div
-		class="text-ink-gray-5 -mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-1 pb-4 pt-2 text-sm"
+		class="text-ink-gray-5 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t text-sm"
+		:class="flush ? '-mb-5 px-1 pb-4 pt-2' : 'px-5 py-2'"
 	>
 		<span>{{ __('{0} of {1}', [String(count), String(total)]) }}</span>
 		<div class="flex items-center gap-3">
@@ -27,12 +28,14 @@ import { Button } from 'frappe-ui'
 
 import { PAGE_LENGTHS, type PageLength } from '@/apps/mail/utils/pagedList'
 
-defineProps<{
+const { flush = true } = defineProps<{
 	count: number
 	total: number
 	pageLength: PageLength
 	hasMore: boolean
 	loading?: boolean
+	// At the bottom of a page the footer sits flush against the edge; inside a card it does not.
+	flush?: boolean
 }>()
 const emit = defineEmits<{ 'update:pageLength': [value: PageLength]; loadMore: [] }>()
 </script>

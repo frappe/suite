@@ -1018,6 +1018,27 @@ def get_mailing_list(list_id: str, start: int = 0, limit: int = 200, search: str
 
 
 @frappe.whitelist()
+def get_mailing_list_recipients(
+    list_id: str, search: str | None = None, start: int = 0, page_length: int = DEFAULT_PAGE_LENGTH
+) -> dict:
+    """One page of a list's recipients, searched and paged on Suite Cloud."""
+
+    check_admin_permission("view mailing lists")
+    start, page_length = _paging(start, page_length)
+    page = get_client().call(
+        "mail.mailing_lists.list_recipients",
+        email=list_id,
+        start=start,
+        limit=page_length,
+        search=(search or "").strip() or None,
+    )
+    return {
+        "items": [{"email": r["email"], "enabled": bool(r.get("enabled", True))} for r in page["items"]],
+        "total": page["total"],
+    }
+
+
+@frappe.whitelist()
 @dynamic_rate_limit()
 def add_mailing_list(
     name: str, domain: str, recipients: list | None = None, description: str | None = None
