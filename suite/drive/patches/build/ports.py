@@ -643,6 +643,11 @@ class BlobRow:
     is_private: int
     status: str
     key: str | None = None
+    # The content address. `File Blob` is unique on
+    # `(checksum, is_private, driver)`, so one picture stored public and later
+    # made private is two rows with one checksum. Step 8 reads it to tell that
+    # pair apart from two rows that hold different bytes.
+    checksum: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1632,7 +1637,7 @@ class SiteContentTarget:
         row = frappe.db.get_value(
             "File Blob",
             name,
-            ["name", "file_size", "mime_type", "driver", "is_private", "status", "key"],
+            ["name", "file_size", "mime_type", "driver", "is_private", "status", "key", "checksum"],
             as_dict=True,
         )
         return BlobRow(**dict(row)) if row else None
