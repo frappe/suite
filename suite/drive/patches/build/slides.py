@@ -83,6 +83,7 @@ SLIDE_FIELDS = (
     "media_duplicates_collapsed",
     "borrowed_duplicates_collapsed",
     "slide_elements_rewritten",
+    "slide_elements_repaired",
     "deck_previews_created",
     "blobless_nodes",
     "slides_deferred",
@@ -155,7 +156,9 @@ def _convert_deck(env, deck, batch_size, result):
     # thumbnail classification needs the whole File set, so both are collected
     # in full. The reads themselves stay bounded pages (§13).
     slides = _pages(env.content.slides, deck.name, (0, ""), batch_size, lambda row: (row.idx, row.name))
-    parsed = {slide.name: _parse_elements(slide) for slide in slides}
+    repaired = set()
+    parsed = {slide.name: _parse_elements(slide, repaired) for slide in slides}
+    result.slide_elements_repaired += len(repaired)
     files = _pages(
         env.content.media_files,
         deck.name,
@@ -197,7 +200,9 @@ def _convert_deck(env, deck, batch_size, result):
     updates = []
     for slide in slides:
         before = SlideBody(slide.elements, slide.background)
-        planned = _planned_body(slide, parsed[slide.name], mapping, local_mapping, host)
+        planned = _planned_body(
+            slide, parsed[slide.name], mapping, local_mapping, host, slide.name in repaired
+        )
         changed, disagreements = planned.changed, planned.disagreements
         after = SlideBody(planned.elements, planned.background)
         if disagreements:
@@ -228,7 +233,7 @@ def _convert_deck(env, deck, batch_size, result):
     # so recovery also covers a crash after SQL and before the state write.
     current = {}
     for row in slides:
-        planned = _planned_body(row, parsed[row.name], mapping, local_mapping, host)
+        planned = _planned_body(row, parsed[row.name], mapping, local_mapping, host, row.name in repaired)
         current[row.name] = SlideBody(planned.elements, planned.background)
     rewritten = env.slide_journal.recover_changed_elements(deck.name, current)
     return created, collapsed, preview_created, rewritten, blobless, borrowed_collapsed
@@ -244,7 +249,7 @@ class _PlannedBody:
     disagreements: int
 
 
-def _planned_body(slide, elements, mapping, local_mapping, host) -> _PlannedBody:
+def _planned_body(slide, elements, mapping, local_mapping, host, repaired=False) -> _PlannedBody:
     """The stored body a slide keeps, or the rewritten one it earns.
 
     A deck whose media all live outside this mapping resolves nothing. Dumping
@@ -253,11 +258,19 @@ def _planned_body(slide, elements, mapping, local_mapping, host) -> _PlannedBody
     writer. That is a body change with no reference change: it fills the
     journal, counts as a rewrite in §14.9, and edits a source row §14.7 says to
     preserve. So an untouched body keeps its exact stored bytes.
+
+    A body `_parse_elements` repaired is the one exception. Its stored bytes
+    are a JSON string holding the array, which neither Build nor the Slides
+    runtime reads as elements, so keeping them preserves nothing worth
+    keeping. It is stored back as a plain array, the journal holds the
+    before and after, and a rerun reads a list, changes nothing, and writes
+    nothing. `changed` stays 0, so §14.9's `slide_elements_rewritten` still
+    counts media references only.
     """
     rewritten, changed, disagreements = _rewrite_elements(elements, mapping, local_mapping, host)
     background, moved = _rewrite_value(slide.background, mapping, host)
     return _PlannedBody(
-        slide.elements if not changed else _dump(rewritten),
+        _dump(rewritten) if changed or repaired else slide.elements,
         slide.background if not moved else background,
         changed,
         disagreements,
@@ -317,14 +330,43 @@ def _pages(read, deck, start, batch_size, key):
     return collected
 
 
-def _parse_elements(slide):
+def _parse_elements(slide, repaired=None):
+    """Read one slide body, including a legacy row that is encoded twice.
+
+    One production row holds a JSON string that itself holds the JSON array.
+    No Build pass wrote it, and the Slides runtime cannot read it either
+    (`suite/slides/drive.py` `_parsed_elements` refuses a body that decodes
+    to something other than a list). So `json.loads` answers a string, and
+    the elements are one decode further in.
+
+    Build decodes once more and keeps the array it finds. A second decode
+    that yields anything else still refuses the deck: a body Build cannot
+    read is a body it would have to guess at. `repaired` collects the slides
+    that needed the second decode, so `_planned_body` can store them back as
+    a plain array and the row is fixed once.
+    """
     try:
         value = json.loads(slide.elements) if slide.elements else []
     except (TypeError, ValueError) as error:
         raise InvalidLegacyContent(f"Slide {slide.name} elements are not JSON") from error
+    if isinstance(value, str):
+        inner = _inner_list(value)
+        if inner is not None:
+            value = inner
+            if repaired is not None:
+                repaired.add(slide.name)
     if not isinstance(value, list):
         raise InvalidLegacyContent(f"Slide {slide.name} elements are not a list")
     return [item for item in value if isinstance(item, dict)]
+
+
+def _inner_list(value):
+    """The array a double-encoded body holds, or `None` for anything else."""
+    try:
+        inner = json.loads(value)
+    except ValueError:
+        return None
+    return inner if isinstance(inner, list) else None
 
 
 class _MediaWriter:

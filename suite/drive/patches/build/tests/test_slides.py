@@ -321,6 +321,84 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.slide_elements_rewritten, 0)
         self.assertEqual(env.slide_journal.records, [])
 
+    def test_a_double_encoded_body_is_read_rewritten_and_stored_as_an_array(self):
+        # A legacy row whose `elements` is a JSON string holding the JSON
+        # array. No Build pass wrote it, and the Slides runtime refuses it.
+        stored = json.dumps(json.dumps([{"src": "/files/media-a.png", "text": "keep"}]))
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, stored)],
+            media=[media("media-a", blob="blob-1")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", b"media", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.slide_elements_repaired, 1)
+        self.assertEqual(result.slide_elements_rewritten, 1)
+        body = json.loads(source.slide_rows["slide-1"].elements)
+        self.assertEqual(body, [{"src": "media-a", "text": "keep"}])
+
+        again = convert_slides_and_templates(env)
+        self.assertEqual(again.slide_elements_repaired, 0)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), body)
+        self.assertEqual(len(env.slide_journal.records), 1)
+
+    def test_a_double_encoded_body_with_no_media_is_still_stored_as_an_array(self):
+        # The production shape: two text elements, so nothing resolves and
+        # only the double encoding is repaired.
+        elements = [{"type": "text", "content": "one"}, {"type": "text", "content": "two"}]
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps(json.dumps(elements)))],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual(result.slide_elements_repaired, 1)
+        self.assertEqual(result.slide_elements_rewritten, 0)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), elements)
+
+        again = convert_slides_and_templates(env)
+        self.assertEqual(again.slide_elements_repaired, 0)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), elements)
+        self.assertEqual(len(env.slide_journal.records), 1)
+
+    def test_a_double_encoded_body_that_is_not_a_list_still_refuses_the_deck(self):
+        for stored in (json.dumps(json.dumps({"src": "/files/media-a.png"})), json.dumps("plain text")):
+            with self.subTest(stored=stored):
+                source = FakeContent(
+                    documents=[deck()],
+                    slides=[SlideRow("slide-1", "deck-1", 1, stored)],
+                    users={"Administrator": True},
+                )
+                env, _ = self.environment(source)
+
+                with self.assertRaisesRegex(BuildSlidesError, "not a list"):
+                    convert_slides_and_templates(env)
+                self.assertEqual(source.slide_rows["slide-1"].elements, stored)
+
+    def test_null_and_empty_bodies_hold_no_elements_and_are_left_alone(self):
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, None), SlideRow("slide-2", "deck-1", 2, "")],
+            users={"Administrator": True},
+        )
+        env, _ = self.environment(source)
+
+        result = convert_slides_and_templates(env)
+
+        self.assertTrue(result.slides_completed)
+        self.assertEqual(result.slide_elements_repaired, 0)
+        self.assertEqual(result.slide_elements_rewritten, 0)
+        self.assertIsNone(source.slide_rows["slide-1"].elements)
+        self.assertEqual(source.slide_rows["slide-2"].elements, "")
+        self.assertEqual(env.slide_journal.records, [])
+
     def test_an_unmatched_thumbnail_is_reported_and_the_deck_still_converts(self):
         source = FakeContent(
             documents=[deck(thumbnail="/files/gone.webp")],

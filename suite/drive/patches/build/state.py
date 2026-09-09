@@ -383,6 +383,12 @@ class ContentConversion:
     # two numbers stay apart.
     borrowed_duplicates_collapsed: int = 0
     slide_elements_rewritten: int = 0
+    # Not in §14.9 either, and owned by the slides phase. §14.7's
+    # `slide_elements_rewritten` counts the bodies whose media references
+    # became node ids. This counts the legacy bodies stored as a JSON string
+    # holding the JSON array, which Build decodes twice and stores back as a
+    # plain array. A rerun reads a list and counts none.
+    slide_elements_repaired: int = 0
     deck_previews_created: int = 0
     template_nodes_created: int = 0
     writer_templates_converted: int = 0
