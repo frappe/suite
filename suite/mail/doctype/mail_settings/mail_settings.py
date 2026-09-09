@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail import suite_cloud
-from suite.mail.directory import get_domains
+from suite.mail.directory import get_active_domain_names
 from suite.mail.utils import get_config, is_stalwart_configured
 
 
@@ -85,6 +85,11 @@ class MailSettings(Document):
             self.signup_domains = ""
             return
 
+        # Only a change to the signup fields is checked against Suite Cloud: the client would
+        # otherwise use the credentials from before this save, refusing the save that fixes them.
+        if not (self.has_value_changed("allow_signup") or self.has_value_changed("signup_domains")):
+            return
+
         is_stalwart_configured(raise_exception=True)
 
         if not self.signup_domains:
@@ -95,14 +100,15 @@ class MailSettings(Document):
         if not signup_domains:
             frappe.throw(_("Invalid Signup Domains format. Please provide one domain per line."))
 
-        site_domains = {d["domain"] for d in get_domains()}
+        # Accounts can only be created on active domains, so signup is offered on those alone.
+        site_domains = set(get_active_domain_names())
         valid_signup_domains = []
         for domain in signup_domains:
             domain = domain.strip().lower()
             if domain:
                 if domain not in site_domains:
                     frappe.throw(
-                        _("Domain {0} is not one of this site's mail domains.").format(frappe.bold(domain))
+                        _("Domain {0} is not an active mail domain of this site.").format(frappe.bold(domain))
                     )
                 valid_signup_domains.append(domain)
 
