@@ -3749,7 +3749,10 @@ guards refuse every list while a share row survives.
 
 Dropped and counted: rows naming a User or User Group that no longer
 exists; rows on an unmigrated entity; rows with no flags; rows invalid
-under the root guardrails. Duplicate `(entity, user)` rows collapse as
+under the root guardrails. Rows naming `Administrator` or `Guest` are
+dropped too: the first reads through `is_drive_admin`, the second through
+`$PUBLIC`. Surrounding whitespace in a stored address is stripped before
+the row is classified. Duplicate `(entity, user)` rows collapse as
 `dedupe_drive_permissions.py` does: deny wins, else the most permissive.
 Every grant gets `expires_on = NULL`. Grants on Trashed nodes are kept.
 
@@ -3806,7 +3809,9 @@ From the [012] amendment to [011]:
 - Slide media `File` rows (`attached_to_doctype = "Presentation"`) become
   child nodes of the deck node, one node per deck per blob. Duplicates
   within a deck collapse to one node. A video poster is a media node like
-  any other.
+  any other. A media File that was Trashed in the old tree becomes an
+  Active child of an Active deck, so the deck is not purged out from under
+  a body that still draws it.
 - `Slide.elements` JSON is rewritten: `src` holds the node id,
   `attachmentName` is dropped. `Slide.background` and legacy `/files/`
   paths are rewritten the same way. A legacy `poster` may be a dict, not a
