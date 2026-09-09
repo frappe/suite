@@ -772,6 +772,8 @@ class ContentTarget(Protocol):
 
     def update_media_node(self, name: str, blob: str, size: int, mime: str) -> None: ...
 
+    def adopt_media_node(self, name: str, values: dict) -> None: ...
+
     def update_slides(self, rows: list[dict]) -> None: ...
 
     def versions_to_thin(self, report_at: str) -> int: ...
@@ -1758,6 +1760,13 @@ class SiteContentTarget:
         frappe.db.set_value(
             "Drive Node", name, {"blob": blob, "size": size, "mime": mime}, update_modified=False
         )
+
+    def adopt_media_node(self, name: str, values: dict) -> None:
+        # `slides.ADOPTED_FIELDS` names the columns. A file node is a leaf
+        # (§3.1), so re-parenting one rewrites this row and no descendant
+        # path, and `update_modified` stays off for the reason every other
+        # Build write keeps it off: §14.7 preserves the source stamps.
+        frappe.db.set_value("Drive Node", name, dict(values), update_modified=False)
 
     def update_slides(self, rows: list[dict]) -> None:
         for row in rows:
