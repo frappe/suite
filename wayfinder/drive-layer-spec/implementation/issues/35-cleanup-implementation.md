@@ -15,6 +15,7 @@
 claimed files. Repairs verified and closed in commit `dd9d54a3d` on that
 branch. Reopened a third time on the same branch (starting revision
 `67590e5db`) to repair the 6 findings below that; same claimed files.
+Repairs verified and closed in commit `caeeccadb` on that branch.
 
 **Execution gate:** None beyond completed blockers.
 
@@ -36,6 +37,108 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 Run Cleanup against isolated fixtures only. Prove every missing gate leaves data unchanged and valid fixtures retain all referenced bytes.
 
 ## Completion evidence
+
+### 2026-09-09 — 6 third-review findings repaired, verified (branch `fix/drive-35-final-safety`)
+
+Commit `caeeccadb` on this branch repairs all 6 findings below in the real
+`Site*` ports, `readiness.py`, `removal.py`, `state.py`, and `patch.py`.
+Cleanup stayed unregistered throughout: no `patches.txt`/`hooks.py` entry, no
+`run_cleanup()` call outside a test, no live `bench migrate`, no site
+connection, no push or merge.
+
+1. `CleanupState.load()` now raises `CorruptCleanupStateError` when an
+   existing state file cannot be parsed, after quarantining it to a
+   `*.corrupt-<timestamp>-<pid>` sidecar for forensics; only a genuinely
+   missing file (`FileNotFoundError`) still returns a fresh record.
+   `run_cleanup()` calls the new `CleanupState.refuse_if_corrupt()` as its
+   first action, before `run_preflight`, the gates, or any phase. The error
+   message states the only recovery: a database restore from before the
+   corruption, or an operator manually reconstructing the record.
+   `test_corrupt_state_before_any_phase_wins_over_a_failing_gate` and
+   `test_corrupt_state_after_phase1_commit_refuses_before_any_further_work`
+   cover corruption both before any phase and after a real phase-1 commit,
+   proving no later phase, sidecar, or S3 work runs and the quarantined
+   bytes survive unchanged.
+2. Added `SiteNotificationWriterReadiness.still_unready()`, a static
+   source-text probe over the two writers Ticket 30's addendum named
+   (`suite.drive.api.notifications.create_notification`,
+   `DriveUserInvitation.after_insert`), checking whether either still names
+   a step-3 dropped column or never sets `activity`. Wired into
+   `readiness.run_preflight` via `_probe_notification_writer_readiness`,
+   ahead of the S3 probe. Neither writer is touched in this ticket, so
+   `test_both_real_writers_are_unready_today` proves the probe honestly
+   fails against the real, checked-in source right now.
+3. `phase_s3_prefix` is now batch-bounded end to end. Each `list_prefix`
+   page is deduplicated, passed to `blob_references` on its own, filtered,
+   and enqueued with its own `enqueue_delete` call — never accumulated
+   across pages into one unbounded `IN` clause or one unbounded job.
+   `PhaseResult.job_id` (singular) is now `job_ids: list[str]`.
+   `test_every_call_stays_within_batch_size_across_multiple_pages`,
+   `test_a_page_wholly_referenced_is_recorded_but_enqueues_nothing_and_pagination_continues`,
+   and `test_a_duplicate_key_within_one_page_is_not_double_counted_or_double_enqueued`
+   cover bounded call sizes, pagination correctness, and per-page dedupe.
+4. Replaced the count-based `_require_exact_or_already_done` with
+   `_verify_gone`, backed by five new `SchemaGateway` presence probes
+   (`custom_fields_present`, `property_setters_present`, `doctypes_present`,
+   `columns_present`, `single_values_present`) that re-read each named
+   target's actual current existence. MariaDB commits DDL and
+   Single-value deletes independently of this package's own
+   `env.transaction.commit()`, so a crash between two drop calls in the
+   same phase leaves a legitimate partial state, not a corrupted one; a
+   resumed call now completes it instead of refusing on a mismatched count.
+   Still fails closed if a target really is present, or a presence check
+   itself errors. New partial-pre-state and crash-then-resume tests cover
+   all four affected phases (custom fields, legacy doctypes, content
+   history, content fields), using `CrashingSchema` and
+   `RaisingPresenceSchema` fixtures.
+5. `SiteThumbnailStore.delete_sidecars` now refuses an absolute
+   `thumbnail_prefix` outright (`os.path.isabs`) and checks containment via
+   `Path.resolve()`/`Path.is_relative_to(root)` instead of joining
+   `thumbnail_prefix` onto `root_folder` with plain string concatenation,
+   which `os.path.join`/`Path.__truediv__` can silently escape the moment
+   `thumbnail_prefix` is itself absolute. `root_folder` may still be
+   absolute. New tests cover an absolute prefix, a traversal prefix, an
+   absolute `root_folder` with an ordinary prefix, and a `..`-bearing
+   prefix that resolves back inside the root.
+6. Documented, in `SiteSchemaGateway.drop_custom_fields`'s docstring and a
+   comment in `removal.py`, that Frappe's own `CustomField.on_trash` never
+   runs DDL, so the physical `tabFile` column is intentionally left behind
+   and outside §14.10's scope. No DDL added.
+
+**Verified:**
+- Cleanup fixture/spy suite: 169 tests, 0 failures (`unittest discover -s
+  suite/drive/patches/cleanup/tests`, no DB connection).
+- Build/architecture/dormancy suite: 987 tests via `frappe.init` with no
+  `connect()`, covering `suite/drive/patches/{build,cleanup}/tests`,
+  `suite.tests.test_architecture`, `suite.drive.tests.test_build_{content,
+  storage,tree}`; 0 assertion failures. 17 `IntegrationTestCase`s that
+  require a live DB connection were skipped by name, not run — pre-existing,
+  unrelated to any file this branch touches.
+- `py_compile` clean on every changed file.
+- `ruff check`/`ruff format` (pinned `v0.12.3`) clean after one
+  import-sort autofix and formatting on 4 files; re-ran the full cleanup
+  suite and the wide no-DB suite after to confirm the reformat changed
+  nothing behaviorally.
+- Six manual mutations, one per finding, each applied to the real
+  production code, confirmed caught by a specific test failure, then
+  reverted byte-identical (`git diff --stat` matched before and after):
+  removing `env.state.refuse_if_corrupt()` from `run_cleanup` (caught, once
+  `state.load()` was also mutated to silently reset instead of raising, by
+  both `TestRunCleanupCorruptState` tests); skipping
+  `_probe_notification_writer_readiness` in `run_preflight` (caught by
+  `test_an_unready_writer_refuses_before_any_phase_runs`); removing the
+  per-page dedupe in `phase_s3_prefix` (caught by
+  `test_a_duplicate_key_within_one_page_is_not_double_counted_or_double_enqueued`);
+  neutering `_verify_gone`'s presence check (caught by
+  `test_a_target_still_present_after_the_drop_call_refuses`); reverting
+  `SiteThumbnailStore.delete_sidecars` to plain `os.path.join` string
+  concatenation (caught by all three thumbnail-path-escape tests). Finding
+  6 is documentation-only and has no behavior to mutate.
+- No stale references to the old `job_id` field name or the old
+  `_require_exact_or_already_done` helper remain anywhere in
+  `suite/drive/patches/cleanup/`.
+- This entry supersedes the invalidated closeout below it, and every
+  invalidated closeout below that.
 
 ### 2026-09-09 — 9 second-review findings repaired, verified (branch `fix/drive-35-final-safety`)
 
