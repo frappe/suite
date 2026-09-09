@@ -85,6 +85,7 @@ import {
 	domainStatusBadge,
 	domainStatusOptions,
 } from '@/apps/mail/utils/domainStatus'
+import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
@@ -93,6 +94,7 @@ import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
 
 const showAddDomain = ref(false)
+useAddOnArrival(showAddDomain)
 const search = ref('')
 const status = ref<'All' | DomainStatus>('All')
 

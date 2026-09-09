@@ -58,6 +58,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
@@ -66,6 +67,7 @@ import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListMod
 usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
 
 const showAdd = ref(false)
+useAddOnArrival(showAdd)
 const search = ref('')
 
 const list = usePagedList<ListRowType>('suite.mail.api.admin.get_mailing_lists', () => ({

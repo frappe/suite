@@ -143,6 +143,7 @@ import { useRouter } from 'vue-router'
 import { Avatar, Badge, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
+import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -384,25 +385,25 @@ const QUICK_ACTIONS = [
 		label: __('Add an account'),
 		description: __('Give someone a mailbox on your domains.'),
 		icon: UserPlus,
-		to: { name: 'mail-accounts' },
+		to: { name: 'mail-accounts', query: ADD_QUERY },
 	},
 	{
 		label: __('Add a domain'),
 		description: __('Connect a domain and set up its DNS.'),
 		icon: Globe,
-		to: { name: 'mail-domains' },
+		to: { name: 'mail-domains', query: ADD_QUERY },
 	},
 	{
 		label: __('Add a group'),
 		description: __('A shared address for a team.'),
 		icon: UsersRound,
-		to: { name: 'mail-groups' },
+		to: { name: 'mail-groups', query: ADD_QUERY },
 	},
 	{
 		label: __('Add a mailing list'),
 		description: __('Broadcast mail to many recipients.'),
 		icon: Megaphone,
-		to: { name: 'mail-mailing-lists' },
+		to: { name: 'mail-mailing-lists', query: ADD_QUERY },
 	},
 ]
 </script>

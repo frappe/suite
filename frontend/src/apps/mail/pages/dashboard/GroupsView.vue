@@ -61,6 +61,7 @@ import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } 
 
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
@@ -69,6 +70,7 @@ import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 usePageMeta(() => appPageMeta(__('Groups'), 'Mail'))
 
 const showAddGroup = ref(false)
+useAddOnArrival(showAddGroup)
 const search = ref('')
 
 const list = usePagedList<GroupRow>('suite.mail.api.admin.get_groups', () => ({ search: search.value }))

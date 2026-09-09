@@ -35,6 +35,7 @@ import { Tabs, usePageMeta } from 'frappe-ui'
 
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
+import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
 
@@ -58,6 +59,7 @@ const tab = computed({
 // add/invite accounts
 
 const showAddMember = ref(false)
+useAddOnArrival(showAddMember)
 
 const usersView = useTemplateRef('usersView')
 const invitesView = useTemplateRef('invitesView')
