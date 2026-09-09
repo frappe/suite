@@ -332,6 +332,7 @@ def add_member(
     right away; an invited member picks their own on the setup form.
     """
 
+    check_admin_permission("add members", f"{username}@{domain}")
     account_request = frappe.new_doc("Mail Account Request")
     account_request.account = f"{username}@{domain}"
     account_request.aliases = "\n".join(_listify(aliases))
@@ -345,10 +346,7 @@ def add_member(
     account_request.send_invite = cint(send_invite)
     # Arrives as UTC like every other timestamp; the doctype field holds system time.
     account_request.expires_at = from_utc_z(expires_at)
-    # Insert first: create permission on Mail Account Request is what gates this endpoint, so the
-    # action is only authorized (and worth recording) once the request exists.
     account_request.insert()
-    log_admin_action("add members", account_request.account)
 
     if not send_invite:
         account_request.force_verify_and_create_account(first_name, last_name, password, locale, time_zone)
