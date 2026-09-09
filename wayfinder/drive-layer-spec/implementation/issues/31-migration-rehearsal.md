@@ -4,11 +4,13 @@
 
 **Blocked by:** [30 — Verify the complete backend before migration rehearsal](30-backend-integration-review.md)
 
-**Status:** blocked
+**Status:** in-progress
+
+**Claimed:** 2026-09-09 by Faris (orchestrated by Claude). Starting revisions: suite forge/drive-layer 5965c9933, frappe forge/storage-v2 ad5cd7f1a7. Claimed files: none in the repo; the site suite-frappe.localhost on suite-bench.
 
 **Owner:** Suite migration operations
 
-**Execution gate:** Requires an approved export and explicit authority to overwrite the selected test target. No dataset has been supplied.
+**Execution gate:** Requires an approved export and explicit authority to overwrite the selected test target. Satisfied 2026-09-09: backup 5rs8ke96ri supplied, target suite-frappe.localhost approved by Faris.
 
 **Source:** [Drive spec](../../drive-layer-spec.md), §14; plan Build rehearsal.
 Read [execution rules and source precedence](../README.md#execution-rules) before claiming this ticket.
@@ -48,4 +50,22 @@ Run a real restore/migrate/reconciliation/recovery exercise and attach measured 
 ## Completion evidence
 
 Record changed behavior, exact revisions, commands, results, and unresolved gates here.
-Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+
+### Restore (2026-09-09)
+
+- Target `suite-frappe.localhost` was created empty on suite-bench (frappe forge/storage-v2, suite forge/drive-layer 5965c9933, db `_d72aedad662d70ca`, port 8010). No prior data, so no target backup was needed.
+- Guards set before restore: site_config `maintenance_mode 1`, `pause_scheduler 1`, `disable_scheduler 1`, `mute_emails 1`, `developer_mode 0`; `bench disable-scheduler`. Production `encryption_key` and outbound service keys were not copied, so stored credentials stay unreadable.
+- `bench --site suite-frappe.localhost restore <db.sql.gz> --with-public-files <files.tar> --with-private-files <private-files.tar>` completed rc=0 in 4 min 12 s. Log: `/home/faris/backups/suite-frappe/restore.log`. A temporary MariaDB admin user was created for the run and dropped after it.
+- First attempt failed with `ERROR 2006 Server has gone away` at a row in `tabDeleted Document` larger than the 16 MB `max_allowed_packet`. Fixed by raising the server value to 1 GB for the import and restoring it to 16777216 afterward, plus a client-side `max_allowed_packet=1G` through a temporary defaults file. Note for the production Build release: the dump needs a larger packet size to restore.
+- Result: `tabFile` 25335, `tabUser` 249, `tabPresentation` 522, `tabEmail Account` 1; 369 tables, 5.78 GB. `private/files` 27 GB, 13933 files; `public/files` 1.9 GB, 116 files. Disk free after: 37 GB.
+- Neutralized after restore by raw SQL: the one Email Account disabled both ways with `awaiting_password=1`; Mail Settings `server_url` and `dns_provider` cleared; Webhook and Notification already off; Email Queue had no pending rows. Administrator password set locally. Redis queue on 11006 flushed (1913 keys). `bench doctor`: scheduler disabled, paused, inactive, maintenance mode on, 0 workers.
+- Not done: `bench migrate` has not run. The site is at the production schema. Build is held for an explicit go.
+
+### Plan for the Build run (from code reading, not yet executed)
+
+- `bench migrate --skip-fixtures --skip-search-index` first with `storage_v2` unset. Every earlier patch commits and is logged; the Build gate raises `BuildGateError` and stops migrate before post-schema. This exercises the gate.
+- Then set site_config `storage_v2 1`, leave `storage_driver` unset (defaults to local), set `Drive Disk Settings.enabled = 0` by SQL, flush redis, and rerun the same migrate. Only Build and post-schema run. Every S3 fetch URL lands in `missing_bytes` by design.
+- `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
+- Do not use `--skip-failing` or `bypass-patch`.
+
+Agents ran the restore and wrote this evidence.
