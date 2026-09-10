@@ -417,18 +417,25 @@ def get_members(
 
 
 def _attach_quotas(users: list[dict]) -> None:
-    """The allotted quota per listed account, one Suite Cloud call for the page; None when unknown."""
+    """Allotted quota and usage per listed account, one Suite Cloud call for the page; None when unknown."""
 
     for user in users:
         user["quota_gb"] = None
+        user["used_bytes"] = None
     emails = [user["account"] for user in users if user.get("account")]
     if not emails:
         return
     with suppress(Exception):
         quotas = get_client().call("mail.accounts.get_quotas", emails=emails)
         for user in users:
-            if user.get("account") in quotas:
-                user["quota_gb"] = flt(quotas[user["account"]])
+            quota = quotas.get(user.get("account"))
+            if quota:
+                user["quota_gb"] = flt(quota.get("disk_quota_gb"))
+                user["used_bytes"] = _bytes_or_none(quota.get("used_disk_bytes"))
+
+
+def _bytes_or_none(value) -> int | None:
+    return None if value is None else cint(value)
 
 
 def _quota_usage(account: dict) -> dict:
@@ -843,6 +850,7 @@ def _group_row(group: dict) -> dict:
         "email": group["email"],
         "description": group.get("description"),
         "quota_gb": flt(group.get("disk_quota_gb")),
+        "used_bytes": _bytes_or_none(group.get("used_disk_bytes")),
         "created_at": to_utc_z(group.get("created_at")),
     }
 

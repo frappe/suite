@@ -227,7 +227,9 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         detail = admin.get_group(group)
         self.assertEqual([m["email"] for m in detail["members"]], [f"alice@{DOMAIN}"])
         self.assertEqual(detail["quota"]["total"], 2 * 1024**3)
-        self.assertEqual(admin.get_groups()["items"][0]["quota_gb"], 2)
+        self.fake.groups[group]["used_disk_bytes"] = 1024
+        listed = admin.get_groups()["items"][0]
+        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (2, 1024))
         with self.change_settings("Mail Settings", default_disk_quota_gb=7):
             frappe.local.request_cache.clear()
             admin.add_group("ops", DOMAIN)
@@ -389,14 +391,15 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual([g["email"] for g in member["groups"]], [f"sales@{DOMAIN}"])
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
         self.assertEqual(member["quota"]["total"], 2 * 1024**3)
-        # Usage costs a cluster read per account, so the list carries no quota; the detail page does.
         requests = admin.get_account_requests(search="carol")
         self.assertEqual((requests["total"], requests["items"][0]["account"]), (1, self.email))
         self.assertEqual(admin.get_account_requests(search="carol", start=20, page_length=20)["items"], [])
+        self.fake.accounts[self.email]["used_disk_bytes"] = 4096
         page = admin.get_members(search="carol")
         self.assertEqual(page["total"], 1)
         listed = next(u for u in page["items"] if u["name"] == self.email)
-        self.assertEqual(listed["quota_gb"], 2)  # the allotment, fetched for the page in one call
+        # Allotment and usage, fetched for the page in one call.
+        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (2, 4096))
         self.assertEqual(admin.get_members(search="carol", start=20, page_length=20)["items"], [])
         self.assertNotIn("quota", listed)
 

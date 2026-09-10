@@ -190,7 +190,11 @@ class FakeSuiteCloud:
         return self._account(email)
 
     def accounts__get_quotas(self, emails) -> dict:
-        return {e: self.accounts[e]["disk_quota_gb"] for e in emails if e in self.accounts}
+        return {
+            e: {"disk_quota_gb": a["disk_quota_gb"], "used_disk_bytes": a.get("used_disk_bytes")}
+            for e in emails
+            if (a := self.accounts.get(e))
+        }
 
     def accounts__get_account(self, email: str) -> dict:
         return self._account(self._require(self.accounts, email)["email"])
@@ -305,6 +309,7 @@ class FakeSuiteCloud:
             "aliases": self._alias_rows(aliases),
             "members": list(members or []),
             "disk_quota_gb": disk_quota_gb or DEFAULT_QUOTA_GB,
+            "used_disk_bytes": 0,
         }
         for member in members or []:
             self._require(self.accounts, member)["groups"].append(email)

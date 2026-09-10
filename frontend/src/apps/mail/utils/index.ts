@@ -33,6 +33,13 @@ export const toTitleCase = (str: string) =>
 export const formatGb = (gb?: number | null) =>
 	gb == null ? '—' : __('{0} GB', [String(Math.round(gb * 100) / 100)])
 
+// "1.2 GB of 5 GB" for a list row; the allotment alone when usage is unknown, a dash when both are.
+export const formatStorage = (usedBytes?: number | null, quotaGb?: number | null) => {
+	if (usedBytes == null) return formatGb(quotaGb)
+	if (quotaGb == null) return formatBytes(usedBytes)
+	return __('{0} of {1}', [formatBytes(usedBytes), formatGb(quotaGb)])
+}
+
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
 
