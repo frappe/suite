@@ -421,6 +421,7 @@ export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
 	// stray Mailbox Settings icon (it must never render as a generic folder).
 	if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
+	if (mailbox.icon === 'spam') return 'mail-warning'
 	if (mailbox.icon) return mailbox.icon
 	if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
 	return 'folder'

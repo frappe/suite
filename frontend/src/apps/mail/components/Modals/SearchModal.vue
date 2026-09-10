@@ -36,8 +36,6 @@
 						type="search"
 						class="placeholder-ink-gray-4 w-full border-none bg-transparent text-base focus:ring-0"
 						placeholder="Search"
-						@click="showAdvancedFilters = false"
-						@input="showAdvancedFilters = false"
 						@keydown.enter="openSearchPage"
 					/>
 					<Button

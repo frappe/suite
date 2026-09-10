@@ -32,7 +32,7 @@
 
 <script setup>
 import { onActivated, onMounted, onScopeDispose, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { createResource, dialog } from 'frappe-ui'
 
@@ -54,6 +54,7 @@ import { requestFullscreen } from '@/apps/slides/stores/slideshow'
 import { useRootStore } from '@/stores/root'
 
 const router = useRouter()
+const route = useRoute()
 const root = useRootStore()
 
 const previewPresentation = ref(null)
@@ -152,6 +153,8 @@ const navigateToEditor = () => {
 }
 
 const unregisterPaletteGroups = root.registerPaletteGroups('slides-home', () => {
+	if (route.name !== 'slides-home') return []
+
 	const commands = [
 		{
 			id: 'slides-new-presentation',

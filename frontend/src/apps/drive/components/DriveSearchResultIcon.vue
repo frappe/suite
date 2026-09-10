@@ -1,11 +1,11 @@
 <template>
   <span
-    class="relative mr-2 flex size-7 shrink-0 items-center justify-center rounded-4 bg-surface-gray-2"
+    class="relative mr-3 flex size-4 shrink-0 items-center justify-center"
   >
     <img
       :src="thumbnail.fallback"
       alt=""
-      class="size-5 rounded-1"
+      class="size-4 rounded-1"
       :class="hasThumbnail && loaded ? 'opacity-0' : 'opacity-100'"
       draggable="false"
     />
@@ -13,7 +13,7 @@
       v-if="hasThumbnail"
       :src="thumbnail.src"
       alt=""
-      class="absolute inset-1 size-5 rounded-1 object-cover"
+      class="absolute inset-0 size-4 rounded-1 object-cover"
       :class="loaded ? 'opacity-100' : 'opacity-0'"
       draggable="false"
       @load="loaded = true"
