@@ -601,9 +601,22 @@ function cancelSearches() {
 }
 
 function consumeMailFilterToken(value: string) {
-  const match = value.match(/(?:^|\s)(from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i)
+  const match = value.match(/(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i)
   if (!match || match.index == null) return false
-  const parsed = parseMailSearchQuery(match[0].trim())
+  const token = match[0].trim()
+  const separator = token.indexOf(':')
+  if (token.slice(0, separator).toLowerCase() === 'in') {
+    const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, '')
+    const mailbox = (mailUser.mailboxes.data ?? []).find(
+      (candidate: { id: string; _name: string }) =>
+        candidate.id === mailboxName || candidate._name.toLowerCase() === mailboxName.toLowerCase(),
+    )
+    if (!mailbox) return false
+    applyMailFilter('inMailbox', mailbox.id, mailbox._name)
+    query.value = value.slice(0, match.index).trim()
+    return true
+  }
+  const parsed = parseMailSearchQuery(token)
   const entry = Object.entries(parsed).find(([key]) => key !== 'text')
   if (!entry) return false
   const [key, filterValue] = entry
