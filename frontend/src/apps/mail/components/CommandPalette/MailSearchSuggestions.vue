@@ -35,8 +35,8 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Icon } from 'frappe-ui'
-import { CommandPaletteGroup, CommandPaletteItem } from 'frappe-ui/experimental'
+import { Avatar } from 'frappe-ui'
+import { CommandPaletteGroup, CommandPaletteItem, Icon } from 'frappe-ui/experimental'
 import type { MailContactSuggestion, MailFilterSuggestion } from './types'
 
 defineProps<{

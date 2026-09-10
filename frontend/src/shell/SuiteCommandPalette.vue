@@ -8,6 +8,7 @@
     @select="selectItem"
   >
     <CommandPaletteInput
+      ref="paletteInput"
       :placeholder="mailAppliedFilters.length ? 'Add another filter or search mail' : palettePlaceholder"
       @keydown.backspace="removeLastMailFilter"
     >
@@ -198,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onScopeDispose, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 import { createResource, useKeyboardShortcut } from 'frappe-ui'
@@ -293,13 +294,18 @@ const DriveSearchResultModified = defineAsyncComponent(
   () => import('@/apps/drive/components/DriveSearchResultModified.vue'),
 )
 const root = useRootStore()
-const mailUser = userStore()
 const route = useRoute()
 const router = useRouter()
+const paletteInput = ref<{ $el: HTMLElement } | null>(null)
 const query = ref('')
 const navigationMode = ref(false)
 const mailAppliedFilters = ref<MailSearchFilterBadge[]>([])
+let mailUser: ReturnType<typeof userStore> | undefined
 let openSelectionInNewTab = false
+
+function getMailUser() {
+  return mailUser ??= userStore()
+}
 
 useKeyboardShortcut({
   combo: 'Mod+K',
@@ -437,7 +443,7 @@ const mailFilterSuggestions = computed<MailFilterSuggestion[]>(() => {
   if (!operator) return []
   const partial = operator.partial.toLowerCase()
   if (operator.key === 'in') {
-    return (mailUser.mailboxes.data ?? [])
+    return (getMailUser().mailboxes.data ?? [])
       .filter((mailbox: { _name: string }) => mailbox._name.toLowerCase().includes(partial))
       .slice(0, 3)
       .map((mailbox: { id: string; _name: string; role?: string; icon?: string; color?: keyof typeof FOLDER_ICON_COLOR_MAP }) => ({
@@ -446,18 +452,18 @@ const mailFilterSuggestions = computed<MailFilterSuggestion[]>(() => {
         label: mailbox._name,
         filterKey: 'inMailbox',
         filterValue: mailbox.id,
-        icon: getIcon(mailbox).startsWith('lucide-') ? getIcon(mailbox) : `lucide-${getIcon(mailbox)}`,
+        icon: getIcon(mailbox),
         iconClass: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
       }))
   }
   const choices = operator.key === 'has'
     ? [
-        { value: 'attachment', label: 'With attachments', filterKey: 'hasAttachment', filterValue: 'true', icon: 'lucide-paperclip' },
-        { value: 'no-attachment', label: 'Without attachments', filterKey: 'hasAttachment', filterValue: 'false', icon: 'lucide-ban' },
+        { value: 'attachment', label: 'With attachments', filterKey: 'hasAttachment', filterValue: 'true', icon: 'paperclip' },
+        { value: 'no-attachment', label: 'Without attachments', filterKey: 'hasAttachment', filterValue: 'false', icon: 'ban' },
       ]
     : [
-        { value: 'read', label: 'Read', filterKey: 'isRead', filterValue: 'true', icon: 'lucide-mail-open' },
-        { value: 'unread', label: 'Unread', filterKey: 'isRead', filterValue: 'false', icon: 'lucide-mail' },
+        { value: 'read', label: 'Read', filterKey: 'isRead', filterValue: 'true', icon: 'mail-open' },
+        { value: 'unread', label: 'Unread', filterKey: 'isRead', filterValue: 'false', icon: 'mail' },
       ]
   return choices
     .filter((choice) => choice.value.includes(partial) || choice.label.toLowerCase().includes(partial))
@@ -503,6 +509,19 @@ const filteredCommands = computed(() => {
       .includes(normalizedQuery.value),
   )
 })
+
+watch(
+  [driveResults, sheetResults, slideResults, writerResults, meetResults, mailResults, mailSuggestions],
+  async (groups) => {
+    if (!root.paletteOpen || !groups.some((items) => items.length)) return
+    await nextTick()
+    const input = paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
+    const palette = input?.closest('[data-slot="command-palette"]')
+    if (!input || palette?.querySelector('[data-slot="command-palette-item"][data-state="active"]')) return
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  },
+  { flush: 'post' },
+)
 
 watch([query, mailAppliedFilters], ([value]) => {
   if (!navigationMode.value && value.trim() === '>') {
@@ -607,7 +626,7 @@ function consumeMailFilterToken(value: string) {
   const separator = token.indexOf(':')
   if (token.slice(0, separator).toLowerCase() === 'in') {
     const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, '')
-    const mailbox = (mailUser.mailboxes.data ?? []).find(
+    const mailbox = (getMailUser().mailboxes.data ?? []).find(
       (candidate: { id: string; _name: string }) =>
         candidate.id === mailboxName || candidate._name.toLowerCase() === mailboxName.toLowerCase(),
     )
@@ -620,7 +639,10 @@ function consumeMailFilterToken(value: string) {
   const entry = Object.entries(parsed).find(([key]) => key !== 'text')
   if (!entry) return false
   const [key, filterValue] = entry
-  applyMailFilter(key, filterValue)
+  const displayValue = key === 'hasAttachment'
+    ? filterValue === 'true' ? 'With attachments' : 'Without attachments'
+    : filterValue
+  applyMailFilter(key, filterValue, displayValue)
   query.value = value.slice(0, match.index).trim()
   return true
 }

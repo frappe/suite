@@ -11,8 +11,9 @@
 			<Button
 				variant="ghost"
 				icon="lucide-x"
+				size="xs"
 				:aria-label="`Remove ${getLabel(filter)} filter`"
-				class="-mr-0.5 !size-4 !p-0 hover:!bg-surface-gray-3"
+				class="-mr-0.5 !size-3.5 !p-0 hover:!bg-surface-gray-3"
 				@mousedown.prevent
 				@click.stop="emit('remove', filter.key)"
 			/>
