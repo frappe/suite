@@ -1,6 +1,6 @@
 <template>
 	<Tooltip :text="label" :hover-delay="0.3">
-		<div class="flex h-6 w-32 items-center">
+		<div class="flex h-6 w-20 items-center">
 			<div class="bg-surface-gray-3 h-1.5 w-full overflow-hidden rounded-full">
 				<div class="h-full rounded-full" :class="fillClass" :style="{ width: `${percent ?? 0}%` }" />
 			</div>
