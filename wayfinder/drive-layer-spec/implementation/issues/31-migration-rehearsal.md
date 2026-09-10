@@ -4,7 +4,7 @@
 
 **Blocked by:** [30 — Verify the complete backend before migration rehearsal](30-backend-integration-review.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Claimed:** 2026-09-09 by Faris (orchestrated by Claude). Starting revisions: suite forge/drive-layer 5965c9933, frappe forge/storage-v2 ad5cd7f1a7. Claimed files: none in the repo; the site suite-frappe.localhost on suite-bench.
 
@@ -35,13 +35,15 @@ Agents gathered these facts from read-only frappectl profiles and the forge/driv
 
 ## Acceptance criteria
 
-- [ ] Record the supplied dataset, target, restore authority, and a recoverable target backup before restoring anything.
-- [ ] Restore only to the approved target, suite-frappe.localhost on suite-bench.
-- [ ] Run Build, read the private report, and compare source/target counts, access, bytes, ids, document bodies, and root pairs.
-- [ ] Report links minted, dropped-grant categories, title renames, and trash disagreements to the user.
-- [ ] Exercise representative legacy and new clients, then verify a safe rerun.
-- [ ] Rehearse rollback with the preserved database and bytes. Account for renamed tables, body rewrites, and writes after Build.
-- [ ] Record the exact release candidate and evidence needed for later Cleanup. Do not activate Cleanup or relocate bytes.
+- [x] Record the supplied dataset, target, restore authority, and a recoverable target backup before restoring anything.
+- [x] Restore only to the approved target, suite-frappe.localhost on suite-bench.
+- [x] Run Build, read the private report, and compare source/target counts, access, bytes, ids, document bodies, and root pairs.
+- [x] Report links minted, dropped-grant categories, title renames, and trash disagreements to the user.
+- [x] Exercise representative legacy and new clients, then verify a safe rerun.
+- [x] Rehearse rollback with the preserved database and bytes. Account for renamed tables, body rewrites, and writes after Build.
+- [x] Record the exact release candidate and evidence needed for later Cleanup. Do not activate Cleanup or relocate bytes.
+
+All seven criteria verified 2026-09-10; evidence in the sections below.
 
 ## Verification
 
@@ -235,10 +237,28 @@ Record changed behavior, exact revisions, commands, results, and unresolved gate
 - Media bytes: 77 present, 0 missing, 142,517,717 bytes (`pass14-media-bytes.txt`). Doctor: scheduler disabled and paused, 0 workers, maintenance mode on, guard keys 1, `Drive Disk Settings.enabled` 0, disk free 34 GB.
 - Artifacts: `pass14-restore.log`, `pass14-precondition.sql`, `pass14-precondition.log`, `pass14-preflight.txt`, `pass14-migrate.log`, `pass14-migrate-clean.log`, `pass14-progress.tsv`, `pass14-report.json`, `pass14-state-final.json`, `pass14-counts.tsv`, `pass14-counts.diff`, `pass14-report-compare.md`, `pass14-media-bytes.txt`, `pass14-doctor.log`, `pass14-guard-keys.tsv`, `pass14b-migrate.log`, `pass14b-counts.tsv`, `pass14b-counts.diff`.
 
-### Plan for the Build rerun
+### Build pass 15, release-candidate run after the one-shot counter fix (2026-09-10, completed)
 
-- Pass 14 and 14b completed on c844f83bc with the same tables as pass 13. Next: merge fix 13, restore the snapshot, run pass 15 as the release-candidate run, then the acceptance ticks.
+- Fix 13 merged as f150659d6 (branch `forge/ticket-31-oneshot-counters`, commit aa924c52c, written by a codex agent after auditing every phase field): `slide_elements_repaired`, `template_nodes_adopted`, `docshare_rows_dropped`, and `docshare_dropped_by_reason` joined `CUMULATIVE_FIELDS`; the templates step adds to the adoption count instead of assigning it. Every other phase counter is recomputed from rows Build preserves and stays per run. 901 Build tests pass without a database.
+- Snapshot restored by `restore-prebuild.sh` from the session shell (exit 0, three PASS lines, about 1 min 57 s), `pass15-precondition.sql` (`enabled` 1 to 0), `bench clear-cache`, redis flushed, preflight clean.
+- Same migrate command on HEAD 9b5c2ba57 (code identical to f150659d6; only ticket 31 differs). Exit code 0, wall 24 min 12 s, Build `Success: Done in 1312.486s`, no traceback, hook passed, Patch Log row `6q57bb9egb`. Pass 15b: exit code 0, wall 4 s, Build skipped, counts unchanged (`pass15b-counts.diff` empty).
+- Every table count equals pass 14 apart from the Patch Log row identity: Drive Node 18,948; Drive Grant 4,839; Drive Comment Thread 1,154; Drive Comment 1,554; Drive Node Version 142,536; Drive Node Preview 441; Drive Root 180; Drive Activity 15,804; Drive Favourite 45; File Blob 27,559; DocShare 247 all User; Presentation 517; Writer Document 2,435; Sheet 105; File 25,258; Slide 5,861; Writer Version 142,363; Sheet Op Log 4,461; Sheet Snapshot 173; NULL `node` 0 in all three content tables; no whitespace principal; journals 50 and 2,791.
+- Report versus pass 14: only `versions_to_thin` 140,043 (time-based), `slide_elements_repaired` 1 (was 0), `template_nodes_adopted` 1 (was 0) differ. `issues_total` 345 (links 44, slides 298, history 2, templates 1), `media_references_missing_file_rows` 179, one-shot counters 44 / 44 / 1 / 49 / 54 / 84, `docshare_rows_dropped` 0. Issue groups: 44 purged documents, 179 missing media references, 102 non-template media references, 17 missing thumbnails, 2 comment id collisions, 1 template adoption. Issue samples equal pass 14.
+- Media bytes: 77 present, 0 missing, 142,517,717 bytes. Doctor: scheduler disabled and paused, 0 workers, maintenance mode on, guard keys 1, `Drive Disk Settings.enabled` 0, disk free 34 GB.
+- Artifacts: `pass15-restore.log`, `pass15-precondition.sql`, `pass15-precondition.log`, `pass15-migrate.log`, `pass15-migrate-clean.log`, `pass15-progress.tsv`, `pass15-report.json`, `pass15-state-final.json`, `pass15-counts.tsv`, `pass15-report-compare.md`, `pass15-media-bytes.txt`, `pass15-doctor.log`, `pass15b-migrate.log`, `pass15b-counts.tsv`, `pass15b-counts.diff`.
+
+### Release candidate and evidence for Cleanup (2026-09-10)
+
+- Release candidate: suite `forge/drive-layer` at f150659d6 (merge of fix 13; the Build package is unchanged by the later docs commits), frappe `forge/storage-v2` at ad5cd7f1a7. Pass 15 ran this code end to end on the restored production copy. Fixes made during the rehearsal, all merged: 6 (8d74df17f, double-encoded slide bodies), 7 (9ef941d6f, template deck with an existing node), 8 (227e3e4ec, copied comment ids), 9 (7ca9dc44c and ff8953591, DocShare deletion with journal and Removed-only purge), 10 (ef5887064, whitespace principals), 11 (a1e1a2437, one-shot counters and missing-media issues), 12 (6377c483e, blank and colour prefilter), 13 (aa924c52c, remaining one-shot counters).
+- Reported to the user in the session summary: `links_minted` 725; `grant_rows_dropped` dead_principal 108 (69 missing users, 25 Administrator, 6 Guest, 8 invalid addresses without a User row) and unmigrated_entity 10; `docshare_rows_dropped` 0; `title_renames` 1,192; `trash_disagreements` 5.
+- Evidence for a later Cleanup (ticket 36), all under `/home/faris/backups/suite-frappe/build/`: `source-inventory.md` (pre-Build counts), `pass15-report.json` and `pass15-state-final.json` (the release-candidate report and state), `pass10-reconcile.sql` and `pass10-deltas.md` (the count reconciliation and every explained delta), `rollback-steps.md` and `rollback-counts.tsv` (the in-place rollback), `restore-prebuild.sh` (the database rollback), `client-exercise-summary.md`, and on the site `private/drive-build-docshare-preimages/` (50) and `private/drive-build-slide-preimages/` (2,791). Cleanup was not activated and no bytes were relocated (`s3_objects_copied` 0, `relocate_blobs` never run).
+- Operating rules learned: `--skip-fixtures` until ticket 38; flush the queue redis before each migrate; after every snapshot restore re-apply `Drive Disk Settings.enabled = 0` and `bench clear-cache`; to rerun Build on a completed site delete its Patch Log row with a recorded precorrection; every resume re-scans all versions in the history step (about 5 to 6 min); select named columns only.
+- Open follow-ups, not blocking this ticket: the history step re-scan on resume; `Sheet Collab State` shares are outside the `content_shares` read (Cleanup verification covers them); 173 legacy media references in 57 decks point at files that no longer exist (source data, reported as issues, bodies unchanged); two File rows attached to no document are not adoptable by design; 130 non-template media references remain by design; `used_bytes` is 17.99 GB against 138.24 GB because S3 was gated off, so the S3 copy path and `missing_bytes` (7,047) were not rehearsed; ticket 38 (fixture node defect) stays open.
+
+### Rerun rules
+
 - `--skip-fixtures` is required until ticket 38 lands; `sync_fixtures` deletes and re-inserts the template Presentations and hits `require_node`.
 - Do not use `--skip-failing` or `bypass-patch`.
+- After a snapshot restore, re-apply `Drive Disk Settings.enabled = 0` and `bench clear-cache` before migrating.
 
-Agents ran the restore and wrote this evidence.
+Agents ran every pass, the rollback, the restores, and the client exercise, and wrote this evidence.
