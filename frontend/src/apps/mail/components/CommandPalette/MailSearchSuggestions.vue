@@ -34,35 +34,12 @@
 	</CommandPaletteGroup>
 </template>
 
-<script lang="ts">
-export interface MailContactSuggestion {
-	resultType: 'mail-contact'
-	value: string
-	label: string
-	email: string
-	name?: string
-	user_image?: string
-}
-
-export interface MailFilterSuggestion {
-	resultType: 'mail-filter-suggestion'
-	value: string
-	label: string
-	filterKey: string
-	filterValue: string
-	icon: string
-	iconClass?: string
-}
-</script>
-
 <script setup lang="ts">
 import { Avatar, Icon } from 'frappe-ui'
 import { CommandPaletteGroup, CommandPaletteItem } from 'frappe-ui/experimental'
+import type { MailContactSuggestion, MailFilterSuggestion } from './types'
 
 defineProps<{
-	suggestions: (
-		| import('./MailSearchSuggestions.vue').MailContactSuggestion
-		| import('./MailSearchSuggestions.vue').MailFilterSuggestion
-	)[]
+	suggestions: (MailContactSuggestion | MailFilterSuggestion)[]
 }>()
 </script>

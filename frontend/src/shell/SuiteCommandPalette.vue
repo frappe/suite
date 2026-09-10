@@ -218,8 +218,13 @@ import { userStore } from '@/apps/mail/stores/user'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon } from '@/apps/mail/utils'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import MailSearchFilterBadges, { type MailSearchFilterBadge } from '@/apps/mail/components/CommandPalette/MailSearchFilterBadges.vue'
-import MailSearchSuggestions, { type MailContactSuggestion, type MailFilterSuggestion } from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
+import MailSearchFilterBadges from '@/apps/mail/components/CommandPalette/MailSearchFilterBadges.vue'
+import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
+import type {
+  MailContactSuggestion,
+  MailFilterSuggestion,
+  MailSearchFilterBadge,
+} from '@/apps/mail/components/CommandPalette/types'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
 interface DriveResult {

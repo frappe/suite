@@ -20,18 +20,11 @@
 	</Badge>
 </template>
 
-<script lang="ts">
-export interface MailSearchFilterBadge {
-	key: string
-	value: string
-	displayValue: string
-}
-</script>
-
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
+import type { MailSearchFilterBadge } from './types'
 
-defineProps<{ filters: import('./MailSearchFilterBadges.vue').MailSearchFilterBadge[] }>()
+defineProps<{ filters: MailSearchFilterBadge[] }>()
 const emit = defineEmits<{ remove: [key: string] }>()
 
 const OPERATORS: Record<string, string> = {
@@ -45,7 +38,7 @@ const OPERATORS: Record<string, string> = {
 	before: 'before',
 }
 
-function getLabel(filter: import('./MailSearchFilterBadges.vue').MailSearchFilterBadge) {
+function getLabel(filter: MailSearchFilterBadge) {
 	if (filter.key === 'hasAttachment') return filter.displayValue
 	if (filter.key === 'isRead') return `is:${filter.value === 'true' ? 'read' : 'unread'}`
 	return `${OPERATORS[filter.key] ?? filter.key}:${filter.displayValue}`
