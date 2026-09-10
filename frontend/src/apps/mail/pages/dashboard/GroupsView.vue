@@ -31,9 +31,11 @@
 					>
 						<ListRowItem :item="item">
 							<span v-if="column.key === 'created_at'">{{ formatCreatedAt(item) }}</span>
-							<span v-else-if="column.key === 'quota_gb'" class="text-ink-gray-5 text-sm">
-								{{ formatStorage(row.used_bytes, row.quota_gb) }}
-							</span>
+							<StorageBar
+								v-else-if="column.key === 'quota_gb'"
+								:used-bytes="row.used_bytes"
+								:quota-gb="row.quota_gb"
+							/>
 						</ListRowItem>
 					</ListRow>
 				</template>
@@ -62,13 +64,13 @@ import { FormControl, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
-import { formatStorage } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
+import StorageBar from '@/apps/mail/components/StorageBar.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 
 usePageMeta(() => appPageMeta(__('Groups'), 'Mail'))

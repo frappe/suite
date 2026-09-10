@@ -65,7 +65,7 @@
 							/>
 						</template>
 						<template v-else-if="column.key === 'quota'">
-							<span class="text-ink-gray-5 text-sm">{{ formatStorage(row.used_bytes, row.quota_gb) }}</span>
+							<StorageBar :used-bytes="row.used_bytes" :quota-gb="row.quota_gb" />
 						</template>
 						<template v-else-if="column.key === 'last_active'">
 							<span class="text-ink-gray-5 text-sm">
@@ -141,12 +141,13 @@ import {
 	ListView,
 } from 'frappe-ui/experimental'
 
-import { formatStorage, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
+import StorageBar from '@/apps/mail/components/StorageBar.vue'
 
 
 type MemberRow = {
@@ -224,8 +225,6 @@ watch(
 
 const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
-
-// The allotment only; usage would cost a cluster call per row and lives on the account page.
 
 const LIST_COLUMNS = [
 	{ label: __('User'), key: 'user' },
