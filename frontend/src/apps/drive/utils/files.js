@@ -16,7 +16,7 @@ import {
 import { set } from 'idb-keyval'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
 import emitter from '@/apps/drive/emitter'
-import { getSessionUser } from '@/boot/session'
+import { getSessionUser } from '@/utils/session'
 import writerIcon from '@/assets/app-logos/writer.png'
 import sheetsIcon from '@/assets/app-logos/sheets.svg'
 import slidesIcon from '@/assets/app-logos/slides.svg'
