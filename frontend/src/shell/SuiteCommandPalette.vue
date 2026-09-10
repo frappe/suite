@@ -4,6 +4,7 @@
     v-model:query="query"
     :filterable="false"
     title="Search Suite"
+    style="font-feature-settings: 'calt' 1, 'cv01' 1, 'cv11' 1"
     @keydown.capture="handleModifiedEnter"
     @select="selectItem"
   >
@@ -170,28 +171,28 @@
       {{ mailOperatorContext?.prompt || (mailAppliedFilters.length ? 'No mail matches these filters' : text && text.length < minimumQueryLength && contextSearchLabel ? `Type more to search ${contextSearchLabel}` : `No results for "${text}"`) }}
     </CommandPaletteEmpty>
 
-    <CommandPaletteFooter>
+    <CommandPaletteFooter class="!text-xs">
       <span v-if="!navigationMode" class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-sm text-ink-gray-5">&gt;</span>
+        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-xs text-ink-gray-5">&gt;</span>
         <span>Switch apps</span>
       </span>
       <span class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-sm text-ink-gray-5">
+        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
           <span class="lucide-arrow-up size-4" />
         </span>
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-sm text-ink-gray-5">
+        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
           <span class="lucide-arrow-down size-4" />
         </span>
         <span>Navigate</span>
       </span>
       <span class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-sm text-ink-gray-5">
+        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
           <span class="lucide-corner-down-left size-4" />
         </span>
         <span>Open</span>
       </span>
       <span class="ml-auto flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-sm text-ink-gray-5">esc</span>
+        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-xs text-ink-gray-5">esc</span>
         <span>Close</span>
       </span>
     </CommandPaletteFooter>
