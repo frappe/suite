@@ -60,10 +60,10 @@ Scope, decided 2026-09-11:
   Sheets 33k, Slides 26k, Drive 11k, Writer 10k, Calendar 5k. The SPA calls
   60 distinct legacy `suite.drive.api.*` methods and no `/api/suite/drive/`
   route. `suite/drive/http/routes.py` holds 50 handlers. Suite's pinned
-  frappe-ui (`a89a95f`) exports DesktopShell, MobileShell, Rail, Sidebar,
-  BottomSheet, MobileNav and PageHeader, but not RailItem, SidebarItem,
-  SidebarLabel or PageHeaderMobile. The prototype pins frappe-ui
-  1.0.0-beta.55.
+  frappe-ui (`a89a95f`, 15 commits after `v1.0.0-beta.55`) exports every
+  shell component the prototype uses (verified 2026-09-11; an earlier note
+  here said four were missing, which was a grep error). The prototype pins
+  frappe-ui 1.0.0-beta.55.
 - Skills each session consults: grilling and domain-modeling for decision
   tickets; frappe-ui before any styling; prototype tickets edit the base
   prototype on the sketch server, never a fresh one; codebase-design for
@@ -88,6 +88,13 @@ Scope, decided 2026-09-11:
   add one line under Decisions so far here.
 
 ## Decisions so far
+
+- [frappe-ui shell component gap](tickets/004-frappe-ui-shell-component-gap.md) —
+  no gap: all 28 prototype components exist at suite's pin; no bump needed;
+  `v1.0.0-beta.56` would cost one toast migration; use `frappe-ui/list`,
+  add no `frappe-ui/experimental` imports; Rail and Sidebar need suite
+  wrappers for geometry, scroll and badges; node_modules is stale against
+  the lock.
 
 - [Legacy Drive client inventory](tickets/005-legacy-drive-client-inventory.md) —
   60 legacy names, all in Drive UI (Writer repeats six); 29 have an exact

@@ -31,3 +31,9 @@ Settle:
 Inputs: ARCHITECTURE.md target structure and rules 8 and 9,
 `frontend/scripts/check-import-boundaries.mjs`, `frontend/vite.config.ts`,
 tickets 002 and 003.
+
+Handed from [frappe-ui shell component gap](004-frappe-ui-shell-component-gap.md)
+(2026-09-11): the boundary rules should also refuse new
+`frappe-ui/experimental` imports and private-path imports such as
+`frappe-ui/src/...` (one exists in `writer/utils/dialogs.ts`). New lists use
+`frappe-ui/list`. A move to `v1.0.0-beta.56` costs a toast migration only.

@@ -30,3 +30,8 @@ Inputs: `frontend/src/boot/*`, `frontend/src/shell/*`,
 `frontend/src/apps/registry.ts`, the prototype's `ShellLayout.vue` and
 `ContextualPanelBody.vue`, ARCHITECTURE.md rule 8, Drive spec §11.1, §11.4,
 §11.6, §4.7.
+
+Handed from [frappe-ui shell component gap](004-frappe-ui-shell-component-gap.md)
+(2026-09-11): every shell primitive exists at the current pin, so no bump
+gates this ticket. frappe-ui's Rail and Sidebar leave scroll regions, fades,
+route rules and badges to the app; those are suite wrappers under `shell/`.
