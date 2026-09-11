@@ -36,7 +36,6 @@ from suite.mail.api.scheduled import (
     get_scheduled_mail,
     get_submissions,
     reschedule_mail,
-    retry_delivery_now,
     retry_failed_mail,
     send_scheduled_mail_now,
 )
@@ -522,10 +521,10 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
     def test_retry_and_dismiss_finalized_submissions(self):
         account = self.personal_account(self.sender)
 
-        # All three refuse a submission whose delivery is still pending.
+        # Both refuse a submission whose delivery is still pending.
         pending = self._schedule(minutes=120)
         with self.set_user(self.sender.email):
-            for action in (retry_failed_mail, retry_delivery_now, dismiss_failed_mail):
+            for action in (retry_failed_mail, dismiss_failed_mail):
                 with self.assertRaises(frappe.ValidationError):
                     action(account, pending.submission_id)
 
@@ -544,16 +543,11 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
             message="The held submission never went final.",
         )
 
-        # A concluded delivery has left the MTA queue — nothing there to poke.
         self.wait_until(
             lambda: self._get_details(account, result["submission_id"])["status"] in ("delivered", "sent"),
             timeout=90,
             message="The released delivery never concluded.",
         )
-        with self.set_user(self.sender.email):
-            with self.assertRaises(frappe.ValidationError):
-                retry_delivery_now(account, result["submission_id"])
-
         # Retry replaces the finalized record with a fresh immediate submission.
         with self.set_user(self.sender.email):
             retried = retry_failed_mail(account, result["submission_id"])
@@ -614,7 +608,6 @@ class TestOutboxRequestBoundary(IntegrationTestCase):
             lambda: reschedule_mail("acc", "sub", send_at=["2026-01-01T00:00:00Z"]),
             lambda: send_scheduled_mail_now("acc", id=None),
             lambda: cancel_scheduled_mail("acc", id={"id": "sub"}),
-            lambda: retry_delivery_now("acc", id={}),
             lambda: retry_failed_mail(["acc"], "sub"),
             lambda: dismiss_failed_mail("acc", id=42),
         ):

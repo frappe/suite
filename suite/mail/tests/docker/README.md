@@ -1,8 +1,37 @@
 # Stalwart for mail/calendar integration tests
 
-The backend tests in `suite/mail/tests/` and `suite/calendar/tests/` run against a live
-Stalwart server. Test classes skip themselves when Stalwart is not configured, so a
-plain `bench run-tests --app suite` stays green without it.
+The backend tests in `suite/mail/tests/` and `suite/calendar/tests/` come in two kinds:
+
+- **Directory tests** (`test_suite_cloud_directory.py`, `test_suite_cloud_client.py`) run against
+  an in-memory Suite Cloud (`suite/mail/tests/fake_suite_cloud.py`) and need no server at all. A
+  plain `bench run-tests --app suite` runs them.
+- **Live tests** (everything built on `StalwartIntegrationTestCase` in `suite/mail/tests/base.py`)
+  send and read real mail over JMAP. They need a Stalwart cluster **managed by a Suite Cloud** that
+  knows this site, because accounts are created through Suite Cloud's site API. Test classes skip
+  themselves when the site has no mail server configured, so the default run stays green.
+
+## Live tests against a Suite Cloud
+
+The simplest setup is one bench with both apps on the same site: install `suite_cloud`, register a
+cluster and bootstrap a node as its README describes, create a Suite Site for this site (the desk
+form or `suite_cloud.api.fc.create_site`), and point Mail Settings, or the `mail` site config, at
+it:
+
+```sh
+bench --site <site> set-config allow_tests true
+bench --site <site> set-config mute_emails 1  # unless the site has an outgoing Email Account
+bench --site <site> set-config mail "{'server_url': 'https://mail.blr.frappemail.com', 'suite_cloud_url': 'http://<site>:8000', 'site_api_key': '<key>', 'site_api_secret': '<secret>', 'verify_ssl': 1}" --parse
+bench --site <site> clear-cache
+```
+
+Mail Settings takes priority over `site_config.json`, so leave its Mail Server fields empty on a
+test site. Test data uses unique per-run names, so repeated runs against the same cluster are fine;
+cleanup is best-effort.
+
+## A standalone Stalwart container
+
+The compose file here boots a plain Stalwart for exploring JMAP by hand. It is not managed by a
+Suite Cloud, so the live test classes above cannot create accounts on it.
 
 ## Start Stalwart
 
@@ -22,29 +51,14 @@ fly), and restarts the container — the same sequence the production deploy pla
 performs. Override with `STALWART_VERSION`, `STALWART_CLI_VERSION`,
 `STALWART_ADMIN_USER`, `STALWART_ADMIN_PASSWORD`, or `STALWART_HTTP_PORT`.
 
-## Point the site at it
-
-```sh
-bench --site <site> set-config allow_tests true
-bench --site <site> set-config mute_emails 1  # unless the site has an outgoing Email Account
-bench --site <site> set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
-bench --site <site> execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
-bench --site <site> clear-cache
-```
-
-(`Mail Settings` takes priority over `site_config.json` — leave its Stalwart fields empty
-on test sites. `verify_ssl` must be unchecked there explicitly because the field defaults
-to on, which would shadow the site_config value; the container's certificate is
-self-signed.)
-
 ## Run the tests
 
 ```sh
-bench --site <site> run-tests --app suite --module suite.mail.tests.test_admin_members
+bench --site <site> run-tests --app suite --module suite.mail.tests.test_suite_cloud_directory
+bench --site <site> run-tests --app suite --module suite.mail.tests.test_mail_flags_and_search  # live
 ```
 
-Test data uses unique per-run names, so repeated runs against the same container are
-fine. For a full reset:
+For a full reset of the standalone container:
 
 ```sh
 docker compose down -v && ./start-stalwart.sh

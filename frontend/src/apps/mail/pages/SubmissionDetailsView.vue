@@ -232,7 +232,6 @@ const actions = computed(() => {
 		reschedule: () => (showReschedule.value = true),
 		cancelDelivery: () => (showCancel.value = true),
 		sendAgain: () => (showRetry.value = true),
-		tryAgainNow: () => retryNow.submit(),
 		remove: () => dismissMail.submit(),
 	})
 })
@@ -335,16 +334,6 @@ const retryMail = createResource({
 		showRetry.value = false
 		raiseToast(__('Message sent.'))
 		followReplacement(result.id)
-	},
-	onError: onActionError,
-})
-
-const retryNow = createResource({
-	url: 'suite.mail.api.scheduled.retry_delivery_now',
-	makeParams: () => ({ account: accountId, id: submissionId }),
-	onSuccess: () => {
-		raiseToast(__('Delivery attempt scheduled.'))
-		submission.reload()
 	},
 	onError: onActionError,
 })

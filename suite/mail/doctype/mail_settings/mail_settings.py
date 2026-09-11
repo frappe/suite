@@ -8,8 +8,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.mail.stalwart import get_domain_service
-from suite.mail.utils import is_stalwart_configured
+from suite.mail import suite_cloud
+from suite.mail.directory import get_active_domain_names
+from suite.mail.utils import get_config, is_stalwart_configured
 
 
 class MailSettings(Document):
@@ -25,59 +26,46 @@ class MailSettings(Document):
             MailClientConfiguration,
         )
 
-        admin_log_file_count: DF.Int
-        admin_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        admin_log_max_file_size: DF.Int
         allow_signup: DF.Check
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
-        default_dns_ttl: DF.Int
         default_gravatar: DF.Literal[
             "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]
-        disabled_account_role: DF.Data | None
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int
         exchange_export_timeout: DF.Int
         exchange_import_timeout: DF.Int
-        exchange_log_file_count: DF.Int
-        exchange_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        exchange_log_max_file_size: DF.Int
         exchange_max_export: DF.Int
         exchange_max_import: DF.Int
         expand_mailing_list_participants: DF.Check
-        inbound_log_file_count: DF.Int
-        inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        inbound_log_max_file_size: DF.Int
         jmap_push_auth: DF.Password | None
         jmap_push_p256dh: DF.Data | None
         jmap_push_private_key: DF.Password | None
+        log_file_count: DF.Int
+        log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+        log_max_file_size_mb: DF.Int
         mail_client_configurations: DF.Table[MailClientConfiguration]
         max_email_sync: DF.Int
         max_mailing_list_participants: DF.Int
         max_message_payload_size_mb: DF.Int
         max_push_notifications: DF.Int
-        outbound_log_file_count: DF.Int
-        outbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        outbound_log_max_file_size: DF.Int
-        password: DF.Password | None
         process_pending_emails_batch_size: DF.Int
         process_pending_emails_max_batch_size: DF.Int
         process_pending_emails_timeout: DF.Int
-        push_log_file_count: DF.Int
-        push_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        push_log_max_file_size: DF.Int
         scan_message_timeout: DF.Int
         server_url: DF.Data | None
         show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
         signup_domains: DF.SmallText | None
+        site_api_key: DF.Data | None
+        site_api_secret: DF.Password | None
         spamd_host: DF.Data | None
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
-        username: DF.Data | None
+        suite_cloud_url: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
@@ -97,6 +85,11 @@ class MailSettings(Document):
             self.signup_domains = ""
             return
 
+        # Only a change to the signup fields is checked against Suite Cloud: the client would
+        # otherwise use the credentials from before this save, refusing the save that fixes them.
+        if not (self.has_value_changed("allow_signup") or self.has_value_changed("signup_domains")):
+            return
+
         is_stalwart_configured(raise_exception=True)
 
         if not self.signup_domains:
@@ -107,11 +100,16 @@ class MailSettings(Document):
         if not signup_domains:
             frappe.throw(_("Invalid Signup Domains format. Please provide one domain per line."))
 
+        # Accounts can only be created on active domains, so signup is offered on those alone.
+        site_domains = set(get_active_domain_names())
         valid_signup_domains = []
         for domain in signup_domains:
             domain = domain.strip().lower()
             if domain:
-                get_domain_service().get_by_name(domain, raise_exception=True)
+                if domain not in site_domains:
+                    frappe.throw(
+                        _("Domain {0} is not an active mail domain of this site.").format(frappe.bold(domain))
+                    )
                 valid_signup_domains.append(domain)
 
         self.signup_domains = "\n".join(valid_signup_domains)
@@ -174,6 +172,32 @@ class MailSettings(Document):
             raise
         except Exception as e:
             frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(str(e)))
+
+    @frappe.whitelist()
+    def validate_suite_cloud_credentials(self) -> dict:
+        """Pings Suite Cloud with the configured URL, key and secret and reports what it answered.
+
+        Reads the effective configuration, so credentials written to the site config by Frappe
+        Cloud are checked too; unsaved edits on the form are not.
+        """
+
+        frappe.only_for("System Manager")
+        suite_cloud.is_suite_cloud_configured(raise_exception=True)
+        site = suite_cloud.get_client().call("site.ping")
+
+        message = _("Connected to Suite Cloud as site {0} on cluster {1}.").format(
+            frappe.bold(site.get("site")), frappe.bold(site.get("cluster") or site.get("jmap_url"))
+        )
+        indicator = "green"
+        jmap_url = (site.get("jmap_url") or "").rstrip("/")
+        server_url = (get_config("server_url") or "").rstrip("/")
+        if jmap_url and jmap_url != server_url:
+            message += "<br>" + _("Suite Cloud expects the JMAP URL {0}, but this site uses {1}.").format(
+                frappe.bold(jmap_url), frappe.bold(server_url or _("none"))
+            )
+            indicator = "orange"
+        frappe.msgprint(message, title=_("Suite Cloud"), indicator=indicator)
+        return site
 
     @frappe.whitelist()
     def generate_jmap_push_keys(self) -> None:

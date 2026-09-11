@@ -17,9 +17,9 @@
 	</div>
 
 	<ListView
-		v-if="invites.data"
+		v-if="list.loaded"
 		ref="listView"
-		class="flex-1"
+		class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
 		:columns="LIST_COLUMNS"
 		:rows="inviteRows"
 		:options="listOptions"
@@ -64,25 +64,38 @@
 		</ListSelectBanner>
 	</ListView>
 	<DashboardListSkeleton v-else :columns="5" />
+	<DashboardPager
+		v-if="list.loaded && list.total"
+		:count="list.rows.length"
+		:total="list.total"
+		:page-length="list.pageLength"
+		:has-more="list.hasMore"
+		:loading="list.loading"
+		@update:page-length="list.setPageLength"
+		@load-more="list.loadMore"
+	/>
 
 	<EditInviteModal
 		v-if="selectedInvite"
 		v-model="showEditInvite"
 		:invite-i-d="selectedInvite"
-		@reload-invites="invites.reload()"
+		@reload-invites="list.reload()"
 	/>
 	<Dialog v-model:open="showDeleteInvites" v-bind="DELETE_INVITES_OPTIONS" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Badge, Button, Dialog, FormControl, createResource } from 'frappe-ui'
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { usePagedList } from '@/apps/mail/utils/pagedList'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import EditInviteModal from '@/apps/mail/components/Modals/EditInviteModal.vue'
 
 type InviteStatus = 'All' | 'Pending' | 'Accepted' | 'Expired'
@@ -98,33 +111,47 @@ type InviteRow = {
 }
 
 const search = ref('')
-const status = ref<InviteStatus>('All')
+// The overview links here with ?status=Expired; the filter follows the query on arrival.
+const route = useRoute()
+const STATUSES: InviteStatus[] = ['All', 'Pending', 'Accepted', 'Expired']
+const statusFromQuery = (): InviteStatus =>
+	STATUSES.find((value) => value === route.query.status) || 'All'
+const status = ref<InviteStatus>(statusFromQuery())
+watch(() => route.query.status, () => (status.value = statusFromQuery()))
 const selectedInvite = ref('')
 const showEditInvite = ref(false)
 const showDeleteInvites = ref(false)
 
-const invites = createResource({
-	url: 'suite.mail.api.admin.get_account_requests',
-	makeParams: () => ({
-		search: search.value,
-		...(status.value !== 'All' ? { status: status.value } : {}),
-	}),
-	auto: true,
-	cache: ['memberInvites', search.value, status.value],
-})
+const list = usePagedList<Omit<InviteRow, 'status'>>('suite.mail.api.admin.get_account_requests', () => ({
+	search: search.value,
+	...(status.value !== 'All' ? { status: status.value } : {}),
+}))
 
 const inviteRows = computed<InviteRow[]>(() =>
-	((invites.data || []) as Omit<InviteRow, 'status'>[]).map((row) => ({
+	list.rows.map((row) => ({
 		...row,
 		is_admin: Boolean(row.is_admin),
 		status: status.value !== 'All' ? status.value : row.is_verified ? 'Accepted' : 'Pending',
 	})),
 )
 
-watchDebounced(() => search.value, invites.reload, { debounce: 300 })
-watch(() => status.value, invites.reload)
+watchDebounced(() => search.value, list.reload, { debounce: 300 })
+watch(() => status.value, list.reload)
 
-const reloadInvites = () => invites.reload()
+// Names no longer listed leave the selection, as on the accounts list.
+watch(
+	() => list.rows,
+	(rows) => {
+		const selections = listView.value?.selections
+		if (!selections?.size) return
+		const shown = new Set(rows.map((row) => row.name))
+		for (const name of Array.from(selections)) {
+			if (!shown.has(name)) selections.delete(name)
+		}
+	},
+)
+
+const reloadInvites = () => list.reload()
 defineExpose({ reloadInvites })
 
 const listView = useTemplateRef<{
@@ -136,7 +163,7 @@ const deleteInvites = createResource({
 	url: 'suite.mail.api.admin.delete_account_requests',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		invites.reload()
+		list.reload()
 		showDeleteInvites.value = false
 		raiseToast(__('Invites deleted.'))
 		listView.value?.toggleAllRows?.()

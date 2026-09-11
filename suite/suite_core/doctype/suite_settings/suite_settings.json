@@ -4,32 +4,66 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "workspace_section",
   "workspace_name",
+  "column_break_workspace",
   "workspace_logo",
+  "contact_section",
+  "contact_email",
+  "setup_section",
   "is_onboarded"
  ],
  "fields": [
   {
+   "fieldname": "workspace_section",
+   "fieldtype": "Section Break",
+   "label": "Workspace"
+  },
+  {
    "fieldname": "workspace_name",
    "fieldtype": "Data",
-   "label": "Workspace Name"
+   "label": "Workspace Name",
+   "description": "The name of this Suite workspace, shown in the launcher and wherever a connected service names this site."
+  },
+  {
+   "fieldname": "column_break_workspace",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "workspace_logo",
    "fieldtype": "Attach Image",
-   "label": "Workspace Logo"
+   "label": "Workspace Logo",
+   "description": "Square image shown beside the workspace name. It is served publicly, so use PNG, JPEG or WebP without anything private."
+  },
+  {
+   "fieldname": "contact_section",
+   "fieldtype": "Section Break",
+   "label": "Contact"
+  },
+  {
+   "fieldname": "contact_email",
+   "fieldtype": "Data",
+   "label": "Contact Email",
+   "options": "Email",
+   "description": "Where connected services send notices about this workspace, such as planned downtime or quota warnings."
+  },
+  {
+   "fieldname": "setup_section",
+   "fieldtype": "Section Break",
+   "label": "Setup"
   },
   {
    "default": "0",
    "fieldname": "is_onboarded",
    "fieldtype": "Check",
    "label": "Onboarded",
-   "read_only": 1
+   "read_only": 1,
+   "description": "Set once the setup wizard has been completed. While unchecked, the wizard is offered to the first admin who signs in."
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 18:26:27.000000",
+ "modified": "2026-09-09 11:30:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",

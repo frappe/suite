@@ -237,34 +237,6 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
 
 
 @frappe.whitelist()
-def retry_delivery_now(account: str, id: str) -> None:
-    """Tells the MTA to attempt a released, still-queued (retrying) delivery again right away.
-
-    A release mid-retry is still undoStatus "pending" (it can be cancelled until it concludes),
-    so this gates on the hold — not on the submission being final; an unreleased hold must go
-    through send-now instead, which replaces the submission."""
-
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
-
-    service = get_email_submission_service(account)
-    submission = _get_submission(service, id)
-
-    if submission.get("undoStatus") == "canceled":
-        frappe.throw(_("This scheduled delivery has been cancelled."))
-    if _hold_active(submission):
-        frappe.throw(_("This delivery is still scheduled — use send now instead."))
-
-    queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
-    if not queue_message:
-        frappe.throw(_("This delivery is no longer waiting in the outbound queue."))
-
-    from suite.mail.stalwart import get_queued_message_service
-
-    get_queued_message_service().retry([queue_message["id"]])
-
-
-@frappe.whitelist()
 def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
     record so the listing shows only the live attempt."""
@@ -460,39 +432,11 @@ def _envid(submission: dict) -> str | None:
 def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
     """The MTA queue messages behind the given submissions, keyed by ENVID.
 
-    Read with the admin management connection but exposing only messages whose ENVID matches
-    one of the account's own submissions. Best-effort: without the management API the rows
-    just lack retry counts and live queue state.
+    The outbound queue lives on the shared cluster and is not exposed to sites, so this is
+    always empty: rows simply lack retry counts and live queue state.
     """
 
-    envids = {envid for s in submissions if (envid := _envid(s))}
-    senders = {
-        email
-        for s in submissions
-        if _envid(s) and (email := ((s.get("envelope") or {}).get("mailFrom") or {}).get("email"))
-    }
-    if not envids:
-        return {}
-
-    try:
-        from suite.mail.stalwart import get_queued_message_service
-
-        service = get_queued_message_service()
-        messages = []
-        for sender in senders:
-            messages.extend(
-                service.get_all(
-                    filter={"returnPath": sender},
-                    properties=["id", "envId", "recipients", "nextRetry"],
-                )
-            )
-    except Exception:
-        log_mail_error(
-            _("Failed to read the MTA queue for scheduled mails"), frappe.get_traceback(with_context=True)
-        )
-        return {}
-
-    return {m["envId"]: m for m in messages if m.get("envId") in envids}
+    return {}
 
 
 def _identity_email(service: EmailSubmissionService, identity_id: str | None) -> str | None:

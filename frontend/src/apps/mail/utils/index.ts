@@ -29,6 +29,10 @@ export const toTitleCase = (str: string) =>
 		})
 		.join(' ') || ''
 
+// A quota or allotment in gigabytes as the dashboard prints it; unknown reads as a dash.
+export const formatGb = (gb?: number | null) =>
+	gb == null ? '—' : __('{0} GB', [String(Math.round(gb * 100) / 100)])
+
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
 

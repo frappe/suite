@@ -20,14 +20,12 @@ from frappe.utils import (
     validate_email_address,
 )
 
-from suite.mail.stalwart import create_account, create_app_password, get_roles
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.directory import create_account, delete_account_by_email, get_domains
+from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging, generate_otp
 from suite.utils.user import is_suite_admin, is_system_manager
-
-STALWART_DEFAULT_USER_ROLES = ["User"]
 
 # How long a signup OTP stays valid. Only its hash is kept (in cache); the code itself
 # travels by email and is never stored.
@@ -83,15 +81,6 @@ class MailAccountRequest(Document):
         return bool(self.expires_at and get_datetime(self.expires_at) < now_datetime())
 
     @property
-    def _roles(self) -> list[str]:
-        """Returns the list of roles for the account request."""
-
-        if roles := _lines(self.roles):
-            return roles
-
-        return list(STALWART_DEFAULT_USER_ROLES)
-
-    @property
     def domain(self) -> str:
         """Returns the domain of the primary account."""
 
@@ -116,15 +105,13 @@ class MailAccountRequest(Document):
         return _lines(self.mailing_lists)
 
     @property
-    def _quota(self) -> int:
-        """Returns the disk quota in bytes to create the account with.
+    def _quota_gb(self) -> float | None:
+        """The quota to create the account with: the request's, else Mail Settings' default.
 
-        An unset quota falls back to the configured default, which ``get_config`` resolves from Mail
-        Settings first and the site config second. An explicit ``0`` means unlimited and is left alone.
+        Unset in both places, Suite Cloud applies the site's own default.
         """
 
-        quota_gb = self.quota_gb if self.quota_gb is not None else get_config("default_disk_quota_gb")
-        return cint(flt(quota_gb) * 1024**3)
+        return flt(self.quota_gb) or flt(get_config("default_disk_quota_gb")) or None
 
     def before_insert(self) -> None:
         is_stalwart_configured(raise_exception=True)
@@ -135,7 +122,6 @@ class MailAccountRequest(Document):
         self.validate_invited_by()
         self.validate_account()
         self.validate_aliases()
-        self.validate_roles()
         self.validate_groups()
         self.validate_mailing_lists()
 
@@ -203,10 +189,7 @@ class MailAccountRequest(Document):
         if not self.aliases:
             return
 
-        from suite.mail.stalwart import get_domains
-
-        server_domains = {domain["name"] for domain in get_domains()}
-
+        server_domains = {domain["domain"] for domain in get_domains()}
         seen = set()
         cleaned = []
         for alias in self.aliases.split("\n"):
@@ -226,34 +209,20 @@ class MailAccountRequest(Document):
 
         self.aliases = "\n".join(cleaned)
 
-    def validate_roles(self) -> None:
-        """Validates the roles."""
-
-        roles_to_assign = self._roles
-        server_roles = {r["description"] for r in get_roles()}
-
-        for role in roles_to_assign:
-            if role not in server_roles:
-                frappe.throw(_("Role {0} does not exist on the server.").format(frappe.bold(role)))
-
-        self.roles = "\n".join(roles_to_assign)
-
     def validate_groups(self) -> None:
-        """Validates the groups the account will join and normalizes them."""
+        """Validates the groups the account will join and normalizes them (addresses)."""
 
         if not self.groups:
             return
 
-        from suite.mail.stalwart import get_group_service
+        from suite.mail.directory import get_group_addresses
 
-        group_ids = self._groups
-        server_group_ids = {str(g["id"]) for g in get_group_service().get_all_groups(properties=["id"])}
-
-        for group_id in group_ids:
-            if group_id not in server_group_ids:
-                frappe.throw(_("Group {0} does not exist on the server.").format(frappe.bold(group_id)))
-
-        self.groups = "\n".join(group_ids)
+        groups = [g.strip().lower() for g in self._groups]
+        site_groups = get_group_addresses()
+        for group in groups:
+            if group not in site_groups:
+                frappe.throw(_("Group {0} does not exist.").format(frappe.bold(group)))
+        self.groups = "\n".join(groups)
 
     def validate_mailing_lists(self) -> None:
         """Validates the mailing lists the account will be a recipient of and normalizes them."""
@@ -261,16 +230,14 @@ class MailAccountRequest(Document):
         if not self.mailing_lists:
             return
 
-        from suite.mail.stalwart import get_mailing_list_service
+        from suite.mail.directory import get_mailing_list_addresses
 
-        list_ids = self._mailing_lists
-        server_list_ids = {str(ml["id"]) for ml in get_mailing_list_service().get_all(properties=["id"])}
-
-        for list_id in list_ids:
-            if list_id not in server_list_ids:
-                frappe.throw(_("Mailing list {0} does not exist on the server.").format(frappe.bold(list_id)))
-
-        self.mailing_lists = "\n".join(list_ids)
+        lists = [ml.strip().lower() for ml in self._mailing_lists]
+        site_lists = get_mailing_list_addresses()
+        for mailing_list in lists:
+            if mailing_list not in site_lists:
+                frappe.throw(_("Mailing list {0} does not exist.").format(frappe.bold(mailing_list)))
+        self.mailing_lists = "\n".join(lists)
 
     def validate_expired(self) -> None:
         """Forbids action if the request has expired."""
@@ -392,54 +359,53 @@ class MailAccountRequest(Document):
         is_stalwart_configured(raise_exception=True)
         self.validate_account()
 
-        # Step - 1: Create Account on Stalwart
-        account_id = execute_with_logging(
+        # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
+        # password are created on the cluster through Suite Cloud in one call.
+        account = execute_with_logging(
             func=lambda: create_account(
-                name=self.account.split("@")[0],
-                domain=self.domain,
+                email=self.account,
                 password=password,
-                description=f"{first_name} {last_name}" if last_name else first_name,
+                display_name=f"{first_name} {last_name}" if last_name else first_name,
                 aliases=self._aliases,
-                groups=[],
-                roles=self._roles,
-                quota=self._quota,
+                groups=self._surviving("mail.groups.list_groups", self._groups),
+                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
+                disk_quota_gb=self._quota_gb,
                 locale=locale,
-                timezone=time_zone,
+                time_zone=time_zone,
             ),
-            title="Failed to create account on Stalwart",
-            user_message=_("Failed to create account on the server, check error log for details."),
+            title="Failed to create the mail account",
+            user_message=_("Failed to create the mail account, check error log for details."),
             module="Mail",
         )
+        app_password = account["app_password"]
 
-        # Step - 2: Create App Password on Stalwart
-        app_password = execute_with_logging(
-            func=lambda: create_app_password(self.account),
-            title="Failed to create app password on Stalwart",
-            user_message=_("Failed to create app password on the server, check error log for details."),
-            module="Mail",
-        )
+        # Steps 3 and 4 happen on this site, outside the cluster's transaction: if either fails, the
+        # cluster account is removed again so a retry does not run into "already exists".
+        try:
+            # Step - 3: Create User
+            user = execute_with_logging(
+                func=lambda: create_user(
+                    self.account,
+                    first_name,
+                    last_name,
+                    password,
+                    ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
+                ),
+                title="Failed to create user",
+                user_message=_("Failed to create user, check error log for details."),
+                module="Mail",
+            )
 
-        # Step - 3: Create User
-        user = execute_with_logging(
-            func=lambda: create_user(
-                self.account,
-                first_name,
-                last_name,
-                password,
-                ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
-            ),
-            title="Failed to create user",
-            user_message=_("Failed to create user, check error log for details."),
-            module="Mail",
-        )
-
-        # Step - 4: Update User Settings
-        execute_with_logging(
-            func=lambda: self._update_user_settings(user, app_password),
-            title="Failed to update user settings",
-            user_message=_("Failed to update user settings, check error log for details."),
-            module="Mail",
-        )
+            # Step - 4: Update User Settings
+            execute_with_logging(
+                func=lambda: self._update_user_settings(user, app_password),
+                title="Failed to update user settings",
+                user_message=_("Failed to update user settings, check error log for details."),
+                module="Mail",
+            )
+        except Exception:
+            self._discard_cluster_account()
+            raise
 
         # Step - 5: Create Push Subscription
         if frappe.utils.get_url().startswith("https"):
@@ -449,41 +415,36 @@ class MailAccountRequest(Document):
                 module="Mail",
             )
 
-        # Step - 6: Join the groups and mailing lists picked when the request was created. Logged but
-        # not thrown: the account already exists, so a stale group or list must not fail the signup.
-        if account_id and self._groups:
-            execute_with_logging(
-                func=lambda: self._join_groups(account_id),
-                title="Failed to add account to groups on Stalwart",
-                module="Mail",
+    def _surviving(self, method: str, wanted: list[str]) -> list[str]:
+        """The groups or lists named at invite time that still exist.
+
+        A group deleted between the invitation and its acceptance must not stop the person from
+        getting their mailbox; the missing membership is logged for the admin instead.
+        """
+
+        if not wanted:
+            return wanted
+        from suite.mail.directory import all_pages
+
+        existing = {row["email"] for row in all_pages(method)}
+        missing = [address for address in wanted if address.lower() not in existing]
+        if missing:
+            log_mail_error(
+                title=f"Invite for {self.account} named memberships that no longer exist",
+                message=", ".join(missing),
             )
+        return [address for address in wanted if address.lower() in existing]
 
-        if self._mailing_lists:
-            execute_with_logging(
-                func=lambda: self._join_mailing_lists(),
-                title="Failed to add account to mailing lists on Stalwart",
-                module="Mail",
+    def _discard_cluster_account(self) -> None:
+        """Best effort: a failure here is logged, the original error is what the caller sees."""
+
+        try:
+            delete_account_by_email(self.account)
+        except Exception:
+            log_mail_error(
+                title=f"Failed to remove the cluster account {self.account} after a failed creation",
+                message=frappe.get_traceback(),
             )
-
-    def _join_groups(self, account_id: str) -> None:
-        """Adds the created account to each of the requested groups."""
-
-        from suite.mail.stalwart import get_group_service
-
-        service = get_group_service()
-        for group_id in self._groups:
-            service.add_members(group_id, [account_id])
-
-    def _join_mailing_lists(self) -> None:
-        """Adds the account's primary address as a recipient of each requested mailing list."""
-
-        from suite.mail.stalwart import get_mailing_list_service
-
-        service = get_mailing_list_service()
-        for list_id in self._mailing_lists:
-            recipients = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
-            recipients[self.account] = True
-            service.update(list_id, {"recipients": recipients})
 
     def _update_user_settings(self, user: str, app_password: str) -> None:
         """Updates the user settings with the app password and backup email."""

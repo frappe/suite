@@ -10,39 +10,26 @@ from frappe.utils.caching import request_cache
 from suite.utils import log_error
 
 CONFIG_KEYS = [
-    # JMAP
+    # Mail server: the JMAP URL end users connect to, and the Suite Cloud that manages the directory
     "server_url",
-    "username",
-    "password",
     "verify_ssl",
+    "suite_cloud_url",
+    "site_api_key",
+    "site_api_secret",
     # SpamAssassin
     "spamd_host",
     "spamd_port",
     "spamd_scanning_mode",
     "spamd_hybrid_scanning_threshold",
     # Defaults
-    "default_dns_ttl",
     "default_disk_quota_gb",
-    "disabled_account_role",
     "enable_gravatar",
     "default_gravatar",
     "expand_mailing_list_participants",
-    # Logs
-    "admin_log_file_count",
-    "admin_log_level",
-    "admin_log_max_file_size",
-    "push_log_file_count",
-    "push_log_level",
-    "push_log_max_file_size",
-    "inbound_log_file_count",
-    "inbound_log_level",
-    "inbound_log_max_file_size",
-    "outbound_log_file_count",
-    "outbound_log_level",
-    "outbound_log_max_file_size",
-    "exchange_log_file_count",
-    "exchange_log_level",
-    "exchange_log_max_file_size",
+    # Logging (shared by every mail log)
+    "log_level",
+    "log_file_count",
+    "log_max_file_size_mb",
     # Limits
     "exchange_max_export",
     "exchange_max_import",
@@ -73,7 +60,7 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
 
     config = {}
     for field in CONFIG_KEYS:
-        if field == "password":
+        if field == "site_api_secret":
             config[field] = password_or_none(settings, field) or mail_conf.get(field)
         else:
             config[field] = settings.get(field) or mail_conf.get(field)
@@ -92,19 +79,23 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
 
 
 def is_stalwart_configured(raise_exception: bool = False) -> bool:
-    """Checks if the Stalwart server is properly configured."""
+    """Whether the site has a mail server: a JMAP URL for users and a Suite Cloud for the directory.
+
+    Frappe Cloud writes all three into the site config when it registers the site; Mail Settings
+    can override them on a self-managed site.
+    """
 
     config = get_config()
-
-    server_url = config.get("server_url")
-    username = config.get("username")
-    password = config.get("password")
-
-    if server_url and (username and password):
+    if (
+        config.get("server_url")
+        and config.get("suite_cloud_url")
+        and config.get("site_api_key")
+        and config.get("site_api_secret")
+    ):
         return True
 
     if raise_exception:
-        frappe.throw(_("Stalwart server is not properly configured. Please check your Mail Settings."))
+        frappe.throw(_("The mail server is not configured. Please check your Mail Settings."))
 
     return False
 

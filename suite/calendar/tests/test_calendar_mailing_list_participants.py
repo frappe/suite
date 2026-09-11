@@ -16,12 +16,12 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
     expand_mailing_list_participants,
 )
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
-from suite.mail.stalwart import get_domains, get_mailing_list_index
+from suite.mail.directory import get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
 
-DOMAINS = [{"name": "example.com"}]
+DOMAINS = [{"domain": "example.com"}]
 INDEX = {
     "team@example.com": ["alice@example.com", "bob@example.com"],
     "team-alias@example.com": ["alice@example.com", "bob@example.com"],
@@ -234,8 +234,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
             add_mailing_list_recipients(list_id, [self.first.email, self.second.email])
             list_email = get_mailing_list(list_id)["email"]
 
-        # The directory is cached, and the list was created after this run started.
-        get_domains.clear_cache()
+        # The list index is cached, and the list was created after this run started.
         get_mailing_list_index.clear_cache()
 
         with self.set_user(self.organizer.email):

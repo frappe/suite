@@ -9,8 +9,9 @@
   "server_url",
   "verify_ssl",
   "column_break_xvlo",
-  "username",
-  "password",
+  "suite_cloud_url",
+  "site_api_key",
+  "site_api_secret",
   "mail_client_config_section",
   "show_mail_client_config",
   "show_calendar_client_config",
@@ -21,14 +22,30 @@
   "column_break_njvq",
   "spamd_scanning_mode",
   "spamd_hybrid_scanning_threshold",
+  "accounts_tab",
   "defaults_section",
   "default_disk_quota_gb",
-  "disabled_account_role",
   "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
-  "column_break_defaults_2",
-  "default_dns_ttl",
+  "signup_section",
+  "allow_signup",
+  "column_break_daqm",
+  "signup_domains",
+  "event_invites_tab",
+  "event_invites_section",
+  "custom_event_invites",
+  "column_break_sbzt",
+  "expand_mailing_list_participants",
+  "max_mailing_list_participants",
+  "jmap_push_tab",
+  "section_break_qvpk",
+  "enable_jmap_push_encryption",
+  "column_break_wpvf",
+  "jmap_push_auth",
+  "jmap_push_private_key",
+  "jmap_push_p256dh",
+  "advanced_tab",
   "limits_section",
   "exchange_max_export",
   "exchange_max_import",
@@ -40,24 +57,6 @@
   "column_break_cazi",
   "process_pending_emails_batch_size",
   "process_pending_emails_max_batch_size",
-  "logs_section",
-  "admin_log_file_count",
-  "push_log_file_count",
-  "inbound_log_file_count",
-  "outbound_log_file_count",
-  "exchange_log_file_count",
-  "column_break_ztzv",
-  "admin_log_level",
-  "push_log_level",
-  "inbound_log_level",
-  "outbound_log_level",
-  "exchange_log_level",
-  "column_break_pvju",
-  "admin_log_max_file_size",
-  "push_log_max_file_size",
-  "inbound_log_max_file_size",
-  "outbound_log_max_file_size",
-  "exchange_log_max_file_size",
   "timeouts_seconds_section",
   "exchange_export_timeout",
   "exchange_import_timeout",
@@ -65,44 +64,35 @@
   "scan_message_timeout",
   "column_break_wvdy",
   "process_pending_emails_timeout",
-  "signup_tab",
-  "allow_signup",
-  "column_break_daqm",
-  "signup_domains",
-  "jmap_push_tab",
-  "section_break_qvpk",
-  "enable_jmap_push_encryption",
-  "column_break_wpvf",
-  "jmap_push_auth",
-  "jmap_push_private_key",
-  "jmap_push_p256dh",
-  "event_invites_tab",
-  "event_invites_section",
-  "custom_event_invites",
-  "expand_mailing_list_participants",
-  "max_mailing_list_participants"
+  "logs_section",
+  "log_level",
+  "column_break_logging_1",
+  "log_max_file_size_mb",
+  "column_break_logging_2",
+  "log_file_count"
  ],
  "fields": [
   {
    "fieldname": "config_tab",
    "fieldtype": "Tab Break",
-   "label": "Config"
+   "label": "Mail Server"
   },
   {
    "fieldname": "jmap_section",
    "fieldtype": "Section Break",
-   "label": "Stalwart/JMAP"
+   "label": "Mail Server"
   },
   {
+   "description": "Mail cluster users connect to, e.g. https://mail.blr.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
    "fieldname": "server_url",
    "fieldtype": "Data",
-   "label": "Server URL",
+   "label": "JMAP URL",
    "options": "URL",
    "placeholder": "https://mail.frappemail.com"
   },
   {
    "default": "1",
-   "description": "Verify the server's SSL certificate. Disable only for local development against a server with a self-signed certificate.",
+   "description": "Verify the mail cluster's SSL certificate. Disable only for local development against a self-signed certificate.",
    "fieldname": "verify_ssl",
    "fieldtype": "Check",
    "label": "Verify SSL"
@@ -112,16 +102,25 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "username",
+   "description": "Suite Cloud that manages this site's domains, accounts, groups and lists, e.g. https://cloud.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
+   "fieldname": "suite_cloud_url",
    "fieldtype": "Data",
-   "label": "Username",
-   "mandatory_depends_on": "eval: doc.password"
+   "label": "Suite Cloud URL",
+   "options": "URL"
   },
   {
-   "fieldname": "password",
+   "description": "This site's key at Suite Cloud, issued when Frappe Cloud registered the site.",
+   "fieldname": "site_api_key",
+   "fieldtype": "Data",
+   "label": "Site API Key",
+   "mandatory_depends_on": "eval: doc.site_api_secret"
+  },
+  {
+   "description": "This site's secret at Suite Cloud, shown once by Frappe Cloud. Rotate it from Frappe Cloud if it leaks.",
+   "fieldname": "site_api_secret",
    "fieldtype": "Password",
-   "label": "Password",
-   "mandatory_depends_on": "eval: doc.username"
+   "label": "Site API Secret",
+   "mandatory_depends_on": "eval: doc.site_api_key"
   },
   {
    "collapsible": 1,
@@ -132,14 +131,14 @@
   },
   {
    "default": "1",
-   "description": "Show the SMTP/IMAP/POP connection details in the Mail UI so users can set up third-party mail clients. When unchecked, nothing is shown.",
+   "description": "Show SMTP, IMAP and POP connection details in the Mail UI so users can set up third-party mail clients.",
    "fieldname": "show_mail_client_config",
    "fieldtype": "Check",
    "label": "Show Connection Details in Mail UI"
   },
   {
    "default": "1",
-   "description": "Show the CalDAV connection details in the Calendar UI so users can set up third-party calendar clients. When unchecked, nothing is shown.",
+   "description": "Show CalDAV connection details in the Calendar UI so users can set up third-party calendar clients.",
    "fieldname": "show_calendar_client_config",
    "fieldtype": "Check",
    "label": "Show Connection Details in Calendar UI"
@@ -154,7 +153,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
+   "collapsible_depends_on": "eval: false",
    "fieldname": "spamassassin_section",
    "fieldtype": "Section Break",
    "label": "SpamAssassin"
@@ -163,13 +162,15 @@
    "fieldname": "spamd_host",
    "fieldtype": "Data",
    "label": "Host",
-   "placeholder": "spamd.example.com"
+   "placeholder": "spamd.example.com",
+   "description": "SpamAssassin daemon (spamd) that scans messages, e.g. spamd.example.com. Leave blank to skip spam checks."
   },
   {
    "default": "783",
    "fieldname": "spamd_port",
    "fieldtype": "Int",
-   "label": "Port"
+   "label": "Port",
+   "description": "Port spamd listens on; 783 is its default."
   },
   {
    "fieldname": "column_break_njvq",
@@ -179,9 +180,11 @@
    "default": "Hybrid Approach",
    "fieldname": "spamd_scanning_mode",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Scanning Mode",
    "options": "Exclude Attachments\nInclude Attachments\nHybrid Approach",
-   "reqd": 1
+   "reqd": 1,
+   "description": "What spamd receives: the whole message, the message without attachments, or the hybrid approach, which scans without attachments first and sends the whole message only when that pass scores at or above the threshold."
   },
   {
    "default": "2",
@@ -190,27 +193,27 @@
    "label": "Hybrid Scanning Threshold",
    "mandatory_depends_on": "eval: doc.spamd_scanning_mode == \"Hybrid Approach\"",
    "precision": "1",
-   "read_only_depends_on": "eval: doc.spamd_scanning_mode != \"Hybrid Approach\""
+   "read_only_depends_on": "eval: doc.spamd_scanning_mode != \"Hybrid Approach\"",
+   "description": "Spam score of the attachment-free pass at or above which the whole message is scanned again."
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
+   "fieldname": "accounts_tab",
+   "fieldtype": "Tab Break",
+   "label": "Accounts"
+  },
+  {
    "fieldname": "defaults_section",
    "fieldtype": "Section Break",
-   "label": "Defaults"
+   "label": "Account Defaults"
   },
   {
-   "default": "1",
+   "default": "5",
    "fieldname": "default_disk_quota_gb",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Default Disk Quota (GB)",
-   "reqd": 1
-  },
-  {
-   "description": "Stalwart role (by description) applied to a user's mail account when the user is disabled. The role must be created manually on Stalwart with the appropriate allowed/disabled permissions. Leave blank to skip applying a role on disable.",
-   "fieldname": "disabled_account_role",
-   "fieldtype": "Data",
-   "label": "Disabled Account Role"
+   "reqd": 1,
+   "description": "Disk quota, in GB, for accounts created without one."
   },
   {
    "fieldname": "column_break_defaults_1",
@@ -218,7 +221,7 @@
   },
   {
    "default": "0",
-   "description": "Use Gravatar for default user images. Gravatar is a third-party service; enabling this shares users' email addresses (hashed) with it. When disabled, initials are shown instead.",
+   "description": "Use Gravatar for default user images. Gravatar is a third-party service; enabling this shares hashed email addresses with it. When disabled, initials are shown instead.",
    "fieldname": "enable_gravatar",
    "fieldtype": "Check",
    "label": "Enable Gravatar"
@@ -229,268 +232,19 @@
    "description": "Image Gravatar serves for addresses that have no Gravatar. 404 uses a locally generated identicon instead.",
    "fieldname": "default_gravatar",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Default Gravatar",
    "options": "404\nmp\nidenticon\nmonsterid\nwavatar\nretro\nrobohash\nblank",
    "reqd": 1
   },
   {
-   "fieldname": "column_break_defaults_2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "3600",
-   "fieldname": "default_dns_ttl",
-   "fieldtype": "Int",
-   "label": "Default DNS TTL",
-   "reqd": 1
-  },
-  {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "limits_section",
+   "fieldname": "signup_section",
    "fieldtype": "Section Break",
-   "label": "Limits"
-  },
-  {
-   "default": "1000",
-   "fieldname": "exchange_max_export",
-   "fieldtype": "Int",
-   "label": "Exchange Max Export",
-   "reqd": 1
-  },
-  {
-   "default": "1000",
-   "fieldname": "exchange_max_import",
-   "fieldtype": "Int",
-   "label": "Exchange Max Import",
-   "reqd": 1
-  },
-  {
-   "default": "500",
-   "fieldname": "exchange_export_batch_size",
-   "fieldtype": "Int",
-   "label": "Exchange Export Batch Size",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_rvxs",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "100",
-   "fieldname": "max_email_sync",
-   "fieldtype": "Int",
-   "label": "Max Email Sync",
-   "reqd": 1
-  },
-  {
-   "default": "25",
-   "fieldname": "max_message_payload_size_mb",
-   "fieldtype": "Int",
-   "label": "Max Message Payload Size (MB)",
-   "reqd": 1
-  },
-  {
-   "default": "5",
-   "fieldname": "max_push_notifications",
-   "fieldtype": "Int",
-   "label": "Max Push Notifications",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_cazi",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "2500",
-   "fieldname": "process_pending_emails_batch_size",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Batch Size",
-   "reqd": 1
-  },
-  {
-   "default": "25000",
-   "fieldname": "process_pending_emails_max_batch_size",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Max Batch Size",
-   "reqd": 1
-  },
-  {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "logs_section",
-   "fieldtype": "Section Break",
-   "label": "Logs"
-  },
-  {
-   "default": "10",
-   "fieldname": "admin_log_file_count",
-   "fieldtype": "Int",
-   "label": "Admin Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "push_log_file_count",
-   "fieldtype": "Int",
-   "label": "Push Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "inbound_log_file_count",
-   "fieldtype": "Int",
-   "label": "Inbound Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "outbound_log_file_count",
-   "fieldtype": "Int",
-   "label": "Outbound Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "exchange_log_file_count",
-   "fieldtype": "Int",
-   "label": "Exchange Log File Count",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_ztzv",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "INFO",
-   "fieldname": "admin_log_level",
-   "fieldtype": "Select",
-   "label": "Admin Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "push_log_level",
-   "fieldtype": "Select",
-   "label": "Push Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "inbound_log_level",
-   "fieldtype": "Select",
-   "label": "Inbound Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "outbound_log_level",
-   "fieldtype": "Select",
-   "label": "Outbound Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "exchange_log_level",
-   "fieldtype": "Select",
-   "label": "Exchange Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_pvju",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "5000000",
-   "fieldname": "admin_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Admin Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "push_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Push Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "inbound_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Inbound Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "outbound_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Outbound Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "exchange_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Exchange Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "timeouts_seconds_section",
-   "fieldtype": "Section Break",
-   "label": "Timeouts (Seconds)"
-  },
-  {
-   "default": "3600",
-   "fieldname": "exchange_export_timeout",
-   "fieldtype": "Int",
-   "label": "Mail Exchange Export Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "3600",
-   "fieldname": "exchange_import_timeout",
-   "fieldtype": "Int",
-   "label": "Mail Exchange Import Timeout",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_ahml",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "120",
-   "fieldname": "scan_message_timeout",
-   "fieldtype": "Int",
-   "label": "Scan Message Timeout",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_wvdy",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "1500",
-   "fieldname": "process_pending_emails_timeout",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Timeout",
-   "reqd": 1
-  },
-  {
-   "fieldname": "signup_tab",
-   "fieldtype": "Tab Break",
    "label": "Signup"
   },
   {
    "default": "0",
-   "description": "Allows users to sign up and select a preferred username.",
+   "description": "Let visitors create their own mail account with a username of their choice on one of the signup domains.",
    "fieldname": "allow_signup",
    "fieldtype": "Check",
    "label": "Allow Signup"
@@ -501,52 +255,11 @@
   },
   {
    "depends_on": "eval: doc.allow_signup",
-   "description": "Domains allowed for signup.",
+   "description": "One domain per line. Each must be one of this site's mail domains.",
    "fieldname": "signup_domains",
    "fieldtype": "Small Text",
    "label": "Signup Domains",
    "mandatory_depends_on": "eval: doc.allow_signup"
-  },
-  {
-   "fieldname": "jmap_push_tab",
-   "fieldtype": "Tab Break",
-   "label": "JMAP Push"
-  },
-  {
-   "fieldname": "section_break_qvpk",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "0",
-   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
-   "fieldname": "enable_jmap_push_encryption",
-   "fieldtype": "Check",
-   "label": "Enable Push Encryption"
-  },
-  {
-   "fieldname": "column_break_wpvf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Authentication secret for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_auth",
-   "fieldtype": "Password",
-   "label": "JMAP Push Auth Secret",
-   "read_only": 1
-  },
-  {
-   "description": "ECDH P-256 private key used to decrypt incoming encrypted push notifications.",
-   "fieldname": "jmap_push_private_key",
-   "fieldtype": "Password",
-   "label": "JMAP Push Private Key",
-   "read_only": 1
-  },
-  {
-   "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_p256dh",
-   "fieldtype": "Data",
-   "label": "JMAP Push Key (P256DH)",
-   "read_only": 1
   },
   {
    "fieldname": "event_invites_tab",
@@ -560,14 +273,14 @@
   },
   {
    "default": "1",
-   "description": "Send calendar invitation, update, and cancellation emails from Frappe Mail using the templates below, with .ics attachments and HTTP RSVP links. When disabled, the JMAP server handles scheduling messages instead.",
+   "description": "Send calendar invitation, update and cancellation emails from Frappe Mail using the templates below, with .ics attachments and HTTP RSVP links. When disabled, the JMAP server handles scheduling messages instead.",
    "fieldname": "custom_event_invites",
    "fieldtype": "Check",
    "label": "Send Custom Event Invitations"
   },
   {
    "default": "1",
-   "description": "Invite a mailing list's members individually when the list address is added to an event. The server expands a mailing list only when delivering mail, so an invitation addressed to the list itself reaches every member's inbox but is never added to their calendars.",
+   "description": "Invite a mailing list's members individually when the list address is added to an event. The server expands a list only when delivering mail, so an invitation addressed to the list reaches every inbox but is never added to calendars.",
    "fieldname": "expand_mailing_list_participants",
    "fieldtype": "Check",
    "label": "Expand Mailing List Participants"
@@ -575,16 +288,227 @@
   {
    "default": "100",
    "depends_on": "expand_mailing_list_participants",
-   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Only members added by expansion are left out once this is reached, and they are reported; participants invited by name are always kept.",
+   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Only members added by expansion are left out and reported; participants invited by name are always kept.",
    "fieldname": "max_mailing_list_participants",
    "fieldtype": "Int",
    "label": "Max Mailing List Participants"
+  },
+  {
+   "fieldname": "jmap_push_tab",
+   "fieldtype": "Tab Break",
+   "label": "JMAP Push"
+  },
+  {
+   "fieldname": "section_break_qvpk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "description": "Create push subscriptions with the keys below so the JMAP server encrypts push payloads end to end. Leave disabled to receive push notifications as plain JSON.",
+   "fieldname": "enable_jmap_push_encryption",
+   "fieldtype": "Check",
+   "label": "Enable Push Encryption"
+  },
+  {
+   "fieldname": "column_break_wpvf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Authentication secret for push encryption. Generated by Actions, Generate JMAP Push Keys.",
+   "fieldname": "jmap_push_auth",
+   "fieldtype": "Password",
+   "label": "JMAP Push Auth Secret",
+   "read_only": 1
+  },
+  {
+   "description": "ECDH P-256 private key that decrypts incoming push notifications. Generated by Actions, Generate JMAP Push Keys.",
+   "fieldname": "jmap_push_private_key",
+   "fieldtype": "Password",
+   "label": "JMAP Push Private Key",
+   "read_only": 1
+  },
+  {
+   "description": "P-256 public key sent to the JMAP server when subscribing. Generated by Actions, Generate JMAP Push Keys.",
+   "fieldname": "jmap_push_p256dh",
+   "fieldtype": "Data",
+   "label": "JMAP Push Key (P256DH)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "advanced_tab",
+   "fieldtype": "Tab Break",
+   "label": "Advanced"
+  },
+  {
+   "fieldname": "limits_section",
+   "fieldtype": "Section Break",
+   "label": "Limits"
+  },
+  {
+   "default": "1000",
+   "fieldname": "exchange_max_export",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Exchange Max Export",
+   "reqd": 1,
+   "description": "Most items one export job may contain, for mail, contacts and calendars alike."
+  },
+  {
+   "default": "1000",
+   "fieldname": "exchange_max_import",
+   "fieldtype": "Int",
+   "label": "Exchange Max Import",
+   "reqd": 1,
+   "description": "Most items one import job may contain, for mail, contacts and calendars alike."
+  },
+  {
+   "default": "500",
+   "fieldname": "exchange_export_batch_size",
+   "fieldtype": "Int",
+   "label": "Exchange Export Batch Size",
+   "reqd": 1,
+   "description": "Messages downloaded per batch while exporting mail."
+  },
+  {
+   "fieldname": "column_break_rvxs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "fieldname": "max_email_sync",
+   "fieldtype": "Int",
+   "label": "Max Email Sync",
+   "reqd": 1,
+   "description": "Most emails one pull request may fetch from a mailbox."
+  },
+  {
+   "default": "25",
+   "fieldname": "max_message_payload_size_mb",
+   "fieldtype": "Int",
+   "label": "Max Message Payload Size (MB)",
+   "reqd": 1,
+   "description": "Largest message, attachments included, that can be sent or uploaded."
+  },
+  {
+   "default": "5",
+   "fieldname": "max_push_notifications",
+   "fieldtype": "Int",
+   "label": "Max Push Notifications",
+   "reqd": 1,
+   "description": "Most new messages announced by push notifications per sync; any beyond that arrive silently."
+  },
+  {
+   "fieldname": "column_break_cazi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2500",
+   "fieldname": "process_pending_emails_batch_size",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Batch Size",
+   "reqd": 1,
+   "description": "Queued emails each processing run picks up."
+  },
+  {
+   "default": "25000",
+   "fieldname": "process_pending_emails_max_batch_size",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Max Batch Size",
+   "reqd": 1,
+   "description": "Ceiling on the batch size, even when a larger one is requested."
+  },
+  {
+   "fieldname": "timeouts_seconds_section",
+   "fieldtype": "Section Break",
+   "label": "Timeouts (Seconds)"
+  },
+  {
+   "default": "3600",
+   "fieldname": "exchange_export_timeout",
+   "fieldtype": "Int",
+   "label": "Mail Exchange Export Timeout",
+   "reqd": 1,
+   "description": "Seconds an export job may run before the background worker stops it."
+  },
+  {
+   "default": "3600",
+   "fieldname": "exchange_import_timeout",
+   "fieldtype": "Int",
+   "label": "Mail Exchange Import Timeout",
+   "reqd": 1,
+   "description": "Seconds an import job may run before the background worker stops it."
+  },
+  {
+   "fieldname": "column_break_ahml",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "fieldname": "scan_message_timeout",
+   "fieldtype": "Int",
+   "label": "Scan Message Timeout",
+   "reqd": 1,
+   "description": "Seconds to wait for spamd to answer a scan."
+  },
+  {
+   "fieldname": "column_break_wvdy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1500",
+   "fieldname": "process_pending_emails_timeout",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Timeout",
+   "reqd": 1,
+   "description": "Seconds a queue processing run may take before the background worker stops it."
+  },
+  {
+   "fieldname": "logs_section",
+   "fieldtype": "Section Break",
+   "label": "Logging"
+  },
+  {
+   "default": "INFO",
+   "description": "Applies to every mail log: admin, push, inbound, outbound and exchange. DEBUG traces every step; use it only while investigating a problem.",
+   "fieldname": "log_level",
+   "fieldtype": "Select",
+   "label": "Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_logging_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "5",
+   "description": "A log file is rotated once it grows past this size.",
+   "fieldname": "log_max_file_size_mb",
+   "fieldtype": "Int",
+   "label": "Max Log File Size (MB)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_logging_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "10",
+   "description": "Rotated files kept per log; the oldest is deleted when a new one is started.",
+   "fieldname": "log_file_count",
+   "fieldtype": "Int",
+   "label": "Log Files Kept",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_sbzt",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-01 15:00:00.000000",
+ "modified": "2026-09-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

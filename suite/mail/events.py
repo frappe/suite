@@ -6,11 +6,10 @@ from frappe.core.doctype.user.user import _get_user_for_update_password
 from frappe.core.doctype.user.user import update_password as update_frappe_password
 from frappe.model.document import Document
 
-from suite.mail.stalwart import add_account_role as add_stalwart_account_role
-from suite.mail.stalwart import delete_account as delete_stalwart_account
-from suite.mail.stalwart import remove_account_role as remove_stalwart_account_role
-from suite.mail.stalwart import update_password as update_stalwart_password
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.directory import delete_account as delete_mail_account
+from suite.mail.directory import set_account_enabled
+from suite.mail.directory import update_password as update_mail_password
+from suite.mail.utils import is_stalwart_configured
 from suite.mail.utils.user import is_jmap_configured
 from suite.utils import execute_with_logging
 
@@ -63,8 +62,8 @@ def update_password(
 
     if user and is_jmap_configured(user):
         execute_with_logging(
-            lambda: update_stalwart_password(user, new_password=new_password),
-            title="Failed to update password on Stalwart server",
+            lambda: update_mail_password(user, new_password=new_password),
+            title="Failed to update the mail account password",
             with_context=False,
             module="Mail",
         )
@@ -91,8 +90,8 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
         return
 
     execute_with_logging(
-        lambda: update_stalwart_password(user, new_password=new_password),
-        title="Failed to update password on Stalwart server",
+        lambda: update_mail_password(user, new_password=new_password),
+        title="Failed to update the mail account password",
         with_context=False,
         module="Mail",
     )
@@ -141,10 +140,10 @@ def clear_sessions_on_disable(doc: Document, method: str | None = None) -> None:
 
 
 def apply_disabled_account_role(doc: Document, method: str | None = None) -> None:
-    """Apply the configured Stalwart role to the user's mail account when the user is disabled.
+    """Locks the user's mail account when the user is disabled.
 
-    The role is created manually on Stalwart with the desired allowed/disabled permissions, so
-    applying it effectively restricts the disabled user's mail access. No-op if no role is configured.
+    Suite Cloud swaps the account onto its locked role: it keeps receiving mail but can no
+    longer log in, send or read.
     """
 
     if (
@@ -156,24 +155,16 @@ def apply_disabled_account_role(doc: Document, method: str | None = None) -> Non
     ):
         return
 
-    role = get_config("disabled_account_role")
-    if not role:
-        return
-
     execute_with_logging(
-        lambda: add_stalwart_account_role(doc.name, role),
-        title="Failed to apply disabled account role on Stalwart server",
+        lambda: set_account_enabled(doc.name, False),
+        title="Failed to lock the mail account",
         with_context=False,
         module="Mail",
     )
 
 
 def remove_disabled_account_role(doc: Document, method: str | None = None) -> None:
-    """Remove the configured Stalwart disabled account role when the user is re-enabled.
-
-    This reverses apply_disabled_account_role so the user regains their mail access on enable.
-    No-op if no role is configured.
-    """
+    """Unlocks the user's mail account when the user is re-enabled."""
 
     if (
         doc.flags.in_insert
@@ -184,13 +175,9 @@ def remove_disabled_account_role(doc: Document, method: str | None = None) -> No
     ):
         return
 
-    role = get_config("disabled_account_role")
-    if not role:
-        return
-
     execute_with_logging(
-        lambda: remove_stalwart_account_role(doc.name, role),
-        title="Failed to remove disabled account role on Stalwart server",
+        lambda: set_account_enabled(doc.name, True),
+        title="Failed to unlock the mail account",
         with_context=False,
         module="Mail",
     )
@@ -202,8 +189,8 @@ def delete_account(doc: Document, method: str | None = None) -> None:
 
     user = doc.name
     execute_with_logging(
-        lambda: delete_stalwart_account(user),
-        title="Failed to delete account on Stalwart server",
+        lambda: delete_mail_account(user),
+        title="Failed to delete the mail account",
         with_context=False,
         module="Mail",
     )

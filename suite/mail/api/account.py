@@ -8,14 +8,13 @@ from frappe.utils.data import sha256_hash
 
 from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.directory import get_domains
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_account_request.mail_account_request import otp_cache_key
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
-from suite.mail.stalwart import get_domains
 from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
-from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
     has_user_settings,
@@ -128,7 +127,7 @@ def get_account_setup_options(request_key: str) -> dict:
     to arbitrary callers.
     """
 
-    from suite.mail.stalwart import get_account_metadata
+    from suite.mail.directory import get_account_metadata
 
     account_request = frappe.db.get_value(
         "Mail Account Request",
@@ -325,35 +324,32 @@ def _get_client_config_from_dns() -> list[dict]:
     """
 
     try:
+        from suite.mail.suite_cloud import get_client
+
         domains = get_domains()
         if not domains:
             return []
 
         config = []
 
-        # Every domain on the cluster points at the same mail server, so their SRV records
-        # resolve to identical client endpoints. Any one domain's zone is enough.
-        domain = domains[0]
+        # Every domain of the site points at the same cluster, so their SRV records resolve to
+        # identical client endpoints. Any one domain's records are enough.
+        records = get_client().call("mail.domains.get_dns_records", domain=domains[0]["domain"])["records"]
 
-        for record in parse_dns_zone_file(domain["dnsZoneFile"]):
-            if record["type"] != "SRV":
+        for record in records:
+            if record["type"] != "SRV" or not record.get("value") or record["value"] == ".":
                 continue
 
-            mapping = _SRV_SERVICE_MAP.get(record["name"].split(".")[0])
+            mapping = _SRV_SERVICE_MAP.get(record["host"].split(".")[0])
             if not mapping:
-                continue
-
-            # SRV rdata: <priority> <weight> <port> <target>. "." target means not offered.
-            parts = record["value"].split()
-            if len(parts) < 4 or parts[3] == ".":
                 continue
 
             protocol, connection_security = mapping
             config.append(
                 {
                     "protocol": protocol,
-                    "hostname": parts[3].rstrip("."),
-                    "port": cint(parts[2]),
+                    "hostname": record["value"].rstrip("."),
+                    "port": cint(record.get("port")),
                     "connection_security": connection_security,
                 }
             )

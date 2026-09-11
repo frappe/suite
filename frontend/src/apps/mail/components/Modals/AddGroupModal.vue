@@ -30,13 +30,22 @@
 					:options="domainOptions"
 				/>
 				<FormControl v-model="description" :label="__('Description')" />
+				<FormControl
+					v-model="quotaGb"
+					type="number"
+					:min="0"
+					:label="__('Quota (GB)')"
+					:description="__('Leave blank to use the configured default disk quota.')"
+				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
-					<MultiSelect v-model="memberIds" :options="accountOptions" />
-				</div>
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Roles') }}</label>
-					<MultiSelect v-model="roleIds" :options="roleOptions" />
+					<MultiSelect
+						v-model="memberIds"
+						v-model:query="picker.query"
+						:options="picker.options"
+						:filterable="false"
+						:placeholder="__('Search accounts')"
+					/>
 				</div>
 				<ErrorMessage
 					:message="addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.'))"
@@ -52,6 +61,7 @@ import { useRouter } from 'vue-router'
 import { Dialog, ErrorMessage, FormControl, MultiSelect, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -60,28 +70,22 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
+const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
-const roleIds = ref<string[]>([])
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
-const roles = createResource({ url: 'suite.mail.api.admin.get_roles_list', auto: true })
+const picker = useAccountPicker(memberIds)
 
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
-const accountOptions = computed(() =>
-	(accounts.data || []).map((a: { id: string; email: string }) => ({ label: a.email, value: a.id })),
-)
-const roleOptions = computed(() =>
-	(roles.data || []).map((r: { id: string; description: string }) => ({ label: r.description, value: r.id })),
-)
 
 watch(show, () => {
 	if (show.value) {
 		name.value = ''
 		domain.value = ''
 		description.value = ''
+		quotaGb.value = ''
 		memberIds.value = []
-		roleIds.value = []
+		picker.reset()
 		addGroup.reset()
 	}
 })
@@ -93,7 +97,7 @@ const addGroup = createResource({
 		domain: domain.value,
 		description: description.value?.trim() || undefined,
 		members: memberIds.value,
-		roles: roleIds.value,
+		quota_gb: quotaGb.value === '' ? null : Number(quotaGb.value),
 	}),
 	onSuccess: (data: string) => {
 		if (!data) return

@@ -105,6 +105,13 @@ def get_account_user(account: str, user: str | None = None) -> str:
     return user
 
 
+def get_account_email(user: str | None = None) -> str | None:
+    """The address of the user's mail account: their login on the cluster, kept in User Settings."""
+
+    user = user or frappe.session.user
+    return frappe.db.get_value("User Settings", {"user": user}, "username")
+
+
 def get_account_emails(account: str) -> list[str]:
     """Returns the list of email addresses associated with the account."""
 
