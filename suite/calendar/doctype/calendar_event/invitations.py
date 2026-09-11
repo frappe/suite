@@ -12,6 +12,7 @@ API after the event is written to JMAP.
 """
 
 import re
+from copy import deepcopy
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -22,7 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, get_datetime, get_system_timezone, strip_html_tags
 
-from suite.calendar.doctype.calendar_event.ics import build_event_ics
+from suite.calendar.doctype.calendar_event.ics import _apply_override, build_event_ics
 from suite.calendar.doctype.calendar_event.invite_templates import (
     DEFAULT_SUBJECTS,
     DEFAULT_TEMPLATES,
@@ -101,8 +102,9 @@ def notify_participants(
     `action` is one of "invite", "update", "cancel". Pass `event_id` to fetch the current
     event, or a pre-fetched `event_snapshot` (needed for cancellations after deletion).
     For updates, `previous_emails` enables new -> invite / kept -> update / gone -> cancel;
-    omit it to send a plain update to everyone. `recurrence_id` scopes a cancellation to a
-    single occurrence of a recurring event.
+    omit it to send a plain update to everyone. `recurrence_id` scopes the mail to a single
+    occurrence of a recurring event — the date it names, and everything else it says, is that
+    occurrence's rather than the series'.
 
     Note: the snapshot arg is named `event_snapshot`, not `event` — `event` is a reserved
     kwarg of `frappe.enqueue` and would be swallowed before reaching this function.
@@ -122,7 +124,7 @@ def notify_participants(
         return
 
     user = get_user_for_jmap_account(account, raise_exception=True)
-    expires_at = _rsvp_expiry(event)
+    expires_at = _rsvp_expiry(_occurrence_view(event, recurrence_id))
 
     for email, kind in plan.items():
         try:
@@ -222,7 +224,7 @@ def notify_organizer_of_reply(
         user = get_user_for_jmap_account(account, raise_exception=True)
         responder_name = _organizer_name(account, event, responder_email)
         subject, html = _render_response(
-            event,
+            _occurrence_view(event, recurrence_id),
             organizer,
             _organizer_name(account, event, organizer),
             responder_email,
@@ -304,7 +306,10 @@ def _send(
         links = build_rsvp_links(account, event["id"], participant["uid"], email, expires_at)
 
     from_name = _organizer_name(account, event, organizer)
-    subject, html = _render(kind, event, organizer, from_name, participant, links)
+    # The .ics above speaks for the series (or for the occurrence, where one is named); the body
+    # has no such machinery, so it is rendered from the occurrence's own view of the event.
+    occurrence = _occurrence_view(event, recurrence_id)
+    subject, html = _render(kind, occurrence, organizer, from_name, participant, links)
     message = _build_mime(from_name, organizer, email, subject, html, ics, method)
 
     MailQueue._create(
@@ -356,6 +361,27 @@ def _render_response(
     subject = frappe.render_template(DEFAULT_SUBJECTS["response"], context, is_path=False)
     html = frappe.render_template(template_path(DEFAULT_TEMPLATES["response"]), context, is_path=True)
     return subject, html
+
+
+def _occurrence_view(event: dict, recurrence_id: str | None) -> dict:
+    """The event as one occurrence sees it: the series with that date's override folded in.
+
+    A mail about a single occurrence has to name that occurrence — the date it was moved to, the
+    title it was given — and the series carries none of that: its own start never moved, and the
+    edit lives in `recurrenceOverrides` under the date the occurrence was expanded at. Which is
+    the recurrence id, and so the start to fall back on when the override says nothing about it.
+
+    Returns the event untouched when the mail speaks for the whole series.
+    """
+
+    if not recurrence_id:
+        return event
+
+    view = deepcopy({k: v for k, v in event.items() if k != "recurrenceOverrides"})
+    view["start"] = recurrence_id
+    _apply_override(view, (event.get("recurrenceOverrides") or {}).get(recurrence_id) or {})
+
+    return view
 
 
 def _context(event, organizer, organizer_name, participant, links) -> dict:

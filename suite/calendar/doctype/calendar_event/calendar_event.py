@@ -634,7 +634,9 @@ def update_calendar_event_instance(
             frappe.throw(_(response["description"]), title=title)
 
     if use_custom_invites:
-        _enqueue_event_notification(account, "update", event_id=master_id)
+        # Named, or the mail would be the series' own: its start is where the occurrence used to
+        # be, and the edit that just moved it lives on the occurrence alone.
+        _enqueue_event_notification(account, "update", event_id=master_id, recurrence_id=recurrence_id)
 
 
 @frappe.whitelist()
