@@ -250,12 +250,17 @@ const metaEntries = computed(() => {
 			? { text: __('Sub-addressing on'), tooltip: __('Mail to user+tag@{0} reaches user@{0}.', [data?.name || '']) }
 			: { text: __('Sub-addressing off'), tooltip: __('Mail to user+tag@{0} is rejected.', [data?.name || '']) },
 	)
-	if (data?.allow_relaying) {
-		entries.push({
-			text: __('Relaying on'),
-			tooltip: __('Mail for addresses without an account here is forwarded to the domain\'s MX.'),
-		})
-	}
+	entries.push(
+		data?.allow_relaying
+			? {
+					text: __('Relaying on'),
+					tooltip: __('Mail for addresses of {0} without an account here is forwarded to the domain\'s MX.', [data?.name || '']),
+				}
+			: {
+					text: __('Relaying off'),
+					tooltip: __('Mail for addresses of {0} without an account here is rejected, or goes to the catch-all.', [data?.name || '']),
+				},
+	)
 	return entries
 })
 
