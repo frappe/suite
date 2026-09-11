@@ -191,11 +191,20 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
 
         updated = admin.update_domain(
-            DOMAIN, description="Acme Inc", catch_all_address=" Inbox@acme.test ", sub_addressing=False
+            DOMAIN,
+            description="Acme Inc",
+            catch_all_address=" Inbox@acme.test ",
+            sub_addressing=False,
+            allow_relaying=True,
         )
         self.assertEqual(
-            (updated["description"], updated["catch_all_address"], updated["sub_addressing"]),
-            ("Acme Inc", "inbox@acme.test", False),
+            (
+                updated["description"],
+                updated["catch_all_address"],
+                updated["sub_addressing"],
+                updated["allow_relaying"],
+            ),
+            ("Acme Inc", "inbox@acme.test", False, True),
         )
         self.assertRaises(frappe.ValidationError, admin.update_domain, DOMAIN, catch_all_address="nope")
         self.assertEqual(admin.update_domain(DOMAIN, catch_all_address="")["catch_all_address"], "")

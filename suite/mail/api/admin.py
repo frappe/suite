@@ -111,6 +111,7 @@ def _domain_row(domain: dict) -> dict:
         "is_enabled": bool(domain.get("enabled")),
         "catch_all_address": domain.get("catch_all_address") or "",
         "sub_addressing": bool(domain.get("sub_addressing")),
+        "allow_relaying": bool(domain.get("allow_relaying")),
         "is_verified": bool(domain.get("is_verified")),
         "last_verified_at": to_utc_z(domain.get("last_verified_at")),
         "created_at": to_utc_z(domain.get("created_at")),
@@ -214,8 +215,13 @@ def update_domain(
     description: str | None = None,
     catch_all_address: str | None = None,
     sub_addressing: bool | None = None,
+    allow_relaying: bool | None = None,
 ) -> dict:
-    """Description, catch-all and sub-addressing; an empty catch-all means unknown addresses bounce."""
+    """Description and the delivery settings; an empty catch-all means unknown addresses bounce.
+
+    Relaying forwards mail for addresses the cluster does not hold to the domain's MX, so a domain
+    can keep some mailboxes elsewhere.
+    """
 
     check_admin_permission("update domains", domain_id)
     changes: dict[str, Any] = {}
@@ -228,6 +234,8 @@ def update_domain(
         changes["catch_all_address"] = catch_all_address
     if sub_addressing is not None:
         changes["sub_addressing"] = bool(sub_addressing)
+    if allow_relaying is not None:
+        changes["allow_relaying"] = bool(allow_relaying)
     if not changes:
         return get_domain(domain_id)
     return _domain_row(get_client().call("mail.domains.update_domain", domain=domain_id, **changes))

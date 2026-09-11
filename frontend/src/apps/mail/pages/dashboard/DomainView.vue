@@ -85,6 +85,7 @@ type DomainData = {
 	is_enabled: boolean
 	catch_all_address?: string
 	sub_addressing: boolean
+	allow_relaying: boolean
 	last_verified_at?: string
 	created_at: string
 	dns_record_groups: RecordGroup[]
@@ -228,7 +229,7 @@ const confirmDialogOptions = computed(() => {
 const isEnabled = computed(() => !!(domain.data as DomainData | undefined)?.is_enabled)
 
 // Facts under the domain name: the description, when it was added (exact time on hover), and
-// the two delivery settings, each explained on hover since a bare "Sub-addressing on" says little.
+// the delivery settings, each explained on hover since a bare "Sub-addressing on" says little.
 const metaEntries = computed(() => {
 	const data = domain.data as DomainData | undefined
 	const entries: { text: string; tooltip?: string }[] = []
@@ -249,6 +250,12 @@ const metaEntries = computed(() => {
 			? { text: __('Sub-addressing on'), tooltip: __('Mail to user+tag@{0} reaches user@{0}.', [data?.name || '']) }
 			: { text: __('Sub-addressing off'), tooltip: __('Mail to user+tag@{0} is rejected.', [data?.name || '']) },
 	)
+	if (data?.allow_relaying) {
+		entries.push({
+			text: __('Relaying on'),
+			tooltip: __('Mail for addresses without an account here is forwarded to the domain\'s MX.'),
+		})
+	}
 	return entries
 })
 

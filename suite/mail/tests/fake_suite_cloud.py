@@ -87,7 +87,14 @@ class FakeSuiteCloud:
     def domains__create_domain(self, domain: str, description=None, **_) -> dict:
         if domain in self.domains:
             frappe.throw(f"Domain {domain} already exists.", frappe.ValidationError)
-        self.domains[domain] = {"domain": domain, "description": description, "enabled": 1, "is_verified": 0}
+        self.domains[domain] = {
+            "domain": domain,
+            "description": description,
+            "enabled": 1,
+            "is_verified": 0,
+            "sub_addressing": 1,
+            "allow_relaying": 0,
+        }
         return self._domain(domain)
 
     def domains__update_domain(self, domain: str, **changes) -> dict:
@@ -98,8 +105,9 @@ class FakeSuiteCloud:
                 d["is_verified"] = 0  # Suite Cloud drops verification with the domain
         if "catch_all_address" in changes:
             changes["catch_all_address"] = changes["catch_all_address"] or None
-        if "sub_addressing" in changes:
-            changes["sub_addressing"] = int(bool(changes["sub_addressing"]))
+        for flag in ("sub_addressing", "allow_relaying"):
+            if flag in changes:
+                changes[flag] = int(bool(changes[flag]))
         d.update(changes)
         return self._domain(domain)
 
