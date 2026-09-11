@@ -19,8 +19,6 @@
 
   <SearchModal
     v-model="showSearchModal"
-    v-model:show-advanced="showSearchAdvanced"
-    v-model:edit-filter="showSearchEditFilter"
     v-model:initial-text="searchInitialText"
     v-model:initial-filters="searchInitialFilters"
   />
@@ -40,11 +38,6 @@ const root = useRootStore();
 
 // Exposed as a model so other views (e.g. the search results header's query chip) can reopen the modal.
 const showSearchModal = defineModel<boolean>("showSearch", { default: false });
-const showSearchAdvanced = defineModel<boolean>("showAdvanced", {
-  default: false,
-});
-// Filter key a results-page chip asked to reopen inline; forwarded to the search modal.
-const showSearchEditFilter = defineModel<string>("editFilter", { default: "" });
 const searchInitialText = ref("");
 const searchInitialFilters = ref<Record<string, string>>({});
 
@@ -83,7 +76,6 @@ const unregisterPaletteGroups = root.registerPaletteGroups(
             searchInitialText.value = context?.query ?? "";
             searchInitialFilters.value = context?.filters ?? {};
             setTimeout(() => {
-              showSearchAdvanced.value = true;
               showSearchModal.value = true;
             });
           },

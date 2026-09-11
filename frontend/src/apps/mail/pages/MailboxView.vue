@@ -18,8 +18,6 @@
 		</div>
 		<HeaderActions
 			v-model:show-search="showSearchModal"
-			v-model:show-advanced="showSearchAdvanced"
-			v-model:edit-filter="searchEditFilter"
 		/>
 	</header>
 
@@ -75,8 +73,6 @@
 					<SearchResultsHeader
 						v-if="mailbox === 'search'"
 						v-model:show-search="showSearchModal"
-						v-model:show-advanced="showSearchAdvanced"
-						v-model:edit-filter="searchEditFilter"
 					/>
 
 					<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
@@ -1657,8 +1653,6 @@ const title = computed(() => {
 // search view's header — so its state sits here, between them. Everything else about the query surface
 // belongs to SearchResultsHeader.
 const showSearchModal = ref(false)
-const showSearchAdvanced = ref(false)
-const searchEditFilter = ref('')
 
 const threadCount = computed(() => {
 	const count = mailboxObj.value?.total_threads
