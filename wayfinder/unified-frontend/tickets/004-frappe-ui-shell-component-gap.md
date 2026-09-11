@@ -3,7 +3,7 @@ id: 004
 title: frappe-ui shell component gap
 label: wayfinder:research
 status: open
-assignee:
+assignee: codex (agent, 2026-09-11)
 blocked-by: []
 ---
 

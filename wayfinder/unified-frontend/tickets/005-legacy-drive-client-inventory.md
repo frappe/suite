@@ -3,7 +3,7 @@ id: 005
 title: Legacy Drive client inventory
 label: wayfinder:research
 status: open
-assignee:
+assignee: codex (agent, 2026-09-11)
 blocked-by: []
 ---
 
