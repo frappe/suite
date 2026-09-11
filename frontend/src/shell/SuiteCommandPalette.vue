@@ -9,24 +9,87 @@
   >
     <CommandPaletteInput
       ref="paletteInput"
-      :placeholder="mailAppliedFilters.length ? 'Add another filter or search mail' : palettePlaceholder"
+      :placeholder="
+        mailAppliedFilters.length
+          ? 'Add another filter or search mail'
+          : palettePlaceholder
+      "
       @keydown.backspace="removeLastMailFilter"
     >
-      <template v-if="mailAppliedFilters.length" #prefix>
-        <span class="lucide-search size-4 shrink-0 text-ink-gray-6" aria-hidden="true" />
-        <MailSearchFilterBadges :filters="mailAppliedFilters" @remove="removeMailFilter" />
+      <template v-if="activeApp === 'mail'" #suffix>
+        <Button
+          variant="ghost"
+          icon="lucide-sliders-horizontal"
+          size="sm"
+          aria-label="Advanced search in Mail"
+          @mousedown.prevent
+          @click="openMailAdvancedSearch"
+        />
       </template>
     </CommandPaletteInput>
 
+    <div
+      v-if="activeApp === 'mail'"
+      class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
+      :class="{ 'pr-12': mailAppliedFilters.length }"
+    >
+      <span
+        v-for="filter in mailAppliedFilters"
+        :key="filter.key"
+        class="inline-flex h-7 items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs"
+      >
+        <span class="max-w-40 truncate">{{ getMailFilterLabel(filter) }}</span>
+        <button
+          class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
+          aria-label="Remove filter"
+          @mousedown.prevent
+          @click.stop="removeMailFilter(filter.key)"
+        >
+          <span class="lucide-x size-3" aria-hidden="true" />
+        </button>
+      </span>
+      <Button
+        v-for="option in availableMailFilterOptions"
+        :key="option.key"
+        variant="outline"
+        size="sm"
+        class="!h-7 text-xs"
+        @mousedown.prevent
+        @click="applyMailQuickFilter(option)"
+      >
+        <span class="flex items-center gap-1">
+          <span class="lucide-plus size-3" aria-hidden="true" />
+          {{ option.label }}
+        </span>
+      </Button>
+      <Button
+        v-if="mailAppliedFilters.length"
+        variant="ghost"
+        icon="lucide-x"
+        size="sm"
+        class="absolute right-4 top-2 !size-7 !p-0"
+        aria-label="Clear all filters"
+        @mousedown.prevent
+        @click="mailAppliedFilters = []"
+      />
+    </div>
+
     <CommandPaletteList>
-      <CommandPaletteGroup v-if="exactApps.length" label="Navigate">
+      <CommandPaletteGroup
+        v-if="navigationMode && exactApps.length"
+        label="Navigate"
+      >
         <CommandPaletteItem
           v-for="app in exactApps"
           :key="app.name"
           :value="app"
         >
           <template #prefix>
-            <img :src="app.logo" alt="" class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1" />
+            <img
+              :src="app.logo"
+              alt=""
+              class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1"
+            />
           </template>
           {{ app.title }}
         </CommandPaletteItem>
@@ -43,7 +106,11 @@
             <span
               class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7"
             >
-              <span :class="command.icon || 'lucide-command'" class="size-4" aria-hidden="true" />
+              <span
+                :class="command.icon || 'lucide-command'"
+                class="size-4"
+                aria-hidden="true"
+              />
             </span>
           </template>
           {{ command.label }}
@@ -78,7 +145,7 @@
           <template #prefix>
             <DriveSearchResultIcon :entity="sheet" />
           </template>
-          {{ sheet.title || 'Untitled Sheet' }}
+          {{ sheet.title || "Untitled Sheet" }}
           <template #suffix>
             <DriveSearchResultModified :modified="sheet.modified" />
           </template>
@@ -110,7 +177,7 @@
           <template #prefix>
             <DriveSearchResultIcon :entity="document" />
           </template>
-          {{ document.title || 'Untitled Document' }}
+          {{ document.title || "Untitled Document" }}
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
@@ -121,7 +188,9 @@
           :value="meeting"
         >
           <template #prefix>
-            <span class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7">
+            <span
+              class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7"
+            >
               <span class="lucide-video size-4" aria-hidden="true" />
             </span>
           </template>
@@ -134,66 +203,91 @@
 
       <MailSearchSuggestions :suggestions="mailSuggestions" />
 
-      <CommandPaletteGroup v-if="mailResults.length" label="Mail">
+      <CommandPaletteGroup v-if="mailResults.length">
         <CommandPaletteItem
           v-for="mail in mailResults"
           :key="`${mail.account}-${mail.thread_id}`"
           :value="mail"
+          class="group [&_[data-slot=command-palette-item-label]]:flex-1"
         >
-          <template #prefix>
-            <span class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7">
-              <span class="lucide-mail size-4" aria-hidden="true" />
-            </span>
-          </template>
-          {{ mail.subject || '[No subject]' }}
-          <template #suffix>
-            <span class="max-w-48 truncate text-ink-gray-5">{{ mail.from_name || mail.from_email }}</span>
-          </template>
+          <MailSearchResult :result="mail" />
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
-      <CommandPaletteGroup v-if="remainingApps.length" label="Navigate">
+      <CommandPaletteGroup
+        v-if="navigationMode && remainingApps.length"
+        label="Navigate"
+      >
         <CommandPaletteItem
           v-for="app in remainingApps"
           :key="app.name"
           :value="app"
         >
           <template #prefix>
-            <img :src="app.logo" alt="" class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1" />
+            <img
+              :src="app.logo"
+              alt=""
+              class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1"
+            />
           </template>
           {{ app.title }}
         </CommandPaletteItem>
       </CommandPaletteGroup>
     </CommandPaletteList>
 
-    <CommandPaletteEmpty v-slot="{ query: text }">
-      {{ mailOperatorContext?.prompt || (mailAppliedFilters.length ? 'No mail matches these filters' : text && text.length < minimumQueryLength && contextSearchLabel ? `Type more to search ${contextSearchLabel}` : `No results for "${text}"`) }}
+    <CommandPaletteEmpty
+      v-if="normalizedQuery || mailAppliedFilters.length"
+      v-slot="{ query: text }"
+    >
+      {{
+        mailOperatorContext?.prompt ||
+        (mailAppliedFilters.length
+          ? "No mail matches these filters"
+          : activeApp !== "mail" &&
+              text &&
+              text.length < minimumQueryLength &&
+              contextSearchLabel
+            ? `Type more to search ${contextSearchLabel}`
+            : `No results for "${text}"`)
+      }}
     </CommandPaletteEmpty>
 
     <CommandPaletteFooter class="!justify-between !px-2.5 !text-xs">
       <span class="flex items-center gap-4">
         <span class="flex items-center gap-1">
-          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+          <span
+            class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
+          >
             <span class="lucide-arrow-down size-4" />
           </span>
-          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+          <span
+            class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
+          >
             <span class="lucide-arrow-up size-4" />
           </span>
           <span>to navigate</span>
         </span>
         <span class="flex items-center gap-1">
-          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+          <span
+            class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
+          >
             <span class="lucide-corner-down-left size-4" />
           </span>
           <span>to open</span>
         </span>
         <span class="flex items-center gap-1">
-          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5">esc</span>
+          <span
+            class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
+            >esc</span
+          >
           <span>to close</span>
         </span>
       </span>
       <span v-if="!navigationMode" class="flex items-center gap-1">
-        <span class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5">&gt;</span>
+        <span
+          class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
+          >&gt;</span
+        >
         <span>to switch apps</span>
       </span>
     </CommandPaletteFooter>
@@ -201,10 +295,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onScopeDispose, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import type { RouteLocationRaw } from 'vue-router'
-import { createResource, useKeyboardShortcut } from 'frappe-ui'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onScopeDispose,
+  ref,
+  watch,
+} from "vue";
+import { useRoute, useRouter } from "vue-router";
+import type { RouteLocationRaw } from "vue-router";
+import { Button, createResource, useKeyboardShortcut } from "frappe-ui";
 import {
   CommandPalette,
   CommandPaletteEmpty,
@@ -214,279 +315,409 @@ import {
   CommandPaletteItem,
   CommandPaletteList,
   type CommandPaletteSelectEvent,
-} from 'frappe-ui/experimental'
-import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
-import { getMailChoiceOperator, getMailContactOperator, getMailSearchOperatorContext, parseMailSearchQuery } from '@/apps/mail/utils/searchQuery'
-import { userStore } from '@/apps/mail/stores/user'
-import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { getIcon } from '@/apps/mail/utils'
-import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import MailSearchFilterBadges from '@/apps/mail/components/CommandPalette/MailSearchFilterBadges.vue'
-import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
+} from "frappe-ui/experimental";
+import {
+  getAppSwitcherItems,
+  type SuiteAppSwitcherItem,
+} from "@/apps/registry";
+import {
+  getMailChoiceOperator,
+  getMailContactOperator,
+  getMailSearchOperatorContext,
+  parseMailSearchQuery,
+} from "@/apps/mail/utils/searchQuery";
+import { userStore } from "@/apps/mail/stores/user";
+import { FOLDER_ICON_COLOR_MAP } from "@/apps/mail/constants";
+import { getIcon } from "@/apps/mail/utils";
+import { utcDayEnd, utcDayStart } from "@/apps/mail/utils/datetime";
+import MailSearchResult from "@/apps/mail/components/CommandPalette/MailSearchResult.vue";
+import MailSearchSuggestions from "@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue";
 import type {
   MailContactSuggestion,
   MailFilterSuggestion,
   MailSearchFilterBadge,
-} from '@/apps/mail/components/CommandPalette/types'
-import { useRootStore, type PaletteCommand } from '@/stores/root'
+  MailSearchResult as MailResult,
+} from "@/apps/mail/components/CommandPalette/types";
+import { useRootStore, type PaletteCommand } from "@/stores/root";
 
 interface DriveResult {
-  name: string
-  file_name: string
-  file_type?: string
-  is_folder: boolean
-  modified?: string
-  user_name?: string
-  full_name?: string
-  [key: string]: unknown
+  name: string;
+  file_name: string;
+  file_type?: string;
+  is_folder: boolean;
+  modified?: string;
+  user_name?: string;
+  full_name?: string;
+  [key: string]: unknown;
 }
 
 interface SheetResult {
-  resultType: 'sheet'
-  name: string
-  title?: string
-  modified?: string
-  content_doctype: 'Sheet'
-  file_type: 'Spreadsheet'
-  [key: string]: unknown
+  resultType: "sheet";
+  name: string;
+  title?: string;
+  modified?: string;
+  content_doctype: "Sheet";
+  file_type: "Spreadsheet";
+  [key: string]: unknown;
 }
 
 interface SlideResult {
-  resultType: 'slide'
-  name: string
-  file_name: string
-  content_docname: string
-  modified?: string
-  thumbnail?: string
-  owner?: string
-  content_doctype: 'Presentation'
-  [key: string]: unknown
+  resultType: "slide";
+  name: string;
+  file_name: string;
+  content_docname: string;
+  modified?: string;
+  thumbnail?: string;
+  owner?: string;
+  content_doctype: "Presentation";
+  [key: string]: unknown;
 }
 
 interface WriterResult {
-  resultType: 'writer'
-  name: string
-  title?: string
-  content_doctype: 'Writer Document'
-  file_type: 'Document'
-  [key: string]: unknown
+  resultType: "writer";
+  name: string;
+  title?: string;
+  content_doctype: "Writer Document";
+  file_type: "Document";
+  [key: string]: unknown;
 }
 
 interface MeetResult {
-  resultType: 'meeting'
-  name: string
-  title?: string
-  modified?: string
+  resultType: "meeting";
+  name: string;
+  title?: string;
+  modified?: string;
 }
 
-interface MailResult {
-  resultType: 'mail'
-  account: string
-  thread_id: string
-  subject?: string
-  from_name?: string
-  from_email: string
-}
-
-const minimumQueryLength = 3
+const minimumQueryLength = 3;
 const DriveSearchResultIcon = defineAsyncComponent(
-  () => import('@/apps/drive/components/DriveSearchResultIcon.vue'),
-)
+  () => import("@/apps/drive/components/DriveSearchResultIcon.vue"),
+);
 const DriveSearchResultModified = defineAsyncComponent(
-  () => import('@/apps/drive/components/DriveSearchResultModified.vue'),
-)
-const root = useRootStore()
-const route = useRoute()
-const router = useRouter()
-const paletteInput = ref<{ $el: HTMLElement } | null>(null)
-const query = ref('')
-const navigationMode = ref(false)
-const mailAppliedFilters = ref<MailSearchFilterBadge[]>([])
-let mailUser: ReturnType<typeof userStore> | undefined
-let openSelectionInNewTab = false
+  () => import("@/apps/drive/components/DriveSearchResultModified.vue"),
+);
+const root = useRootStore();
+const route = useRoute();
+const router = useRouter();
+const paletteInput = ref<{ $el: HTMLElement } | null>(null);
+const query = ref("");
+const navigationMode = ref(false);
+const mailAppliedFilters = ref<MailSearchFilterBadge[]>([]);
+let mailUser: ReturnType<typeof userStore> | undefined;
+let openSelectionInNewTab = false;
 
 function getMailUser() {
-  return mailUser ??= userStore()
+  return (mailUser ??= userStore());
 }
 
 useKeyboardShortcut({
-  combo: 'Mod+K',
-  description: 'Search Suite',
-  group: 'Suite',
+  combo: "Mod+K",
+  description: "Search Suite",
+  group: "Suite",
   allowInInput: true,
   handler: () => {
-    root.paletteOpen = true
+    root.paletteOpen = true;
   },
-})
+});
 
 const driveSearch = createResource({
   auto: false,
-  method: 'POST',
-  url: 'suite.drive.api.files.search',
+  method: "POST",
+  url: "suite.drive.api.files.search",
   debounce: 180,
-})
+});
 const sheetSearch = createResource({
   auto: false,
-  method: 'POST',
-  url: 'suite.sheets.api.list_sheets',
+  method: "POST",
+  url: "suite.sheets.api.list_sheets",
   debounce: 180,
-})
+});
 const slideSearch = createResource({
   auto: false,
-  method: 'GET',
-  url: 'suite.drive.api.list.files',
+  method: "GET",
+  url: "suite.drive.api.list.files",
   debounce: 180,
-})
+});
 const writerSearch = createResource({
   auto: false,
-  method: 'GET',
-  url: 'suite.writer.api.general.search',
+  method: "GET",
+  url: "suite.writer.api.general.search",
   debounce: 180,
-})
+});
 const meetSearch = createResource({
   auto: false,
-  method: 'POST',
-  url: 'frappe.client.get_list',
+  method: "POST",
+  url: "frappe.client.get_list",
   debounce: 180,
-})
+});
 const mailSearch = createResource({
   auto: false,
-  method: 'POST',
-  url: 'suite.mail.api.mail.search_mails',
+  method: "POST",
+  url: "suite.mail.api.mail.search_mails",
   debounce: 180,
-})
+});
 const mailContactSearch = createResource({
   auto: false,
-  method: 'GET',
-  url: 'suite.mail.api.mail.get_email_suggestions',
+  method: "GET",
+  url: "suite.mail.api.mail.get_email_suggestions",
   debounce: 180,
-})
+});
 
-const normalizedQuery = computed(() => query.value.trim().toLowerCase())
-const appQuery = computed(() => normalizedQuery.value)
+const normalizedQuery = computed(() => query.value.trim().toLowerCase());
+const appQuery = computed(() => normalizedQuery.value);
 const mailFilter = computed(() => ({
-  ...Object.fromEntries(mailAppliedFilters.value.map(({ key, value }) => [key, value])),
+  ...Object.fromEntries(
+    mailAppliedFilters.value.map(({ key, value }) => [key, value]),
+  ),
   ...parseMailSearchQuery(query.value.trim()),
-}))
+}));
 const mailRequestFilter = computed(() => ({
   ...mailFilter.value,
-  ...(mailFilter.value.after ? { after: utcDayStart(mailFilter.value.after) } : {}),
-  ...(mailFilter.value.before ? { before: utcDayEnd(mailFilter.value.before) } : {}),
-}))
+  ...(mailFilter.value.after
+    ? { after: utcDayStart(mailFilter.value.after) }
+    : {}),
+  ...(mailFilter.value.before
+    ? { before: utcDayEnd(mailFilter.value.before) }
+    : {}),
+}));
 const mailOperatorContext = computed(() =>
-  activeApp.value === 'mail' ? getMailSearchOperatorContext(query.value) : null,
-)
+  activeApp.value === "mail" ? getMailSearchOperatorContext(query.value) : null,
+);
 const activeMailContactOperator = computed(() =>
-  activeApp.value === 'mail' ? getMailContactOperator(query.value) : null,
-)
+  activeApp.value === "mail" ? getMailContactOperator(query.value) : null,
+);
 const activeMailChoiceOperator = computed(() =>
-  activeApp.value === 'mail' ? getMailChoiceOperator(query.value) : null,
-)
+  activeApp.value === "mail" ? getMailChoiceOperator(query.value) : null,
+);
 const driveResults = computed<DriveResult[]>(() =>
-  activeApp.value === 'drive' && Array.isArray(driveSearch.data)
+  activeApp.value === "drive" && Array.isArray(driveSearch.data)
     ? driveSearch.data.slice(0, 20)
     : [],
-)
+);
 const sheetResults = computed<SheetResult[]>(() => {
-  if (activeApp.value !== 'sheets' || !Array.isArray(sheetSearch.data?.sheets)) return []
-  return sheetSearch.data.sheets.slice(0, 20).map((sheet: Omit<SheetResult, 'resultType'>) => ({
-    ...sheet,
-    resultType: 'sheet' as const,
-    content_doctype: 'Sheet' as const,
-    file_type: 'Spreadsheet' as const,
-  }))
-})
+  if (activeApp.value !== "sheets" || !Array.isArray(sheetSearch.data?.sheets))
+    return [];
+  return sheetSearch.data.sheets
+    .slice(0, 20)
+    .map((sheet: Omit<SheetResult, "resultType">) => ({
+      ...sheet,
+      resultType: "sheet" as const,
+      content_doctype: "Sheet" as const,
+      file_type: "Spreadsheet" as const,
+    }));
+});
 const slideResults = computed<SlideResult[]>(() => {
-  if (activeApp.value !== 'slides' || !Array.isArray(slideSearch.data?.rows)) return []
+  if (activeApp.value !== "slides" || !Array.isArray(slideSearch.data?.rows))
+    return [];
   return slideSearch.data.rows
     .filter((row: SlideResult) => row.content_docname)
     .slice(0, 20)
-    .map((row: Omit<SlideResult, 'resultType'>) => ({ ...row, resultType: 'slide' as const }))
-})
+    .map((row: Omit<SlideResult, "resultType">) => ({
+      ...row,
+      resultType: "slide" as const,
+    }));
+});
 const writerResults = computed<WriterResult[]>(() => {
-  if (activeApp.value !== 'writer' || !Array.isArray(writerSearch.data?.results)) return []
-  return writerSearch.data.results.slice(0, 20).map((document: Omit<WriterResult, 'resultType'>) => ({
-    ...document,
-    resultType: 'writer' as const,
-    content_doctype: 'Writer Document' as const,
-    file_type: 'Document' as const,
-  }))
-})
+  if (
+    activeApp.value !== "writer" ||
+    !Array.isArray(writerSearch.data?.results)
+  )
+    return [];
+  return writerSearch.data.results
+    .slice(0, 20)
+    .map((document: Omit<WriterResult, "resultType">) => ({
+      ...document,
+      resultType: "writer" as const,
+      content_doctype: "Writer Document" as const,
+      file_type: "Document" as const,
+    }));
+});
 const meetResults = computed<MeetResult[]>(() => {
-  if (activeApp.value !== 'meet' || !Array.isArray(meetSearch.data)) return []
-  return meetSearch.data.slice(0, 20).map((meeting: Omit<MeetResult, 'resultType'>) => ({
-    ...meeting,
-    resultType: 'meeting' as const,
-  }))
-})
+  if (activeApp.value !== "meet" || !Array.isArray(meetSearch.data)) return [];
+  return meetSearch.data
+    .slice(0, 20)
+    .map((meeting: Omit<MeetResult, "resultType">) => ({
+      ...meeting,
+      resultType: "meeting" as const,
+    }));
+});
 const mailResults = computed<MailResult[]>(() => {
-  if (activeApp.value !== 'mail' || !Array.isArray(mailSearch.data?.[0])) return []
-  return mailSearch.data[0].slice(0, 20).map((mail: Omit<MailResult, 'resultType'>) => ({
+  if (activeApp.value !== "mail" || !Array.isArray(mailSearch.data?.[0]))
+    return [];
+  return mailSearch.data[0].map((mail: Omit<MailResult, "resultType">) => ({
     ...mail,
-    resultType: 'mail' as const,
-  }))
-})
+    resultType: "mail" as const,
+  }));
+});
 const mailContactResults = computed<MailContactSuggestion[]>(() => {
-  if (!activeMailContactOperator.value?.partial || !Array.isArray(mailContactSearch.data)) return []
-  const partial = activeMailContactOperator.value.partial
-  const contacts = mailContactSearch.data.map((contact: { email: string; name?: string; user_image?: string }) => ({
-    ...contact,
-    value: contact.email,
-    label: contact.name || contact.email,
-    resultType: 'mail-contact' as const,
-  }))
-  if (!contacts.some((contact: MailContactSuggestion) => contact.email.toLowerCase() === partial.toLowerCase())) {
-    contacts.push({ resultType: 'mail-contact', value: partial, label: partial, email: partial })
+  if (
+    !activeMailContactOperator.value?.partial ||
+    !Array.isArray(mailContactSearch.data)
+  )
+    return [];
+  const partial = activeMailContactOperator.value.partial;
+  const contacts = mailContactSearch.data.map(
+    (contact: { email: string; name?: string; user_image?: string }) => ({
+      ...contact,
+      value: contact.email,
+      label: contact.name || contact.email,
+      resultType: "mail-contact" as const,
+    }),
+  );
+  if (
+    !contacts.some(
+      (contact: MailContactSuggestion) =>
+        contact.email.toLowerCase() === partial.toLowerCase(),
+    )
+  ) {
+    contacts.push({
+      resultType: "mail-contact",
+      value: partial,
+      label: partial,
+      email: partial,
+    });
   }
-  return contacts.slice(0, 3)
-})
+  return contacts;
+});
 const mailFilterSuggestions = computed<MailFilterSuggestion[]>(() => {
-  const operator = activeMailChoiceOperator.value
-  if (!operator) return []
-  const partial = operator.partial.toLowerCase()
-  if (operator.key === 'in') {
+  const operator = activeMailChoiceOperator.value;
+  if (!operator) return [];
+  const partial = operator.partial.toLowerCase();
+  if (operator.key === "in") {
     return (getMailUser().mailboxes.data ?? [])
-      .filter((mailbox: { _name: string }) => mailbox._name.toLowerCase().includes(partial))
-      .slice(0, 3)
-      .map((mailbox: { id: string; _name: string; role?: string; icon?: string; color?: keyof typeof FOLDER_ICON_COLOR_MAP }) => ({
-        resultType: 'mail-filter-suggestion' as const,
-        value: mailbox.id,
-        label: mailbox._name,
-        filterKey: 'inMailbox',
-        filterValue: mailbox.id,
-        icon: getIcon(mailbox),
-        iconClass: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
-      }))
+      .filter((mailbox: { _name: string }) =>
+        mailbox._name.toLowerCase().includes(partial),
+      )
+      .map(
+        (mailbox: {
+          id: string;
+          _name: string;
+          role?: string;
+          icon?: string;
+          color?: keyof typeof FOLDER_ICON_COLOR_MAP;
+        }) => ({
+          resultType: "mail-filter-suggestion" as const,
+          value: mailbox.id,
+          label: mailbox._name,
+          filterKey: "inMailbox",
+          filterValue: mailbox.id,
+          icon: getIcon(mailbox),
+          iconClass: mailbox.color
+            ? FOLDER_ICON_COLOR_MAP[mailbox.color]
+            : undefined,
+        }),
+      );
   }
-  const choices = operator.key === 'has'
-    ? [
-        { value: 'attachment', label: 'With attachments', filterKey: 'hasAttachment', filterValue: 'true', icon: 'paperclip' },
-        { value: 'no-attachment', label: 'Without attachments', filterKey: 'hasAttachment', filterValue: 'false', icon: 'ban' },
-      ]
-    : [
-        { value: 'read', label: 'Read', filterKey: 'isRead', filterValue: 'true', icon: 'mail-open' },
-        { value: 'unread', label: 'Unread', filterKey: 'isRead', filterValue: 'false', icon: 'mail' },
-      ]
+  const choices =
+    operator.key === "has"
+      ? [
+          {
+            value: "attachment",
+            label: "With attachments",
+            filterKey: "hasAttachment",
+            filterValue: "true",
+            icon: "paperclip",
+          },
+          {
+            value: "no-attachment",
+            label: "Without attachments",
+            filterKey: "hasAttachment",
+            filterValue: "false",
+            icon: "ban",
+          },
+        ]
+      : [
+          {
+            value: "read",
+            label: "Read",
+            filterKey: "isRead",
+            filterValue: "true",
+            icon: "mail-open",
+          },
+          {
+            value: "unread",
+            label: "Unread",
+            filterKey: "isRead",
+            filterValue: "false",
+            icon: "mail",
+          },
+        ];
   return choices
-    .filter((choice) => choice.value.includes(partial) || choice.label.toLowerCase().includes(partial))
-    .map((choice) => ({ resultType: 'mail-filter-suggestion' as const, ...choice }))
-})
-const mailSuggestions = computed(() => [...mailContactResults.value, ...mailFilterSuggestions.value])
-const activeApp = computed(() => String(route.meta.appId ?? ''))
-const contextSearchLabel = computed(() =>
-  ({ drive: 'Drive', sheets: 'Sheets', slides: 'Slides', writer: 'Writer', meet: 'Meet', mail: 'Mail', calendar: 'Calendar' })[activeApp.value],
-)
+    .filter(
+      (choice) =>
+        choice.value.includes(partial) ||
+        choice.label.toLowerCase().includes(partial),
+    )
+    .map((choice) => ({
+      resultType: "mail-filter-suggestion" as const,
+      ...choice,
+    }));
+});
+const mailSuggestions = computed(() => [
+  ...mailContactResults.value,
+  ...mailFilterSuggestions.value,
+]);
+const mailFilterOptions = [
+  { key: "inMailbox", label: "Folder", operator: "in:" },
+  { key: "from", label: "From", operator: "from:" },
+  { key: "to", label: "To", operator: "to:" },
+  {
+    key: "hasAttachment",
+    label: "With attachments",
+    value: "true",
+    displayValue: "With attachments",
+  },
+  { key: "isRead", label: "Unread", value: "false", displayValue: "Unread" },
+];
+const availableMailFilterOptions = computed(() => {
+  const applied = new Set(mailAppliedFilters.value.map((filter) => filter.key));
+  return mailFilterOptions.filter((option) => !applied.has(option.key));
+});
+const MAIL_FILTER_OPERATORS: Record<string, string> = {
+  inMailbox: "in",
+  from: "from",
+  to: "to",
+  cc: "cc",
+  bcc: "bcc",
+  subject: "subject",
+  after: "after",
+  before: "before",
+};
+
+function getMailFilterLabel(filter: MailSearchFilterBadge) {
+  if (filter.key === "hasAttachment") return filter.displayValue;
+  if (filter.key === "isRead")
+    return `is:${filter.value === "true" ? "read" : "unread"}`;
+  return `${MAIL_FILTER_OPERATORS[filter.key] ?? filter.key}:${filter.displayValue}`;
+}
+const activeApp = computed(() => String(route.meta.appId ?? ""));
+const contextSearchLabel = computed(
+  () =>
+    ({
+      drive: "Drive",
+      sheets: "Sheets",
+      slides: "Slides",
+      writer: "Writer",
+      meet: "Meet",
+      mail: "Mail",
+      calendar: "Calendar",
+    })[activeApp.value],
+);
 const palettePlaceholder = computed(() =>
-  navigationMode.value ? 'Switch apps' : `Search in ${contextSearchLabel.value || 'Suite'}`,
-)
-const apps = computed(() => getAppSwitcherItems(String(route.meta.appId ?? '')))
+  navigationMode.value
+    ? "Switch apps"
+    : `Search in ${contextSearchLabel.value || "Suite"}`,
+);
+const apps = computed(() =>
+  getAppSwitcherItems(String(route.meta.appId ?? "")),
+);
 const filteredApps = computed(() => {
-  if (activeApp.value === 'mail' && mailAppliedFilters.value.length) return []
-  if (!appQuery.value) return apps.value
+  if (activeApp.value === "mail" && mailAppliedFilters.value.length) return [];
+  if (!appQuery.value) return apps.value;
   return apps.value.filter((app) =>
     `${app.title} ${app.name}`.toLowerCase().includes(appQuery.value),
-  )
-})
+  );
+});
 const exactApps = computed(() =>
   appQuery.value
     ? filteredApps.value.filter(
@@ -495,276 +726,375 @@ const exactApps = computed(() =>
           app.name.toLowerCase() === appQuery.value,
       )
     : [],
-)
+);
 const remainingApps = computed(() =>
   filteredApps.value.filter((app) => !exactApps.value.includes(app)),
-)
+);
 const filteredCommands = computed(() => {
-  if (navigationMode.value || (activeApp.value === 'mail' && mailAppliedFilters.value.length)) return []
-  const commands = root.paletteGroups.flatMap((group) => group.commands)
-  if (!normalizedQuery.value) return commands
-  return commands.filter((command) =>
-    [command.label, command.description, ...(command.keywords ?? [])]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(normalizedQuery.value),
+  if (
+    navigationMode.value ||
+    (activeApp.value === "mail" && mailAppliedFilters.value.length)
   )
-})
+    return [];
+  const commands = root.paletteGroups.flatMap((group) => group.commands);
+  return commands.filter(
+    (command) =>
+      !(activeApp.value === "mail" && command.id === "mail-advanced-search") &&
+      (!normalizedQuery.value ||
+        [command.label, command.description, ...(command.keywords ?? [])]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery.value)),
+  );
+});
+
+function openMailAdvancedSearch() {
+  const command = root.paletteGroups
+    .flatMap((group) => group.commands)
+    .find((candidate) => candidate.id === "mail-advanced-search");
+  if (!command) return;
+  const currentQuery = query.value;
+  const filters = Object.fromEntries(
+    mailAppliedFilters.value.map(({ key, value }) => [key, value]),
+  );
+  root.paletteOpen = false;
+  command.run({ query: currentQuery, filters });
+}
+
+async function applyMailQuickFilter(
+  option: (typeof mailFilterOptions)[number],
+) {
+  if ("value" in option && option.value) {
+    applyMailFilter(option.key, option.value, option.displayValue);
+    return;
+  }
+  if (!option.operator) return;
+  query.value = `${query.value.trimEnd()}${query.value.trim() ? " " : ""}${option.operator}`;
+  await nextTick();
+  paletteInput.value?.$el.querySelector<HTMLInputElement>("input")?.focus();
+}
 
 watch(
-  [driveResults, sheetResults, slideResults, writerResults, meetResults, mailResults, mailSuggestions],
+  [
+    driveResults,
+    sheetResults,
+    slideResults,
+    writerResults,
+    meetResults,
+    mailResults,
+    mailSuggestions,
+  ],
   async (groups) => {
-    if (!root.paletteOpen || !groups.some((items) => items.length)) return
-    await nextTick()
-    const input = paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
-    const palette = input?.closest('[data-slot="command-palette"]')
-    if (!input || palette?.querySelector('[data-slot="command-palette-item"][data-state="active"]')) return
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    if (!root.paletteOpen || !groups.some((items) => items.length)) return;
+    await nextTick();
+    const input =
+      paletteInput.value?.$el.querySelector<HTMLInputElement>("input");
+    if (!input) return;
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
+    );
   },
-  { flush: 'post' },
-)
+  { flush: "post" },
+);
 
-watch([query, mailAppliedFilters], ([value]) => {
-  if (!navigationMode.value && value.trim() === '>') {
-    navigationMode.value = true
-    query.value = ''
-    resetSearches()
-    return
-  }
-
-  const text = value.trim()
-  cancelSearches()
-  if (navigationMode.value) return
-
-  if (activeApp.value === 'mail') {
-    if (consumeMailFilterToken(value)) return
-    const account = String(route.params.accountId || localStorage.getItem('mail-account-id') || '')
-    if (account && activeMailContactOperator.value?.partial) {
-      mailContactSearch.submit({
-        account,
-        text: activeMailContactOperator.value.partial,
-        limit: 5,
-      })
+watch(
+  [query, mailAppliedFilters],
+  ([value]) => {
+    if (!navigationMode.value && value.trim() === ">") {
+      navigationMode.value = true;
+      query.value = "";
+      resetSearches();
+      return;
     }
-    if (account && (text.length >= minimumQueryLength || mailAppliedFilters.value.length)) {
-      mailSearch.submit({ account, filter: mailRequestFilter.value, limit: 20 })
-    } else if (!mailAppliedFilters.value.length) {
-      resetSearches()
+
+    const text = value.trim();
+    cancelSearches();
+    if (navigationMode.value) return;
+
+    if (activeApp.value === "mail") {
+      if (consumeMailFilterToken(value)) return;
+      const account = String(
+        route.params.accountId || localStorage.getItem("mail-account-id") || "",
+      );
+      if (account && activeMailContactOperator.value?.partial) {
+        mailContactSearch.submit({
+          account,
+          text: activeMailContactOperator.value.partial,
+          limit: 5,
+        });
+      }
+      if (mailOperatorContext.value) {
+        mailSearch.reset();
+        return;
+      }
+      if (account && (text || mailAppliedFilters.value.length)) {
+        mailSearch.submit({
+          account,
+          filter: mailRequestFilter.value,
+          limit: 20,
+        });
+      } else if (!mailAppliedFilters.value.length) {
+        resetSearches();
+      }
+      return;
     }
-    return
-  }
 
-  if (text.length < minimumQueryLength) {
-    resetSearches()
-    return
-  }
+    if (text.length < minimumQueryLength) {
+      resetSearches();
+      return;
+    }
 
-  if (activeApp.value === 'drive') {
-    driveSearch.submit({ query: text })
-  } else if (activeApp.value === 'sheets') {
-    sheetSearch.submit({
-      start: 0,
-      limit: 20,
-      search: text,
-      owner_filter: 'all',
-      order_by: 'modified',
-      sort_dir: 'desc',
-    })
-  } else if (activeApp.value === 'slides') {
-    slideSearch.submit({
-      search: text,
-      file_kinds: JSON.stringify(['Presentation']),
-      order_by: 'modified',
-      ascending: false,
-      start: 0,
-      limit: 20,
-      paginated: true,
-    })
-  } else if (activeApp.value === 'writer') {
-    writerSearch.submit({ query: text })
-  } else if (activeApp.value === 'meet') {
-    meetSearch.submit({
-      doctype: 'Meet Room',
-      fields: ['name', 'title', 'modified'],
-      or_filters: [
-        ['Meet Room', 'title', 'like', `%${text}%`],
-        ['Meet Room', 'name', 'like', `%${text}%`],
-      ],
-      order_by: 'modified desc',
-      limit_page_length: 20,
-    })
-  }
-}, { deep: true })
+    if (activeApp.value === "drive") {
+      driveSearch.submit({ query: text });
+    } else if (activeApp.value === "sheets") {
+      sheetSearch.submit({
+        start: 0,
+        limit: 20,
+        search: text,
+        owner_filter: "all",
+        order_by: "modified",
+        sort_dir: "desc",
+      });
+    } else if (activeApp.value === "slides") {
+      slideSearch.submit({
+        search: text,
+        file_kinds: JSON.stringify(["Presentation"]),
+        order_by: "modified",
+        ascending: false,
+        start: 0,
+        limit: 20,
+        paginated: true,
+      });
+    } else if (activeApp.value === "writer") {
+      writerSearch.submit({ query: text });
+    } else if (activeApp.value === "meet") {
+      meetSearch.submit({
+        doctype: "Meet Room",
+        fields: ["name", "title", "modified"],
+        or_filters: [
+          ["Meet Room", "title", "like", `%${text}%`],
+          ["Meet Room", "name", "like", `%${text}%`],
+        ],
+        order_by: "modified desc",
+        limit_page_length: 20,
+      });
+    }
+  },
+  { deep: true },
+);
 
 watch(
   () => root.paletteOpen,
   (open) => {
-    if (open) return
-    navigationMode.value = false
-    mailAppliedFilters.value = []
-    resetSearches()
+    if (open) return;
+    navigationMode.value = false;
+    mailAppliedFilters.value = [];
+    resetSearches();
   },
-)
+);
 
 function resetSearches() {
-  cancelSearches()
-  for (const resource of [driveSearch, sheetSearch, slideSearch, writerSearch, meetSearch, mailSearch, mailContactSearch]) {
-    resource.reset()
+  cancelSearches();
+  for (const resource of [
+    driveSearch,
+    sheetSearch,
+    slideSearch,
+    writerSearch,
+    meetSearch,
+    mailSearch,
+    mailContactSearch,
+  ]) {
+    resource.reset();
   }
 }
 
 function cancelSearches() {
-  for (const resource of [driveSearch, sheetSearch, slideSearch, writerSearch, meetSearch, mailSearch, mailContactSearch]) {
-    resource.submit.cancel()
-    resource.abort()
+  for (const resource of [
+    driveSearch,
+    sheetSearch,
+    slideSearch,
+    writerSearch,
+    meetSearch,
+    mailSearch,
+    mailContactSearch,
+  ]) {
+    resource.submit.cancel();
+    resource.abort();
   }
 }
 
 function consumeMailFilterToken(value: string) {
-  const match = value.match(/(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i)
-  if (!match || match.index == null) return false
-  const token = match[0].trim()
-  const separator = token.indexOf(':')
-  if (token.slice(0, separator).toLowerCase() === 'in') {
-    const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, '')
+  const match = value.match(
+    /(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i,
+  );
+  if (!match || match.index == null) return false;
+  const token = match[0].trim();
+  const separator = token.indexOf(":");
+  if (token.slice(0, separator).toLowerCase() === "in") {
+    const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, "");
     const mailbox = (getMailUser().mailboxes.data ?? []).find(
       (candidate: { id: string; _name: string }) =>
-        candidate.id === mailboxName || candidate._name.toLowerCase() === mailboxName.toLowerCase(),
-    )
-    if (!mailbox) return false
-    applyMailFilter('inMailbox', mailbox.id, mailbox._name)
-    query.value = value.slice(0, match.index).trim()
-    return true
+        candidate.id === mailboxName ||
+        candidate._name.toLowerCase() === mailboxName.toLowerCase(),
+    );
+    if (!mailbox) return false;
+    applyMailFilter("inMailbox", mailbox.id, mailbox._name);
+    query.value = value.slice(0, match.index).trim();
+    return true;
   }
-  const parsed = parseMailSearchQuery(token)
-  const entry = Object.entries(parsed).find(([key]) => key !== 'text')
-  if (!entry) return false
-  const [key, filterValue] = entry
-  const displayValue = key === 'hasAttachment'
-    ? filterValue === 'true' ? 'With attachments' : 'Without attachments'
-    : filterValue
-  applyMailFilter(key, filterValue, displayValue)
-  query.value = value.slice(0, match.index).trim()
-  return true
+  const parsed = parseMailSearchQuery(token);
+  const entry = Object.entries(parsed).find(([key]) => key !== "text");
+  if (!entry) return false;
+  const [key, filterValue] = entry;
+  const displayValue =
+    key === "hasAttachment"
+      ? filterValue === "true"
+        ? "With attachments"
+        : "Without attachments"
+      : filterValue;
+  applyMailFilter(key, filterValue, displayValue);
+  query.value = value.slice(0, match.index).trim();
+  return true;
 }
 
 function applyMailFilter(key: string, value: string, displayValue = value) {
   mailAppliedFilters.value = [
     ...mailAppliedFilters.value.filter((filter) => filter.key !== key),
     { key, value, displayValue },
-  ]
+  ];
 }
 
 function selectMailContact(contact: MailContactSuggestion) {
-  const operator = activeMailContactOperator.value
-  if (!operator) return
-  applyMailFilter(operator.key, contact.email)
-  query.value = query.value.replace(
-    new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, 'i'),
-    '',
-  ).trim()
+  const operator = activeMailContactOperator.value;
+  if (!operator) return;
+  applyMailFilter(operator.key, contact.email);
+  query.value = query.value
+    .replace(new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, "i"), "")
+    .trim();
 }
 
 function selectMailFilterSuggestion(suggestion: MailFilterSuggestion) {
-  const operator = activeMailChoiceOperator.value
-  if (!operator) return
-  applyMailFilter(suggestion.filterKey, suggestion.filterValue, suggestion.label)
-  query.value = query.value.replace(
-    new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, 'i'),
-    '',
-  ).trim()
+  const operator = activeMailChoiceOperator.value;
+  if (!operator) return;
+  applyMailFilter(
+    suggestion.filterKey,
+    suggestion.filterValue,
+    suggestion.label,
+  );
+  query.value = query.value
+    .replace(new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, "i"), "")
+    .trim();
 }
 
 function removeMailFilter(key: string) {
-  mailAppliedFilters.value = mailAppliedFilters.value.filter((filter) => filter.key !== key)
+  mailAppliedFilters.value = mailAppliedFilters.value.filter(
+    (filter) => filter.key !== key,
+  );
 }
 
 function removeLastMailFilter(event: KeyboardEvent) {
-  if (query.value || !mailAppliedFilters.value.length) return
-  event.preventDefault()
-  mailAppliedFilters.value = mailAppliedFilters.value.slice(0, -1)
+  if (query.value || !mailAppliedFilters.value.length) return;
+  event.preventDefault();
+  mailAppliedFilters.value = mailAppliedFilters.value.slice(0, -1);
 }
 
 function handleModifiedEnter(event: KeyboardEvent) {
-  if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return
-  const activeItem = (event.currentTarget as HTMLElement).querySelector<HTMLElement>(
+  if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+  const activeItem = (
+    event.currentTarget as HTMLElement
+  ).querySelector<HTMLElement>(
     '[data-slot="command-palette-item"][data-state="active"]',
-  )
-  if (!activeItem) return
-  event.preventDefault()
-  event.stopPropagation()
-  openSelectionInNewTab = true
-  activeItem.click()
+  );
+  if (!activeItem) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openSelectionInNewTab = true;
+  activeItem.click();
 }
 
 async function selectItem(
-  item: DriveResult | SheetResult | SlideResult | WriterResult | MeetResult | MailResult | MailContactSuggestion | MailFilterSuggestion | PaletteCommand | SuiteAppSwitcherItem,
+  item:
+    | DriveResult
+    | SheetResult
+    | SlideResult
+    | WriterResult
+    | MeetResult
+    | MailResult
+    | MailContactSuggestion
+    | MailFilterSuggestion
+    | PaletteCommand
+    | SuiteAppSwitcherItem,
   event: CommandPaletteSelectEvent,
 ) {
-  const originalEvent = event.detail.originalEvent
-  const openInNewTab = openSelectionInNewTab || originalEvent.metaKey || originalEvent.ctrlKey
-  openSelectionInNewTab = false
-  if ('resultType' in item && item.resultType === 'mail-contact') {
-    event.preventDefault()
-    selectMailContact(item)
-    return
+  const originalEvent = event.detail.originalEvent;
+  const openInNewTab =
+    openSelectionInNewTab || originalEvent.metaKey || originalEvent.ctrlKey;
+  openSelectionInNewTab = false;
+  if ("resultType" in item && item.resultType === "mail-contact") {
+    event.preventDefault();
+    selectMailContact(item);
+    return;
   }
-  if ('resultType' in item && item.resultType === 'mail-filter-suggestion') {
-    event.preventDefault()
-    selectMailFilterSuggestion(item)
-    return
+  if ("resultType" in item && item.resultType === "mail-filter-suggestion") {
+    event.preventDefault();
+    selectMailFilterSuggestion(item);
+    return;
   }
-  if ('run' in item) {
-    await item.run()
-    return
+  if ("run" in item) {
+    await item.run({ query: query.value });
+    return;
   }
-  if ('route' in item) {
+  if ("route" in item) {
     if (openInNewTab) {
-      window.open(item.route, '_blank', 'noopener')
-      return
+      window.open(item.route, "_blank", "noopener");
+      return;
     }
     if (!item.spa) {
-      window.location.assign(item.route)
-      return
+      window.location.assign(item.route);
+      return;
     }
-    await router.push(item.route)
-    return
+    await router.push(item.route);
+    return;
   }
-  if ('resultType' in item) {
-    let location: RouteLocationRaw
-    if (item.resultType === 'sheet') {
-      location = { name: 'sheets-editor', params: { id: item.name } }
-    } else if (item.resultType === 'slide') {
+  if ("resultType" in item) {
+    let location: RouteLocationRaw;
+    if (item.resultType === "sheet") {
+      location = { name: "sheets-editor", params: { id: item.name } };
+    } else if (item.resultType === "slide") {
       location = {
-        name: 'slides-editor',
+        name: "slides-editor",
         params: { presentationId: item.content_docname },
         query: { slide: 1 },
-      }
-    } else if (item.resultType === 'writer') {
-      location = { name: 'writer-document', params: { id: item.name } }
-    } else if (item.resultType === 'mail') {
+      };
+    } else if (item.resultType === "writer") {
+      location = { name: "writer-document", params: { id: item.name } };
+    } else if (item.resultType === "mail") {
       location = {
-        name: 'mail-mail',
-        params: { accountId: item.account, mailbox: 'search', threadID: item.thread_id },
+        name: "mail-mail",
+        params: {
+          accountId: item.account,
+          mailbox: "search",
+          threadID: item.thread_id,
+        },
         query: mailFilter.value,
-      }
+      };
     } else {
-      location = { name: 'meet-meeting', params: { meetingId: item.name } }
+      location = { name: "meet-meeting", params: { meetingId: item.name } };
     }
     if (openInNewTab) {
-      window.open(router.resolve(location).href, '_blank', 'noopener')
+      window.open(router.resolve(location).href, "_blank", "noopener");
     } else {
-      await router.push(location)
+      await router.push(location);
     }
-    return
+    return;
   }
 
-  const { openEntity } = await import('@/apps/drive/utils/files')
-  openEntity(item, openInNewTab)
+  const { openEntity } = await import("@/apps/drive/utils/files");
+  openEntity(item, openInNewTab);
 }
 
 onScopeDispose(() => {
-  resetSearches()
-})
+  resetSearches();
+});
 </script>
