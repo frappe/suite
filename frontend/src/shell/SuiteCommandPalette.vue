@@ -608,6 +608,10 @@ watch(
     const input =
       paletteInput.value?.$el.querySelector<HTMLInputElement>("input");
     if (!input) return;
+    const activeItem = paletteInput.value?.$el
+      .closest('[data-slot="command-palette"]')
+      ?.querySelector('[data-slot="command-palette-item"][data-state="active"]');
+    if (activeItem) return;
     input.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
     );
