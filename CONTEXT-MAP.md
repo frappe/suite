@@ -11,6 +11,8 @@ The repository-wide dependency and interface rules are in
   permissioned tree, and lends that tree to the other products
 - [Meet](./suite/meet/CONTEXT.md) — persistent rooms for live audio, video,
   screen sharing, and recording
+- [Suite shell](./frontend/CONTEXT.md) — the frame every product renders
+  inside: rail, contextual panel, content pane
 
 Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
 
