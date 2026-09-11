@@ -20,6 +20,7 @@ from suite.drive.utils import (
     FRAMEWORK_FOLDERS,
     GENERAL_USER,
     GROUP_PREFIX,
+    PERMISSION_TYPES,
     ROOT_FOLDER,
     STATUS_ACTIVE,
     STATUS_REMOVED,
@@ -286,6 +287,53 @@ class File(FrappeFile):
             }
         ).insert(ignore_permissions=True)
 
+    # The broad audiences a file can be exposed to, kept apart deliberately.
+    # `link` is the `""` principal - anyone holding the URL, including
+    # unauthenticated visitors. `site` is `$GENERAL` - every logged-in user.
+    # These are different populations, so they must be compared separately: a
+    # file every site user can read is still not readable by anonymous
+    # visitors, and collapsing the two into one bit would let a move from one
+    # into the other pass as "no wider".
+    BROAD_AUDIENCES = ("link", "site")
+
+    def _general_access(self, entity_name):
+        """What each broad audience gets from `entity_name` alone - its own rows
+        plus whatever it inherits - ignoring anything more specific like an
+        individual share.
+
+        `site` is resolved through `$GENERAL`, whose principal ladder also
+        contains `""` (see `get_principals`), so it is really "link or site".
+        That overlap is harmless here because `link` is measured on its own:
+        widening onto the link audience is caught by the `link` comparison even
+        though `site` cannot distinguish it.
+        """
+        link = get_user_access_for_user(entity_name, "Guest")
+        site = generate_upward_path(entity_name, GENERAL_USER)[-1]
+        return {
+            "link": {t: bool(link.get(t)) for t in PERMISSION_TYPES},
+            "site": {t: bool(site.get(t)) for t in PERMISSION_TYPES},
+        }
+
+    def _exposes_more_broadly(self, new_parent):
+        """Whether moving into `new_parent` would open this file to a broader
+        audience (anyone with the link, or every site user) than it already has
+        where it sits now.
+
+        `share()` requires `share` rights before handing any single grantee
+        access this file's owner doesn't already extend. Moving into a
+        publicly- or site-wide-shared folder is the same act - it hands that
+        same audience access - so it needs the same rights; without this,
+        `move()` is a side door around the check `share()` enforces on the
+        front door.
+        """
+        current = self._general_access(self.name)
+        destination = self._general_access(new_parent)
+        return any(
+            destination[audience][t] and not current[audience][t]
+            for audience in self.BROAD_AUDIENCES
+            for t in PERMISSION_TYPES
+        )
+
     @_update_modified
     def move(self, new_parent=None):
         """
@@ -306,6 +354,16 @@ class File(FrappeFile):
             )
         elif not user_has_permission(new_parent, "upload") or not user_has_permission(self, "write"):
             frappe.throw("You don't have permission to move this file.", frappe.PermissionError)
+        elif (
+            new_parent != self.folder
+            and self._exposes_more_broadly(new_parent)
+            and not user_has_permission(self, "share")
+        ):
+            frappe.throw(
+                "Moving this file here would expose it to people who can't already see it. "
+                "You need share access to do that.",
+                frappe.PermissionError,
+            )
 
         if not frappe.db.get_value("File", new_parent, "is_folder"):
             frappe.throw(

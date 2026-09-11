@@ -794,6 +794,120 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertNotEqual(get_new_title(self.file.file_name, self.folder.name), self.file.file_name)
             self.assertEqual(get_new_title("unclaimed.txt", self.folder.name), "unclaimed.txt")
 
+    def test_move_cannot_widen_audience_without_share_rights(self):
+        """share() refuses to hand out access the granter doesn't hold - move()
+        must refuse the same thing. Write-only access lets you edit a file, not
+        decide who else gets to see it; moving it into a folder you've made
+        public would do exactly that."""
+        with self.set_user(OWNER):
+            movable = self.upload(b"move me", "movable.txt")
+            movable.share(user=OTHER_USER, write=True)
+
+        with self.set_user(OTHER_USER):
+            public_folder = create_drive_file(
+                frappe.generate_hash(8),
+                get_user_folder(OTHER_USER).name,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            public_folder.share(read=True)
+
+            self.assertTrue(user_has_permission(movable, "write"))
+            self.assertFalse(user_has_permission(movable, "share"))
+            with self.assertRaises(frappe.PermissionError):
+                move([movable.name], new_parent=public_folder.name)
+
+        with self.set_user("Guest"):
+            self.assertFalse(user_has_permission(movable, "read"))
+
+    def test_move_cannot_widen_site_wide_file_to_anonymous_visitors(self):
+        """ "Readable by every site user" and "readable by anyone with the link"
+        are different populations - the second reaches people who never logged
+        in. Comparing them as one bit would read this move as "no wider", since
+        both sides already say "broadly readable", and quietly publish a
+        site-internal file to anonymous visitors."""
+        with self.set_user(OWNER):
+            movable = self.upload(b"move me", "movable.txt")
+            movable.share(user=GENERAL_USER, read=True)
+            movable.share(user=OTHER_USER, write=True)
+
+        with self.set_user("Guest"):
+            self.assertFalse(user_has_permission(movable, "read"))
+
+        with self.set_user(OTHER_USER):
+            link_public_folder = create_drive_file(
+                frappe.generate_hash(8),
+                get_user_folder(OTHER_USER).name,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            link_public_folder.share(read=True)
+
+            with self.assertRaises(frappe.PermissionError):
+                move([movable.name], new_parent=link_public_folder.name)
+
+        with self.set_user("Guest"):
+            self.assertFalse(user_has_permission(movable, "read"))
+
+    def test_move_allowed_without_share_rights_when_not_widening_audience(self):
+        """The check only fires when the destination would expose the file to
+        someone new - ordinary reorganizing by a write-only collaborator, into
+        a folder with no broader audience than the file already has, must keep
+        working."""
+        with self.set_user(OWNER):
+            movable = self.upload(b"move me", "movable.txt")
+            movable.share(user=OTHER_USER, write=True)
+
+        with self.set_user(OTHER_USER):
+            private_folder = create_drive_file(
+                frappe.generate_hash(8),
+                get_user_folder(OTHER_USER).name,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            move([movable.name], new_parent=private_folder.name)
+
+        movable.reload()
+        self.assertEqual(movable.folder, private_folder.name)
+
+    def test_move_allowed_with_share_rights(self):
+        """A collaborator who does hold `share` on the file can already
+        publish it directly via share() - move() into a public folder must
+        stay just as permitted, not a second, stricter gate."""
+        with self.set_user(OWNER):
+            movable = self.upload(b"move me", "movable.txt")
+            movable.share(user=OTHER_USER, write=True, share=True)
+
+        with self.set_user(OTHER_USER):
+            public_folder = create_drive_file(
+                frappe.generate_hash(8),
+                get_user_folder(OTHER_USER).name,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            public_folder.share(read=True)
+            move([movable.name], new_parent=public_folder.name)
+
+        movable.reload()
+        self.assertEqual(movable.folder, public_folder.name)
+
+    def test_owner_can_move_own_file_into_public_folder(self):
+        """Ownership already grants every level, including `share` - moving
+        your own file somewhere more exposed is your call to make."""
+        with self.set_user(OWNER):
+            movable = self.upload(b"move me", "movable.txt")
+            public_folder = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            public_folder.share(read=True)
+            move([movable.name], new_parent=public_folder.name)
+
+        movable.reload()
+        self.assertEqual(movable.folder, public_folder.name)
+
 
 class TestDriveSearch(IntegrationTestCase):
     """`search` resolves access per row, so what it scans and what it returns
