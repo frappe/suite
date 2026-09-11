@@ -4,7 +4,7 @@
     v-model:query="query"
     :filterable="false"
     title="Search Suite"
-    style="font-feature-settings: 'calt' 1, 'cv01' 1, 'cv11' 1"
+    class="suite-command-palette"
     @keydown.capture="handleModifiedEnter"
     @select="selectItem"
   >
@@ -171,29 +171,31 @@
       {{ mailOperatorContext?.prompt || (mailAppliedFilters.length ? 'No mail matches these filters' : text && text.length < minimumQueryLength && contextSearchLabel ? `Type more to search ${contextSearchLabel}` : `No results for "${text}"`) }}
     </CommandPaletteEmpty>
 
-    <CommandPaletteFooter class="!text-xs">
-      <span v-if="!navigationMode" class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-xs text-ink-gray-5">&gt;</span>
-        <span>Switch apps</span>
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
-          <span class="lucide-arrow-up size-4" />
+    <CommandPaletteFooter class="!justify-between !px-2.5 !text-xs">
+      <span class="flex items-center gap-4">
+        <span class="flex items-center gap-1">
+          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+            <span class="lucide-arrow-down size-4" />
+          </span>
+          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+            <span class="lucide-arrow-up size-4" />
+          </span>
+          <span>to navigate</span>
         </span>
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
-          <span class="lucide-arrow-down size-4" />
+        <span class="flex items-center gap-1">
+          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5">
+            <span class="lucide-corner-down-left size-4" />
+          </span>
+          <span>to open</span>
         </span>
-        <span>Navigate</span>
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 p-0.5 text-xs text-ink-gray-5">
-          <span class="lucide-corner-down-left size-4" />
+        <span class="flex items-center gap-1">
+          <span class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5">esc</span>
+          <span>to close</span>
         </span>
-        <span>Open</span>
       </span>
-      <span class="ml-auto flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-0.5 rounded-1 bg-surface-gray-2 px-1 py-0.5 text-xs text-ink-gray-5">esc</span>
-        <span>Close</span>
+      <span v-if="!navigationMode" class="flex items-center gap-1">
+        <span class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5">&gt;</span>
+        <span>to switch apps</span>
       </span>
     </CommandPaletteFooter>
   </CommandPalette>
@@ -767,3 +769,29 @@ onScopeDispose(() => {
   resetSearches()
 })
 </script>
+
+<style>
+.suite-command-palette {
+  font-family: 'InterVar', 'Inter', sans-serif;
+  font-feature-settings: 'calt' 1, 'cv01' 1, 'cv11' 1;
+}
+
+.suite-command-palette [data-slot='command-palette-input'] input,
+.suite-command-palette [data-slot='command-palette-group-label'],
+.suite-command-palette [data-slot='command-palette-item'] {
+  font-size: 13px;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+
+.suite-command-palette [data-slot='command-palette-input'] input,
+.suite-command-palette [data-slot='command-palette-item'] {
+  color: var(--ink-gray-7);
+}
+
+.suite-command-palette [data-slot='command-palette-footer'],
+.suite-command-palette [data-slot='command-palette-footer'] .text-xs {
+  font-size: 12px;
+  line-height: 1.15;
+}
+</style>
