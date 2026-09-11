@@ -29,3 +29,10 @@ recordings) can reuse later.
 
 Inputs: Drive spec §7.3, §8.4, §8.5, §8.8, §11.5, §13.7; ticket 32
 acceptance criteria; `frontend/src/apps/drive/components/FileUploader*`.
+
+Handed from [Legacy Drive client inventory](005-legacy-drive-client-inventory.md)
+(2026-09-11): folder download has no REST route (archive build, status and
+stream are retained legacy bodies). The old uploader probes
+`does_entity_exist` and `get_new_title` synchronously; the new flow gets a
+409 collision from `POST /nodes` instead. Only `list-add` has a socket
+emitter, from the legacy upload shim.

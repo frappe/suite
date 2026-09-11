@@ -89,6 +89,13 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Legacy Drive client inventory](tickets/005-legacy-drive-client-inventory.md) —
+  60 legacy names, all in Drive UI (Writer repeats six); 29 have an exact
+  REST route, 31 do not (17 product methods stay on `/api/method/` by
+  design); four backend asks surfaced: root discovery, unread count, folder
+  archive, storage breakdown; REST handlers emit no socket events; Drive UI
+  creates Writer and Sheets documents through product endpoints.
+
 ## Not yet specified
 
 - Icon source. The prototype uses frappe-ui's lucide sprite; CLAUDE.md

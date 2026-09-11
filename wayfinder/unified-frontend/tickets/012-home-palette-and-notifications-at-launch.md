@@ -30,3 +30,8 @@ Decide, given ticket 003's REST structure:
 Inputs: ticket 003's resolution, Drive spec §3.9 to §3.11, §9.5, the
 prototype's `HomeArea.vue` and `CommandPalette.vue`,
 `frontend/src/apps/calendar`, `frontend/src/apps/meet/pages/Home.vue`.
+
+Handed from [Legacy Drive client inventory](005-legacy-drive-client-inventory.md)
+(2026-09-11): `GET /notifications?unread=1` returns a page, not a count, so
+a rail badge needs either a count ask on the Drive program or a client
+count over the first page.

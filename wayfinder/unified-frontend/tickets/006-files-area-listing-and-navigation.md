@@ -36,3 +36,10 @@ Settle on real data:
 
 Inputs: Drive spec §5, §8, §9.5, §11; ticket 32 acceptance criteria; the
 legacy inventory from ticket 005; the frappe-ui skill for list patterns.
+
+Handed from [Legacy Drive client inventory](005-legacy-drive-client-inventory.md)
+(2026-09-11): no REST route returns the caller's root ids, so the Files area
+cannot open without a root-discovery ask on the Drive program. Realtime:
+REST handlers emit no socket events, so list refresh after a write is a
+client decision. The 17 product methods (users, groups, settings, invites)
+stay on `/api/method/`.
