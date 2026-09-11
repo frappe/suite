@@ -106,7 +106,7 @@
 							label="Date"
 							type="date"
 							format="MMM D, YYYY"
-							placeholder="Select date"
+							:placeholder="__('Select date')"
 						/>
 						<FormControl
 							v-model="scheduleStartTime"
@@ -114,7 +114,7 @@
 							type="time"
 							:interval="15"
 							format="h:mm A"
-							placeholder="Select time"
+							:placeholder="__('Select time')"
 						/>
 						<FormControl
 							v-model="scheduleEndTime"
@@ -122,7 +122,7 @@
 							type="time"
 							:interval="15"
 							format="h:mm A"
-							placeholder="Select time"
+							:placeholder="__('Select time')"
 						/>
 					</div>
 					<ParticipantSelector

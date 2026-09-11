@@ -993,7 +993,7 @@ const recurringScopeModalProps = computed(() => ({
 											v-model="event.startDate"
 											type="date"
 											format="MMM D, YYYY"
-											placeholder="Select date"
+											:placeholder="__('Select date')"
 											class="w-full"
 										/>
 										<FormControl
@@ -1002,7 +1002,7 @@ const recurringScopeModalProps = computed(() => ({
 											type="time"
 											:interval="15"
 											format="h:mm A"
-											placeholder="Select time"
+											:placeholder="__('Select time')"
 											class="!w-28 shrink-0"
 										/>
 									</div>
@@ -1016,7 +1016,7 @@ const recurringScopeModalProps = computed(() => ({
 											v-model="event.endDate"
 											type="date"
 											format="MMM D, YYYY"
-											placeholder="Select date"
+											:placeholder="__('Select date')"
 											class="w-full"
 										/>
 										<FormControl
@@ -1025,7 +1025,7 @@ const recurringScopeModalProps = computed(() => ({
 											type="time"
 											:interval="15"
 											format="h:mm A"
-											placeholder="Select time"
+											:placeholder="__('Select time')"
 											class="!w-28 shrink-0"
 										/>
 									</div>

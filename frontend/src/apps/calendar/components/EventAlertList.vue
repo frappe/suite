@@ -97,7 +97,7 @@ const RELATIVE_TO_OPTIONS = [
 				:model-value="alert.date"
 				type="date"
 				format="MMM D, YYYY"
-				placeholder="Select date"
+				:placeholder="__('Select date')"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'date', $event)"
 			/>
@@ -107,7 +107,7 @@ const RELATIVE_TO_OPTIONS = [
 				type="time"
 				:interval="15"
 				format="h:mm A"
-				placeholder="Select time"
+				:placeholder="__('Select time')"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'time', $event)"
 			/>
