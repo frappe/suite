@@ -57,7 +57,6 @@ import LucideMonitor from '~icons/lucide/monitor'
 import LucideCheck from '~icons/lucide/check'
 import { themeMode, switchTheme } from '@/utils/setupTheme'
 
-defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
 const route = useRoute()
 notifCount.fetch()
