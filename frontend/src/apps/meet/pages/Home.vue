@@ -101,13 +101,20 @@
 				<div class="space-y-4">
 					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
 					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-						<FormControl v-model="scheduleDate" label="Date" type="date" />
+						<FormControl
+							v-model="scheduleDate"
+							label="Date"
+							type="date"
+							format="MMM D, YYYY"
+							placeholder="Select date"
+						/>
 						<FormControl
 							v-model="scheduleStartTime"
 							label="Start"
 							type="time"
 							:interval="15"
 							format="h:mm A"
+							placeholder="Select time"
 						/>
 						<FormControl
 							v-model="scheduleEndTime"
@@ -115,6 +122,7 @@
 							type="time"
 							:interval="15"
 							format="h:mm A"
+							placeholder="Select time"
 						/>
 					</div>
 					<ParticipantSelector

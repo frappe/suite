@@ -989,14 +989,21 @@ const recurringScopeModalProps = computed(() => ({
 										{{ __('Starts') }}
 									</label>
 									<div class="flex gap-2">
-										<FormControl v-model="event.startDate" type="date" class="w-full" />
+										<FormControl
+											v-model="event.startDate"
+											type="date"
+											format="MMM D, YYYY"
+											placeholder="Select date"
+											class="w-full"
+										/>
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.startTime"
 											type="time"
 											:interval="15"
 											format="h:mm A"
-											class="w-full"
+											placeholder="Select time"
+											class="!w-28 shrink-0"
 										/>
 									</div>
 								</div>
@@ -1005,14 +1012,21 @@ const recurringScopeModalProps = computed(() => ({
 										{{ __('Ends') }}
 									</label>
 									<div class="flex gap-2">
-										<FormControl v-model="event.endDate" type="date" class="w-full" />
+										<FormControl
+											v-model="event.endDate"
+											type="date"
+											format="MMM D, YYYY"
+											placeholder="Select date"
+											class="w-full"
+										/>
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.endTime"
 											type="time"
 											:interval="15"
 											format="h:mm A"
-											class="w-full"
+											placeholder="Select time"
+											class="!w-28 shrink-0"
 										/>
 									</div>
 								</div>

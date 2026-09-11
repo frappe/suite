@@ -96,6 +96,8 @@ const RELATIVE_TO_OPTIONS = [
 			<FormControl
 				:model-value="alert.date"
 				type="date"
+				format="MMM D, YYYY"
+				placeholder="Select date"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'date', $event)"
 			/>
@@ -103,6 +105,9 @@ const RELATIVE_TO_OPTIONS = [
 			<FormControl
 				:model-value="alert.time"
 				type="time"
+				:interval="15"
+				format="h:mm A"
+				placeholder="Select time"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'time', $event)"
 			/>
