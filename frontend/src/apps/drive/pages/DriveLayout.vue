@@ -97,7 +97,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () =>
     )
   }
 
-  return commands.length ? [{ id: 'drive-context', label: 'Drive', commands }] : []
+  return commands.length ? [{ commands }] : []
 })
 onScopeDispose(unregisterPaletteGroups)
 

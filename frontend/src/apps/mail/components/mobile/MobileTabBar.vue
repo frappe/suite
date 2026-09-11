@@ -96,7 +96,7 @@ import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet, useKeyboardOpen, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
+import SearchModal from '@/apps/mail/components/Modals/AdvancedSearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
 
 import type { MailboxData } from '@/apps/mail/types'

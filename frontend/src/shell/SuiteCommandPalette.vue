@@ -321,21 +321,14 @@ import {
   type SuiteAppSwitcherItem,
 } from "@/apps/registry";
 import {
-  getMailChoiceOperator,
-  getMailContactOperator,
-  getMailSearchOperatorContext,
-  parseMailSearchQuery,
-} from "@/apps/mail/utils/searchQuery";
-import { userStore } from "@/apps/mail/stores/user";
-import { FOLDER_ICON_COLOR_MAP } from "@/apps/mail/constants";
-import { getIcon } from "@/apps/mail/utils";
-import { utcDayEnd, utcDayStart } from "@/apps/mail/utils/datetime";
+  mailFilterOptions,
+  useMailCommandPaletteSearch,
+} from "@/apps/mail/composables/useMailCommandPaletteSearch";
 import MailSearchResult from "@/apps/mail/components/CommandPalette/MailSearchResult.vue";
 import MailSearchSuggestions from "@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue";
 import type {
   MailContactSuggestion,
   MailFilterSuggestion,
-  MailSearchFilterBadge,
   MailSearchResult as MailResult,
 } from "@/apps/mail/components/CommandPalette/types";
 import { useRootStore, type PaletteCommand } from "@/stores/root";
@@ -402,13 +395,24 @@ const router = useRouter();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
-const mailAppliedFilters = ref<MailSearchFilterBadge[]>([]);
-let mailUser: ReturnType<typeof userStore> | undefined;
+const activeApp = computed(() => String(route.meta.appId ?? ""));
+const mailSearchActive = computed(() => activeApp.value === "mail");
+const {
+  appliedFilters: mailAppliedFilters,
+  availableFilterOptions: availableMailFilterOptions,
+  filter: mailFilter,
+  operatorContext: mailOperatorContext,
+  results: mailResults,
+  suggestions: mailSuggestions,
+  applyFilter: applyMailFilter,
+  getFilterLabel: getMailFilterLabel,
+  selectContact: selectMailContact,
+  selectFilterSuggestion: selectMailFilterSuggestion,
+  search: searchMail,
+  cancel: cancelMailSearch,
+  reset: resetMailSearch,
+} = useMailCommandPaletteSearch(query, mailSearchActive);
 let openSelectionInNewTab = false;
-
-function getMailUser() {
-  return (mailUser ??= userStore());
-}
 
 useKeyboardShortcut({
   combo: "Mod+K",
@@ -450,45 +454,8 @@ const meetSearch = createResource({
   url: "frappe.client.get_list",
   debounce: 180,
 });
-const mailSearch = createResource({
-  auto: false,
-  method: "POST",
-  url: "suite.mail.api.mail.search_mails",
-  debounce: 180,
-});
-const mailContactSearch = createResource({
-  auto: false,
-  method: "GET",
-  url: "suite.mail.api.mail.get_email_suggestions",
-  debounce: 180,
-});
-
 const normalizedQuery = computed(() => query.value.trim().toLowerCase());
 const appQuery = computed(() => normalizedQuery.value);
-const mailFilter = computed(() => ({
-  ...Object.fromEntries(
-    mailAppliedFilters.value.map(({ key, value }) => [key, value]),
-  ),
-  ...parseMailSearchQuery(query.value.trim()),
-}));
-const mailRequestFilter = computed(() => ({
-  ...mailFilter.value,
-  ...(mailFilter.value.after
-    ? { after: utcDayStart(mailFilter.value.after) }
-    : {}),
-  ...(mailFilter.value.before
-    ? { before: utcDayEnd(mailFilter.value.before) }
-    : {}),
-}));
-const mailOperatorContext = computed(() =>
-  activeApp.value === "mail" ? getMailSearchOperatorContext(query.value) : null,
-);
-const activeMailContactOperator = computed(() =>
-  activeApp.value === "mail" ? getMailContactOperator(query.value) : null,
-);
-const activeMailChoiceOperator = computed(() =>
-  activeApp.value === "mail" ? getMailChoiceOperator(query.value) : null,
-);
 const driveResults = computed<DriveResult[]>(() =>
   activeApp.value === "drive" && Array.isArray(driveSearch.data)
     ? driveSearch.data.slice(0, 20)
@@ -541,156 +508,6 @@ const meetResults = computed<MeetResult[]>(() => {
       resultType: "meeting" as const,
     }));
 });
-const mailResults = computed<MailResult[]>(() => {
-  if (activeApp.value !== "mail" || !Array.isArray(mailSearch.data?.[0]))
-    return [];
-  return mailSearch.data[0].map((mail: Omit<MailResult, "resultType">) => ({
-    ...mail,
-    resultType: "mail" as const,
-  }));
-});
-const mailContactResults = computed<MailContactSuggestion[]>(() => {
-  if (
-    !activeMailContactOperator.value?.partial ||
-    !Array.isArray(mailContactSearch.data)
-  )
-    return [];
-  const partial = activeMailContactOperator.value.partial;
-  const contacts = mailContactSearch.data.map(
-    (contact: { email: string; name?: string; user_image?: string }) => ({
-      ...contact,
-      value: contact.email,
-      label: contact.name || contact.email,
-      resultType: "mail-contact" as const,
-    }),
-  );
-  if (
-    !contacts.some(
-      (contact: MailContactSuggestion) =>
-        contact.email.toLowerCase() === partial.toLowerCase(),
-    )
-  ) {
-    contacts.push({
-      resultType: "mail-contact",
-      value: partial,
-      label: partial,
-      email: partial,
-    });
-  }
-  return contacts;
-});
-const mailFilterSuggestions = computed<MailFilterSuggestion[]>(() => {
-  const operator = activeMailChoiceOperator.value;
-  if (!operator) return [];
-  const partial = operator.partial.toLowerCase();
-  if (operator.key === "in") {
-    return (getMailUser().mailboxes.data ?? [])
-      .filter((mailbox: { _name: string }) =>
-        mailbox._name.toLowerCase().includes(partial),
-      )
-      .map(
-        (mailbox: {
-          id: string;
-          _name: string;
-          role?: string;
-          icon?: string;
-          color?: keyof typeof FOLDER_ICON_COLOR_MAP;
-        }) => ({
-          resultType: "mail-filter-suggestion" as const,
-          value: mailbox.id,
-          label: mailbox._name,
-          filterKey: "inMailbox",
-          filterValue: mailbox.id,
-          icon: getIcon(mailbox),
-          iconClass: mailbox.color
-            ? FOLDER_ICON_COLOR_MAP[mailbox.color]
-            : undefined,
-        }),
-      );
-  }
-  const choices =
-    operator.key === "has"
-      ? [
-          {
-            value: "attachment",
-            label: "With attachments",
-            filterKey: "hasAttachment",
-            filterValue: "true",
-            icon: "paperclip",
-          },
-          {
-            value: "no-attachment",
-            label: "Without attachments",
-            filterKey: "hasAttachment",
-            filterValue: "false",
-            icon: "ban",
-          },
-        ]
-      : [
-          {
-            value: "read",
-            label: "Read",
-            filterKey: "isRead",
-            filterValue: "true",
-            icon: "mail-open",
-          },
-          {
-            value: "unread",
-            label: "Unread",
-            filterKey: "isRead",
-            filterValue: "false",
-            icon: "mail",
-          },
-        ];
-  return choices
-    .filter(
-      (choice) =>
-        choice.value.includes(partial) ||
-        choice.label.toLowerCase().includes(partial),
-    )
-    .map((choice) => ({
-      resultType: "mail-filter-suggestion" as const,
-      ...choice,
-    }));
-});
-const mailSuggestions = computed(() => [
-  ...mailContactResults.value,
-  ...mailFilterSuggestions.value,
-]);
-const mailFilterOptions = [
-  { key: "inMailbox", label: "Folder", operator: "in:" },
-  { key: "from", label: "From", operator: "from:" },
-  { key: "to", label: "To", operator: "to:" },
-  {
-    key: "hasAttachment",
-    label: "With attachments",
-    value: "true",
-    displayValue: "With attachments",
-  },
-  { key: "isRead", label: "Unread", value: "false", displayValue: "Unread" },
-];
-const availableMailFilterOptions = computed(() => {
-  const applied = new Set(mailAppliedFilters.value.map((filter) => filter.key));
-  return mailFilterOptions.filter((option) => !applied.has(option.key));
-});
-const MAIL_FILTER_OPERATORS: Record<string, string> = {
-  inMailbox: "in",
-  from: "from",
-  to: "to",
-  cc: "cc",
-  bcc: "bcc",
-  subject: "subject",
-  after: "after",
-  before: "before",
-};
-
-function getMailFilterLabel(filter: MailSearchFilterBadge) {
-  if (filter.key === "hasAttachment") return filter.displayValue;
-  if (filter.key === "isRead")
-    return `is:${filter.value === "true" ? "read" : "unread"}`;
-  return `${MAIL_FILTER_OPERATORS[filter.key] ?? filter.key}:${filter.displayValue}`;
-}
-const activeApp = computed(() => String(route.meta.appId ?? ""));
 const contextSearchLabel = computed(
   () =>
     ({
@@ -813,30 +630,10 @@ watch(
     if (navigationMode.value) return;
 
     if (activeApp.value === "mail") {
-      if (consumeMailFilterToken(value)) return;
       const account = String(
         route.params.accountId || localStorage.getItem("mail-account-id") || "",
       );
-      if (account && activeMailContactOperator.value?.partial) {
-        mailContactSearch.submit({
-          account,
-          text: activeMailContactOperator.value.partial,
-          limit: 5,
-        });
-      }
-      if (mailOperatorContext.value) {
-        mailSearch.reset();
-        return;
-      }
-      if (account && (text || mailAppliedFilters.value.length)) {
-        mailSearch.submit({
-          account,
-          filter: mailRequestFilter.value,
-          limit: 20,
-        });
-      } else if (!mailAppliedFilters.value.length) {
-        resetSearches();
-      }
+      searchMail(value, account);
       return;
     }
 
@@ -902,11 +699,10 @@ function resetSearches() {
     slideSearch,
     writerSearch,
     meetSearch,
-    mailSearch,
-    mailContactSearch,
   ]) {
     resource.reset();
   }
+  resetMailSearch();
 }
 
 function cancelSearches() {
@@ -916,75 +712,11 @@ function cancelSearches() {
     slideSearch,
     writerSearch,
     meetSearch,
-    mailSearch,
-    mailContactSearch,
   ]) {
     resource.submit.cancel();
     resource.abort();
   }
-}
-
-function consumeMailFilterToken(value: string) {
-  const match = value.match(
-    /(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i,
-  );
-  if (!match || match.index == null) return false;
-  const token = match[0].trim();
-  const separator = token.indexOf(":");
-  if (token.slice(0, separator).toLowerCase() === "in") {
-    const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, "");
-    const mailbox = (getMailUser().mailboxes.data ?? []).find(
-      (candidate: { id: string; _name: string }) =>
-        candidate.id === mailboxName ||
-        candidate._name.toLowerCase() === mailboxName.toLowerCase(),
-    );
-    if (!mailbox) return false;
-    applyMailFilter("inMailbox", mailbox.id, mailbox._name);
-    query.value = value.slice(0, match.index).trim();
-    return true;
-  }
-  const parsed = parseMailSearchQuery(token);
-  const entry = Object.entries(parsed).find(([key]) => key !== "text");
-  if (!entry) return false;
-  const [key, filterValue] = entry;
-  const displayValue =
-    key === "hasAttachment"
-      ? filterValue === "true"
-        ? "With attachments"
-        : "Without attachments"
-      : filterValue;
-  applyMailFilter(key, filterValue, displayValue);
-  query.value = value.slice(0, match.index).trim();
-  return true;
-}
-
-function applyMailFilter(key: string, value: string, displayValue = value) {
-  mailAppliedFilters.value = [
-    ...mailAppliedFilters.value.filter((filter) => filter.key !== key),
-    { key, value, displayValue },
-  ];
-}
-
-function selectMailContact(contact: MailContactSuggestion) {
-  const operator = activeMailContactOperator.value;
-  if (!operator) return;
-  applyMailFilter(operator.key, contact.email);
-  query.value = query.value
-    .replace(new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, "i"), "")
-    .trim();
-}
-
-function selectMailFilterSuggestion(suggestion: MailFilterSuggestion) {
-  const operator = activeMailChoiceOperator.value;
-  if (!operator) return;
-  applyMailFilter(
-    suggestion.filterKey,
-    suggestion.filterValue,
-    suggestion.label,
-  );
-  query.value = query.value
-    .replace(new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, "i"), "")
-    .trim();
+  cancelMailSearch();
 }
 
 function removeMailFilter(key: string) {

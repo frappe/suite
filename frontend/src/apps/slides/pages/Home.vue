@@ -175,7 +175,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('slides-home', () => 
 		})
 	}
 
-	return [{ id: 'slides-context', label: 'Slides', commands }]
+	return [{ commands }]
 })
 onScopeDispose(unregisterPaletteGroups)
 

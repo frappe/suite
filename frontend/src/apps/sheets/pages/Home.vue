@@ -355,8 +355,6 @@ const overflowActions = [
 
 const unregisterPaletteGroups = root.registerPaletteGroups('sheets-home', [
   {
-    id: 'sheets-context',
-    label: 'Sheets',
     commands: [
       {
         id: 'sheets-new-sheet',

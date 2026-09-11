@@ -92,8 +92,6 @@ const startInstantMeeting = async () => {
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
   {
-    id: 'suite-create',
-    label: 'Create',
     commands: [
       {
         id: 'suite-new-sheet',
@@ -148,7 +146,6 @@ const userMenuOptions = [
 
 onMounted(() => {
   setupTheme()
-  root.setActiveApp(null)
   document.documentElement.style.overscrollBehavior = 'none'
 })
 

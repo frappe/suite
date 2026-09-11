@@ -373,8 +373,6 @@ const isMeetingCodeValid = (code: string) => {
 
 const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 	{
-		id: "meet-context",
-		label: "Meet",
 		commands: [
 			{
 				id: "meet-start-open",

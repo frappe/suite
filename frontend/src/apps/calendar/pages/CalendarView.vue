@@ -323,8 +323,6 @@ const newEventDate = () => {
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
 	{
-		id: 'calendar-actions',
-		label: 'Calendar',
 		commands: [
 			{
 				id: 'calendar-new-event',

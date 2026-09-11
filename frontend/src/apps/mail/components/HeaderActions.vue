@@ -29,7 +29,7 @@ import { Button } from "frappe-ui";
 
 import { isMac } from "@/apps/mail/utils";
 import { useComposeMail, useScreenSize } from "@/apps/mail/utils/composables";
-import SearchModal from "@/apps/mail/components/Modals/SearchModal.vue";
+import SearchModal from "@/apps/mail/components/Modals/AdvancedSearchModal.vue";
 import { useRootStore } from "@/stores/root";
 
 const { isMobile } = useScreenSize();
@@ -64,8 +64,6 @@ const unregisterPaletteGroups = root.registerPaletteGroups(
   "mail-header-actions",
   [
     {
-      id: "mail-search",
-      label: "Mail",
       commands: [
         {
           id: "mail-advanced-search",

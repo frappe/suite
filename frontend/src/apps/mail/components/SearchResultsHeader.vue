@@ -57,11 +57,8 @@
 				v-for="chip in searchFilterChips"
 				:key="chip.key"
 				class="bg-surface-gray-2 inline-flex items-center gap-1 rounded-4 pl-2 pr-1"
-				:class="[
-					isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
-					{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) },
-				]"
-				@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
+				:class="[isMobile ? 'h-8 text-sm' : 'h-7 text-xs', 'hover:bg-surface-gray-3 cursor-pointer']"
+				@click="openSearch"
 			>
 				<span class="max-w-40 truncate">{{ chip.label }}</span>
 				<button
@@ -111,33 +108,6 @@ const { accountId, mailboxes, mailboxIds } = userStore()
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 
 const openSearch = () => (showSearch.value = true)
-
-// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
-// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
-// these keys are clickable.
-const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
-const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
-// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
-// Read ↔ Unread — instead of opening the modal.
-const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
-const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
-const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
-
-// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
-// chips only expose the remove button.
-const handleChipClick = (key: string) => {
-	if (isToggleableChip(key)) return toggleSearchFilter(key)
-	if (isEditableChip(key)) return editSearchFilter(key)
-}
-
-const editSearchFilter = () => openSearch()
-
-// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
-const toggleSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	query[key] = query[key] === 'true' ? 'false' : 'true'
-	searchWith(query)
-}
 
 const SEARCH_FILTER_LABELS: Record<string, string> = {
 	inMailbox: __('In'),

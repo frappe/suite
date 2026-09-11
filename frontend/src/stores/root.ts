@@ -21,8 +21,6 @@ export interface PaletteCommand {
 }
 
 export interface PaletteCommandGroup {
-  id: string;
-  label: string;
   commands: PaletteCommand[];
 }
 
@@ -34,8 +32,6 @@ export interface PaletteCommandGroup {
  * root store only holds what the shell itself needs.
  */
 export const useRootStore = defineStore("suite-root", () => {
-  // id of the currently active suite app (drive|slides|writer|sheets|meet|mail|calendar)
-  const activeApp = ref<string | null>(null);
   const theme = ref<"light" | "dark">("light");
   const paletteOpen = ref(false);
   const paletteRegistrations = shallowReactive(
@@ -44,10 +40,6 @@ export const useRootStore = defineStore("suite-root", () => {
   const paletteGroups = computed(() =>
     [...paletteRegistrations.values()].flatMap((groups) => toValue(groups)),
   );
-
-  function setActiveApp(id: string | null) {
-    activeApp.value = id;
-  }
 
   function setTheme(next: "light" | "dark") {
     theme.value = next;
@@ -67,11 +59,9 @@ export const useRootStore = defineStore("suite-root", () => {
   }
 
   return {
-    activeApp,
     theme,
     paletteOpen,
     paletteGroups,
-    setActiveApp,
     setTheme,
     registerPaletteGroups,
   };
