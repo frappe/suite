@@ -4,7 +4,6 @@
     v-model:query="query"
     :filterable="false"
     title="Search Suite"
-    class="suite-command-palette"
     @keydown.capture="handleModifiedEnter"
     @select="selectItem"
   >
@@ -769,29 +768,3 @@ onScopeDispose(() => {
   resetSearches()
 })
 </script>
-
-<style>
-.suite-command-palette {
-  font-family: 'InterVar', 'Inter', sans-serif;
-  font-feature-settings: 'calt' 1, 'cv01' 1, 'cv11' 1;
-}
-
-.suite-command-palette [data-slot='command-palette-input'] input,
-.suite-command-palette [data-slot='command-palette-group-label'],
-.suite-command-palette [data-slot='command-palette-item'] {
-  font-size: 13px;
-  line-height: 1.15;
-  letter-spacing: 0.02em;
-}
-
-.suite-command-palette [data-slot='command-palette-input'] input,
-.suite-command-palette [data-slot='command-palette-item'] {
-  color: var(--ink-gray-7);
-}
-
-.suite-command-palette [data-slot='command-palette-footer'],
-.suite-command-palette [data-slot='command-palette-footer'] .text-xs {
-  font-size: 12px;
-  line-height: 1.15;
-}
-</style>
