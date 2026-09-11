@@ -200,15 +200,24 @@ const mailboxOptions = computed(() =>
 
 const closeSearch = () => history.back()
 
-const openSearchPage = () => {
-	router.push({
+const openSearchPage = async () => {
+	const location = {
 		name: 'mail-mailbox',
 		params: { accountId: store.accountId, mailbox: 'search' },
 		query: {
 			...filteredFilter.value,
 			...(allAccounts.value ? { all_accounts: '1' } : {}),
 		},
-	})
+	}
+	if (isMobile.value) {
+		await new Promise<void>((resolve) => {
+			window.addEventListener('popstate', () => resolve(), { once: true })
+			history.back()
+		})
+		await router.replace(location)
+		return
+	}
+	await router.push(location)
 	show.value = false
 }
 </script>
