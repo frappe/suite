@@ -521,7 +521,7 @@ watch(
     const input = paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
     const palette = input?.closest('[data-slot="command-palette"]')
     if (!input || palette?.querySelector('[data-slot="command-palette-item"][data-state="active"]')) return
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
   },
   { flush: 'post' },
 )
