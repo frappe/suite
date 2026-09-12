@@ -20,6 +20,18 @@
       "
       @keydown.backspace="removeLastMailFilter"
     >
+      <template #prefix>
+        <button
+          v-if="isMailSearchRoute && isMobile"
+          type="button"
+          class="flex shrink-0"
+          aria-label="Back"
+          @click="history.back()"
+        >
+          <span class="lucide-arrow-left size-4 text-ink-gray-5" />
+        </button>
+        <span v-else class="lucide-search size-4 shrink-0 text-ink-gray-6" />
+      </template>
       <template v-if="activeApp === 'mail'" #suffix>
         <Button
           variant="ghost"
@@ -34,7 +46,7 @@
 
     <div
       v-if="activeApp === 'mail'"
-      class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
+      class="mail-search-filters relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
       :class="{ 'pr-12': mailAppliedFilters.length }"
     >
       <span
@@ -330,7 +342,10 @@ import {
 } from "@/apps/mail/composables/useMailCommandPaletteSearch";
 import MailSearchResult from "@/apps/mail/components/CommandPalette/MailSearchResult.vue";
 import MailSearchSuggestions from "@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue";
-import { useKeyboardOpen } from "@/apps/mail/utils/composables";
+import {
+  useKeyboardOpen,
+  useScreenSize,
+} from "@/apps/mail/utils/composables";
 import type {
   MailContactSuggestion,
   MailFilterSuggestion,
@@ -398,6 +413,7 @@ const root = useRootStore();
 const route = useRoute();
 const router = useRouter();
 const keyboardOpen = useKeyboardOpen();
+const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
@@ -870,12 +886,29 @@ onScopeDispose(() => {
     max-width: none;
     margin: 0;
     border-radius: 0;
+    background-color: var(--surface-base);
     box-shadow: none;
   }
 
   .mail-mobile-search-page {
     height: 100%;
     max-height: none;
+    background-color: var(--surface-base);
+  }
+
+  .mail-mobile-search-page [data-slot="command-palette-input"] {
+    gap: 12px;
+    padding-inline: 16px;
+  }
+
+  .mail-mobile-search-page .mail-search-filters > span,
+  .mail-mobile-search-page .mail-search-filters > button:not(:last-child) {
+    height: 32px;
+    font-size: 14px;
+  }
+
+  .mail-mobile-search-page [data-slot="command-palette-footer"] {
+    display: none;
   }
 }
 </style>
