@@ -14,10 +14,13 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from suite.drive.api.storage import get_storage_reservation, get_storage_usage
+from suite.drive.utils import create_drive_file
 from suite.meet.api.recording import (
     BYTES_PER_SECOND,
     MAX_BUDGET_BYTES,
+    MAX_SECONDS,
     MINIMUM_BUDGET_BYTES,
+    STARTUP_TIMEOUT_SECONDS,
     _apply_segment_progress,
     _limits,
     _reconcile_interrupted,
@@ -461,8 +464,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     "suite.meet.recording.ingest._recordings_folder",
                     return_value=recording.drive_home_folder,
                 ),
-                patch("suite.meet.recording.ingest.update_file_size"),
-                patch("suite.meet.recording.ingest.FileManager.upload_file"),
+                patch("suite.drive.utils.update_file_size"),
+                patch("suite.drive.utils.files.FileManager.upload_file"),
                 patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
                 patch("suite.meet.api.recording._publish_state") as publish_state,
             ):
@@ -568,7 +571,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    def test_terminal_notification_is_owner_only_and_does_not_gate_cleanup(self):
+    def test_terminal_email_is_owner_only_and_does_not_gate_cleanup(self):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
         content = b"invalid-artifact"
@@ -637,18 +640,58 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 sendmail.call_args.kwargs["message_id"],
                 f"meet-recording-finalization-{recording.name}@{frappe.local.site}",
             )
-            self.assertTrue(
-                frappe.db.exists(
-                    "Notification Log",
-                    {
-                        "for_user": self.owner,
-                        "document_type": "Meet Recording",
-                        "document_name": recording.name,
-                    },
-                )
-            )
+            self.assertIn("could not be processed", sendmail.call_args.kwargs["message"])
+            self.assertIn("No recording was added to Drive", sendmail.call_args.kwargs["message"])
+            self.assertNotIn("/drive/f/", sendmail.call_args.kwargs["message"])
+            self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
         finally:
             path.unlink(missing_ok=True)
+
+    def test_ready_email_names_room_and_links_to_drive_artifact(self):
+        self.room.db_set("title", "Weekly planning")
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        artifact = create_drive_file(
+            "Weekly planning recording.mp4",
+            recording.drive_home_folder,
+            "Video",
+            "/weekly-planning-recording.mp4",
+            mime_type="video/mp4",
+            owner=self.owner,
+        )
+        recording.db_set(
+            {
+                "status": "Ready",
+                "artifact": artifact.name,
+                "artifact_size": 1,
+                "artifact_duration": 1,
+                "artifact_sha256": "a" * 64,
+                "notification_pending": 1,
+                "notification_next_retry_at": now_datetime(),
+            },
+            update_modified=False,
+        )
+
+        artifact_url = f"https://suite.test/drive/f/{artifact.name}"
+        try:
+            with (
+                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
+                patch("suite.meet.recording.ingest.frappe.utils.get_url", return_value=artifact_url),
+            ):
+                deliver_recording_notification(recording.name)
+
+            self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
+            self.assertEqual(
+                sendmail.call_args.kwargs["subject"],
+                "Your recording of Weekly planning is ready",
+            )
+            self.assertIn("Weekly planning", sendmail.call_args.kwargs["message"])
+            self.assertIn("Open recording in Drive", sendmail.call_args.kwargs["message"])
+            self.assertIn(artifact_url, sendmail.call_args.kwargs["message"])
+            self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
+        finally:
+            frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
 
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -685,14 +728,25 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     "suite.meet.recording.ingest._recordings_folder",
                     return_value=recording.drive_home_folder,
                 ),
-                patch("suite.meet.recording.ingest.update_file_size"),
-                patch("suite.meet.recording.ingest.FileManager.upload_file"),
+                patch("suite.drive.utils.update_file_size"),
+                patch("suite.drive.utils.files.FileManager.upload_file"),
             ):
                 result = process_upload(recording.name)
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)
             self.assertEqual(result["status"], "Partial")
             self.assertEqual(frappe.parse_json(completed.capture_gaps), [gap])
+            with (
+                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
+                patch(
+                    "suite.meet.recording.ingest.frappe.utils.get_url",
+                    return_value=f"https://suite.test/drive/f/{artifact.name}",
+                ),
+            ):
+                deliver_recording_notification(completed.name)
+            self.assertIn("partial recording", sendmail.call_args.kwargs["subject"])
+            self.assertIn("Some portions could not be captured", sendmail.call_args.kwargs["message"])
+            self.assertIn(f"/drive/f/{artifact.name}", sendmail.call_args.kwargs["message"])
         finally:
             path.unlink(missing_ok=True)
             if artifact:
@@ -735,6 +789,16 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertEqual(recording.recorder_key_thumbprint, "xx0BcA-wMohw8atYDJOe6peGModklG2wRHBlXHMvl0M")
         client.deliver_grant.assert_called_once()
         self.assertEqual(client.deliver_grant.call_args.kwargs["endpoint_generation"], 0)
+        grant = jwt.decode(
+            client.deliver_grant.call_args.kwargs["grant"],
+            frappe.conf.sfu_secret,
+            algorithms=["HS256"],
+            audience="meet-sfu-recorder",
+        )
+        self.assertLessEqual(
+            grant["authorization_expires_at"] - grant["iat"],
+            MAX_SECONDS + STARTUP_TIMEOUT_SECONDS,
+        )
 
     def test_replacement_ready_rotates_key_and_grant_once(self):
         recording, interrupted, interruption_id = self._interrupted_recording()

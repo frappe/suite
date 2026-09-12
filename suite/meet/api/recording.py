@@ -1244,6 +1244,10 @@ def recorder_stopped(
 def recorder_upload_chunk(
     recording_id: str, job: str, offset: int, chunk_sha256: str, protocol_version: int
 ) -> dict:
+    if protocol_version == str(PROTOCOL_VERSION):
+        protocol_version = PROTOCOL_VERSION
+    if isinstance(offset, str) and offset.isdecimal():
+        offset = int(offset)
     _validate_callback_protocol(protocol_version)
     authenticate_callback(
         protocol_version=protocol_version,

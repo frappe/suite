@@ -11,16 +11,17 @@ from contextlib import suppress
 from datetime import UTC
 from fractions import Fraction
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, get_datetime, get_system_timezone, now_datetime
+from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_system_timezone, now_datetime
 
-from suite.drive.api.storage import acquire_owner_storage_lock, reduce_storage_reservation
-from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
-from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
+
+if TYPE_CHECKING:
+    from suite.drive.utils.files import FileManager
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
@@ -53,6 +54,8 @@ def begin_upload(
     ended_at=None,
     end_reason: str | None = None,
 ) -> dict:
+    from suite.drive.api.storage import reduce_storage_reservation
+
     size = cint(size)
     duration_ms = cint(duration_ms)
     if size <= 0 or duration_ms <= 0 or not isinstance(sha256, str) or not _sha256(sha256):
@@ -341,6 +344,10 @@ def _claim_finalization(recording_name: str):
 
 
 def _publish_artifact(recording_name: str, path: Path) -> dict:
+    from suite.drive.api.storage import acquire_owner_storage_lock
+    from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
+    from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
+
     recording = _locked_recording(recording_name)
     if recording.status in ("Ready", "Partial"):
         return {"artifact": recording.artifact, "status": recording.status}
@@ -542,37 +549,13 @@ def deliver_recording_notification(recording_name: str):
     frappe.db.commit()
     try:
         recording = frappe.get_doc("Meet Recording", recording_name)
-        subject = {
-            "Ready": _("Your recording is ready"),
-            "Partial": _("Your partial recording is ready"),
-            "Failed": _("Your recording could not be processed"),
-        }[recording.status]
-        if not frappe.db.exists(
-            "Notification Log",
-            {
-                "for_user": recording.room_owner,
-                "document_type": "Meet Recording",
-                "document_name": recording.name,
-                "type": "Alert",
-            },
-        ):
-            frappe.get_doc(
-                {
-                    "doctype": "Notification Log",
-                    "subject": subject,
-                    "for_user": recording.room_owner,
-                    "type": "Alert",
-                    "document_type": "Meet Recording",
-                    "document_name": recording.name,
-                    "from_user": "Administrator",
-                }
-            ).insert(ignore_permissions=True)
+        subject, message = _recording_email_content(recording)
         message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
         if not frappe.db.exists("Email Queue", {"message_id": message_id}):
             frappe.sendmail(
                 recipients=[recording.room_owner],
                 subject=subject,
-                message=subject,
+                message=message,
                 reference_doctype="Meet Recording",
                 reference_name=recording.name,
                 message_id=message_id,
@@ -600,6 +583,37 @@ def deliver_recording_notification(recording_name: str):
             title=f"Meet recording notification failed for {recording_name}",
             message=traceback,
         )
+
+
+def _recording_email_content(recording) -> tuple[str, str]:
+    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or _("Untitled Meet Room")
+    recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
+    room_title_html = frappe.utils.escape_html(room_title)
+    recorded_at_html = frappe.utils.escape_html(recorded_at)
+
+    if recording.status == "Ready":
+        subject = _("Your recording of {0} is ready").format(room_title)
+        description = _("The recording of <strong>{0}</strong> from {1} is ready in Drive.").format(
+            room_title_html, recorded_at_html
+        )
+    elif recording.status == "Partial":
+        subject = _("Your partial recording of {0} is ready").format(room_title)
+        description = _(
+            "A partial recording of <strong>{0}</strong> from {1} is ready in Drive. "
+            "Some portions could not be captured."
+        ).format(room_title_html, recorded_at_html)
+    else:
+        subject = _("Your recording of {0} could not be processed").format(room_title)
+        description = _(
+            "The recording of <strong>{0}</strong> from {1} could not be processed. "
+            "No recording was added to Drive."
+        ).format(room_title_html, recorded_at_html)
+
+    link = frappe.utils.get_url(f"/drive/f/{recording.artifact}") if recording.artifact else None
+    message = f"<p>{description}</p>"
+    if link:
+        message += f'<p><a href="{frappe.utils.escape_html(link)}">{_("Open recording in Drive")}</a></p>'
+    return subject, message
 
 
 def _locked_recording(name: str):
@@ -759,6 +773,9 @@ def _callback_datetime(value):
 
 
 def _recordings_folder(recording) -> str:
+    from suite.drive.utils import create_drive_file
+    from suite.drive.utils.files import FileManager
+
     existing = frappe.db.get_value(
         "File",
         {

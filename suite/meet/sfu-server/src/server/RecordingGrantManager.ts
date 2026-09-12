@@ -11,7 +11,7 @@ import type { RecordingGrantPersistenceFile } from './RecordingGrantPersistenceF
 
 const GRANT_TYPE = 'meet-recording-grant+jwt';
 const GRANT_AUDIENCE = 'meet-sfu-recorder';
-const MAX_AUTHORIZATION_SECONDS = 4 * 60 * 60;
+const MAX_AUTHORIZATION_SECONDS = 4 * 60 * 60 + 60;
 const CHALLENGE_SECONDS = 10;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const ACCEPTED_PROTOCOL_VERSIONS = new Set([1]);

@@ -175,8 +175,8 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                     "suite.meet.recording.ingest._recordings_folder",
                     return_value=recording.drive_home_folder,
                 ),
-                patch("suite.meet.recording.ingest.update_file_size"),
-                patch("suite.meet.recording.ingest.FileManager.upload_file"),
+                patch("suite.drive.utils.update_file_size"),
+                patch("suite.drive.utils.files.FileManager.upload_file"),
             ):
                 result = process_upload(recording.name)
             artifact = frappe.get_doc("File", result["artifact"])
