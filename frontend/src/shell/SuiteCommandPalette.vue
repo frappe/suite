@@ -2,6 +2,10 @@
   <CommandPalette
     v-model:open="root.paletteOpen"
     v-model:query="query"
+    :class="{
+      'mail-mobile-search-page': isMailSearchRoute,
+      'mail-mobile-search-page--keyboard': isMailSearchRoute && keyboardOpen,
+    }"
     :filterable="false"
     title="Search Suite"
     @keydown.capture="handleModifiedEnter"
@@ -326,6 +330,7 @@ import {
 } from "@/apps/mail/composables/useMailCommandPaletteSearch";
 import MailSearchResult from "@/apps/mail/components/CommandPalette/MailSearchResult.vue";
 import MailSearchSuggestions from "@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue";
+import { useKeyboardOpen } from "@/apps/mail/utils/composables";
 import type {
   MailContactSuggestion,
   MailFilterSuggestion,
@@ -392,10 +397,14 @@ const DriveSearchResultModified = defineAsyncComponent(
 const root = useRootStore();
 const route = useRoute();
 const router = useRouter();
+const keyboardOpen = useKeyboardOpen();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
 const activeApp = computed(() => String(route.meta.appId ?? ""));
+const isMailSearchRoute = computed(
+  () => activeApp.value === "mail" && route.params.mailbox === "search",
+);
 const mailSearchActive = computed(() => activeApp.value === "mail");
 const {
   appliedFilters: mailAppliedFilters,
@@ -834,3 +843,39 @@ onScopeDispose(() => {
   resetSearches();
 });
 </script>
+
+<style>
+@media (max-width: 767px) {
+  .dialog-overlay:has(+ .dialog-scroll-container .mail-mobile-search-page) {
+    display: none;
+  }
+
+  .dialog-scroll-container:has(.mail-mobile-search-page) {
+    bottom: calc(3.75rem + 1px + env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+
+  .dialog-scroll-container:has(.mail-mobile-search-page--keyboard) {
+    bottom: 0;
+  }
+
+  .dialog-scroll-container:has(.mail-mobile-search-page) > div {
+    min-height: 100%;
+    align-items: stretch;
+    padding: env(safe-area-inset-top) 0 0;
+  }
+
+  .dialog-content:has(> .mail-mobile-search-page) {
+    height: 100%;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mail-mobile-search-page {
+    height: 100%;
+    max-height: none;
+  }
+}
+</style>

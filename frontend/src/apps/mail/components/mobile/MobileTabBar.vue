@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
@@ -144,7 +144,18 @@ const screenerActive = computed(() =>
 const searchActive = computed(() => root.paletteOpen || isSearchRoute.value)
 const profileActive = computed(() => route.name === 'mail-profile')
 
-const openSearch = () => (root.paletteOpen = true)
+const openSearch = async () => {
+	if (!isSearchRoute.value)
+		await router.push({
+			name: 'mail-mailbox',
+			params: { accountId: store.accountId, mailbox: 'search' },
+		})
+	root.paletteOpen = true
+}
+
+watch(isSearchRoute, (active) => {
+	if (!active) root.paletteOpen = false
+})
 
 const openMail = () => {
 	// Re-tapping the active Mail tab opens the folder switcher.
