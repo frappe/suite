@@ -27,8 +27,6 @@ describe("useMeetingHandlers", () => {
 		const connectionState = {
 			connectionError: "Recovery exhausted",
 			guestAuthToken: "stale-token",
-			guestSfuUrl: "wss://sfu.example.com",
-			guestSfuPort: "443",
 			isInPreview: false,
 		};
 		const handlers = useMeetingHandlers({
@@ -42,8 +40,6 @@ describe("useMeetingHandlers", () => {
 		expect(sfuManager.value).toBeNull();
 		expect(connectionState.connectionError).toBeNull();
 		expect(connectionState.guestAuthToken).toBeNull();
-		expect(connectionState.guestSfuUrl).toBeNull();
-		expect(connectionState.guestSfuPort).toBeNull();
 		expect(connectionState.isInPreview).toBe(true);
 	});
 

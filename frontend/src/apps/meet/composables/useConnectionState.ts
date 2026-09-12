@@ -1,5 +1,4 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
 import type { CurrentUser } from "./useCurrentUser";
 
 export type GuestSessionStatus =
@@ -110,64 +109,18 @@ export function shouldAutoConnectAdmittedGuest(
 	return subscribedSession.status === "pending";
 }
 
-export interface ConnectionState {
-	connectionError: string | null;
-	connectionMoved: boolean;
-	isInPreview: boolean;
-	codecStrategy: string;
-	networkQuality: string;
-	connectionIssues: string[];
-	guestId: string | null;
-	guestAuthToken: string | null;
-	guestSfuUrl: string | null;
-	guestSfuPort: string | null;
-	guestSessionToken: string | null;
-	justCreated: boolean;
-	$reset: () => void;
-}
-
-export const useConnectionState = defineStore("meet-connection", () => {
-	const connectionError = ref<string | null>(null);
-	const connectionMoved = ref(false);
-	const isInPreview = ref(true);
-	const codecStrategy = ref("svc");
-	const networkQuality = ref("good");
-	const connectionIssues = ref<string[]>([]);
-	const guestId = ref<string | null>(null);
-	const guestAuthToken = ref<string | null>(null);
-	const guestSfuUrl = ref<string | null>(null);
-	const guestSfuPort = ref<string | null>(null);
-	const guestSessionToken = ref<string | null>(null);
-	const justCreated = ref(false);
-
-	function $reset() {
-		connectionError.value = null;
-		connectionMoved.value = false;
-		isInPreview.value = true;
-		codecStrategy.value = "svc";
-		networkQuality.value = "good";
-		connectionIssues.value = [];
-		guestId.value = null;
-		guestAuthToken.value = null;
-		guestSfuUrl.value = null;
-		guestSfuPort.value = null;
-		guestSessionToken.value = null;
-		justCreated.value = false;
-	}
-
-	return {
-		connectionError,
-		connectionMoved,
-		isInPreview,
-		codecStrategy,
-		networkQuality,
-		connectionIssues,
-		guestId,
-		guestAuthToken,
-		guestSfuUrl,
-		guestSfuPort,
-		guestSessionToken,
-		justCreated,
-		$reset,
-	};
+export const useConnectionState = defineStore("meet-connection", {
+	state: () => ({
+		connectionError: null as string | null,
+		connectionMoved: false,
+		isInPreview: true,
+		codecStrategy: "svc",
+		networkQuality: "good",
+		guestId: null as string | null,
+		guestAuthToken: null as string | null,
+		guestSessionToken: null as string | null,
+		justCreated: false,
+	}),
 });
+
+export type ConnectionState = ReturnType<typeof useConnectionState>;

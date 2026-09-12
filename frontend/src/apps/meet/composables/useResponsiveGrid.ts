@@ -1,4 +1,5 @@
-import { type ComputedRef, computed, onMounted, onUnmounted, ref } from "vue";
+import { useMediaQuery } from "@vueuse/core";
+import { type ComputedRef, computed } from "vue";
 
 interface UseResponsiveGridReturn {
 	isMobile: ComputedRef<boolean>;
@@ -7,31 +8,8 @@ interface UseResponsiveGridReturn {
 }
 
 export function useResponsiveGrid(): UseResponsiveGridReturn {
-	const isMedium = ref(window.matchMedia("(min-width: 768px)").matches);
-	const isLarge = ref(window.matchMedia("(min-width: 1024px)").matches);
-	let mediaQueries: MediaQueryList[] = [];
-
-	const updateBreakpoints = (): void => {
-		isMedium.value = window.matchMedia("(min-width: 768px)").matches;
-		isLarge.value = window.matchMedia("(min-width: 1024px)").matches;
-	};
-
-	onMounted(() => {
-		mediaQueries = [
-			window.matchMedia("(min-width: 768px)"),
-			window.matchMedia("(min-width: 1024px)"),
-		];
-		updateBreakpoints();
-		for (const query of mediaQueries) {
-			query.addEventListener("change", updateBreakpoints);
-		}
-	});
-
-	onUnmounted(() => {
-		for (const query of mediaQueries) {
-			query.removeEventListener("change", updateBreakpoints);
-		}
-	});
+	const isMedium = useMediaQuery("(min-width: 768px)");
+	const isLarge = useMediaQuery("(min-width: 1024px)");
 
 	const isMobile = computed(() => !isMedium.value);
 

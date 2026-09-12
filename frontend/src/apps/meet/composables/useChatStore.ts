@@ -1,5 +1,4 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
 
 export interface ChatMessage {
 	id: number;
@@ -10,66 +9,30 @@ export interface ChatMessage {
 	timestamp: string;
 }
 
-export interface ChatStore {
-	isChatOpen: boolean;
-	chatMessages: ChatMessage[];
-	hasUnreadMessages: boolean;
-	toggleChat: () => void;
-	hostOnlyChat: boolean;
-	markAsRead: () => void;
-	addMessage: (message: ChatMessage) => void;
-	pinnedMessage: ChatMessage | null;
-	setPinnedMessage: (message: ChatMessage | null) => void;
-	$reset: () => void;
-}
-
-export const useChatStore = defineStore("meet-chat", () => {
-	const isChatOpen = ref(false);
-	const chatMessages = ref<ChatMessage[]>([]);
-	const hasUnreadMessages = ref(false);
-	const hostOnlyChat = ref(false);
-	const pinnedMessage = ref<ChatMessage | null>(null);
-
-	function toggleChat() {
-		isChatOpen.value = !isChatOpen.value;
-		if (isChatOpen.value) {
-			hasUnreadMessages.value = false;
-		}
-	}
-
-	function markAsRead() {
-		hasUnreadMessages.value = false;
-	}
-
-	function addMessage(message: ChatMessage) {
-		if (!chatMessages.value) {
-			chatMessages.value = [];
-		}
-		chatMessages.value.push(message);
-	}
-
-	function setPinnedMessage(message: ChatMessage | null) {
-		pinnedMessage.value = message;
-	}
-
-	function $reset() {
-		isChatOpen.value = false;
-		chatMessages.value = [];
-		hasUnreadMessages.value = false;
-		hostOnlyChat.value = false;
-		pinnedMessage.value = null;
-	}
-
-	return {
-		isChatOpen,
-		chatMessages,
-		hasUnreadMessages,
-		toggleChat,
-		hostOnlyChat,
-		markAsRead,
-		addMessage,
-		pinnedMessage,
-		setPinnedMessage,
-		$reset,
-	};
+export const useChatStore = defineStore("meet-chat", {
+	state: () => ({
+		isChatOpen: false,
+		chatMessages: [] as ChatMessage[],
+		hasUnreadMessages: false,
+		hostOnlyChat: false,
+		pinnedMessage: null as ChatMessage | null,
+	}),
+	actions: {
+		toggleChat() {
+			this.isChatOpen = !this.isChatOpen;
+			if (this.isChatOpen) this.hasUnreadMessages = false;
+		},
+		markAsRead() {
+			this.hasUnreadMessages = false;
+		},
+		addMessage(message: ChatMessage) {
+			if (!this.chatMessages) this.chatMessages = [];
+			this.chatMessages.push(message);
+		},
+		setPinnedMessage(message: ChatMessage | null) {
+			this.pinnedMessage = message;
+		},
+	},
 });
+
+export type ChatStore = ReturnType<typeof useChatStore>;
