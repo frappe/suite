@@ -1,4 +1,3 @@
-import { decodeGroupState } from "ts-mls";
 import { getGroupMembers } from "ts-mls/clientState.js";
 import { describe, expect, it } from "vitest";
 import { TsMlsEpochProtocolProvider } from "../EpochProtocolProvider";
@@ -19,7 +18,6 @@ describe("TsMlsEpochProtocolProvider", () => {
 		});
 
 		expect(genesis.epochNumber).toBe(1);
-		expect(genesis.encodedState.byteLength).toBeGreaterThan(0);
 		expect(genesis.meetingSecret.byteLength).toBe(32);
 
 		const credential = getGroupMembers(genesis.state)[0]?.credential;
@@ -32,9 +30,6 @@ describe("TsMlsEpochProtocolProvider", () => {
 
 		const reExportedSecret = await provider.exportMeetingSecret(genesis.state);
 		expect([...reExportedSecret]).toEqual([...genesis.meetingSecret]);
-
-		const decoded = decodeGroupState(genesis.encodedState, 0)?.[0];
-		expect(decoded?.groupContext.epoch).toBe(genesis.state.groupContext.epoch);
 	});
 
 	it("adds a member and lets the joiner export the same epoch meeting secret", async () => {

@@ -101,7 +101,6 @@ function createController() {
 			createGenesisEpoch: vi.fn(async () => ({
 				epochNumber: 1,
 				state: {} as never,
-				encodedState: new Uint8Array([1]),
 				meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			})),
 			generateKeyPackage: vi.fn(),
@@ -170,7 +169,6 @@ describe("E2EEHandshakeController", () => {
 			createGenesisEpoch: vi.fn(async () => ({
 				epochNumber: 1,
 				state: { id: "epoch-1-state" } as never,
-				encodedState: new Uint8Array([1]),
 				meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			})),
 			generateKeyPackage: vi.fn(),
@@ -187,7 +185,6 @@ describe("E2EEHandshakeController", () => {
 				epoch: {
 					epochNumber: 2,
 					state: state as never,
-					encodedState: new Uint8Array([8]),
 					meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 				},
 			})),

@@ -42,14 +42,6 @@ import type { Producer } from "mediasoup-client/types";
 const isAbortError = (error: unknown) =>
 	(error as { name?: unknown } | null)?.name === "AbortError";
 
-function throwIfAborted(signal?: AbortSignal): void {
-	if (signal?.aborted) {
-		throw (
-			signal.reason ?? new DOMException("E2EE lifecycle ended", "AbortError")
-		);
-	}
-}
-
 interface SFUMeetingManagerOptions {
 	meetingId: string;
 	currentUser: User | null;
@@ -493,7 +485,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		signal?: AbortSignal,
 	): Promise<E2EEPublicationResult> {
 		return this.mediaManager.serializeSendMediaMutation(() => {
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			return this.reconfigureForE2EENow(videoStream, audioStream, signal);
 		});
 	}
@@ -503,7 +495,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		audioStream: MediaStream | null,
 		signal?: AbortSignal,
 	): Promise<E2EEPublicationResult> {
-		throwIfAborted(signal);
+		signal?.throwIfAborted();
 		console.log("Reconfiguring media for E2EE");
 		this.connectionManager.initialSyncInProgress = true;
 		const publicationResult: E2EEPublicationResult = {
@@ -548,7 +540,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 				screenTrack?.readyState === "live";
 
 			await this.mediaManager.cancelPendingSubscriptions();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			mediaHandler.cleanup();
 			this.mediaManager.setLocalTrack("video", videoTrack);
 			this.mediaManager.setLocalTrack("audio", audioTrack);
@@ -557,13 +549,13 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 			this.transportManager.cleanup();
 
 			await this.transportManager.initializeDevice();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			await this.transportManager.createReceiveTransport();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 
 			if (videoTrack || audioTrack || screenTrack) {
 				await this.transportManager.createSendTransport();
-				throwIfAborted(signal);
+				signal?.throwIfAborted();
 
 				if (videoTrack) {
 					try {
@@ -578,7 +570,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							);
 							if (signal?.aborted) {
 								this.closeProducerInstance(videoProducer);
-								throwIfAborted(signal);
+								signal?.throwIfAborted();
 							}
 							if (
 								videoTrack.readyState !== "live" ||
@@ -613,7 +605,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							);
 							if (signal?.aborted) {
 								this.closeProducerInstance(audioProducer);
-								throwIfAborted(signal);
+								signal?.throwIfAborted();
 							}
 							if (
 								audioTrack.readyState !== "live" ||
@@ -643,7 +635,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 						);
 						if (signal?.aborted) {
 							this.closeProducerInstance(screenProducer);
-							throwIfAborted(signal);
+							signal?.throwIfAborted();
 						}
 						if (
 							!isCurrentScreenTrack() ||
@@ -663,7 +655,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 				}
 			}
 			await this.connectionManager.setupExistingParticipants();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			if (
 				publicationResult.videoPublished &&
 				(videoTrack?.readyState !== "live" ||
@@ -708,32 +700,12 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		}
 	}
 
-	async resyncAfterRecovery(reason: string): Promise<void> {
-		return this.connectionManager.resyncAfterRecovery(reason);
-	}
-
 	async recoverTransport(reason: string): Promise<RecoveryResult> {
 		return this.recoveryManager.recoverTransportIce(reason);
 	}
 
 	async resetReceiveMedia(): Promise<void> {
 		return this.connectionManager.resetReceiveSide();
-	}
-
-	async subscribeToRemoteProducer({
-		producerId,
-		participantId,
-		isScreen,
-	}: {
-		producerId: string;
-		participantId: string;
-		isScreen: boolean;
-	}): Promise<unknown | null> {
-		return this.mediaManager.subscribeToRemoteProducer({
-			producerId,
-			participantId,
-			isScreen,
-		});
 	}
 
 	startMediaHealthMonitoring(
