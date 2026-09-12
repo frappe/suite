@@ -973,6 +973,147 @@ describe('SocketHandlerManager characterization', () => {
 		vi.useRealTimers();
 	});
 
+	it('releases Participant Connection ownership when admission fails so a fresh connection can join', async () => {
+		const harness = createManager();
+		const failed = connectFullSocket(harness, {
+			id: 'sock-failed',
+			userId: 'user-1',
+		});
+		vi.spyOn(harness.roster, 'add').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+		const failedCallback = vi.fn();
+
+		emitJoin(failed, { connectionId: 'failed-device' }, failedCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failedCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'roster unavailable',
+		});
+
+		const retry = connectFullSocket(harness, {
+			id: 'sock-retry',
+			userId: 'user-1',
+		});
+		const retryCallback = vi.fn();
+		emitJoin(retry, { connectionId: 'fresh-device' }, retryCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(retryCallback).toHaveBeenCalledWith({
+			success: true,
+			senderId: retry.senderId,
+		});
+	});
+
+	it('explicit leave followed by disconnect removes one Participant Connection exactly once', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving);
+		await new Promise((resolve) => setImmediate(resolve));
+		observer.emitCalls.length = 0;
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+		leaving.fire('disconnect', 'client namespace disconnect');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledTimes(1);
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-leaving',
+		);
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(1);
+		expect(leaving.roomId).toBeUndefined();
+	});
+
+	it('does not publish a stale departure after a new Participant Connection joins during cleanup', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving, { connectionId: 'old-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		let finishRosterRemoval = () => {};
+		vi.spyOn(harness.roster, 'remove').mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					finishRosterRemoval = resolve;
+				}),
+		);
+		observer.emitCalls.length = 0;
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const replacement = connectFullSocket(harness, {
+			id: 'sock-replacement',
+			userId: 'user-1',
+		});
+		const replacementCallback = vi.fn();
+		emitJoin(replacement, { connectionId: 'new-device' }, replacementCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+		finishRosterRemoval();
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(replacementCallback).toHaveBeenCalledWith({
+			success: true,
+			senderId: replacement.senderId,
+		});
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(0);
+	});
+
+	it('finishes Participant Connection cleanup when one resource rejects removal', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving);
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.spyOn(harness.roster, 'remove').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+		observer.emitCalls.length = 0;
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-leaving',
+		);
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(1);
+		expect(leaving.roomId).toBeUndefined();
+	});
+
 	it('disconnect of a full-access socket removes the peer, broadcasts participant_left, and closes the room after grace when the last human leaves', async () => {
 		vi.useFakeTimers();
 		const harness = createManager();
