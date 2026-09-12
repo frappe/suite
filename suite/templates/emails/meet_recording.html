@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<meta name="color-scheme" content="light" />
+	<meta name="supported-color-schemes" content="light" />
+</head>
+<body data-fixed-palette style="margin: 0; padding: 0; background-color: #f3f3f3;">
+	<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f3f3; margin: 0; padding: 0;">
+		<tr>
+			<td align="center" style="padding: 32px 16px;">
+				<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; max-width: 600px;">
+					<tr>
+						<td align="center" style="padding: 8px 0 26px;">
+							<table role="presentation" cellpadding="0" cellspacing="0">
+								<tr>
+									<td style="vertical-align: middle; padding-right: 9px;">
+										<img embed="meet-logo.png" width="22" height="22" alt="" style="display: block; border: 0; width: 22px; height: 22px;" />
+									</td>
+									<td style="vertical-align: middle; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 19px; font-weight: 600; color: #171717; letter-spacing: -0.01em;">Frappe Meet</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+					<tr>
+						<td align="center" style="background-color: #ffffff; border: 1px solid #ededed; border-radius: 16px; padding: 36px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+							<p style="font-size: 15px; line-height: 1.5; color: #171717; max-width: 400px; margin: 0 auto {{ '24px' if link else '0' }};">{{ description }}</p>
+							{% if link %}
+							<a class="btn" href="{{ link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px; border: 0; margin: 0;">{{ _("Open recording in Drive") }}</a>
+							{% endif %}
+						</td>
+					</tr>
+					<tr>
+						<td align="center" style="padding: 18px 8px 4px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #7c7c7c;">This email was sent by Frappe Mail.</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
+</body>
+</html>

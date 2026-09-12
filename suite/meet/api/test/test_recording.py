@@ -640,9 +640,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 sendmail.call_args.kwargs["message_id"],
                 f"meet-recording-finalization-{recording.name}@{frappe.local.site}",
             )
-            self.assertIn("could not be processed", sendmail.call_args.kwargs["message"])
-            self.assertIn("No recording was added to Drive", sendmail.call_args.kwargs["message"])
-            self.assertNotIn("/drive/f/", sendmail.call_args.kwargs["message"])
+            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
+            self.assertIn("could not be processed", sendmail.call_args.kwargs["args"]["description"])
+            self.assertIn("No recording was added to Drive", sendmail.call_args.kwargs["args"]["description"])
+            self.assertIsNone(sendmail.call_args.kwargs["args"]["link"])
             self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
         finally:
             path.unlink(missing_ok=True)
@@ -686,9 +687,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 sendmail.call_args.kwargs["subject"],
                 "Your recording of Weekly planning is ready",
             )
-            self.assertIn("Weekly planning", sendmail.call_args.kwargs["message"])
-            self.assertIn("Open recording in Drive", sendmail.call_args.kwargs["message"])
-            self.assertIn(artifact_url, sendmail.call_args.kwargs["message"])
+            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
+            self.assertIn("Weekly planning", sendmail.call_args.kwargs["args"]["description"])
+            self.assertEqual(sendmail.call_args.kwargs["args"]["link"], artifact_url)
             self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
         finally:
             frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
@@ -745,8 +746,12 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             ):
                 deliver_recording_notification(completed.name)
             self.assertIn("partial recording", sendmail.call_args.kwargs["subject"])
-            self.assertIn("Some portions could not be captured", sendmail.call_args.kwargs["message"])
-            self.assertIn(f"/drive/f/{artifact.name}", sendmail.call_args.kwargs["message"])
+            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
+            self.assertIn(
+                "Some portions could not be captured",
+                sendmail.call_args.kwargs["args"]["description"],
+            )
+            self.assertIn(f"/drive/f/{artifact.name}", sendmail.call_args.kwargs["args"]["link"])
         finally:
             path.unlink(missing_ok=True)
             if artifact:

@@ -549,13 +549,15 @@ def deliver_recording_notification(recording_name: str):
     frappe.db.commit()
     try:
         recording = frappe.get_doc("Meet Recording", recording_name)
-        subject, message = _recording_email_content(recording)
+        subject, args = _recording_email_content(recording)
         message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
         if not frappe.db.exists("Email Queue", {"message_id": message_id}):
             frappe.sendmail(
                 recipients=[recording.room_owner],
                 subject=subject,
-                message=message,
+                template="meet_recording",
+                args=args,
+                inline_images=_meet_logo_inline_images(),
                 reference_doctype="Meet Recording",
                 reference_name=recording.name,
                 message_id=message_id,
@@ -585,35 +587,34 @@ def deliver_recording_notification(recording_name: str):
         )
 
 
-def _recording_email_content(recording) -> tuple[str, str]:
+def _recording_email_content(recording) -> tuple[str, dict]:
     room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or _("Untitled Meet Room")
     recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
-    room_title_html = frappe.utils.escape_html(room_title)
-    recorded_at_html = frappe.utils.escape_html(recorded_at)
 
     if recording.status == "Ready":
         subject = _("Your recording of {0} is ready").format(room_title)
-        description = _("The recording of <strong>{0}</strong> from {1} is ready in Drive.").format(
-            room_title_html, recorded_at_html
-        )
+        description = _("The recording of {0} from {1} is ready in Drive.").format(room_title, recorded_at)
     elif recording.status == "Partial":
         subject = _("Your partial recording of {0} is ready").format(room_title)
         description = _(
-            "A partial recording of <strong>{0}</strong> from {1} is ready in Drive. "
-            "Some portions could not be captured."
-        ).format(room_title_html, recorded_at_html)
+            "A partial recording of {0} from {1} is ready in Drive. Some portions could not be captured."
+        ).format(room_title, recorded_at)
     else:
         subject = _("Your recording of {0} could not be processed").format(room_title)
         description = _(
-            "The recording of <strong>{0}</strong> from {1} could not be processed. "
-            "No recording was added to Drive."
-        ).format(room_title_html, recorded_at_html)
+            "The recording of {0} from {1} could not be processed. No recording was added to Drive."
+        ).format(room_title, recorded_at)
 
     link = frappe.utils.get_url(f"/drive/f/{recording.artifact}") if recording.artifact else None
-    message = f"<p>{description}</p>"
-    if link:
-        message += f'<p><a href="{frappe.utils.escape_html(link)}">{_("Open recording in Drive")}</a></p>'
-    return subject, message
+    return subject, {"description": description, "link": link}
+
+
+def _meet_logo_inline_images():
+    try:
+        logo = Path(frappe.get_app_path("suite", "public", "meet", "images", "meet.png"))
+        return [{"filename": "meet-logo.png", "filecontent": logo.read_bytes()}]
+    except OSError:
+        return []
 
 
 def _locked_recording(name: str):
