@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, onMounted, onScopeDispose, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Dialog, TabButtons, createResource, usePageMeta } from 'frappe-ui'
 import { Calendar } from 'frappe-ui/experimental'
@@ -13,6 +13,7 @@ import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
+import { useRootStore } from '@/stores/root'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
@@ -319,6 +320,21 @@ const newEventDate = () => {
 	const start = dayjs(range.startDate)
 	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
+	{
+		commands: [
+			{
+				id: 'calendar-new-event',
+				label: 'New event',
+				icon: 'lucide-calendar-plus',
+				keywords: ['create', 'add'],
+				run: () => handleOpenEvent({ date: newEventDate() }),
+			},
+		],
+	},
+])
+onScopeDispose(unregisterPaletteGroups)
 
 // A pill in the grid and a row in the sidebar's upcoming list toggle the
 // detail panel the way mail's does: a second click on the open event closes it.

@@ -888,20 +888,6 @@
       @navigate-to="onNavigateTo"
     />
 
-    <!-- Cmd+K command palette -->
-    <CommandPalette v-model:open="showCmdPalette" v-model:query="cmdQuery" @select="onCmdSelect">
-      <CommandPaletteInput placeholder="Search commands" />
-      <CommandPaletteList>
-        <CommandPaletteGroup v-for="group in cmdGroups" :key="group.title" :label="group.title">
-          <CommandPaletteItem v-for="item in group.items" :key="item.name" :value="item">
-            {{ item.title }}
-            <template v-if="item.description" #suffix>{{ item.description }}</template>
-          </CommandPaletteItem>
-        </CommandPaletteGroup>
-      </CommandPaletteList>
-      <CommandPaletteEmpty />
-    </CommandPalette>
-
     <!-- Hyperlink dialog (Ctrl+L) — stores fmt.hyperlink on the active cell -->
     <Dialog v-model:open="showHyperlinkDialog" title="Insert hyperlink" size="sm">
       <template #default>
@@ -1312,7 +1298,6 @@ import { useCollaboration }    from './useCollaboration.js'
 import { useExportImport }     from './useExportImport.js'
 import { useVersionHistory }   from './useVersionHistory.js'
 import { useSplitText }        from './useSplitText.js'
-import { buildCommandGroups }  from './commandPalette.config.js'
 import FindReplace             from './FindReplace.vue'
 import VersionHistory          from './VersionHistory.vue'
 import VersionPreviewBanner    from './VersionPreviewBanner.vue'
@@ -1338,12 +1323,6 @@ import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import {
    Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip, usePageMeta } from 'frappe-ui'
 import {
-  CommandPalette,
-  CommandPaletteEmpty,
-  CommandPaletteGroup,
-  CommandPaletteInput,
-  CommandPaletteItem,
-  CommandPaletteList,
   Icon as FeatherIcon,
 } from 'frappe-ui/experimental'
 
@@ -5874,27 +5853,6 @@ function doUnhideAllCols() {
   history.push(); isDirty.value = true
 }
 
-
-// ── Cmd+K command palette ─────────────────────────────────────────────────────
-// CommandPalette ships its own Cmd+K listener that flips `showCmdPalette`.
-const showCmdPalette = ref(false)
-const cmdQuery       = ref('')
-
-const cmdGroups = computed(() => buildCommandGroups({
-  toggleFmt, setAlign, setValign, adjustDecimals, toggleWrap, clearFormatting,
-  undo, redo, repeatLast, showFindReplace, openFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
-  contextMenu, getGrid: () => grid,
-  doInsertRow, doDeleteRow, doInsertCol, doDeleteCol,
-  doMoveColLeft, doMoveColRight,
-  doHideRows, doHideCols, doUnhideAllRows, doUnhideAllCols,
-  doAutoFitCol, doAutoFitRow, toggleMerge, addRowsCount, doAddMoreRows,
-  doFreezeRow, doFreezeCol, doUnfreezeRows, doUnfreezeCols, showSortFilter,
-  openPivotDialog,
-  addSheet, currentSheet, openRenameDialog, doDuplicateSheet, doDeleteSheet,
-  onSave, exportCSV, exportXLSX, exportPDF, csvInputRef, xlsxInputRef,
-}))
-
-function onCmdSelect(item) { item?.fn?.() }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

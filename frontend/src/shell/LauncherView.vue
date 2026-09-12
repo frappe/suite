@@ -40,8 +40,9 @@
 
 <script setup lang="ts">
 import { h, onMounted, onUnmounted } from 'vue'
-import { Avatar, Dropdown } from 'frappe-ui'
+import { Avatar, createResource, Dropdown, toast } from 'frappe-ui'
 import { CircleUser, LogOut } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 
 import { SUITE_APPS } from '@/apps/registry'
 import settingsLogo from '@/assets/app-logos/settings.svg'
@@ -55,6 +56,74 @@ import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
 
 const apps = SUITE_APPS
+const router = useRouter()
+const root = useRootStore()
+
+const mailUser = createResource({ url: 'suite.mail.api.account.get_user_info' })
+const createMeeting = createResource({
+  url: 'suite.meet.api.meeting.create',
+  method: 'POST',
+})
+
+const composeMail = async () => {
+  const user = await mailUser.submit()
+  const accounts = user?.accounts ?? []
+  const savedAccount = localStorage.getItem('mail-account-id')
+  const account =
+    accounts.find(({ id }: { id: string }) => id === savedAccount) ??
+    accounts.find(({ is_personal }: { is_personal?: boolean }) => is_personal) ??
+    accounts[0]
+
+  if (account) await router.push(`/mail/account/${account.id}/compose`)
+  else await router.push('/mail')
+}
+
+const startInstantMeeting = async () => {
+  const toastId = toast.loading('Creating meeting...')
+  try {
+    const meetingCode = await createMeeting.submit({ meeting_type: 'open' })
+    toast.dismiss(toastId)
+    await router.push(`/meet/${meetingCode}`)
+  } catch {
+    toast.dismiss(toastId)
+    toast.error('Failed to create meeting. Please try again.')
+  }
+}
+
+const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
+  {
+    commands: [
+      {
+        id: 'suite-new-sheet',
+        label: 'New sheet',
+        icon: 'lucide-table-2',
+        keywords: ['create', 'spreadsheet', 'sheets'],
+        run: () => router.push('/sheets/new'),
+      },
+      {
+        id: 'suite-new-presentation',
+        label: 'New presentation',
+        icon: 'lucide-presentation',
+        keywords: ['create', 'slides'],
+        run: () => router.push('/slides/presentation/new'),
+      },
+      {
+        id: 'suite-compose-mail',
+        label: 'Compose mail',
+        icon: 'lucide-pencil',
+        keywords: ['new', 'email', 'message'],
+        run: composeMail,
+      },
+      {
+        id: 'suite-start-instant-meet',
+        label: 'Start instant meet',
+        icon: 'lucide-zap',
+        keywords: ['new', 'open', 'meeting'],
+        run: startInstantMeeting,
+      },
+    ],
+  },
+])
 
 const { workspaceName, workspaceLogo } = useWorkspace()
 
@@ -77,11 +146,11 @@ const userMenuOptions = [
 
 onMounted(() => {
   setupTheme()
-  useRootStore().setActiveApp(null)
   document.documentElement.style.overscrollBehavior = 'none'
 })
 
 onUnmounted(() => {
   document.documentElement.style.overscrollBehavior = ''
+  unregisterPaletteGroups()
 })
 </script>

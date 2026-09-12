@@ -15,6 +15,7 @@ import { useAppSwitcher } from "@/composables/useAppSwitcher";
 import { setupTheme, switchTheme, themeMode } from "@/utils/setupTheme";
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
+import CommandPaletteSidebarItem from "@/shell/CommandPaletteSidebarItem.vue";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
@@ -113,6 +114,7 @@ const showShortcutsDialog = inject(
 		/>
 		<div class="flex-1 px-2">
 			<SidebarSection>
+				<CommandPaletteSidebarItem />
 				<SidebarItem
 					label="Home"
 					to="/meet"

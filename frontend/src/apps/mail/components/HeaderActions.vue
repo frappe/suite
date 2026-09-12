@@ -7,7 +7,7 @@
 			icon="lucide-search"
 			:tooltip="__('Search ({0}+K)', [modifier])"
 			variant="ghost"
-			@click="showSearchModal = true"
+			@click="openSearch"
 		/>
 		<Button
 			icon-left="lucide-pencil"
@@ -19,28 +19,34 @@
 
 	<SearchModal
 		v-model="showSearchModal"
-		v-model:show-advanced="showSearchAdvanced"
-		v-model:edit-filter="showSearchEditFilter"
+		v-model:initial-text="searchInitialText"
+		v-model:initial-filters="searchInitialFilters"
 	/>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Button } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
-import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
+import SearchModal from '@/apps/mail/components/Modals/AdvancedSearchModal.vue'
+import { useRootStore } from '@/stores/root'
 
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
+const root = useRootStore()
 
 // Exposed as a model so other views (e.g. the search results header's query chip) can reopen the modal.
 const showSearchModal = defineModel<boolean>('showSearch', { default: false })
-const showSearchAdvanced = defineModel<boolean>('showAdvanced', { default: false })
-// Filter key a results-page chip asked to reopen inline; forwarded to the search modal.
-const showSearchEditFilter = defineModel<string>('editFilter', { default: '' })
+const searchInitialText = ref('')
+const searchInitialFilters = ref<Record<string, string>>({})
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
+const openSearch = () => {
+	searchInitialText.value = ''
+	searchInitialFilters.value = {}
+	showSearchModal.value = true
+}
 
 // Asked of the layout rather than answered here, because a composer mounted in this header would be
 // a composer belonging to this view: leave the mailbox for the screener and the draft goes with the
@@ -54,19 +60,39 @@ const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 // answer a request nobody had made, and left no way at all to start a second mail.
 const compose = () => requestCompose({})
 
+const unregisterPaletteGroups = root.registerPaletteGroups(
+	'mail-header-actions',
+	[
+		{
+			commands: [
+				{
+					id: 'mail-advanced-search',
+					label: 'Advanced search in Mail',
+					icon: 'lucide-search',
+					keywords: ['email', 'from', 'to', 'subject'],
+					run: (context) => {
+						searchInitialText.value = context?.query ?? ''
+						searchInitialFilters.value = context?.filters ?? {}
+						setTimeout(() => {
+							showSearchModal.value = true
+						})
+					},
+				},
+			],
+		},
+	],
+)
+
 const handleKeydown = (e: KeyboardEvent) => {
 	const target = e.target as HTMLElement
-	if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+	if (
+		target.tagName === 'INPUT' ||
+		target.tagName === 'TEXTAREA' ||
+		target.isContentEditable
+	)
 		return
 
 	const key = e.key.toLowerCase()
-
-	// Search shortcut
-	if ((e.metaKey || e.ctrlKey) && key === 'k') {
-		e.preventDefault()
-		showSearchModal.value = true
-		return
-	}
 
 	// Compose shortcut. It reaches here with a composer already open, too — `c` starts a new mail
 	// wherever it is pressed, and typing into a composer is caught by the field test above.
@@ -77,5 +103,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
+onUnmounted(() => {
+	document.removeEventListener('keydown', handleKeydown)
+	unregisterPaletteGroups()
+})
 </script>

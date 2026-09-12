@@ -6,7 +6,7 @@ import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Local frappe-ui work: when the submodule is checked out, bare `frappe-ui`
+// Local frappe-ui work: when the submodule is checked out, public component
 // imports resolve to its source instead of the pinned package, so edits show up
 // without a publish/reinstall. Same wiring as the mail app.
 //
@@ -19,6 +19,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // pin, components come from the checkout while tokens come from the package. Run
 // `yarn dev:frappe-ui` to point node at the checkout too and keep them in step.
 const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
+const frappeUIExperimentalPath = path.resolve(__dirname, '../frappe-ui/experimental.ts')
 
 const emitSlidesServiceWorker = () => ({
   name: 'slides-service-worker',
@@ -139,7 +140,10 @@ export default defineConfig(({ mode }) => ({
         replacement: path.resolve(__dirname, 'tailwind.config.js'),
       },
       ...(fs.existsSync(frappeUIPath)
-        ? [{ find: /^frappe-ui$/, replacement: frappeUIPath }]
+        ? [
+            { find: /^frappe-ui$/, replacement: frappeUIPath },
+            { find: /^frappe-ui\/experimental$/, replacement: frappeUIExperimentalPath },
+          ]
         : []),
     ],
     // Keep single ProseMirror / Yjs / reka-ui / vue singletons across the 7
