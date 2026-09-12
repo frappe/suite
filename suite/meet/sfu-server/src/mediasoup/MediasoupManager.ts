@@ -668,7 +668,8 @@ export class MediasoupManager {
 		return closeResult;
 	}
 
-	closeConsumer(consumerId: string): void {
+	closeConsumer(consumerId: string, roomId: string, peerId: string): void {
+		this.assertConsumerAccess(consumerId, roomId, peerId);
 		this.consumerManager.closeConsumer(consumerId);
 	}
 
@@ -680,7 +681,16 @@ export class MediasoupManager {
 		return this.producerManager.resumeProducer(producerId);
 	}
 
-	async requestConsumerKeyFrame(consumerId: string): Promise<boolean> {
+	async requestConsumerKeyFrame(
+		consumerId: string,
+		roomId: string,
+		peerId: string,
+	): Promise<boolean> {
+		const data = this.consumerManager.getConsumerData(consumerId);
+		if (!data) return false;
+		if (data.roomId !== roomId || data.peerId !== peerId) {
+			throw new Error('Consumer ownership mismatch');
+		}
 		return this.consumerManager.requestConsumerKeyFrame(consumerId);
 	}
 
@@ -730,7 +740,11 @@ export class MediasoupManager {
 		return data;
 	}
 
-	assertConsumerAccess(consumerId: string, roomId: string, peerId: string) {
+	private assertConsumerAccess(
+		consumerId: string,
+		roomId: string,
+		peerId: string,
+	) {
 		const data = this.consumerManager.getConsumerData(consumerId);
 		if (!data) throw new Error(`Consumer ${consumerId} not found`);
 		if (data.roomId !== roomId || data.peerId !== peerId) {
@@ -741,6 +755,8 @@ export class MediasoupManager {
 
 	async updateConsumerPreferences(options: {
 		consumerId: string;
+		roomId: string;
+		peerId: string;
 		visible: boolean;
 		width: number;
 		height: number;
@@ -751,12 +767,11 @@ export class MediasoupManager {
 		};
 		paused: boolean;
 	}> {
-		const consumerData = this.consumerManager.getConsumerData(
+		const consumerData = this.assertConsumerAccess(
 			options.consumerId,
+			options.roomId,
+			options.peerId,
 		);
-		if (!consumerData) {
-			throw new Error(`Consumer ${options.consumerId} not found`);
-		}
 
 		const { consumer } = consumerData;
 		const wasPaused = consumer.paused;

@@ -53,6 +53,8 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 
 		await mgr.updateConsumerPreferences({
 			consumerId: 'c1',
+			roomId: 'r1',
+			peerId: 'p1',
 			visible: true,
 			width: 640,
 			height: 360,
@@ -77,6 +79,8 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 
 		await mgr.updateConsumerPreferences({
 			consumerId: 'c1',
+			roomId: 'r1',
+			peerId: 'p1',
 			visible: true,
 			width: 640,
 			height: 360,
@@ -492,7 +496,7 @@ describe('MediasoupManager resource access', () => {
 		).toThrow('is not a recv transport');
 	});
 
-	it('requires consumer room and peer ownership to match', () => {
+	it('rejects a foreign consumer before mutating it', async () => {
 		const mgr = createManager();
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
 			roomId: 'room-1',
@@ -500,12 +504,40 @@ describe('MediasoupManager resource access', () => {
 			consumer: {},
 		} as never);
 
-		expect(() => mgr.assertConsumerAccess('c1', 'room-2', 'peer-1')).toThrow(
+		const close = vi.spyOn(mgr.consumerManager, 'closeConsumer');
+		const pause = vi.spyOn(mgr.consumerManager, 'pauseConsumer');
+
+		expect(() => mgr.closeConsumer('c1', 'room-2', 'peer-1')).toThrow(
 			'Consumer ownership mismatch',
 		);
-		expect(() => mgr.assertConsumerAccess('c1', 'room-1', 'peer-2')).toThrow(
-			'Consumer ownership mismatch',
-		);
+		expect(close).not.toHaveBeenCalled();
+		await expect(
+			mgr.updateConsumerPreferences({
+				consumerId: 'c1',
+				roomId: 'room-2',
+				peerId: 'peer-1',
+				visible: false,
+				width: 0,
+				height: 0,
+			}),
+		).rejects.toThrow('Consumer ownership mismatch');
+		expect(pause).not.toHaveBeenCalled();
+	});
+
+	it('distinguishes a missing keyframe target from a foreign consumer', async () => {
+		const mgr = createManager();
+		await expect(
+			mgr.requestConsumerKeyFrame('missing', 'room-1', 'peer-1'),
+		).resolves.toBe(false);
+
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-2',
+			consumer: {},
+		} as never);
+		await expect(
+			mgr.requestConsumerKeyFrame('foreign', 'room-1', 'peer-1'),
+		).rejects.toThrow('Consumer ownership mismatch');
 	});
 
 	it('rejects a producer from another room when creating a consumer', async () => {
