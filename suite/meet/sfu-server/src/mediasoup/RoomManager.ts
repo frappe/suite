@@ -1,5 +1,5 @@
 import type * as mediasoup from 'mediasoup';
-import type { Room, RoomStats, RtpCodecCapability } from '../types';
+import type { Room, RtpCodecCapability } from '../types';
 import { loggers } from '../utils/logger';
 
 const MAX_AUDIO_LEVEL_ENTRIES = 20;
@@ -105,31 +105,14 @@ export class RoomManager {
 		return this.routers.get(roomId);
 	}
 
-	getRoomStats(roomId: string): RoomStats | null {
-		const room = this.rooms.get(roomId);
-		if (!room) return null;
-
-		return {
-			id: roomId,
-			created: room.created,
-			peerCount: room.peers.size,
-			participantCount: Array.from(room.peers.keys()).filter(
-				(peerId) => !peerId.startsWith('recorder:'),
-			).length,
-			peers: Array.from(room.peers.keys()),
-			producerCount: Array.from(room.peers.values()).reduce(
-				(count, peer) => count + peer.producers.size,
-				0,
-			),
-			consumerCount: Array.from(room.peers.values()).reduce(
-				(count, peer) => count + peer.consumers.size,
-				0,
-			),
-		};
-	}
-
 	getRoomCount(): number {
 		return this.rooms.size;
+	}
+
+	getPeerCount(): number {
+		let count = 0;
+		for (const room of this.rooms.values()) count += room.peers.size;
+		return count;
 	}
 
 	getAllRooms(): Room[] {

@@ -81,7 +81,6 @@ export type {
 	ParticipantInfo,
 	PinnedChatMessage,
 	PreviewParticipantInfo,
-	Producer,
 	ProducerCloseDetails,
 	ProducerCloseReason,
 	ProducerCloseSource,
@@ -448,10 +447,7 @@ export interface Room {
 export interface Peer {
 	id: string;
 	info: PeerInfo;
-	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, Producer>;
-	consumers: Map<string, Consumer>;
-	joined: Date;
 }
 
 export interface PeerInfo extends UserData {
@@ -488,16 +484,6 @@ export interface ConsumerData {
 	peerId: string;
 	transportId: string;
 	consumer: Consumer;
-}
-
-export interface RoomStats {
-	id: string;
-	created: Date;
-	peerCount: number;
-	participantCount: number;
-	peers: string[];
-	producerCount?: number;
-	consumerCount?: number;
 }
 
 // Configuration types

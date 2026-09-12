@@ -134,9 +134,81 @@ describe('MediasoupManager.createConsumer', () => {
 
 		expect(closeConsumer).not.toHaveBeenCalled();
 	});
+
+	it('rejects a consumer removed while creation is completing', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			transportManager: { getTransportData: (id: string) => unknown };
+			producerManager: { getProducerData: (id: string) => unknown };
+			roomManager: { getRoom: (id: string) => unknown };
+		};
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			direction: 'recv',
+			transport: {},
+		} as never);
+		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-2',
+			producer: { appData: {} },
+		} as never);
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			router: { canConsume: () => true },
+			peers: new Map([['peer-1', {}]]),
+		} as never);
+		vi.spyOn(mgr.consumerManager, 'createConsumer').mockResolvedValue({
+			id: 'closed-consumer',
+			producerId: 'producer-1',
+			kind: 'video',
+			rtpParameters: {},
+			paused: false,
+		});
+
+		await expect(
+			mgr.createConsumer(
+				'transport-1',
+				'producer-1',
+				'room-1',
+				'peer-1',
+				{} as never,
+			),
+		).rejects.toThrow('Failed to create consumer closed-consumer');
+	});
 });
 
 describe('MediasoupManager participant connections', () => {
+	it('stores peer metadata in the room and updates repeated joins in place', async () => {
+		const mgr = createManager();
+		const room = { peers: new Map() };
+		const internals = mgr as unknown as {
+			roomManager: { getRoom: (roomId: string) => unknown };
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+
+		const first = await mgr.addPeer('room-1', 'peer-1');
+		const repeated = await mgr.addPeer('room-1', 'peer-1', {
+			name: 'Alice',
+			userId: 'user-1',
+			audio_enabled: false,
+			video_enabled: true,
+			senderId: 7,
+			isHost: true,
+		});
+
+		expect(repeated).toBe(first);
+		expect(room.peers.get('peer-1')).toBe(first);
+		expect(first.info).toMatchObject({
+			name: 'Alice',
+			userId: 'user-1',
+			audio_enabled: false,
+			video_enabled: true,
+			senderId: 7,
+			isHost: true,
+		});
+		expect(first.producers.size).toBe(0);
+	});
+
 	it('deduplicates participant snapshots while combining connection media', () => {
 		const mgr = createManager();
 		const internals = mgr as unknown as {
@@ -250,12 +322,10 @@ describe('MediasoupManager producer cleanup', () => {
 		const publisher = {
 			info: { userId: 'publisher-1', name: 'Publisher' },
 			producers: new Map([[producer.id, producer]]),
-			consumers: new Map(),
 		};
 		const viewer = {
 			info: { userId: 'viewer-1', name: 'Viewer' },
 			producers: new Map(),
-			consumers: new Map([[consumer.id, consumer]]),
 		};
 		const room = {
 			peers: new Map([
@@ -294,7 +364,6 @@ describe('MediasoupManager producer cleanup', () => {
 		expect(internals.producerManager.getProducerCount()).toBe(0);
 		expect(mgr.consumerManager.getConsumerCount()).toBe(0);
 		expect(publisher.producers.has(producer.id)).toBe(false);
-		expect(viewer.consumers.has(consumer.id)).toBe(false);
 		await expect(
 			mgr.getExistingProducers('room-1', 'viewer-1'),
 		).resolves.toEqual([]);
@@ -317,6 +386,37 @@ describe('MediasoupManager producer cleanup', () => {
 });
 
 describe('MediasoupManager resource access', () => {
+	it('removes a peer through each authoritative resource manager', async () => {
+		const mgr = createManager();
+		const room = {
+			peers: new Map([
+				['peer-1', { producers: new Map([['producer-1', {}]]) }],
+			]),
+		};
+		const internals = mgr as unknown as {
+			roomManager: { getRoom: (id: string) => unknown };
+			producerManager: { getProducerIdsByPeer: () => string[] };
+			transportManager: { closePeerTransports: (...args: unknown[]) => void };
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+		vi.spyOn(internals.producerManager, 'getProducerIdsByPeer').mockReturnValue(
+			['producer-1'],
+		);
+		const closeProducer = vi.spyOn(mgr, 'closeProducer');
+		const closeConsumers = vi.spyOn(mgr.consumerManager, 'closePeerConsumers');
+		const closeTransports = vi.spyOn(
+			internals.transportManager,
+			'closePeerTransports',
+		);
+
+		await mgr.removePeer('room-1', 'peer-1');
+
+		expect(closeProducer).toHaveBeenCalledWith('producer-1');
+		expect(closeConsumers).toHaveBeenCalledWith('room-1', 'peer-1');
+		expect(closeTransports).toHaveBeenCalledWith('room-1', 'peer-1');
+		expect(room.peers.has('peer-1')).toBe(false);
+	});
+
 	it('removes every peer resource before closing a populated room', async () => {
 		const mgr = createManager();
 		const internals = mgr as unknown as {

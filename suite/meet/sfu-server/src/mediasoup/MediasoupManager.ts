@@ -23,7 +23,6 @@ import type {
 } from '../types';
 import { loggers } from '../utils/logger';
 import { ConsumerManager } from './ConsumerManager';
-import { PeerManager } from './PeerManager';
 import { ProducerManager } from './ProducerManager';
 import { RoomManager } from './RoomManager';
 import { TransportManager } from './TransportManager';
@@ -50,7 +49,6 @@ export class MediasoupManager {
 	private creatingRooms = new Map<string, Promise<Room>>();
 	private workerManager = new WorkerManager();
 	private roomManager = new RoomManager();
-	private peerManager = new PeerManager();
 	private transportManager = new TransportManager();
 	private producerManager = new ProducerManager();
 	consumerManager = new ConsumerManager();
@@ -80,12 +78,6 @@ export class MediasoupManager {
 	private creatingConsumers = new Set<string>();
 
 	constructor(private readonly config: MediasoupConfig) {
-		this.consumerManager.onClose(({ roomId, peerId, consumer }) => {
-			this.roomManager
-				.getRoom(roomId)
-				?.peers.get(peerId)
-				?.consumers.delete(consumer.id);
-		});
 		this.consumerManager.onScore((kind, score) => {
 			for (const listener of this.mediaScoreListeners) {
 				listener('recv', kind, score);
@@ -330,7 +322,28 @@ export class MediasoupManager {
 			throw new Error(`Room ${roomId} not found`);
 		}
 
-		return this.peerManager.addPeer(room, peerId, peerInfo);
+		const existing = room.peers.get(peerId);
+		if (existing) {
+			existing.info = { ...existing.info, ...peerInfo };
+			return existing;
+		}
+
+		const peer: Peer = {
+			id: peerId,
+			info: {
+				name: peerInfo.name || '',
+				userId: peerInfo.userId || peerId,
+				avatar: peerInfo.avatar,
+				audio_enabled: peerInfo.audio_enabled ?? false,
+				video_enabled: peerInfo.video_enabled ?? false,
+				is_guest: peerInfo.is_guest ?? false,
+				senderId: peerInfo.senderId,
+				isHost: peerInfo.isHost || false,
+			},
+			producers: new Map(),
+		};
+		room.peers.set(peerId, peer);
+		return peer;
 	}
 
 	async removePeer(roomId: string, peerId: string): Promise<void> {
@@ -347,9 +360,7 @@ export class MediasoupManager {
 		this.consumerManager.closePeerConsumers(roomId, peerId);
 		this.transportManager.closePeerTransports(roomId, peerId);
 		peer?.producers.clear();
-		peer?.consumers.clear();
-		peer?.transports.clear();
-		this.peerManager.removePeer(room, peerId);
+		room.peers.delete(peerId);
 		this.peerScores.delete(peerId);
 	}
 
@@ -572,12 +583,9 @@ export class MediasoupManager {
 			this.consumerManager.closeConsumer(result.id);
 			throw new Error(`Peer ${peerId} not found in room ${roomId}`);
 		}
-
-		const consumer = this.consumerManager.getConsumer(result.id);
-		if (!consumer) {
+		if (!this.consumerManager.getConsumerData(result.id)) {
 			throw new Error(`Failed to create consumer ${result.id}`);
 		}
-		peer.consumers.set(result.id, consumer);
 
 		return {
 			...result,
@@ -1086,7 +1094,7 @@ export class MediasoupManager {
 		return {
 			rooms: this.roomManager.getRoomCount(),
 			participants: this.roomManager.getParticipantCount(),
-			peers: this.peerManager.getPeerCount(),
+			peers: this.roomManager.getPeerCount(),
 			transports: this.transportManager.getTransportCount(),
 			producers: this.producerManager.getProducerCount(),
 			consumers: this.consumerManager.getConsumerCount(),
@@ -1099,7 +1107,7 @@ export class MediasoupManager {
 
 		const initialStats = {
 			rooms: this.roomManager.getRoomCount(),
-			peers: this.peerManager.getPeerCount(),
+			peers: this.roomManager.getPeerCount(),
 			transports: this.transportManager.getTransportCount(),
 			producers: this.producerManager.getProducerCount(),
 			consumers: this.consumerManager.getConsumerCount(),
@@ -1114,14 +1122,13 @@ export class MediasoupManager {
 		this.consumerManager.cleanup();
 		this.producerManager.cleanup();
 		this.transportManager.cleanup();
-		this.peerManager.cleanup();
 
 		// Close all workers
 		await this.workerManager.cleanup();
 
 		const finalStats = {
 			rooms: this.roomManager.getRoomCount(),
-			peers: this.peerManager.getPeerCount(),
+			peers: this.roomManager.getPeerCount(),
 			transports: this.transportManager.getTransportCount(),
 			producers: this.producerManager.getProducerCount(),
 			consumers: this.consumerManager.getConsumerCount(),

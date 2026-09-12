@@ -47,10 +47,7 @@ function addPeersTo(room: Room, ...peerIds: string[]): void {
 				audio_enabled: false,
 				video_enabled: false,
 			},
-			transports: new Map(),
 			producers: new Map(),
-			consumers: new Map(),
-			joined: new Date(),
 		});
 	}
 }
@@ -158,31 +155,26 @@ describe('RoomManager', () => {
 		await expect(mgr.closeRoom('nope')).resolves.toBeUndefined();
 	});
 
-	it('getRoomStats aggregates peer/producer/consumer counts', async () => {
+	it('counts peers across rooms while excluding recorders from participants', async () => {
 		const mgr = new RoomManager();
-		const router = makeRouter();
-		const worker = makeWorker({ router });
-		const webRtcServer = makeWebRtcServer();
-		const room = await mgr.createRoom('r1', 1, worker, webRtcServer, codecs);
-		addPeersTo(room, 'p1', 'p2', 'recorder:session-1');
-
-		room.peers.get('p1')!.producers.set('a', {} as never);
-		room.peers.get('p1')!.producers.set('b', {} as never);
-		room.peers.get('p2')!.consumers.set('c', {} as never);
-
-		const stats = mgr.getRoomStats('r1');
-		expect(stats).toEqual(
-			expect.objectContaining({
-				id: 'r1',
-				peerCount: 3,
-				participantCount: 2,
-				peers: ['p1', 'p2', 'recorder:session-1'],
-				producerCount: 2,
-				consumerCount: 1,
-			}),
+		const first = await mgr.createRoom(
+			'r1',
+			1,
+			makeWorker({ router: makeRouter() }),
+			makeWebRtcServer(),
+			codecs,
 		);
+		const second = await mgr.createRoom(
+			'r2',
+			2,
+			makeWorker({ router: makeRouter() }),
+			makeWebRtcServer(),
+			codecs,
+		);
+		addPeersTo(first, 'p1', 'recorder:session-1');
+		addPeersTo(second, 'p1');
 
-		expect(mgr.getRoomStats('missing')).toBeNull();
+		expect(mgr.getPeerCount()).toBe(3);
 		expect(mgr.getParticipantCount()).toBe(2);
 	});
 
