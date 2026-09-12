@@ -10,7 +10,7 @@
 			!keyboardOpen &&
 			!isMobileSelectionActive &&
 			!isSearchRoute &&
-			!showSearchModal &&
+			!root.paletteOpen &&
 			!screenerActive &&
 			!profileActive
 		"
@@ -81,12 +81,11 @@
 		</div>
 	</nav>
 
-	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
@@ -96,14 +95,15 @@ import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet, useKeyboardOpen, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import SearchModal from '@/apps/mail/components/Modals/AdvancedSearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
+import { useRootStore } from '@/stores/root'
 
 import type { MailboxData } from '@/apps/mail/types'
 
 const route = useRoute()
 const router = useRouter()
 const store = userStore()
+const root = useRootStore()
 const user = inject('$user') as { data: Record<string, any> }
 const { mailboxes, allInboxesUnread } = store
 const { openFolderSheet } = useFolderSheet()
@@ -123,8 +123,6 @@ const currentFolder = computed(() => {
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
 
-const showSearchModal = ref(false)
-
 // Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
 // whole screen to lay itself out in rather than floating over this one.
 const openCompose = () => openComposePage(router, store.accountId)
@@ -143,30 +141,12 @@ const mailActive = computed(
 const screenerActive = computed(() =>
 	['mail-screener', 'mail-screener-sender'].includes(route.name as string),
 )
-const searchActive = computed(() => showSearchModal.value || isSearchRoute.value)
+const searchActive = computed(() => root.paletteOpen || isSearchRoute.value)
 const profileActive = computed(() => route.name === 'mail-profile')
 
-// The Search tab is a navigation like the others: it lands on the search page (so tab
-// selection stays route-driven — an overlay over a mail route read as two active tabs),
-// then opens the query editor on top of it. Navigate first: the editor pushes its own
-// history state, which must sit above the search page's entry for back to unwind cleanly.
-const openSearch = async () => {
-	if (!isSearchRoute.value)
-		await router.push({
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox: 'search' },
-		})
-	showSearchModal.value = true
-}
+const openSearch = () => (root.paletteOpen = true)
 
 const openMail = () => {
-	// The query editor overlay leaves the bar visible; a tab tap first dismisses it. It
-	// only ever covers the search page now, so the tap always navigates on to the inbox.
-	if (showSearchModal.value) {
-		showSearchModal.value = false
-		if (!mailActive.value) router.push('/mail')
-		return
-	}
 	// Re-tapping the active Mail tab opens the folder switcher.
 	if (mailActive.value) {
 		openFolderSheet()
@@ -179,7 +159,6 @@ const openMail = () => {
 }
 
 const openScreener = () => {
-	showSearchModal.value = false
 	if (screenerActive.value) return
 	router.push({ name: 'mail-screener', params: { accountId: store.accountId } })
 }
@@ -189,7 +168,6 @@ const openScreener = () => {
 // to the root of its own stack: the open settings sub-page is a query on this route,
 // so dropping the query closes it.
 const openProfile = () => {
-	showSearchModal.value = false
 	if (profileActive.value) {
 		if (route.query.tab) router.replace({ query: {} })
 		return
