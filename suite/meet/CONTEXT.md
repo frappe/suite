@@ -90,7 +90,7 @@ _Avoid_: Server-side Encryption
 - A **Recording Artifact** belongs to exactly one **Room Owner**.
 - A **Recording Artifact** appears in Drive only after its video is valid and ready.
 - A **Recording Artifact** is named from its Meet Room title and Recording Session start time.
-- Only the **Room Owner** receives post-processing ready, partial, or failed notifications.
+- Only the **Room Owner** receives post-processing ready, partial, or failed notifications, delivered by email rather than an in-app notification.
 - Trashing a **Recording Artifact** follows normal reversible Drive behavior; permanently deleting it also deletes its Recording Session metadata.
 - A **Recording Initiator** controls a **Recording Session** but does not thereby own its **Recording Artifact**.
 - A **Recorder Endpoint** observes the **Shared Stage** but does not count as a participant or keep the room human-occupied.
