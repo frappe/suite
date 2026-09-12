@@ -330,6 +330,65 @@ describe("SFUMeetingManager facade operations", () => {
 		expect(manager.getLocalProducerState("audio")?.id).toBe("recovered-producer");
 	});
 
+	it("publishes by replacing a stale producer with the requested track", async () => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const manager = createManager();
+		const previousTrack = mediaTrack("previous-video", "video");
+		const requestedTrack = mediaTrack("requested-video", "video");
+		const producer = {
+			id: "video-producer",
+			track: previousTrack,
+			closed: false,
+			paused: false,
+			replaceTrack: vi.fn(async ({ track }: { track: MediaStreamTrack }) => {
+				producer.track = track;
+			}),
+			close: vi.fn(),
+		};
+		manager.mediaHandler.setProducers({ videoProducer: producer as never });
+
+		const result = await manager.publishMedia(
+			new FakeMediaStream([requestedTrack]) as never,
+			{ publishVideo: true, publishAudio: false },
+		);
+
+		expect(result).toEqual({ video: { status: "published" } });
+		expect(producer.replaceTrack).toHaveBeenCalledWith({ track: requestedTrack });
+		expect(manager.getLocalProducerState("video")?.track).toBe(requestedTrack);
+	});
+
+	it("reports audio and video publication outcomes independently", async () => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const manager = createManager({
+			isConnected: vi.fn(() => false),
+		} as never);
+		const video = mediaTrack("video", "video");
+		const audio = mediaTrack("audio", "audio");
+		const videoError = new Error("video failed");
+		const audioProducer = {
+			id: "audio-producer",
+			track: audio,
+			closed: false,
+			paused: false,
+			resume: vi.fn(),
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer")
+			.mockRejectedValueOnce(videoError)
+			.mockResolvedValueOnce(audioProducer as never);
+
+		const result = await manager.publishMedia(
+			new FakeMediaStream([video, audio]) as never,
+			{ publishVideo: true, publishAudio: true },
+		);
+
+		expect(result).toEqual({
+			video: { status: "failed", error: videoError },
+			audio: { status: "published" },
+		});
+		expect(audioProducer.resume).toHaveBeenCalledOnce();
+	});
+
 	it("abandons a delayed screen producer after screen sharing stops", async () => {
 		const closeProducer = vi.fn().mockResolvedValue(undefined);
 		const manager = createManager({

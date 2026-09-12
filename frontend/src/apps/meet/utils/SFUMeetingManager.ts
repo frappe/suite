@@ -61,6 +61,15 @@ interface E2EEPublicationResult {
 	audioPublished: boolean;
 }
 
+type LocalPublicationOutcome =
+	| { status: "published" }
+	| { status: "failed"; error: unknown };
+
+interface LocalMediaPublicationResult {
+	video?: LocalPublicationOutcome;
+	audio?: LocalPublicationOutcome;
+}
+
 type LocalProducerKind = "audio" | "video" | "screen";
 
 interface LocalProducerState {
@@ -394,8 +403,63 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
-	): Promise<PublishedMedia> {
-		return this.mediaManager.publishMedia(localStream, options);
+	): Promise<LocalMediaPublicationResult> {
+		return this.mediaManager.serializeSendMediaMutation(async () => {
+			const publication: LocalMediaPublicationResult = {};
+			const publish = async (
+				kind: "video" | "audio",
+				track: MediaStreamTrack | null,
+			): Promise<LocalPublicationOutcome> => {
+				if (!track) {
+					return {
+						status: "failed",
+						error: new Error(
+							`No live ${kind} track was requested for publication`,
+						),
+					};
+				}
+
+				try {
+					await this.reconcileLocalProducerTrackNow(
+						kind,
+						track,
+						kind === "audio" ? { resume: true } : {},
+					);
+					const producer = this.getLocalProducer(kind);
+					if (
+						!producer ||
+						producer.closed ||
+						producer.track?.readyState !== "live" ||
+						(producer.track !== track && producer.track?.id !== track.id)
+					) {
+						throw new Error(
+							`${kind === "video" ? "Video" : "Audio"} publication did not publish the requested track`,
+						);
+					}
+					return { status: "published" };
+				} catch (error) {
+					return { status: "failed", error };
+				}
+			};
+
+			if (options.publishVideo) {
+				publication.video = await publish(
+					"video",
+					localStream
+						.getVideoTracks()
+						.find((track) => track.readyState === "live") ?? null,
+				);
+			}
+			if (options.publishAudio) {
+				publication.audio = await publish(
+					"audio",
+					localStream
+						.getAudioTracks()
+						.find((track) => track.readyState === "live") ?? null,
+				);
+			}
+			return publication;
+		});
 	}
 
 	async publishInitialMedia(

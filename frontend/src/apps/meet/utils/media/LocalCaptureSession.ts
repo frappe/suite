@@ -19,7 +19,7 @@ export interface LocalCaptureOperation {
 	publicationOwner?: object | null;
 }
 
-export type LocalCaptureKindPublicationResult =
+type LocalCaptureKindPublicationResult =
 	| { status: "published" }
 	| { status: "failed"; error: unknown };
 
