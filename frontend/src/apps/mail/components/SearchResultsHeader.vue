@@ -14,9 +14,9 @@
 				:placeholder="__('Search')"
 				:aria-label="__('Edit search')"
 				class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-base focus:ring-0"
-				@mousedown.prevent="openSearch()"
+				@mousedown.prevent="openSearch"
 			/>
-			<Button variant="ghost" :aria-label="__('Filters')" @click="openSearch">
+			<Button variant="ghost" :aria-label="__('Filters')" @click="openAdvancedSearch">
 				<template #icon>
 					<SlidersHorizontal class="text-ink-gray-5 h-4 w-4" />
 				</template>
@@ -33,7 +33,7 @@
 			:aria-label="__('Edit search')"
 			readonly
 			variant="outline"
-			@mousedown.prevent="openSearch()"
+			@mousedown.prevent="openSearch"
 		>
 			<template #prefix>
 				<Search class="text-ink-gray-5 size-4" />
@@ -42,7 +42,7 @@
 				<button
 					class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
 					:aria-label="__('Filters')"
-					@mousedown.stop.prevent="openSearch"
+					@mousedown.stop.prevent="openAdvancedSearch"
 				>
 					<SlidersHorizontal class="size-4" />
 				</button>
@@ -58,7 +58,7 @@
 				:key="chip.key"
 				class="bg-surface-gray-2 inline-flex items-center gap-1 rounded-4 pl-2 pr-1"
 				:class="[isMobile ? 'h-8 text-sm' : 'h-7 text-xs', 'hover:bg-surface-gray-3 cursor-pointer']"
-				@click="openSearch"
+				@click="openAdvancedSearch"
 			>
 				<span class="max-w-40 truncate">{{ chip.label }}</span>
 				<button
@@ -89,6 +89,7 @@ import { Button, FormControl } from 'frappe-ui'
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import { useRootStore } from '@/stores/root'
 
 import type { MailboxData, UserResource } from '@/apps/mail/types'
 
@@ -104,10 +105,12 @@ const router = useRouter()
 const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
 const { accountId, mailboxes, mailboxIds } = userStore()
+const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 
-const openSearch = () => (showSearch.value = true)
+const openSearch = () => (root.paletteOpen = true)
+const openAdvancedSearch = () => (showSearch.value = true)
 
 const SEARCH_FILTER_LABELS: Record<string, string> = {
 	inMailbox: __('In'),
