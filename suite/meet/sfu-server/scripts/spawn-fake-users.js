@@ -11,7 +11,7 @@ Options:
   --sfu-url <url>         Base SFU URL (protocol+host) (default: http://localhost)
   --sfu-port <number>     SFU port if not implicit in URL (default: 3000)
   --site <name>           Frappe site namespace for the room
-  --secret <secret>       JWT signing secret used by SFU (required)
+  --secret <secret>       JWT signing secret used by SFU (or JWT_SECRET)
   --with-producers        Create real fake audio/video producers using FFmpeg
   --all-producers         Create producers for every fake user instead of odd-indexed users
   --auto-toggle           Periodically send media_control events

@@ -45,10 +45,11 @@ export class InMemoryRosterPersistence implements RosterPersistence {
 			this.rooms.set(roomId, entries);
 		}
 		const idx = entries.findIndex((e) => e.senderId === entry.senderId);
+		const storedEntry = structuredClone(entry);
 		if (idx >= 0) {
-			entries[idx] = entry;
+			entries[idx] = storedEntry;
 		} else {
-			entries.push(entry);
+			entries.push(storedEntry);
 		}
 	}
 
