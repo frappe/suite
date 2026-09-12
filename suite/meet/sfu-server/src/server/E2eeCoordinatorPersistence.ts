@@ -59,23 +59,6 @@ export interface E2eeCoordinatorPersistence {
 	clearRoom(roomId: string): Promise<void>;
 }
 
-function cloneRoomState(
-	state: PersistedE2eeRoomCoordinatorState,
-): PersistedE2eeRoomCoordinatorState {
-	return {
-		currentEpoch: state.currentEpoch,
-		commits: state.commits.map((commit) => ({ ...commit })),
-		welcomes: state.welcomes.map((welcome) => ({ ...welcome })),
-		acks: state.acks.map((ack) => ({ ...ack })),
-		pendingCommitRequests: state.pendingCommitRequests.map((request) => ({
-			...request,
-			joiningSenderIds: [...request.joiningSenderIds],
-			removedSenderIds: [...request.removedSenderIds],
-			alreadyTried: [...request.alreadyTried],
-		})),
-	};
-}
-
 function emptyRoomState(): PersistedE2eeRoomCoordinatorState {
 	return {
 		commits: [],
@@ -94,11 +77,7 @@ export class InMemoryE2eeCoordinatorPersistence
 		now: number = Date.now(),
 	): Promise<Map<string, PersistedE2eeRoomCoordinatorState>> {
 		this.pruneExpired(now);
-		const out = new Map<string, PersistedE2eeRoomCoordinatorState>();
-		for (const [roomId, state] of this.rooms) {
-			out.set(roomId, cloneRoomState(state));
-		}
-		return out;
+		return structuredClone(this.rooms);
 	}
 
 	async setCurrentEpoch(roomId: string, epochNumber: number): Promise<void> {
@@ -153,12 +132,7 @@ export class InMemoryE2eeCoordinatorPersistence
 		room.pendingCommitRequests = room.pendingCommitRequests.filter(
 			(existing) => existing.epochNumber !== request.epochNumber,
 		);
-		room.pendingCommitRequests.push({
-			...request,
-			joiningSenderIds: [...request.joiningSenderIds],
-			removedSenderIds: [...request.removedSenderIds],
-			alreadyTried: [...request.alreadyTried],
-		});
+		room.pendingCommitRequests.push(structuredClone(request));
 	}
 
 	async removePendingCommitRequest(

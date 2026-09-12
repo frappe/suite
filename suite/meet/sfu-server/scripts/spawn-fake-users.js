@@ -1,73 +1,77 @@
 const { io } = require("socket.io-client");
 const jwt = require("jsonwebtoken");
-const yargs = require("yargs/yargs");
-const { hideBin } = require("yargs/helpers");
 const { spawn } = require("child_process");
+const { parseArgs } = require("node:util");
 
-const argv = yargs(hideBin(process.argv))
-	.option("meeting", {
-		type: "string",
-		demandOption: true,
-		describe: "Meeting ID / room ID to join",
-	})
-	.option("count", {
-		type: "number",
-		default: 5,
-		describe: "Number of fake users to spawn",
-	})
-	.option("sfu-url", {
-		type: "string",
-		default: "http://localhost",
-		describe: "Base SFU URL (protocol+host)",
-	})
-	.option("sfu-port", {
-		type: "number",
-		default: 3000,
-		describe: "SFU port if not implicit in URL",
-	})
-	.option("site", {
-		type: "string",
-		describe: "Frappe site namespace for the room",
-	})
-	.option("secret", {
-		type: "string",
-		default: process.env.JWT_SECRET,
-		describe: "JWT signing secret used by SFU (required)",
-	})
-	.option("with-producers", {
-		type: "boolean",
-		default: false,
-		describe: "Create real fake audio/video producers using FFmpeg",
-	})
-	.option("all-producers", {
-		type: "boolean",
-		default: false,
-		describe: "Create producers for every fake user instead of odd-indexed users",
-	})
-	.option("auto-toggle", {
-		type: "boolean",
-		default: false,
-		describe: "Periodically send media_control events",
-	})
-	.option("lifetime", {
-		type: "number",
-		default: 0,
-		describe: "Milliseconds before disconnecting (0 = keep alive)",
-	})
-	.help().argv;
+const help = `Usage: spawn-fake-users.js --meeting <id> [options]
+
+Options:
+  --meeting <id>          Meeting ID / room ID to join (required)
+  --count <number>        Number of fake users to spawn (default: 5)
+  --sfu-url <url>         Base SFU URL (protocol+host) (default: http://localhost)
+  --sfu-port <number>     SFU port if not implicit in URL (default: 3000)
+  --site <name>           Frappe site namespace for the room
+  --secret <secret>       JWT signing secret used by SFU (required)
+  --with-producers        Create real fake audio/video producers using FFmpeg
+  --all-producers         Create producers for every fake user instead of odd-indexed users
+  --auto-toggle           Periodically send media_control events
+  --lifetime <ms>         Milliseconds before disconnecting (default: 0)
+  --help                  Show help`;
+
+let values;
+try {
+	({ values } = parseArgs({
+		options: {
+			meeting: { type: "string" },
+			count: { type: "string", default: "5" },
+			"sfu-url": { type: "string", default: "http://localhost" },
+			"sfu-port": { type: "string", default: "3000" },
+			site: { type: "string" },
+			secret: { type: "string" },
+			"with-producers": { type: "boolean", default: false },
+			"all-producers": { type: "boolean", default: false },
+			"auto-toggle": { type: "boolean", default: false },
+			lifetime: { type: "string", default: "0" },
+			help: { type: "boolean", default: false },
+		},
+		allowNegative: true,
+	}));
+} catch (error) {
+	console.error(`Error: ${error.message}`);
+	process.exit(1);
+}
+
+if (values.help) {
+	console.log(help);
+	process.exit(0);
+}
+
+if (!values.meeting) {
+	console.error("Error: --meeting is required");
+	process.exit(1);
+}
+
+const numberOption = (name) => {
+	const value = Number(values[name]);
+	if (!Number.isFinite(value)) {
+		console.error(`Error: --${name} must be a number`);
+		process.exit(1);
+	}
+	return value;
+};
 
 const {
 	meeting: meetingId,
-	count,
-	sfuUrl,
-	sfuPort,
 	site,
-	secret,
-	withProducers,
-	allProducers,
-	autoToggle,
-	lifetime,
-} = argv;
+	"with-producers": withProducers,
+	"all-producers": allProducers,
+	"auto-toggle": autoToggle,
+} = values;
+const count = numberOption("count");
+const sfuUrl = values["sfu-url"];
+const sfuPort = numberOption("sfu-port");
+const lifetime = numberOption("lifetime");
+const secret = values.secret ?? process.env.JWT_SECRET;
 
 if (!secret) {
 	console.error("Error: JWT secret is required. Provide --secret or set JWT_SECRET environment variable.");
