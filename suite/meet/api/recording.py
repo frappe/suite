@@ -1242,20 +1242,18 @@ def recorder_stopped(
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def recorder_upload_chunk(
-    recording_id: str, job: str, offset: int, chunk_sha256: str, protocol_version: int
+    recording_id: str, job: str, offset: str, chunk_sha256: str, protocol_version: str
 ) -> dict:
-    if protocol_version == str(PROTOCOL_VERSION):
-        protocol_version = PROTOCOL_VERSION
-    if isinstance(offset, str) and offset.isdecimal():
-        offset = int(offset)
-    _validate_callback_protocol(protocol_version)
+    if protocol_version != str(PROTOCOL_VERSION):
+        frappe.throw(_("Unsupported recording callback protocol version"))
     authenticate_callback(
-        protocol_version=protocol_version,
+        protocol_version=PROTOCOL_VERSION,
         recording=recording_id,
         job=job,
         operation="upload_chunk",
         operation_id=f"{offset}:{chunk_sha256}",
     )
+    offset_value = int(offset)
     if frappe.request.content_type != "application/octet-stream":
         frappe.throw(_("Recording upload chunks must be binary data"))
     if frappe.request.content_length is not None and frappe.request.content_length > CHUNK_SIZE:
@@ -1263,7 +1261,7 @@ def recorder_upload_chunk(
     return _callback_response(
         append_chunk(
             recording_id,
-            offset=offset,
+            offset=offset_value,
             chunk=frappe.request.get_data(cache=True),
             chunk_sha256=chunk_sha256,
         )

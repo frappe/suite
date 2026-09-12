@@ -314,13 +314,13 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
                     frappe.local.request = Mock(content_type=content_type, content_length=5)
                     with self.assertRaises(frappe.ValidationError):
                         recorder_upload_chunk(
-                            self.recording.name, self.recording.recorder_job_id, 0, digest, 1
+                            self.recording.name, self.recording.recorder_job_id, "0", digest, "1"
                         )
 
             request = Mock(content_type="application/octet-stream", content_length=CHUNK_SIZE + 1)
             frappe.local.request = request
             with self.assertRaises(frappe.ValidationError):
-                recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest, 1)
+                recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, "0", digest, "1")
             request.get_data.assert_not_called()
 
             request = Mock(content_type="application/octet-stream", content_length=5)
