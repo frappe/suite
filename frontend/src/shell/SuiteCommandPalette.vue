@@ -430,6 +430,7 @@ const {
   results: mailResults,
   suggestions: mailSuggestions,
   applyFilter: applyMailFilter,
+  setFilters: setMailFilters,
   getFilterLabel: getMailFilterLabel,
   selectContact: selectMailContact,
   selectFilterSuggestion: selectMailFilterSuggestion,
@@ -713,7 +714,20 @@ watch(
 watch(
   () => root.paletteOpen,
   (open) => {
-    if (open) return;
+    if (open) {
+      if (isMailSearchRoute.value) {
+        query.value = typeof route.query.text === "string" ? route.query.text : "";
+        setMailFilters(
+          Object.fromEntries(
+            Object.entries(route.query).filter(
+              ([key, value]) =>
+                key !== "text" && key !== "all_accounts" && typeof value === "string",
+            ),
+          ) as Record<string, string>,
+        );
+      }
+      return;
+    }
     navigationMode.value = false;
     mailAppliedFilters.value = [];
     resetSearches();

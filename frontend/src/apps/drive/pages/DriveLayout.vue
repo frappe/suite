@@ -49,7 +49,7 @@ import { onKeyDown, useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
 import { initSocket } from '@/apps/drive/socket'
 import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
 import { useRootStore } from '@/stores/root'
 
@@ -58,7 +58,6 @@ provide('emitter', emitter)
 provide('socket', initSocket())
 
 const route = useRoute()
-const router = useRouter()
 const isDesktop = useMediaQuery('(min-width: 768px)')
 const shellScroll = computed(() => route.meta.shellScroll !== false)
 const inIframe = window.self !== window.top

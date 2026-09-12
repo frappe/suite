@@ -215,6 +215,23 @@ export function useMailCommandPaletteSearch(
     ];
   }
 
+  function setFilters(filters: Record<string, string>) {
+    appliedFilters.value = Object.entries(filters).map(([key, value]) => {
+      let displayValue = value;
+      if (key === "inMailbox") {
+        displayValue =
+          (getMailUser().mailboxes.data ?? []).find(
+            (mailbox: { id: string }) => mailbox.id === value,
+          )?._name ?? value;
+      } else if (key === "hasAttachment") {
+        displayValue = value === "true" ? "With attachments" : "Without attachments";
+      } else if (key === "isRead") {
+        displayValue = value === "true" ? "Read" : "Unread";
+      }
+      return { key, value, displayValue };
+    });
+  }
+
   function consumeFilterToken(value: string) {
     const match = value.match(
       /(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):(?:"[^"]+"|\S+)\s$/i,
@@ -315,6 +332,7 @@ export function useMailCommandPaletteSearch(
     results,
     suggestions,
     applyFilter,
+    setFilters,
     getFilterLabel,
     selectContact,
     selectFilterSuggestion,
