@@ -77,6 +77,10 @@ Scope, decided 2026-09-11:
   `forge/drive-layer` because the frontend consumes that branch's API.
   Research branches: `forge/research-<name>`.
 - Vocabulary: [`frontend/CONTEXT.md`](../../frontend/CONTEXT.md).
+- Server-state client: [`references/server-state-client.md`](references/server-state-client.md)
+  is the guideline for the frontend data layer (decided 2026-09-12 and
+  2026-09-13 under ticket 002). Frontend work starts on it. Ticket 002
+  tightens it as pages land.
 
 ### Local tracker conventions
 
