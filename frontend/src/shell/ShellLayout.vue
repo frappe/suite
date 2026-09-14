@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from "vue";
 import { DesktopShell, MobileShell } from "frappe-ui";
 import { useRoute } from "vue-router";
 
@@ -146,6 +146,20 @@ const resolvedFrame = computed<ShellFrame | null>(() => {
 });
 const scrollOwner = computed<ScrollOwner>(() =>
   route.meta.scroll === "content" ? "content" : "shell",
+);
+
+// Products ask for their contextual panel on mobile with a window event.
+// This keeps the products -> platform import direction (no shell import).
+const OPEN_PANEL_EVENT = "suite:open-active-area-panel";
+function onOpenActiveAreaPanel(event: Event) {
+  const area = (event as CustomEvent<{ area?: string }>).detail?.area;
+  if (!isMobile.value) return;
+  if (area && area !== route.meta.area) return;
+  mobileSheetOpen.value = true;
+}
+onMounted(() => window.addEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel));
+onBeforeUnmount(() =>
+  window.removeEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel),
 );
 
 function describeUnavailable(

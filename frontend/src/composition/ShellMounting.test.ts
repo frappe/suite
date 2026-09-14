@@ -17,7 +17,6 @@ vi.mock("frappe-ui", () => {
   };
 });
 
-import { filesArea } from "@/apps/drive";
 import ContentPane from "@/shell/ContentPane.vue";
 import DocumentFrame from "@/shell/DocumentFrame.vue";
 
@@ -33,18 +32,27 @@ describe.each([1280, 390])("shell mount seam at %ipx", (width) => {
       configurable: true,
       value: width,
     });
-    const { routes } = await filesArea.loadRoutes();
-    const FilesPage = routes[0]?.component as Component;
+    const LongList = defineComponent({
+      setup: () => () =>
+        h(
+          "div",
+          { "data-long-list": "" },
+          Array.from({ length: 200 }, (_, index) =>
+            h("div", { class: "h-9" }, `Row ${index + 1}`),
+          ),
+        ),
+    });
     const files = mount(
       defineComponent({
         setup: () => () =>
-          h(ContentPane, { scroll: "shell" }, { default: () => h(FilesPage) }),
+          h(ContentPane, { scroll: "shell" }, { default: () => h(LongList) }),
       }),
     );
     expect(files.querySelector('[data-scroll-owner="shell"]')).not.toBeNull();
     expect(
-      files.querySelectorAll("[data-files-placeholder] > div > div"),
-    ).toHaveLength(200);
+      files.querySelector('[data-scroll-owner="shell"]')?.className,
+    ).not.toContain("overflow-hidden");
+    expect(files.querySelectorAll("[data-long-list] > div")).toHaveLength(200);
 
     const content = mount(
       defineComponent({
