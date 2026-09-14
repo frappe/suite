@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
 
-const baseURL = process.env.BASE_URL ?? "http://suite.local:8098";
+const baseURL = process.env.BASE_URL ?? "http://slides.localhost:8086";
 const isCI = !!process.env.CI;
 
 export default defineConfig({
