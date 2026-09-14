@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createRealtime, type SocketLike } from './index'
+import { createRealtime, resolveSocketUrl, type SocketLike } from './index'
 
 class FakeSocket implements SocketLike {
   connected = false
@@ -20,6 +20,10 @@ class FakeSocket implements SocketLike {
   }
   emit(event: string, ...args: any[]) {
     this.emitted.push([event, ...args])
+    return this
+  }
+  disconnect() {
+    this.connected = false
     return this
   }
   trigger(event: string, ...args: any[]) {
@@ -74,5 +78,33 @@ describe('realtime', () => {
     expect(reconnect).toHaveBeenCalledOnce()
     expect(socket.emitted).toContainEqual(['doctype_subscribe', 'Drive Node'])
     leave()
+  })
+
+  it('discovers production and development socket URLs', () => {
+    expect(resolveSocketUrl({
+      location: {
+        origin: 'https://suite.example.com', protocol: 'https:', hostname: 'suite.example.com', port: '',
+      } as Location,
+    } as Window, 'suite.example.com', 9000)).toBe('https://suite.example.com/suite.example.com')
+    expect(resolveSocketUrl({
+      location: {
+        origin: 'https://slides.localhost:8080', protocol: 'https:', hostname: 'slides.localhost', port: '8080',
+      } as Location,
+    } as Window, 'slides.localhost', 9000)).toBe('https://slides.localhost:9000/slides.localhost')
+  })
+
+  it('closes the tab connection and creates a fresh lazy socket on demand', () => {
+    const first = new FakeSocket()
+    const second = new FakeSocket()
+    const factory = vi.fn()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second)
+    const realtime = createRealtime({ io: factory, siteName: 'site', window })
+    expect(factory).not.toHaveBeenCalled()
+    expect(realtime.socket()).toBe(first)
+    realtime.close()
+    expect(first.connected).toBe(false)
+    expect(realtime.socket()).toBe(second)
+    expect(factory).toHaveBeenCalledTimes(2)
   })
 })

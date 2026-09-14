@@ -503,7 +503,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         const error = platformError(cause)
         record.error = error
         record.status = 'error'
-        if (error.type === 'SessionExpired') paused = true
+        if (error.type === 'SessionExpired') {
+          record.stale = true
+          paused = true
+        }
       })
       .finally(() => {
         record.isFetching = false

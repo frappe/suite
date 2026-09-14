@@ -43,4 +43,39 @@ describe('session', () => {
     expect(session.status.value).toBe('guest')
     expect(request.mock.calls.map(([operation]) => operation.id)).toContain('frappe.logout')
   })
+
+  it('keeps guests idle until login supplies an identity', async () => {
+    document.cookie = 'user_id=Guest; path=/'
+    const request = vi.fn(async () => ({ name: 'user@example.com' }))
+    const session = createSession({ request } as Transport)
+    await session.refresh()
+    expect(session.status.value).toBe('guest')
+    expect(session.user.value).toBeNull()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates concurrent account refreshes', async () => {
+    document.cookie = 'user_id=user%40example.com; path=/'
+    let release!: (account: Record<string, unknown>) => void
+    const account = new Promise<Record<string, unknown>>((resolve) => (release = resolve))
+    const request = vi.fn(() => account)
+    const session = createSession({ request } as Transport)
+    const first = session.refresh()
+    const second = session.refresh()
+    expect(request).toHaveBeenCalledOnce()
+    release({ name: 'user@example.com', full_name: 'User' })
+    await Promise.all([first, second])
+    expect(session.status.value).toBe('authenticated')
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('clears stale identity and capabilities when the account becomes Guest', async () => {
+    document.cookie = 'user_id=user%40example.com; path=/'
+    const request = vi.fn(async () => ({ name: 'Guest' }))
+    const session = createSession({ request } as Transport)
+    await session.refresh()
+    expect(session.status.value).toBe('guest')
+    expect(session.user.value).toBeNull()
+    expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
+  })
 })
