@@ -35,11 +35,13 @@ Scope, decided 2026-09-11:
   [suite-shell-prototype](https://sketch.netchamp.dev/u/netchampfaris/suite-shell-prototype)
   (sketch slug `suite-shell-prototype`). Decided from it: an icon rail with
   Home, Files, Mail, Calendar, plus Search, Notifications, Settings and the
-  account; documents open in the content pane with the panel hidden and the
-  shell owning the title bar; a Meet call is a full-screen page outside the
-  shell; mobile is a bottom nav plus a bottom sheet. Not decided from it: the
-  URL scheme. Removed from it: the Organization/Personal workspace switcher.
-  Choosing a Drive Root belongs to the Files area only.
+  account; documents open in the content pane with the panel hidden; a Meet
+  call is a full-screen page outside the shell; mobile is a bottom nav plus a
+  bottom sheet. Ticket 009 supersedes the prototype's ownership inference for
+  open documents: each product owns its complete document surface, including
+  its title bar, while the shell owns placement. Not decided from the
+  prototype: the URL scheme. Removed from it: the Organization/Personal
+  workspace switcher. Choosing a Drive Root belongs to the Files area only.
 - Source precedence: the Drive spec
   ([`../drive-layer-spec/drive-layer-spec.md`](../drive-layer-spec/drive-layer-spec.md))
   wins for Drive behavior. [`ARCHITECTURE.md`](../../ARCHITECTURE.md) rule 8
@@ -93,6 +95,71 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Frontend module layout and import boundaries](tickets/013-frontend-module-layout-and-boundaries.md) —
+  Drive owns separate `files` and deletable `legacy` subtrees; eight decided
+  platform modules move on day one behind compatibility shims. Package-root
+  product seams and the full acyclic import graph are enforced with shrinking
+  debt baselines, including unstable/private frappe-ui imports. Areas and
+  heavy surfaces load on demand under a 200 KiB-gzip initial-JS budget. New
+  colocated and unified browser tests are zero-red; exact legacy failures stay
+  visible. Suite architecture paths belong to `@netchampfaris`, and Drive is
+  co-owned by `@BreadGenie` and `@netchampfaris`.
+
+- [Home, palette and notifications at launch](tickets/012-home-palette-and-notifications-at-launch.md) —
+  Home Recent is 12 Drive recents in one uncursored window; Upcoming is
+  Calendar events only from now to end of tomorrow, across every account,
+  with a typed conferencing field driving Join. New carries three document
+  kinds, all through generic Drive creation into the Personal Root. The Meet
+  control is built from the reserved room and scheduled-meeting routes. The
+  bell is a Drive-only popover with mark-on-click plus Mark all read;
+  composition owns the Mail rail badge so AreaDefinition stays frozen.
+  Sections never hide and fail inline. The command palette is out of scope.
+
+- [Files area: listing, navigation and roots](tickets/006-files-area-listing-and-navigation.md) —
+  My files and Organization files are direct panel locations; Shared with me,
+  Recent, Starred and root-tabbed Trash are saved views. Listings use opaque
+  infinite cursors, server-owned folders-first sorting/grouping, exact
+  access/preview expansions and explicit loaded-row selection; every node kind
+  has one canonical open target. Drive owns the workflow-shaped
+  `@/apps/drive` interface. Root discovery, grouped/folder-only children,
+  view access, search breadcrumbs, folder archives and payload-free realtime
+  invalidation are recorded backend asks.
+
+- [Content page contract](tickets/009-content-page-contract.md) — one generic
+  host opens a live Drive `DocumentSession` and mounts a fresh product adapter
+  per node; each product owns its complete document surface, body,
+  collaboration, panels, geometry and leave guard. The session owns node
+  metadata and actions, scoped credentials, access refresh and stable media
+  handles; one composition registry drives opening and generic Drive creation,
+  and legacy pages remain separate until ticket 014 flips their redirects.
+
+- [REST endpoint structure beyond Drive](tickets/003-rest-endpoint-structure.md) —
+  Drive is the reference for resource-shaped `/api/suite/<owner>/...` routes;
+  one composition dispatcher selects product-owned typed route tables, while
+  Suite owns account, site, user and invitation resources. New shell
+  capabilities migrate as two adapters over one product workflow, Home
+  composes product queries in the client, and every adapter must pass a shared
+  executable conformance kit before legacy removal follows a zero-caller
+  proof.
+
+- [Shell and platform interface](tickets/002-shell-and-platform-interface.md) —
+  products export small area definitions through their public seams;
+  composition owns ordering and capability filtering; typed route metadata
+  selects shell frame and scroll ownership; the platform owns session,
+  server state, transport, one Frappe realtime connection, theme,
+  translation, page metadata and common feedback mechanics; product domain
+  meaning stays product-private. Unavailable deep links get an explanatory
+  shell surface, and frappe-ui's existing page-header target is the flexible
+  page-to-shell seam.
+
+- [Route grammar](tickets/001-route-grammar.md) — canonical areas are
+  `/home`, `/files`, `/mail`, and `/calendar`; `/` redirects to `/home`;
+  roots use memorable `/files` and `/files/organization` routes, folders use
+  `/files/f/<node-id>/<decorative-slug>`, and content uses
+  `/d/<node-id>/<decorative-slug>`; saved views are paths; `/l/<token>` is a
+  temporary credential-entry route; typed route metadata controls the shell
+  and unauthenticated visitors use the Guest surface.
+
 - [frappe-ui shell component gap](tickets/004-frappe-ui-shell-component-gap.md) —
   no gap: all 28 prototype components exist at suite's pin; no bump needed;
   `v1.0.0-beta.56` would cost one toast migration; use `frappe-ui/list`,
@@ -114,23 +181,26 @@ Scope, decided 2026-09-11:
 - Settings and account surfaces behind the rail: today's
   `SuiteSettingsDialog`, per-app settings bodies, the Desk switcher for
   system users.
-- Notifications: the rail badge source once Drive Notification and Mail
-  unread counts exist under REST; the shape of a cross-product feed.
-- Global search across products for the palette. Waits on the REST
-  structure ticket.
-- Editor fit: Sheets canvas and Slides stage sizing inside the content
-  pane; comments, version and presence panels beside an open document.
-- Previews and thumbnails in the grid view (signed `/f/` URLs and refresh).
-- Testing gates: the vitest baseline is red (57 failures); e2e lives under
-  `e2e/drive-backed-apps`; what the switch gate runs.
+- Notifications: the shape of a cross-product feed. Ticket 012 ships a
+  Drive-only bell and names the joined feed as the planned upgrade.
+- The mounting spike must prove the shared full-pane box with Writer, the
+  Sheets canvas, and the Slides stage on desktop and mobile; ticket 009 assigns
+  all internal geometry, panels and presence presentation to each product.
 - Mobile behaviour per area beyond the shell chrome.
-- PWA scoping (Mail is installable today), Sentry, translation and theme
-  handoff into `platform/`.
-- Keyboard shortcuts across areas (Cmd+number, Cmd+K, Escape).
-- Meet entry points on Home (rooms, join, schedule) against REST.
+- PWA scoping (Mail is installable today) and Sentry ownership.
+- Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K is not among
+  them: ticket 012 ruled the palette out of scope.
+- Named Meet rooms: persistent rooms with a handle and a cadence, as the base
+  prototype's Rooms dropdown imagined them. No doctype, no list route and no
+  such concept in Meet today. A Meet-program idea this effort surfaced.
 
 ## Out of scope
 
+- Command palette and global search across products. Ruled out under
+  [Home, palette and notifications at launch](tickets/012-home-palette-and-notifications-at-launch.md):
+  the unified frontend ships with no Cmd+K and no rail Search button. A
+  palette is only worth building over a search that spans products, and that
+  search is a separate effort.
 - Rebuilding Mail, Meet or Calendar pages. They adopt the shell. Their
   internals are later efforts.
 - REST migration of Mail, Meet, Calendar, Writer, Sheets and Slides

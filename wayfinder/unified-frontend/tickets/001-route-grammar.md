@@ -2,8 +2,8 @@
 id: 001
 title: Route grammar
 label: wayfinder:grilling
-status: open
-assignee:
+status: closed
+assignee: codex (agent, 2026-09-11)
 blocked-by: []
 ---
 
@@ -37,3 +37,50 @@ Inputs: `frontend/src/router/index.ts` (lazy route groups, auth gate,
 onboarding gate, Mail PWA scoping), `frontend/src/apps/*/routes.ts`, the
 prototype's `useShellNav.ts`, Drive spec §11.2 (route table) and §6.2
 (link seeding).
+
+## Resolution
+
+Resolved with the user on 2026-09-11. The route grammar is:
+
+- The canonical area routes are `/home`, `/files`, `/mail`, and `/calendar`.
+  Meet calls remain full-screen at `/meet/<code>`. Historical prefixes such
+  as `/suite` and `/drive/...` survive only as redirects to their canonical
+  equivalents. `/` replacement-redirects to canonical `/home`.
+- An open document uses the node-first route
+  `/d/<node-id>/<slugified-title>`. The node id is authoritative and the slug
+  is decorative: a missing or stale slug still resolves, then the router
+  replaces the URL with the current slug without adding browser history. This
+  is the single content route for Writer, Sheets and Slides documents and for
+  previewable uploaded files; the node response selects the renderer. Slugs are
+  Unicode-aware: normalize and lowercase, keep letters and numbers from every
+  script, collapse punctuation and whitespace to hyphens, and omit the slug
+  when no readable characters remain. Cap the decorative segment at 80 Unicode
+  characters and truncate only at a character boundary.
+- Active Drive Roots use memorable semantic routes rather than exposing their
+  opaque node ids: `/files` is **My files** (the Personal Root) and
+  `/files/organization` is **Organization files** (the business site's single
+  Shared Root). `/files/shared-with-me` is **Shared with me**, a computed view
+  of direct grants and never a third root. Personal sites omit the organization
+  destination. Ordinary folder routes remain node-id-based so moves and renames
+  do not break them: `/files/f/<node-id>/<decorative-slug>` identifies only
+  the open folder, while the API supplies its breadcrumb chain. Research:
+  [`../references/file-navigation-naming-benchmark.md`](../references/file-navigation-naming-benchmark.md).
+- Saved destinations use dedicated paths: `/files/recent`, `/files/starred`,
+  `/files/shared-with-me`, and `/files/trash`. Query parameters describe
+  presentation or filtering state such as layout, sort, and grouping; they do
+  not select the saved destination.
+- Share links use `/l/<token>` as a temporary credential-entry route. It
+  resolves the grant, remembers the token with its target node, and replacement-
+  navigates to the canonical folder or document route, so the capability does
+  not remain in browser history or subsequent URLs. The client sends the token
+  only for its target or descendants, never for unrelated requests. Copying a
+  canonical node URL does not share access; a fresh browser needs the original
+  link.
+- Every route declares one typed shell contract in metadata: `area` selects
+  the rail and contextual-panel context; `frame` is `area`, `document`, or
+  `none`; `scroll` is `shell` or `content`; `allowGuest` controls the auth
+  gate; and `title` and `favicon` provide page metadata. A guest on an allowed
+  route gets the **Guest surface**, the shell-less presentation for a visitor
+  without a Suite session whether access comes from a link or `$PUBLIC`. A
+  signed-in visitor gets the Suite shell. The shell does not infer presentation
+  from URL prefixes, and new routes do not add independent layout booleans.

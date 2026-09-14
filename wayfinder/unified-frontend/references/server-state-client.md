@@ -291,6 +291,11 @@ is stale on boot and always revalidates.
 
 ## Realtime
 
+- `@/platform/realtime` owns one lazy singleton Socket.IO connection per
+  browser tab to the Frappe site namespace. The engine and product clients
+  subscribe through it, and every subscription returns cleanup. Product live
+  planes such as Meet SFU signalling, Hocuspocus/Yjs, SSE and media streams
+  remain outside it.
 - `doc_update`: equal version means our own write echoing back, no-op. Newer
   means mark stale and refetch if observed.
 - `list_update`: invalidate lists tagged with the doctype that do not contain
