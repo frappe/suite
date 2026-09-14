@@ -26,10 +26,12 @@ const KEY = 'suite-drive-files-presentation-v1'
 export function resolvePresentation(
   query: LocationQuery,
   preference: Partial<PresentationState> | null = readPresentationPreference(),
+  /** Narrow screens open in grid: a rem-sized table does not fit a phone. */
+  viewOverride: FilesViewMode | null = null,
 ): PresentationState {
   const saved = { ...DEFAULT_PRESENTATION, ...(preference ?? {}) }
   return {
-    view: oneOf(query.view, ['list', 'grid']) ?? saved.view,
+    view: oneOf(query.view, ['list', 'grid']) ?? viewOverride ?? saved.view,
     sort: oneOf(query.sort, ['title', 'owner', 'modified', 'kind', 'size']) ?? saved.sort,
     dir: oneOf(query.dir, ['asc', 'desc']) ?? saved.dir,
     group: oneOf(query.group, ['none', 'type', 'owner', 'modified']) ?? saved.group,

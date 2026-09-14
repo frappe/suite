@@ -19,7 +19,7 @@ import { SidebarItem, SidebarLabel } from "frappe-ui";
 import { translate as __ } from "@/platform/translation";
 
 const destinations = [
-  { label: __("All files"), to: "/files", icon: "lucide-folder" },
+  { label: __("My files"), to: "/files", icon: "lucide-folder" },
   {
     label: __("Shared with me"),
     to: "/files/shared-with-me",

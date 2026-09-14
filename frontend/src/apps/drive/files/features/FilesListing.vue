@@ -11,15 +11,15 @@
     </div>
     <div v-else-if="!query.rows.length" class="flex flex-col items-center justify-center gap-2 py-16 text-center">
       <span class="lucide-folder-open size-6 text-ink-gray-4" aria-hidden="true" />
-      <p class="text-base text-ink-gray-7">{{ emptyTitle }}</p>
+      <p class="text-base text-ink-gray-5">{{ emptyTitle }}</p>
       <p class="text-p-sm text-ink-gray-5">{{ emptyDescription }}</p>
     </div>
 
     <template v-else-if="presentation.view === 'list'">
       <List
         :columns="columnTracks"
-        :row-height="48"
-        :selectable="false"
+        :row-height="40"
+        :selectable="selectionMode"
         :selection="selection"
         class="mt-3 list-row-px-3"
         @update:selection="$emit('update:selection', $event)"
@@ -44,22 +44,18 @@
             @contextmenu.prevent="$emit('menu', row)"
           >
             <ListCell>
-              <Checkbox
-                :model-value="selection.includes(row.name)"
-                :aria-label="`Select ${row.title}`"
-                class="mr-2 shrink-0"
-                @click.stop
-                @update:model-value="$emit('select', row, false)"
-              />
-              <span class="mr-2 size-4 shrink-0 text-ink-gray-5" :class="nodeIcon(row)" aria-hidden="true" />
+              <span class="mr-2 size-4 shrink-0" :class="[nodeIcon(row), nodeIconTint(row)]" aria-hidden="true" />
               <span class="min-w-0 truncate text-base text-ink-gray-8">{{ row.title }}</span>
-              <span v-if="row.favourite" class="lucide-star ml-1.5 size-3.5 text-ink-amber-6" aria-hidden="true" />
+              <span v-if="row.favourite" class="lucide-star ml-1.5 size-3.5 shrink-0 text-ink-amber-6" aria-hidden="true" />
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{ breadcrumbText(row) }}</span>
             </ListCell>
             <ListCell v-if="hasColumn('kind')"><span class="truncate text-base text-ink-gray-7">{{ nodeTypeLabel(row) }}</span></ListCell>
-            <ListCell v-if="hasColumn('owner')"><span class="truncate text-base text-ink-gray-7">{{ row.owner }}</span></ListCell>
-            <ListCell v-if="hasColumn('size')" class="justify-end"><span class="text-p-sm text-ink-gray-5">{{ formatBytes(row.size) }}</span></ListCell>
-            <ListCell v-if="hasColumn('modified')" class="justify-end"><span class="text-p-sm text-ink-gray-5">{{ formatModified(row.modified) }}</span></ListCell>
+            <ListCell v-if="hasColumn('owner')">
+              <Avatar size="xs" :label="row.owner" class="mr-2 shrink-0" />
+              <span class="truncate text-base text-ink-gray-7">{{ row.owner }}</span>
+            </ListCell>
+            <ListCell v-if="hasColumn('size')" class="justify-end"><span class="truncate text-base text-ink-gray-5">{{ formatBytes(row.size) }}</span></ListCell>
+            <ListCell v-if="hasColumn('modified')" class="justify-end"><span class="truncate text-base text-ink-gray-5">{{ formatModified(row.modified) }}</span></ListCell>
             <ListCell class="justify-end">
               <Dropdown :options="menuOptions(row)" align="end">
                 <Button icon="lucide-ellipsis" variant="ghost" :aria-label="`Actions for ${row.title}`" @click.stop />
@@ -78,24 +74,39 @@
             v-for="row in section.rows"
             :key="row.name"
             role="listitem"
-            class="relative min-h-36 select-none rounded-5 border border-outline-gray-1 hover:bg-surface-gray-1"
-            :class="selection.includes(row.name) ? 'bg-surface-gray-2' : 'bg-surface-elevation-1'"
+            class="relative select-none rounded-5 border transition-colors"
+            :class="selection.includes(row.name)
+              ? 'border-outline-gray-3 bg-surface-gray-2'
+              : 'border-outline-gray-1 bg-surface-base hover:bg-surface-gray-1'"
           >
-            <Button
-              variant="ghost"
-              class="flex min-h-36 w-full flex-col p-3 text-start focus-visible:outline focus-visible:outline-2"
+            <button
+              type="button"
+              class="flex w-full select-none flex-col items-start gap-3 rounded-5 p-3 text-start focus-visible:focus-ring"
               @click="onRowClick($event, row)"
               @dblclick="$emit('open', row)"
               @pointerdown="startLongPress(row)"
               @pointerup="cancelLongPress"
               @pointercancel="cancelLongPress"
             >
-              <img v-if="row.preview?.url && !failedPreviews.has(row.name)" :src="row.preview.url" alt="" class="mb-3 h-20 w-full rounded-4 object-cover" @error="previewError(row)" />
-              <span v-else class="mb-3 size-5 text-ink-gray-5" :class="nodeIcon(row)" aria-hidden="true" />
-              <span class="mt-auto w-full truncate text-base font-medium text-ink-gray-8">{{ row.title }}</span>
-              <span class="w-full truncate text-p-sm text-ink-gray-5">{{ row.owner }} · {{ formatModified(row.modified) }}</span>
-            </Button>
-            <Dropdown :options="menuOptions(row)" align="end">
+              <img v-if="row.preview?.url && !failedPreviews.has(row.name)" :src="row.preview.url" alt="" class="h-20 w-full rounded-4 object-cover" @error="previewError(row)" />
+              <span v-else class="size-4.5 shrink-0" :class="[nodeIcon(row), nodeIconTint(row)]" aria-hidden="true" />
+              <span class="flex w-full min-w-0 flex-col gap-0.5">
+                <span class="flex w-full min-w-0 items-center">
+                  <span class="truncate text-base font-medium text-ink-gray-8">{{ row.title }}</span>
+                  <span v-if="row.favourite" class="lucide-star ml-1.5 size-3.5 shrink-0 text-ink-amber-6" aria-hidden="true" />
+                </span>
+                <span class="truncate text-xs text-ink-gray-5">{{ row.owner }} · {{ formatModified(row.modified) }}</span>
+              </span>
+              <!-- Inside the tile button so the corner it covers still toggles. -->
+              <Checkbox
+                v-if="selectionMode"
+                :model-value="selection.includes(row.name)"
+                tabindex="-1"
+                aria-hidden="true"
+                class="pointer-events-none absolute end-3 top-3"
+              />
+            </button>
+            <Dropdown v-if="!selectionMode" :options="menuOptions(row)" align="end">
               <Button class="absolute end-2 top-2" icon="lucide-ellipsis" variant="ghost" :aria-label="`Actions for ${row.title}`" @click.stop />
             </Dropdown>
           </div>
@@ -113,12 +124,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Alert, Button, Checkbox, Dropdown, ErrorMessage, LoadingIndicator, Skeleton } from 'frappe-ui'
+import { Alert, Avatar, Button, Checkbox, Dropdown, ErrorMessage, LoadingIndicator, Skeleton } from 'frappe-ui'
 import { List, ListCell, ListGroup, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
-import { nodeIcon, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
+import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import type { QueryResult } from '@/platform/server-state'
 import { groupContiguous } from './grouping'
 import { loadUntilVisible } from './listingWindows'
@@ -150,9 +161,15 @@ const previewRetries = new Set<string>()
 const failedPreviews = ref(new Set<string>())
 
 const sections = computed(() => groupContiguous(props.query.rows as DriveNode[], props.presentation.group))
+const COLUMN_TRACKS: Record<string, string> = {
+  owner: '12rem',
+  modified: '8rem',
+  kind: '8rem',
+  size: '6rem',
+}
 const columnTracks = computed(() => [
-  'minmax(12rem,1fr)',
-  ...props.presentation.columns.map((column) => column === 'owner' ? '11rem' : column === 'modified' ? '8rem' : '7rem'),
+  'minmax(0,1fr)',
+  ...props.presentation.columns.map((column) => COLUMN_TRACKS[column] ?? '8rem'),
   '2.5rem',
 ])
 

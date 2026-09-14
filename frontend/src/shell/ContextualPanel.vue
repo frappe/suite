@@ -4,7 +4,6 @@
     v-if="!embedded"
     width="14rem"
     disable-collapse
-    class="border-r"
   >
     <PanelBody :area="area" />
   </component>

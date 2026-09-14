@@ -28,13 +28,13 @@
 
     <ScrollArea class="min-h-0 flex-1">
       <div
-        class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-3 pb-40 pt-5 sm:px-5 sm:py-6"
+        class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6"
       >
         <section aria-labelledby="home-recent-heading">
           <div class="flex items-center justify-between pb-3">
             <h2
               id="home-recent-heading"
-              class="text-lg-semibold text-ink-gray-8"
+              class="text-lg font-medium text-ink-gray-9"
             >
               {{ __("Recent") }}
             </h2>
@@ -106,7 +106,7 @@
                 aria-hidden="true"
               />
               <span class="flex w-full min-w-0 flex-col gap-0.5">
-                <span class="w-full truncate text-base-medium text-ink-gray-8">
+                <span class="w-full truncate text-base font-medium text-ink-gray-8">
                   {{ node.title }}
                 </span>
                 <span class="text-xs text-ink-gray-5">
@@ -135,7 +135,7 @@
           <div class="flex flex-wrap items-center justify-between gap-2 pb-3">
             <h2
               id="home-upcoming-heading"
-              class="text-lg-semibold text-ink-gray-8"
+              class="text-lg font-medium text-ink-gray-9"
             >
               {{ __("Upcoming") }}
             </h2>
@@ -502,16 +502,16 @@ function eventKey(event: CalendarEvent): string {
 }
 
 function nodeIcon(node: DriveNodeSummary): string[] {
+  if (node.kind === "folder") return ["lucide-folder", "text-ink-gray-6"];
   if (node.content_doctype === "Writer Document")
-    return ["lucide-file-text", "text-ink-blue-5"];
-  if (node.content_doctype === "Spreadsheet")
-    return ["lucide-sheet", "text-ink-green-5"];
+    return ["lucide-file-text", "text-ink-blue-6"];
+  if (node.content_doctype === "Sheet" || node.content_doctype === "Spreadsheet")
+    return ["lucide-table", "text-ink-green-6"];
   if (node.content_doctype === "Presentation")
-    return ["lucide-presentation", "text-ink-orange-5"];
-  if (node.mime === "application/pdf")
-    return ["lucide-file-text", "text-ink-red-5"];
+    return ["lucide-presentation", "text-ink-orange-6"];
+  if (node.mime === "application/pdf") return ["lucide-file", "text-ink-red-6"];
   if (node.mime?.startsWith("image/"))
-    return ["lucide-image", "text-ink-violet-5"];
-  return ["lucide-file", "text-ink-gray-5"];
+    return ["lucide-image", "text-ink-violet-6"];
+  return ["lucide-file", "text-ink-gray-6"];
 }
 </script>

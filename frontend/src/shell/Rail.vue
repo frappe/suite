@@ -6,7 +6,7 @@
         class="h-full w-full"
         viewport-class="px-[11px] py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <nav class="flex flex-col items-center gap-2" :aria-label="__('Areas')">
+        <nav class="flex flex-col items-center gap-0.5" :aria-label="__('Areas')">
           <RailItem
             v-for="area in areas"
             :key="area.id"
@@ -28,7 +28,7 @@
       />
     </div>
 
-    <div class="flex shrink-0 flex-col items-center gap-2 px-[11px] pb-3 pt-2">
+    <div class="flex shrink-0 flex-col items-center gap-0.5 px-[11px] pb-3 pt-2">
       <slot name="bell" />
       <RailItem :label="__('Settings')" variant="ghost" @click="openSettings()">
         <span class="lucide-settings size-4" aria-hidden="true" />

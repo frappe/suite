@@ -4,7 +4,7 @@
       <div class="flex w-full items-center justify-between gap-3">
         <Breadcrumbs :items="breadcrumbs" />
         <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button variant="solid" theme="gray" icon-left="lucide-plus" label="New" />
+          <Button variant="subtle" label="New" icon-right="lucide-chevrons-up-down" />
         </Dropdown>
       </div>
     </PageHeader>
@@ -21,13 +21,13 @@
       />
       <template #suffix>
         <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button icon="lucide-plus" aria-label="New" />
+          <Button variant="subtle" label="New" icon-right="lucide-chevrons-up-down" />
         </Dropdown>
       </template>
     </PageHeaderMobile>
 
-    <div class="mx-auto w-full max-w-[1120px] px-3 pb-28 pt-4 sm:px-5">
-      <div class="flex h-9 items-center justify-between gap-2">
+    <div class="px-5 py-4">
+      <div class="flex h-7 items-center justify-between gap-2">
         <template v-if="selectionMode">
           <div class="flex min-w-0 items-center gap-2">
             <template v-if="props.destination === 'trash'">
@@ -49,7 +49,7 @@
             :debounce="250"
             placeholder="Search files"
             aria-label="Search files"
-            class="w-full max-w-72"
+            class="w-full max-w-64"
             @update:model-value="updateSearch"
           >
             <template #prefix><span class="lucide-search size-4" aria-hidden="true" /></template>
@@ -158,13 +158,15 @@ const pickerMode = ref<'move' | 'copy'>('move')
 const pickerBulk = ref(false)
 const batchOutcome = ref<DriveBatchResult | null>(null)
 const batchVerb = ref('moved')
+const narrow = ref(false)
+let narrowMedia: MediaQueryList | null = null
 let stopRealtime: (() => void) | null = null
 let stopPreviews: (() => void) | null = null
 let visitedFolder = ''
 
 const presentation = computed(() => {
   void presentationVersion.value
-  const resolved = resolvePresentation(route.query, readPresentationPreference())
+  const resolved = resolvePresentation(route.query, readPresentationPreference(), narrow.value ? 'grid' : null)
   if (isSearching.value || !concreteDestination.value) {
     return { ...resolved, sort: 'modified' as const, dir: 'desc' as const, group: 'none' as const }
   }
@@ -254,6 +256,9 @@ const visitMutation = useMutation(visitNode(), { silent: true })
 const archiveMutation = useMutation(startArchive())
 
 onMounted(() => {
+  narrowMedia = window.matchMedia('(max-width: 767px)')
+  narrow.value = narrowMedia.matches
+  narrowMedia.addEventListener('change', onNarrowChange)
   stopRealtime = observeDriveChanges()
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
@@ -261,6 +266,7 @@ onMounted(() => {
   window.addEventListener('popstate', onMobileBack)
 })
 onBeforeUnmount(() => {
+  narrowMedia?.removeEventListener('change', onNarrowChange)
   stopRealtime?.()
   stopPreviews?.()
   window.removeEventListener('keydown', onWindowKeydown)
@@ -351,6 +357,9 @@ function selectAll() {
 function clearSelected() { selectionState.value = clearSelection() }
 function onWindowKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && selectionMode.value) clearSelected()
+}
+function onNarrowChange(event: MediaQueryListEvent) {
+  narrow.value = event.matches
 }
 function onMobileBack() {
   if (selectionMode.value) clearSelected()
