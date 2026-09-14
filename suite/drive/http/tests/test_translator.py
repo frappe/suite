@@ -13,6 +13,9 @@ from frappe.tests import UnitTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from suite.composition.http import compile_template
+from suite.composition.tests.http_conformance import HttpConformanceMixin
+from suite.drive import framework
 from suite.drive.http import routes, translator
 from suite.drive.http.tests import ensure_local_context
 
@@ -33,6 +36,9 @@ GUEST_ROUTES = frozenset(
         "node_patch",
         "node_children",
         "node_copy",
+        "node_archive_start",
+        "node_archive_status",
+        "node_archive_download",
         "node_batch",
         "node_put_content",
         "node_get_content",
@@ -83,7 +89,9 @@ SESSION_ONLY_ROUTES = frozenset(
         "view_list",
         "view_clear_recents",
         "notifications_list",
+        "notifications_unread_count",
         "notifications_read",
+        "roots_discover",
         "root_usage",
         "root_patch",
         "root_purge",
@@ -112,7 +120,9 @@ def handler_of(request):
     return request.path[len(V2) :]
 
 
-class TestTranslator(UnitTestCase):
+class TestTranslator(HttpConformanceMixin, UnitTestCase):
+    HTTP = framework.HTTP
+
     def test_every_table_row_reaches_its_handler_with_its_path_ids(self):
         cases = (
             ("POST", "/api/suite/drive/nodes", "node_create", {}),
@@ -122,6 +132,14 @@ class TestTranslator(UnitTestCase):
             ("DELETE", "/api/suite/drive/nodes/n1", "node_purge", {"node": "n1"}),
             ("GET", "/api/suite/drive/nodes/n1/children", "node_children", {"node": "n1"}),
             ("POST", "/api/suite/drive/nodes/n1/copy", "node_copy", {"node": "n1"}),
+            ("POST", "/api/suite/drive/nodes/n1/archive", "node_archive_start", {"node": "n1"}),
+            ("GET", "/api/suite/drive/nodes/n1/archive", "node_archive_status", {"node": "n1"}),
+            (
+                "GET",
+                "/api/suite/drive/nodes/n1/archive/download",
+                "node_archive_download",
+                {"node": "n1"},
+            ),
             ("PUT", "/api/suite/drive/nodes/n1/content", "node_put_content", {"node": "n1"}),
             ("GET", "/api/suite/drive/nodes/n1/content", "node_get_content", {"node": "n1"}),
             ("GET", "/api/suite/drive/nodes/n1/media", "node_media", {"node": "n1"}),
@@ -188,7 +206,9 @@ class TestTranslator(UnitTestCase):
             ("PATCH", "/api/suite/drive/comments/c9", "comment_patch", {"comment": "c9"}),
             ("DELETE", "/api/suite/drive/comments/c9", "comment_delete", {"comment": "c9"}),
             ("GET", "/api/suite/drive/notifications", "notifications_list", {}),
+            ("GET", "/api/suite/drive/notifications/unread-count", "notifications_unread_count", {}),
             ("POST", "/api/suite/drive/notifications/read", "notifications_read", {}),
+            ("GET", "/api/suite/drive/roots", "roots_discover", {}),
             ("GET", "/api/suite/drive/roots/r1/usage", "root_usage", {"root": "r1"}),
             ("PATCH", "/api/suite/drive/roots/r1", "root_patch", {"root": "r1"}),
             ("DELETE", "/api/suite/drive/roots/r1", "root_purge", {"root": "r1"}),
@@ -323,16 +343,16 @@ class TestRouteTable(UnitTestCase):
     """The table and the decorators must agree, or one of them is a hole."""
 
     def test_every_row_names_a_whitelisted_handler_that_allows_its_verb(self):
-        for method, _pattern, name, _ids in translator.ROUTES:
-            with self.subTest(row=f"{method} {name}"):
-                handler = getattr(routes, name)
+        for route in translator.ROUTES:
+            with self.subTest(row=f"{route.method} {route.handler}"):
+                handler = getattr(routes, route.handler)
                 self.assertIn(handler, frappe.whitelisted)
-                self.assertIn(method, frappe.allowed_http_methods_for_whitelisted_func[handler])
+                self.assertIn(route.method, frappe.allowed_http_methods_for_whitelisted_func[handler])
 
     def test_a_handler_allows_only_the_verbs_its_rows_declare(self):
         declared = {}
-        for method, _pattern, name, _ids in translator.ROUTES:
-            declared.setdefault(name, set()).add(method)
+        for route in translator.ROUTES:
+            declared.setdefault(route.handler, set()).add(route.method)
         for name, methods in declared.items():
             with self.subTest(handler=name):
                 allowed = set(frappe.allowed_http_methods_for_whitelisted_func[getattr(routes, name)])
@@ -348,7 +368,7 @@ class TestRouteTable(UnitTestCase):
                 self.assertNotIn(getattr(routes, name), frappe.guest_methods)
 
     def test_the_guest_columns_cover_every_handler(self):
-        named = {name for _method, _pattern, name, _ids in translator.ROUTES}
+        named = {route.handler for route in translator.ROUTES}
         named.add(translator.UNKNOWN)
         self.assertEqual(named, GUEST_ROUTES | SESSION_ONLY_ROUTES)
 
@@ -361,11 +381,11 @@ class TestRouteTable(UnitTestCase):
     def test_every_path_id_is_a_parameter_of_its_handler(self):
         import inspect
 
-        for _method, _pattern, name, ids in translator.ROUTES:
-            with self.subTest(handler=name):
-                handler = getattr(routes, name)
+        for route in translator.ROUTES:
+            with self.subTest(handler=route.handler):
+                handler = getattr(routes, route.handler)
                 parameters = inspect.signature(inspect.unwrap(handler)).parameters
-                for path_id in ids:
+                for path_id in compile_template(route.path).names:
                     self.assertIn(path_id, parameters)
 
     def test_every_handler_parameter_is_annotated(self):

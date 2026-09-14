@@ -1,0 +1,30 @@
+{
+  "owner": "mail",
+  "prefix": "/api/suite/mail/",
+  "operations": [
+    {
+      "id": "inbox_summary",
+      "method": "GET",
+      "path": "inbox-summary",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread"
+        ],
+        "title": "InboxSummary",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    }
+  ]
+}

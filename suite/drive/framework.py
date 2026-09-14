@@ -20,6 +20,8 @@ from frappe import _
 from frappe.core.doctype.permission_type.permission_type import get_doctype_ptype_map
 from frappe.utils import now, validate_email_address
 
+from suite.composition.http import HttpOwner
+
 from suite.drive._core import content
 from suite.drive._core.access import check
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
@@ -27,6 +29,21 @@ from suite.drive._core.principals import Principals, parse_link_header
 from suite.drive._core.roles import DEFAULT_PTYPE_ROLE, EDIT, PTYPE_ROLE, READ
 
 ACCESS_NODE_FIELDS = ("name", "kind", "root", "path", "state")
+
+
+def _http_owner() -> HttpOwner:
+    from suite.drive.http.translator import ROUTES
+
+    return HttpOwner(
+        owner="drive",
+        prefix="/api/suite/drive/",
+        target="suite.drive.http.routes",
+        routes=ROUTES,
+        strip_owner=False,
+    )
+
+
+HTTP = _http_owner()
 
 # §1: `Drive Grant` is the only permission table, "source of truth and read
 # path". The framework disagrees twice, and both times outside the four hooks

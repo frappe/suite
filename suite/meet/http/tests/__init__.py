@@ -1,0 +1,1 @@
+"""Meet HTTP adapter tests."""

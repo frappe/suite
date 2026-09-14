@@ -1,0 +1,206 @@
+{
+  "owner": "calendar",
+  "prefix": "/api/suite/calendar/",
+  "operations": [
+    {
+      "id": "events_get",
+      "method": "GET",
+      "path": "events",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "EventsQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "CalendarEvent": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "show_without_time": {
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "recurrence_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Id"
+              },
+              "recurrence_rule": {
+                "title": "Recurrence Rule",
+                "type": "string"
+              },
+              "master_id": {
+                "title": "Master Id",
+                "type": "string"
+              },
+              "master_start": {
+                "title": "Master Start",
+                "type": "string"
+              },
+              "master_duration": {
+                "title": "Master Duration",
+                "type": "string"
+              },
+              "links": {
+                "items": {
+                  "$ref": "#/$defs/EventLink"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "participants": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Participants",
+                "type": "array"
+              },
+              "conferencing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Conferencing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "CalendarEvent",
+            "type": "object"
+          },
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "meeting_id",
+              "url"
+            ],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": [
+              "uid",
+              "href",
+              "content_type"
+            ],
+            "title": "EventLink",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CalendarEvent"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    }
+  ]
+}

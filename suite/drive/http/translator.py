@@ -23,127 +23,166 @@ that answers JSON everywhere else, and a 405 would confirm that a path exists
 to a caller who may not know it does.
 """
 
-import re
-
 import frappe
+
+from suite.composition.http import ORIGINAL_PATH, Route, dispatch, original_path
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveLinkExpired,
+    DriveLocked,
+    DriveNotFound,
+    DriveOverQuota,
+)
+from suite.drive.http import shapes
 
 PREFIX = "/api/suite/drive/"
 TARGET = "/api/v2/method/suite.drive.http.routes."
-ORIGINAL_PATH = "suite.drive.original_path"
 UNKNOWN = "unknown"
 
-# (method, pattern, handler, path-segment names). §11.2, in table order. The
+# One Route per §11.2 row, in table order. The
 # verb here and the verb on the handler's `@frappe.whitelist(methods=...)` are
 # checked against each other by `test_translator.py`: this table decides what is
 # reachable, and the decorator refuses the same call made directly at the v2
 # method URL.
 ROUTES = (
-    ("POST", re.compile(r"^nodes$"), "node_create", ()),
-    ("POST", re.compile(r"^nodes/batch$"), "node_batch", ()),
-    ("GET", re.compile(r"^nodes/([^/]+)$"), "node_get", ("node",)),
-    ("PATCH", re.compile(r"^nodes/([^/]+)$"), "node_patch", ("node",)),
-    ("DELETE", re.compile(r"^nodes/([^/]+)$"), "node_purge", ("node",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/children$"), "node_children", ("node",)),
-    ("POST", re.compile(r"^nodes/([^/]+)/copy$"), "node_copy", ("node",)),
-    ("PUT", re.compile(r"^nodes/([^/]+)/content$"), "node_put_content", ("node",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/content$"), "node_get_content", ("node",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/media$"), "node_media", ("node",)),
-    ("POST", re.compile(r"^nodes/([^/]+)/preview$"), "node_preview", ("node",)),
-    ("POST", re.compile(r"^uploads$"), "upload_create", ()),
-    ("PUT", re.compile(r"^uploads/([^/]+)/chunk$"), "upload_chunk", ("upload_id",)),
-    ("POST", re.compile(r"^uploads/([^/]+)/finish$"), "upload_finish", ("upload_id",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/activity$"), "node_activity", ("node",)),
-    ("POST", re.compile(r"^nodes/([^/]+)/visit$"), "node_visit", ("node",)),
-    ("PUT", re.compile(r"^nodes/([^/]+)/favourite$"), "node_put_favourite", ("node",)),
-    ("DELETE", re.compile(r"^nodes/([^/]+)/favourite$"), "node_delete_favourite", ("node",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/grants$"), "node_grants", ("node",)),
+    Route("POST", "nodes", "node_create", allow_guest=True, output=shapes.NodeShape),
+    Route(
+        "POST",
+        "nodes/batch",
+        "node_batch",
+        body=shapes.BatchNodes,
+        allow_guest=True,
+        output=shapes.BatchResult,
+    ),
+    Route(
+        "GET",
+        "nodes/{node}",
+        "node_get",
+        errors=(DriveNotFound, DriveLocked, DriveLinkExpired),
+        allow_guest=True,
+        query=shapes.NodeGetQuery,
+        output=shapes.NodeShape,
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
+    ),
+    Route(
+        "PATCH",
+        "nodes/{node}",
+        "node_patch",
+        body=shapes.Rename | shapes.Move | shapes.Trash | shapes.Restore | shapes.Stamp,
+        errors=(DriveForbidden, DriveConflict, DriveOverQuota),
+        allow_guest=True,
+        output=shapes.NodeShape,
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
+    ),
+    Route("DELETE", "nodes/{node}", "node_purge"),
+    Route(
+        "GET",
+        "nodes/{node}/children",
+        "node_children",
+        errors=(DriveConflict,),
+        allow_guest=True,
+        query=shapes.ChildrenQuery,
+        output=shapes.Page[shapes.NodeShape],
+    ),
+    Route(
+        "POST",
+        "nodes/{node}/copy",
+        "node_copy",
+        body=shapes.CopyNode,
+        errors=(DriveForbidden, DriveConflict, DriveOverQuota),
+        allow_guest=True,
+        output=shapes.NodeShape,
+    ),
+    Route(
+        "POST",
+        "nodes/{node}/archive",
+        "node_archive_start",
+        errors=(DriveConflict,),
+        allow_guest=True,
+        output=shapes.ArchiveStatus,
+    ),
+    Route(
+        "GET",
+        "nodes/{node}/archive",
+        "node_archive_status",
+        errors=(DriveNotFound, DriveConflict),
+        allow_guest=True,
+        output=shapes.ArchiveStatus,
+    ),
+    Route("GET", "nodes/{node}/archive/download", "node_archive_download", allow_guest=True),
+    Route("PUT", "nodes/{node}/content", "node_put_content", allow_guest=True),
+    Route("GET", "nodes/{node}/content", "node_get_content", allow_guest=True),
+    Route("GET", "nodes/{node}/media", "node_media", allow_guest=True),
+    Route("POST", "nodes/{node}/preview", "node_preview", allow_guest=True),
+    Route("POST", "uploads", "upload_create", allow_guest=True),
+    Route("PUT", "uploads/{upload_id}/chunk", "upload_chunk", allow_guest=True),
+    Route("POST", "uploads/{upload_id}/finish", "upload_finish", allow_guest=True),
+    Route("GET", "nodes/{node}/activity", "node_activity", allow_guest=True),
+    Route("POST", "nodes/{node}/visit", "node_visit", output=shapes.Empty),
+    Route("PUT", "nodes/{node}/favourite", "node_put_favourite", output=shapes.Empty),
+    Route("DELETE", "nodes/{node}/favourite", "node_delete_favourite", output=shapes.Empty),
+    Route("GET", "nodes/{node}/grants", "node_grants"),
     # The principal is the whole tail, not one segment. A `$GROUP:` names a
     # `User Group`, whose docname may hold a slash; werkzeug has already
     # decoded `%2F` by the time this runs, so `[^/]+` would 404 that group
     # rather than answer it. Nothing follows the principal, so a greedy tail
     # cannot swallow a segment another row claims.
-    ("PUT", re.compile(r"^nodes/([^/]+)/grants/(.+)$"), "node_put_grant", ("node", "principal")),
-    ("DELETE", re.compile(r"^nodes/([^/]+)/grants/(.+)$"), "node_delete_grant", ("node", "principal")),
-    ("POST", re.compile(r"^grants/([^/]+)/rotate$"), "grant_rotate", ("grant",)),
-    ("POST", re.compile(r"^links/([^/]+)/unlock$"), "link_unlock", ("token",)),
+    Route("PUT", "nodes/{node}/grants/{principal:path}", "node_put_grant"),
+    Route("DELETE", "nodes/{node}/grants/{principal:path}", "node_delete_grant"),
+    Route("POST", "grants/{grant}/rotate", "grant_rotate"),
+    Route("POST", "links/{token}/unlock", "link_unlock", allow_guest=True),
     # The literal leads the pattern that would also match it, the same guard
     # `nodes/batch` gets above.
-    ("DELETE", re.compile(r"^views/recents$"), "view_clear_recents", ()),
-    ("GET", re.compile(r"^views/([^/]+)$"), "view_list", ("view",)),
-    ("GET", re.compile(r"^nodes/([^/]+)/versions$"), "node_versions", ("node",)),
-    ("POST", re.compile(r"^nodes/([^/]+)/versions$"), "node_version_create", ("node",)),
-    ("PATCH", re.compile(r"^nodes/([^/]+)/versions/([^/]+)$"), "node_version_patch", ("node", "seq")),
-    ("DELETE", re.compile(r"^nodes/([^/]+)/versions/([^/]+)$"), "node_version_delete", ("node", "seq")),
-    (
+    Route("DELETE", "views/recents", "view_clear_recents"),
+    Route(
         "GET",
-        re.compile(r"^nodes/([^/]+)/versions/([^/]+)/content$"),
-        "node_version_content",
-        ("node", "seq"),
+        "views/{view}",
+        "view_list",
+        query=shapes.ViewQuery,
+        output=shapes.Page[shapes.NodeShape | shapes.ArchivedRootShape],
     ),
-    (
+    Route("GET", "nodes/{node}/versions", "node_versions", allow_guest=True),
+    Route("POST", "nodes/{node}/versions", "node_version_create", allow_guest=True),
+    Route("PATCH", "nodes/{node}/versions/{seq}", "node_version_patch", allow_guest=True),
+    Route("DELETE", "nodes/{node}/versions/{seq}", "node_version_delete"),
+    Route("GET", "nodes/{node}/versions/{seq}/content", "node_version_content", allow_guest=True),
+    Route("POST", "nodes/{node}/versions/{seq}/restore", "node_version_restore", allow_guest=True),
+    Route("GET", "nodes/{node}/threads", "node_threads", allow_guest=True),
+    Route("POST", "nodes/{node}/threads", "node_thread_create", allow_guest=True),
+    Route("PATCH", "threads/{thread}", "thread_patch", allow_guest=True),
+    Route("POST", "threads/{thread}/comments", "thread_comment_create", allow_guest=True),
+    Route("PATCH", "comments/{comment}", "comment_patch", allow_guest=True),
+    Route("DELETE", "comments/{comment}", "comment_delete", allow_guest=True),
+    Route(
+        "GET",
+        "notifications",
+        "notifications_list",
+        query=shapes.NotificationsQuery,
+        output=shapes.Page[shapes.NotificationShape],
+    ),
+    Route(
+        "GET",
+        "notifications/unread-count",
+        "notifications_unread_count",
+        output=shapes.UnreadCount,
+    ),
+    Route(
         "POST",
-        re.compile(r"^nodes/([^/]+)/versions/([^/]+)/restore$"),
-        "node_version_restore",
-        ("node", "seq"),
+        "notifications/read",
+        "notifications_read",
+        body=shapes.NotificationNames | shapes.AllNotifications,
+        output=shapes.ReadResult,
     ),
-    ("GET", re.compile(r"^nodes/([^/]+)/threads$"), "node_threads", ("node",)),
-    ("POST", re.compile(r"^nodes/([^/]+)/threads$"), "node_thread_create", ("node",)),
-    ("PATCH", re.compile(r"^threads/([^/]+)$"), "thread_patch", ("thread",)),
-    ("POST", re.compile(r"^threads/([^/]+)/comments$"), "thread_comment_create", ("thread",)),
-    ("PATCH", re.compile(r"^comments/([^/]+)$"), "comment_patch", ("comment",)),
-    ("DELETE", re.compile(r"^comments/([^/]+)$"), "comment_delete", ("comment",)),
-    ("GET", re.compile(r"^notifications$"), "notifications_list", ()),
-    ("POST", re.compile(r"^notifications/read$"), "notifications_read", ()),
-    ("GET", re.compile(r"^roots/([^/]+)/usage$"), "root_usage", ("root",)),
-    ("PATCH", re.compile(r"^roots/([^/]+)$"), "root_patch", ("root",)),
-    ("DELETE", re.compile(r"^roots/([^/]+)$"), "root_purge", ("root",)),
+    Route("GET", "roots", "roots_discover", output=shapes.RootLocations),
+    Route("GET", "roots/{root}/usage", "root_usage", output=shapes.RootUsage),
+    Route("PATCH", "roots/{root}", "root_patch"),
+    Route("DELETE", "roots/{root}", "root_purge"),
 )
 
 
 def handle_before_request() -> None:
     """Translate one Drive request, or leave every other request untouched."""
-    request = getattr(frappe.local, "request", None)
-    if request is None or not request.path.startswith(PREFIX):
-        return
-    if request.method == "OPTIONS":
-        # `frappe/app.py` answers OPTIONS with an empty response before it
-        # reaches any route. Rewriting the path would change nothing but the
-        # access log.
-        return
+    from suite.drive.framework import HTTP
 
-    rest = request.path[len(PREFIX) :].rstrip("/")
-    for method, pattern, handler, names in ROUTES:
-        if method != request.method:
-            continue
-        match = pattern.match(rest)
-        if match is None:
-            continue
-        # `update`, not `setdefault`: a path id is the address the caller wrote
-        # in the URL, so it overrides a body or query argument of the same name.
-        frappe.local.form_dict.update(dict(zip(names, match.groups(), strict=True)))
-        _dispatch(request, handler)
-        return
-
-    _dispatch(request, UNKNOWN)
-
-
-def _dispatch(request, handler: str) -> None:
-    # Popped before anything can read it. `frappe/app.py` runs
-    # `frappe.handler.handle()` for any request whose form_dict carries `cmd`,
-    # and that branch is tested before the `/api/` prefix branch, so a `cmd`
-    # left here would replace the addressed route with a method of the caller's
-    # choosing - including one this table never exposed.
-    frappe.local.form_dict.pop("cmd", None)
-
-    target = TARGET + handler
-    request.environ.setdefault(ORIGINAL_PATH, request.path)
-    request.environ["PATH_INFO"] = target
-    request.path = target
-    for cached in ("full_path", "url", "base_url"):
-        request.__dict__.pop(cached, None)
-
-
-def original_path() -> str | None:
-    """Return the Drive path the client asked for, after the rewrite."""
-    request = getattr(frappe.local, "request", None)
-    return request.environ.get(ORIGINAL_PATH) if request is not None else None
+    dispatch(HTTP)
