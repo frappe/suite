@@ -196,3 +196,19 @@ Rules every package follows:
 - Gated by open tickets 007, 008, 010, 011, 014: leave the control absent or
   render an explicit unavailable state.
 - Every package ends with a `Not done:` line naming what it left out and why.
+
+## Decisions made during implementation
+
+- **`/files` collides with Frappe's public upload path.** `frappe serve` wraps
+  the app in `StaticDataMiddleware` for `/files`, and frappe-ui's Vite proxy
+  forwards `/files` to the bench, so the Files area 500ed on the dev site
+  (found 2026-09-15). Resolution, pending Faris's review: keep ticket 001's
+  grammar. In dev, `frontend/vite.config.ts` excludes `files` from the
+  frappe-ui proxy source and adds a `/files` rule whose `bypass` serves the SPA
+  for `Accept: text/html` navigations only; other requests still proxy to the
+  bench. In production, nginx serves a real upload first and falls through to
+  the new `website_route_rules` for `/home`, `/files`, `/files/<path>` and
+  `/d/<path>` in `suite/hooks.py`. Residual risk: a public upload named exactly
+  `organization`, `recent`, `starred`, `shared-with-me`, `trash` or `f` would
+  shadow that route in production. Alternative if that is unacceptable: rename
+  the area prefix (one constant in `composition/routes.ts` plus tests).

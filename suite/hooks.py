@@ -46,6 +46,14 @@ sqlite_search = ["suite.writer.search.WriterSearch"]
 # links (which use the bare prefix) both hit the SPA on first load.
 website_route_rules = [
     {"from_route": "/suite/<path:app_path>", "to_route": "suite"},
+    # unified frontend — canonical area and document routes (ticket 001).
+    # Additive during grow-beside; ticket 014 owns the legacy redirects.
+    # In production nginx serves a real public upload under /files/ first
+    # and falls through to these rules for everything else.
+    {"from_route": "/home", "to_route": "suite"},
+    {"from_route": "/files", "to_route": "suite"},
+    {"from_route": "/files/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/d/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
     # drive — the share-link landing page (§11.2). It must be declared before
     # the catch-all below is read, although werkzeug would rank it first
