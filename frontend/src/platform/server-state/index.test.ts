@@ -1,3 +1,4 @@
+import { nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Realtime, Room, SocketLike } from '@/platform/realtime'
@@ -112,6 +113,36 @@ describe('server state queries', () => {
     await settled
     expect(aborted).toBe(true)
     expect(result.error).toBeNull()
+    state.dispose()
+  })
+
+  it('keeps one in-flight fetch when a function source re-emits an equal descriptor', async () => {
+    let release!: (value: Page) => void
+    let aborted = false
+    const mock = mockTransport((_operation, _input, signal) => new Promise<Page>((resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        aborted = true
+        reject(new DOMException('Aborted', 'AbortError'))
+      })
+      release = resolve
+    }))
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const version = ref(0)
+    const result = state.useQuery(() => {
+      void version.value
+      return infinite(childrenOperation, { node: 'root' }, { cursorParam: 'cursor' })
+    })
+    await tick()
+    expect(mock.request).toHaveBeenCalledOnce()
+    version.value += 1
+    await nextTick()
+    await tick()
+    expect(aborted).toBe(false)
+    release({ rows: [node()], next_cursor: null })
+    await tick()
+    expect(result.status).toBe('success')
+    expect(result.rows).toHaveLength(1)
+    expect(mock.request).toHaveBeenCalledOnce()
     state.dispose()
   })
 

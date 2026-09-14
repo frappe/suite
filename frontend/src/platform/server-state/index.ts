@@ -261,11 +261,15 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     let stop: WatchStopHandle | null = null
 
     const attach = (descriptor: D | false | null | undefined) => {
+      if (descriptor) assertDescriptor(descriptor)
+      const record = descriptor ? getQueryRecord(descriptor) : null
+      // A function source re-emits a fresh descriptor object on every dependency
+      // change. Same key means the same record: keep the observer and any
+      // in-flight fetch instead of aborting and re-attaching.
+      if (record && record === current.value) return
       detach(current.value)
       current.value = null
-      if (!descriptor) return
-      assertDescriptor(descriptor)
-      const record = getQueryRecord(descriptor)
+      if (!record) return
       current.value = record
       observe(record)
       void hydrated.then(() => {
@@ -476,7 +480,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
 
   async function fetchRecord(record: QueryRecord, next = false, force = false): Promise<void> {
     if (paused) return
-    if (record.promise && !next) return record.promise
+    if (record.promise && !next && !record.controller?.signal.aborted) return record.promise
     if (next && (record.isFetchingNext || !hasNext(record))) return
     if (!force && !next && record.normalized !== undefined && !isRecordStale(record)) return
 
@@ -509,6 +513,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         }
       })
       .finally(() => {
+        if (record.controller !== controller) return
         record.isFetching = false
         record.isFetchingNext = false
         record.controller = null

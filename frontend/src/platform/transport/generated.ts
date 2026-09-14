@@ -165,9 +165,9 @@ function assertSchema(value: unknown, schema: any, label: string, root: any = sc
   if (types.length && !types.some((type: string) => matchesType(value, type))) throw new TypeError(label + ' has the wrong type')
   if ((types.includes('object') || schema.properties) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
     const record = value as Record<string, unknown>
-    for (const key of schema.required ?? []) if (!(key in record)) throw new TypeError(label + '.' + key + ' is required')
+    for (const key of schema.required ?? []) if (record[key] === undefined) throw new TypeError(label + '.' + key + ' is required')
     if (schema.additionalProperties === false) for (const key of Object.keys(record)) if (!(key in (schema.properties ?? {}))) throw new TypeError(label + '.' + key + ' is not allowed')
-    for (const [key, child] of Object.entries(schema.properties ?? {})) if (key in record) assertSchema(record[key], child, label + '.' + key, root)
+    for (const [key, child] of Object.entries(schema.properties ?? {})) if (record[key] !== undefined) assertSchema(record[key], child, label + '.' + key, root)
   }
   if ((types.includes('array') || schema.items) && Array.isArray(value)) value.forEach((item, index) => assertSchema(item, schema.items ?? {}, label + '[' + index + ']', root))
 }
