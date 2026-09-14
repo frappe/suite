@@ -43,6 +43,7 @@ export default defineConfig({
 					include: [
 						"src/{shell,platform,composition}/**/*.test.{js,ts}",
 						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+						"src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}",
 					],
 				},
 			},
@@ -54,6 +55,7 @@ export default defineConfig({
 					exclude: [
 						"src/{shell,platform,composition}/**/*.test.{js,ts}",
 						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+						"src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}",
 					],
 				},
 			},

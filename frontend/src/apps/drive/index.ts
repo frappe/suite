@@ -61,8 +61,16 @@ export function driveNodeRoute(
 }
 
 export function openDocumentSession(nodeId: string) {
-  return openDriveDocumentSession(nodeId)
+  return openDriveDocumentSession(nodeId).catch(async (error) => {
+    if (!(error instanceof Error) || !error.message.includes('is not a content document')) throw error
+    const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
+    return openFilePreviewSession(nodeId)
+  })
 }
+
+export const filePreviewSurface = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
+)
 
 // Migration debt. Keep these lazy legacy dialog exports until Writer and Slides migrate.
 export const ShareDialog = defineAsyncComponent(

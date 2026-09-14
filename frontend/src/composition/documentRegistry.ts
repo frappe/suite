@@ -1,7 +1,13 @@
+import { writerDocument } from "@/apps/writer";
+import { sheetsDocument } from "@/apps/sheets";
+import { slidesDocument } from "@/apps/slides";
 import type { DocumentTypeDefinition } from "@/platform/contracts";
 
-// W3-documents wires Writer, Sheets and Slides definitions into this ordered list.
-export const documentTypes: readonly DocumentTypeDefinition[] = [];
+export const documentTypes: readonly DocumentTypeDefinition[] = [
+  writerDocument,
+  sheetsDocument,
+  slidesDocument,
+];
 
 export function findDocumentType(
   contentDoctype: string,
