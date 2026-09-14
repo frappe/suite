@@ -4,11 +4,11 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, inject, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { addUpload, updateUpload } from '@/apps/drive/data/uploads'
-import { currentFolder } from '@/apps/drive/data/currentFolder'
+import { addUpload, updateUpload } from '@/apps/drive/legacy/data/uploads'
+import { currentFolder } from '@/apps/drive/legacy/data/currentFolder'
 import Dropzone from 'dropzone'
-import { storageBar } from '@/apps/drive/resources/files'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import { storageBar } from '@/apps/drive/legacy/resources/files'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
 
 const route = useRoute()
 defineEmits(['success'])

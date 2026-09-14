@@ -1,8 +1,8 @@
 import { computed, ref } from 'vue'
-import emitter from '@/apps/drive/emitter'
-import router from '@/apps/drive/router'
-import { rootInfo } from '@/apps/drive/resources/files'
-import { shareView } from '@/apps/drive/data/prefs'
+import emitter from '@/apps/drive/legacy/emitter'
+import router from '@/apps/drive/legacy/router'
+import { rootInfo } from '@/apps/drive/legacy/resources/files'
+import { shareView } from '@/apps/drive/legacy/data/prefs'
 import { useSessionStore } from '@/boot/session'
 
 type DriveBreadcrumb = Record<string, unknown>

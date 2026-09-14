@@ -44,11 +44,11 @@
 </template>
 <script setup>
 import { Button, Tree, createResource } from 'frappe-ui'
-import Alert from '@/apps/drive/components/Alert.vue'
+import Alert from '@/apps/drive/legacy/components/Alert.vue'
 import { computed } from 'vue'
-import { toast } from '@/apps/drive/utils/toasts'
-import emitter from '@/apps/drive/emitter'
-import { clearDialogs } from '@/apps/drive/utils/dialogs'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
+import emitter from '@/apps/drive/legacy/emitter'
+import { clearDialogs } from '@/apps/drive/legacy/utils/dialogs'
 
 function buildTree(items) {
   const root = {}

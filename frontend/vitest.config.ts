@@ -30,10 +30,33 @@ export default defineConfig({
 	},
 	test: {
 		environment: "jsdom",
-		include: ["src/**/*.test.{js,ts}", "recorder/**/*.test.{js,ts}"],
+		passWithNoTests: true,
 		setupFiles: ["fake-indexeddb/auto"],
 		retry: process.env.CI ? 2 : 0,
 		silent: true,
+		projects: [
+			{
+				extends: true,
+				test: {
+					name: "unified",
+					include: [
+						"src/{shell,platform,composition}/**/*.test.{js,ts}",
+						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+					],
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: "legacy",
+					include: ["src/**/*.test.{js,ts}", "recorder/**/*.test.{js,ts}"],
+					exclude: [
+						"src/{shell,platform,composition}/**/*.test.{js,ts}",
+						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+					],
+				},
+			},
+		],
 		coverage: {
 			provider: "v8",
 			include: ["src/**/*.{js,ts,vue}", "recorder/**/*.{ts,vue}"],

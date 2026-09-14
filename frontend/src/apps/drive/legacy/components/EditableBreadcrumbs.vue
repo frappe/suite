@@ -18,7 +18,7 @@
 <script setup>
 import { Breadcrumbs, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
-import { renamingEntity } from '@/apps/drive/data/selection'
+import { renamingEntity } from '@/apps/drive/legacy/data/selection'
 import InlineRenameInput from './InlineRenameInput.vue'
 
 const props = defineProps({

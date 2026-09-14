@@ -6,8 +6,8 @@ import { useTimeAgo } from '@vueuse/core'
 import editorStyle from '@/apps/writer/styles/editor.css?inline'
 import globalStyle from '@/apps/writer/styles/index.css?inline'
 import slugify from 'slugify'
-import { toast as nToast, createResource } from 'frappe-ui'
-import { rootInfo } from '@/apps/drive/sdk'
+import { useFileUpload, toast as nToast, createResource } from 'frappe-ui'
+import { rootInfo } from '@/apps/drive/legacy/sdk'
 
 rootInfo.fetch()
 import { createLowlight, common } from 'lowlight'

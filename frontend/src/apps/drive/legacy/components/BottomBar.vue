@@ -16,8 +16,8 @@ import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
 import LucideBuilding2 from '~icons/lucide/building-2'
-import { getRootSection } from '@/apps/drive/data/breadcrumbs'
-import { rootInfo } from '@/apps/drive/resources/files'
+import { getRootSection } from '@/apps/drive/legacy/data/breadcrumbs'
+import { rootInfo } from '@/apps/drive/legacy/resources/files'
 
 export default {
   name: 'BottomBar',

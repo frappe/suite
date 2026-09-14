@@ -16,14 +16,14 @@
 import { Button } from 'frappe-ui'
 import { computed, defineAsyncComponent } from 'vue'
 
-const MSOfficePreview = defineAsyncComponent(() => import('@/apps/drive/components/FileTypePreview/MSOfficePreview.vue'))
-const ImagePreview = defineAsyncComponent(() => import('@/apps/drive/components/FileTypePreview/ImagePreview.vue'))
+const MSOfficePreview = defineAsyncComponent(() => import('@/apps/drive/legacy/components/FileTypePreview/MSOfficePreview.vue'))
+const ImagePreview = defineAsyncComponent(() => import('@/apps/drive/legacy/components/FileTypePreview/ImagePreview.vue'))
 const PDFPreview = defineAsyncComponent(() => import('./FileTypePreview/PDFPreview.vue'))
 const VideoPreview = defineAsyncComponent(() => import('./FileTypePreview/VideoPreview.vue'))
 const TextPreview = defineAsyncComponent(() => import('./FileTypePreview/TextPreview.vue'))
-const AudioPreview = defineAsyncComponent(() => import('@/apps/drive/components/FileTypePreview/AudioPreview.vue'))
+const AudioPreview = defineAsyncComponent(() => import('@/apps/drive/legacy/components/FileTypePreview/AudioPreview.vue'))
 import LucideAlertCircle from '~icons/lucide/alert-circle'
-import { previewFileType, previewUnavailableReason } from '@/apps/drive/utils/filePreview'
+import { previewFileType, previewUnavailableReason } from '@/apps/drive/legacy/utils/filePreview'
 
 const props = defineProps({
   previewEntity: {

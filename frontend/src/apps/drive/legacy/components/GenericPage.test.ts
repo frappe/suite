@@ -57,18 +57,18 @@ vi.mock('@/boot/session', () => ({
   useSessionStore: () => ({ isLoggedIn: false, user: 'tester@example.com' }),
   useCurrentUser: () => ({ systemUser: ref(false) }),
 }))
-vi.mock('@/apps/drive/data/prefs', () => ({
+vi.mock('@/apps/drive/legacy/data/prefs', () => ({
   view: ref('list'),
   getSortOrder: () => undefined,
   setSortOrder: vi.fn(),
 }))
-vi.mock('@/apps/drive/data/breadcrumbs', () => ({ pageBreadcrumbs: [] }))
-vi.mock('@/apps/drive/data/selection', () => ({
+vi.mock('@/apps/drive/legacy/data/breadcrumbs', () => ({ pageBreadcrumbs: [] }))
+vi.mock('@/apps/drive/legacy/data/selection', () => ({
   activeEntity: ref(null),
   startRename: vi.fn(),
 }))
-vi.mock('@/apps/drive/data/uploads', () => ({ uploads: ref([]) }))
-vi.mock('@/apps/drive/utils/files', () => ({
+vi.mock('@/apps/drive/legacy/data/uploads', () => ({ uploads: ref([]) }))
+vi.mock('@/apps/drive/legacy/utils/files', () => ({
   pasteObj: vi.fn(),
   openEntity: vi.fn(),
   prettyData: (rows: unknown[]) => rows,
@@ -77,26 +77,26 @@ vi.mock('@/apps/drive/utils/files', () => ({
   isManaged: () => true,
   isAttachmentRef: () => false,
 }))
-vi.mock('@/apps/drive/utils/confirmActions', () => ({
+vi.mock('@/apps/drive/legacy/utils/confirmActions', () => ({
   confirmRestore: vi.fn(),
   confirmRemove: vi.fn(),
   confirmDeleteForever: vi.fn(),
 }))
-vi.mock('@/apps/drive/utils/download', () => ({ entitiesDownload: vi.fn() }))
-vi.mock('@/apps/drive/utils/toasts', () => ({ toast: vi.fn() }))
-vi.mock('@/apps/drive/ui/drive/js/utils', () => ({ getFileLink: vi.fn() }))
-vi.mock('@/apps/drive/resources/files', () => ({
+vi.mock('@/apps/drive/legacy/utils/download', () => ({ entitiesDownload: vi.fn() }))
+vi.mock('@/apps/drive/legacy/utils/toasts', () => ({ toast: vi.fn() }))
+vi.mock('@/apps/drive/legacy/ui/drive/js/utils', () => ({ getFileLink: vi.fn() }))
+vi.mock('@/apps/drive/legacy/resources/files', () => ({
   PAGE_SIZE: 50,
   formatRows: (rows: unknown[]) => rows,
   toggleFav: { submit: vi.fn() },
   clearRecent: { submit: vi.fn() },
   move: { submit: vi.fn() },
 }))
-vi.mock('@/apps/drive/resources/permissions', () => ({
+vi.mock('@/apps/drive/legacy/resources/permissions', () => ({
   settings: { fetched: true, data: {}, fetch: vi.fn() },
 }))
 
-import emitter from '@/apps/drive/emitter'
+import emitter from '@/apps/drive/legacy/emitter'
 import GenericPage from './GenericPage.vue'
 
 const entities = [

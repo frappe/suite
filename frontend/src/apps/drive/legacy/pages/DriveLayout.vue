@@ -39,23 +39,23 @@
   </FrappeUIProvider>
 </template>
 <script setup>
-import Sidebar from '@/apps/drive/components/Sidebar.vue'
-import SearchPopup from '@/apps/drive/components/SearchPopup.vue'
-import FDialogs from '@/apps/drive/components/FDialogs.vue'
-import BottomBar from '@/apps/drive/components/BottomBar.vue'
-import FileUploader from '@/apps/drive/components/FileUploader.vue'
+import Sidebar from '@/apps/drive/legacy/components/Sidebar.vue'
+import SearchPopup from '@/apps/drive/legacy/components/SearchPopup.vue'
+import FDialogs from '@/apps/drive/legacy/components/FDialogs.vue'
+import BottomBar from '@/apps/drive/legacy/components/BottomBar.vue'
+import FileUploader from '@/apps/drive/legacy/components/FileUploader.vue'
 import { useSessionStore } from '@/boot/session'
 import { ref, computed, onMounted, provide } from 'vue'
-import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
+import { sidebarCollapsed, shareView } from '@/apps/drive/legacy/data/prefs'
 import { useMediaQuery } from '@vueuse/core'
-import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
-import { initSocket } from '@/apps/drive/socket'
+import emitter from '@/apps/drive/legacy/emitter'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
+import { initSocket } from '@/apps/drive/legacy/socket'
 import { DesktopShell, FrappeUIProvider, KeyboardShortcutsDialog, MobileShell, useKeyboardShortcut } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
-import { rootInfo } from '@/apps/drive/resources/files'
-import { isApple } from '@/apps/drive/utils/files'
+import { rootInfo } from '@/apps/drive/legacy/resources/files'
+import { isApple } from '@/apps/drive/legacy/utils/files'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)

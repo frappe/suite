@@ -95,7 +95,7 @@ import { Button, createResource, Dialog, SettingsRow, Switch } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import CopyControl from '@/components/CopyControl.vue'
-import { setSettings, webdavConfig } from '@/apps/drive/resources/permissions'
+import { setSettings, webdavConfig } from '@/apps/drive/legacy/resources/permissions'
 
 const config = computed(() => webdavConfig.data ?? {})
 

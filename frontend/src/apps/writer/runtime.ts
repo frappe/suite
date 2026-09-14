@@ -1,6 +1,6 @@
 import { createResource } from 'frappe-ui'
 
-import { allUsers } from '@/apps/drive/sdk'
+import { allUsers } from '@/apps/drive/legacy/sdk'
 import { getSessionUser } from '@/boot/session'
 
 export function bootstrap() {

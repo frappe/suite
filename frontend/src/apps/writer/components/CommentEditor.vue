@@ -41,7 +41,7 @@ import {
   Separator,
 } from 'frappe-ui/editor'
 import { Button } from 'frappe-ui'
-import { allUsers } from '@/apps/drive/sdk'
+import { allUsers } from '@/apps/drive/legacy/sdk'
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
 import LucideX from '~icons/lucide/x'

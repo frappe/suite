@@ -9,7 +9,7 @@
   />
 </template>
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
-import { getSlides } from '@/apps/drive/resources/files'
+import { getSlides } from '@/apps/drive/legacy/resources/files'
 </script>

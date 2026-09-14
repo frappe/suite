@@ -1,7 +1,6 @@
 <template>
   <SuiteSettingsDialog v-model:open="open" v-model:tab="activeTab" :groups="groups" :shortcut="false" />
 </template>
-
 <script setup lang="ts">
 import { computed, markRaw, ref, watch } from 'vue'
 import {
@@ -10,10 +9,10 @@ import {
   HardDrive,
 } from 'lucide-vue-next'
 
-import BackendSettings from '@/apps/drive/components/Settings/BackendSettings.vue'
-import StorageSettings from '@/apps/drive/components/Settings/StorageSettings.vue'
-import WebDAVSettings from '@/apps/drive/components/Settings/WebDAVSettings.vue'
-import { isAdmin, webdavConfig } from '@/apps/drive/resources/permissions'
+import BackendSettings from '@/apps/drive/legacy/components/Settings/BackendSettings.vue'
+import StorageSettings from '@/apps/drive/legacy/components/Settings/StorageSettings.vue'
+import WebDAVSettings from '@/apps/drive/legacy/components/Settings/WebDAVSettings.vue'
+import { isAdmin, webdavConfig } from '@/apps/drive/legacy/resources/permissions'
 import type { SettingsGroup } from '@/components/settings/types'
 import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
 

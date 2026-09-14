@@ -3,6 +3,7 @@ import { createResource } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
 import { appDocumentTitle } from '@/utils/documentTitle'
+import { setupTheme } from '@/utils/setupTheme'
 
 /**
  * Drive route module — mounted by the suite router under the '/drive' prefix.
@@ -28,7 +29,7 @@ const setPageTitle = (to: any) => {
 }
 
 const redirectLegacyEntity = async (to: any, name: string) => {
-  const { translate } = await import('@/apps/drive/resources/files')
+  const { translate } = await import('@/apps/drive/legacy/resources/files')
   await translate.fetch({ old_name: to.params.entityName })
   return {
     name,
@@ -39,12 +40,12 @@ const redirectLegacyEntity = async (to: any, name: string) => {
 export const routes: RouteRecordRaw[] = [
   {
     path: '',
-    component: () => import('@/apps/drive/pages/DriveLayout.vue'),
+    component: () => import('@/apps/drive/legacy/pages/DriveLayout.vue'),
     children: [
       {
         path: 'signup',
         name: 'drive-Signup',
-        component: () => import('@/apps/drive/pages/Signup.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Signup.vue'),
         beforeEnter: () => {
           if (useSessionStore().isLoggedIn) return { name: 'drive-Home' }
         },
@@ -53,26 +54,26 @@ export const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'drive-Home',
-        component: () => import('@/apps/drive/pages/Personal.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Personal.vue'),
         beforeEnter: [setPageTitle],
         props: true,
       },
       {
         path: 'inbox',
         name: 'drive-Inbox',
-        component: () => import('@/apps/drive/pages/Notifications.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Notifications.vue'),
         beforeEnter: [setPageTitle],
       },
       {
         path: 'recents',
         name: 'drive-Recents',
-        component: () => import('@/apps/drive/pages/Recents.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Recents.vue'),
         beforeEnter: [setPageTitle],
       },
       {
         path: 'favourites',
         name: 'drive-Favourites',
-        component: () => import('@/apps/drive/pages/Favourites.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Favourites.vue'),
         beforeEnter: [setPageTitle],
       },
       {
@@ -84,25 +85,25 @@ export const routes: RouteRecordRaw[] = [
         path: 'attachments/:doctype?/:docname?',
         name: 'drive-Attachments',
         props: true,
-        component: () => import('@/apps/drive/pages/Attachments.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Attachments.vue'),
         beforeEnter: [setPageTitle],
       },
       {
         path: 'documents',
         name: 'drive-Documents',
-        component: () => import('@/apps/drive/pages/Documents.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Documents.vue'),
         beforeEnter: [setPageTitle],
       },
       {
         path: 'presentations',
         name: 'drive-Presentations',
-        component: () => import('@/apps/drive/pages/Slides.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Slides.vue'),
         beforeEnter: [setPageTitle],
       },
       {
         path: 'trash',
         name: 'drive-Trash',
-        component: () => import('@/apps/drive/pages/Trash.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Trash.vue'),
         beforeEnter: [setPageTitle],
       },
       {
@@ -131,14 +132,14 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'f/:entityName/:slug?',
         name: 'drive-File',
-        component: () => import('@/apps/drive/pages/File.vue'),
+        component: () => import('@/apps/drive/legacy/pages/File.vue'),
         meta: { allowGuest: true, filePage: true, shellScroll: false },
         props: true,
       },
       {
         path: 'd/:entityName/:slug?',
         name: 'drive-Folder',
-        component: () => import('@/apps/drive/pages/Folder.vue'),
+        component: () => import('@/apps/drive/legacy/pages/Folder.vue'),
         meta: { allowGuest: true },
         props: true,
       },
@@ -198,3 +199,14 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
 ]
+
+export default routes
+
+setupTheme()
+
+const translations = createResource({
+  url: 'suite.drive.api.product.get_translations',
+  cache: 'translations',
+  transform: (data: unknown) => ((window as any).translatedMessages = data),
+})
+if (!(window as any).translatedMessages) translations.fetch()

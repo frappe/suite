@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
+import FilePreviewSkeleton from '@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { ref, onBeforeUnmount, watch, onMounted } from 'vue'
 
 const props = defineProps({

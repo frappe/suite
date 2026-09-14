@@ -85,10 +85,10 @@ import {
 } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { toast } from '@/apps/drive/utils/toasts'
-import { createDialog } from '@/apps/drive/utils/dialogs'
-import { getDiskSettings } from '@/apps/drive/resources/permissions'
-import SyncBreakdown from '@/apps/drive/components/SyncBreakdown.vue'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
+import { createDialog } from '@/apps/drive/legacy/utils/dialogs'
+import { getDiskSettings } from '@/apps/drive/legacy/resources/permissions'
+import SyncBreakdown from '@/apps/drive/legacy/components/SyncBreakdown.vue'
 
 const edited = ref(false)
 

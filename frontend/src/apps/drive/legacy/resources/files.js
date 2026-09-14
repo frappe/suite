@@ -1,13 +1,16 @@
 import { createResource } from 'frappe-ui'
-import { toast } from '@/apps/drive/utils/toasts'
-import { openEntity } from '@/apps/drive/utils/files'
-import { getSortOrder } from '@/apps/drive/data/prefs'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
+import { openEntity, setTitle } from '@/apps/drive/legacy/utils/files'
+import { activeEntity } from '@/apps/drive/legacy/data/selection'
+import { renameCrumbEntity } from '@/apps/drive/legacy/data/breadcrumbs'
+import { getSortOrder } from '@/apps/drive/legacy/data/prefs'
 import {
   prettyData,
   setCache,
   unwrapRows,
   PRESENTATION_CONTENT_DOCTYPE,
-} from '@/apps/drive/utils/files'
+} from '@/apps/drive/legacy/utils/files'
+import { updateURLSlug } from '@/apps/drive/legacy/utils/files'
 
 // GETTERS
 export const PAGE_SIZE = 50

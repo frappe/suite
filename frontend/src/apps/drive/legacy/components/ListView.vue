@@ -94,18 +94,18 @@
 <script setup>
 import { List, ListCell, ListGroup, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
 import { Checkbox, Skeleton, vOnOutsideClick } from 'frappe-ui'
-import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
+import { activeEntity, setActiveEntity } from '@/apps/drive/legacy/data/selection'
 import { computed, ref, watch } from 'vue'
-import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
+import ContextMenu from '@/apps/drive/legacy/components/ContextMenu.vue'
 import DriveListRow from './DriveListRow.vue'
 import NoFilesSection from './NoFilesSection.vue'
-import { openEntity, isModKey } from '@/apps/drive/utils/files'
+import { openEntity, isModKey } from '@/apps/drive/legacy/utils/files'
 import {
   flattenRows,
   toggleFolder,
   refreshExpanded,
-} from '@/apps/drive/data/folderTree'
-import { useListColumns } from '@/apps/drive/data/listColumns'
+} from '@/apps/drive/legacy/data/folderTree'
+import { useListColumns } from '@/apps/drive/legacy/data/listColumns'
 
 
 const props = defineProps({

@@ -33,7 +33,7 @@
 <script setup>
 import { Button } from 'frappe-ui'
 import { useSessionStore } from '@/boot/session'
-import router from '@/apps/drive/router'
+import router from '@/apps/drive/legacy/router'
 import { computed, watchEffect } from 'vue'
 import LucideFileUser from '~icons/lucide/file-user'
 

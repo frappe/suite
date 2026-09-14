@@ -165,9 +165,9 @@
 <script setup>
 import { createResource, ErrorMessage, FormControl, Button } from "frappe-ui"
 import { ref, onMounted, computed } from "vue"
-import FrappeDriveLogo from "@/apps/drive/components/FrappeDriveLogo.vue"
-import { toast } from "@/apps/drive/utils/toasts"
-import { settings } from "@/apps/drive/resources/permissions"
+import FrappeDriveLogo from "@/apps/drive/legacy/components/FrappeDriveLogo.vue"
+import { toast } from "@/apps/drive/legacy/utils/toasts"
+import { settings } from "@/apps/drive/legacy/resources/permissions"
 
 const params = new URLSearchParams(new URL(window.location.href).search)
 const email = ref(params.get("e") || "")

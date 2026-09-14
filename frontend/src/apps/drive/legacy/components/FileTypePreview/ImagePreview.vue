@@ -10,10 +10,10 @@
 </template>
 
 <script setup>
-import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
+import FilePreviewSkeleton from '@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useObjectUrl } from '@vueuse/core'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
 
 const props = defineProps({
   previewEntity: Object,

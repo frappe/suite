@@ -1,6 +1,6 @@
 import { createResource } from 'frappe-ui'
 import { getAppSwitcherItems } from '@/apps/registry'
-import { toast } from '@/apps/drive/utils/toasts'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
 import { useSessionStore } from '@/boot/session'
 
 export const notifCount = createResource({

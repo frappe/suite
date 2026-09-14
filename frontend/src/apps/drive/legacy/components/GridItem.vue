@@ -53,7 +53,7 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
+import { getIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/legacy/utils/files'
 import { Tooltip } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import InlineRenameInput from './InlineRenameInput.vue'

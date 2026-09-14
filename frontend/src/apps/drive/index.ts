@@ -1,5 +1,4 @@
-// Cross-product Drive interface. Keep this list derived from production callers;
-// Drive-internal UI and state remain private to the Drive app.
+// Migration debt. W3-files replaces these legacy exports with the new Drive seam.
 export {
   ShareDialog,
   MoveDialog,
@@ -11,4 +10,4 @@ export {
   prettyData,
   rename,
   rootInfo,
-} from "./sdk.js";
+} from "./legacy/sdk.js";

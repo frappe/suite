@@ -17,7 +17,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
+    "test:unified": "vitest run --project unified --passWithNoTests",
+    "test:legacy": "node scripts/run-legacy-tests.mjs",
+    "generate:contract": "node scripts/generate-contract.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
+    "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
   "dependencies": {

@@ -36,9 +36,9 @@ import { computed } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 
-import NewFolderDialog from '@/apps/drive/components/NewFolderDialog.vue'
-import NewLinkDialog from '@/apps/drive/components/NewLinkDialog.vue'
-import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/ui/drive'
+import NewFolderDialog from '@/apps/drive/legacy/components/NewFolderDialog.vue'
+import NewLinkDialog from '@/apps/drive/legacy/components/NewLinkDialog.vue'
+import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/legacy/ui/drive'
 
 const props = defineProps({
   list: Object,

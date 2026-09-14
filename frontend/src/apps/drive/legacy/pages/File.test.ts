@@ -20,14 +20,14 @@ vi.mock('frappe-ui', () => ({
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.routerPush }) }))
 vi.mock('@vueuse/core', () => ({ onKeyStroke: vi.fn() }))
 vi.mock('~icons/lucide/scan', () => ({ default: defineComponent({ template: '<span />' }) }))
-vi.mock('@/apps/drive/data/selection', () => ({ setActiveEntity: mocks.setActiveEntity }))
-vi.mock('@/apps/drive/data/breadcrumbs', () => ({
+vi.mock('@/apps/drive/legacy/data/selection', () => ({ setActiveEntity: mocks.setActiveEntity }))
+vi.mock('@/apps/drive/legacy/data/breadcrumbs', () => ({
   pageBreadcrumbs: [],
   setCrumbEntity: mocks.setCrumbEntity,
   clearCrumbEntity: vi.fn(),
 }))
-vi.mock('@/apps/drive/data/currentFolder', () => ({ currentFolder: { value: { entities: [] } } }))
-vi.mock('@/apps/drive/utils/files', () => ({
+vi.mock('@/apps/drive/legacy/data/currentFolder', () => ({ currentFolder: { value: { entities: [] } } }))
+vi.mock('@/apps/drive/legacy/utils/files', () => ({
   prettyData: (entities: unknown[]) => entities,
   enterFullScreen: vi.fn(),
   updateURLSlug: mocks.updateURLSlug,
@@ -35,16 +35,16 @@ vi.mock('@/apps/drive/utils/files', () => ({
   hasHostedContent: () => false,
 }))
 
-vi.mock('@/apps/drive/components/Navbar.vue', () => ({
+vi.mock('@/apps/drive/legacy/components/Navbar.vue', () => ({
   default: defineComponent({ template: '<div />' }),
 }))
-vi.mock('@/apps/drive/components/FileRender.vue', () => ({
+vi.mock('@/apps/drive/legacy/components/FileRender.vue', () => ({
   default: defineComponent({ template: '<div />' }),
 }))
-vi.mock('@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue', () => ({
+vi.mock('@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue', () => ({
   default: defineComponent({ template: '<div />' }),
 }))
-vi.mock('@/apps/drive/components/ErrorPage.vue', () => ({
+vi.mock('@/apps/drive/legacy/components/ErrorPage.vue', () => ({
   default: defineComponent({ template: '<div />' }),
 }))
 

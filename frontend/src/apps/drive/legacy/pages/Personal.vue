@@ -20,10 +20,10 @@
 </template>
 
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
-import { getPersonal, getShared } from '@/apps/drive/resources/files'
-import { shareView } from '@/apps/drive/data/prefs'
-import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
+import { getPersonal, getShared } from '@/apps/drive/legacy/resources/files'
+import { shareView } from '@/apps/drive/legacy/data/prefs'
+import { setCurrentFolder } from '@/apps/drive/legacy/data/currentFolder'
 import LucideHome from '~icons/lucide/home'
 import LucideUsers from '~icons/lucide/users'
 

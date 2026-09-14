@@ -34,14 +34,14 @@
     :entities="activeEntity ? [activeEntity] : selectedEntitities" />
 </template>
 <script setup>
-import ListView from '@/apps/drive/components/ListView.vue'
-import GridView from '@/apps/drive/components/GridView.vue'
-import DriveToolBar from '@/apps/drive/components/DriveToolBar.vue'
-import Navbar from '@/apps/drive/components/Navbar.vue'
-import NoFilesSection from '@/apps/drive/components/NoFilesSection.vue'
-import UploadTracker from '@/apps/drive/components/UploadTracker.vue'
-import ListDialogs from '@/apps/drive/components/ListDialogs.vue'
-import ErrorPage from '@/apps/drive/components/ErrorPage.vue'
+import ListView from '@/apps/drive/legacy/components/ListView.vue'
+import GridView from '@/apps/drive/legacy/components/GridView.vue'
+import DriveToolBar from '@/apps/drive/legacy/components/DriveToolBar.vue'
+import Navbar from '@/apps/drive/legacy/components/Navbar.vue'
+import NoFilesSection from '@/apps/drive/legacy/components/NoFilesSection.vue'
+import UploadTracker from '@/apps/drive/legacy/components/UploadTracker.vue'
+import ListDialogs from '@/apps/drive/legacy/components/ListDialogs.vue'
+import ErrorPage from '@/apps/drive/legacy/components/ErrorPage.vue'
 import {
   pasteObj,
   openEntity,
@@ -50,41 +50,41 @@ import {
   isVirtual,
   isManaged,
   isAttachmentRef,
-} from '@/apps/drive/utils/files'
+} from '@/apps/drive/legacy/utils/files'
 import {
   toggleFav,
   clearRecent,
   PAGE_SIZE,
   formatRows,
-} from '@/apps/drive/resources/files'
-import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
-import { entitiesDownload } from '@/apps/drive/utils/download'
+} from '@/apps/drive/legacy/resources/files'
+import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/legacy/utils/confirmActions'
+import { entitiesDownload } from '@/apps/drive/legacy/utils/download'
 import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useEventListener } from '@vueuse/core'
 import { frappeRequest, shellScrollContainer as scrollHost, useKeyboardShortcut } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
-import { activeEntity, startRename } from '@/apps/drive/data/selection'
-import { uploads } from '@/apps/drive/data/uploads'
+import { activeEntity, startRename } from '@/apps/drive/legacy/data/selection'
+import { uploads } from '@/apps/drive/legacy/data/uploads'
 const { systemUser } = useCurrentUser()
-import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
-import { view, getSortOrder, setSortOrder } from '@/apps/drive/data/prefs'
-import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
+import { pageBreadcrumbs } from '@/apps/drive/legacy/data/breadcrumbs'
+import { view, getSortOrder, setSortOrder } from '@/apps/drive/legacy/data/prefs'
+import { setCurrentFolder } from '@/apps/drive/legacy/data/currentFolder'
 import {
   expandedFolders,
   loadedChildRows,
   refreshExpanded,
   refreshFolder,
   removeFromTree,
-} from '@/apps/drive/data/folderTree'
-import { getPageFilters } from '@/apps/drive/data/pageState'
-import { toast } from '@/apps/drive/utils/toasts'
-import { move } from '@/apps/drive/resources/files'
-import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
-import { settings } from '@/apps/drive/resources/permissions'
-import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
-import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
+} from '@/apps/drive/legacy/data/folderTree'
+import { getPageFilters } from '@/apps/drive/legacy/data/pageState'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
+import { move } from '@/apps/drive/legacy/resources/files'
+import DriveListSkeleton from '@/apps/drive/legacy/components/DriveListSkeleton.vue'
+import { settings } from '@/apps/drive/legacy/resources/permissions'
+import emitter from '@/apps/drive/legacy/emitter'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
+import { getFileLink } from '@/apps/drive/legacy/ui/drive/js/utils'
 
 import LucideClock from '~icons/lucide/clock'
 import LucideDownload from '~icons/lucide/download'

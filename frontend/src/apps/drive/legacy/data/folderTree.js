@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from 'vue'
 import { frappeRequest } from 'frappe-ui'
-import { prettyData, sortEntities } from '@/apps/drive/utils/files'
+import { prettyData, sortEntities } from '@/apps/drive/legacy/utils/files'
 
 export const expandedFolders = ref(new Set())
 export const folderChildren = reactive({})

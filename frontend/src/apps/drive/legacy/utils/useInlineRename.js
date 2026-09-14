@@ -1,6 +1,6 @@
 import { nextTick, ref } from 'vue'
-import { renamingEntity, stopRename } from '@/apps/drive/data/selection'
-import { rename } from '@/apps/drive/ui/drive/js/resources'
+import { renamingEntity, stopRename } from '@/apps/drive/legacy/data/selection'
+import { rename } from '@/apps/drive/legacy/ui/drive/js/resources'
 
 // Types whose name is edited whole — they carry no user-facing extension.
 const KEEP_WHOLE_TYPES = ['Document', 'Markdown', 'Link']

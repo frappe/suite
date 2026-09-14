@@ -13,8 +13,8 @@
 <script setup>
 import { computed, inject } from 'vue'
 import SidebarStorage from '@/components/SidebarStorage.vue'
-import { formatSize, base2BlockSize } from '@/apps/drive/utils/format'
-import { storageBar } from '@/apps/drive/resources/files'
+import { formatSize, base2BlockSize } from '@/apps/drive/legacy/utils/format'
+import { storageBar } from '@/apps/drive/legacy/resources/files'
 
 const emitter = inject('emitter')
 

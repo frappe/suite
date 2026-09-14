@@ -36,17 +36,17 @@
 </template>
 
 <script setup>
-import { setActiveEntity } from '@/apps/drive/data/selection'
+import { setActiveEntity } from '@/apps/drive/legacy/data/selection'
 import {
   pageBreadcrumbs,
   setCrumbEntity,
   clearCrumbEntity,
-} from '@/apps/drive/data/breadcrumbs'
-import Navbar from '@/apps/drive/components/Navbar.vue'
+} from '@/apps/drive/legacy/data/breadcrumbs'
+import Navbar from '@/apps/drive/legacy/components/Navbar.vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Button } from 'frappe-ui'
-import FileRender from '@/apps/drive/components/FileRender.vue'
-import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
+import FileRender from '@/apps/drive/legacy/components/FileRender.vue'
+import FilePreviewSkeleton from '@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { createResource } from 'frappe-ui'
 import { appDocumentTitle } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
@@ -58,9 +58,9 @@ import {
   updateURLSlug,
   isWriterDocument,
   hasHostedContent,
-} from '@/apps/drive/utils/files'
-import { currentFolder } from '@/apps/drive/data/currentFolder'
-import ErrorPage from '@/apps/drive/components/ErrorPage.vue'
+} from '@/apps/drive/legacy/utils/files'
+import { currentFolder } from '@/apps/drive/legacy/data/currentFolder'
+import ErrorPage from '@/apps/drive/legacy/components/ErrorPage.vue'
 
 const router = useRouter()
 const props = defineProps({

@@ -65,11 +65,11 @@
   </AppSettingsBody>
 </template>
 <script setup>
-import { formatSize, base2BlockSize, COLOR_MAP, formatPercent } from '@/apps/drive/utils/format'
+import { formatSize, base2BlockSize, COLOR_MAP, formatPercent } from '@/apps/drive/legacy/utils/format'
 import { Tooltip, Button } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { getIconUrl, openEntity, MIME_LIST_MAP } from '@/apps/drive/utils/files'
+import { getIconUrl, openEntity, MIME_LIST_MAP } from '@/apps/drive/legacy/utils/files'
 import { createResource } from 'frappe-ui'
 import { ref } from 'vue'
 import LucideCloud from '~icons/lucide/cloud'

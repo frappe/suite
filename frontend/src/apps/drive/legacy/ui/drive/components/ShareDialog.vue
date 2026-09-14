@@ -112,7 +112,7 @@ import {
 } from 'frappe-ui'
 import AccessSelect from './AccessSelect.vue'
 import TagInput from './TagInput/TagInput.vue'
-import { getUserGroups } from '@/apps/drive/resources/permissions'
+import { getUserGroups } from '@/apps/drive/legacy/resources/permissions'
 import LucideUsers from '~icons/lucide/users'
 import { getFileLink, dynamicList } from '../js/utils'
 

@@ -10,7 +10,7 @@
 <script setup>
 /* Consider adding https://codemirror.net/ and add a mimetype eval list for all possible mimetypes */
 
-import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
+import FilePreviewSkeleton from '@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { onMounted, ref, watch } from 'vue'
 
 const props = defineProps({

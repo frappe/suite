@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ frappeRequest: vi.fn() }))
 
 vi.mock('frappe-ui', () => ({ frappeRequest: mocks.frappeRequest }))
-vi.mock('@/apps/drive/utils/files', () => ({
+vi.mock('@/apps/drive/legacy/utils/files', () => ({
   prettyData: (rows: unknown[]) => rows,
   sortEntities: (rows: { file_name?: string }[], order?: { ascending?: boolean }) =>
     [...rows].sort((a, b) =>

@@ -12,8 +12,8 @@
 </template>
 
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
-import { getRecents } from '@/apps/drive/resources/files'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
+import { getRecents } from '@/apps/drive/legacy/resources/files'
 import LucideClock from '~icons/lucide/clock'
 // Broken - list view
 

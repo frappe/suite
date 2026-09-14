@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
-import { getTrash } from '@/apps/drive/resources/files'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
+import { getTrash } from '@/apps/drive/legacy/resources/files'
 import LucideTrash from '~icons/lucide/trash'
 </script>

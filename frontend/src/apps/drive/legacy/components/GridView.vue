@@ -90,15 +90,15 @@
 </template>
 
 <script setup>
-import GridItem from '@/apps/drive/components/GridItem.vue'
-import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
-import NoFilesSection from '@/apps/drive/components/NoFilesSection.vue'
+import GridItem from '@/apps/drive/legacy/components/GridItem.vue'
+import ContextMenu from '@/apps/drive/legacy/components/ContextMenu.vue'
+import NoFilesSection from '@/apps/drive/legacy/components/NoFilesSection.vue'
 import { Button, Checkbox, Skeleton } from 'frappe-ui'
 import { ref, computed } from 'vue'
-import { openEntity, isModKey } from '@/apps/drive/utils/files'
+import { openEntity, isModKey } from '@/apps/drive/legacy/utils/files'
 import { useRoute } from 'vue-router'
-import { setActiveEntity, renamingEntity } from '@/apps/drive/data/selection'
-import { settings } from '@/apps/drive/resources/permissions'
+import { setActiveEntity, renamingEntity } from '@/apps/drive/legacy/data/selection'
+import { settings } from '@/apps/drive/legacy/resources/permissions'
 import { vOnOutsideClick } from 'frappe-ui'
 
 const props = defineProps({

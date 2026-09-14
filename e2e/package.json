@@ -8,6 +8,8 @@
     "test:meet": "playwright test -c meet/playwright.config.ts",
     "test:meet-load": "node --test meet/load/*.test.mjs",
     "load:meet": "node meet/load/run.mjs",
+    "test:unified-shell": "playwright test -c unified-frontend/shell/playwright.config.ts",
+    "test:unified-files": "playwright test -c unified-frontend/files/playwright.config.ts",
     "test:headed": "yarn test:drive-backed-apps --headed",
     "test:debug": "yarn test:drive-backed-apps --debug",
     "test:ui": "yarn test:drive-backed-apps --ui",

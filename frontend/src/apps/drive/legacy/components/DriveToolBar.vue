@@ -101,8 +101,8 @@ import {
   h,
   onWatcherCleanup,
 } from 'vue'
-import { getIconUrl } from '@/apps/drive/utils/files'
-import { view, shareView } from '@/apps/drive/data/prefs'
+import { getIconUrl } from '@/apps/drive/legacy/utils/files'
+import { view, shareView } from '@/apps/drive/legacy/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import SortControl from '@/components/SortControl.vue'
 

@@ -1,38 +1,39 @@
-import router from '@/apps/drive/router'
+import router from '@/apps/drive/legacy/router'
 
-import '@/apps/drive/data/breadcrumbs'
-import { currentFolder } from '@/apps/drive/data/currentFolder'
-import { formatSize } from '@/apps/drive/utils/format'
+import { isHomeContext } from '@/apps/drive/legacy/data/breadcrumbs'
+import { currentFolder } from '@/apps/drive/legacy/data/currentFolder'
+import { formatSize } from '@/apps/drive/legacy/utils/format'
 import { nextTick } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
-import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
+import { getFileLink } from '@/apps/drive/legacy/ui/drive/js/utils'
 import {
   getRecents,
   mutate,
   createDocument,
   createSheet,
   getDocuments,
-} from '@/apps/drive/resources/files'
+} from '@/apps/drive/legacy/resources/files'
 import { set } from 'idb-keyval'
+import { toast } from '@/apps/drive/legacy/utils/toasts.js'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
-import emitter from '@/apps/drive/emitter'
+import emitter from '@/apps/drive/legacy/emitter'
 
-import folderIcon from '../../../../../suite/public/drive/images/icons/folder.svg'
-import imageIcon from '../../../../../suite/public/drive/images/icons/image.svg'
-import pdfIcon from '../../../../../suite/public/drive/images/icons/pdf.svg'
-import photoshopIcon from '../../../../../suite/public/drive/images/icons/photoshop.svg'
-import codeIcon from '../../../../../suite/public/drive/images/icons/code.svg'
-import sketchIcon from '../../../../../suite/public/drive/images/icons/sketch.svg'
-import markdownIcon from '../../../../../suite/public/drive/images/icons/markdown.svg'
-import textIcon from '../../../../../suite/public/drive/images/icons/text.svg'
-import documentIcon from '../../../../../suite/public/drive/images/icons/document.svg'
-import spreadsheetIcon from '../../../../../suite/public/drive/images/icons/spreadsheet.svg'
-import presentationIcon from '../../../../../suite/public/drive/images/icons/presentation.svg'
-import audioIcon from '../../../../../suite/public/drive/images/icons/audio.svg'
-import videoIcon from '../../../../../suite/public/drive/images/icons/video.svg'
-import applicationIcon from '../../../../../suite/public/drive/images/icons/application.svg'
-import archiveIcon from '../../../../../suite/public/drive/images/icons/archive.svg'
-import unknownIcon from '../../../../../suite/public/drive/images/icons/unknown.svg'
+import folderIcon from '../../../../../../suite/public/drive/images/icons/folder.svg'
+import imageIcon from '../../../../../../suite/public/drive/images/icons/image.svg'
+import pdfIcon from '../../../../../../suite/public/drive/images/icons/pdf.svg'
+import photoshopIcon from '../../../../../../suite/public/drive/images/icons/photoshop.svg'
+import codeIcon from '../../../../../../suite/public/drive/images/icons/code.svg'
+import sketchIcon from '../../../../../../suite/public/drive/images/icons/sketch.svg'
+import markdownIcon from '../../../../../../suite/public/drive/images/icons/markdown.svg'
+import textIcon from '../../../../../../suite/public/drive/images/icons/text.svg'
+import documentIcon from '../../../../../../suite/public/drive/images/icons/document.svg'
+import spreadsheetIcon from '../../../../../../suite/public/drive/images/icons/spreadsheet.svg'
+import presentationIcon from '../../../../../../suite/public/drive/images/icons/presentation.svg'
+import audioIcon from '../../../../../../suite/public/drive/images/icons/audio.svg'
+import videoIcon from '../../../../../../suite/public/drive/images/icons/video.svg'
+import applicationIcon from '../../../../../../suite/public/drive/images/icons/application.svg'
+import archiveIcon from '../../../../../../suite/public/drive/images/icons/archive.svg'
+import unknownIcon from '../../../../../../suite/public/drive/images/icons/unknown.svg'
 
 const FILE_ICONS = {
   Folder: folderIcon,

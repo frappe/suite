@@ -1,6 +1,6 @@
 import { onScopeDispose } from 'vue'
 
-import emitter from '@/apps/drive/emitter'
+import emitter from '@/apps/drive/legacy/emitter'
 
 /**
  * Subscribe to the app-wide emitter for as long as the calling component lives.

@@ -21,7 +21,7 @@
 <script setup>
 import { computed } from 'vue'
 
-import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/ui/drive'
+import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/legacy/ui/drive'
 
 const props = defineProps({
   resource: Object,

@@ -14,18 +14,18 @@
   <SettingsDialog v-model:open="showSettings" :suggested-tab="suggestedTab" />
 </template>
 <script setup>
-import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'
+import FrappeDriveLogo from '@/apps/drive/legacy/components/FrappeDriveLogo.vue'
 
 import StorageBar from './StorageBar.vue'
 import { Sidebar, SidebarCollapseToggle, SidebarHeader, SidebarItem, SidebarSection } from 'frappe-ui'
-import { notifCount, apps } from '@/apps/drive/resources/permissions'
-import { rootInfo } from '@/apps/drive/resources/files'
-import { dynamicList, isApple } from '@/apps/drive/utils/files'
+import { notifCount, apps } from '@/apps/drive/legacy/resources/permissions'
+import { rootInfo } from '@/apps/drive/legacy/resources/files'
+import { dynamicList, isApple } from '@/apps/drive/legacy/utils/files'
 
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 const { fullName: currentUserFullName } = useCurrentUser()
-import { getRootSection } from '@/apps/drive/data/breadcrumbs'
-import { sidebarCollapsed } from '@/apps/drive/data/prefs'
+import { getRootSection } from '@/apps/drive/legacy/data/breadcrumbs'
+import { sidebarCollapsed } from '@/apps/drive/legacy/data/prefs'
 import LucideClock from '~icons/lucide/clock'
 import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideTrash from '~icons/lucide/trash'
@@ -37,13 +37,13 @@ import LucideSearch from '~icons/lucide/search'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
 
-import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
-import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import SettingsDialog from '@/apps/drive/legacy/components/Settings/SettingsDialog.vue'
+import emitter from '@/apps/drive/legacy/emitter'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
 import { ref, computed, watch } from 'vue'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useRouter, useRoute } from 'vue-router'
-import { move } from '@/apps/drive/resources/files'
+import { move } from '@/apps/drive/legacy/resources/files'
 
 import LucideBook from '~icons/lucide/book'
 import LucideBadgeHelp from '~icons/lucide/badge-help'

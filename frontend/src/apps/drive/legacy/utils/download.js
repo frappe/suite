@@ -4,8 +4,8 @@
 // already opened — no interval polling.
 
 import { call } from 'frappe-ui'
-import { toast } from '@/apps/drive/utils/toasts.js'
-import { getSocket } from '@/apps/drive/socket'
+import { toast } from '@/apps/drive/legacy/utils/toasts.js'
+import { getSocket } from '@/apps/drive/legacy/socket'
 
 export function entitiesDownload(entities, transfer = false) {
   if (entities.length === 1 && !entities[0].is_folder) {

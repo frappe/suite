@@ -96,7 +96,7 @@
 </template>
 <script setup>
 import { Dialog, Avatar, createResource } from 'frappe-ui'
-import { getIconUrl, openEntity } from '@/apps/drive/utils/files'
+import { getIconUrl, openEntity } from '@/apps/drive/legacy/utils/files'
 import { onScopeDispose, ref, watch } from 'vue'
 
 import LucideFilePlus2 from '~icons/lucide/file-plus-2'

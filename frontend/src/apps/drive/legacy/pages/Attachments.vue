@@ -10,8 +10,8 @@
 </template>
 
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
-import { getAttachments } from '@/apps/drive/resources/files'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
+import { getAttachments } from '@/apps/drive/legacy/resources/files'
 import LucidePaperclip from '~icons/lucide/paperclip'
 import { watch } from 'vue'
 

@@ -11,15 +11,15 @@
 </template>
 
 <script setup>
-import GenericPage from '@/apps/drive/components/GenericPage.vue'
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
 import { watch, computed, onUnmounted } from 'vue'
 import { createResource } from 'frappe-ui'
 import { appDocumentTitle } from '@/utils/documentTitle'
-import { COMMON_OPTIONS } from '@/apps/drive/resources/files'
-import { prettyData, setCache, updateURLSlug } from '@/apps/drive/utils/files'
-import { setCrumbEntity, clearCrumbEntity } from '@/apps/drive/data/breadcrumbs'
-import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
-import router from '@/apps/drive/router'
+import { COMMON_OPTIONS } from '@/apps/drive/legacy/resources/files'
+import { prettyData, setCache, updateURLSlug } from '@/apps/drive/legacy/utils/files'
+import { setCrumbEntity, clearCrumbEntity } from '@/apps/drive/legacy/data/breadcrumbs'
+import { setCurrentFolder } from '@/apps/drive/legacy/data/currentFolder'
+import router from '@/apps/drive/legacy/router'
 import LucideFolderClosed from '~icons/lucide/folder-closed'
 
 const props = defineProps({

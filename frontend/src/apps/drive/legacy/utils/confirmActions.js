@@ -1,7 +1,7 @@
 import { dialog, call, toast } from 'frappe-ui'
 import { useTimeAgo } from '@vueuse/core'
-import { getTrash, toggleFav, clearRecent, clearTrash } from '@/apps/drive/resources/files.js'
-import { sortEntities } from '@/apps/drive/utils/files.js'
+import { getTrash, toggleFav, clearRecent, clearTrash } from '@/apps/drive/legacy/resources/files.js'
+import { sortEntities } from '@/apps/drive/legacy/utils/files.js'
 
 function itemString(entities) {
   return entities.length === 1 ? 'an item' : `${entities.length} items`

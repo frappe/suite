@@ -10,7 +10,7 @@
 <script setup>
 import { ref } from 'vue'
 import { Button } from 'frappe-ui'
-import { ShareDialog, getFileForDoc } from '@/apps/drive/sdk'
+import { ShareDialog, getFileForDoc } from '@/apps/drive/legacy/sdk'
 import { presentationId } from '@/apps/slides/stores/presentation'
 import { resetFocus } from '@/apps/slides/stores/element'
 

@@ -2,19 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const idb = vi.hoisted(() => ({ set: vi.fn() }))
 
-vi.mock('@/apps/drive/router', () => ({ default: { push: vi.fn() } }))
-vi.mock('@/apps/drive/ui/drive/js/utils', () => ({ getFileLink: vi.fn() }))
-vi.mock('@/apps/drive/resources/files', () => ({
+vi.mock('@/apps/drive/legacy/router', () => ({ default: { push: vi.fn() } }))
+vi.mock('@/apps/drive/legacy/ui/drive/js/utils', () => ({ getFileLink: vi.fn() }))
+vi.mock('@/apps/drive/legacy/resources/files', () => ({
   getRecents: { data: [], setData: vi.fn() },
   mutate: vi.fn(),
   createDocument: {},
   createSheet: {},
   getDocuments: {},
 }))
-vi.mock('@/apps/drive/data/breadcrumbs', () => ({ isHomeContext: () => true }))
-vi.mock('@/apps/drive/data/currentFolder', () => ({ currentFolder: { value: null } }))
-vi.mock('@/apps/drive/emitter', () => ({ default: { emit: vi.fn(), on: vi.fn() } }))
-vi.mock('@/apps/drive/utils/toasts.js', () => ({ toast: vi.fn() }))
+vi.mock('@/apps/drive/legacy/data/breadcrumbs', () => ({ isHomeContext: () => true }))
+vi.mock('@/apps/drive/legacy/data/currentFolder', () => ({ currentFolder: { value: null } }))
+vi.mock('@/apps/drive/legacy/emitter', () => ({ default: { emit: vi.fn(), on: vi.fn() } }))
+vi.mock('@/apps/drive/legacy/utils/toasts.js', () => ({ toast: vi.fn() }))
 vi.mock('idb-keyval', () => ({ set: idb.set }))
 vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: vi.fn() }))
 

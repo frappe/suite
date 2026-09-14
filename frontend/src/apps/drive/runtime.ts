@@ -1,7 +1,7 @@
 import type { RouteLocationNormalized } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
-import { setActiveEntity } from '@/apps/drive/data/selection'
+import { setActiveEntity } from '@/apps/drive/legacy/data/selection'
 import { setupTheme } from '@/utils/setupTheme'
 
 export function bootstrap() {

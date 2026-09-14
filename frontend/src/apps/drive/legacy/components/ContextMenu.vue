@@ -40,7 +40,7 @@
 </template>
 <script setup>
 import { onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
-import disableScroll from '@/apps/drive/utils/disable-scroll'
+import disableScroll from '@/apps/drive/legacy/utils/disable-scroll'
 
 const props = defineProps({
   actionItems: Array,

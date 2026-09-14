@@ -27,8 +27,8 @@
 </template>
 <script setup>
 import { computed, nextTick, onMounted, watch } from 'vue'
-import { renamingEntity } from '@/apps/drive/data/selection'
-import { useInlineRename } from '@/apps/drive/utils/useInlineRename'
+import { renamingEntity } from '@/apps/drive/legacy/data/selection'
+import { useInlineRename } from '@/apps/drive/legacy/utils/useInlineRename'
 
 defineOptions({ inheritAttrs: false })
 

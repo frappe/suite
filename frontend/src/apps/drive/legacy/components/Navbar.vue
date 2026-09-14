@@ -55,20 +55,20 @@
   </nav>
 </template>
 <script setup>
-import EntityDialogs from '@/apps/drive/components/EntityDialogs.vue'
+import EntityDialogs from '@/apps/drive/legacy/components/EntityDialogs.vue'
 import { Button, Dropdown } from 'frappe-ui'
-import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
+import EditableBreadcrumbs from '@/apps/drive/legacy/components/EditableBreadcrumbs.vue'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
-import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
-import { shareView } from '@/apps/drive/data/prefs'
-import { startRename } from '@/apps/drive/data/selection'
+import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/legacy/data/breadcrumbs'
+import { shareView } from '@/apps/drive/legacy/data/prefs'
+import { startRename } from '@/apps/drive/legacy/data/selection'
 const { systemUser } = useCurrentUser()
-import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import emitter from '@/apps/drive/legacy/emitter'
+import { useEmitter } from '@/apps/drive/legacy/utils/useEmitter'
 import { ref, computed, inject, h } from 'vue'
-import { entitiesDownload } from '@/apps/drive/utils/download'
-import { getRecents, getTrash, getFavourites, toggleFav, rootInfo } from '@/apps/drive/resources/files'
-import { apps } from '@/apps/drive/resources/permissions'
+import { entitiesDownload } from '@/apps/drive/legacy/utils/download'
+import { getRecents, getTrash, getFavourites, toggleFav, rootInfo } from '@/apps/drive/legacy/resources/files'
+import { apps } from '@/apps/drive/legacy/resources/permissions'
 import { useRoute } from 'vue-router'
 import {
   newExternal,
@@ -77,14 +77,14 @@ import {
   isAttachmentRef,
   isVirtual,
   openEntity,
-} from '@/apps/drive/utils/files'
-import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
+} from '@/apps/drive/legacy/utils/files'
+import { getFileLink } from '@/apps/drive/legacy/ui/drive/js/utils'
 import {
   confirmRemove,
   confirmClearRecents,
   confirmClearFavourites,
   confirmClearTrash,
-} from '@/apps/drive/utils/confirmActions'
+} from '@/apps/drive/legacy/utils/confirmActions'
 
 import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
