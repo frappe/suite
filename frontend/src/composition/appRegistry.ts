@@ -41,8 +41,14 @@ export function useAppRegistry(session: Session = useSession()): AppRegistry {
     areas: computed(() =>
       filterAreas(areaDefinitions, session.capabilities.value),
     ),
-    badges: computed(() => ({ mail: inbox.data?.unread ?? 0 })),
+    badges: computed(() => deriveAreaBadges(inbox.data)),
   };
+}
+
+export function deriveAreaBadges(
+  inbox: { unread: number } | undefined,
+): Readonly<Record<string, number>> {
+  return { mail: Math.max(0, inbox?.unread ?? 0) };
 }
 
 export function areaIsAvailable(

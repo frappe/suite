@@ -3,6 +3,12 @@ import { defineComponent, h, type Component } from "vue";
 import type { AreaDefinition } from "@/platform/contracts";
 import { translate as __ } from "@/platform/translation";
 
+export { upcomingEvents } from "@/apps/calendar/client/events";
+export type {
+  CalendarEvent,
+  UpcomingEventsInput,
+} from "@/apps/calendar/client/events";
+
 const CalendarIcon = defineComponent({
   name: "CalendarAreaIcon",
   setup: () => () =>

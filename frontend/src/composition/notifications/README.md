@@ -1,3 +1,5 @@
 # Notifications
 
-W3-home owns the notification popover. The shell exposes a `bell` slot for it.
+`NotificationsBell.vue` owns the rail popover. It reads Drive notification
+routes through composition-local descriptors and reaches Drive navigation only
+through the `@/apps/drive` package root.

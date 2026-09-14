@@ -1,13 +1,8 @@
 import { defineComponent, h, type Component } from "vue";
 
-import { api } from "@/apps/mail/client/generated";
+import { inboxSummary } from "@/apps/mail/client/inboxSummary";
 import type { AreaDefinition } from "@/platform/contracts";
-import {
-  query,
-  useQuery,
-  type DescriptorSource,
-  type QueryDescriptor,
-} from "@/platform/server-state";
+import { useQuery } from "@/platform/server-state";
 import { translate as __ } from "@/platform/translation";
 
 const MailIcon = defineComponent({
@@ -37,8 +32,5 @@ export const mailArea: AreaDefinition = {
 };
 
 export function useInboxSummary(enabled: () => boolean = () => true) {
-  const descriptor: DescriptorSource<
-    QueryDescriptor<Record<string, never>, { unread: number }>
-  > = () => (enabled() ? query(api.inbox_summary, {}) : false);
-  return useQuery(descriptor);
+  return useQuery(() => (enabled() ? inboxSummary() : false));
 }

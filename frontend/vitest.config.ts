@@ -8,6 +8,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"frappe-ui/list": path.resolve(__dirname, "../node_modules/frappe-ui/src/molecules/list/index.ts"),
 			"frappe-ui": path.resolve(__dirname, "recorder/frappeUi.ts"),
 			"~icons/lucide/scan": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/chevron-down": path.resolve(__dirname, "src/test/icon-stub.ts"),

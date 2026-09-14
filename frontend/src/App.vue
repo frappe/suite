@@ -6,6 +6,9 @@
       :badges="registry.badges.value"
     >
       <router-view />
+      <template #bell>
+        <NotificationsBell />
+      </template>
     </ShellLayout>
   </FeedbackProvider>
 </template>
@@ -22,6 +25,9 @@ const FeedbackProvider = defineAsyncComponent(() =>
 );
 const ShellLayout = defineAsyncComponent(
   () => import("@/shell/ShellLayout.vue"),
+);
+const NotificationsBell = defineAsyncComponent(
+  () => import("@/composition/notifications/NotificationsBell.vue"),
 );
 const registry = useAppRegistry();
 </script>

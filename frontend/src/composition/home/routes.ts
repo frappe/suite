@@ -8,7 +8,7 @@ export const routes: RouteRecordRaw[] = [
     meta: {
       area: "home",
       frame: "area",
-      scroll: "shell",
+      scroll: "content",
       title: "Home",
       favicon: "/assets/suite/frontend/logo.svg",
     },
