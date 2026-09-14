@@ -101,3 +101,12 @@ _Avoid_: Shell endpoint, Shared app data
 - **App**: `apps/registry.ts` and `SUITE_APPS` mean a product's code and
   route prefix. In the shell's language a product is an Area only if it has a
   rail item. Writer, Sheets, Slides and Meet are products without an area.
+
+## Shell mount seam
+
+The route metadata selects one of three boxes. `scroll: 'shell'` lets the
+frappe-ui shell viewport scroll the whole page. `scroll: 'content'` gives the
+area a fixed `h-full min-h-0 min-w-0 overflow-hidden` box so it owns scrolling.
+`frame: 'document'` removes the contextual panel and supplies that same full
+width and height box. A fixed-size canvas can mount inside it without growing
+any shell ancestor. The desktop and mobile shells use this seam unchanged.
