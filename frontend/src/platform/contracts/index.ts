@@ -1,9 +1,9 @@
 /**
  * Product-neutral contracts shared by composition, shell and product seams.
- * Types only. Behavior lives in the owning module.
+ * Types and injection keys only. Behavior lives in the owning module.
  * Sources: tickets 001 (route metadata), 002 (area definition), 009 (document type).
  */
-import type { Component } from 'vue'
+import type { Component, InjectionKey } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 
 export type PlatformCapability = 'jmap' | 'systemManager'
@@ -44,3 +44,9 @@ export interface DocumentTypeDefinition {
   /** Lazy document surface. It receives the prop `session: DocumentSession`. */
   loadSurface: () => Promise<Component>
 }
+
+/**
+ * Composition provides the ordered document registry at the app root.
+ * Products inject it for their New menus without importing composition.
+ */
+export const DOCUMENT_TYPES_KEY: InjectionKey<readonly DocumentTypeDefinition[]> = Symbol('suite:document-types')

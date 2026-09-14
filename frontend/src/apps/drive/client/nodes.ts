@@ -133,7 +133,7 @@ export const unstarNode = () => mutation(emptyOperation<{ node: string }>(api.no
 })
 
 function defaultDocumentTitle(contentDoctype: string): string {
-  if (contentDoctype === 'Spreadsheet') return 'Untitled spreadsheet'
+  if (contentDoctype === 'Sheet') return 'Untitled spreadsheet'
   if (contentDoctype === 'Presentation') return 'Untitled presentation'
   return 'Untitled document'
 }
