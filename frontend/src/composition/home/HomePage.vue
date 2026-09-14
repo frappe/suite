@@ -345,6 +345,7 @@ import {
   type DriveNodeSummary,
 } from "@/apps/drive";
 import { createRoom, scheduleMeeting } from "@/apps/meet";
+import { documentTypes } from "@/composition/documentRegistry";
 import {
   formatEventTime,
   formatOpenedAt,
@@ -386,23 +387,11 @@ const meetingEnd = ref(
 );
 const scheduleError = ref("");
 
-const newMenuItems = [
-  {
-    label: __("Document"),
-    icon: "lucide-file-text",
-    onClick: () => createDocument("Writer Document"),
-  },
-  {
-    label: __("Spreadsheet"),
-    icon: "lucide-sheet",
-    onClick: () => createDocument("Spreadsheet"),
-  },
-  {
-    label: __("Presentation"),
-    icon: "lucide-presentation",
-    onClick: () => createDocument("Presentation"),
-  },
-];
+const newMenuItems = documentTypes.map((definition) => ({
+  label: definition.newLabel(),
+  icon: definition.icon,
+  onClick: () => createDocument(definition.contentDoctype),
+}));
 
 const meetMenuItems = [
   {

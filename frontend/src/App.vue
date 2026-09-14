@@ -14,9 +14,11 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent } from "vue";
+import { defineAsyncComponent, provide } from "vue";
 
 import { useAppRegistry } from "@/composition/appRegistry";
+import { documentTypes } from "@/composition/documentRegistry";
+import { DOCUMENT_TYPES_KEY } from "@/platform/contracts";
 
 const FeedbackProvider = defineAsyncComponent(() =>
   import("@/platform/feedback").then(
@@ -30,4 +32,5 @@ const NotificationsBell = defineAsyncComponent(
   () => import("@/composition/notifications/NotificationsBell.vue"),
 );
 const registry = useAppRegistry();
+provide(DOCUMENT_TYPES_KEY, documentTypes);
 </script>

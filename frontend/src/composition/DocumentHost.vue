@@ -36,6 +36,7 @@ import {
   type DocumentSession,
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
+import { usePageTitle } from "@/platform/page-meta";
 
 const route = useRoute();
 const router = useRouter();
@@ -46,6 +47,7 @@ const error = shallowRef("");
 let opening = 0;
 
 const nodeId = computed(() => String(route.params.node ?? ""));
+usePageTitle(() => session.value?.title.value || "Document");
 const downloadUrl = computed(
   () => `/api/suite/drive/nodes/${encodeURIComponent(nodeId.value)}/content`,
 );

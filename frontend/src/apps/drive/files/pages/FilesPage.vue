@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Breadcrumbs, Button, ContextMenu, Dropdown, PageHeader, PageHeaderBackButton, PageHeaderMobile, TabButtons, TextInput } from 'frappe-ui'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
@@ -121,6 +121,7 @@ import { observeDriveChanges } from '@/apps/drive/client/realtime'
 import { roots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveBatchResult, type DriveNode } from '@/apps/drive/client/types'
 import { view } from '@/apps/drive/client/views'
+import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 import { confirm, prompt, toast } from '@/platform/feedback'
 import { useMutation, useQuery } from '@/platform/server-state'
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -147,6 +148,7 @@ type Destination = 'personal' | 'organization' | 'folder' | 'shared' | 'recent' 
 const props = defineProps<{ destination: Destination }>()
 const route = useRoute()
 const router = useRouter()
+const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
 const discovered = useQuery(roots())
 const presentationVersion = ref(0)
 const selectionState = ref<SelectionState>(clearSelection())
@@ -318,9 +320,11 @@ const moreOptions = computed(() => [
 const newOptions = computed(() => [
   { label: 'Folder', icon: 'lucide-folder-plus', onClick: () => create('folder') },
   { label: 'Upload files', icon: 'lucide-upload', disabled: true, description: 'Available after ticket 007' },
-  { label: 'Writer document', icon: 'lucide-file-text', onClick: () => create('document', 'Writer Document') },
-  { label: 'Spreadsheet', icon: 'lucide-sheet', onClick: () => create('document', 'Spreadsheet') },
-  { label: 'Presentation', icon: 'lucide-presentation', onClick: () => create('document', 'Presentation') },
+  ...documentTypes.map((definition) => ({
+    label: definition.newLabel(),
+    icon: definition.icon,
+    onClick: () => create('document', definition.contentDoctype),
+  })),
   { label: 'Link', icon: 'lucide-link', onClick: () => create('link') },
 ])
 
@@ -461,7 +465,7 @@ async function download(row: DriveNode) {
 async function create(kind: 'folder' | 'document' | 'link', contentDoctype?: string) {
   if (!parentId.value) return
   const values = await prompt<{ title: string; url?: string }>({
-    title: kind === 'link' ? 'New link' : kind === 'folder' ? 'New folder' : `New ${contentDoctype}`,
+    title: kind === 'link' ? 'New link' : kind === 'folder' ? 'New folder' : `New ${documentTypes.find((definition) => definition.contentDoctype === contentDoctype)?.newLabel().toLowerCase() ?? 'document'}`,
     fields: [
       { name: 'title', label: 'Name', required: true },
       ...(kind === 'link' ? [{ name: 'url', label: 'URL', type: 'text' as const, required: true }] : []),

@@ -183,7 +183,7 @@ describe("Home page", () => {
 
   it.each([
     ["Document", "Writer Document"],
-    ["Spreadsheet", "Spreadsheet"],
+    ["Spreadsheet", "Sheet"],
     ["Presentation", "Presentation"],
   ])(
     "creates a %s through generic Drive creation and navigates to it",
