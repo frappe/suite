@@ -1,118 +1,171 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { createResource } from 'frappe-ui'
 
-import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
+import { getCookieSessionUser, useSession } from '@/platform/session'
 
-// True when Jinja served the boot globals (window.suite_*); false in the Vite
-// dev server, where callers fetch instead.
-export const hasServerBoot = typeof window.suite_is_onboarded !== 'undefined'
+const platformSession = useSession()
 
-export const getSessionUser = (): string | null => {
-  const cookies = new URLSearchParams(document.cookie.split('; ').join('&'))
-  let user = cookies.get('user_id')
-  if (user === 'Guest') user = null
-  return user
+export const hasServerBoot =
+  typeof window !== 'undefined' && typeof window.suite_is_onboarded !== 'undefined'
+
+export const getSessionUser = getCookieSessionUser
+export const fullName = computed(() => platformSession.user.value?.fullName ?? '')
+export const imageURL = computed(() => platformSession.user.value?.avatar ?? '')
+export const systemUser = computed(() => platformSession.capabilities.value.systemManager)
+export const jmapUser = computed(() => platformSession.capabilities.value.jmap)
+
+type LegacyAccount = Record<string, unknown> & {
+  name?: string
+  email?: string
+  full_name?: string
+  avatar?: string | null
+  user_image?: string | null
+  roles?: string[]
+  is_jmap_configured?: boolean
 }
 
-const _getCookies = () =>
-  Object.fromEntries(
-    document.cookie
-      .split('; ')
-      .map((c) => {
-        const [k, ...v] = c.split('=')
-        return [k, decodeURIComponent(v.join('='))]
-      }),
-  )
+function accountData(): LegacyAccount | null {
+  const current = platformSession.user.value
+  if (!current) return null
+  return {
+    ...current,
+    name: current.id,
+    email: current.email ?? current.id,
+    full_name: current.fullName,
+    avatar: current.avatar,
+    user_image: current.avatar,
+    roles: Array.isArray(current.roles)
+      ? current.roles
+      : platformSession.capabilities.value.systemManager
+        ? ['System Manager']
+        : [],
+    is_jmap_configured: platformSession.capabilities.value.jmap,
+  }
+}
 
-const _cookies = _getCookies()
-
-/** Cookie-based profile refs — synchronous on load, updated when userResource resolves. */
-export const fullName = ref(_cookies.full_name || '')
-export const imageURL = ref(_cookies.user_image || '')
-export const systemUser = ref(_cookies.system_user === 'yes')
-export const jmapUser = ref(false)
-
-export const userResource = createResource({
-  url: 'suite.api.account.get_logged_in_user',
-  cache: 'User',
-  onError(error) {
-    if (error && error.exc_type === 'AuthenticationError') {
-      window.location.href = '/login'
-    }
+let userPromise: Promise<LegacyAccount | null> | null = null
+export const userResource = reactive({
+  data: accountData() as LegacyAccount | null,
+  error: null as unknown,
+  loading: platformSession.status.value === 'loading',
+  fetched: platformSession.status.value !== 'loading',
+  promise: null as Promise<LegacyAccount | null> | null,
+  async fetch() {
+    if (userPromise) return userPromise
+    this.loading = true
+    this.error = null
+    userPromise = platformSession
+      .refresh()
+      .then(() => {
+        this.data = accountData()
+        this.fetched = true
+        return this.data
+      })
+      .catch((error) => {
+        this.error = error
+        throw error
+      })
+      .finally(() => {
+        this.loading = false
+        userPromise = null
+      })
+    this.promise = userPromise
+    return userPromise
   },
-  onSuccess(data: Record<string, unknown> | null) {
-    if (!data) return
-    if (data.full_name) fullName.value = data.full_name as string
-    if (data.avatar) imageURL.value = data.avatar as string
-    systemUser.value = ((data.roles as string[]) ?? []).includes('System Manager')
-    jmapUser.value = !!data.is_jmap_configured
+  reload() {
+    return this.fetch()
+  },
+  reset() {
+    this.data = null
+    this.error = null
+    this.loading = false
+    this.fetched = false
+    this.promise = null
   },
 })
 
-/**
- * Shared suite session store.
- *
- * One source of truth for "who is logged in" across all 7 apps. Reads the
- * `user_id` cookie set by the Frappe backend; `Guest` is treated as logged-out.
- * Per-app session stores should be replaced by (or delegate to) this one so the
- * unified shell and every app route group agree on auth state.
- */
+watch(
+  [platformSession.user, platformSession.capabilities, platformSession.status],
+  () => {
+    userResource.data = accountData()
+    userResource.loading = platformSession.status.value === 'loading'
+    userResource.fetched = platformSession.status.value !== 'loading'
+  },
+  { deep: true },
+)
+
+if (platformSession.user.value) userResource.promise = userResource.fetch()
+
+function legacyAction<Input>(run: (input: Input) => Promise<void>) {
+  const action = reactive({
+    data: null as null,
+    error: null as unknown,
+    loading: false,
+    promise: null as Promise<void> | null,
+    submit: null as unknown as (input: Input) => Promise<void>,
+    fetch: null as unknown as (input: Input) => Promise<void>,
+    reset: null as unknown as () => void,
+  })
+  const submit = async (input: Input) => {
+    action.loading = true
+    action.error = null
+    const promise = run(input)
+    action.promise = promise
+    try {
+      await promise
+    } catch (error) {
+      action.error = error
+      throw error
+    } finally {
+      action.loading = false
+    }
+  }
+  action.submit = submit
+  action.fetch = submit
+  action.reset = () => {
+    action.error = null
+    action.loading = false
+    action.promise = null
+  }
+  return action
+}
+
 export const useSessionStore = defineStore('suite-session', () => {
-  const user = ref<string | null>(getSessionUser())
+  const user = ref<string | null>(platformSession.user.value?.id ?? getSessionUser())
+  watch(platformSession.user, (next) => {
+    user.value = next?.id ?? null
+  })
   const isLoggedIn = computed(() => !!user.value)
-
-  const login = createResource({
-    url: 'login',
-    onError() {
-      throw new Error('Invalid email or password')
+  const login = legacyAction<{ usr?: string; pwd?: string; email?: string; password?: string }>(
+    async (input) => {
+      const email = input.usr ?? input.email ?? ''
+      const password = input.pwd ?? input.password ?? ''
+      await platformSession.login(email, password)
+      user.value = platformSession.user.value?.id ?? email
     },
-    onSuccess() {
-      user.value = getSessionUser()
-      login.reset()
-    },
+  )
+  const logout = legacyAction<void>(async () => {
+    await platformSession.logout()
+    user.value = null
+    if (typeof window !== 'undefined') window.location.reload()
   })
-
-  const logout = createResource({
-    url: 'logout',
-    async onSuccess() {
-      user.value = null
-      // the slides worker keeps this user's responses; the next user must not see them
-      await clearSlidesUserData().catch(() => {})
-      window.location.reload()
-    },
-  })
-
   return { user, isLoggedIn, login, logout }
 })
 
 export const session = reactive({
-  user: computed(() => {
-    const store = useSessionStore()
-    return {
-      sessionUser: store.user,
-      ...userResource.data,
-    }
-  }),
-  isLoggedIn: computed(() => useSessionStore().isLoggedIn),
+  user: computed(() => ({ sessionUser: platformSession.user.value?.id ?? null, ...userResource.data })),
+  isLoggedIn: computed(() => !!platformSession.user.value),
 })
 
 export function useCurrentUser() {
-  const store = useSessionStore()
   return {
-    user: computed(() => store.user),
-    isLoggedIn: computed(() => store.isLoggedIn),
-    fullName: computed(() => (userResource.data?.full_name as string | undefined) ?? fullName.value),
-    imageURL: computed(() => (userResource.data?.avatar as string | undefined) ?? imageURL.value),
-    email: computed(() => (userResource.data?.email as string | undefined) ?? store.user ?? ''),
-    systemUser: computed(() =>
-      userResource.data
-        ? ((userResource.data.roles as string[]) ?? []).includes('System Manager')
-        : systemUser.value,
-    ),
-    isSystemManager: computed(() =>
-      ((userResource.data?.roles as string[] | undefined) ?? []).includes('System Manager'),
-    ),
-    jmapUser: computed(() => (userResource.data ? !!userResource.data.is_jmap_configured : jmapUser.value)),
+    user: computed(() => platformSession.user.value?.id ?? null),
+    isLoggedIn: computed(() => !!platformSession.user.value),
+    fullName,
+    imageURL,
+    email: computed(() => platformSession.user.value?.email ?? platformSession.user.value?.id ?? ''),
+    systemUser,
+    isSystemManager: systemUser,
+    jmapUser,
   }
 }

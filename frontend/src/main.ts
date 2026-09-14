@@ -7,7 +7,7 @@ import { spritePlugin } from 'frappe-ui/experimental'
 import App from '@/App.vue'
 import router from '@/router'
 import { configureFrappeUI } from '@/boot/config'
-import { translationPlugin } from '@/boot/translation'
+import { ready as translationsReady, translationPlugin } from '@/boot/translation'
 import { userResource, getSessionUser } from '@/boot/session'
 import { initSentry } from '@/boot/sentry'
 
@@ -20,6 +20,7 @@ if (getSessionUser()) {
 const app = createApp(App)
 
 await initSentry(app, router)
+await translationsReady
 
 app.use(createPinia())
 app.use(router)
