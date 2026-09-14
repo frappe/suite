@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, watch } from "vue";
 import { DesktopShell, MobileShell } from "frappe-ui";
 import { useRoute } from "vue-router";
 
@@ -158,6 +158,14 @@ function onOpenActiveAreaPanel(event: Event) {
   mobileSheetOpen.value = true;
 }
 onMounted(() => window.addEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel));
+// A destination chosen inside the sheet navigates. Close the sheet with it, or
+// it covers the listing the person just asked for.
+watch(
+  () => route.fullPath,
+  () => {
+    mobileSheetOpen.value = false;
+  },
+);
 onBeforeUnmount(() =>
   window.removeEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel),
 );

@@ -39,8 +39,12 @@
             :value="row.name"
             tabindex="0"
             :data-node="row.name"
+            @click.capture="onRangeClick($event, row)"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
+            @pointerdown="startLongPress(row)"
+            @pointerup="cancelLongPress"
+            @pointercancel="cancelLongPress"
             @contextmenu.prevent="$emit('menu', row)"
           >
             <ListCell>
@@ -157,6 +161,7 @@ const listing = ref<HTMLElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 let longPress: ReturnType<typeof setTimeout> | null = null
+let longPressFired = false
 const previewRetries = new Set<string>()
 const failedPreviews = ref(new Set<string>())
 
@@ -193,24 +198,52 @@ function directionFor(column: FilesSort) {
 function breadcrumbText(row: DriveNode) {
   return row.breadcrumbs?.map((crumb) => crumb.title).join(' › ') ?? ''
 }
+function onRangeClick(event: MouseEvent, row: DriveNode) {
+  // While the list is selectable, frappe-ui's ListRow answers the click itself
+  // and its toggle knows nothing about ranges or long presses. Take both in the
+  // capture phase so the app's rules survive.
+  if (takeLongPressClick(event)) return
+  if (!event.shiftKey) return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('select', row, true)
+}
 function onRowClick(event: MouseEvent, row: DriveNode) {
+  if (takeLongPressClick(event)) return
   if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) emit('select', row, event.shiftKey)
   else emit('open', row)
 }
 async function loadMore() {
   if (!props.query.hasNext || props.query.isFetchingNext) return
+  // A failed window ends the walk. Without the flag the loop retries the same
+  // cursor forever and the inline retry control never appears. The flag is
+  // local, so pressing Retry starts a fresh walk.
+  let failed = false
   await loadUntilVisible({
     get rows() { return props.query.rows },
-    get hasNext() { return props.query.hasNext },
+    get hasNext() { return props.query.hasNext && !failed },
     async fetchNext() {
       await props.query.fetchNext()
+      failed = Boolean(props.query.error)
       return this
     },
   })
 }
 function startLongPress(row: DriveNode) {
   cancelLongPress()
-  longPress = setTimeout(() => emit('select', row, false), 500)
+  longPress = setTimeout(() => {
+    // The press already answered. Swallow the click that follows the release,
+    // or it toggles the row straight back off.
+    longPressFired = true
+    emit('select', row, false)
+  }, 500)
+}
+function takeLongPressClick(event: MouseEvent) {
+  if (!longPressFired) return false
+  longPressFired = false
+  event.preventDefault()
+  event.stopPropagation()
+  return true
 }
 function cancelLongPress() {
   if (longPress) clearTimeout(longPress)
