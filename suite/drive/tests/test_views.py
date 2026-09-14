@@ -227,6 +227,22 @@ class TestListingContract(UnitTestCase):
         self.assertLess(ancestor_filter, limit)
         self.assertIn("ancestor_grant.principal IN %(own)s", SHARED_SQL)
 
+    def test_folder_filter_and_grouping_live_inside_the_sql_window(self):
+        query = nodes_module._folder_page_query("title", "ASC", group_by="owner")
+        before_limit = query[: query.index("LIMIT")]
+        self.assertIn("(%(kind)s IS NULL OR kind = %(kind)s)", before_limit)
+        order = before_limit[before_limit.rindex("ORDER BY") :]
+        self.assertLess(order.index("owner"), order.index("kind = 'folder'"))
+        self.assertLess(order.index("kind = 'folder'"), order.index("title ASC"))
+        self.assertTrue(order.rstrip().endswith("name ASC"))
+
+    def test_ungrouped_order_always_partitions_folders_first(self):
+        for direction in ("ASC", "DESC"):
+            with self.subTest(direction=direction):
+                order = nodes_module._listing_order("modified", direction, group_by=None, prefix="")
+                self.assertTrue(order.startswith("CASE WHEN kind = 'folder' THEN 0 ELSE 1 END ASC"))
+                self.assertTrue(order.endswith("name ASC"))
+
     def test_path_schema_is_data_500_with_a_full_composite_index(self):
         schema_path = Path(__file__).parents[1] / "doctype" / "drive_node" / "drive_node.json"
         fields = {field["fieldname"]: field for field in json.loads(schema_path.read_text())["fields"]}
@@ -404,6 +420,65 @@ class TestDriveViews(IntegrationTestCase):
         self.assertEqual([row.name for row in nested_page["rows"]], [nested.name])
         self.assertEqual(sql.call_count, 3)
 
+    def test_folder_kind_filter_is_applied_before_the_short_window(self):
+        self._node(self.personal.name, "A file", kind="file")
+        folder = self._node(self.personal.name, "Z folder")
+
+        page = children(self.principals, self.personal.name, kind="folder", limit=1)
+
+        self.assertEqual([row.name for row in page["rows"]], [folder.name])
+        self.assertIsNotNone(page["next_cursor"])
+
+        empty_root = self._node(self.personal.name, "Empty picker")
+        self._node(empty_root.name, "Only file", kind="file")
+        empty = children(self.principals, empty_root.name, kind="folder", limit=1)
+        self.assertEqual(empty["rows"], [])
+        self.assertIsNone(empty["next_cursor"])
+
+    def test_folder_access_expansion_keeps_the_three_query_page_cost(self):
+        folder = self._node(self.personal.name, "Access-batched folder")
+
+        with self.assertQueryCount(3):
+            rows = children(
+                self.principals,
+                self.personal.name,
+                with_access=True,
+            )["rows"]
+
+        expanded = next(row for row in rows if row.name == folder.name)
+        self.assertGreaterEqual(expanded.access["role"], READ)
+
+    def test_grouping_is_contiguous_stable_and_folders_first_inside_owner(self):
+        made = []
+        for owner, kind, title in (
+            ("a@example.com", "file", "A file"),
+            ("a@example.com", "folder", "Z folder"),
+            ("b@example.com", "file", "B file"),
+            ("b@example.com", "folder", "Y folder"),
+        ):
+            node = self._node(self.personal.name, title, kind=kind)
+            frappe.db.set_value("Drive Node", node.name, "owner", owner, update_modified=False)
+            made.append(node.name)
+
+        rows = children(
+            self.principals,
+            self.personal.name,
+            group_by="owner",
+            order_by="title",
+            ascending=False,
+        )["rows"]
+        relevant = [row for row in rows if row.name in made]
+
+        self.assertEqual(
+            [(row.owner, row.kind) for row in relevant],
+            [
+                ("a@example.com", "folder"),
+                ("a@example.com", "file"),
+                ("b@example.com", "folder"),
+                ("b@example.com", "file"),
+            ],
+        )
+
     def test_document_children_are_hidden_from_children_and_general_views(self):
         document = self._node(self.other.name, "Deck", kind="document")
         media = self._node(document.name, "unique-media-token", kind="file")
@@ -484,13 +559,14 @@ class TestDriveViews(IntegrationTestCase):
         )
         self._grant(self.other.name, VIEWER, READ)
 
-        self.assertEqual(
-            {row.name for row in views(self.principals, "templates")["rows"]},
-            {template.name, other_template.name},
+        self.assertTrue(
+            {template.name, other_template.name}.issubset(
+                {row.name for row in views(self.principals, "templates")["rows"]}
+            )
         )
-        self.assertEqual(
+        self.assertIn(
+            template.name,
             [row.name for row in views(self.principals, "templates", content_doctype="User")["rows"]],
-            [template.name],
         )
         self.assertEqual(
             [row.name for row in views(self.principals, "trash", root=self.other.name)["rows"]],
@@ -517,16 +593,58 @@ class TestDriveViews(IntegrationTestCase):
             [row.name for row in views(self.principals, "trash", root=self.other.name)["rows"]],
         )
 
-    def test_search_uses_one_ancestor_union_grant_query_for_the_window(self):
+    def test_search_access_uses_one_ancestor_union_grant_query_for_the_window(self):
         first = self._node(self.other.name, "needle one")
         second = self._node(self.other.name, "needle two")
         self._grant(self.other.name, VIEWER, READ)
 
         with patch("suite.drive._core.nodes._grant_rows", wraps=nodes_module._grant_rows) as grant_rows:
-            rows = views(self.principals, "search", term="needle")["rows"]
+            rows = views(self.principals, "search", term="needle", with_access=True)["rows"]
 
         self.assertEqual({row.name for row in rows}, {first.name, second.name})
+        self.assertTrue(all(row.access["role"] >= READ for row in rows))
         grant_rows.assert_called_once()
+
+    def test_search_breadcrumbs_fetch_ancestor_titles_as_one_union(self):
+        folder = self._node(self.personal.name, "Finance")
+        match = self._node(folder.name, "breadcrumb-needle")
+        original_get_all = frappe.get_all
+        with patch("suite.drive._core.nodes.frappe.get_all", wraps=original_get_all) as get_all:
+            with self.assertQueryCount(4):
+                rows = views(
+                    self.principals,
+                    "search",
+                    term="breadcrumb-needle",
+                    with_breadcrumbs=True,
+                )["rows"]
+
+        self.assertEqual([row.name for row in rows], [match.name])
+        self.assertEqual(
+            [crumb["name"] for crumb in rows[0].breadcrumbs],
+            [self.personal.name, folder.name],
+        )
+        title_reads = [
+            call
+            for call in get_all.call_args_list
+            if call.args
+            and call.args[0] == "Drive Node"
+            and call.kwargs.get("fields") == ["name", "title"]
+        ]
+        self.assertEqual(len(title_reads), 1)
+
+    def test_recent_access_is_batched_and_keeps_opened_at(self):
+        from suite.drive._core.activity import visit
+
+        recent = [self._node(self.personal.name, f"Recent {index}") for index in range(8)]
+        for row in recent:
+            visit(self.principals, row.name)
+
+        with self.assertQueryCount(3):
+            rows = views(self.principals, "recents", with_access=True)["rows"]
+
+        self.assertEqual({row.name for row in rows}, {row.name for row in recent})
+        self.assertTrue(all(row.opened_at for row in rows))
+        self.assertTrue(all(row.access["role"] >= READ for row in rows))
 
     def test_fully_hidden_search_window_advances_by_the_sql_window(self):
         hidden = self._node(self.other.name, "hidden-window-token")

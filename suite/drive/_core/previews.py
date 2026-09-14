@@ -346,15 +346,18 @@ def _write_preview(node: str, *, source_blob: str | None, preview_blob: str) -> 
         preview.source_blob = source_blob
         preview.blob = preview_blob
         preview.save(ignore_permissions=True)
-        return
-    frappe.get_doc(
-        {
-            "doctype": "Drive Node Preview",
-            "node": node,
-            "source_blob": source_blob,
-            "blob": preview_blob,
-        }
-    ).insert(ignore_permissions=True)
+    else:
+        frappe.get_doc(
+            {
+                "doctype": "Drive Node Preview",
+                "node": node,
+                "source_blob": source_blob,
+                "blob": preview_blob,
+            }
+        ).insert(ignore_permissions=True)
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(node)
 
 
 def _missing_rows(after_creation, after_name):

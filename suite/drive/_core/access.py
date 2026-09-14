@@ -1121,6 +1121,14 @@ def _write_activity(
     from suite.drive._core.activity import notify_users, record
 
     activity = record(principals, node, action, detail=detail)
+    targets = tuple(
+        target
+        for key in ("principal", "old_principal", "new_principal")
+        if isinstance((target := detail.get(key)), str) and target
+    )
+    from suite.drive._core.changes import emit_for_principals
+
+    emit_for_principals(targets)
     target = detail.get("principal")
     if isinstance(target, str) and target and not target.startswith("$"):
         notify_users(activity, (target,))

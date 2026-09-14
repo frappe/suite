@@ -7,11 +7,12 @@ import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive._core.access import add_creator_grant, chain_ids, effective_role
-from suite.drive._core.errors import DriveConflict, DriveForbidden
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, MANAGE, NONE, UPLOAD
 from suite.drive._core.roots import (
     create_root,
+    discover,
     personal_root_for,
     reject_illegal_root_operation,
     validate_root_pair,
@@ -32,6 +33,46 @@ class TestRootCreationContract(UnitTestCase):
 
         _lock_identity("Shared", None)
         get_value.assert_called_once_with("DocType", "Drive Root", "name", for_update=True)
+
+
+class TestRootDiscovery(UnitTestCase):
+    principals = Principals("user@example.com", ("user@example.com", "$GENERAL"), ("$PUBLIC",))
+
+    @patch("suite.drive._core.access.require")
+    @patch("suite.drive._core.roots.validate_root_pair")
+    @patch("suite.drive._core.roots.frappe.db.sql")
+    def test_personal_sites_return_an_explicit_null_organization(self, sql, pair, require):
+        sql.return_value = [frappe._dict(node="personal", kind="Personal", title="My files")]
+        pair.return_value = frappe._dict(node=frappe._dict(name="personal"))
+
+        answer = discover(self.principals)
+
+        self.assertEqual(
+            answer,
+            {"personal": {"node": "personal", "title": "My files"}, "organization": None},
+        )
+        self.assertIn("r.state = 'Active'", sql.call_args.args[0])
+        require.assert_called_once()
+
+    @patch("suite.drive._core.roots.frappe.db.sql", return_value=[])
+    def test_a_missing_active_personal_root_is_not_an_empty_location(self, _sql):
+        with self.assertRaises(DriveNotFound):
+            discover(self.principals)
+
+    @patch("suite.drive._core.access.require")
+    @patch("suite.drive._core.roots.validate_root_pair")
+    @patch("suite.drive._core.roots.frappe.db.sql")
+    def test_an_active_shared_root_is_the_organization_location(self, sql, pair, require):
+        sql.return_value = [
+            frappe._dict(node="personal", kind="Personal", title="My files"),
+            frappe._dict(node="shared", kind="Shared", title="Organization files"),
+        ]
+        pair.side_effect = lambda node: frappe._dict(node=frappe._dict(name=node))
+
+        answer = discover(self.principals)
+
+        self.assertEqual(answer["organization"], {"node": "shared", "title": "Organization files"})
+        self.assertEqual(require.call_count, 2)
 
 
 class TestRootLifecycle(IntegrationTestCase):

@@ -1,0 +1,4238 @@
+{
+  "owner": "drive",
+  "prefix": "/api/suite/drive/",
+  "operations": [
+    {
+      "id": "node_create",
+      "method": "POST",
+      "path": "nodes",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "node_batch",
+      "method": "POST",
+      "path": "nodes/batch",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "$defs": {
+          "BatchPatch": {
+            "properties": {
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "parent": {
+                "title": "Parent",
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "Active",
+                  "Trashed"
+                ],
+                "title": "State",
+                "type": "string"
+              },
+              "content_modified": {
+                "title": "Content Modified",
+                "type": "string"
+              }
+            },
+            "title": "BatchPatch",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "patch": {
+            "$ref": "#/$defs/BatchPatch"
+          }
+        },
+        "required": [
+          "nodes",
+          "patch"
+        ],
+        "title": "BatchNodes",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "BatchFailure": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              },
+              "message": {
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "type",
+              "message"
+            ],
+            "title": "BatchFailure",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "ok": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ok",
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/$defs/BatchFailure"
+            },
+            "title": "Failed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "failed"
+        ],
+        "title": "BatchResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "node_get",
+      "method": "GET",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": {
+        "properties": {
+          "expand": {
+            "title": "Expand",
+            "type": "string"
+          }
+        },
+        "title": "NodeGetQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_patch.rename",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Rename",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_patch.move",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent"
+        ],
+        "title": "Move",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_patch.trash",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "state": {
+            "const": "Trashed",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "Trash",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_patch.restore",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "state": {
+            "const": "Active",
+            "title": "State",
+            "type": "string"
+          },
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "Restore",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_patch.stamp",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_modified"
+        ],
+        "title": "Stamp",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_purge",
+      "method": "DELETE",
+      "path": "nodes/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_children",
+      "method": "GET",
+      "path": "nodes/{node}/children",
+      "pathParams": [
+        "node"
+      ],
+      "query": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "order_by": {
+            "title": "Order By",
+            "type": "string"
+          },
+          "ascending": {
+            "title": "Ascending",
+            "type": "boolean"
+          },
+          "mime_prefix": {
+            "title": "Mime Prefix",
+            "type": "string"
+          },
+          "kind": {
+            "const": "folder",
+            "title": "Kind",
+            "type": "string"
+          },
+          "group_by": {
+            "enum": [
+              "type",
+              "owner",
+              "modified"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "expand": {
+            "title": "Expand",
+            "type": "string"
+          }
+        },
+        "title": "ChildrenQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "NodeShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Parent"
+              },
+              "root": {
+                "title": "Root",
+                "type": "string"
+              },
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mime"
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Url"
+              },
+              "content_doctype": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Doctype"
+              },
+              "content_docname": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Docname"
+              },
+              "is_template": {
+                "title": "Is Template",
+                "type": "integer"
+              },
+              "owner": {
+                "title": "Owner",
+                "type": "string"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Modified"
+              },
+              "content_modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Modified"
+              },
+              "access": {
+                "$ref": "#/$defs/AccessShape"
+              },
+              "breadcrumbs": {
+                "items": {
+                  "$ref": "#/$defs/BreadcrumbShape"
+                },
+                "title": "Breadcrumbs",
+                "type": "array"
+              },
+              "preview": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/PreviewShape"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "opened_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Opened At"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind",
+              "parent",
+              "root",
+              "state",
+              "size",
+              "mime",
+              "url",
+              "content_doctype",
+              "content_docname",
+              "is_template",
+              "owner",
+              "creation",
+              "modified",
+              "content_modified"
+            ],
+            "title": "NodeShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/$defs/NodeShape"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "errors": [
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_copy",
+      "method": "POST",
+      "path": "nodes/{node}/copy",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent"
+        ],
+        "title": "CopyNode",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent",
+          "root",
+          "state",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_archive_start",
+      "method": "POST",
+      "path": "nodes/{node}/archive",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "status": {
+            "enum": [
+              "building",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "file_name",
+          "size",
+          "error"
+        ],
+        "title": "ArchiveStatus",
+        "type": "object"
+      },
+      "errors": [
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_archive_status",
+      "method": "GET",
+      "path": "nodes/{node}/archive",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "status": {
+            "enum": [
+              "building",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "file_name",
+          "size",
+          "error"
+        ],
+        "title": "ArchiveStatus",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_archive_download",
+      "method": "GET",
+      "path": "nodes/{node}/archive/download",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_put_content",
+      "method": "PUT",
+      "path": "nodes/{node}/content",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_get_content",
+      "method": "GET",
+      "path": "nodes/{node}/content",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_media",
+      "method": "GET",
+      "path": "nodes/{node}/media",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_preview",
+      "method": "POST",
+      "path": "nodes/{node}/preview",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "upload_create",
+      "method": "POST",
+      "path": "uploads",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "upload_chunk",
+      "method": "PUT",
+      "path": "uploads/{upload_id}/chunk",
+      "pathParams": [
+        "upload_id"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "upload_finish",
+      "method": "POST",
+      "path": "uploads/{upload_id}/finish",
+      "pathParams": [
+        "upload_id"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "node_activity",
+      "method": "GET",
+      "path": "nodes/{node}/activity",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_visit",
+      "method": "POST",
+      "path": "nodes/{node}/visit",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_put_favourite",
+      "method": "PUT",
+      "path": "nodes/{node}/favourite",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_delete_favourite",
+      "method": "DELETE",
+      "path": "nodes/{node}/favourite",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_grants",
+      "method": "GET",
+      "path": "nodes/{node}/grants",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_put_grant",
+      "method": "PUT",
+      "path": "nodes/{node}/grants/{principal:path}",
+      "pathParams": [
+        "node",
+        "principal"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_delete_grant",
+      "method": "DELETE",
+      "path": "nodes/{node}/grants/{principal:path}",
+      "pathParams": [
+        "node",
+        "principal"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "grant_rotate",
+      "method": "POST",
+      "path": "grants/{grant}/rotate",
+      "pathParams": [
+        "grant"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "link_unlock",
+      "method": "POST",
+      "path": "links/{token}/unlock",
+      "pathParams": [
+        "token"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "view_clear_recents",
+      "method": "DELETE",
+      "path": "views/recents",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "view_list",
+      "method": "GET",
+      "path": "views/{view}",
+      "pathParams": [
+        "view"
+      ],
+      "query": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "content_doctype": {
+            "title": "Content Doctype",
+            "type": "string"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          },
+          "expand": {
+            "title": "Expand",
+            "type": "string"
+          }
+        },
+        "title": "ViewQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "ArchivedRootShape": {
+            "properties": {
+              "root": {
+                "title": "Root",
+                "type": "string"
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User"
+              },
+              "used_bytes": {
+                "title": "Used Bytes",
+                "type": "integer"
+              },
+              "quota_bytes": {
+                "title": "Quota Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "root",
+              "user",
+              "used_bytes",
+              "quota_bytes"
+            ],
+            "title": "ArchivedRootShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "NodeShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Parent"
+              },
+              "root": {
+                "title": "Root",
+                "type": "string"
+              },
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mime"
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Url"
+              },
+              "content_doctype": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Doctype"
+              },
+              "content_docname": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Docname"
+              },
+              "is_template": {
+                "title": "Is Template",
+                "type": "integer"
+              },
+              "owner": {
+                "title": "Owner",
+                "type": "string"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Modified"
+              },
+              "content_modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Modified"
+              },
+              "access": {
+                "$ref": "#/$defs/AccessShape"
+              },
+              "breadcrumbs": {
+                "items": {
+                  "$ref": "#/$defs/BreadcrumbShape"
+                },
+                "title": "Breadcrumbs",
+                "type": "array"
+              },
+              "preview": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/PreviewShape"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "opened_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Opened At"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind",
+              "parent",
+              "root",
+              "state",
+              "size",
+              "mime",
+              "url",
+              "content_doctype",
+              "content_docname",
+              "is_template",
+              "owner",
+              "creation",
+              "modified",
+              "content_modified"
+            ],
+            "title": "NodeShape",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NodeShape"
+                },
+                {
+                  "$ref": "#/$defs/ArchivedRootShape"
+                }
+              ]
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "node_versions",
+      "method": "GET",
+      "path": "nodes/{node}/versions",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_version_create",
+      "method": "POST",
+      "path": "nodes/{node}/versions",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_version_patch",
+      "method": "PATCH",
+      "path": "nodes/{node}/versions/{seq}",
+      "pathParams": [
+        "node",
+        "seq"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_version_delete",
+      "method": "DELETE",
+      "path": "nodes/{node}/versions/{seq}",
+      "pathParams": [
+        "node",
+        "seq"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_version_content",
+      "method": "GET",
+      "path": "nodes/{node}/versions/{seq}/content",
+      "pathParams": [
+        "node",
+        "seq"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_version_restore",
+      "method": "POST",
+      "path": "nodes/{node}/versions/{seq}/restore",
+      "pathParams": [
+        "node",
+        "seq"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_threads",
+      "method": "GET",
+      "path": "nodes/{node}/threads",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "node_thread_create",
+      "method": "POST",
+      "path": "nodes/{node}/threads",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ]
+    },
+    {
+      "id": "thread_patch",
+      "method": "PATCH",
+      "path": "threads/{thread}",
+      "pathParams": [
+        "thread"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "thread_comment_create",
+      "method": "POST",
+      "path": "threads/{thread}/comments",
+      "pathParams": [
+        "thread"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "comment_patch",
+      "method": "PATCH",
+      "path": "comments/{comment}",
+      "pathParams": [
+        "comment"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "comment_delete",
+      "method": "DELETE",
+      "path": "comments/{comment}",
+      "pathParams": [
+        "comment"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "notifications_list",
+      "method": "GET",
+      "path": "notifications",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "boolean"
+          }
+        },
+        "title": "NotificationsQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "ActivityShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "action": {
+                "title": "Action",
+                "type": "string"
+              },
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "At"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "client": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Client"
+              },
+              "detail": {
+                "additionalProperties": true,
+                "title": "Detail",
+                "type": "object"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "action",
+              "actor",
+              "at",
+              "via_link",
+              "client",
+              "detail"
+            ],
+            "title": "ActivityShape",
+            "type": "object"
+          },
+          "NotificationShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "read": {
+                "title": "Read",
+                "type": "integer"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "activity": {
+                "$ref": "#/$defs/ActivityShape"
+              }
+            },
+            "required": [
+              "name",
+              "read",
+              "creation",
+              "activity"
+            ],
+            "title": "NotificationShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/$defs/NotificationShape"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "notifications_unread_count",
+      "method": "GET",
+      "path": "notifications/unread-count",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread"
+        ],
+        "title": "UnreadCount",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "notifications_read.notification_names",
+      "method": "POST",
+      "path": "notifications/read",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "notifications": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notifications",
+            "type": "array"
+          }
+        },
+        "required": [
+          "notifications"
+        ],
+        "title": "NotificationNames",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "read": {
+            "title": "Read",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "read"
+        ],
+        "title": "ReadResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "notifications_read.all_notifications",
+      "method": "POST",
+      "path": "notifications/read",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "all": {
+            "const": true,
+            "title": "All",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "all"
+        ],
+        "title": "AllNotifications",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "read": {
+            "title": "Read",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "read"
+        ],
+        "title": "ReadResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "roots_discover",
+      "method": "GET",
+      "path": "roots",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "RootLocation": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "title"
+            ],
+            "title": "RootLocation",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "personal": {
+            "$ref": "#/$defs/RootLocation"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RootLocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "personal",
+          "organization"
+        ],
+        "title": "RootLocations",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "root_usage",
+      "method": "GET",
+      "path": "roots/{root}/usage",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          },
+          "reserved_bytes": {
+            "title": "Reserved Bytes",
+            "type": "integer"
+          },
+          "quota_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes"
+          },
+          "effective_quota": {
+            "title": "Effective Quota",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_bytes",
+          "reserved_bytes",
+          "quota_bytes",
+          "effective_quota"
+        ],
+        "title": "RootUsage",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "root_patch",
+      "method": "PATCH",
+      "path": "roots/{root}",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "root_purge",
+      "method": "DELETE",
+      "path": "roots/{root}",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    }
+  ]
+}

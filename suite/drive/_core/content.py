@@ -810,6 +810,9 @@ def _refuse_trashed_write(node: Mapping, role: int) -> None:
 def touch_node(node: str) -> None:
     """Stamp `content_modified` without loading or versioning the node."""
     frappe.db.set_value("Drive Node", node, "content_modified", now_datetime(), update_modified=False)
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(node)
 
 
 def download_filename(title: str) -> str:

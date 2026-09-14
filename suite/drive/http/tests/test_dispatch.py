@@ -1189,6 +1189,12 @@ class TestByteEgress(DriveHTTPCase):
 class TestRoots(DriveHTTPCase):
     """§11.2's own-root read, and the two Suite Admin writes."""
 
+    def test_root_discovery_returns_the_callers_personal_location(self):
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/roots"))
+        self.assertEqual(answer["personal"]["node"], self.root.name)
+        self.assertEqual(set(answer["personal"]), {"node", "title"})
+        self.assertIn("organization", answer)
+
     def test_the_owner_reads_their_own_counters(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/roots/{self.root.name}/usage"))
         self.assertEqual(set(answer), {"used_bytes", "reserved_bytes", "quota_bytes", "effective_quota"})
@@ -1712,16 +1718,20 @@ class TestViewRoutes(DriveHTTPCase):
     def test_an_unknown_view_name_is_a_bad_request(self):
         self.refusal(self.as_owner("GET", f"{PREFIX}/views/everything"), 400, "DriveError")
 
-    def test_a_view_expands_a_preview_and_refuses_the_other_two(self):
+    def test_a_view_expands_preview_and_access_and_refuses_breadcrumbs(self):
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
         answer = self.view("favourites", expand="preview")
         self.assertEqual([row["name"] for row in answer["rows"]], [self.file])
         self.assertIn("preview", answer["rows"][0])
         self.assertIsNone(answer["rows"][0]["preview"])
-        for expansion in ("access", "breadcrumbs"):
-            with self.subTest(expand=expansion):
-                response = self.as_owner("GET", f"{PREFIX}/views/favourites", query={"expand": expansion})
-                self.refusal(response, 400, "DriveError")
+        access = self.view("favourites", expand="access")
+        self.assertGreaterEqual(access["rows"][0]["access"]["role"], READ)
+        response = self.as_owner(
+            "GET",
+            f"{PREFIX}/views/favourites",
+            query={"expand": "breadcrumbs"},
+        )
+        self.refusal(response, 400, "DriveError")
 
     def test_a_personal_view_is_scoped_to_the_caller(self):
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
@@ -2047,6 +2057,10 @@ class TestNotificationRoutes(DriveHTTPCase):
         self.assertEqual(row["activity"]["name"], self.activity)
         self.assertEqual(row["activity"]["node"], self.node)
 
+    def test_unread_count_is_the_callers_exact_scalar(self):
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/notifications/unread-count"))
+        self.assertEqual(answer, {"unread": activity_core.unread_count(self.owner)})
+
     def test_reading_another_users_notification_marks_nothing(self):
         answer = self.data(
             self.as_owner("POST", f"{PREFIX}/notifications/read", body={"notifications": [self.theirs]})
@@ -2071,6 +2085,7 @@ class TestNotificationRoutes(DriveHTTPCase):
     def test_a_guest_is_not_heard_on_the_notification_routes(self):
         for method, path, body in (
             ("GET", f"{PREFIX}/notifications", None),
+            ("GET", f"{PREFIX}/notifications/unread-count", None),
             ("POST", f"{PREFIX}/notifications/read", {"all": True}),
         ):
             with self.subTest(method=method, path=path):

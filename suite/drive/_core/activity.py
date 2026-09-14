@@ -88,6 +88,9 @@ def record(
             "detail": detail or {},
         }
     ).insert(ignore_permissions=True)
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(node)
     return row.name
 
 
@@ -144,6 +147,9 @@ def visit(principals: Principals, node: str) -> str:
         if existing is None:
             raise DriveConflict(_("The Drive recent row could not be recorded"))
     frappe.db.set_value("Drive Recent", existing, "opened_at", stamp, update_modified=False)
+    from suite.drive._core.changes import emit_for_users
+
+    emit_for_users((principals.user,))
     return existing
 
 
@@ -180,6 +186,7 @@ def recents(
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
+    with_access: bool = False,
 ) -> dict:
     """Page only the caller's still-readable recent nodes, newest first."""
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
@@ -195,7 +202,12 @@ def recents(
         limit=window,
         start=offset,
     )
-    return page_of(_visible_personal_rows(principals, rows), offset, len(rows), window)
+    return page_of(
+        _visible_personal_rows(principals, rows, with_access=with_access),
+        offset,
+        len(rows),
+        window,
+    )
 
 
 def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) -> int:
@@ -209,6 +221,10 @@ def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) ->
         filters["node"] = ["in", node_ids]
     deleted = frappe.db.count("Drive Recent", filters)
     frappe.db.delete("Drive Recent", filters)
+    if deleted:
+        from suite.drive._core.changes import emit_for_users
+
+        emit_for_users((principals.user,))
     return deleted
 
 
@@ -235,6 +251,10 @@ def set_favourite(principals: Principals, node: str, value: bool = True) -> bool
         )
     elif not value and existing:
         frappe.db.delete("Drive Favourite", {"name": existing, "user": principals.user})
+    if (value and not existing) or (not value and existing):
+        from suite.drive._core.changes import emit_for_users
+
+        emit_for_users((principals.user,))
     return value
 
 
@@ -243,6 +263,7 @@ def favourites(
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
+    with_access: bool = False,
 ) -> dict:
     """Page only the caller's still-readable favourite nodes."""
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
@@ -258,7 +279,12 @@ def favourites(
         limit=window,
         start=offset,
     )
-    return page_of(_visible_personal_rows(principals, rows), offset, len(rows), window)
+    return page_of(
+        _visible_personal_rows(principals, rows, with_access=with_access),
+        offset,
+        len(rows),
+        window,
+    )
 
 
 def personal_marks(principals: Principals, nodes: Iterable[str]) -> dict[str, dict]:
@@ -310,6 +336,10 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
             ),
         )
         created += int(inserted)
+        if inserted:
+            from suite.drive._core.changes import emit_for_users
+
+            emit_for_users((user,))
     return created
 
 
@@ -407,6 +437,9 @@ def mark_read(principals: Principals, notifications: Iterable[str] | str | None 
         1,
         update_modified=False,
     )
+    from suite.drive._core.changes import emit_for_users
+
+    emit_for_users((principals.user,))
     return len(ids)
 
 
@@ -447,15 +480,34 @@ def _delete_personal_rows(doctype: str, fieldname: str, user: str) -> int:
     return count
 
 
-def _visible_personal_rows(principals: Principals, rows: list) -> list[dict]:
-    visible = []
+def _visible_personal_rows(
+    principals: Principals,
+    rows: list,
+    *,
+    with_access: bool = False,
+) -> list[dict]:
+    """Resolve one personal-list window with a fixed pair of node queries."""
+    if not rows:
+        return []
+    from suite.drive._core.nodes import NODE_FIELD_NAMES, _readable_rows
+
+    wanted = tuple(dict.fromkeys(row.node for row in rows))
+    stored = frappe.get_all(
+        "Drive Node",
+        filters={"name": ["in", wanted]},
+        fields=NODE_FIELD_NAMES,
+    )
+    visible = {
+        node.name: node
+        for node in _readable_rows(stored, principals, with_access=with_access)
+    }
+    answer = []
     for row in rows:
-        node = _readable_node(principals, row.node)
-        if node is None:
-            continue
-        row.node = node
-        visible.append(row)
-    return visible
+        node = visible.get(row.node)
+        if node is not None:
+            row.node = node
+            answer.append(row)
+    return answer
 
 
 def _authorized_node(principals: Principals, node: str) -> frappe._dict:
