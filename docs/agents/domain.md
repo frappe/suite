@@ -5,7 +5,7 @@ App documentation applies across its frontend, Python backend, and supporting se
 ## Find Relevant Context
 
 - Specs live at `specs/<app>/<NNN>-<slug>.md`; see `specs/README.md` when writing one.
-- Existing domain vocabulary lives in `suite/<app>/CONTEXT.md` (currently Meet and Drive).
+- Existing domain vocabulary lives in `suite/<app>/CONTEXT.md`.
 - Existing decisions live under `suite/<app>/docs/adr/` where present.
 - Select documents by the behavior being changed. Read relevant sections, not every spec or ADR for an app. Skip absent locations.
 
