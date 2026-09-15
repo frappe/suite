@@ -9,9 +9,4 @@ Frappe app with a Vue frontend and separate realtime services.
 ## Context
 
 - Frontend work: `frontend/AGENTS.md`. Python backend work: `suite/AGENTS.md`.
-- App behavior or design, across frontend, backend, and services: `docs/agents/domain.md` routes to relevant context, decisions, and specs.
-
-## Agent skills
-
-- Issue or PRD work: issues live under `.scratch/`; see `docs/agents/issue-tracker.md`.
-- Triage: use the vocabulary in `docs/agents/triage-labels.md`.
+- For app behavior changes, read relevant specs under `specs/<app>/`, domain context at `suite/<app>/CONTEXT.md`, and decisions under `suite/<app>/docs/adr/`, where present.
