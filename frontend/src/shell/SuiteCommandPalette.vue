@@ -97,16 +97,16 @@
       >
         <CommandPaletteItem
           v-for="recent in paletteRecents"
-          :key="recent.id"
+          :key="recent.name"
           :value="recent"
         >
           <template #prefix>
-            <span
-              :class="recent.icon || 'lucide-clock'"
-              class="mr-3 size-4 shrink-0 text-ink-gray-7"
-            />
+            <DriveSearchResultIcon :entity="recent" />
           </template>
-          {{ recent.label }}
+          {{ recent.file_name }}
+          <template #suffix>
+            <DriveSearchResultModified :modified="recent.modified" />
+          </template>
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
@@ -370,12 +370,8 @@ import type {
   MailFilterSuggestion,
   MailSearchResult as MailResult,
 } from "@/apps/mail/components/CommandPalette/types";
+import { getRecents } from "@/apps/drive/resources/files";
 import { useRootStore, type PaletteCommand } from "@/stores/root";
-import {
-  readPaletteRecents,
-  rememberPaletteRecent,
-  type PaletteRecent,
-} from "@/shell/paletteRecents";
 
 interface DriveResult {
   name: string;
@@ -441,7 +437,9 @@ const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
-const paletteRecents = ref(readPaletteRecents());
+const paletteRecents = computed<DriveResult[]>(() =>
+  Array.isArray(getRecents.data) ? getRecents.data.slice(0, 5) : [],
+);
 const activeApp = computed(() => String(route.meta.appId ?? ""));
 const isMailSearchRoute = computed(
   () => activeApp.value === "mail" && route.params.mailbox === "search",
@@ -740,6 +738,7 @@ watch(
   () => root.paletteOpen,
   (open) => {
     if (open) {
+      getRecents.reload();
       if (isMailSearchRoute.value) {
         query.value = typeof route.query.text === "string" ? route.query.text : "";
         setMailFilters(
@@ -824,8 +823,7 @@ async function selectItem(
     | MailContactSuggestion
     | MailFilterSuggestion
     | PaletteCommand
-    | SuiteAppSwitcherItem
-    | PaletteRecent,
+    | SuiteAppSwitcherItem,
   event: CommandPaletteSelectEvent,
 ) {
   const originalEvent = event.detail.originalEvent;
@@ -844,16 +842,6 @@ async function selectItem(
   }
   if ("run" in item) {
     await item.run({ query: query.value });
-    return;
-  }
-  if ("kind" in item) {
-    if (item.driveEntity) {
-      const { openEntity } = await import("@/apps/drive/utils/files");
-      openEntity(item.driveEntity, openInNewTab);
-    } else if (item.href) {
-      if (openInNewTab) window.open(item.href, "_blank", "noopener");
-      else await router.push(item.href);
-    }
     return;
   }
   if ("route" in item) {
@@ -894,15 +882,6 @@ async function selectItem(
       location = { name: "meet-meeting", params: { meetingId: item.name } };
     }
     const href = router.resolve(location).href;
-    if (item.resultType !== "mail") {
-      paletteRecents.value = rememberPaletteRecent({
-        kind: "entity",
-        id: `${item.resultType}:${item.name}`,
-        label: item.title || ("file_name" in item ? item.file_name : item.name),
-        href,
-        icon: item.resultType === "meet" ? "lucide-video" : "lucide-file",
-      });
-    }
     if (openInNewTab) {
       window.open(href, "_blank", "noopener");
     } else {
@@ -912,13 +891,6 @@ async function selectItem(
   }
 
   const { openEntity } = await import("@/apps/drive/utils/files");
-  paletteRecents.value = rememberPaletteRecent({
-    kind: "entity",
-    id: `drive:${item.name}`,
-    label: item.file_name,
-    driveEntity: item,
-    icon: item.is_folder ? "lucide-folder" : "lucide-file",
-  });
   openEntity(item, openInNewTab);
 }
 
