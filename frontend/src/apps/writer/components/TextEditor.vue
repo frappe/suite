@@ -28,7 +28,7 @@ const activeComment = ref(null)
 const showSettings = defineModel('showSettings')
 
 watch(activeComment, () => rebuild(editor.value))
-const edited = ref(false)
+const edited = defineModel('dirty', { default: false })
 
 const props = defineProps({
   document: Object,
@@ -47,7 +47,7 @@ provide('editor', editor)
 
 const {
   doc,
-  save,
+  save: saveDocument,
   cleanup,
   provider,
   permanentUserData,
@@ -55,6 +55,15 @@ const {
   users,
   ...commentsDetail
 } = useYjs(props.file.doc.name, props.document, editor, edited)
+let saveRevision = 0
+doc.on('update', (_, origin) => {
+  if (origin && origin !== 'server') saveRevision += 1
+})
+const save = async (...args) => {
+  const revision = saveRevision
+  await saveDocument(...args)
+  if (saveRevision === revision) edited.value = false
+}
 defineExpose({ editor, users })
 watch(loaded, () => rebuild(editor.value))
 

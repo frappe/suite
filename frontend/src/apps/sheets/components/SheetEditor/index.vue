@@ -1260,6 +1260,8 @@ import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useRootStore } from '@/stores/root'
+import { confirmLeave } from '@/utils/confirmLeave'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
@@ -1337,7 +1339,7 @@ const appsMenuOption = useAppSwitcher('sheets', async () => {
 const themeMenuOption = useThemeMenuOption()
 const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
-  { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
+  { label: 'Sheets', route: { name: 'sheets-home' } },
 ])
 const sheetBreadcrumbs = computed(() => [
   ...sheetHomeBreadcrumbs.value,
@@ -3505,7 +3507,7 @@ onBeforeUnmount(() => {
 // Browser-level guard (tab close / refresh / cross-app nav). The native
 // "Leave site?" prompt is the only thing that can preempt a unload reliably.
 function onBeforeUnloadGuard(e) {
-  if (!isDirty.value) return
+  if (!hasUnsavedChanges()) return
   e.preventDefault()
   e.returnValue = ''   // Chrome requires returnValue to show the prompt
 }
@@ -3513,6 +3515,20 @@ function onBeforeUnloadGuard(e) {
 let _autoSaveTimer = null
 let _savePromise = null
 let _pendingSaveBatch = null
+
+function hasUnsavedChanges() {
+  return isDirty.value || isSaving.value
+}
+
+const confirmUnsavedNavigation = () => {
+  if (!hasUnsavedChanges() || readOnly.value) return true
+  return confirmLeave()
+}
+onBeforeRouteLeave(confirmUnsavedNavigation)
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.id === from.params.id) return true
+  return confirmUnsavedNavigation()
+})
 
 // Operation queue — populated by _queueOp() at write sites (paste, fill,
 // import, cell edit, etc.).  Flushed after each successful save so each
@@ -3864,11 +3880,6 @@ watch(saveError, (msg) => {
   }, 30_000)
 })
 
-async function flushAndClose() {
-  await flushSave()
-  emit('close')
-}
-
 // Watch for any dirty change → schedule auto-save
 watch(isDirty, (dirty) => { if (dirty) _triggerAutoSave() })
 
@@ -3878,9 +3889,8 @@ watch(showSortFilter, () => { grid?.render?.() })
 
 // Title focus/blur — mark `isDirty` when the value changed during the focus
 // session so `_doAutoSave` doesn't bail on its `!isDirty` guard. Without
-// this, a rename-then-leave flow (no cell edit in between) silently dropped
-// the new title: the 2 s autosave ran but exited early, and `flushAndClose`
-// → `flushSave` did the same. Snapshotting on focus avoids spurious saves
+// this, a rename-then-save flow (no cell edit in between) silently dropped
+// the new title because `flushSave` exited early. Snapshotting on focus avoids spurious saves
 // when the user just clicks into and out of the field without typing.
 let _titleAtFocus = ''
 function startTitleEditing() {

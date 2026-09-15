@@ -62,11 +62,12 @@ import {
 	nextTick,
 	useTemplateRef,
 } from 'vue'
-import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
 import { call, toast, usePageMeta, KeyboardShortcutsDialog } from 'frappe-ui'
 import { appPageMeta } from '@/utils/documentTitle'
 import { useRootStore } from '@/stores/root'
+import { confirmLeave } from '@/utils/confirmLeave'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -329,8 +330,15 @@ watch(
 	},
 )
 
-onBeforeRouteLeave(() => {
+const confirmUnsavedNavigation = async () => {
 	hideOpenDialogs()
+	if (!dirty.value || inReadonlyMode.value) return true
+	return confirmLeave()
+}
+onBeforeRouteLeave(confirmUnsavedNavigation)
+onBeforeRouteUpdate((to, from) => {
+	if (to.params.presentationId === from.params.presentationId) return true
+	return confirmUnsavedNavigation()
 })
 
 window.addEventListener('popstate', hideOpenDialogs)

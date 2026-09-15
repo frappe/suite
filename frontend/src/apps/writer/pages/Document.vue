@@ -53,10 +53,11 @@
     </div>
   </div>
   <div v-else-if="document?.doc" class="flex w-full h-full overflow-hidden" v-show="!showVersions">
-    <NonCollabEditor v-if="!document.doc?.collab" ref="editorEl" v-model:versionPreview="versionPreview"
+    <NonCollabEditor v-if="!document.doc?.collab" ref="editorEl" v-model:dirty="hasUnsavedChanges" v-model:versionPreview="versionPreview"
       v-model:showSettings="showSettings" :file="file.doc" :document :settings :editable />
-    <MarkdownEditor v-else-if="file.doc?.mime_type == 'text/markdown'" :document :settings />
-    <TextEditor v-else-if="document.doc?.settings" ref="editorEl" v-model:show-versions="showVersions"
+    <MarkdownEditor v-else-if="file.doc?.mime_type == 'text/markdown'" v-model:dirty="hasUnsavedChanges"
+      :document :settings />
+    <TextEditor v-else-if="document.doc?.settings" ref="editorEl" v-model:dirty="hasUnsavedChanges" v-model:show-versions="showVersions"
       v-model:versionPreview="versionPreview" v-model:showSettings="showSettings" :file :document :editable :settings />
 
     <WriterSettings v-if="showSettings" v-model="showSettings" :doc-settings="document"
@@ -80,6 +81,8 @@ import {
 } from 'vue'
 import { useSessionStore } from '@/boot/session'
 import { useRootStore } from '@/stores/root'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+import { confirmLeave } from '@/utils/confirmLeave'
 const currentUserId = computed(() => useSessionStore().user)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 import { Button, Skeleton, useDoc, usePageMeta } from 'frappe-ui'
@@ -118,6 +121,7 @@ const versionPreview = ref(null)
 const showSettings = ref(false)
 const showTemplates = ref(false)
 const showVersions = ref(false)
+const hasUnsavedChanges = ref(false)
 const isOffline = ref(false)
 provide('isOffline', isOffline)
 
@@ -163,6 +167,23 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
   },
 )
 onScopeDispose(unregisterPaletteGroups)
+const confirmUnsavedNavigation = () => {
+  if (!hasUnsavedChanges.value) return true
+  return confirmLeave()
+}
+onBeforeRouteLeave(confirmUnsavedNavigation)
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.id === from.params.id) return true
+  return confirmUnsavedNavigation()
+})
+
+const handleBeforeUnload = (event) => {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+window.addEventListener('beforeunload', handleBeforeUnload)
+onScopeDispose(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 watch(showVersions, (v) => {
   if (!v) versionPreview.value = null
 })

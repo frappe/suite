@@ -26,12 +26,12 @@
 
 <script setup>
 import { debounce } from 'frappe-ui'
-import { computed, ref, onBeforeUnmount, provide } from 'vue'
+import { computed, ref, provide } from 'vue'
 import { useComments } from '@/apps/writer/composables/useYjs'
 import CoreEditor from './CoreEditor.vue'
 
 const showSettings = defineModel('showSettings')
-const edited = ref(false)
+const edited = defineModel('dirty', { default: false })
 
 const props = defineProps({
   file: Object,
@@ -53,14 +53,12 @@ defineExpose({ editor })
 
 const commentsDetail = useComments(props.document, editor)
 const save = async (manual, html, onSuccess) => {
+  const content = rawContent.value
   await props.document.saveHtml.submit({ html: rawContent.value })
+  if (rawContent.value === content) edited.value = false
   onSuccess?.()
 }
 const autosave = debounce(save, 5000)
-
-onBeforeUnmount(() => {
-  if (edited.value) save()
-})
 
 // Local saving with IndexedDB
 const db = ref(null)

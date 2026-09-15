@@ -7,13 +7,12 @@
       <ToC v-if="editor" :editor :anchors />
       <div id="editor-scroll-container"
         class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
-        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick"
-          @keydown="onEditorKeydown">
+        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick">
           <div class="hidden md:block" />
           <div class="flex flex-col grow min-w-0">
             <FTextEditor ref="textEditor" :upload-function="uploadFunction"
               :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
-              :editable @change="(val) => emit('editor-change', val)">
+              :editable @change="handleEditorChange">
               <template #default="{ editor }">
                 <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
                 <EditorTableMenu :editor />
@@ -306,8 +305,9 @@ const onBackgroundClick = (e) => {
   }
 }
 
-const onEditorKeydown = async (e) => {
-  if (!props.editable || e.metaKey || e.ctrlKey || edited.value) return
+const handleEditorChange = async (value) => {
+  emit('editor-change', value)
+  if (!props.editable || edited.value) return
   edited.value = true
   await nextTick()
   autoversion()

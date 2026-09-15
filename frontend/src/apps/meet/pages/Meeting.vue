@@ -242,7 +242,7 @@
 						@toggle-raise-hand="raiseHand.toggleRaiseHand()"
 						@report-problem="handleReportProblem"
 						@toggle-stats="toggleStatsForNerds"
-						@end-call="sfuConnection.endCall()"
+						@end-call="confirmAndEndCall"
 						@device-changed="handleDeviceChanged"
 						@visibility-change="isToolbarVisible = $event"
 						@manage-recording="handleRecordingAction"
@@ -294,7 +294,12 @@ import {
 	toRef,
 	watch,
 } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import {
+	onBeforeRouteLeave,
+	onBeforeRouteUpdate,
+	useRoute,
+	useRouter,
+} from "vue-router";
 import { submit } from "../utils/request";
 import { useRootStore } from "@/stores/root";
 
@@ -357,6 +362,7 @@ import {
 } from "../data/statsPreferences";
 import { session, userResource } from "@/boot/session";
 import { appPageMeta } from "@/utils/documentTitle";
+import { confirmLeave } from "@/utils/confirmLeave";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -831,6 +837,51 @@ const showPreview = computed(() => {
 	const joinRequestRejected = lobbyStore.isJoinRequestRejected;
 	return inPreview || joinRequestRejected;
 });
+
+const canLeaveMeeting = ref(false);
+let pendingLeaveConfirmation: Promise<boolean> | null = null;
+
+async function confirmMeetingLeave() {
+	if (
+		canLeaveMeeting.value ||
+		(!sfuConnection.isSetupComplete.value && !sfuConnection.isConnecting.value)
+	) return true;
+	if (pendingLeaveConfirmation) return pendingLeaveConfirmation;
+
+	pendingLeaveConfirmation = confirmLeave({
+		title: "Leave meeting?",
+		message: "You will be disconnected from the meeting.",
+		confirmLabel: "Leave meeting",
+	});
+	try {
+		return await pendingLeaveConfirmation;
+	} finally {
+		pendingLeaveConfirmation = null;
+	}
+}
+
+async function confirmAndEndCall() {
+	if (!(await confirmMeetingLeave())) return;
+	canLeaveMeeting.value = true;
+	await sfuConnection.endCall();
+}
+
+onBeforeRouteLeave(confirmMeetingLeave);
+onBeforeRouteUpdate((to, from) => {
+	if (to.params.meetingId === from.params.meetingId) return true;
+	return confirmMeetingLeave();
+});
+
+const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+	if (
+		canLeaveMeeting.value ||
+		(!sfuConnection.isSetupComplete.value && !sfuConnection.isConnecting.value)
+	) return;
+	event.preventDefault();
+	event.returnValue = "";
+};
+window.addEventListener("beforeunload", handleBeforeUnload);
+onUnmounted(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 
 // Soft connecting feedback: only if join takes longer than 5s (no full-page spinner).
 const CONNECTING_TOAST_ID = "meet-connecting";
