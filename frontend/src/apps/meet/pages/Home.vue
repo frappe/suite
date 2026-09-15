@@ -422,7 +422,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 			},
 			{
 				id: "meet-settings",
-				label: "Meet settings",
+				label: "Settings",
 				enterHint: "open meet settings",
 				icon: "lucide-settings",
 				keywords: ["audio", "video", "camera", "microphone", "devices"],

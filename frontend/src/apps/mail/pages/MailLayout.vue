@@ -143,7 +143,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 					commands: [
 						{
 							id: 'mail-settings',
-							label: 'Mail settings',
+							label: 'Settings',
 							enterHint: 'open settings',
 							icon: 'lucide-settings',
 							run: () => openSettings(),

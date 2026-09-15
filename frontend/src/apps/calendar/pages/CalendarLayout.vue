@@ -33,7 +33,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-l
 		commands: [
 			{
 				id: 'calendar-settings',
-				label: 'Calendar settings',
+				label: 'Settings',
 				enterHint: 'open settings',
 				icon: 'lucide-settings',
 				run: () => (showSettings.value = true),

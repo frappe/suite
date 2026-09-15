@@ -2069,7 +2069,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('sheets-edi
   return [{
     commands: [{
       id: 'sheets-settings',
-      label: 'Sheets AI settings',
+      label: 'Settings',
       icon: 'lucide-cpu',
       keywords: ['AI', 'assist', 'configure'],
       run: () => (aiSettingsOpen.value = true),
