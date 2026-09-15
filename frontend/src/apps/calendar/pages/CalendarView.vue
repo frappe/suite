@@ -327,6 +327,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-v
 			{
 				id: 'calendar-new-event',
 				label: 'New event',
+				enterHint: 'create event',
 				icon: 'lucide-calendar-plus',
 				keywords: ['create', 'add'],
 				run: () => handleOpenEvent({ date: newEventDate() }),

@@ -159,6 +159,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('slides-home', () => 
 		{
 			id: 'slides-new-presentation',
 			label: 'New presentation',
+			enterHint: 'create presentation',
 			icon: 'lucide-plus',
 			keywords: ['create', 'slides'],
 			run: navigateToEditor,
@@ -169,6 +170,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('slides-home', () => 
 		commands.push({
 			id: 'slides-present-selected',
 			label: 'Present selected presentation',
+			enterHint: 'present selected presentation',
 			icon: 'lucide-play',
 			keywords: ['slideshow', 'preview'],
 			run: () => navigateToPresentation(undefined, true),

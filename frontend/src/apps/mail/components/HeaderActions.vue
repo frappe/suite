@@ -68,6 +68,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups(
 				{
 					id: 'mail-advanced-search',
 					label: 'Advanced search in Mail',
+					enterHint: 'open advanced search',
 					icon: 'lucide-search',
 					keywords: ['email', 'from', 'to', 'subject'],
 					run: (context) => {

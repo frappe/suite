@@ -283,9 +283,20 @@
 
 <script setup lang="ts">
 import { Badge, Button, toast, useCall, useDoc, usePageMeta } from "frappe-ui";
-import { computed, h, onMounted, onUnmounted, provide, ref, toRef, watch } from "vue";
+import {
+	computed,
+	h,
+	onMounted,
+	onScopeDispose,
+	onUnmounted,
+	provide,
+	ref,
+	toRef,
+	watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { submit } from "../utils/request";
+import { useRootStore } from "@/stores/root";
 
 import ChatPanel from "../components/ChatPanel.vue";
 import JoinRequestNotifications from "../components/JoinRequestNotifications.vue";
@@ -379,6 +390,25 @@ async function copyMeetingLink() {
 		toast.error("Could not copy meeting link");
 	}
 }
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	"meet-meeting",
+	[
+		{
+			commands: [
+				{
+					id: "meet-copy-link",
+					label: "Copy meeting link",
+					enterHint: "copy meeting link",
+					icon: "lucide-link-2",
+					keywords: ["share", "url"],
+					run: copyMeetingLink,
+				},
+			],
+		},
+	],
+);
+onScopeDispose(unregisterPaletteGroups);
 
 // --- Stores (singletons) ---
 const connectionState = useConnectionState();

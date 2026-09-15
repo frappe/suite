@@ -96,6 +96,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
       {
         id: 'suite-new-sheet',
         label: 'New sheet',
+        enterHint: 'create sheet',
         icon: 'lucide-table-2',
         keywords: ['create', 'spreadsheet', 'sheets'],
         run: () => router.push('/sheets/new'),
@@ -103,6 +104,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
       {
         id: 'suite-new-presentation',
         label: 'New presentation',
+        enterHint: 'create presentation',
         icon: 'lucide-presentation',
         keywords: ['create', 'slides'],
         run: () => router.push('/slides/presentation/new'),
@@ -110,6 +112,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
       {
         id: 'suite-compose-mail',
         label: 'Compose mail',
+        enterHint: 'compose mail',
         icon: 'lucide-pencil',
         keywords: ['new', 'email', 'message'],
         run: composeMail,
@@ -117,6 +120,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
       {
         id: 'suite-start-instant-meet',
         label: 'Start instant meet',
+        enterHint: 'start instant meet',
         icon: 'lucide-zap',
         keywords: ['new', 'open', 'meeting'],
         run: startInstantMeeting,

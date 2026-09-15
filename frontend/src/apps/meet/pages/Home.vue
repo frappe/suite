@@ -377,6 +377,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 			{
 				id: "meet-start-open",
 				label: "Start instant meet",
+				enterHint: "start instant meet",
 				icon: "lucide-zap",
 				keywords: ["new", "instant", "room"],
 				disabled: createMeeting.loading,
@@ -385,6 +386,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 			{
 				id: "meet-start-restricted",
 				label: "Start restricted meet",
+				enterHint: "start restricted meet",
 				icon: "lucide-lock",
 				keywords: ["new", "private", "room"],
 				disabled: createMeeting.loading,
@@ -393,6 +395,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 			{
 				id: "meet-join-code",
 				label: "Join with code",
+				enterHint: "join with code",
 				icon: "lucide-link",
 				keywords: ["room", "call"],
 				run: () => (showJoinDialog.value = true),
@@ -400,6 +403,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 			{
 				id: "meet-schedule",
 				label: "Schedule meet",
+				enterHint: "schedule meet",
 				icon: "lucide-calendar-plus",
 				keywords: ["calendar", "new"],
 				run: openScheduleDialog,

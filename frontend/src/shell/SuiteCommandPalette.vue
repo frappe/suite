@@ -92,7 +92,7 @@
 
     <CommandPaletteList>
       <CommandPaletteGroup
-        v-if="!normalizedQuery && paletteRecents.length"
+        v-if="!navigationMode && !normalizedQuery && paletteRecents.length"
         label="Recent"
       >
         <CommandPaletteItem
@@ -287,7 +287,10 @@
       }}
     </CommandPaletteEmpty>
 
-    <CommandPaletteFooter class="!justify-between !px-2.5 !text-xs">
+    <CommandPaletteFooter
+      v-slot="{ active }"
+      class="!justify-between !px-2.5 !text-xs"
+    >
       <span class="flex items-center gap-4">
         <span class="flex items-center gap-1">
           <span
@@ -304,26 +307,26 @@
         </span>
         <span class="flex items-center gap-1">
           <span
-            class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
-          >
-            <span class="lucide-corner-down-left size-4" />
-          </span>
-          <span>to open</span>
-        </span>
-        <span class="flex items-center gap-1">
-          <span
             class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
             >esc</span
           >
           <span>to close</span>
         </span>
+        <span v-if="!navigationMode" class="flex items-center gap-1">
+          <span
+            class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
+            >&gt;</span
+          >
+          <span>to switch apps</span>
+        </span>
       </span>
-      <span v-if="!navigationMode" class="flex items-center gap-1">
+      <span class="flex min-w-40 items-center justify-end gap-1">
         <span
-          class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
-          >&gt;</span
+          class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
         >
-        <span>to switch apps</span>
+          <span class="lucide-corner-down-left size-4" />
+        </span>
+        <span>{{ enterHint(active) }}</span>
       </span>
     </CommandPaletteFooter>
   </CommandPalette>
@@ -421,6 +424,18 @@ interface MeetResult {
   title?: string;
   modified?: string;
 }
+
+type PaletteItem =
+  | DriveResult
+  | SheetResult
+  | SlideResult
+  | WriterResult
+  | MeetResult
+  | MailResult
+  | MailContactSuggestion
+  | MailFilterSuggestion
+  | PaletteCommand
+  | SuiteAppSwitcherItem;
 
 const minimumQueryLength = 3;
 const DriveSearchResultIcon = defineAsyncComponent(
@@ -586,7 +601,7 @@ const palettePlaceholder = computed(() =>
     : `Search in ${contextSearchLabel.value || "Suite"}`,
 );
 const apps = computed(() =>
-  getAppSwitcherItems(String(route.meta.appId ?? "")),
+  getAppSwitcherItems(String(route.meta.appId ?? ""), true),
 );
 const filteredApps = computed(() => {
   if (activeApp.value === "mail" && mailAppliedFilters.value.length) return [];
@@ -625,6 +640,34 @@ const filteredCommands = computed(() => {
           .includes(normalizedQuery.value)),
   );
 });
+
+function enterHint(item: unknown) {
+  if (!item || typeof item !== "object") return "to open";
+  if ("resultType" in item) {
+    if (item.resultType === "mail") return "to view thread";
+    if (item.resultType === "mail-contact") return "to choose contact";
+    if (item.resultType === "mail-filter-suggestion") return "to apply filter";
+    if (item.resultType === "sheet") return "to open sheet";
+    if (item.resultType === "slide") return "to open presentation";
+    if (item.resultType === "writer") return "to open document";
+    if (item.resultType === "meeting") return "to open meeting";
+  }
+  if ("run" in item) {
+    const label = "label" in item ? String(item.label) : "command";
+    if ("enterHint" in item && item.enterHint)
+      return `to ${String(item.enterHint)}`;
+    return `to run ${label}`;
+  }
+  if ("route" in item)
+    return `to switch to ${"title" in item ? String(item.title) : "app"}`;
+  if ("is_folder" in item && item.is_folder) return "to open folder";
+  if ("content_doctype" in item) {
+    if (item.content_doctype === "Presentation") return "to open presentation";
+    if (item.content_doctype === "Sheet") return "to open sheet";
+    if (item.content_doctype === "Writer Document") return "to open document";
+  }
+  return "to open file";
+}
 
 function openMailAdvancedSearch() {
   const command = root.paletteGroups
@@ -825,17 +868,7 @@ function handleModifiedEnter(event: KeyboardEvent) {
 }
 
 async function selectItem(
-  item:
-    | DriveResult
-    | SheetResult
-    | SlideResult
-    | WriterResult
-    | MeetResult
-    | MailResult
-    | MailContactSuggestion
-    | MailFilterSuggestion
-    | PaletteCommand
-    | SuiteAppSwitcherItem,
+  item: PaletteItem,
   event: CommandPaletteSelectEvent,
 ) {
   const originalEvent = event.detail.originalEvent;

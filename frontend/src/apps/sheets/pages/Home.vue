@@ -359,6 +359,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('sheets-home', [
       {
         id: 'sheets-new-sheet',
         label: 'New sheet',
+        enterHint: 'create sheet',
         icon: 'lucide-plus',
         keywords: ['create', 'spreadsheet'],
         run: newSheet,

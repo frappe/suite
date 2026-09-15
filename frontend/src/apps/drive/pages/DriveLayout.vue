@@ -80,6 +80,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () =>
       {
         id: 'drive-new-folder',
         label: 'New folder',
+        enterHint: 'create folder',
         icon: 'lucide-folder-plus',
         description: 'Create in the current Drive folder',
         keywords: ['create'],
@@ -88,6 +89,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () =>
       {
         id: 'drive-upload-file',
         label: 'Upload file',
+        enterHint: 'upload file',
         icon: 'lucide-file-up',
         description: 'Upload to the current Drive folder',
         keywords: ['create', 'add'],

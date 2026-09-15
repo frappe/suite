@@ -65,10 +65,15 @@ const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
   spa: false,
 }
 
-export function getAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
+export function getAppSwitcherItems(
+  currentApp: string,
+  includeCurrent = false,
+): SuiteAppSwitcherItem[] {
   const items = [
     ...(systemUser.value ? [DESK_APP_SWITCHER_ITEM] : []),
-    ...SUITE_APP_SWITCHER_ITEMS.filter((app) => app.name !== currentApp),
+    ...SUITE_APP_SWITCHER_ITEMS.filter(
+      (app) => includeCurrent || app.name !== currentApp,
+    ),
   ]
   if (!jmapUser.value) {
     return items.filter((app) => app.name !== 'mail' && app.name !== 'calendar')

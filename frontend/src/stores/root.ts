@@ -10,6 +10,7 @@ import { defineStore } from "pinia";
 export interface PaletteCommand {
   id: string;
   label: string;
+  enterHint?: string;
   description?: string;
   icon?: string;
   keywords?: string[];
