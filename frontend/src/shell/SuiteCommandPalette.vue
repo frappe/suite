@@ -85,7 +85,7 @@
         size="sm"
         class="absolute right-4 top-2 !size-7 !p-0"
         aria-label="Clear all filters"
-        :tooltip="`Clear filters (${clearFiltersShortcut})`"
+        tooltip="Clear filters"
         @mousedown.prevent
         @click="mailAppliedFilters = []"
       />
@@ -151,7 +151,7 @@
           </template>
           {{ command.label }}
           <template v-if="command.description" #suffix>
-            <span class="text-ink-gray-5">{{ command.description }}</span>
+            <span class="text-p-xs text-ink-gray-5">{{ command.description }}</span>
           </template>
         </CommandPaletteItem>
       </CommandPaletteGroup>
@@ -252,7 +252,7 @@
           </template>
           {{ event.title || "Untitled event" }}
           <template #suffix>
-            <span class="text-ink-gray-5">{{ formatCalendarStart(event) }}</span>
+            <span class="text-p-xs text-ink-gray-5">{{ formatCalendarStart(event) }}</span>
           </template>
         </CommandPaletteItem>
       </CommandPaletteGroup>
@@ -487,9 +487,6 @@ const router = useRouter();
 const keyboardOpen = useKeyboardOpen();
 const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
-const clearFiltersShortcut = /Mac|iPhone|iPad/.test(navigator.platform)
-  ? "⌘⌫"
-  : "Ctrl+Backspace";
 const query = ref("");
 const navigationMode = ref(false);
 const activeApp = computed(() => String(route.meta.appId ?? ""));
@@ -696,14 +693,13 @@ const filteredCommands = computed(() => {
             .toLowerCase()
             .includes(normalizedQuery.value)),
     )
-    .sort(
-      (a, b) => Number(isUtilityCommand(a)) - Number(isUtilityCommand(b)),
-    );
+    .sort((a, b) => commandRank(a) - commandRank(b));
 });
 
-function isUtilityCommand(command: PaletteCommand) {
-  return command.id.startsWith("suite-") &&
-    (command.id.includes("settings") || command.id.includes("theme"));
+function commandRank(command: PaletteCommand) {
+  if (/-(new|create|compose|start|schedule|upload)(-|$)/.test(command.id)) return 0;
+  if (command.id.includes("settings") || command.id.includes("theme")) return 2;
+  return 1;
 }
 
 function enterHint(item: unknown) {
@@ -939,12 +935,12 @@ function removeMailFilter(key: string) {
 }
 
 function handleMailFilterBackspace(event: KeyboardEvent) {
-  if (query.value || !mailAppliedFilters.value.length) return;
+  if (
+    query.value ||
+    !mailAppliedFilters.value.length ||
+    (!event.metaKey && !event.ctrlKey)
+  ) return;
   event.preventDefault();
-  if (event.metaKey || event.ctrlKey) {
-    mailAppliedFilters.value = [];
-    return;
-  }
   mailAppliedFilters.value = mailAppliedFilters.value.slice(0, -1);
 }
 
