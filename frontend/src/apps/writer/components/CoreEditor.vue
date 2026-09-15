@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col w-full bg-surface-base">
+  <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
     <TextEditorFixedMenu v-if="editable"
       class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
       :editor="editor" :items="menuButtons" />
@@ -93,6 +93,7 @@ import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
 
 import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
+import { useRootStore } from '@/stores/root'
 import {
   COMMON_EXTENSIONS,
   isModKey,
@@ -120,6 +121,7 @@ const emit = defineEmits(['save', 'editor-change', 'cleanup'])
 
 const showSettings = defineModel('showSettings')
 const edited = defineModel('edited')
+const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
 watch(
@@ -387,6 +389,19 @@ const addComment = () => {
 }
 
 const manualSave = (func) => emit('save', true, null, func)
+
+const openCommandPalette = (event) => {
+  if (
+    !props.editable ||
+    (!event.metaKey && !event.ctrlKey) ||
+    event.shiftKey ||
+    event.altKey ||
+    event.key.toLowerCase() !== 'k'
+  ) return
+  event.preventDefault()
+  event.stopPropagation()
+  root.paletteOpen = true
+}
 
 onKeyDown('p', (e) => {
   if (!isModKey(e)) return
