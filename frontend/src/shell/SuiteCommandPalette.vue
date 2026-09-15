@@ -437,10 +437,21 @@ const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
-const paletteRecents = computed<DriveResult[]>(() =>
-  Array.isArray(getRecents.data) ? getRecents.data.slice(0, 5) : [],
-);
 const activeApp = computed(() => String(route.meta.appId ?? ""));
+const paletteRecents = computed<DriveResult[]>(() => {
+  if (!Array.isArray(getRecents.data)) return [];
+  const recents = getRecents.data.filter((entity: DriveResult) => {
+    if (activeApp.value === "drive") return true;
+    if (activeApp.value === "slides")
+      return entity.content_doctype === "Presentation";
+    if (activeApp.value === "sheets")
+      return entity.content_doctype === "Sheet";
+    if (activeApp.value === "writer")
+      return entity.content_doctype === "Writer Document";
+    return false;
+  });
+  return recents.slice(0, 5);
+});
 const isMailSearchRoute = computed(
   () => activeApp.value === "mail" && route.params.mailbox === "search",
 );
@@ -738,7 +749,8 @@ watch(
   () => root.paletteOpen,
   (open) => {
     if (open) {
-      getRecents.reload();
+      if (["drive", "slides", "sheets", "writer"].includes(activeApp.value))
+        getRecents.reload();
       if (isMailSearchRoute.value) {
         query.value = typeof route.query.text === "string" ? route.query.text : "";
         setMailFilters(
