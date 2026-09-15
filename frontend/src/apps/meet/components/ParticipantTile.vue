@@ -60,8 +60,8 @@
 		>
 			<template v-if="showAudioState">
 				<AudioIndicator
-					v-if="isAudioEnabled && stream"
-					:mediaStream="stream"
+					v-if="isAudioEnabled && audioStream"
+					:mediaStream="audioStream"
 					:isActive="true"
 					:maxHeight="12"
 					:sensitivity="3.0"
@@ -187,6 +187,7 @@ interface Props {
 	showReaction?: boolean;
 	showRaisedHand?: boolean;
 	showAudioState?: boolean;
+	audioStream?: MediaStream | null;
 	showNetworkState?: boolean;
 	tileBackgroundClass?: string;
 	avatarBackgroundClass?: string;
@@ -209,6 +210,7 @@ const props = withDefaults(defineProps<Props>(), {
 	showReaction: true,
 	showRaisedHand: true,
 	showAudioState: true,
+	audioStream: null,
 	showNetworkState: true,
 	tileBackgroundClass: "bg-surface-gray-3",
 	avatarBackgroundClass: "bg-surface-gray-3",
@@ -240,6 +242,8 @@ const { stream } = useAudioStream(props.participant.user_id, {
 	mediaState: meetingCtx?.mediaState,
 	currentUser: meetingCtx?.currentUser,
 });
+
+const audioStream = computed(() => props.audioStream || stream.value);
 
 const resolvedDisplayName = computed(() => {
 	return (
