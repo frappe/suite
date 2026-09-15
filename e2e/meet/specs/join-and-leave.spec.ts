@@ -11,6 +11,7 @@ test.describe("Joining and leaving", { tag: "@meet-group-1" }, () => {
 		await joinFromPreview(hostPage);
 
 		await hostPage.getByRole("button", { name: "End Call" }).click();
+		await hostPage.getByRole("button", { name: "Leave meeting" }).click();
 
 		await hostPage.waitForURL(/\/meet\/?$/);
 		await expect(hostPage.getByRole("button", { name: "Instant meet" })).toBeVisible();

@@ -20,8 +20,8 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', compu
     commands: [
       {
         id: 'suite-toggle-theme',
-        label: `Switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} theme`,
-        enterHint: `switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} theme`,
+        label: `Switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} mode`,
+        enterHint: `switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} mode`,
         icon: resolvedTheme.value === 'dark' ? 'lucide-sun' : 'lucide-moon',
         keywords: ['appearance', 'color scheme', 'theme'],
         run: () => switchTheme(resolvedTheme.value === 'dark' ? 'light' : 'dark'),
