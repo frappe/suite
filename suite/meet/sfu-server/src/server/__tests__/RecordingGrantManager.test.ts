@@ -116,11 +116,20 @@ describe('RecordingGrantManager', () => {
 		['exp', NOW],
 		['exp', NOW + 3_601],
 		['authorization_expires_at', NOW],
-		['authorization_expires_at', NOW + 4 * 60 * 60 + 1],
+		['authorization_expires_at', NOW + 4 * 60 * 60 + 61],
 	] as const)('rejects invalid %s claims', (claim, value) => {
 		expect(() =>
 			manager.verifyGrant(makeToken({ [claim]: value }), NOW),
 		).toThrow();
+	});
+
+	it('allows the recording startup minute before the four-hour capture maximum', () => {
+		expect(
+			manager.verifyGrant(
+				makeToken({ authorization_expires_at: NOW + 4 * 60 * 60 + 60 }),
+				NOW,
+			),
+		).toBeTruthy();
 	});
 
 	it.each([

@@ -56,16 +56,16 @@
 <script setup lang="ts">
 import { onScopeDispose } from "vue";
 import { useRootStore } from "@/stores/root";
-import { usePlatform } from "../composables/usePlatform";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
 import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
 import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
 import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
+import { getPlatform } from "../utils/device";
 import SettingsDialog from "./settings/SettingsDialog.vue";
 import ToolbarButton from "./ToolbarButton.vue";
 
-const $platform = usePlatform();
+const $platform = getPlatform();
 
 const props = defineProps({
 	isMicOn: {

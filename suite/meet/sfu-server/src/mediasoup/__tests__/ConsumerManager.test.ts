@@ -20,9 +20,6 @@ describe('ConsumerManager', () => {
 			dtlsState: 'connected',
 			consume: vi.fn().mockResolvedValue(consumer),
 		};
-		const onClose = vi.fn();
-		manager.onClose(onClose);
-
 		await manager.createConsumer(
 			transport as never,
 			{ closed: false } as never,
@@ -34,13 +31,6 @@ describe('ConsumerManager', () => {
 		consumer.emit('transportclose');
 
 		expect(manager.getConsumerCount()).toBe(0);
-		expect(onClose).toHaveBeenCalledWith(
-			expect.objectContaining({
-				roomId: 'room-1',
-				peerId: 'peer-1',
-				transportId: 'transport-1',
-			}),
-		);
 	});
 
 	it('removes and closes a consumer when its initial resume fails', async () => {

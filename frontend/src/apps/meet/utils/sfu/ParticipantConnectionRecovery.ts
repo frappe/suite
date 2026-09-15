@@ -83,7 +83,7 @@ export class ParticipantConnectionRecovery {
 		for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
 			const delayMs = this.retryDelay(attempt);
 			if (delayMs > 0) await this.sleep(delayMs, signal);
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			this.transition(
 				"rebuilding_participant_connection",
 				trigger,
@@ -92,10 +92,10 @@ export class ParticipantConnectionRecovery {
 			);
 			try {
 				await this.options.rebuild(trigger, attempt, signal);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				this.transition("verifying", trigger, attempt, delayMs);
 				await this.options.verify(trigger, signal);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				this.transition("healthy", trigger, attempt, delayMs);
 				return true;
 			} catch (error) {
@@ -131,12 +131,6 @@ export class ParticipantConnectionRecovery {
 			maxAttempts: this.maxAttempts,
 			delayMs,
 		});
-	}
-
-	private throwIfAborted(signal: AbortSignal): void {
-		if (signal.aborted) {
-			throw signal.reason ?? new DOMException("Recovery stopped", "AbortError");
-		}
 	}
 
 	private delay(delayMs: number, signal: AbortSignal): Promise<void> {

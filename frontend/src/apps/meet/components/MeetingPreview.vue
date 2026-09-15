@@ -16,11 +16,12 @@
 						:isLocal="true"
 						:isVideoEnabled="isCameraOn"
 						:isAudioEnabled="isMicOn"
+						:audioStream="mediaStream"
 						:videoRef="previewVideoRef"
 						:showPinButton="false"
 						:showReaction="false"
 						:showRaisedHand="false"
-						:showAudioState="false"
+						:showAudioState="isMicOn"
 						:showNetworkState="false"
 						:tileBackgroundClass="'bg-black'"
 						:avatarBackgroundClass="'bg-surface-gray-3'"
@@ -133,6 +134,7 @@ const props = defineProps<{
 	meetingTitle?: string;
 	isCameraOn?: boolean;
 	isMicOn?: boolean;
+	mediaStream?: MediaStream | null;
 	cameraPermissionGranted?: boolean;
 	microphonePermissionGranted?: boolean;
 	isConnecting?: boolean;

@@ -8,6 +8,8 @@
   "uid",
   "schedule_id",
   "send_to",
+  "schedule_agent",
+  "member_of",
   "roles",
   "column_break_ycmk",
   "kind",
@@ -113,6 +115,24 @@
    "read_only": 1
   },
   {
+   "description": "Set to \"none\" for a participant that never receives scheduling messages, such as a mailing list whose members are invited individually.",
+   "fieldname": "schedule_agent",
+   "fieldtype": "Data",
+   "label": "Schedule Agent",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "{}",
+   "depends_on": "eval: doc.member_of != \"{}\"",
+   "description": "The group participants (such as mailing lists) this participant was invited through.",
+   "fieldname": "member_of",
+   "fieldtype": "JSON",
+   "label": "Member Of",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "comment",
    "fieldtype": "Small Text",
    "label": "Comment",
@@ -124,7 +144,7 @@
  "is_virtual": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-25 13:04:04.214533",
+ "modified": "2026-09-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "Event Participant",

@@ -81,14 +81,7 @@ class NotificationContextManager {
 		}
 
 		// only play for local user leaving
-		if (type === "leave") {
-			if (options?.isLocalUser) {
-				this.context.lastNotificationTime[type] = now;
-				if (!this.context.isTabVisible) {
-					this.context.playedNotificationsWhenHidden[type] = true;
-				}
-				return true;
-			}
+		if (type === "leave" && !options?.isLocalUser) {
 			return false;
 		}
 
@@ -103,55 +96,21 @@ class NotificationContextManager {
 				return false;
 			}
 
-			const now = Date.now();
-			const lastTime = this.context.lastNotificationTime[type] || 0;
-			if (now - lastTime < this.MIN_NOTIFICATION_INTERVAL) {
-				return false;
-			}
-
-			this.context.lastNotificationTime[type] = now;
-			if (!this.context.isTabVisible) {
-				this.context.playedNotificationsWhenHidden[type] = true;
-			}
-
 			if (userId) {
 				this.context.joinedUsers.add(userId);
 			}
-
-			return true;
 		}
 
 		// suppress chat sounds when chat is open
-		if (type === "chat") {
-			if (this.context.isChatOpen) {
-				return false;
-			}
-
-			this.context.lastNotificationTime[type] = now;
-			if (!this.context.isTabVisible) {
-				this.context.playedNotificationsWhenHidden[type] = true;
-			}
-			return true;
+		if (type === "chat" && this.context.isChatOpen) {
+			return false;
 		}
 
-		// join request sounds are important
-		if (type === "joinRequest") {
-			this.context.lastNotificationTime[type] = now;
-			if (!this.context.isTabVisible) {
-				this.context.playedNotificationsWhenHidden[type] = true;
-			}
-			return true;
+		this.context.lastNotificationTime[type] = now;
+		if (!this.context.isTabVisible) {
+			this.context.playedNotificationsWhenHidden[type] = true;
 		}
-
-		if (type === "raiseHand") {
-			this.context.lastNotificationTime[type] = now;
-			if (!this.context.isTabVisible) {
-				this.context.playedNotificationsWhenHidden[type] = true;
-			}
-			return true;
-		}
-
-		return false;
+		return true;
 	}
 }
 

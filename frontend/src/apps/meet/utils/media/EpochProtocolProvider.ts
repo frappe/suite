@@ -6,7 +6,6 @@ import {
 	defaultCapabilities,
 	defaultLifetime,
 	emptyPskIndex,
-	encodeGroupState,
 	generateKeyPackage,
 	getCiphersuiteFromName,
 	getCiphersuiteImpl,
@@ -39,7 +38,6 @@ type EpochMemberInput = {
 type EpochStateResult = {
 	epochNumber: number;
 	state: ClientState;
-	encodedState: Uint8Array;
 	meetingSecret: Uint8Array<ArrayBuffer>;
 };
 
@@ -257,7 +255,6 @@ export class TsMlsEpochProtocolProvider implements EpochProtocolProvider {
 		return {
 			epochNumber: this.getMeetEpochNumber(state),
 			state,
-			encodedState: encodeGroupState(state),
 			meetingSecret: await this.exportMeetingSecret(state),
 		};
 	}

@@ -22,7 +22,6 @@ function createController(options: { isHost?: boolean } = {}) {
 				epoch: {
 					epochNumber: 2,
 					state: state as never,
-					encodedState: new Uint8Array([8]),
 					meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 				},
 			};
@@ -48,7 +47,6 @@ function createController(options: { isHost?: boolean } = {}) {
 	const joinFromWelcome = vi.fn(async () => ({
 		epochNumber: 2,
 		state: { id: "joined-epoch-2-state" } as never,
-		encodedState: new Uint8Array([10]),
 		meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 	}));
 	const processCommit = vi.fn();
@@ -57,7 +55,6 @@ function createController(options: { isHost?: boolean } = {}) {
 		epoch: {
 			epochNumber: 3,
 			state: state as never,
-			encodedState: new Uint8Array([11]),
 			meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			_removedLeaf: leafIndex,
 		},
@@ -65,7 +62,6 @@ function createController(options: { isHost?: boolean } = {}) {
 	const createGenesisEpoch = vi.fn(async () => ({
 		epochNumber: 1,
 		state: { id: "genesis-state" } as never,
-		encodedState: new Uint8Array([12]),
 		meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 	}));
 	const controller = new E2EEEpochSignalingController({

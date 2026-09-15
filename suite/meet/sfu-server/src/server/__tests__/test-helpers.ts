@@ -211,7 +211,6 @@ function createMockMediasoupManager(): MediasoupManager {
 			});
 			return result;
 		}),
-		assertConsumerAccess: vi.fn(),
 		closeConsumer: vi.fn().mockResolvedValue(undefined),
 		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
 		updateConsumerPreferences: vi.fn().mockResolvedValue({ paused: false }),

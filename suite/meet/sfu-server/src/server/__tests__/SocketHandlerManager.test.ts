@@ -973,6 +973,147 @@ describe('SocketHandlerManager characterization', () => {
 		vi.useRealTimers();
 	});
 
+	it('releases Participant Connection ownership when admission fails so a fresh connection can join', async () => {
+		const harness = createManager();
+		const failed = connectFullSocket(harness, {
+			id: 'sock-failed',
+			userId: 'user-1',
+		});
+		vi.spyOn(harness.roster, 'add').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+		const failedCallback = vi.fn();
+
+		emitJoin(failed, { connectionId: 'failed-device' }, failedCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failedCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'roster unavailable',
+		});
+
+		const retry = connectFullSocket(harness, {
+			id: 'sock-retry',
+			userId: 'user-1',
+		});
+		const retryCallback = vi.fn();
+		emitJoin(retry, { connectionId: 'fresh-device' }, retryCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(retryCallback).toHaveBeenCalledWith({
+			success: true,
+			senderId: retry.senderId,
+		});
+	});
+
+	it('explicit leave followed by disconnect removes one Participant Connection exactly once', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving);
+		await new Promise((resolve) => setImmediate(resolve));
+		observer.emitCalls.length = 0;
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+		leaving.fire('disconnect', 'client namespace disconnect');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledTimes(1);
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-leaving',
+		);
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(1);
+		expect(leaving.roomId).toBeUndefined();
+	});
+
+	it('does not publish a stale departure after a new Participant Connection joins during cleanup', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving, { connectionId: 'old-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		let finishRosterRemoval = () => {};
+		vi.spyOn(harness.roster, 'remove').mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					finishRosterRemoval = resolve;
+				}),
+		);
+		observer.emitCalls.length = 0;
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const replacement = connectFullSocket(harness, {
+			id: 'sock-replacement',
+			userId: 'user-1',
+		});
+		const replacementCallback = vi.fn();
+		emitJoin(replacement, { connectionId: 'new-device' }, replacementCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+		finishRosterRemoval();
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(replacementCallback).toHaveBeenCalledWith({
+			success: true,
+			senderId: replacement.senderId,
+		});
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(0);
+	});
+
+	it('finishes Participant Connection cleanup when one resource rejects removal', async () => {
+		const harness = createManager();
+		const observer = connectFullSocket(harness, {
+			id: 'sock-observer',
+			userId: 'observer-1',
+		});
+		emitJoin(observer, { userId: 'observer-1', name: 'Observer' });
+		const leaving = connectFullSocket(harness, {
+			id: 'sock-leaving',
+			userId: 'user-1',
+		});
+		emitJoin(leaving);
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.spyOn(harness.roster, 'remove').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+		observer.emitCalls.length = 0;
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+
+		leaving.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-leaving',
+		);
+		expect(
+			observer.emitCalls.filter((call) => call.event === 'participant_left'),
+		).toHaveLength(1);
+		expect(leaving.roomId).toBeUndefined();
+	});
+
 	it('disconnect of a full-access socket removes the peer, broadcasts participant_left, and closes the room after grace when the last human leaves', async () => {
 		vi.useFakeTimers();
 		const harness = createManager();
@@ -1907,7 +2048,7 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
-	it('authenticates and checks consumer room ownership before updating preferences', async () => {
+	it('authenticates and passes ownership to consumer mutations', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {
 			userId: 'viewer-1',
@@ -1925,50 +2066,29 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.authManager.ensureMediaConsumerAccess).toHaveBeenCalledWith(
 			socket,
 		);
-		expect(harness.mediasoup.assertConsumerAccess).toHaveBeenCalledWith(
-			'consumer-1',
-			'room-1',
-			'viewer-1',
-		);
+		expect(harness.mediasoup.updateConsumerPreferences).toHaveBeenCalledWith({
+			consumerId: 'consumer-1',
+			roomId: 'room-1',
+			peerId: 'viewer-1',
+			visible: true,
+			width: 640,
+			height: 360,
+		});
 		expect(callback).toHaveBeenCalledWith({
 			success: true,
 			paused: false,
 			visible: true,
 		});
-	});
 
-	it('rejects every foreign consumer mutation before side effects', async () => {
-		const harness = createManager();
-		const socket = connectFullSocket(harness, {
-			scope: 'recording',
-			recordingProofComplete: true,
-			userId: 'recorder:recording-1',
-			roomId: 'room-1',
-		});
-		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
-			throw new Error('Consumer ownership mismatch');
-		});
-
-		for (const [event, data] of [
-			['close_consumer', { consumerId: 'foreign' }],
-			[
-				'consumer:update_preferences',
-				{ consumerId: 'foreign', visible: true, width: 640, height: 360 },
-			],
-			['request_consumer_keyframe', { consumerId: 'foreign' }],
-		] as const) {
-			const callback = vi.fn();
-			socket.fire(event, data, callback);
-			await new Promise((resolve) => setImmediate(resolve));
-			expect(callback, event).toHaveBeenCalledWith({
-				success: false,
-				error: 'Consumer ownership mismatch',
-			});
-		}
-
-		expect(harness.mediasoup.closeConsumer).not.toHaveBeenCalled();
-		expect(harness.mediasoup.updateConsumerPreferences).not.toHaveBeenCalled();
-		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
+		const closeCallback = vi.fn();
+		socket.fire('close_consumer', { consumerId: 'consumer-1' }, closeCallback);
+		await new Promise((r) => setImmediate(r));
+		expect(harness.mediasoup.closeConsumer).toHaveBeenCalledWith(
+			'consumer-1',
+			'room-1',
+			'viewer-1',
+		);
+		expect(closeCallback).toHaveBeenCalledWith({ success: true });
 	});
 
 	it('treats a keyframe request for an already-closed consumer as a no-op', async () => {
@@ -1977,9 +2097,7 @@ describe('SocketHandlerManager characterization', () => {
 			userId: 'viewer-1',
 			roomId: 'room-1',
 		});
-		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
-			throw new Error('Consumer stale-consumer not found');
-		});
+		harness.mediasoup.requestConsumerKeyFrame.mockResolvedValueOnce(false);
 		const callback = vi.fn();
 
 		socket.fire(
@@ -1993,7 +2111,11 @@ describe('SocketHandlerManager characterization', () => {
 			success: true,
 			requested: false,
 		});
-		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
+		expect(harness.mediasoup.requestConsumerKeyFrame).toHaveBeenCalledWith(
+			'stale-consumer',
+			'room-1',
+			'viewer-1',
+		);
 	});
 
 	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {

@@ -20,7 +20,6 @@ import {
 import type { DeviceType, deviceManager } from "../utils/media/DeviceManager";
 import {
 	LocalCaptureSession,
-	type LocalCaptureKindPublicationResult,
 	type LocalCaptureOperation,
 	type MediaDeviceOverrides,
 } from "../utils/media/LocalCaptureSession";
@@ -324,93 +323,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			publish: async (stream, options) => {
 				const manager = sfuManager.value;
 				if (!manager) return {};
-				const requestedVideoTrack = options.publishVideo
-					? (stream
-							.getVideoTracks()
-							.find((track) => track.readyState === "live") ?? null)
-					: null;
-				const requestedAudioTrack = options.publishAudio
-					? (stream
-							.getAudioTracks()
-							.find((track) => track.readyState === "live") ?? null)
-					: null;
-				const publication = (await manager.publishMedia(stream, options)) ?? {};
-				const producerMatches = (
-					producer: { track?: MediaStreamTrack | null } | null,
-					track: MediaStreamTrack,
-				) =>
-					producer?.track?.readyState === "live" &&
-					(producer.track === track || producer.track.id === track.id);
-				const ensurePublished = async (
-					kind: "video" | "audio",
-					track: MediaStreamTrack | null,
-				): Promise<LocalCaptureKindPublicationResult> => {
-					if (!track) {
-						return {
-							status: "failed",
-							error: new Error(
-								`No live ${kind} track was requested for publication`,
-							),
-						};
-					}
-					const producer = manager.getLocalProducerState(kind);
-					if (!producerMatches(producer, track)) {
-						try {
-							await manager.reconcileLocalProducerTrack(
-								kind,
-								track,
-								kind === "audio" ? { resume: true } : {},
-							);
-						} catch (error) {
-							return { status: "failed", error };
-						}
-					}
-					const currentProducer = manager.getLocalProducerState(kind);
-					if (!currentProducer) {
-						return {
-							status: "failed",
-							error: new Error(
-								`${kind === "video" ? "Video" : "Audio"} publication did not create a producer`,
-							),
-						};
-					}
-					return producerMatches(currentProducer, track)
-						? { status: "published" }
-						: {
-								status: "failed",
-								error: new Error(
-									`${kind === "video" ? "Video" : "Audio"} publication did not publish the requested track`,
-								),
-							};
-				};
-				return {
-					...(options.publishVideo
-						? {
-								video: Object.hasOwn(publication, "videoError")
-									? {
-											status: "failed" as const,
-											error: publication.videoError,
-										}
-									: await ensurePublished(
-											"video",
-											requestedVideoTrack,
-										),
-							}
-						: {}),
-					...(options.publishAudio
-						? {
-								audio: Object.hasOwn(publication, "audioError")
-									? {
-											status: "failed" as const,
-											error: publication.audioError,
-										}
-									: await ensurePublished(
-											"audio",
-											requestedAudioTrack,
-										),
-							}
-						: {}),
-				};
+				return manager.publishMedia(stream, options);
 			},
 		},
 		getLocalStream: () => mediaState.localStream,

@@ -35,15 +35,7 @@ export class InMemoryRosterPersistence implements RosterPersistence {
 	private readonly rooms = new Map<string, RosterEntry[]>();
 
 	async loadAll(): Promise<Map<string, RosterEntry[]>> {
-		// Deep-clone so callers can't mutate the underlying arrays.
-		const out = new Map<string, RosterEntry[]>();
-		for (const [roomId, entries] of this.rooms) {
-			out.set(
-				roomId,
-				entries.map((e) => ({ ...e })),
-			);
-		}
-		return out;
+		return structuredClone(this.rooms);
 	}
 
 	async addEntry(roomId: string, entry: RosterEntry): Promise<void> {
@@ -53,10 +45,11 @@ export class InMemoryRosterPersistence implements RosterPersistence {
 			this.rooms.set(roomId, entries);
 		}
 		const idx = entries.findIndex((e) => e.senderId === entry.senderId);
+		const storedEntry = structuredClone(entry);
 		if (idx >= 0) {
-			entries[idx] = entry;
+			entries[idx] = storedEntry;
 		} else {
-			entries.push(entry);
+			entries.push(storedEntry);
 		}
 	}
 

@@ -34,8 +34,7 @@
 		"mediasoup": "^3.19.19",
 		"prom-client": "^15.1.3",
 		"socket.io": "^4.7.5",
-		"socket.io-client": "^4.7.5",
-		"yargs": "^18.0.0"
+		"socket.io-client": "^4.7.5"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.12",

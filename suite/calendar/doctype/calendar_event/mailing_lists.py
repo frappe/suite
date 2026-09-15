@@ -9,14 +9,24 @@ An iTIP ATTENDEE naming the list therefore matches nobody on ingest, so members 
 invitation mail but the event is never added to their calendars. Groups behave differently only
 because a group is a real principal with its own address and its own calendar.
 
-Replacing the list with one participant per member before the event is stored is what RFC 5546 asks
-the organizer to do, and it fixes both invite paths at once: Frappe Mail's own invitation mails and
-the JMAP server's scheduling messages are both built from the stored participant list. Each member
-also ends up with a distinct participant uid, which is what gives them individual RSVP links.
+Adding one participant per member before the event is stored is what RFC 5546 asks the organizer
+to do, and it fixes both invite paths at once: Frappe Mail's own invitation mails and the JMAP
+server's scheduling messages are both built from the stored participant list. Each member also
+ends up with a distinct participant uid, which is what gives them individual RSVP links.
 
-Membership is resolved once, when the invitation is sent. Someone added to the list afterwards will
-receive later mail to the list but not this event, so participants are re-expanded on every update.
+The list itself stays on the event as a group participant that is never scheduled (`scheduleAgent`
+none), and every member added for it points back at the list through `memberOf` (RFC 8984,
+section 4.4.6). That link lets an invitation reach a member with the list in its To header, the
+way any other mail to the list arrives, and it marks which participants were derived from a list
+rather than named by the organizer.
+
+Membership is resolved every time the event is saved: members no longer on the list are dropped
+(the invitation code then mails them a cancellation), new members are added, and the rest keep
+their participant entry along with the response recorded against it.
 """
+
+from collections.abc import Iterator
+from uuid import uuid7
 
 import frappe
 from frappe import _
@@ -29,7 +39,7 @@ DEFAULT_MAX_PARTICIPANTS = 100
 
 
 def expand_mailing_list_participants(participants: list[dict] | None) -> list[dict] | None:
-    """Replaces any mailing list participant with one participant per member address.
+    """Adds one participant per member behind every mailing list participant.
 
     Participants that are not mailing lists are passed through untouched, and the original order is
     preserved. Returns the input unchanged when expansion is disabled or the directory cannot be
@@ -51,43 +61,96 @@ def expand_mailing_list_participants(participants: list[dict] | None) -> list[di
         return participants
 
     index = _mailing_list_index()
-    if not index or not any(_email_of(p) in index for p in participants):
+    if not index or not any(_email_of(p) in index or p.get("member_of") for p in participants):
         return participants
 
-    limit = _max_participants()
-    slots: list[tuple[str, dict, bool]] = []
-    explicit: set[str] = set()
+    return _Expansion(participants, index, _max_participants()).run()
 
-    for participant in participants:
-        email = _email_of(participant)
-        if email in index:
-            slots.extend(
-                (member, _member_participant(participant, member), True) for member in _members(email, index)
-            )
-        else:
-            slots.append((email, participant, False))
-            if email:
-                explicit.add(email)
 
-    expanded: list[dict] = []
-    seen: set[str] = set()
-    dropped: list[str] = []
+class _Expansion:
+    """One pass over an event's participants against the directory's mailing list index."""
 
-    for address, entry, is_member in slots:
-        if address and (address in seen or (is_member and address in explicit)):
-            continue
-        if is_member and len(expanded) >= limit:
-            dropped.append(address)
-            continue
+    def __init__(self, participants: list[dict], index: dict[str, list[str]], limit: int) -> None:
+        self.participants = participants
+        self.index = index
+        self.limit = limit
+        # Lists expanded on this pass, and every participant on the event, by uid.
+        self.expanded = {p.get("uid") for p in participants if _email_of(p) in index}
+        self.present = {p.get("uid") for p in participants if p.get("uid")}
+        # Entries an earlier expansion derived from a list, by address. A member still on the list
+        # keeps their entry, and with it the uid their RSVP is recorded against.
+        self.derived = {_email_of(p): p for p in participants if p.get("member_of")}
+        self.explicit = {_email_of(p) for p in participants if _email_of(p) not in index and self._kept(p)}
 
-        if address:
-            seen.add(address)
-        expanded.append(entry)
+    def run(self) -> list[dict]:
+        expanded: list[dict] = []
+        members: dict[str, dict] = {}
+        seen: set[str] = set()
+        dropped: list[str] = []
+        invited = 0
 
-    if dropped:
-        _report_truncation(limit, dropped)
+        for address, entry, is_member in self._slots():
+            if address and address in seen:
+                # The same address through a second list: the one entry belongs to both.
+                if is_member and address in members:
+                    members[address]["member_of"].update(entry["member_of"])
+                continue
+            if is_member and address in self.explicit:
+                continue
+            if is_member and invited >= self.limit:
+                dropped.append(address)
+                continue
 
-    return expanded
+            if address:
+                seen.add(address)
+            if is_member:
+                members[address] = entry
+            expanded.append(entry)
+            # A list kept for display is not invited, so it does not use up the cap.
+            if entry.get("schedule_agent") != "none":
+                invited += 1
+
+        if dropped:
+            _report_truncation(self.limit, dropped)
+
+        return expanded
+
+    def _slots(self) -> Iterator[tuple[str, dict, bool]]:
+        """Yields (address, entry, is_member) in the order the entries should be stored."""
+
+        for participant in self.participants:
+            email = _email_of(participant)
+            if email in self.index:
+                yield from self._list_slots(participant, email)
+            elif self._kept(participant):
+                yield email, participant, False
+
+    def _list_slots(self, participant: dict, email: str) -> Iterator[tuple[str, dict, bool]]:
+        group = _list_participant(participant)
+        yield email, group, False
+        for member in _members(email, self.index):
+            yield member, self._member(participant, group["uid"], member), True
+
+    def _member(self, source: dict, list_uid: str, email: str) -> dict:
+        entry = self.derived.get(email) or _member_participant(source, email)
+        return entry | {"member_of": {list_uid: True}}
+
+    def _kept(self, participant: dict) -> bool:
+        """Whether a participant is stored as it is, rather than re-derived from a list.
+
+        Anyone the organizer named is. A member an earlier expansion added is re-derived by their
+        list while that list is on the event and in the directory, and dropped once the organizer
+        removes the list, which uninvites them. Only when the list has vanished from the directory
+        are they kept as they are: that was not the organizer's doing.
+        """
+
+        lists = set(participant.get("member_of") or {})
+        if not lists:
+            return True
+        if lists & self.expanded:
+            return False
+
+        return bool(lists & self.present)
 
 
 def _members(address: str, index: dict[str, list[str]]) -> list[str]:
@@ -117,17 +180,50 @@ def _members(address: str, index: dict[str, list[str]]) -> list[str]:
     return members
 
 
+def _list_participant(participant: dict) -> dict:
+    """Keeps the list on the event as a group participant nobody schedules.
+
+    With scheduling turned off, neither Frappe Mail's invitation code nor the JMAP server mails
+    the list address itself; its members are invited one by one. The reply expectation stays as
+    the organizer set it, since members inherit it. The uid is fixed here rather than left for
+    the server to mint, because the members' memberOf has to name it.
+    """
+
+    return participant | {
+        "uid": participant.get("uid") or str(uuid7()),
+        "kind": "group",
+        "schedule_agent": "none",
+        "send_to": None,
+        "schedule_id": None,
+        "member_of": None,
+    }
+
+
 def _member_participant(participant: dict, email: str) -> dict:
     """Builds one member's participant entry from the mailing list's entry.
 
-    Role, kind and reply expectations carry over from the list, while the identity fields are reset:
+    Role and reply expectations carry over from the list, while the identity fields are reset:
     a cleared uid makes the server mint a fresh one (and with it a distinct RSVP link), and the
     routing fields are dropped so they are rebuilt from the member's own address rather than
-    pointing back at the list.
+    pointing back at the list. The list's group kind is not inherited either.
     """
 
+    kind = participant.get("kind") or None
+    if kind and kind.lower() == "group":
+        kind = None
+
     member = dict(participant)
-    member.update({"email": email, "uid": None, "name": None, "send_to": None, "schedule_id": None})
+    member.update(
+        {
+            "email": email,
+            "uid": None,
+            "name": None,
+            "kind": kind,
+            "send_to": None,
+            "schedule_id": None,
+            "schedule_agent": None,
+        }
+    )
 
     return member
 

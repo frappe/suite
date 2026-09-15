@@ -1,77 +1,34 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
 import type {
 	Participant,
 	ParticipantUpdate,
 } from "../utils/media/ParticipantManager";
 
-export interface ParticipantStore {
-	participants: Record<string, Participant>;
-	remoteVideos: Record<string, HTMLVideoElement>;
-	activeSpeakerIds: string[];
-	stableSpeakerIds: string[];
-	speakerStartTimes: Record<string, number>;
-	addParticipant: (participant: Participant) => void;
-	removeParticipant: (participantId: string) => void;
-	updateParticipant: (
-		participantId: string,
-		updates: ParticipantUpdate,
-	) => void;
-	getParticipantName: (participantId: string) => string;
-	$reset: () => void;
-}
-
-export const useParticipantStore = defineStore("meet-participant", () => {
-	const participants = ref<Record<string, Participant>>({});
-	const remoteVideos = ref<Record<string, HTMLVideoElement>>({});
-	const activeSpeakerIds = ref<string[]>([]);
-	const stableSpeakerIds = ref<string[]>([]);
-	const speakerStartTimes = ref<Record<string, number>>({});
-
-	function addParticipant(participant: Participant) {
-		const userId = participant.user_id;
-		if (!userId) return;
-		participants.value[userId] = participant;
-	}
-
-	function removeParticipant(participantId: string) {
-		delete participants.value[participantId];
-		delete remoteVideos.value[participantId];
-	}
-
-	function updateParticipant(
-		participantId: string,
-		updates: ParticipantUpdate,
-	) {
-		const participant = participants.value[participantId];
-		if (participant) {
-			participants.value[participantId] = { ...participant, ...updates };
-		}
-	}
-
-	function getParticipantName(participantId: string): string {
-		const participant = participants.value[participantId];
-		return participant?.user_name || participantId;
-	}
-
-	function $reset() {
-		participants.value = {};
-		remoteVideos.value = {};
-		activeSpeakerIds.value = [];
-		stableSpeakerIds.value = [];
-		speakerStartTimes.value = {};
-	}
-
-	return {
-		participants,
-		remoteVideos,
-		activeSpeakerIds,
-		stableSpeakerIds,
-		speakerStartTimes,
-		addParticipant,
-		removeParticipant,
-		updateParticipant,
-		getParticipantName,
-		$reset,
-	};
+export const useParticipantStore = defineStore("meet-participant", {
+	state: () => ({
+		participants: {} as Record<string, Participant>,
+		activeSpeakerIds: [] as string[],
+		stableSpeakerIds: [] as string[],
+		speakerStartTimes: {} as Record<string, number>,
+	}),
+	actions: {
+		addParticipant(participant: Participant) {
+			const userId = participant.user_id;
+			if (userId) this.participants[userId] = participant;
+		},
+		removeParticipant(participantId: string) {
+			delete this.participants[participantId];
+		},
+		updateParticipant(participantId: string, updates: ParticipantUpdate) {
+			const participant = this.participants[participantId];
+			if (participant) {
+				this.participants[participantId] = { ...participant, ...updates };
+			}
+		},
+		getParticipantName(participantId: string): string {
+			return this.participants[participantId]?.user_name || participantId;
+		},
+	},
 });
+
+export type ParticipantStore = ReturnType<typeof useParticipantStore>;

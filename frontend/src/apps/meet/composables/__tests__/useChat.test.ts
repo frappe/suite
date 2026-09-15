@@ -24,7 +24,7 @@ function makeChatStore(): ChatStore {
 		markAsRead: vi.fn(),
 		addMessage: vi.fn((message: ChatMessage) => messages.push(message)),
 		$reset: vi.fn(),
-	};
+	} as ChatStore;
 }
 
 function makeSFUClient(

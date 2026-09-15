@@ -1,53 +1,25 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
-import { PollPayloadFE } from "../types";
+import type { PollPayloadFE } from "../types";
 
-export const usePollStore = defineStore("poll", () => {
-	const polls = ref<Record<string, PollPayloadFE>>({});
-
-	const activePolls = computed(() => {
-		return Object.values(polls.value).filter((poll) => poll.isActive);
-	});
-
-	function addPoll(poll: PollPayloadFE) {
-		polls.value = {
-			...polls.value,
-			[poll.pollId]: poll,
-		};
-	}
-
-	function updatePoll(poll: PollPayloadFE) {
-		const existingPoll = polls.value[poll.pollId];
-        if (existingPoll && existingPoll.hasVoted) {
-            poll.hasVoted = true;
-        }
-        
-        polls.value[poll.pollId] = poll;
-	}
-
-	function setExistingPolls(existingPolls: PollPayloadFE[]) {
-		existingPolls.forEach((poll) => {
-			polls.value[poll.pollId] = poll;
-		});
-	}
-
-	const markPollAsVoted = (pollId: string) => {
-    if (polls.value[pollId]) {
-        polls.value[pollId].hasVoted = true;
-    }
-};
-
-	function $reset() {
-		polls.value = {};
-	}
-
-	return {
-		polls,
-		activePolls,
-		addPoll,
-		updatePoll,
-		setExistingPolls,
-		markPollAsVoted,
-		$reset,
-	};
+export const usePollStore = defineStore("poll", {
+	state: () => ({ polls: {} as Record<string, PollPayloadFE> }),
+	getters: {
+		activePolls: (state) =>
+			Object.values(state.polls).filter((poll) => poll.isActive),
+	},
+	actions: {
+		addPoll(poll: PollPayloadFE) {
+			this.polls = { ...this.polls, [poll.pollId]: poll };
+		},
+		updatePoll(poll: PollPayloadFE) {
+			if (this.polls[poll.pollId]?.hasVoted) poll.hasVoted = true;
+			this.polls[poll.pollId] = poll;
+		},
+		setExistingPolls(existingPolls: PollPayloadFE[]) {
+			for (const poll of existingPolls) this.polls[poll.pollId] = poll;
+		},
+		markPollAsVoted(pollId: string) {
+			if (this.polls[pollId]) this.polls[pollId].hasVoted = true;
+		},
+	},
 });

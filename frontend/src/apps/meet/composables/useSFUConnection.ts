@@ -754,9 +754,6 @@ export function useSFUConnection(deps: {
 				connectionState.guestId = admittedSession.guestId;
 				connectionState.guestSessionToken = admittedSession.guestSessionToken;
 				connectionState.guestAuthToken = response.auth_token;
-				connectionState.guestSfuUrl = response.sfu_url || null;
-				connectionState.guestSfuPort =
-					response.sfu_port == null ? null : String(response.sfu_port);
 				if (response.host_only_chat !== undefined) {
 					chatStore.hostOnlyChat = response.host_only_chat;
 				}
@@ -1016,9 +1013,6 @@ export function useSFUConnection(deps: {
 			connectionState.guestSessionToken = joinResult.guest_session_token;
 			connectionState.guestAuthToken =
 				joinResult.auth_token || null;
-			connectionState.guestSfuUrl = joinResult.sfu_url || null;
-			connectionState.guestSfuPort =
-				joinResult.sfu_port == null ? null : String(joinResult.sfu_port);
 
 			if (joinResult.host_only_chat !== undefined) {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
@@ -1066,8 +1060,6 @@ export function useSFUConnection(deps: {
 			connectionState.isInPreview = false;
 
 			connectionState.guestAuthToken = null;
-			connectionState.guestSfuUrl = null;
-			connectionState.guestSfuPort = null;
 
 			const joinResult = normalizeJoinPayload(
 				await joinMeetingAPI.submit({ meeting_id: meetingId }),

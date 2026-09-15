@@ -30,6 +30,7 @@ import { registerRoomJoinHandlers } from './handlers/RoomJoinHandlers';
 import { registerRoomQueryHandlers } from './handlers/RoomQueryHandlers';
 import { registerScreenShareHandlers } from './handlers/ScreenShareHandlers';
 import { registerWebRtcTransportHandlers } from './handlers/WebRtcTransportHandlers';
+import { ParticipantConnectionLifecycle } from './ParticipantConnectionLifecycle';
 import type { RecordingGrantManager } from './RecordingGrantManager';
 import { RoomLifecycleCoordinator } from './RoomLifecycleCoordinator';
 import { RoomRegistry } from './RoomRegistry';
@@ -45,6 +46,7 @@ export class SocketHandlerManager {
 	private rateLimiter: RateLimiter;
 	private e2eeEpochRelay: E2EEEpochRelay;
 	private roomLifecycle: RoomLifecycleCoordinator;
+	private participantConnections: ParticipantConnectionLifecycle;
 	private telemetry: Telemetry;
 	private registerHandlers: ((socket: import('socket.io').Socket) => void)[];
 	private idleExpirySweep: NodeJS.Timeout | null = null;
@@ -81,6 +83,13 @@ export class SocketHandlerManager {
 			roster,
 			this.mediasoup,
 		);
+		this.participantConnections = new ParticipantConnectionLifecycle(
+			this.registry,
+			this.roomLifecycle,
+			this.mediasoup,
+			this.e2eeEpochRelay,
+			roster,
+		);
 
 		const deps: HandlerDeps = {
 			io,
@@ -91,6 +100,7 @@ export class SocketHandlerManager {
 			rateLimiter: this.rateLimiter,
 			e2eeEpochRelay: this.e2eeEpochRelay,
 			e2eeRoster: roster,
+			participantConnections: this.participantConnections,
 			telemetry,
 			runtime: this.runtime,
 		};

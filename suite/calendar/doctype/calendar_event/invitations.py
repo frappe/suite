@@ -93,16 +93,18 @@ def notify_participants(
     action: str,
     event_id: str | None = None,
     event_snapshot: dict | None = None,
-    previous_emails: list[str] | None = None,
+    previous_attendees: dict[str, dict] | None = None,
     recurrence_id: str | None = None,
 ) -> None:
     """Sends invite/update/cancel emails for an event's participants.
 
     `action` is one of "invite", "update", "cancel". Pass `event_id` to fetch the current
     event, or a pre-fetched `event_snapshot` (needed for cancellations after deletion).
-    For updates, `previous_emails` enables new -> invite / kept -> update / gone -> cancel;
-    omit it to send a plain update to everyone. `recurrence_id` scopes a cancellation to a
-    single occurrence of a recurring event.
+    For updates, `previous_attendees` (as `mail_attendees` returned them before the write)
+    enables new -> invite / kept -> update / gone -> cancel; omit it to send a plain update to
+    everyone. A cancellation to someone gone from the event is addressed from their previous
+    record, so a member who left a mailing list still sees the list in the To header.
+    `recurrence_id` scopes a cancellation to a single occurrence of a recurring event.
 
     Note: the snapshot arg is named `event_snapshot`, not `event` — `event` is a reserved
     kwarg of `frappe.enqueue` and would be swallowed before reaching this function.
@@ -116,8 +118,8 @@ def notify_participants(
         event = events[0]
 
     organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
-    attendees = _attendees(event, organizer)
-    plan = _plan(action, set(attendees), previous_emails)
+    attendees = mail_attendees(event, organizer)
+    plan = _plan(action, set(attendees), None if previous_attendees is None else set(previous_attendees))
     if not plan:
         return
 
@@ -125,10 +127,9 @@ def notify_participants(
     expires_at = _rsvp_expiry(event)
 
     for email, kind in plan.items():
+        participant = attendees.get(email) or (previous_attendees or {}).get(email)
         try:
-            _send(
-                account, user, event, organizer, email, attendees.get(email), kind, expires_at, recurrence_id
-            )
+            _send(account, user, event, organizer, email, participant, kind, expires_at, recurrence_id)
         except Exception:
             log_error("Calendar", title=_("Failed to send event {0} email to {1}").format(kind, email))
 
@@ -262,7 +263,7 @@ def _response_inline_images() -> list[dict]:
     return [{"filename": RESPONSE_LOGO_EMBED, "filecontent": logo}] if logo else []
 
 
-def _plan(action: str, current: set[str], previous_emails: list[str] | None) -> dict[str, str]:
+def _plan(action: str, current: set[str], previous: set[str] | None) -> dict[str, str]:
     """Maps each recipient email to the email kind (invite/update/cancel) to send."""
 
     if action == "invite":
@@ -271,10 +272,9 @@ def _plan(action: str, current: set[str], previous_emails: list[str] | None) -> 
         return {email: "cancel" for email in current}
 
     # action == "update"
-    if previous_emails is None:
+    if previous is None:
         return {email: "update" for email in current}
 
-    previous = set(previous_emails)
     plan = {email: ("update" if email in previous else "invite") for email in current}
     for email in previous - current:
         plan[email] = "cancel"
@@ -305,7 +305,9 @@ def _send(
 
     from_name = _organizer_name(account, event, organizer)
     subject, html = _render(kind, event, organizer, from_name, participant, links)
-    message = _build_mime(from_name, organizer, email, subject, html, ics, method)
+    # The header may name the mailing list a member came through; the envelope stays theirs.
+    to_header = participant["to"] if participant else email
+    message = _build_mime(from_name, organizer, to_header, subject, html, ics, method)
 
     MailQueue._create(
         user=user,
@@ -478,17 +480,48 @@ def _image_bytes(*path_parts: str) -> bytes | None:
     return _IMAGE_CACHE[key] or None
 
 
-def _attendees(event: dict, organizer: str) -> dict[str, dict]:
-    """Returns {email: {uid, name}} for every participant except the organizer."""
+def mail_attendees(event: dict, organizer: str) -> dict[str, dict]:
+    """Returns {email: {uid, name, to}} for every participant the organizer mails.
 
+    A participant with scheduling turned off is skipped: that is a mailing list kept on the event
+    for display, whose members are invited one by one. `to` is what the To header shows, the list
+    a member came through when there is one, so the mail reads like any other mail to the list.
+    """
+
+    participants = event.get("participants") or {}
     attendees = {}
-    for uid, participant in (event.get("participants") or {}).items():
-        email = (participant.get("calendarAddress") or "").lower().replace("mailto:", "")
-        email = email or (participant.get("email") or "").lower()
+    for uid, participant in participants.items():
+        if participant.get("scheduleAgent") == "none":
+            continue
+
+        email = _address(participant)
         if email and email != organizer:
-            attendees[email] = {"uid": uid, "name": participant.get("name") or email}
+            attendees[email] = {
+                "uid": uid,
+                "name": participant.get("name") or email,
+                "to": _to_header(participants, participant) or email,
+            }
 
     return attendees
+
+
+def _to_header(participants: dict, participant: dict) -> str | None:
+    """Returns the formatted address of the first group a participant was invited through."""
+
+    for group_id in participant.get("memberOf") or {}:
+        group = participants.get(group_id) or {}
+        if address := _address(group):
+            name = (group.get("name") or "").strip()
+            return formataddr((name, address)) if name and name.lower() != address else address
+
+    return None
+
+
+def _address(participant: dict) -> str:
+    """Returns a participant's bare email address, lowercased."""
+
+    address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
+    return address.replace("mailto:", "")
 
 
 def _format_when(event: dict) -> str:
@@ -510,8 +543,7 @@ def _display_name(event: dict, email: str) -> str:
     """Returns the participant display name for an email, if the event lists one."""
 
     for participant in (event.get("participants") or {}).values():
-        address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
-        if address.replace("mailto:", "") == email and participant.get("name"):
+        if _address(participant) == email and participant.get("name"):
             return participant["name"]
 
     return ""

@@ -282,30 +282,30 @@ export class ParticipantConnection {
 
 			try {
 				await this.connect(options.authToken, options.prefetchedDetails);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				const { userData, mediaState } = await this.awaitAbortable(
 					options.prepareJoin(signal),
 					signal,
 				);
 				await this.joinRoom(userData, mediaState, options.conflictId);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				if (this.sfuClient.isE2EERequired?.()) {
 					await this.awaitAbortable(options.waitForE2EEReady(signal), signal);
 					this.e2eeReadyForLifecycle = true;
 				}
 				await this.initializeDevice();
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				if (!(await this.createReceiveTransport())) {
 					throw new Error("Failed to create receive transport");
 				}
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				this.setState("syncing");
 
 				const [publication, snapshot] = await Promise.allSettled([
 					this.awaitAbortable(options.publishLocalMedia(signal), signal),
 					this.setupExistingParticipants(signal, true),
 				]);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				if (publication.status === "rejected") {
 					console.warn("Initial media publication failed:", publication.reason);
 					this.eventHandlers.onInitialPublicationError?.(publication.reason);
@@ -352,11 +352,6 @@ export class ParticipantConnection {
 		if (this._state === state) return;
 		this._state = state;
 		this.eventHandlers.onLifecycleStateChange?.(state);
-	}
-
-	private throwIfAborted(signal: AbortSignal): void {
-		if (signal.aborted)
-			throw signal.reason ?? new DOMException("Aborted", "AbortError");
 	}
 
 	private awaitAbortable<T>(
@@ -414,7 +409,7 @@ export class ParticipantConnection {
 
 	private async waitUntilVisible(signal: AbortSignal): Promise<void> {
 		if (typeof document === "undefined" || !document.hidden) return;
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await new Promise<void>((resolve, reject) => {
 			const visibilityChange = () => {
 				if (!document.hidden) finish(resolve);
@@ -440,9 +435,9 @@ export class ParticipantConnection {
 					await this.waitUntilOnline(signal);
 					await this.delay(delay, signal);
 					await this.serializeLifecycle(async () => {
-						this.throwIfAborted(signal);
+						signal.throwIfAborted();
 						await this.setupExistingParticipants(signal, true);
-						this.throwIfAborted(signal);
+						signal.throwIfAborted();
 						this.setState("ready");
 					});
 					return;
@@ -687,7 +682,7 @@ export class ParticipantConnection {
 	async flushBufferedProducers(
 		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<void> {
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!this.reconciliation.producers.size) {
 			console.log("No buffered producer events to flush");
 			return;
@@ -697,7 +692,7 @@ export class ParticipantConnection {
 			`Flushing ${this.reconciliation.producers.size} buffered producer events`,
 		);
 		for (const event of this.reconciliation.producers.values()) {
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			try {
 				await this.subscribeToReconciledProducer(event, signal);
 			} catch (error) {
@@ -752,11 +747,6 @@ export class ParticipantConnection {
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();
-	}
-
-	async resyncAfterRecovery(reason: string): Promise<void> {
-		const result = await this.recoveryManager.recoverTransportIce(reason);
-		if (result === "skipped") await this.resetReceiveSide();
 	}
 
 	serializeTransportRecovery(
@@ -854,33 +844,33 @@ export class ParticipantConnection {
 		this.transportManager.closeReceiveTransport();
 		this.clearReceiveConsumers();
 		await pendingSubscriptions;
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.sfuClient.disconnect();
 		this.isConnected = false;
 		await this.waitUntilOnline(signal);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		const generation = this.lifecycleGeneration;
 		await this.sfuClient.connect(this.meetingId, this.lastAuthToken, null);
 		if (signal.aborted || generation !== this.lifecycleGeneration) {
 			await this.sfuClient.disconnect();
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			throw new DOMException("Participant connection rebuild replaced", "AbortError");
 		}
 		this.isConnected = true;
 		this.transportManager.initialize(this.sfuClient);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.sfuClient.joinRoom(
 			this.meetingId,
 			this.lastJoinUserData,
 			this.getCurrentRejoinMediaState(),
 			{ connectionId: this.connectionId },
 		);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!(await this.waitForE2EEContextIfRequired(signal))) {
 			throw new Error("E2EE context is not ready after fresh reconnect");
 		}
 		await this.transportManager.initializeDevice();
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!(await this.createReceiveTransport())) {
 			throw new Error("Failed to recreate receive transport");
 		}
@@ -888,7 +878,7 @@ export class ParticipantConnection {
 		if (publication.audioError || publication.videoError) {
 			throw publication.audioError ?? publication.videoError;
 		}
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.setupExistingParticipants(signal, true);
 		this.recoveryManager.setupTransportEventHandlers();
 	}
@@ -896,7 +886,7 @@ export class ParticipantConnection {
 	private async verifyFreshParticipantConnection(signal: AbortSignal): Promise<void> {
 		await this.waitUntilVisible(signal);
 		await this.reconcileExpectedMedia();
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		for (const producer of this.reconciliation.producers.values()) {
 			if (
 				(producer.kind === "audio" || producer.kind === "video") &&
@@ -1115,7 +1105,7 @@ export class ParticipantConnection {
 		event: SFUProducerEvent,
 		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<void> {
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (
 			this.reconciliation.producers.get(event.producerId) !== event ||
 			this.producerClaims.has(event.producerId) ||
@@ -1127,7 +1117,7 @@ export class ParticipantConnection {
 		this.producerClaims.add(event.producerId);
 		try {
 			if (!(await this.waitForE2EEContextIfRequired(signal))) return;
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			if (this.reconciliation.producers.get(event.producerId) !== event) return;
 			await this.awaitAbortable(
 				this.mediaManager.subscribeToRemoteProducer({
@@ -1137,7 +1127,7 @@ export class ParticipantConnection {
 				}),
 				signal,
 			);
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			if (this.reconciliation.producers.get(event.producerId) !== event) {
 				this.removeProducerConsumers(event);
 			}

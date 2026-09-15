@@ -83,6 +83,7 @@
 				:meetingTitle="previewTitle"
 				:isCameraOn="mediaState.isCameraOn"
 				:isMicOn="mediaState.isMicOn"
+				:mediaStream="mediaState.localStream"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
 				:isConnecting="isInitializingPreview || sfuConnection.isConnecting.value"

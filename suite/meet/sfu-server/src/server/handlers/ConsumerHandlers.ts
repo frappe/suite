@@ -57,12 +57,11 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { consumerId } = data;
-				deps.mediasoup.assertConsumerAccess(
+				await deps.mediasoup.closeConsumer(
 					consumerId,
 					getRoomId(socket),
 					getPeerId(socket),
 				);
-				await deps.mediasoup.closeConsumer(consumerId);
 
 				callback({ success: true });
 			} catch (error) {
@@ -82,18 +81,14 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					callback({ success: false, error: 'Missing consumerId' });
 					return;
 				}
-				deps.mediasoup.assertConsumerAccess(
-					consumerId,
-					getRoomId(socket),
-					getPeerId(socket),
-				);
-
 				const visible = Boolean(data.visible);
 				const width = Math.round(data.width);
 				const height = Math.round(data.height);
 
 				const result = await deps.mediasoup.updateConsumerPreferences({
 					consumerId,
+					roomId: getRoomId(socket),
+					peerId: getPeerId(socket),
 					visible,
 					width,
 					height,
@@ -113,23 +108,13 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { consumerId } = data;
-				deps.mediasoup.assertConsumerAccess(
+				const requested = await deps.mediasoup.requestConsumerKeyFrame(
 					consumerId,
 					getRoomId(socket),
 					getPeerId(socket),
 				);
-				const requested =
-					await deps.mediasoup.requestConsumerKeyFrame(consumerId);
 				callback({ success: true, requested });
 			} catch (error) {
-				if (
-					error instanceof Error &&
-					error.message.startsWith('Consumer ') &&
-					error.message.endsWith(' not found')
-				) {
-					callback({ success: true, requested: false });
-					return;
-				}
 				loggers.socketHandler.error(
 					'Error requesting consumer key frame: %s',
 					(error as Error).message,

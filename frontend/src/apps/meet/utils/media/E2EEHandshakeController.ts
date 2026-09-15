@@ -23,12 +23,8 @@ const isAbortError = (error: unknown) =>
 const abortReason = (signal: AbortSignal) =>
 	signal.reason ?? new DOMException("E2EE lifecycle ended", "AbortError");
 
-function throwIfAborted(signal: AbortSignal): void {
-	if (signal.aborted) throw abortReason(signal);
-}
-
 function waitWithSignal(timeoutMs: number, signal: AbortSignal): Promise<void> {
-	throwIfAborted(signal);
+	signal.throwIfAborted();
 	return new Promise((resolve, reject) => {
 		const onAbort = () => {
 			clearTimeout(timer);
@@ -46,7 +42,7 @@ function raceWithSignal<T>(
 	promise: Promise<T>,
 	signal: AbortSignal,
 ): Promise<T> {
-	throwIfAborted(signal);
+	signal.throwIfAborted();
 	return new Promise((resolve, reject) => {
 		const onAbort = () => reject(abortReason(signal));
 		signal.addEventListener("abort", onAbort, { once: true });
@@ -169,7 +165,7 @@ export class E2EEHandshakeController {
 		if (this.isReconfiguringForE2EE) return;
 		this.isReconfiguringForE2EE = true;
 		try {
-			throwIfAborted(signal);
+			signal.throwIfAborted();
 			this.sfuClient.setE2EERequired(true);
 			await this.reconfigureMediaForE2EE(signal);
 		} catch (error) {
@@ -226,7 +222,7 @@ export class E2EEHandshakeController {
 		}
 
 		const identity = await this.getDeviceIdentity();
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 		const userId = this.ownParticipantId();
 		const hostSenderId = this.sfuClient.getOwnSenderId?.() ?? 0;
 		await this.generateHostMeetingSecret(signal);
@@ -250,7 +246,7 @@ export class E2EEHandshakeController {
 			activeEpoch.state,
 			decodedKeyPackages,
 		);
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 		installActiveEpochState({
 			epochNumber: result.epoch.epochNumber,
 			state: result.epoch.state,
@@ -267,7 +263,7 @@ export class E2EEHandshakeController {
 		await this.deps.epochSignalingController?.syncSenderSigningPubs(
 			result.epoch.state,
 		);
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 		const fromParticipantId = userId;
 		const previousEpochNumber = activeEpoch.epochNumber;
 		const epochNumber = result.epoch.epochNumber;
@@ -317,7 +313,7 @@ export class E2EEHandshakeController {
 	): Promise<number[]> {
 		try {
 			const participants = await this.deps.sfuClient.getRoomParticipants();
-			throwIfAborted(signal);
+			signal.throwIfAborted();
 			const hostParticipantId = this.ownParticipantId();
 			return participants
 				.filter((p) => {
@@ -372,7 +368,7 @@ export class E2EEHandshakeController {
 		if (!signaling) return out;
 		const start = Date.now();
 		while (Date.now() - start < timeoutMs) {
-			throwIfAborted(signal);
+			signal.throwIfAborted();
 			const cache = signaling.getReceivedKeyPackagesBySenderId();
 			for (const senderId of expected) {
 				if (out.has(senderId)) continue;
@@ -388,7 +384,7 @@ export class E2EEHandshakeController {
 
 	async generateHostMeetingSecret(signal?: AbortSignal): Promise<void> {
 		const identity = await this.getDeviceIdentity();
-		if (signal) throwIfAborted(signal);
+		signal?.throwIfAborted();
 		const genesis = await this.epochProtocolProvider.createGenesisEpoch({
 			groupId: this.meetingId,
 			userId: this.ownParticipantId(),
@@ -396,7 +392,7 @@ export class E2EEHandshakeController {
 			senderId: this.sfuClient.getOwnSenderId?.() ?? 0,
 			signingPubKey: identity.signingPublicKey,
 		});
-		if (signal) throwIfAborted(signal);
+		signal?.throwIfAborted();
 		this.keyVersion = genesis.epochNumber;
 		this.meetingSecret = genesis.meetingSecret;
 		installActiveEpochState({
@@ -506,12 +502,12 @@ export class E2EEHandshakeController {
 	private async reconfigureMediaForE2EE(
 		signal: AbortSignal = this.startLifecycle(),
 	): Promise<void> {
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!this.sfuClient?.isConnected?.()) return;
 
 		try {
 			await this.sfuClient.refreshToken();
-			throwIfAborted(signal);
+			signal.throwIfAborted();
 		} catch (error) {
 			if (signal.aborted || isAbortError(error)) throw error;
 			console.warn(
@@ -534,7 +530,7 @@ export class E2EEHandshakeController {
 				video_enabled: this.mediaState.isCameraOn,
 			},
 		);
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 		const needsCameraMedia = this.mediaState.isCameraOn;
 		const needsMicrophoneMedia = this.mediaState.isMicOn;
 		const processedStream = this.mediaState.processedStream;
@@ -571,7 +567,7 @@ export class E2EEHandshakeController {
 				signal,
 			);
 		}
-		throwIfAborted(signal);
+		signal.throwIfAborted();
 
 		const needsCamera =
 			this.mediaState.isCameraOn && !publicationResult.videoPublished;

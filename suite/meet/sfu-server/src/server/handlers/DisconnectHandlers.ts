@@ -2,7 +2,6 @@ import type { Socket } from 'socket.io';
 import { normalizeDisconnectReason } from '../../telemetry/Telemetry';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { isRealParticipant } from './utils';
 
 export function registerDisconnectHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -41,47 +40,16 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 							await deps.mediasoup.removePeer(roomId, participantId);
 						}
 					}
-					deps.registry.leaveScope(socket, roomId, 'full');
-					deps.registry.leaveScope(socket, roomId, 'presence-preview');
-
 					if (socket.scope === 'full') {
-						const participantDeparted = deps.registry.releaseParticipant(
+						await deps.participantConnections.disconnect(
 							socket,
 							roomId,
 							participantId,
+							peerId,
 						);
-						if (socket.senderId !== undefined) {
-							await deps.e2eeRoster.remove(roomId, socket.senderId);
-							deps.e2eeEpochRelay.removePendingJoiner(roomId, socket.senderId);
-						}
-						deps.registry.removeSender(roomId, peerId);
-						await deps.mediasoup.removePeer(roomId, peerId);
-
-						if (participantDeparted) {
-							if (isRealParticipant(participantId)) {
-								deps.registry.emitParticipantEvent(
-									roomId,
-									'participant_left',
-									participantId,
-								);
-							}
-
-							if (deps.registry.hasRaisedHand(roomId, participantId)) {
-								deps.registry.clearRaisedHand(roomId, participantId);
-								deps.registry.emitRaisedHand(roomId, {
-									participantId,
-									raised: false,
-									timestamp: new Date().toISOString(),
-								});
-							}
-
-							loggers.socketHandler.info(
-								'Cleaned up user %s from room %s',
-								participantId,
-								roomId,
-							);
-						}
-						deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
+					} else {
+						deps.registry.leaveScope(socket, roomId, 'full');
+						deps.registry.leaveScope(socket, roomId, 'presence-preview');
 					}
 				} catch (error) {
 					loggers.socketHandler.error('Error handling disconnect: %s', error);

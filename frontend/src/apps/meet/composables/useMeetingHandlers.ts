@@ -84,8 +84,6 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		} finally {
 			deps.connectionState.connectionError = null;
 			deps.connectionState.guestAuthToken = null;
-			deps.connectionState.guestSfuUrl = null;
-			deps.connectionState.guestSfuPort = null;
 			deps.connectionState.isInPreview = true;
 		}
 	};
@@ -139,7 +137,6 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		clearGuestSessionForExit(deps.meetingId);
 		deps.lobbyStore.isInLobby = false;
 		deps.lobbyStore.isWaitingForApproval = false;
-		deps.lobbyStore.lobbyParticipantCount = 0;
 		deps.router.push({ name: "meet-home" });
 	};
 

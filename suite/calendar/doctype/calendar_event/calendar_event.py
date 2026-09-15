@@ -19,6 +19,7 @@ from suite.calendar.doctype.calendar.calendar import validate_calendar_name_form
 from suite.calendar.doctype.calendar_event.invitations import (
     acting_as_organizer,
     custom_event_invites_enabled,
+    mail_attendees,
 )
 from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
@@ -151,6 +152,8 @@ class CalendarEvent(Document):
                     "expect_reply": bool(p.expect_reply),
                     "description": p.description,
                     "comment": p.comment,
+                    "schedule_agent": p.schedule_agent,
+                    "member_of": json.loads(p.member_of),
                 }
                 for p in self.participants
             ]
@@ -516,9 +519,9 @@ def update_calendar_event(
         and acting_as_organizer(account, organizer)
     )
 
-    previous_emails = None
+    previous_attendees = None
     if use_custom_invites:
-        previous_emails, event["sequence"] = _previous_invite_state(account, id)
+        previous_attendees, event["sequence"] = _previous_invite_state(account, id)
 
     service = get_calendar_event_service(account)
     # Read before the write: moving a series moves the occurrences its overrides are keyed by.
@@ -537,7 +540,7 @@ def update_calendar_event(
     _reanchor_overrides(service, id, stored, start, recurrence_rule)
 
     if use_custom_invites:
-        _enqueue_event_notification(account, "update", event_id=id, previous_emails=previous_emails)
+        _enqueue_event_notification(account, "update", event_id=id, previous_attendees=previous_attendees)
 
 
 def _reanchor_overrides(service, id: str, stored: dict, start: str | None, rule: dict | None) -> None:
@@ -750,6 +753,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
                 "expect_reply": cint(p.get("expectReply", False)),
                 "description": p.get("description", ""),
                 "comment": p.get("comment", ""),
+                "schedule_agent": p.get("scheduleAgent") or "",
+                "member_of": p.get("memberOf") or {},
             }
         )
 
@@ -807,7 +812,7 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 def _enqueue_event_notification(account: str, action: str, **kwargs) -> None:
     """Queues custom invitation/update/cancel emails to send after the event is committed.
 
-    Extra kwargs are forwarded to notify_participants (event_id, event, previous_emails,
+    Extra kwargs are forwarded to notify_participants (event_id, event, previous_attendees,
     recurrence_id).
     """
 
@@ -934,22 +939,25 @@ def enqueue_send_event_alert_notification(user: str, alert: dict, ctx: dict | No
         )
 
 
-def _previous_invite_state(account: str, id: str) -> tuple[list[str], int]:
-    """Returns (current participant emails, next SEQUENCE) for an event about to be updated.
+def _previous_invite_state(account: str, id: str) -> tuple[dict[str, dict], int]:
+    """Returns (attendees as stored, next SEQUENCE) for an event about to be updated.
 
-    The next sequence is the stored sequence + 1, so every organizer update strictly increases
-    SEQUENCE. Attendee clients (Outlook especially) ignore a re-sent REQUEST whose SEQUENCE has
-    not advanced, so we bump it ourselves rather than trusting the server to. Fetched in one
-    round-trip since the update path already needs the participant diff.
+    The attendees are the ones the invitation code mails, keyed by email with the To header
+    each was addressed by, so a cancellation to someone the update removes can still be
+    addressed the same way. The next sequence is the stored sequence + 1, so every organizer
+    update strictly increases SEQUENCE. Attendee clients (Outlook especially) ignore a re-sent
+    REQUEST whose SEQUENCE has not advanced, so we bump it ourselves rather than trusting the
+    server to. Fetched in one round-trip since the update path already needs the participant
+    diff.
     """
 
-    events = get_calendar_events(account, [id])
+    events = get_calendar_event_service(account).get([id])
     if not events:
-        return [], 1
+        return {}, 1
 
     event = events[0]
-    emails = [p["email"] for p in event["participants"] if p.get("email")]
-    return emails, cint(event.get("sequence")) + 1
+    organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
+    return mail_attendees(event, organizer), cint(event.get("sequence")) + 1
 
 
 def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:

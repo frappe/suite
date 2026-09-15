@@ -42,14 +42,6 @@ import type { Producer } from "mediasoup-client/types";
 const isAbortError = (error: unknown) =>
 	(error as { name?: unknown } | null)?.name === "AbortError";
 
-function throwIfAborted(signal?: AbortSignal): void {
-	if (signal?.aborted) {
-		throw (
-			signal.reason ?? new DOMException("E2EE lifecycle ended", "AbortError")
-		);
-	}
-}
-
 interface SFUMeetingManagerOptions {
 	meetingId: string;
 	currentUser: User | null;
@@ -59,6 +51,15 @@ interface SFUMeetingManagerOptions {
 interface E2EEPublicationResult {
 	videoPublished: boolean;
 	audioPublished: boolean;
+}
+
+type LocalPublicationOutcome =
+	| { status: "published" }
+	| { status: "failed"; error: unknown };
+
+interface LocalMediaPublicationResult {
+	video?: LocalPublicationOutcome;
+	audio?: LocalPublicationOutcome;
 }
 
 type LocalProducerKind = "audio" | "video" | "screen";
@@ -394,8 +395,63 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
-	): Promise<PublishedMedia> {
-		return this.mediaManager.publishMedia(localStream, options);
+	): Promise<LocalMediaPublicationResult> {
+		return this.mediaManager.serializeSendMediaMutation(async () => {
+			const publication: LocalMediaPublicationResult = {};
+			const publish = async (
+				kind: "video" | "audio",
+				track: MediaStreamTrack | null,
+			): Promise<LocalPublicationOutcome> => {
+				if (!track) {
+					return {
+						status: "failed",
+						error: new Error(
+							`No live ${kind} track was requested for publication`,
+						),
+					};
+				}
+
+				try {
+					await this.reconcileLocalProducerTrackNow(
+						kind,
+						track,
+						kind === "audio" ? { resume: true } : {},
+					);
+					const producer = this.getLocalProducer(kind);
+					if (
+						!producer ||
+						producer.closed ||
+						producer.track?.readyState !== "live" ||
+						(producer.track !== track && producer.track?.id !== track.id)
+					) {
+						throw new Error(
+							`${kind === "video" ? "Video" : "Audio"} publication did not publish the requested track`,
+						);
+					}
+					return { status: "published" };
+				} catch (error) {
+					return { status: "failed", error };
+				}
+			};
+
+			if (options.publishVideo) {
+				publication.video = await publish(
+					"video",
+					localStream
+						.getVideoTracks()
+						.find((track) => track.readyState === "live") ?? null,
+				);
+			}
+			if (options.publishAudio) {
+				publication.audio = await publish(
+					"audio",
+					localStream
+						.getAudioTracks()
+						.find((track) => track.readyState === "live") ?? null,
+				);
+			}
+			return publication;
+		});
 	}
 
 	async publishInitialMedia(
@@ -429,7 +485,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		signal?: AbortSignal,
 	): Promise<E2EEPublicationResult> {
 		return this.mediaManager.serializeSendMediaMutation(() => {
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			return this.reconfigureForE2EENow(videoStream, audioStream, signal);
 		});
 	}
@@ -439,7 +495,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		audioStream: MediaStream | null,
 		signal?: AbortSignal,
 	): Promise<E2EEPublicationResult> {
-		throwIfAborted(signal);
+		signal?.throwIfAborted();
 		console.log("Reconfiguring media for E2EE");
 		this.connectionManager.initialSyncInProgress = true;
 		const publicationResult: E2EEPublicationResult = {
@@ -484,7 +540,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 				screenTrack?.readyState === "live";
 
 			await this.mediaManager.cancelPendingSubscriptions();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			mediaHandler.cleanup();
 			this.mediaManager.setLocalTrack("video", videoTrack);
 			this.mediaManager.setLocalTrack("audio", audioTrack);
@@ -493,13 +549,13 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 			this.transportManager.cleanup();
 
 			await this.transportManager.initializeDevice();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			await this.transportManager.createReceiveTransport();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 
 			if (videoTrack || audioTrack || screenTrack) {
 				await this.transportManager.createSendTransport();
-				throwIfAborted(signal);
+				signal?.throwIfAborted();
 
 				if (videoTrack) {
 					try {
@@ -514,7 +570,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							);
 							if (signal?.aborted) {
 								this.closeProducerInstance(videoProducer);
-								throwIfAborted(signal);
+								signal?.throwIfAborted();
 							}
 							if (
 								videoTrack.readyState !== "live" ||
@@ -549,7 +605,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							);
 							if (signal?.aborted) {
 								this.closeProducerInstance(audioProducer);
-								throwIfAborted(signal);
+								signal?.throwIfAborted();
 							}
 							if (
 								audioTrack.readyState !== "live" ||
@@ -579,7 +635,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 						);
 						if (signal?.aborted) {
 							this.closeProducerInstance(screenProducer);
-							throwIfAborted(signal);
+							signal?.throwIfAborted();
 						}
 						if (
 							!isCurrentScreenTrack() ||
@@ -599,7 +655,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 				}
 			}
 			await this.connectionManager.setupExistingParticipants();
-			throwIfAborted(signal);
+			signal?.throwIfAborted();
 			if (
 				publicationResult.videoPublished &&
 				(videoTrack?.readyState !== "live" ||
@@ -644,32 +700,12 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		}
 	}
 
-	async resyncAfterRecovery(reason: string): Promise<void> {
-		return this.connectionManager.resyncAfterRecovery(reason);
-	}
-
 	async recoverTransport(reason: string): Promise<RecoveryResult> {
 		return this.recoveryManager.recoverTransportIce(reason);
 	}
 
 	async resetReceiveMedia(): Promise<void> {
 		return this.connectionManager.resetReceiveSide();
-	}
-
-	async subscribeToRemoteProducer({
-		producerId,
-		participantId,
-		isScreen,
-	}: {
-		producerId: string;
-		participantId: string;
-		isScreen: boolean;
-	}): Promise<unknown | null> {
-		return this.mediaManager.subscribeToRemoteProducer({
-			producerId,
-			participantId,
-			isScreen,
-		});
 	}
 
 	startMediaHealthMonitoring(

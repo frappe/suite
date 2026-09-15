@@ -19,7 +19,7 @@ export interface LocalCaptureOperation {
 	publicationOwner?: object | null;
 }
 
-export type LocalCaptureKindPublicationResult =
+type LocalCaptureKindPublicationResult =
 	| { status: "published" }
 	| { status: "failed"; error: unknown };
 
@@ -1150,8 +1150,8 @@ export class LocalCaptureSession {
 				) {
 					throw this.lifecycleAbort();
 				}
-				const stream = this.options.getLocalStream() ?? new MediaStream();
-				const currentTracks = stream.getAudioTracks();
+				const currentStream = this.options.getLocalStream();
+				const currentTracks = currentStream?.getAudioTracks() ?? [];
 				const newerTrack = currentTracks.find(
 					(track) =>
 						track.readyState === "live" && !previousRawTracks.includes(track),
@@ -1159,11 +1159,11 @@ export class LocalCaptureSession {
 				if (newerTrack) throw this.lifecycleAbort();
 				prepared.commit();
 				preparedSettled = true;
-				for (const track of currentTracks) stream.removeTrack(track);
-				stream.addTrack(candidateTrack);
-				if (this.options.getLocalStream() !== stream) {
-					this.options.setLocalStream(stream);
-				}
+				const stream = new MediaStream([
+					...(currentStream?.getTracks().filter((track) => track.kind !== "audio") ?? []),
+					candidateTrack,
+				]);
+				this.options.setLocalStream(stream);
 				return { stream, replacedTracks: currentTracks };
 			});
 

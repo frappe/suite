@@ -618,8 +618,11 @@ class CalendarEventService(CalendarsService):
                 uid = participant.get("uid") or str(uuid7())
                 expect_reply = participant.get("expect_reply", False)
                 calendar_address = f"mailto:{email}" if email else None
+                schedule_agent = (participant.get("schedule_agent") or "").lower() or None
 
-                if expect_reply:
+                # A participant nobody schedules (a mailing list kept for display) gets no
+                # routing, whatever the reply expectation its members inherit.
+                if expect_reply and schedule_agent != "none":
                     send_to = (
                         participant.get("send_to") or {"imip": calendar_address} if calendar_address else None
                     )
@@ -634,12 +637,14 @@ class CalendarEventService(CalendarsService):
                     "sendTo": send_to,
                     "scheduleId": schedule_id,
                     "calendarAddress": calendar_address,
-                    "kind": participant.get("kind", "").lower() or None,
+                    "kind": (participant.get("kind") or "").lower() or None,
                     "description": participant.get("description") or None,
                     "roles": participant.get("roles") or None,
-                    "participationStatus": participant.get("participation_status", "").lower() or None,
+                    "participationStatus": (participant.get("participation_status") or "").lower() or None,
                     "expectReply": expect_reply,
                     "comment": participant.get("comment") or None,
+                    "scheduleAgent": schedule_agent,
+                    "memberOf": participant.get("member_of") or None,
                 }
                 participants_emails.append(email)
 

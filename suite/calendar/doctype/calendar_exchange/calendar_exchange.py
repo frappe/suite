@@ -1048,9 +1048,28 @@ def _add_participants(component, participants: dict) -> None:
             if mapped := PARTSTAT_MAP.get(partstat.lower()):
                 attendee.params["PARTSTAT"] = mapped
 
-        attendee.params["RSVP"] = "TRUE" if participant.get("expectReply") else "FALSE"
+        # A group nobody schedules (a mailing list kept for display) is never asked to reply.
+        expects_reply = participant.get("expectReply") and participant.get("scheduleAgent") != "none"
+        attendee.params["RSVP"] = "TRUE" if expects_reply else "FALSE"
+
+        # RFC 5545 3.2.11: the groups the attendee was invited through.
+        if lists := _member_addresses(participants, participant):
+            attendee.params["MEMBER"] = lists
 
         component.add("attendee", attendee, encode=0)
+
+
+def _member_addresses(participants: dict, participant: dict) -> list[str]:
+    """Returns the calendar addresses of the groups a participant is a member of on this event."""
+
+    addresses = []
+    for group_id in participant.get("memberOf") or {}:
+        group = participants.get(group_id) or {}
+        address = group.get("calendarAddress") or (f"mailto:{group['email']}" if group.get("email") else None)
+        if address:
+            addresses.append(address)
+
+    return addresses
 
 
 def _add_alarms(component, alerts: dict) -> None:
