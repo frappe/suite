@@ -18,7 +18,7 @@
           ? 'Add another filter or search mail'
           : palettePlaceholder
       "
-      @keydown.backspace="removeLastMailFilter"
+      @keydown.backspace="handleMailFilterBackspace"
     >
       <template #prefix>
         <button
@@ -85,6 +85,7 @@
         size="sm"
         class="absolute right-4 top-2 !size-7 !p-0"
         aria-label="Clear all filters"
+        :tooltip="`Clear filters (${clearFiltersShortcut})`"
         @mousedown.prevent
         @click="mailAppliedFilters = []"
       />
@@ -236,6 +237,26 @@
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
+      <CommandPaletteGroup v-if="calendarResults.length" label="Calendar">
+        <CommandPaletteItem
+          v-for="event in calendarResults"
+          :key="event.name"
+          :value="event"
+        >
+          <template #prefix>
+            <span
+              class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7"
+            >
+              <span class="lucide-calendar-days size-4" aria-hidden="true" />
+            </span>
+          </template>
+          {{ event.title || "Untitled event" }}
+          <template #suffix>
+            <span class="text-ink-gray-5">{{ formatCalendarStart(event) }}</span>
+          </template>
+        </CommandPaletteItem>
+      </CommandPaletteGroup>
+
       <MailSearchSuggestions :suggestions="mailSuggestions" />
 
       <CommandPaletteGroup v-if="mailResults.length">
@@ -374,6 +395,8 @@ import type {
   MailSearchResult as MailResult,
 } from "@/apps/mail/components/CommandPalette/types";
 import { getRecents } from "@/apps/drive/resources/files";
+import dayjs from "@/apps/calendar/utils/dayjs";
+import { isAllDayEvent } from "@/apps/calendar/utils/eventTime";
 import { useRootStore, type PaletteCommand } from "@/stores/root";
 
 interface DriveResult {
@@ -425,12 +448,26 @@ interface MeetResult {
   modified?: string;
 }
 
+interface CalendarResult {
+  resultType: "calendar-event";
+  name: string;
+  id: string;
+  account: string;
+  title?: string;
+  start: string;
+  time_zone?: string;
+  show_without_time?: 0 | 1;
+  recurrence_id?: string;
+  master_id?: string;
+}
+
 type PaletteItem =
   | DriveResult
   | SheetResult
   | SlideResult
   | WriterResult
   | MeetResult
+  | CalendarResult
   | MailResult
   | MailContactSuggestion
   | MailFilterSuggestion
@@ -450,6 +487,9 @@ const router = useRouter();
 const keyboardOpen = useKeyboardOpen();
 const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
+const clearFiltersShortcut = /Mac|iPhone|iPad/.test(navigator.platform)
+  ? "⌘⌫"
+  : "Ctrl+Backspace";
 const query = ref("");
 const navigationMode = ref(false);
 const activeApp = computed(() => String(route.meta.appId ?? ""));
@@ -529,6 +569,12 @@ const meetSearch = createResource({
   url: "frappe.client.get_list",
   debounce: 180,
 });
+const calendarSearch = createResource({
+  auto: false,
+  method: "POST",
+  url: "suite.calendar.doctype.calendar_event.calendar_event.fetch_calendar_events",
+  debounce: 180,
+});
 const normalizedQuery = computed(() => query.value.trim().toLowerCase());
 const appQuery = computed(() => normalizedQuery.value);
 const driveResults = computed<DriveResult[]>(() =>
@@ -581,6 +627,16 @@ const meetResults = computed<MeetResult[]>(() => {
     .map((meeting: Omit<MeetResult, "resultType">) => ({
       ...meeting,
       resultType: "meeting" as const,
+    }));
+});
+const calendarResults = computed<CalendarResult[]>(() => {
+  if (activeApp.value !== "calendar" || !Array.isArray(calendarSearch.data?.[0]))
+    return [];
+  return calendarSearch.data[0]
+    .slice(0, 20)
+    .map((event: Omit<CalendarResult, "resultType">) => ({
+      ...event,
+      resultType: "calendar-event" as const,
     }));
 });
 const contextSearchLabel = computed(
@@ -651,6 +707,7 @@ function enterHint(item: unknown) {
     if (item.resultType === "slide") return "to open presentation";
     if (item.resultType === "writer") return "to open document";
     if (item.resultType === "meeting") return "to open meeting";
+    if (item.resultType === "calendar-event") return "to view event";
   }
   if ("run" in item) {
     const label = "label" in item ? String(item.label) : "command";
@@ -667,6 +724,18 @@ function enterHint(item: unknown) {
     if (item.content_doctype === "Writer Document") return "to open document";
   }
   return "to open file";
+}
+
+function calendarEventStart(event: CalendarResult) {
+  if (event.time_zone && !isAllDayEvent(event))
+    return dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess());
+  return dayjs(event.start);
+}
+
+function formatCalendarStart(event: CalendarResult) {
+  return calendarEventStart(event).format(
+    isAllDayEvent(event) ? "MMM D" : "MMM D, h:mm A",
+  );
 }
 
 function openMailAdvancedSearch() {
@@ -702,6 +771,7 @@ watch(
     slideResults,
     writerResults,
     meetResults,
+    calendarResults,
     mailResults,
     mailSuggestions,
   ],
@@ -740,7 +810,7 @@ watch(
       const account = String(
         route.params.accountId || localStorage.getItem("mail-account-id") || "",
       );
-      searchMail(value, account);
+      searchMail(value, account, route.query.all_accounts != null);
       return;
     }
 
@@ -783,6 +853,15 @@ watch(
         order_by: "modified desc",
         limit_page_length: 20,
       });
+    } else if (activeApp.value === "calendar") {
+      calendarSearch.submit({
+        account: String(route.params.accountId || ""),
+        filter: { title: text },
+        position: 0,
+        limit: 20,
+        time_zone: dayjs.tz.guess(),
+        expand_recurrences: false,
+      });
     }
   },
   { deep: true },
@@ -808,6 +887,7 @@ watch(
       return;
     }
     navigationMode.value = false;
+    query.value = "";
     mailAppliedFilters.value = [];
     resetSearches();
   },
@@ -821,6 +901,7 @@ function resetSearches() {
     slideSearch,
     writerSearch,
     meetSearch,
+    calendarSearch,
   ]) {
     resource.reset();
   }
@@ -834,6 +915,7 @@ function cancelSearches() {
     slideSearch,
     writerSearch,
     meetSearch,
+    calendarSearch,
   ]) {
     resource.submit.cancel();
     resource.abort();
@@ -847,9 +929,13 @@ function removeMailFilter(key: string) {
   );
 }
 
-function removeLastMailFilter(event: KeyboardEvent) {
+function handleMailFilterBackspace(event: KeyboardEvent) {
   if (query.value || !mailAppliedFilters.value.length) return;
   event.preventDefault();
+  if (event.metaKey || event.ctrlKey) {
+    mailAppliedFilters.value = [];
+    return;
+  }
   mailAppliedFilters.value = mailAppliedFilters.value.slice(0, -1);
 }
 
@@ -921,7 +1007,25 @@ async function selectItem(
           mailbox: "search",
           threadID: item.thread_id,
         },
-        query: mailFilter.value,
+        query: {
+          ...mailFilter.value,
+          ...(route.query.all_accounts != null ? { all_accounts: "1" } : {}),
+        },
+      };
+    } else if (item.resultType === "calendar-event") {
+      const start = calendarEventStart(item);
+      location = {
+        name: "calendar-day",
+        params: {
+          accountId: item.account || route.params.accountId,
+          year: start.year(),
+          month: start.month() + 1,
+          day: start.date(),
+        },
+        query: {
+          event: item.master_id || item.id,
+          recurrence: item.recurrence_id || undefined,
+        },
       };
     } else {
       location = { name: "meet-meeting", params: { meetingId: item.name } };
