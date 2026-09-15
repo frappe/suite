@@ -37,7 +37,10 @@
 		<div class="flex flex-shrink-0 items-center gap-1">
 			<!-- Raised Hand Indicator -->
 			<Tooltip v-if="isHandRaised" :text="`${participant.user_name || participant.user_id} has raised their hand`">
-				<div class="flex items-center justify-center p-1.5 rounded-6">
+				<div
+					class="flex items-center justify-center p-1.5 rounded-6"
+					:aria-label="`${participant.user_name || participant.user_id} has raised their hand`"
+				>
 					<div class="rounded-full bg-amber-500 p-0.5">
 						<lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
 					</div>
