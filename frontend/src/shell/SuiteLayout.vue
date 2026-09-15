@@ -8,5 +8,27 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onScopeDispose } from 'vue'
 import SuiteCommandPalette from './SuiteCommandPalette.vue'
+import { useRootStore } from '@/stores/root'
+import { resolvedTheme, switchTheme } from '@/utils/setupTheme'
+
+const root = useRootStore()
+
+const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', computed(() => [
+  {
+    commands: [
+      {
+        id: 'suite-toggle-theme',
+        label: `Switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} theme`,
+        enterHint: `switch to ${resolvedTheme.value === 'dark' ? 'light' : 'dark'} theme`,
+        icon: resolvedTheme.value === 'dark' ? 'lucide-sun' : 'lucide-moon',
+        keywords: ['appearance', 'color scheme', 'theme'],
+        run: () => switchTheme(resolvedTheme.value === 'dark' ? 'light' : 'dark'),
+      },
+    ],
+  },
+]))
+
+onScopeDispose(unregisterPaletteGroups)
 </script>

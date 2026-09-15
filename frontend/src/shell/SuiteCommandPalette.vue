@@ -685,17 +685,26 @@ const filteredCommands = computed(() => {
   )
     return [];
   const commands = root.paletteGroups.flatMap((group) => group.commands);
-  return commands.filter(
-    (command) =>
-      !(activeApp.value === "mail" && command.id === "mail-advanced-search") &&
-      (!normalizedQuery.value ||
-        [command.label, command.description, ...(command.keywords ?? [])]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery.value)),
-  );
+  return commands
+    .filter(
+      (command) =>
+        !(activeApp.value === "mail" && command.id === "mail-advanced-search") &&
+        (!normalizedQuery.value ||
+          [command.label, command.description, ...(command.keywords ?? [])]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery.value)),
+    )
+    .sort(
+      (a, b) => Number(isUtilityCommand(a)) - Number(isUtilityCommand(b)),
+    );
 });
+
+function isUtilityCommand(command: PaletteCommand) {
+  return command.id.startsWith("suite-") &&
+    (command.id.includes("settings") || command.id.includes("theme"));
+}
 
 function enterHint(item: unknown) {
   if (!item || typeof item !== "object") return "to open";
@@ -1014,8 +1023,13 @@ async function selectItem(
       };
     } else if (item.resultType === "calendar-event") {
       const start = calendarEventStart(item);
+      const calendarRoute = ["calendar-month", "calendar-week", "calendar-day"].includes(
+        String(route.name),
+      )
+        ? String(route.name)
+        : "calendar-month";
       location = {
-        name: "calendar-day",
+        name: calendarRoute,
         params: {
           accountId: item.account || route.params.accountId,
           year: start.year(),

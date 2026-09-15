@@ -58,6 +58,7 @@ import { setupTheme } from '@/utils/setupTheme'
 const apps = SUITE_APPS
 const router = useRouter()
 const root = useRootStore()
+const { fullName, imageURL, systemUser } = useCurrentUser()
 
 const mailUser = createResource({ url: 'suite.mail.api.account.get_user_info' })
 const createMeeting = createResource({
@@ -90,7 +91,7 @@ const startInstantMeeting = async () => {
   }
 }
 
-const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
+const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () => [
   {
     commands: [
       {
@@ -125,13 +126,38 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', [
         keywords: ['new', 'open', 'meeting'],
         run: startInstantMeeting,
       },
+      {
+        id: 'suite-profile-settings',
+        label: 'Profile settings',
+        enterHint: 'open profile settings',
+        icon: 'lucide-user-round',
+        keywords: ['account', 'personal', 'settings'],
+        run: () => openSettings('profile'),
+      },
+      {
+        id: 'suite-preferences-settings',
+        label: 'Preferences',
+        enterHint: 'open preferences',
+        icon: 'lucide-settings-2',
+        keywords: ['settings', 'appearance', 'language', 'timezone'],
+        run: () => openSettings('preferences'),
+      },
+      ...(systemUser.value
+        ? [{
+            id: 'suite-workspace-settings',
+            label: 'Workspace settings',
+            enterHint: 'open workspace settings',
+            icon: 'lucide-building-2',
+            keywords: ['settings', 'organization', 'users', 'members'],
+            run: () => openSettings('workspace'),
+          }]
+        : []),
     ],
   },
 ])
 
 const { workspaceName, workspaceLogo } = useWorkspace()
 
-const { fullName, imageURL } = useCurrentUser()
 const sessionStore = useSessionStore()
 
 const userMenuOptions = [
