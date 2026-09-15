@@ -1,10 +1,10 @@
 export interface PaletteRecent {
+  kind: "entity";
   id: string;
   label: string;
-  href: string;
+  href?: string;
   icon?: string;
-  image?: string;
-  external?: boolean;
+  driveEntity?: Record<string, unknown>;
 }
 
 const storageKey = "suite-palette-recents";
@@ -13,7 +13,9 @@ const limit = 5;
 export function readPaletteRecents(): PaletteRecent[] {
   try {
     const value = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
-    return Array.isArray(value) ? value.slice(0, limit) : [];
+    return Array.isArray(value)
+      ? value.filter((item) => item?.kind === "entity").slice(0, limit)
+      : [];
   } catch {
     return [];
   }

@@ -101,14 +101,7 @@
           :value="recent"
         >
           <template #prefix>
-            <img
-              v-if="recent.image"
-              :src="recent.image"
-              alt=""
-              class="mr-3 size-4 shrink-0 rounded-1"
-            />
             <span
-              v-else
               :class="recent.icon || 'lucide-clock'"
               class="mr-3 size-4 shrink-0 text-ink-gray-7"
             />
@@ -853,20 +846,17 @@ async function selectItem(
     await item.run({ query: query.value });
     return;
   }
-  if ("href" in item) {
-    if (item.external) window.location.assign(item.href);
-    else if (openInNewTab) window.open(item.href, "_blank", "noopener");
-    else await router.push(item.href);
+  if ("kind" in item) {
+    if (item.driveEntity) {
+      const { openEntity } = await import("@/apps/drive/utils/files");
+      openEntity(item.driveEntity, openInNewTab);
+    } else if (item.href) {
+      if (openInNewTab) window.open(item.href, "_blank", "noopener");
+      else await router.push(item.href);
+    }
     return;
   }
   if ("route" in item) {
-    paletteRecents.value = rememberPaletteRecent({
-      id: `app:${item.name}`,
-      label: item.title,
-      href: item.route,
-      image: item.logo,
-      external: !item.spa,
-    });
     if (openInNewTab) {
       window.open(item.route, "_blank", "noopener");
       return;
@@ -904,20 +894,15 @@ async function selectItem(
       location = { name: "meet-meeting", params: { meetingId: item.name } };
     }
     const href = router.resolve(location).href;
-    paletteRecents.value = rememberPaletteRecent({
-      id: `${item.resultType}:${"thread_id" in item ? item.thread_id : item.name}`,
-      label:
-        "subject" in item
-          ? item.subject || "[No subject]"
-          : item.title || ("file_name" in item ? item.file_name : item.name),
-      href,
-      icon:
-        item.resultType === "mail"
-          ? "lucide-mail"
-          : item.resultType === "meet"
-            ? "lucide-video"
-            : "lucide-file",
-    });
+    if (item.resultType !== "mail") {
+      paletteRecents.value = rememberPaletteRecent({
+        kind: "entity",
+        id: `${item.resultType}:${item.name}`,
+        label: item.title || ("file_name" in item ? item.file_name : item.name),
+        href,
+        icon: item.resultType === "meet" ? "lucide-video" : "lucide-file",
+      });
+    }
     if (openInNewTab) {
       window.open(href, "_blank", "noopener");
     } else {
@@ -927,6 +912,13 @@ async function selectItem(
   }
 
   const { openEntity } = await import("@/apps/drive/utils/files");
+  paletteRecents.value = rememberPaletteRecent({
+    kind: "entity",
+    id: `drive:${item.name}`,
+    label: item.file_name,
+    driveEntity: item,
+    icon: item.is_folder ? "lucide-folder" : "lucide-file",
+  });
   openEntity(item, openInNewTab);
 }
 
