@@ -286,7 +286,7 @@ export function useMailCommandPaletteSearch(
       .trim();
   }
 
-  function search(value: string, account: string) {
+  function search(value: string, account: string, allAccounts = false) {
     if (consumeFilterToken(value)) return;
     const text = value.trim();
     if (account && contactOperator.value?.partial) {
@@ -301,10 +301,12 @@ export function useMailCommandPaletteSearch(
       return;
     }
     if (account && (text || appliedFilters.value.length)) {
+      searchResource.reset();
       searchResource.submit({
         account,
         filter: requestFilter.value,
         limit: 20,
+        all_accounts: allAccounts,
       });
     } else if (!appliedFilters.value.length) {
       reset();
