@@ -82,9 +82,11 @@
                     <label class="font-medium text-ink-gray-8 truncate">{{ $user(reply.owner)?.full_name ||
                       reply.owner }}</label>
 
-                    <label class="text-ink-gray-6 shrink-0 whitespace-nowrap" :title="new Date(reply.creation)">
-                      &#183;
-                      {{ formatDateOrTime(reply.creation) }}</label>
+                    <Tooltip :text="new Date(reply.creation).toString()">
+                      <label class="text-ink-gray-6 shrink-0 whitespace-nowrap">
+                        &#183;
+                        {{ formatDateOrTime(reply.creation) }}</label>
+                    </Tooltip>
                   </div>
                   <Dropdown v-if="comment.owner == currentUserId && !reply.new && !reply.edit"
                     class="ml-auto shrink-0 opacity-0" :class="activeComment === comment.id &&
@@ -195,7 +197,7 @@ import {
   onBeforeUnmount,
   nextTick,
 } from 'vue'
-import { Avatar, Button, Dropdown, vOnOutsideClick } from 'frappe-ui'
+import { Avatar, Button, Dropdown, Tooltip, vOnOutsideClick } from 'frappe-ui'
 import { formatDate } from '@/apps/writer/utils/format'
 import { dynamicList } from '@/apps/writer/utils/'
 import { v4 } from 'uuid'

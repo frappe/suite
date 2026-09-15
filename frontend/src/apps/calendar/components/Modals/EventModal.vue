@@ -1058,7 +1058,7 @@ const recurringScopeModalProps = computed(() => ({
 									</div>
 									<div class="truncate text-xs text-ink-gray-5">{{ meetLinkDisplay }}</div>
 								</div>
-								<Button variant="ghost" :title="__('Copy Frappe Meet link')" @click="copyMeetLink">
+								<Button variant="ghost" :tooltip="__('Copy Frappe Meet link')" @click="copyMeetLink">
 									<template #icon><Copy :size="14" class="icon text-ink-gray-5" /></template>
 								</Button>
 								<Button :label="__('Join')" @click="joinMeet" />

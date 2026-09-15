@@ -107,15 +107,15 @@
                       :label="$user(row.owner)?.full_name || 'Deleted'"
                       size="xs"
                     />
-                    <span :title="row.owner">
+                    <Tooltip :text="row.owner">
                       {{ $user(row.owner)?.full_name || 'Deleted' }}
-                    </span>
+                    </Tooltip>
                   </template>
                 </div>
 
-                <span :title="row.recentDate" class="w-28 text-end">{{
-                  row.relativeModified
-                }}</span>
+                <Tooltip :text="row.recentDate">
+                  <span class="block w-28 text-end">{{ row.relativeModified }}</span>
+                </Tooltip>
               </div>
             </div>
             <hr v-if="i !== files.length - 1" />
@@ -151,7 +151,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, useTemplateRef } from 'vue'
 
-import { Avatar, TabButtons } from 'frappe-ui'
+import { Avatar, TabButtons, Tooltip } from 'frappe-ui'
 import { useInfiniteScroll } from '@vueuse/core'
 import LucideGrid from '~icons/lucide/grid'
 import LucideList from '~icons/lucide/list'

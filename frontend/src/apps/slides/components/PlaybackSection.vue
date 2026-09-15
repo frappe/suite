@@ -1,7 +1,7 @@
 <template>
 	<Section label="Playback">
 		<PropertyRow label="Replace">
-			<Button variant="ghost" class="max-w-[45%]" :title="fileName" @click="openFilePicker">
+			<Button variant="ghost" class="max-w-[45%]" :tooltip="fileName" @click="openFilePicker">
 				<span class="min-w-0 truncate text-ink-gray-7">{{ fileName }}</span>
 			</Button>
 		</PropertyRow>

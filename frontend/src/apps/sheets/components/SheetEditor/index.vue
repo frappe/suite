@@ -35,7 +35,8 @@
         <div class="sn-identity">
           <Dropdown :options="brandMenuOptions" :offset="16">
             <template #default="{ open }">
-              <div class="sn-app-menu-trigger" aria-label="Open Sheets menu" title="Open Sheets menu">
+			  <Tooltip text="Open Sheets menu">
+              <div class="sn-app-menu-trigger" aria-label="Open Sheets menu">
                 <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
                   <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
                   <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
@@ -44,6 +45,7 @@
                 </svg>
                 <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
               </div>
+			  </Tooltip>
             </template>
           </Dropdown>
           <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
@@ -313,7 +315,9 @@
 
     <!-- Bar 3 · Formula bar -->
     <div class="sn-formula-bar">
-      <span class="sn-cell-ref" :title="`Active cell ${activeCell}`">{{ activeCell }}</span>
+      <Tooltip :text="`Active cell ${activeCell}`">
+        <span class="sn-cell-ref">{{ activeCell }}</span>
+      </Tooltip>
       <span class="sn-fx-label" aria-hidden="true">fx</span>
       <div class="sn-formula-wrap">
         <input

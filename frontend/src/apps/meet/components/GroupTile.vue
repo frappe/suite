@@ -1,24 +1,21 @@
 <template>
-	<div
-		class="relative bg-surface-gray-3 rounded-6 overflow-hidden min-h-0 flex flex-col gap-2 items-center justify-center cursor-pointer p-2"
-		:title="tooltip"
-		role="button"
-		tabindex="0"
-		@click="$emit('click')"
-		@keydown.enter.prevent="$emit('click')"
-		@keydown.space.prevent="$emit('click')"
-	>
-		<AvatarGroup
-			:participants="avatarParticipants"
-			:error="null"
-			:maxDisplayed="2"
-			:size="size"
-		/>
-	</div>
+	<Tooltip :text="tooltip" :disabled="!tooltip" class="contents">
+		<div
+			class="relative bg-surface-gray-3 rounded-6 overflow-hidden min-h-0 flex flex-col gap-2 items-center justify-center cursor-pointer p-2"
+			role="button"
+			tabindex="0"
+			@click="$emit('click')"
+			@keydown.enter.prevent="$emit('click')"
+			@keydown.space.prevent="$emit('click')"
+		>
+			<AvatarGroup :participants="avatarParticipants" :error="null" :maxDisplayed="2" :size="size" />
+		</div>
+	</Tooltip>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { Tooltip } from "frappe-ui";
 import AvatarGroup from "./AvatarGroup.vue";
 
 const emit = defineEmits<{

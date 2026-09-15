@@ -7,27 +7,29 @@
           :key="user.name"
           class="-ml-2.5 -py-0.5 flex items-center rounded-full"
         >
-          <Avatar
-            class="-"
-            :size="'md'"
-            :style="{
-              border: '1.5px solid',
-              borderRadius: '100%',
-              borderColor: user.color,
-            }"
-            :image="user.avatar"
-            :label="user.name"
-            :title="user.name"
-          />
+          <Tooltip :text="user.name">
+            <Avatar
+              class="-"
+              :size="'md'"
+              :style="{
+                border: '1.5px solid',
+                borderRadius: '100%',
+                borderColor: user.color,
+              }"
+              :image="user.avatar"
+              :label="user.name"
+            />
+          </Tooltip>
         </div>
-        <div
-          v-if="users.length > 3"
-          :style="{ marginLeft: '-0.625rem', fontSize: '10px' }"
-          class="relative inline-block shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5 text-xs cursor-pointer border-[1.5px] border-gray-300"
-          :title="`${users.length - 3} more users`"
-        >
-          +{{ users.length - 3 }}
-        </div>
+        <Tooltip
+			v-if="users.length > 3"
+			:text="`${users.length - 3} more users`"
+		>
+			<div :style="{ marginLeft: '-0.625rem', fontSize: '10px' }"
+				class="relative inline-block shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5 text-xs cursor-pointer border-[1.5px] border-gray-300">
+				+{{ users.length - 3 }}
+			</div>
+		</Tooltip>
       </div>
     </template>
     <template #item="{ item }">
@@ -35,12 +37,9 @@
         class="flex items-center justify-between py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
       >
         <div class="flex gap-2 items-center">
-          <Avatar
-            :size="'md'"
-            :image="item.avatar"
-            :label="item.name"
-            :title="item.name"
-          />
+          <Tooltip :text="item.name">
+            <Avatar :size="'md'" :image="item.avatar" :label="item.name" />
+          </Tooltip>
           <div class="text-sm text-ink-gray-8 mr-4 flex flex-col gap-0.5">
             <span>{{ item.name }}</span>
             <span class="text-xs text-ink-gray-5">{{ item.id }}</span>
@@ -68,7 +67,7 @@
   </Dropdown>
 </template>
 <script setup>
-import { Avatar, Dropdown } from 'frappe-ui'
+import { Avatar, Dropdown, Tooltip } from 'frappe-ui'
 
 defineProps({
   users: Array,

@@ -59,14 +59,15 @@
           <template v-if="tab.id === activeTabId && currentTabAnchors.length">
             <div v-if="showHeadings" class="table-of-contents flex flex-col gap-0.5 ms-6 my-1">
               <div v-for="anchor in currentTabAnchors" class="flex pr-2.5">
-                <a :href="'#' + anchor.id"
-                  class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-1 cursor-pointer truncate grow"
-                  :title="anchor.textContent" :data-item-index="anchor.itemIndex"
-                  @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id" :class="anchor.isActive &&
-                    'text-ink-gray-8 bg-surface-gray-3 hover:bg-surface-gray-4'
-                    " :style="{ '--level': anchor.level - maxLevel }">
-                  {{ anchor.textContent }}
-                </a>
+                <Tooltip :text="anchor.textContent" class="min-w-0 grow">
+                  <a :href="'#' + anchor.id"
+                    class="link block truncate text-sm text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
+                    :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id"
+                    :class="anchor.isActive && 'text-ink-gray-8 bg-surface-gray-3 hover:bg-surface-gray-4'"
+                    :style="{ '--level': anchor.level - maxLevel }">
+                    {{ anchor.textContent }}
+                  </a>
+                </Tooltip>
               </div>
             </div>
           </template>
@@ -76,13 +77,14 @@
       </div>
       <div v-else-if="anchors.length > 1" class="table-of-contents flex flex-col gap-0.5 mb-2 px-0.5 pr-2.5">
         <div v-for="anchor in anchors" class="flex">
-          <a :href="'#' + anchor.id"
-            class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-1 cursor-pointer truncate grow"
-            :title="anchor.textContent" :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)"
-            :key="anchor.id" :class="anchor.isActive && 'text-ink-gray-8'"
-            :style="{ '--level': anchor.level - maxLevel }">
-            {{ anchor.textContent }}
-          </a>
+          <Tooltip :text="anchor.textContent" class="min-w-0 grow">
+            <a :href="'#' + anchor.id"
+              class="link block truncate text-sm text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
+              :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id"
+              :class="anchor.isActive && 'text-ink-gray-8'" :style="{ '--level': anchor.level - maxLevel }">
+              {{ anchor.textContent }}
+            </a>
+          </Tooltip>
         </div>
       </div>
       <div v-if="editor.isEditable" class="flex items-center gap-1 pr-1">
@@ -114,7 +116,7 @@ import LucideTrash from '~icons/lucide/trash'
 import LucideLeftClose from '~icons/lucide/panel-left-close'
 import LucideEllipsisVertical from '~icons/lucide/ellipsis-vertical'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
-import { Button, TextInput, ContextMenu, vOnOutsideClick } from 'frappe-ui'
+import { Button, TextInput, ContextMenu, Tooltip, vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/sdk'
 import { orderedTabs, findTab } from '@/apps/writer/extensions/tabs'
 

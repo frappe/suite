@@ -45,7 +45,7 @@
 			</PropertyRow>
 
 			<div class="flex w-full items-center gap-2">
-				<Button title="Remove transition" @click="removeTransition">
+				<Button tooltip="Remove transition" @click="removeTransition">
 					<template #icon>
 						<lucide-trash-2 class="size-3.5 stroke-[1.5]" />
 					</template>

@@ -49,18 +49,18 @@
 									v-else-if="column.key === 'status'"
 									class="flex w-full items-center justify-between gap-2"
 								>
-									<!-- The failure detail rides on the badge's hover title. -->
-									<span :title="deliveryErrorTitle(row) || undefined">
+									<!-- Show failure details when hovering the status badge. -->
+									<Tooltip :text="deliveryErrorTitle(row)" :disabled="!deliveryErrorTitle(row)">
 										<Badge
 											:label="undoStatusLabel(row.undo_status)"
 											:theme="undoStatusTheme(row.undo_status)"
 										/>
-									</span>
+									</Tooltip>
 									<div class="flex items-center">
 										<Button
 											v-if="!row.email_deleted && row.thread_id"
 											variant="ghost"
-											:title="__('Open email')"
+											:tooltip="__('Open email')"
 											@click.stop.prevent="openEmail(row)"
 										>
 											<template #icon>
@@ -117,6 +117,7 @@ import {
 	Button,
 	Dialog,
 	LoadingIndicator,
+	Tooltip,
 	call,
 	createResource,
 	usePageMeta,
