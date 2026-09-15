@@ -11,7 +11,6 @@
       <SidebarCollapseToggle />
     </div>
   </Sidebar>
-  <SettingsDialog v-model="showSettings" :suggested-tab="suggestedTab" />
   <ShortcutsDialog v-if="showShortcuts" v-model="showShortcuts" />
 </template>
 <script setup>
@@ -38,7 +37,6 @@ import LucideSearch from '~icons/lucide/search'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
 
-import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { useEmitter } from '@/apps/drive/utils/useEmitter'
@@ -62,16 +60,7 @@ const route = useRoute()
 notifCount.fetch()
 rootInfo.fetch()
 
-const showSettings = ref(false)
 const showShortcuts = ref(false)
-const suggestedTab = ref('profile')
-useEmitter('showSettings', (val = 'profile') => {
-  if (val === -1) showSettings.value = false
-  else {
-    showSettings.value = true
-    suggestedTab.value = val
-  }
-})
 useEmitter('toggleShortcuts', () => {
   showShortcuts.value = !showShortcuts.value
 })
@@ -124,7 +113,7 @@ const settingsItems = computed(() => [
       {
         icon: 'lucide-settings',
         label: __('Settings'),
-        onClick: () => (showSettings.value = true),
+        onClick: () => emitter.emit('showSettings'),
       },
       {
         icon: 'lucide-log-out',

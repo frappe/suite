@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, provide } from 'vue'
+import { onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
 import { FrappeUIProvider } from 'frappe-ui'
 
 import { shouldIgnoreKeypress } from '@/apps/calendar/utils'
@@ -7,6 +7,8 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
+import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
+import { useRootStore } from '@/stores/root'
 
 /**
  * Calendar route-group layout.
@@ -19,10 +21,27 @@ import { initSocket } from '@/apps/calendar/socket'
  */
 const { userResource } = userStore()
 const { cycleTheme } = useTheme()
+const showSettings = ref(false)
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
 provide('$socket', initSocket())
+provide('openCalendarSettings', () => (showSettings.value = true))
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-layout', [
+	{
+		commands: [
+			{
+				id: 'calendar-settings',
+				label: 'Calendar settings',
+				enterHint: 'open settings',
+				icon: 'lucide-settings',
+				run: () => (showSettings.value = true),
+			},
+		],
+	},
+])
+onScopeDispose(unregisterPaletteGroups)
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
@@ -49,6 +68,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 <template>
 	<FrappeUIProvider>
 		<router-view />
+		<SettingsModal v-model="showSettings" />
 	</FrappeUIProvider>
 </template>
 

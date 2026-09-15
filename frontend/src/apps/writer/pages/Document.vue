@@ -76,8 +76,10 @@ import {
   watch,
   computed,
   useTemplateRef,
+  onScopeDispose,
 } from 'vue'
 import { useSessionStore } from '@/boot/session'
+import { useRootStore } from '@/stores/root'
 const currentUserId = computed(() => useSessionStore().user)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 import { Button, Skeleton, useDoc, usePageMeta } from 'frappe-ui'
@@ -140,6 +142,27 @@ const editable = computed(() => {
     ? true
     : false
 })
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+  'writer-document-settings',
+  () => {
+    if (!file.doc || !document.value?.doc || !editable.value) return []
+
+    return [
+      {
+        commands: [
+          {
+            id: 'writer-settings',
+            label: 'Writer settings',
+            icon: 'lucide-settings',
+            keywords: ['document', 'preferences'],
+            run: () => (showSettings.value = true),
+          },
+        ],
+      },
+    ]
+  },
+)
+onScopeDispose(unregisterPaletteGroups)
 watch(showVersions, (v) => {
   if (!v) versionPreview.value = null
 })

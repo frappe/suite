@@ -34,6 +34,7 @@
     <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
     <FileUploader
       v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name) && !($route.name === 'drive-Home' && shareView)" />
+    <SettingsDialog v-if="normalView" v-model="showSettings" :suggested-tab="suggestedTab" />
     <FDialogs />
   </FrappeUIProvider>
 </template>
@@ -42,8 +43,9 @@ import Sidebar from '@/apps/drive/components/Sidebar.vue'
 import FDialogs from '@/apps/drive/components/FDialogs.vue'
 import BottomBar from '@/apps/drive/components/BottomBar.vue'
 import FileUploader from '@/apps/drive/components/FileUploader.vue'
+import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import { useSessionStore } from '@/boot/session'
-import { computed, onMounted, onScopeDispose, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, provide, ref } from 'vue'
 import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown, useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
@@ -52,6 +54,7 @@ import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
 import { useRootStore } from '@/stores/root'
+import { useEmitter } from '@/apps/drive/utils/useEmitter'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)
@@ -66,11 +69,28 @@ provide('inIframe', inIframe)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const normalView = computed(() => !inIframe && isLoggedIn.value)
 const root = useRootStore()
+const showSettings = ref(false)
+const suggestedTab = ref('profile')
+useEmitter('showSettings', (tab = 'profile') => {
+  if (tab === -1) showSettings.value = false
+  else {
+    suggestedTab.value = tab
+    showSettings.value = true
+  }
+})
 
 const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () => {
   if (!normalView.value) return []
 
-  const commands = []
+  const commands = [
+    {
+      id: 'drive-settings',
+      label: 'Drive settings',
+      enterHint: 'open settings',
+      icon: 'lucide-settings',
+      run: () => emitter.emit('showSettings'),
+    },
+  ]
 
   if (
     ['drive-Folder', 'drive-Home'].includes(String(route.name)) &&

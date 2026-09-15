@@ -1251,7 +1251,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount, onScopeDispose } from 'vue'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
@@ -1259,6 +1259,7 @@ import { call } from '../../utils/api.js'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useRootStore } from '@/stores/root'
 import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
@@ -2060,6 +2061,20 @@ const userInitial = computed(() => userInitials(userFullName.value, userEmail.va
 const shareOpen   = ref(false)
 const shareCount  = ref(0)   // explicit share count (excluding owner); updated by ShareDialog
 const aiSettingsOpen = ref(false)
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('sheets-editor-settings', () => {
+  if (!window.frappe?.boot?.ai_assist_can_configure) return []
+
+  return [{
+    commands: [{
+      id: 'sheets-settings',
+      label: 'Sheets AI settings',
+      icon: 'lucide-cpu',
+      keywords: ['AI', 'assist', 'configure'],
+      run: () => (aiSettingsOpen.value = true),
+    }],
+  }]
+})
+onScopeDispose(unregisterPaletteGroups)
 const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
   getSheet:        () => sheet,
   getCurrentTitle: () => currentTitle.value,

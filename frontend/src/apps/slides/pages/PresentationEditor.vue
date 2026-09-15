@@ -57,6 +57,7 @@ import {
 	onMounted,
 	onActivated,
 	onBeforeUnmount,
+	onScopeDispose,
 	provide,
 	nextTick,
 	useTemplateRef,
@@ -65,6 +66,7 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
 import { call, toast, usePageMeta, KeyboardShortcutsDialog } from 'frappe-ui'
 import { appPageMeta } from '@/utils/documentTitle'
+import { useRootStore } from '@/stores/root'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -144,6 +146,36 @@ const props = defineProps({
 const showThemeDialog = ref(false)
 const themeDialogAction = ref('update')
 const isSlideInteractionActive = ref(false)
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	'slides-editor-settings',
+	() => {
+		if (
+			route.name !== 'slides-editor' ||
+			presentationDoc.value?.name !== props.presentationId ||
+			inReadonlyMode.value
+		)
+			return []
+
+		return [
+			{
+				commands: [
+					{
+						id: 'slides-settings',
+						label: 'Change presentation theme',
+						icon: 'lucide-palette',
+						keywords: ['slides', 'theme', 'appearance'],
+						run: () => {
+							themeDialogAction.value = 'update'
+							showThemeDialog.value = true
+						},
+					},
+				],
+			},
+		]
+	},
+)
+onScopeDispose(unregisterPaletteGroups)
 
 const showLayoutDialog = ref(false)
 const insertIndex = ref(null)
