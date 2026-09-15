@@ -92,6 +92,32 @@
 
     <CommandPaletteList>
       <CommandPaletteGroup
+        v-if="!normalizedQuery && paletteRecents.length"
+        label="Recent"
+      >
+        <CommandPaletteItem
+          v-for="recent in paletteRecents"
+          :key="recent.id"
+          :value="recent"
+        >
+          <template #prefix>
+            <img
+              v-if="recent.image"
+              :src="recent.image"
+              alt=""
+              class="mr-3 size-4 shrink-0 rounded-1"
+            />
+            <span
+              v-else
+              :class="recent.icon || 'lucide-clock'"
+              class="mr-3 size-4 shrink-0 text-ink-gray-7"
+            />
+          </template>
+          {{ recent.label }}
+        </CommandPaletteItem>
+      </CommandPaletteGroup>
+
+      <CommandPaletteGroup
         v-if="navigationMode && exactApps.length"
         label="Navigate"
       >
@@ -352,6 +378,11 @@ import type {
   MailSearchResult as MailResult,
 } from "@/apps/mail/components/CommandPalette/types";
 import { useRootStore, type PaletteCommand } from "@/stores/root";
+import {
+  readPaletteRecents,
+  rememberPaletteRecent,
+  type PaletteRecent,
+} from "@/shell/paletteRecents";
 
 interface DriveResult {
   name: string;
@@ -417,6 +448,7 @@ const { isMobile } = useScreenSize();
 const paletteInput = ref<{ $el: HTMLElement } | null>(null);
 const query = ref("");
 const navigationMode = ref(false);
+const paletteRecents = ref(readPaletteRecents());
 const activeApp = computed(() => String(route.meta.appId ?? ""));
 const isMailSearchRoute = computed(
   () => activeApp.value === "mail" && route.params.mailbox === "search",
@@ -799,7 +831,8 @@ async function selectItem(
     | MailContactSuggestion
     | MailFilterSuggestion
     | PaletteCommand
-    | SuiteAppSwitcherItem,
+    | SuiteAppSwitcherItem
+    | PaletteRecent,
   event: CommandPaletteSelectEvent,
 ) {
   const originalEvent = event.detail.originalEvent;
@@ -820,7 +853,20 @@ async function selectItem(
     await item.run({ query: query.value });
     return;
   }
+  if ("href" in item) {
+    if (item.external) window.location.assign(item.href);
+    else if (openInNewTab) window.open(item.href, "_blank", "noopener");
+    else await router.push(item.href);
+    return;
+  }
   if ("route" in item) {
+    paletteRecents.value = rememberPaletteRecent({
+      id: `app:${item.name}`,
+      label: item.title,
+      href: item.route,
+      image: item.logo,
+      external: !item.spa,
+    });
     if (openInNewTab) {
       window.open(item.route, "_blank", "noopener");
       return;
@@ -857,8 +903,23 @@ async function selectItem(
     } else {
       location = { name: "meet-meeting", params: { meetingId: item.name } };
     }
+    const href = router.resolve(location).href;
+    paletteRecents.value = rememberPaletteRecent({
+      id: `${item.resultType}:${"thread_id" in item ? item.thread_id : item.name}`,
+      label:
+        "subject" in item
+          ? item.subject || "[No subject]"
+          : item.title || ("file_name" in item ? item.file_name : item.name),
+      href,
+      icon:
+        item.resultType === "mail"
+          ? "lucide-mail"
+          : item.resultType === "meet"
+            ? "lucide-video"
+            : "lucide-file",
+    });
     if (openInNewTab) {
-      window.open(router.resolve(location).href, "_blank", "noopener");
+      window.open(href, "_blank", "noopener");
     } else {
       await router.push(location);
     }
