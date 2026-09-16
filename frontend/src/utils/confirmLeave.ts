@@ -4,6 +4,7 @@ export function confirmLeave({
   title = 'Leave this page?',
   message = 'Your unsaved changes may be lost.',
   confirmLabel = 'Leave',
+  focusConfirm = false,
 } = {}) {
   return new Promise<boolean>((resolve) => {
     let settled = false
@@ -13,6 +14,23 @@ export function confirmLeave({
       resolve(value)
     }
 
+    const actions = focusConfirm
+      ? [
+          {
+            label: 'Stay',
+            variant: 'outline' as const,
+            onClick: () => finish(false),
+          },
+          {
+            label: confirmLabel,
+            variant: 'solid' as const,
+            theme: 'red' as const,
+            autofocus: true,
+            onClick: () => finish(true),
+          },
+        ]
+      : undefined
+
     dialog.confirm({
       title,
       message,
@@ -21,6 +39,7 @@ export function confirmLeave({
       theme: 'red',
       onConfirm: () => finish(true),
       onCancel: () => finish(false),
+      actions,
     })
   })
 }

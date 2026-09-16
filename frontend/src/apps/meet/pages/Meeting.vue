@@ -853,6 +853,7 @@ async function confirmMeetingLeave() {
 		title: "Leave meeting?",
 		message: "You will be disconnected from the meeting.",
 		confirmLabel: "Leave meeting",
+		focusConfirm: true,
 	});
 	try {
 		return await pendingLeaveConfirmation;
