@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 
 import frappe
 import pycrdt
+from frappe import _
 from frappe.model.document import Document
 
+from suite import drive
 from suite.drive.api.notifications import create_notification, get_link
 
 COLLISION_ERRORS = (
@@ -18,17 +20,52 @@ COLLISION_ERRORS = (
 AUTOVERSION_DURATION = 10
 
 
-class WriterDocument(Document):
+class WriterDocument(drive.DriveContent, Document):
+    """The body of one Writer document, on either side of Drive adoption.
+
+    A row that carries a `node` is Drive-native. Drive owns its title, place,
+    grants, lifecycle, versions, comments, and byte charge; the `DriveContent`
+    mixin supplies `node`, `node_title`, `drive_check`, `drive_touch`, and
+    `drive_take_version`, and nothing here mirrors a field Drive owns (§10.2).
+
+    A row with no node is a legacy row Build has not linked yet (§14.6). It
+    keeps the behaviour it has always had: the `File` permission check, the
+    mirrored `File` title and size, the private `Writer Version` history, and
+    the comment blob. Ticket 23 moves the legacy read path and ticket 29
+    activates the registry; until both, the two shapes live side by side.
+
+    The split is explicit at every method, and it only ever runs one way: a
+    linked row never falls back to the `File`, because that would be a way
+    around `Drive Grant`.
+
+    Collaboration is unchanged on both sides. The editor still syncs peer to
+    peer over WebRTC and posts the merged body here.
+    """
+
+    @property
+    def drive_native(self) -> bool:
+        """True when Drive owns this row, false for a legacy row with no node."""
+        return bool(self.get(self.drive_node_field))
+
     def on_trash(self):
-        # Versions are a standalone doctype linking back here, so the framework's
-        # link check would refuse the delete before anything cleaned them up —
-        # and nothing outside this document references a version.
+        # Legacy history. `Writer Version` rows link back here, so the
+        # framework's link check would refuse the delete before anything
+        # cleaned them up. The rows stay readable until Build copies them into
+        # `Drive Node Version` and Cleanup removes the doctype (§14.6).
         frappe.db.delete("Writer Version", {"doc": self.name})
 
     @frappe.whitelist(methods=["POST"])
     def save_doc(self, data: str, html: str | None = None):
-        self.check_permission("write")
+        """Store the merged collaborative body."""
+        self._authorize_write()
         try:
+            if self.drive_native:
+                values = {"content": data}
+                if html is not None:
+                    values["html"] = html
+                frappe.db.set_value("Writer Document", self.name, values, update_modified=False)
+                self.drive_touch()
+                return
             frappe.db.set_value("Writer Document", self.name, "content", data)
             if html is not None:
                 frappe.db.set_value("Writer Document", self.name, "html", html)
@@ -37,8 +74,26 @@ class WriterDocument(Document):
             pass
 
     @frappe.whitelist(methods=["POST"])
+    def take_version(self, label: str | None = None):
+        """Store the saved body as one immutable Drive version.
+
+        Drive reads the body itself, so the caller saves first and passes no
+        bytes. This replaces `new_version` and its private `Writer Version`
+        table for a linked row; the ten-minute automatic throttle it carried is
+        Drive's retention ladder (§9.1).
+        """
+        self._require_drive_native()
+        return self.drive_take_version(kind="named" if label else "auto", label=label)
+
+    @frappe.whitelist(methods=["POST"])
     def new_version(self, data: str, title: str | None = None):
-        """Create a new version of the document"""
+        """Create a new version of a legacy document.
+
+        The legacy path, kept for the current editor until ticket 34 adopts
+        `take_version`. A linked row is refused rather than given a second,
+        private history Drive cannot see.
+        """
+        self._require_legacy("take_version")
         self.check_permission("write")
         if not data or not data.strip() or data.strip() == "<p></p>":
             frappe.response["data"] = False
@@ -86,18 +141,29 @@ class WriterDocument(Document):
 
     @frappe.whitelist(methods=["POST"])
     def update_settings(self, data: str):
-        self.check_permission("write")
+        self._authorize_write()
         self.settings = data
         self.save()
 
     @frappe.whitelist(methods=["POST"])
     def save_html(self, html: str):
-        self.check_permission("write")
+        """Store the rendered body of a non-collaborative document."""
+        self._authorize_write()
+        if self.drive_native:
+            frappe.db.set_value("Writer Document", self.name, "html", html, update_modified=False)
+            self.drive_touch()
+            return
         self.html = html
         self.update_file()
         self.save()
 
     def update_file(self, **kwargs):
+        """Mirror the title and size onto the backing legacy `File`.
+
+        Legacy only. A linked row has no `File`, and its stamp is the node's
+        `content_modified`, written by `drive_touch`.
+        """
+        self._require_legacy("drive_touch")
         file = frappe.db.get_value(
             "File", {"content_docname": self.name, "content_doctype": "Writer Document"}, "name"
         )
@@ -108,6 +174,12 @@ class WriterDocument(Document):
         doc.save(ignore_permissions=True)
 
     def save_comments(self, data, file):
+        """Store the comment blob of a legacy document and notify mentions.
+
+        Legacy only. Comments on a linked document are `Drive Node Comment`
+        rows (§8.11), and §14.6 migrates this blob into them.
+        """
+        self._require_legacy("Drive comments")
         try:
             frappe.db.set_value("Writer Document", self.name, "ycomments", data)
 
@@ -133,8 +205,29 @@ class WriterDocument(Document):
 
     def as_dict(self, *args, **kwargs):
         result = super().as_dict(*args, **kwargs)
-        result.pop("versions")
+        result.pop("versions", None)
         return result
+
+    def _authorize_write(self):
+        """Ask Drive for EDIT on a linked row, the backing `File` on a legacy one."""
+        if self.drive_native:
+            self.drive_check(drive.EDIT)
+            return
+        self.check_permission("write")
+
+    def _require_drive_native(self):
+        if not self.drive_native:
+            frappe.throw(
+                _("This document is not in Drive yet. Its history is in Writer Version."),
+                frappe.ValidationError,
+            )
+
+    def _require_legacy(self, instead: str):
+        if self.drive_native:
+            frappe.throw(
+                _("Drive owns this document. Use {0} instead.").format(instead),
+                frappe.ValidationError,
+            )
 
 
 def notify_comments(file, mentions):

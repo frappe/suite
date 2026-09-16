@@ -4,38 +4,15 @@ import frappe
 
 from suite.drive.api.files import get_file_internal
 from suite.drive.api.permissions import user_has_permission
+from suite.drive.http import shims
 from suite.drive.utils import WRITER_CONTENT_DOCTYPE, get_root_folder
 
 
 @frappe.whitelist(allow_guest=True)
 def get_file_content(embed_name: str, parent_entity_name: str):
+    """Serve one embed inside a document.
+
+    §11.7 forwarder over `GET /nodes/<id>/media`. It answers a redirect to the
+    signed URL §6.8 mints, not the bytes.
     """
-    Give or stream embed content
-    """
-    parent = frappe.get_value(
-        "File",
-        parent_entity_name,
-        ["content_doctype", "file_name", "mime_type", "file_size", "owner", "file_url"],
-        as_dict=1,
-    )
-
-    if parent.content_doctype != WRITER_CONTENT_DOCTYPE:
-        frappe.throw("This is not an embed.")
-
-    embed = frappe.get_cached_doc("File", embed_name)
-
-    if embed.folder != parent_entity_name or not user_has_permission(embed_name, "read"):
-        raise frappe.PermissionError("You do not have permission to view this file")
-
-    if not embed.file_url:
-        embed = frappe._dict(
-            file_url=str(
-                Path(
-                    get_root_folder()["file_url"],
-                    "embeds",
-                    embed_name,
-                )
-            ),
-            file_name=embed.file_name,
-        )
-    return get_file_internal(embed)
+    return shims.embed_file_content(embed_name, parent_entity_name)

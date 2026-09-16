@@ -47,6 +47,10 @@ sqlite_search = ["suite.writer.search.WriterSearch"]
 website_route_rules = [
     {"from_route": "/suite/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
+    # drive — the share-link landing page (§11.2). It must be declared before
+    # the catch-all below is read, although werkzeug would rank it first
+    # anyway: a `<path:>` converter is the least specific rule in a Map.
+    {"from_route": "/drive/l/<token>", "to_route": "drive_link"},
     {"from_route": "/drive/<path:app_path>", "to_route": "suite"},
     {"from_route": "/slides", "to_route": "suite"},
     {"from_route": "/slides/<path:app_path>", "to_route": "suite"},
@@ -117,6 +121,74 @@ website_redirects = [
 ignore_file_permissions = True
 
 # ============================================================================
+# Drive content types (§10.3)
+# ============================================================================
+# Dotted paths to `suite.drive.ContentTypeSpec` objects, one per content app.
+# Registration is staged: an app declares its spec in its own adoption ticket
+# and joins this list only once every row of its doctype carries a `node`
+# Link. Ticket 29 does that here, together with the `has_permission` and
+# `permission_query_conditions` entries below. The three changes land in one
+# commit because the framework reads the registry and both hook maps.
+#
+# Writer declares `suite.writer.drive.SPEC` (ticket 17), Slides declares
+# `suite.slides.drive.SPEC` (ticket 18), and Sheets declares
+# `suite.sheets.drive.SPEC` (ticket 19). All three are listed now.
+#
+# **What proves the links exist.** `validate_content_registry` runs on
+# `after_migrate`, and `suite.drive.patches.build` is the last line of
+# `patches.txt`, so Build has written every node link before the registry is
+# checked. `refuse_unlinked_documents` counts the rows that still have none
+# and stops the migration naming the doctype, so an incomplete Build cannot
+# leave a document nobody can read (§5.13, README "stage content registry
+# activation after required node links exist").
+#
+# On activation each doctype needs an open baseline role DocPerm, because a
+# Frappe permission hook can only deny (`frappe/permissions.py:244-246`);
+# `Writer Document` and `Presentation` both carry the open `All` row §10.4
+# requires, and a `Guest` read row for link grants. Both are preserved as they
+# are; widening or narrowing one is an activation decision, not this one's.
+#
+# `Sheet` carried an `if_owner` `All` row instead, so ticket 19 widened it to the
+# open baseline §10.4 needs and put the owner rule into
+# `suite.sheets.permissions.sheet_has_permission`. `doc_has_permission` answers
+# that row now, and the owner reaches it through the MANAGE grant Build wrote on
+# their own node. The row is kept as ticket 19 left it: it carries `share`,
+# `export`, `print`, `email`, and `report`, because a hook can only deny and a
+# right the row does not carry is a right no hook can hand back. `share_sheet`
+# asks `ptype="share"` and `frappe.share.check_share_permission` asks it again.
+# Its `Guest` read row is there for link grants.
+#
+# `suite/sheets/permissions.py` still defines `sheet_has_permission`,
+# `sheet_query_conditions`, and the two `sheet_op_log_*` guards. No hook names
+# them from here any more. Ticket 35 deletes the module with the doctypes it
+# reads; only `sheet_snapshot_*` is still wired, below.
+#
+# `Presentation` still owns the legacy `title` column §14.7 read at Build and
+# §14.10 drops at Cleanup, one release after activation. `suite.slides.drive.SPEC`
+# declares it in `legacy_fields`, so activation exempts it from §10.2 and freezes
+# it instead: nothing reads it, nothing may write it, and the Build value stays
+# for the §14.11 rollback. Ticket 29 has no column to drop first. `Sheet` does
+# the same for `title`, `trashed`, `trashed_on`, and `trashed_by`.
+#
+# **Three legacy guards stay past activation**, against §10.4's deletion list.
+# `Writer Template`, `Writer Version`, and `Sheet Snapshot` are Build sources
+# §14.10 drops at Cleanup, one release later, so their rows outlive activation
+# and Drive governs none of them: no `ContentTypeSpec` declares them, as a
+# doctype or as a satellite. Their role rows are open (`Suite User` on the two
+# Writer doctypes, `All` read on `Sheet Snapshot`), and a Frappe permission
+# hook can only deny, so deleting the guards would publish every migrated
+# template, version, and snapshot to every signed-in user. §10.4 is the
+# post-Cleanup end state, which is the same reading §10.7 states in as many
+# words: "App must delete ... `Writer Version` ... `Writer Template` ...
+# `filter_templates` and `template_has_permission`". Ticket 35 deletes the
+# guards with the doctypes they read.
+drive_content_types = [
+    "suite.writer.drive.SPEC",
+    "suite.slides.drive.SPEC",
+    "suite.sheets.drive.SPEC",
+]
+
+# ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
@@ -127,16 +199,27 @@ permission_query_conditions = {
     "Drive User Invitation": "suite.drive.utils.overrides.filter_drive_invitation",
     "Drive Entity Activity Log": "suite.drive.utils.overrides.filter_activity_log",
     "Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
-    "Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
+    "Drive Recent": "suite.drive.utils.overrides.filter_drive_recent",
     "Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
-    # slides
-    "Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
+    # slides — governed by Drive (§10.4). `Slide` is the deck's satellite and
+    # takes its rights from the deck's node.
+    "Presentation": "suite.drive.framework.doc_query_conditions",
+    "Slide": "suite.drive.framework.satellite_query_conditions",
     # writer
+    # `Writer Template` and `Writer Version` are Build sources until Cleanup,
+    # so their legacy guards stay; see the note above `drive_content_types`.
     "Writer Template": "suite.writer.overrides.filter_templates",
-    "Writer Document": "suite.writer.overrides.document_query_conditions",
+    "Writer Document": "suite.drive.framework.doc_query_conditions",
     "Writer Version": "suite.writer.overrides.version_query_conditions",
     # sheets
-    "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
+    "Sheet": "suite.drive.framework.doc_query_conditions",
+    # `Sheet Op Log` and `Sheet Collab State` are the two satellites
+    # `suite.sheets.drive.SPEC` declares. `Sheet Snapshot` keeps its own guard
+    # past activation: §14.6 migrates its rows into `Drive Node Version`, so it
+    # is a Build source until Cleanup drops the doctype (§14.10), and a
+    # satellite declaration would freeze rows Build still has to read.
+    "Sheet Op Log": "suite.drive.framework.satellite_query_conditions",
+    "Sheet Collab State": "suite.drive.framework.satellite_query_conditions",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
@@ -158,14 +241,18 @@ has_permission = {
     "Drive Entity Activity Log": "suite.drive.api.permissions.activity_log_has_permission",
     "Drive Settings": "suite.drive.api.permissions.drive_settings_has_permission",
     "Drive User Invitation": "suite.drive.api.permissions.drive_invitation_has_permission",
-    # slides
-    "Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
+    # slides — governed by Drive (§10.4).
+    "Presentation": "suite.drive.framework.doc_has_permission",
+    "Slide": "suite.drive.framework.satellite_has_permission",
     # writer
-    "Writer Document": "suite.drive.overrides.file.content_has_permission",
+    "Writer Document": "suite.drive.framework.doc_has_permission",
+    # Build sources until Cleanup; see the note above `drive_content_types`.
     "Writer Version": "suite.writer.overrides.version_has_permission",
     "Writer Template": "suite.writer.overrides.template_has_permission",
     # sheets
-    "Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
+    "Sheet": "suite.drive.framework.doc_has_permission",
+    "Sheet Op Log": "suite.drive.framework.satellite_has_permission",
+    "Sheet Collab State": "suite.drive.framework.satellite_has_permission",
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
@@ -222,6 +309,17 @@ override_whitelisted_methods = {
 # Document Events (deep-merged; per-doctype/per-event handler lists combined)
 # ============================================================================
 doc_events = {
+    # drive — Drive Grant is the only permission table for a registered
+    # content doctype and its satellites, but a DocShare row grants around
+    # both permission hooks (frappe/permissions.py:214-216 and
+    # frappe/database/query.py:1739-1742). A governed doctype therefore
+    # carries no share at all. Deleting a row is left alone, so a legacy share
+    # can still be cleaned up. Live from ticket 29: the three content doctypes
+    # and their satellites now refuse a new share, and `Writer Template`,
+    # `Writer Version`, and `Sheet Snapshot` still take one.
+    "DocShare": {
+        "validate": ["suite.drive.framework.refuse_governed_share"],
+    },
     "File": {
         "on_update": "suite.meet.recording.ingest.delete_recording_metadata_for_removed_artifact",
     },
@@ -229,19 +327,13 @@ doc_events = {
         "on_update": "suite.drive.utils.clear_user_group_cache",
         "on_trash": "suite.drive.utils.clear_user_group_cache",
     },
-    "Presentation": {
-        "on_update": ["suite.drive.overrides.file.sync_content_file"],
-        "on_trash": ["suite.drive.overrides.file.sync_content_file"],
-    },
-    "Sheet": {
-        # Same content-app wiring as Presentation: on_update mirrors title +
-        # soft-trash onto the backing Drive File, on_trash removes it on hard
-        # delete. Sheets routes its rename and trash/restore through doc.save so
-        # these fire; the high-frequency cell-data autosave stays on db.set_value
-        # (Drive doesn't track cell data) and deliberately fires nothing.
-        "on_update": ["suite.drive.overrides.file.sync_content_file"],
-        "on_trash": ["suite.drive.overrides.file.sync_content_file"],
-    },
+    # `Presentation` and `Sheet` mirrored their title and trash state onto the
+    # backing Drive `File` here. §10.4 deletes both entries at activation and
+    # ticket 29 did: the node is the only truth (§10.2), `title`, `trashed`,
+    # `trashed_on`, and `trashed_by` are frozen `legacy_fields` no caller may
+    # write, and a governed row is trashed through Drive. The `File` row Build
+    # copied stays untouched until §14.10 drops it, which is what the §14.11
+    # rollback needs.
     "User": {
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious
@@ -250,8 +342,7 @@ doc_events = {
             "suite.utils.user.assign_suite_role",
         ],
         "after_insert": [
-            "suite.drive.utils.users.create_drive_settings",
-            "suite.mail.events.create_user_settings",
+            "suite.composition.users.after_insert",
         ],
         "on_update": [
             # First: the disabled account role applied below may cut the JMAP access the
@@ -263,9 +354,7 @@ doc_events = {
             "suite.mail.events.remove_disabled_account_role",
         ],
         "on_trash": [
-            "suite.mail.events.delete_account",
-            "suite.mail.events.delete_user_accounts",
-            "suite.mail.events.delete_user_settings",
+            "suite.composition.users.on_trash",
         ],
     },
 }
@@ -291,8 +380,11 @@ scheduler_events = {
         # meet
         "suite.meet.api.recording.cleanup_failed_recordings",
         # drive
-        "suite.drive.api.scripts.auto_delete_from_trash",
-        "suite.drive.api.scripts.clear_deleted_files",
+        "suite.drive.jobs.recompute_root_usage",
+        "suite.drive.jobs.purge_trashed_nodes",
+        "suite.drive.jobs.thin_versions",
+        "suite.drive.jobs.sweep_missing_previews",
+        "suite.drive.jobs.sweep_unused_document_media",
         # sheets
         "suite.sheets.versioning.tasks.rollup_snapshots",
         "suite.sheets.versioning.tasks.truncate_op_log",
@@ -326,26 +418,36 @@ scheduler_events = {
 }
 
 # ============================================================================
-# Lifecycle hooks — dispatched through suite.suite_core.boot so that EACH
+# Lifecycle hooks — dispatched through suite.composition so that EACH
 # former app's handler is preserved and invoked in order.
 # ============================================================================
-before_install = "suite.suite_core.boot.before_install"
-after_install = "suite.suite_core.boot.after_install"
-after_migrate = "suite.suite_core.boot.after_migrate"
-after_app_install = "suite.suite_core.boot.after_app_install"
-extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
+before_install = "suite.composition.lifecycle.before_install"
+after_install = "suite.composition.lifecycle.after_install"
+after_migrate = "suite.composition.lifecycle.after_migrate"
+after_app_install = "suite.composition.lifecycle.after_app_install"
+extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — custom upload + after_request middleware (single definers)
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
-# drive — WebDAV protocol dispatcher (list hook, additive; answers all verbs under /dav)
-before_request = ["suite.drive.webdav.dispatch.handle_before_request"]
+# drive — WebDAV protocol dispatcher, then the /api/suite/drive/ translator
+# (list hook, additive). The two own disjoint prefixes: /dav and
+# /api/suite/drive/. The translator is reached through suite.drive.framework,
+# which is where ARCHITECTURE.md puts a Frappe dotted target that enters Drive;
+# the WebDAV entry predates that rule and is carried as declared debt.
+before_request = [
+    "suite.drive.webdav.dispatch.handle_before_request",
+    "suite.drive.framework.handle_http_request",
+]
 
 # drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
 # body cap and form_dict buffering; a no-op on frappe versions without this hook,
 # where PUT bodies fall back to buffered and capped)
-streaming_request_paths = ["/dav/"]
+# Compatible Frappe versions consume this prefix before request form parsing so
+# upload chunk bodies remain streams instead of being buffered. It fires for PUT
+# only, which is why the chunk route is PUT and reads the body itself.
+streaming_request_paths = ["/dav/", "/api/suite/drive/uploads/"]
 
 # ============================================================================
 # Fixtures (concatenated; identical entries de-duplicated)
@@ -376,11 +478,24 @@ ignore_links_on_delete = [
     "Drive Settings",
     "Drive Permission",
     "Drive Favourite",
-    "Drive Entity Log",
+    "Drive Recent",
     "Drive Notification",
     "Drive Entity Activity Log",
     "Drive DAV Property",
     "Drive DAV Lock",
+    # drive — records that link a User and outlive them. Offboarding archives
+    # the Personal Root and keeps its nodes, grants, byte charges, and every
+    # attributed record, so the framework's link check must not refuse the User
+    # delete over any of them. suite.drive.install.on_user_trash runs first and
+    # deletes the private rows (Drive Recent, Drive Favourite, Drive
+    # Notification) so a recreated email inherits none of them.
+    "Drive Root",
+    "Drive Activity",
+    "Drive Node Version",
+    "Drive Comment",
+    "Drive Comment Thread",
+    "Drive Recent",
+    "Drive Storage Reservation",
     # mail
     "Mail Account Request",
     "JMAP Account",
@@ -450,6 +565,9 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/v2/method/suite.meet.api.test_helpers.",
     "/api/v2/document/Meet%20Room/",
     "/api/method/suite.drive.api.",
+    # drive — the §11.2 route namespace. Additive: the legacy method prefix
+    # above stays until Cleanup removes it, one release after Build (§11.7).
+    "/api/suite/drive/",
     "/api/method/suite.writer.api.",
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).

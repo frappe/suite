@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Suite codebase architecture proposal</title>
+<style>
+:root {
+  color-scheme: light;
+  --base:#fff; --surface:#f8f8f8; --surface-2:#f3f3f3; --surface-3:#e8e8e8;
+  --ink:#171717; --ink-2:#383838; --muted:#6b6b6b; --faint:#999;
+  --line:#e2e2e2; --line-strong:#c7c7c7;
+  --blue:#0d8ef8; --blue-deep:#066fc4; --blue-bg:#f1f8fe; --blue-line:#d1eaff;
+  --green:#268c5c; --green-bg:#f0faf3; --green-line:#bdefcc;
+  --red:#ce2c2c; --red-bg:#fff5f5; --red-line:#ffd8d8;
+  --amber:#a85f00; --amber-bg:#fdf8ed; --amber-line:#f1ddb0;
+  --violet:#6d4ad8; --violet-bg:#f5f2ff; --violet-line:#ded5fc;
+  --shadow:0 1px 2px #0000000a,0 12px 40px #0000000a;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --base:#171717; --surface:#1f1f1f; --surface-2:#292929; --surface-3:#383838;
+  --ink:#f8f8f8; --ink-2:#d9d9d9; --muted:#a6a6a6; --faint:#7a7a7a;
+  --line:#383838; --line-strong:#4a4a4a;
+  --blue:#61adf2; --blue-deep:#87c5fb; --blue-bg:#0f233d; --blue-line:#164875;
+  --green:#7edaa1; --green-bg:#0a3020; --green-line:#206341;
+  --red:#fdc2c2; --red-bg:#331414; --red-line:#6b2929;
+  --amber:#f4cd80; --amber-bg:#2a1e0a; --amber-line:#684719;
+  --violet:#b9a8f5; --violet-bg:#241b47; --violet-line:#554193;
+  --shadow:0 1px 2px #0004,0 12px 40px #0002;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--base);color:var(--ink-2);font:15px/1.6 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-feature-settings:"cv11","ss01"}
+code,pre,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+a{color:var(--blue-deep)}
+button{font:inherit}
+.layout{max-width:1280px;margin:auto;padding:0 24px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:52px}
+.toc{position:sticky;top:0;align-self:start;height:100vh;padding:38px 0;overflow:auto}
+.toc-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:0 10px 9px}
+.toc a{display:block;padding:5px 10px;border-left:2px solid transparent;border-radius:0 6px 6px 0;color:var(--muted);font-size:12.5px;text-decoration:none}
+.toc a:hover,.toc a.active{color:var(--ink);background:var(--surface)}
+.toc a.active{border-left-color:var(--blue);font-weight:600}
+main{min-width:0;max-width:980px;padding:48px 0 80px}
+header{margin-bottom:44px}
+.eyebrow{color:var(--blue-deep);font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:12px}
+h1{font-size:clamp(32px,5vw,52px);line-height:1.05;letter-spacing:-.045em;margin:0 0 18px;color:var(--ink);max-width:16ch;font-weight:650}
+.lede{font-size:18px;line-height:1.55;color:var(--muted);max-width:760px;margin:0 0 22px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:4px 9px;color:var(--muted);font-size:12px;font-weight:550}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.theme{position:fixed;z-index:10;right:16px;top:16px;width:34px;height:34px;border:1px solid var(--line-strong);border-radius:8px;background:var(--base);color:var(--ink-2);box-shadow:var(--shadow);cursor:pointer}
+.theme:hover{background:var(--surface-2)}
+h2{font-size:24px;line-height:1.25;letter-spacing:-.025em;color:var(--ink);margin:62px 0 18px;scroll-margin-top:24px}
+h3{font-size:16px;line-height:1.4;color:var(--ink);margin:0 0 8px}
+p{margin:0 0 14px}
+.thesis{border:1px solid var(--blue-line);background:var(--blue-bg);border-radius:12px;padding:20px 22px;font-size:17px;color:var(--ink);margin-bottom:18px}
+.thesis strong{color:var(--blue-deep)}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+.panel{border:1px solid var(--line);border-radius:12px;background:var(--base);overflow:hidden;box-shadow:var(--shadow)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--line);background:var(--surface)}
+.panel-head h3{margin:0;font-size:14px}
+.tag{font-size:11px;font-weight:650;border-radius:4px;padding:2px 7px}
+.tag.current{color:var(--red);background:var(--red-bg)}
+.tag.target{color:var(--green);background:var(--green-bg)}
+.tree{margin:0;border:0;border-radius:0;background:transparent;padding:16px 17px 18px;overflow:auto;color:var(--ink-2);font-size:12px;line-height:1.65;white-space:pre}
+.tree .bad{color:var(--red)}
+.tree .good{color:var(--green)}
+.tree .quiet{color:var(--faint)}
+.caption{font-size:12.5px;color:var(--muted);margin-top:10px}
+.shift-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.shift{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface)}
+.shift .n{font:600 11px/1 "JetBrains Mono",monospace;color:var(--blue-deep);margin-bottom:10px}
+.shift strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+.shift span{font-size:12px;line-height:1.45;color:var(--muted)}
+.flow{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:22px;overflow:auto}
+.flow-row{display:flex;align-items:stretch;justify-content:center;gap:8px;min-width:720px}
+.flow-row+.flow-row{margin-top:12px}
+.node{display:flex;align-items:center;justify-content:center;text-align:center;min-height:58px;padding:10px 12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--base);font-size:12.5px;font-weight:600;color:var(--ink);min-width:110px}
+.node.drive{border-color:var(--blue-line);background:var(--blue-bg);color:var(--blue-deep);min-width:145px}
+.node.content{border-color:var(--violet-line);background:var(--violet-bg);color:var(--violet)}
+.node.data{border-color:var(--green-line);background:var(--green-bg);color:var(--green)}
+.arrow{display:flex;align-items:center;color:var(--faint);font-size:20px}
+.inversion{display:grid;grid-template-columns:1fr 28px 1fr;gap:4px;align-items:center;max-width:570px;margin:14px auto 0}
+.inversion .arrow{justify-content:center}
+.legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-top:14px;color:var(--muted);font-size:11.5px}
+.legend b{color:var(--ink-2)}
+.seam{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.codebox{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.codebox.good{border-color:var(--green-line)}
+.codebox.bad{border-color:var(--red-line)}
+.code-label{padding:8px 12px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.codebox.good .code-label{background:var(--green-bg);color:var(--green)}
+.codebox.bad .code-label{background:var(--red-bg);color:var(--red)}
+.codebox pre{margin:0;padding:14px;overflow:auto;font-size:11.5px;line-height:1.65;color:var(--ink-2)}
+.exports{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.exports>div{border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.exports .yes{background:var(--green-bg);border-color:var(--green-line)}
+.exports .no{background:var(--red-bg);border-color:var(--red-line)}
+.exports h3{font-size:13px}
+.exports ul{margin:6px 0 0;padding-left:18px;font-size:12.5px}
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rule{border:1px solid var(--line);border-radius:11px;padding:16px;background:var(--base)}
+.rule-head{display:flex;gap:10px;align-items:flex-start;margin-bottom:8px}
+.rule-num{display:grid;place-items:center;flex:none;width:25px;height:25px;border-radius:6px;background:var(--blue-bg);color:var(--blue-deep);font:600 11px/1 "JetBrains Mono",monospace}
+.rule h3{font-size:14px;margin:2px 0 0}
+.rule ul{padding-left:18px;margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.rule li+li{margin-top:5px}
+.must{color:var(--ink-2);font-weight:600}
+.pipeline{display:grid;grid-template-columns:repeat(4,1fr);gap:0;align-items:stretch}
+.gate{position:relative;border:1px solid var(--line);background:var(--base);padding:16px 14px;min-height:122px}
+.gate:first-child{border-radius:10px 0 0 10px}
+.gate:last-child{border-radius:0 10px 10px 0}
+.gate+.gate{border-left:0}
+.gate:not(:last-child)::after{content:"›";position:absolute;right:-10px;top:45px;z-index:2;width:19px;height:26px;display:grid;place-items:center;background:var(--base);color:var(--blue);font-size:24px}
+.gate .n{font:600 10px/1 "JetBrains Mono",monospace;color:var(--faint);margin-bottom:10px}
+.gate strong{display:block;font-size:13px;color:var(--ink);margin-bottom:5px}
+.gate span{font-size:11.5px;color:var(--muted);line-height:1.4;display:block}
+.checklist{counter-reset:item;list-style:none;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
+.checklist li{position:relative;padding:9px 10px 9px 38px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+.checklist li::before{counter-increment:item;content:counter(item);position:absolute;left:5px;top:8px;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;background:var(--surface-2);color:var(--muted);font:500 10px/1 "JetBrains Mono",monospace}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.step{border-top:3px solid var(--blue);background:var(--surface);border-radius:4px 4px 10px 10px;padding:14px}
+.step .phase{font:600 10px/1 "JetBrains Mono",monospace;color:var(--blue-deep);text-transform:uppercase;letter-spacing:.07em;margin-bottom:9px}
+.step strong{display:block;color:var(--ink);font-size:13px;margin-bottom:5px}
+.step p{font-size:11.5px;color:var(--muted);line-height:1.45;margin:0}
+.decision{margin-top:46px;padding:20px 22px;border:1px solid var(--green-line);background:var(--green-bg);border-radius:12px}
+.decision .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--green);margin-bottom:7px}
+.decision strong{font-size:16px;color:var(--ink)}
+.decision p{font-size:13px;color:var(--muted);margin:8px 0 0}
+footer{border-top:1px solid var(--line);margin-top:54px;padding-top:18px;color:var(--faint);font-size:11.5px}
+@media(max-width:1020px){.layout{grid-template-columns:1fr;max-width:980px}.toc{display:none}main{padding-top:36px}.theme{position:absolute}.shift-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.layout{padding:0 15px}.compare,.seam,.exports,.rules{grid-template-columns:1fr}.shift-grid{grid-template-columns:1fr 1fr}.pipeline{grid-template-columns:1fr 1fr;gap:8px}.gate,.gate:first-child,.gate:last-child{border:1px solid var(--line);border-radius:9px}.gate+.gate{border-left:1px solid var(--line)}.gate::after{display:none!important}.checklist{grid-template-columns:1fr}.steps{grid-template-columns:1fr}h2{margin-top:48px}.flow{padding:14px}.tree{font-size:11px}}
+@media(max-width:430px){.shift-grid{grid-template-columns:1fr}.chips{gap:5px}.chip{font-size:11px}.layout{padding:0 12px}main{padding-top:28px}.panel-head{padding:10px 12px}.tree{padding:13px 12px;font-size:10.5px}.rules{gap:9px}}
+</style>
+</head>
+<body>
+<button class="theme" type="button" aria-label="Toggle color theme" title="Toggle color theme">◐</button>
+<div class="layout">
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-label">Architecture</div>
+    <a href="#thesis">Thesis</a>
+    <a href="#structure">Folder structure</a>
+    <a href="#dependencies">Dependencies</a>
+    <a href="#drive-interface">Drive interface</a>
+    <a href="#rules">Codebase rules</a>
+    <a href="#enforcement">Enforcement</a>
+    <a href="#review">Review checklist</a>
+    <a href="#adoption">Adoption</a>
+  </nav>
+
+  <main>
+    <header>
+      <div class="eyebrow">Frappe Suite · accepted architecture charter</div>
+      <h1>One suite. Deep product modules.</h1>
+      <p class="lede">A codebase structure for the Drive rewrite that gives each product a clear owner, keeps cross-product dependencies small, and turns architectural intent into enforceable rules.</p>
+      <div class="chips">
+        <span class="chip"><span class="dot"></span> Accepted for the Drive rewrite</span>
+        <span class="chip">Modular monolith</span>
+        <span class="chip">Backend + frontend</span>
+        <span class="chip">Behavior spec unchanged</span>
+      </div>
+    </header>
+
+    <section id="thesis">
+      <div class="thesis"><strong>Architecture in one sentence:</strong> each Suite product owns a deep module, products collaborate only through explicit interfaces, and Suite composition wires those modules together.</div>
+      <p>Drive is foundational because several products use its tree, sharing, and storage model. It remains a product module—not <code>suite_core</code>, a shared utility collection, or a database wrapper.</p>
+    </section>
+
+    <section id="structure">
+      <h2>Folder structure: current → target</h2>
+      <div class="compare">
+        <article class="panel">
+          <div class="panel-head"><h3>Current shape</h3><span class="tag current">coupling leaks</span></div>
+          <pre class="tree"><code>suite/
+├── hooks.py
+├── api/
+├── suite_core/
+│   └── <span class="bad">boot.py        # imports products</span>
+├── drive/
+│   ├── <span class="bad">api/           # transport + policy</span>
+│   ├── doctype/
+│   ├── <span class="bad">overrides/     # File replacement</span>
+│   ├── <span class="bad">utils/         # many responsibilities</span>
+│   ├── webdav/        # repeats workflows
+│   └── tests/
+├── writer/            <span class="bad">┐</span>
+├── sheets/            <span class="bad">├ import Drive internals</span>
+├── slides/            <span class="bad">┤</span>
+├── meet/              <span class="bad">┘</span>
+├── mail/
+└── calendar/
+
+frontend/src/
+├── apps/
+│   ├── drive/         <span class="bad"># calls Writer/Sheets</span>
+│   ├── writer/
+│   ├── sheets/
+│   ├── slides/
+│   ├── meet/
+│   ├── mail/
+│   └── calendar/
+├── shell/
+├── boot/
+├── components/
+├── composables/
+├── stores/
+└── utils/</code></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><h3>Accepted target</h3><span class="tag target">explicit seams</span></div>
+          <pre class="tree"><code>suite/
+├── hooks.py           <span class="good"># declarations</span>
+├── <span class="good">composition/</span>
+│   ├── lifecycle.py
+│   └── registrations.py
+├── suite_core/        <span class="good"># product-neutral</span>
+├── drive/
+│   ├── <span class="good">__init__.py     # public seam</span>
+│   ├── <span class="good">_core/          # private behavior</span>
+│   │   ├── roles.py
+│   │   ├── principals.py
+│   │   ├── access.py
+│   │   ├── errors.py
+│   │   ├── nodes.py
+│   │   ├── upload.py
+│   │   ├── quota.py
+│   │   └── records…
+│   ├── framework.py   <span class="good"># Frappe adapter</span>
+│   ├── jobs.py        <span class="good"># scheduler adapter</span>
+│   ├── http/          <span class="good"># adapter</span>
+│   ├── webdav/        <span class="good"># adapter</span>
+│   ├── doctype/
+│   ├── patches/
+│   └── tests/
+├── writer/<span class="good">drive.py     # adapter</span>
+├── sheets/<span class="good">drive.py     # adapter</span>
+├── slides/<span class="good">drive.py     # adapter</span>
+├── meet/
+├── mail/
+└── calendar/
+
+frontend/src/
+├── <span class="good">composition/</span>
+├── shell/
+├── <span class="good">platform/          # neutral only</span>
+└── apps/
+    ├── drive/
+    │   ├── <span class="good">index.ts    # public seam</span>
+    │   ├── features/
+    │   └── internal/
+    └── &lt;other-products&gt;/</code></pre>
+        </article>
+      </div>
+      <p class="caption">This is a migration target, not a demand to move every untouched file. New and rewritten code follows it; existing products converge when their owners work in that area.</p>
+
+      <h3 style="margin-top:24px">What actually changes</h3>
+      <div class="shift-grid">
+        <div class="shift"><div class="n">01</div><strong>Public is explicit</strong><span>Other products import one Drive interface, not implementation files.</span></div>
+        <div class="shift"><div class="n">02</div><strong>Policy is local</strong><span>Node workflows coordinate access, quota, activity, and references.</span></div>
+        <div class="shift"><div class="n">03</div><strong>Adapters translate</strong><span>HTTP and WebDAV stop owning or duplicating Drive behavior.</span></div>
+        <div class="shift"><div class="n">04</div><strong>Composition composes</strong><span>Lifecycle order and adapter registration leave <code>suite_core</code>.</span></div>
+      </div>
+    </section>
+
+    <section id="dependencies">
+      <h2>Allowed dependency direction</h2>
+      <div class="flow" role="img" aria-label="Writer, Sheets, Slides, and Meet depend on the public Drive interface. The public Drive interface, HTTP, and WebDAV adapters call private Drive workflows. Drive workflows use Drive DocTypes and frappe.storage. Content product adapters implement a Drive-owned Content Type interface.">
+        <div class="flow-row">
+          <div class="node">Writer</div><div class="node">Sheets</div><div class="node">Slides</div><div class="node">Meet</div>
+        </div>
+        <div class="flow-row"><div class="arrow">↓</div><div class="arrow">↓</div><div class="arrow">↓</div><div class="arrow">↓</div></div>
+        <div class="flow-row">
+          <div class="node drive">suite.drive<br><span style="font-weight:400">public interface</span></div>
+          <div class="arrow">→</div>
+          <div class="node drive">Drive workflows<br><span style="font-weight:400">private implementation</span></div>
+          <div class="arrow">←</div>
+          <div class="node">HTTP · WebDAV<br><span style="font-weight:400">inbound adapters</span></div>
+        </div>
+        <div class="flow-row">
+          <div class="node data">Drive DocTypes</div><div class="arrow">←</div><div class="node drive">Drive workflows</div><div class="arrow">→</div><div class="node data">frappe.storage</div>
+        </div>
+        <div class="inversion">
+          <div class="node content">Writer · Sheets · Slides<br><span style="font-weight:400">content adapters</span></div>
+          <div class="arrow">→</div>
+          <div class="node content">Content Type<br><span style="font-weight:400">Drive-owned interface</span></div>
+        </div>
+        <div class="legend"><span><b>Solid flow:</b> may call</span><span><b>Adapter flow:</b> implements a Drive-owned interface</span></div>
+      </div>
+      <p class="caption"><code>suite_core</code> may be used by every product but must not import product implementations. Suite composition may register every product because composition is where dependency directions meet.</p>
+    </section>
+
+    <section id="drive-interface">
+      <h2>The Drive seam</h2>
+      <p>The <code>suite.drive</code> package root is the only supported Python interface outside Drive. Its names live in <code>suite/drive/__init__.py</code> and expose complete outcomes needed by real production callers.</p>
+      <div class="seam">
+        <div class="codebox good">
+          <div class="code-label">Allowed · request an outcome</div>
+          <pre><code>from suite import drive
+
+node = drive.create_document(
+    content_type="writer",
+    parent=parent,
+    title=title,
+)
+
+drive.touch(
+    "Writer Document", docname
+)</code></pre>
+        </div>
+        <div class="codebox bad">
+          <div class="code-label">Forbidden · assemble internals</div>
+          <pre><code>from suite.drive._core.quota import admit
+from suite.drive._core.nodes import insert_node
+from suite.drive.doctype.drive_node \
+    import DriveNode
+
+admit(root, size)
+insert_node(values)</code></pre>
+        </div>
+      </div>
+      <div class="exports">
+        <div class="yes">
+          <h3>Public workflow set</h3>
+          <ul><li>check access</li><li>create/copy document or file</li><li>touch and take version</li><li>manage recording reservations</li><li>Content Type declarations</li><li>documented roles, results, and errors</li></ul>
+        </div>
+        <div class="no">
+          <h3>Private implementation</h3>
+          <ul><li>quota admission counters</li><li>activity row writes</li><li>grant predicates</li><li>preview rendering jobs</li><li>DocType queries/controllers</li><li>blob keys and driver details</li></ul>
+        </div>
+      </div>
+      <p class="caption">The final export list comes from the production caller inventory. An internal test is not a reason to publish an operation.</p>
+    </section>
+
+    <section id="rules">
+      <h2>Meta codebase rules</h2>
+      <div class="rules">
+        <article class="rule"><div class="rule-head"><span class="rule-num">01</span><h3>Ownership & placement</h3></div><ul><li>Product behavior <span class="must">MUST</span> live under the product that owns its language.</li><li><code>suite_core</code> <span class="must">MUST</span> remain product-neutral.</li><li>Cross-product orchestration <span class="must">MUST</span> live in composition.</li><li>Product adapters live with, and are owned by, that product.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">02</span><h3>Dependency direction</h3></div><ul><li>Products <span class="must">MUST NOT</span> import another product's implementation.</li><li>Cross-product calls use the provider's declared interface.</li><li>New dependency cycles are forbidden.</li><li>Hook strings and dynamic imports obey the same rules.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">03</span><h3>Interfaces & depth</h3></div><ul><li>Each module has one intentional interface.</li><li>Interfaces expose workflows, not database primitives.</li><li>Every new public operation has a real caller.</li><li>Errors, ordering, permissions, and performance are part of the interface.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">04</span><h3>Seams & adapters</h3></div><ul><li>Add a seam only when behavior genuinely varies.</li><li>A seam should have at least two justified adapters.</li><li>HTTP and WebDAV translate; they do not own Drive policy.</li><li>Tests do not turn an internal seam into a public one.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">05</span><h3>State & invariants</h3></div><ul><li>Every fact has one source of truth.</li><li>Drive owns title, place, grants, lifecycle, versions, comments, and usage.</li><li>Content products own bodies and editor live state.</li><li>Mutations leave all related records consistent or use a documented resumable process.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">06</span><h3>Shared code</h3></div><ul><li>Code stays in its product until two real consumers need it.</li><li>Shared code uses neutral language and has an owner.</li><li><code>utils</code>, <code>common</code>, and <code>shared</code> are not ownership-free zones.</li><li>Keep duplication when domain rules differ.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">07</span><h3>Testing</h3></div><ul><li>The interface is the primary test surface.</li><li>Tests assert observable outcomes and invariants.</li><li>Adapter tests cover translation and protocol behavior.</li><li>Replace shallow legacy tests; do not layer both forever.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">08</span><h3>Frontend modules</h3></div><ul><li>Each <code>apps/&lt;product&gt;</code> owns its UI and client state.</li><li>Products do not import another product's pages, state, or internals.</li><li>Cross-product use goes through a lightweight declared interface.</li><li>Code enters <code>platform</code> only with neutral language and multiple consumers.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">09</span><h3>Review & stewardship</h3></div><ul><li>Product owners own product implementation.</li><li>Suite architecture owns composition, core, shell, and enforcement.</li><li>Interface changes need provider and consumer review.</li><li>Data ownership changes update the context map first.</li></ul></article>
+        <article class="rule"><div class="rule-head"><span class="rule-num">10</span><h3>Migration discipline</h3></div><ul><li>New code follows the target structure; untouched code may remain.</li><li>Existing debt is baselined and may only shrink.</li><li>Build is additive; Cleanup waits for its explicit gates.</li><li>Behavior remains sourced from the Drive layer spec.</li></ul></article>
+      </div>
+    </section>
+
+    <section id="enforcement">
+      <h2>Make the rules fail in CI</h2>
+      <div class="pipeline">
+        <div class="gate"><div class="n">GATE 1</div><strong>Python imports</strong><span>AST check blocks product internals, Drive private modules, cycles, and product imports from <code>suite_core</code>.</span></div>
+        <div class="gate"><div class="n">GATE 2</div><strong>Frontend imports</strong><span>Block <code>@/apps/other/…</code> except declared package interfaces such as <code>@/apps/drive</code>.</span></div>
+        <div class="gate"><div class="n">GATE 3</div><strong>Public exports</strong><span>Snapshot <code>suite.drive.__all__</code> so accidental exports fail review.</span></div>
+        <div class="gate"><div class="n">GATE 4</div><strong>Adapter contracts</strong><span>Every registered Content Type adapter runs through one shared behavior suite.</span></div>
+      </div>
+      <p class="caption">Begin with an explicit allowlist of existing debt. New violations fail immediately; allowlist entries disappear as products migrate.</p>
+    </section>
+
+    <section id="review">
+      <h2>Change review checklist</h2>
+      <ol class="checklist">
+        <li>Which product owns this behavior and vocabulary?</li>
+        <li>Where does the module's interface live?</li>
+        <li>Does the caller request an outcome or assemble steps?</li>
+        <li>Which invariants does the implementation hide?</li>
+        <li>Does this add a dependency edge or cycle?</li>
+        <li>Which two adapters justify a new seam?</li>
+        <li>Can tests use the caller-facing interface?</li>
+        <li>Does shared code have multiple consumers and an owner?</li>
+        <li>Must the context map record a data ownership change?</li>
+        <li>Can CI enforce the architectural decision?</li>
+      </ol>
+    </section>
+
+    <section id="adoption">
+      <h2>Adoption before and through Drive</h2>
+      <div class="steps">
+        <div class="step"><div class="phase">Before Stage 1</div><strong>Freeze the rules</strong><p>Accept the charter, inventory Drive callers, decide package exports, and add import checks with a debt baseline.</p></div>
+        <div class="step"><div class="phase">Drive rewrite</div><strong>Build behind the seam</strong><p>Implement the new Drive workflows. HTTP and WebDAV adapt into them. Preserve the behavior spec.</p></div>
+        <div class="step"><div class="phase">Product adoption</div><strong>Move one adapter at a time</strong><p>Writer, Sheets, Slides, Meet, and Mail stop importing Drive internals as their paths migrate.</p></div>
+        <div class="step"><div class="phase">Frontend adoption</div><strong>Use the generic Drive route</strong><p>Drive UI stops calling Writer and Sheets creation endpoints directly. Cross-app clients use declared package interfaces.</p></div>
+        <div class="step"><div class="phase">Cleanup release</div><strong>Delete the old surfaces</strong><p>Remove shims, File overrides, legacy modules, and their shallow tests only after migration gates hold.</p></div>
+        <div class="step"><div class="phase">Next contexts</div><strong>Apply the pattern selectively</strong><p>Map Mail and Calendar next, especially their existing dependency cycle. Do not force a mass rewrite.</p></div>
+      </div>
+    </section>
+
+    <div class="decision">
+      <div class="label">Accepted decision</div>
+      <strong>The <code>suite.drive</code> package root is the only supported cross-product Python interface. Use <code>from suite import drive</code>, keep implementation modules private, and enforce the boundary before Drive Stage 1.</strong>
+      <p>This changes the code shape without reopening the Drive behavior model. It gives the rewrite a durable seam that later Suite products can follow.</p>
+    </div>
+
+    <footer>Suite codebase architecture charter · accepted 5 September 2026 · canonical repository source: <code>ARCHITECTURE.md</code></footer>
+  </main>
+</div>
+<script>
+const root = document.documentElement;
+const stored = localStorage.getItem('suite-architecture-theme');
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+root.dataset.theme = stored || (prefersDark ? 'dark' : 'light');
+document.querySelector('.theme').addEventListener('click', () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('suite-architecture-theme', root.dataset.theme);
+});
+const links = [...document.querySelectorAll('.toc a')];
+const sections = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+const observer = new IntersectionObserver(entries => {
+  const visible = entries.filter(entry => entry.isIntersecting).sort((a,b) => b.intersectionRatio-a.intersectionRatio)[0];
+  if (!visible) return;
+  links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id));
+}, {rootMargin:'-15% 0px -72% 0px', threshold:[0,.2,.5,1]});
+sections.forEach(section => observer.observe(section));
+</script>
+</body>
+</html>

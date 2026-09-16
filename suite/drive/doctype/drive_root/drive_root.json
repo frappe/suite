@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "autoname": "field:node",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node",
+  "user",
+  "kind",
+  "state",
+  "quota_bytes",
+  "used_bytes",
+  "acl_generation"
+ ],
+ "fields": [
+  {
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Personal\nShared",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "state",
+   "fieldtype": "Select",
+   "label": "State",
+   "options": "Active\nArchived",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "quota_bytes",
+   "fieldtype": "Long Int",
+   "label": "Quota Bytes"
+  },
+  {
+   "default": "0",
+   "fieldname": "used_bytes",
+   "fieldtype": "Long Int",
+   "label": "Used Bytes"
+  },
+  {
+   "default": "0",
+   "fieldname": "acl_generation",
+   "fieldtype": "Int",
+   "label": "ACL Generation"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Root",
+ "naming_rule": "By fieldname",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

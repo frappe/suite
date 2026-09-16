@@ -9,27 +9,26 @@ from frappe.utils import now
 def mark_as_viewed(entity):
     if (
         frappe.session.user == "Guest"
-        or not frappe.has_permission(doctype="Drive Entity Log", ptype="create", user=frappe.session.user)
+        or not frappe.has_permission(doctype="Drive Recent", ptype="create", user=frappe.session.user)
         or entity.is_folder
     ):
         return
 
-    entity_log = frappe.db.get_value(
-        "Drive Entity Log", {"entity_name": entity.name, "user": frappe.session.user}
-    )
-    if entity_log:
-        frappe.db.set_value(
-            "Drive Entity Log",
-            entity_log,
-            "last_interaction",
-            now(),
-            update_modified=False,
-        )
+    recent = frappe.db.get_value("Drive Recent", {"node": entity.name, "user": frappe.session.user})
+    if recent:
+        frappe.db.set_value("Drive Recent", recent, "opened_at", now(), update_modified=False)
         return
-    doc = frappe.new_doc("Drive Entity Log")
-    doc.entity_name = entity.name
+    doc = frappe.new_doc("Drive Recent")
+    doc.node = entity.name
     doc.user = frappe.session.user
-    doc.last_interaction = now()
+    doc.opened_at = now()
+    # §3.9 makes `node` a Link to `Drive Node`, and §14.3 gives the node the
+    # `File` id, so the value is right either way. The link check is skipped
+    # because §10.2 keeps a content type's legacy rows working while that
+    # type is expanding: `shims._legacy_visit` records the open of a `File`
+    # that no node holds yet, and an open must not fail because Build has
+    # not reached it.
+    doc.flags.ignore_links = True
     doc.insert()
     return doc
 

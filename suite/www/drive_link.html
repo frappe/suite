@@ -1,0 +1,10 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block page_content %}
+<div class="py-16 text-center">
+	<h1 class="text-xl font-semibold">{{ title }}</h1>
+	<p class="mt-2 text-base text-gray-600">{{ message }}</p>
+</div>
+{% endblock %}

@@ -1,11 +1,21 @@
-"""URL path <-> File entity resolution and the WebDAV naming policy.
+"""URL path to `Drive Node` resolution, and the WebDAV naming policy.
 
-The DAV namespace shows two mounts — Home (the user's folder) and Everyone
-(the shared `Drive` root). Below them the folder adjacency list is walked one
-indexed point query per segment: exact (BINARY) match first, one
-case-insensitive fallback when unambiguous, oldest row winning for exact
-duplicates. Entities WebDAV cannot represent (content-doc-backed files, links,
-names containing separators) are invisible.
+The DAV namespace has one mount: the caller's own Personal Root, at `/dav/`
+itself (§12). There is no `Everyone` mount, no `Shared with me` collection,
+and no admin mount of somebody else's root; content shared from elsewhere is
+not reachable over this protocol.
+
+Below the mount the tree is walked one query per segment against the frozen
+`node_parent_page (parent, state, title)` index: exact (BINARY) match first,
+one case-insensitive fallback when it is unambiguous, oldest row winning an
+exact duplicate. The `BINARY` comparison is a binary-collation one against a
+`utf8mb4_unicode_ci` column, so only the `(parent, state)` prefix is certain to
+be used; that already narrows the read to one folder's children, and the site
+gate carries an `EXPLAIN` to say whether `title` joins it.
+
+Resolution answers about existence and shape only; the READ check belongs to
+the caller, which is what keeps an unreadable node a 404 rather than a 403
+(§12.1).
 """
 
 from dataclasses import dataclass, field
@@ -14,91 +24,139 @@ from urllib.parse import quote, unquote, urlsplit
 import frappe
 from werkzeug.wrappers import Request
 
-from suite.drive.utils import ROOT_FOLDER, get_root_folder, get_user_folder
+from suite.drive._core.access import require
+from suite.drive._core.errors import DriveNotFound
+from suite.drive._core.nodes import NODE_FIELDS
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import UPLOAD
+from suite.drive._core.roots import personal_root_for
 from suite.drive.webdav import DAV_PREFIX
 from suite.drive.webdav.context import validate_segments
-from suite.drive.webdav.errors import BadGateway, BadRequest, Forbidden
-
-HOME_ALIAS = "Home"
-EVERYONE_ALIAS = "Everyone"
+from suite.drive.webdav.errors import BadGateway, BadRequest, Conflict, Forbidden
 
 MAX_NAME_LENGTH = 140
 
-_PROJECTION = """
-    `name`, file_name, folder, is_folder, file_size, file_url, mime_type, file_type,
-    `owner`, creation, COALESCE(file_modified, modified) AS modified,
-    content_hash, content_doctype, content_docname, attached_to_doctype, attached_to_name
-"""
+# The kinds WebDAV can represent, and the whole of §12.2's hiding rule.
+#
+# A `document` node is a Writer document, a deck, or a sheet. All three are
+# hidden in this release, and hiding them here hides their child media too:
+# the media hang below the document, so the document segment 404s before the
+# walk can reach them [012 §1]. The test is the node's kind, never the title's
+# extension, so an uploaded .docx stays an ordinary visible file, and never the
+# content registry, which is still dormant.
+#
+# A `link` node is a bookmark holding a URL and no bytes. The legacy adapter
+# hid it and this keeps that: shown, it would sync as an empty file and the
+# client's write-back would turn the bookmark into one.
+VISIBLE_KINDS = ("folder", "file")
 
-# rows WebDAV can serve: real bytes (or folders), not content-doc mirrors or links
-_REPRESENTABLE = "content_doctype IS NULL AND (file_type IS NULL OR file_type != 'Link')"
+_VISIBLE = "state = 'Active' AND kind IN ('folder', 'file') AND is_template = 0"
 
 
 @dataclass
 class ResolvedPath:
-    segments: list[str] = field(default_factory=list)  # decoded, mount alias included
-    root: str = "virtual"  # "virtual" | "home" | "everyone" | "unknown"
-    entity: frappe._dict | None = None  # leaf row (the mount row when is_mount)
-    parent: frappe._dict | None = None  # parent row when only the leaf is missing
+    segments: list[str] = field(default_factory=list)  # decoded, below /dav
+    node: frappe._dict | None = None  # the leaf row (the root node when is_mount)
+    parent: frappe._dict | None = None  # the parent row when only the leaf is missing
     missing_intermediate: bool = False
     is_mount: bool = False
 
     @property
     def exists(self) -> bool:
-        return self.entity is not None
+        return self.node is not None
 
     @property
     def is_collection(self) -> bool:
-        return self.is_mount or bool(self.entity and self.entity.is_folder)
+        return bool(self.node is not None and self.node.kind in ("root", "folder"))
 
 
 def resolve(segments: list[str], user: str) -> ResolvedPath:
+    """Walk one DAV path inside the caller's Personal Root.
+
+    A user with no Active Personal Root has no mount at all, so every path
+    under `/dav/` is unmapped for them rather than an error naming a root they
+    do not have.
+    """
+    root_id = personal_root_for(user)
+    if not root_id:
+        return ResolvedPath(segments=list(segments), missing_intermediate=bool(segments))
+
+    root_row = _fetch(root_id)
+    if root_row is None:
+        return ResolvedPath(segments=list(segments), missing_intermediate=bool(segments))
     if not segments:
-        return ResolvedPath(segments=[], is_mount=True)
+        return ResolvedPath(segments=[], node=root_row, is_mount=True)
 
-    alias = segments[0].lower()
-    if alias == HOME_ALIAS.lower():
-        root, mount_name = "home", get_user_folder(user).name
-    elif alias == EVERYONE_ALIAS.lower():
-        root, mount_name = "everyone", get_root_folder().name
-    else:
-        return ResolvedPath(segments=segments, root="unknown", missing_intermediate=len(segments) > 1)
-
-    current = _fetch(mount_name)
-    if len(segments) == 1:
-        return ResolvedPath(segments=segments, root=root, entity=current, is_mount=True)
-
-    for segment in segments[1:-1]:
+    current = root_row
+    for segment in segments[:-1]:
         current = _child(current.name, segment)
-        if current is None or not current.is_folder:
-            return ResolvedPath(segments=segments, root=root, missing_intermediate=True)
+        if current is None or current.kind != "folder":
+            return ResolvedPath(segments=list(segments), missing_intermediate=True)
 
     leaf = _child(current.name, segments[-1])
-    return ResolvedPath(segments=segments, root=root, entity=leaf, parent=current)
+    return ResolvedPath(segments=list(segments), node=leaf, parent=current)
 
 
-def list_children(parent_name: str) -> list[frappe._dict]:
-    """All representable, addressable children — oldest row wins exact-name duplicates."""
-    # CHAR(92) is the backslash: spelled as a LIKE pattern it is unescaped
-    # twice (string literal, then LIKE) and ends up matching '%' instead
-    rows = frappe.db.sql(
-        f"""SELECT {_PROJECTION}
-        FROM `tabFile`
-        WHERE folder = %(parent)s AND status = 'Active' AND {_REPRESENTABLE}
-            AND file_name NOT LIKE '%%/%%' AND INSTR(file_name, CHAR(92)) = 0
-            AND file_name NOT IN ('.', '..')
-        ORDER BY creation ASC""",
-        values={"parent": parent_name},
-        as_dict=True,
+def addressable(row: frappe._dict) -> bool:
+    """Whether a row can be named by a URL under this mount.
+
+    `/` and a relative name have no spelling in a DAV URL at all. `\\` has one,
+    but a client that syncs to a Windows filesystem cannot make a file of it,
+    and the two remaining classes are titles the URL grammar rejects outright.
+    Drive itself accepts all of them, so DAV drops them - from the listing and
+    from the lookup alike, because a name that is not listed must not be
+    fetchable either.
+    """
+    title = row.get("title") or ""
+    return bool(
+        title
+        and title not in (".", "..")
+        and "/" not in title
+        and "\\" not in title
+        and not any(ord(character) < 0x20 for character in title)
     )
-    seen: set[str] = set()
-    children = []
-    for row in rows:
-        if row.file_name in seen:
-            continue
-        seen.add(row.file_name)
-        children.append(row)
-    return children
+
+
+def visible(row: frappe._dict) -> bool:
+    """Whether a node is reachable over DAV at all (§12.2).
+
+    `_VISIBLE` plus `addressable`, which is exactly what `_child` applies, so a
+    row dropped from a listing and a row a path lookup will not resolve are the
+    same set. Callers feed it rows that are already Active, and it checks that
+    anyway: the day one does not, a trashed node must not appear in a listing.
+    """
+    return (
+        row.get("state") == "Active"
+        and row.get("kind") in VISIBLE_KINDS
+        and not row.get("is_template")
+        and addressable(row)
+    )
+
+
+MISSING_PARENT = "Intermediate collections do not exist."
+
+
+def require_create_parent(parent: frappe._dict, principals: Principals) -> None:
+    """UPLOAD on the collection a create verb is about to write into (§12.1).
+
+    Below READ this answers 409, not 404. RFC 4918 §9.7.1 fixes the absent
+    parent at 409, and a parent the caller cannot see is, to them, a parent
+    that is not there: the two must give one answer or the pair is an oracle
+    for which of a caller's own folders were taken away from them. The message
+    is the absent one, word for word, for the same reason.
+
+    A parent the caller can read but may not write is unchanged: that is a 403
+    about a folder they can already see.
+    """
+    if parent is None:
+        # a caller with no Active Personal Root has no mount, so `/dav` itself
+        # resolves to no node and no parent. Reading `segments[-1]` past this
+        # raised IndexError out of PUT and MKCOL, which the mapper answers 500.
+        raise Conflict(MISSING_PARENT)
+    try:
+        require(parent, UPLOAD, principals)
+    except DriveNotFound as e:
+        raise Conflict(MISSING_PARENT) from e
 
 
 def validate_dav_name(name: str, parent: frappe._dict) -> None:
@@ -151,7 +209,7 @@ def reset_memo() -> None:
 
 def _fetch(name: str) -> frappe._dict | None:
     rows = frappe.db.sql(
-        f"SELECT {_PROJECTION} FROM `tabFile` WHERE `name` = %(name)s LIMIT 1",
+        f"SELECT {NODE_FIELDS} FROM `tabDrive Node` WHERE `name` = %(name)s LIMIT 1",
         values={"name": name},
         as_dict=True,
     )
@@ -166,46 +224,45 @@ def _child(parent_name: str, segment: str) -> frappe._dict | None:
     if key in memo:
         return memo[key]
 
-    base = f"""SELECT {_PROJECTION} FROM `tabFile`
-        WHERE folder = %(parent)s AND status = 'Active' AND {_REPRESENTABLE}"""
+    base = f"SELECT {NODE_FIELDS} FROM `tabDrive Node` WHERE parent = %(parent)s AND {_VISIBLE}"
     values = {"parent": parent_name, "segment": segment}
 
     rows = frappe.db.sql(
-        base + " AND file_name = BINARY %(segment)s ORDER BY creation ASC LIMIT 1",
+        base + " AND title = BINARY %(segment)s ORDER BY creation ASC LIMIT 1",
         values=values,
         as_dict=True,
     )
     if not rows:
         # tolerate case-sloppy clients, but only when unambiguous
         rows = frappe.db.sql(
-            base + " AND file_name = %(segment)s ORDER BY creation ASC LIMIT 2",
+            base + " AND title = %(segment)s ORDER BY creation ASC LIMIT 2",
             values=values,
             as_dict=True,
         )
         if len(rows) != 1:
             rows = []
 
-    memo[key] = rows[0] if rows else None
+    # the naming policy is not expressible in SQL, and a row a listing will
+    # not publish must not resolve by hand either
+    memo[key] = rows[0] if rows and addressable(rows[0]) else None
     return memo[key]
 
 
 def _reserved_names(parent: frappe._dict) -> set[str]:
-    reserved = {".embeds"}
-    if parent and parent.get("name") == ROOT_FOLDER:
-        settings = frappe.get_cached_doc("Drive Disk Settings")
-        reserved |= {
-            ".trash",
-            ".uploads",
-            ".drive-downloads",
-            "users",
-            (settings.thumbnail_prefix or ".thumbnails").lower(),
-        }
-    return reserved
+    """Names a client may not create.
+
+    The legacy list named the on-disk layout - `.trash`, `.uploads`, the
+    thumbnail prefix - which the node tree no longer has: a blob is addressed
+    by its content and no title maps to a storage location (§3.1). What is left
+    is the embed folder name, kept because a client that writes one would be
+    naming a place Drive means to own.
+    """
+    return {".embeds"}
 
 
 def _same_host(destination: str, request_host: str) -> bool:
     """Hostnames must match; ports only when both sides state a non-default
-    one — a proxy rewriting Host with nginx's $host drops the port, which
+    one - a proxy rewriting Host with nginx's $host drops the port, which
     must not fail every MOVE/COPY on a non-standard port."""
     try:
         dest, req = urlsplit("//" + destination), urlsplit("//" + request_host)

@@ -1,9 +1,12 @@
 import json
 
 import frappe
+from frappe import _
 
+from suite import drive
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
+from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node, refuse_drive_native
 from suite.sheets.versioning import save as save_mod
 
 MAX_TITLE_LEN = 280
@@ -132,7 +135,12 @@ _YJS_WRITE_EVENTS = frozenset({"yjs_update", "yjs_state"})
 
 @frappe.whitelist()
 def get_sheet_shares(name: str) -> list:
-    """Return users who have explicit share access to this sheet."""
+    """Return users who have explicit share access to this sheet.
+
+    Legacy only. A linked sheet has grants, not shares (§6.5), and answering
+    from `DocShare` would show the wrong list and invite the wrong write.
+    """
+    refuse_drive_native(name, "Drive sharing")
     frappe.has_permission("Sheet", doc=name, throw=True)
     rows = frappe.get_all(
         "DocShare",
@@ -153,6 +161,9 @@ def get_sheet_shares(name: str) -> list:
 
 @frappe.whitelist()
 def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) -> dict:
+    # Legacy only. `Drive Grant` is the one authority over a linked sheet (§1),
+    # so a `DocShare` on one is refused rather than written and then ignored.
+    refuse_drive_native(name, "Drive sharing")
     # `ptype="share"` — only users who themselves hold the share right
     # may grant access to others. Default `read` was too permissive
     # (any viewer could re-share a sheet to anyone).
@@ -260,6 +271,7 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
 
 @frappe.whitelist()
 def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
+    refuse_drive_native(name, "Drive sharing")
     frappe.has_permission("Sheet", doc=name, ptype="share", throw=True)
     if int(everyone or 0):
         # frappe.share.remove() looks up by user; for the everyone row we
@@ -271,7 +283,13 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
         if share_name:
             frappe.delete_doc("DocShare", share_name, ignore_permissions=True)
         return {"status": "ok"}
-    frappe.share.remove("Sheet", name, user)
+    # Same `ignore_permissions` as the `everyone` row above, and as
+    # `frappe.share.add` uses to write the row in the first place
+    # (`frappe/share.py:82`). `DocShare` carries a System Manager DocPerm and
+    # nothing else, so without this an ordinary owner could grant a share and
+    # then never take it back. What may revoke is the `share` right on the
+    # sheet, checked above, exactly as it is for granting.
+    frappe.share.remove("Sheet", name, user, flags={"ignore_permissions": True})
     return {"status": "ok"}
 
 
@@ -318,9 +336,17 @@ def list_sheets(
     limit = min(max(frappe.utils.cint(limit) or 50, 1), 100)
 
     filters = {"trashed": 0}
+    or_filters = None
     search = (search or "").strip()
     if search:
-        filters["title"] = ["like", f"%{search}%"]
+        # Drive owns a linked sheet's title and `Sheet.title` is frozen there
+        # (§10.2), so the column alone matched nothing a caller has written
+        # since activation. The node half is resolved to ids first and OR'd in,
+        # which keeps the page, the total, and the permission query in SQL.
+        or_filters = [
+            ["title", "like", f"%{search}%"],
+            ["name", "in", _sheets_titled_like(search) or [""]],
+        ]
     if owner_filter == "mine":
         filters["owner"] = me
     elif owner_filter == "shared":
@@ -329,11 +355,13 @@ def list_sheets(
     rows = frappe.get_list(
         "Sheet",
         filters=filters,
-        fields=["name", "title", "modified", "owner"],
+        or_filters=or_filters,
+        fields=["name", "title", "node", "modified", "owner"],
         order_by=_list_sheets_order_by(order_by, sort_dir),
         limit_start=start,
         limit_page_length=limit,
     )
+    _publish_titles(rows)
     for r in rows:
         r["is_owner"] = r["owner"] == me
 
@@ -343,6 +371,7 @@ def list_sheets(
     total = frappe.get_list(
         "Sheet",
         filters=filters,
+        or_filters=or_filters,
         fields=[{"COUNT": "*", "as": "total"}],
     )[0]["total"]
     # `now` shares the naive server-local frame of `modified`, so the client
@@ -371,7 +400,10 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
     # doc they can't persist and only discovering it when save_sheet throws.
     return {
         "name": doc.name,
-        "title": doc.title,
+        # Drive owns a linked sheet's title, with no mirror on the frozen
+        # legacy column (§10.2), so the editor would have opened every sheet
+        # written since activation with a blank name.
+        "title": _title_of(doc),
         "can_write": bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False)),
         "sheets_data": raw if frappe.utils.cint(compressed) else decode_sheets_data(raw),
         # The sheet's true creator, so the Share dialog can label the owner row
@@ -405,21 +437,38 @@ def save_sheet(
 @frappe.whitelist()
 def create_sheet(title: str = "", parent: str = "") -> str:
     # Create a blank sheet and return its id. Used by Drive's "New > Spreadsheet"
-    # so the sheet is born inside the folder the user is looking at — `parent`
-    # is the Drive folder its backing File should land in (validated for upload
-    # access here, then threaded to Sheet.after_insert). Mirrors Writer's
-    # create_document. "{}" is a valid empty workbook — the editor's loader
-    # falls back to a fresh Sheet1 when the packed payload is absent.
-    if parent:
-        from suite.drive.api.permissions import user_has_permission
+    # so the sheet is born inside the folder the user is looking at.
+    #
+    # An atomic adapter over `drive.create_document`: the node and the Sheet
+    # are written together, in Drive's own savepoint, so `content.require_node`
+    # never sees a Sheet with no node — the source of the `DriveConflict` this
+    # endpoint used to raise once `Sheet` joined `drive_content_types`. Drive
+    # also runs the UPLOAD check on `parent` itself, so there is no separate
+    # pre-check here the way the legacy `File`-folder check used to be one.
+    #
+    # `parent` is the Drive folder the caller is looking at. Empty means "my
+    # Drive": resolve the caller's own root, provisioning it on first use, the
+    # same fallback `suite.drive.http.shims._home` uses for every other
+    # node-based create.
+    parent_node = parent or _home_folder()
+    node = drive.create_document(parent_node, _clean_title(title), content_doctype=DOCTYPE)
+    docname = docname_for_node(node)
+    if not docname:
+        frappe.throw(_("The new sheet could not be found"), frappe.ValidationError)
+    return docname
 
-        if not user_has_permission(parent, "upload"):
-            frappe.throw(
-                "Cannot access folder due to insufficient permissions",
-                frappe.PermissionError,
-            )
-    result = save_mod.save_sheet(title or "Untitled Spreadsheet", "{}", name=None, parent=parent or None)
-    return result["name"]
+
+def _home_folder() -> str:
+    """The caller's own Drive root, provisioned on first use.
+
+    Mirrors `suite.drive.http.shims._home`: a fresh user has no Personal root
+    until something asks for one, and Guest and Administrator never get one.
+    """
+    user = frappe.session.user
+    home = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+    if not home:
+        frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
+    return home
 
 
 @frappe.whitelist()
@@ -457,6 +506,10 @@ def delete_sheet(name: str) -> str:
     # collaborator can't trash someone else's sheet. Versioning tables are left
     # fully intact — a restore is a perfect restore, not a last-save recovery.
     # The nightly purge (suite.sheets.trash.purge_trashed_sheets) does the real erase.
+    #
+    # Legacy only. Drive owns a linked sheet's trash state on its node, with no
+    # mirror in either direction (§8.7), and `trashed` is frozen there.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Flip the flag through the ORM so on_update fires and Drive drops the backing
     # File from the listing in lockstep (see hooks.py) — no Sheets-specific Drive
@@ -472,6 +525,7 @@ def delete_sheet(name: str) -> str:
 @frappe.whitelist()
 def restore_sheet(name: str) -> str:
     # Same owner-only gate as trashing — restore is the inverse of delete.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Inverse of trashing: clear the flag through the ORM so on_update returns the
     # backing File to the Drive listing.
@@ -487,6 +541,8 @@ def restore_sheet(name: str) -> str:
 def delete_sheet_permanent(name: str) -> str:
     # Irreversible "delete forever" from the trash. Owner-only, same as trashing.
     # The cascade lives in suite.sheets.trash so it stays in lockstep with the purge.
+    # A linked sheet is purged by Drive (§8.8), which calls `on_purge`.
+    refuse_drive_native(name, "the Drive trash")
     frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
     # Only ever fire from the trash flow: a direct call on a live sheet must not
     # skip the recovery window and destroy it in one shot.
@@ -509,7 +565,9 @@ def list_trash() -> dict:
 
     sheets = frappe.get_list(
         "Sheet",
-        filters={"trashed": 1, "owner": frappe.session.user},
+        # A linked sheet is never here: Drive owns its trash and `trashed` is
+        # frozen. The filter says so rather than relying on that.
+        filters={"trashed": 1, "owner": frappe.session.user, "node": ["is", "not set"]},
         fields=["name", "title", "trashed_on"],
         order_by="trashed_on desc",
         limit=100,
@@ -523,6 +581,9 @@ def rename_sheet(name: str, title: str) -> str:
     # this module — `doc.save()` would ultimately enforce write perm too,
     # but defence-in-depth keeps the surface uniform if the controller ever
     # changes.
+    # Legacy only. Drive owns a linked sheet's title on its node (§10.2), and
+    # the `title` column is frozen once the declaration is registered.
+    refuse_drive_native(name, "Drive rename")
     frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
     title = _clean_title(title)
     if not title:
@@ -542,6 +603,10 @@ def duplicate_sheet(name: str) -> str:
     # Home page) only needs the new sheet name, so we unwrap here.
     # Read permission on the SOURCE is required — without this, anyone who
     # knows a sheet id could clone its contents into a sheet they own.
+    #
+    # Legacy only. A linked sheet is copied by `drive.copy`, which runs the
+    # `duplicate` factory and places the copy where the caller may upload (§8.9).
+    refuse_drive_native(name, "Drive copy")
     frappe.has_permission("Sheet", doc=name, throw=True)
     src = frappe.get_doc("Sheet", name)
     plain = decode_sheets_data(src.sheets_data)
@@ -683,6 +748,57 @@ def _user_identity(user: str) -> dict:
     parts = full_name.split()
     initials = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
     return {"full_name": full_name, "initials": initials, "user_image": user_image}
+
+
+def _sheets_titled_like(search: str) -> list[str]:
+    """The linked sheets whose node title matches, as sheet ids.
+
+    A read of Drive's own column, not a decision: `list_sheets` still runs the
+    permission query over the ids this answers.
+    """
+    nodes = frappe.get_all(
+        "Drive Node",
+        filters={"content_doctype": DOCTYPE, "title": ["like", f"%{search}%"]},
+        pluck="name",
+        ignore_permissions=True,
+    )
+    if not nodes:
+        return []
+    return frappe.get_all("Sheet", filters={"node": ["in", nodes]}, pluck="name", ignore_permissions=True)
+
+
+def _title_of(doc) -> str:
+    """One sheet's title, from its node when Drive owns it."""
+    node = doc.get(NODE_FIELD)
+    if not node:
+        return doc.title
+    return frappe.db.get_value("Drive Node", node, "title") or ""
+
+
+def _publish_titles(rows: list[dict]) -> None:
+    """Fill each listed sheet's title from its node, and drop the link column.
+
+    LIMITATION: `order_by=title` still sorts on the frozen `Sheet.title`
+    column, so linked sheets sort together rather than by the title shown.
+    Ordering on the node needs a join Drive Node permissions refuse to a
+    non-admin caller; ticket 34 moves this list onto Drive's own listing.
+    """
+    linked = {row["name"]: row[NODE_FIELD] for row in rows if row.get(NODE_FIELD)}
+    titles = {}
+    if linked:
+        titles = {
+            row["name"]: row["title"]
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"name": ["in", list(linked.values())]},
+                fields=["name", "title"],
+                ignore_permissions=True,
+            )
+        }
+    for row in rows:
+        node = row.pop(NODE_FIELD, None)
+        if node:
+            row["title"] = titles.get(node) or ""
 
 
 def _clean_title(title: str) -> str:

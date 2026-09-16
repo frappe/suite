@@ -1,0 +1,221 @@
+---
+label: wayfinder:map
+tracker: local-markdown
+---
+
+# Map: Drive layer spec
+
+## Destination
+
+An implementation-ready spec pair for the new Drive layer in suite:
+`drive-layer-spec.md` (doctypes, path-batch permission engine, Drive interface,
+HTTP API, WebDAV mapping, framework-side storage_v2 asks) plus a migration
+section from the current suite File-override data. Done when an
+implementation effort can execute from the documents alone.
+
+Status: complete on 2026-09-05. Every ticket is closed. The destination
+documents are [`drive-layer-spec.md`](drive-layer-spec.md) and
+[`drive-layer-plan.md`](drive-layer-plan.md). The repository architecture
+charter is [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md). Not yet specified
+holds two conditional items only.
+
+## Notes
+
+The spec’s [accepted decisions](drive-layer-spec.md#accepted-decisions) amend
+the historical decisions below. They include paired root metadata/nodes
+and Node-only grant/activity targets.
+
+
+- The file-layer decision record is local:
+  [`references/drive-file-layer-designs.md`](references/drive-file-layer-designs.md).
+  The engine: new Drive
+  Node doctype with `path` column; `Drive Grant` is the only permission
+  table, read batched, nearest-wins in Python; deny = role 0; per-token
+  link principals. Prototype: `suite/drive/webdav/perms.py`.
+- Related storage design:
+  [`references/frappe-file-storage-v2-spec.md`](references/frappe-file-storage-v2-spec.md)
+  (storage_v2; framework implementation is staged on `forge/storage-v2`).
+- Constraints: no custom fields on framework File; no new framework hooks
+  (public functions only); use short, direct technical prose.
+- Skills each session should consult: grilling + domain-modeling for
+  decision tickets; codebase-design for interface work.
+- Sessions orchestrating as Fable must spawn subagents with model opus.
+- Subagents must not post or push outside this repo without confirmation.
+
+### Local tracker conventions
+
+- Tickets live in `tickets/`, one file each, frontmatter: `id`, `title`,
+  `label` (`wayfinder:<type>`), `status` (open/closed), `assignee`
+  (empty = unclaimed), `blocked-by` (list of ids).
+- Frontier query: open tickets, empty assignee, all `blocked-by` ids closed.
+- Resolution: append `## Resolution` to the ticket, set `status: closed`,
+  add one line under Decisions so far here.
+
+## Decisions so far
+
+- [Index benchmark parent-state-title](tickets/004-index-benchmark-parent-state-title.md) —
+  freeze `(parent, state, title)`, drop `(parent, state)`; 10k-folder page
+  11.7 ms -> 0.57 ms; accept filesort for modified/size sorts.
+
+- [Shared spaces and offboarding model](tickets/001-shared-spaces-and-offboarding-model.md) —
+  `Drive Root` doctype, `kind` Personal|Shared and `state` Active|Archived;
+  business site = 1 Shared + N Personal, personal site = N Personal; owner
+  grants no access (short-circuit dropped); offboarding is `state = Archived`
+  on one row, no node writes.
+
+- [Role ladder semantics](tickets/002-role-ladder-semantics.md) — strict
+  ladder NONE=0/READ=10/COMMENT=20/UPLOAD=30/EDIT=40/MANAGE=50; creators
+  below EDIT get an EDIT grant on what they create; MANAGE alone shares;
+  personal-root deny guardrail; fresh Shared Root = `$GENERAL` UPLOAD;
+  links cap at EDIT; admin bypass survives; five-flag migration table
+  (grants round down, denies round up).
+
+- [GC reference discovery mechanism](tickets/003-gc-reference-discovery-mechanism.md) —
+  meta-driven, no hook: GC calls `get_link_fields("File Blob")`, one
+  `NOT EXISTS` per column (Singles via `tabSingles`); a blob is live only
+  while a Link field names it; unindexed column = include and warn;
+  discovery failure = delete nothing; public `blob_reference_columns()`.
+
+- [Content app contract](tickets/005-content-app-contract.md) — reframed
+  from Sheets-only to every content app: title and lifecycle live on the
+  node only; versions and comments become Drive tables, change logs and live
+  state stay app-owned; a content edit owes Drive one `touch`; creation goes
+  through Drive with an immutable two-way identity link; sharing has one
+  home (DocShare rows become grants); one declaration per app (identity,
+  factories, bytes, on_purge, satellites with Read-to-see/Edit-to-change).
+
+- [Renditions and thumbnails model](tickets/006-renditions-and-thumbnails-model.md) —
+  `Drive Node Preview` (node, source_blob, blob), one 512 px WebP per node,
+  reuse by source blob; exports are streamed, never stored; Drive renders
+  bytes by mime, apps push a document's image; listings mint signed `/f/`
+  URLs; replace swaps, trash keeps, purge deletes; `Drive Node Version` is a
+  second table for documents and file nodes; Sheets retention ladder goes
+  site-wide; enqueue on write, daily sweep fills gaps.
+
+- [Publishing capability](tickets/007-publishing-capability.md) — published
+  = a `Drive Grant` to `$PUBLIC`, a principal every session holds; caps at
+  READ; MANAGE publishes, no capability, no bypass; composites lose the
+  always-public invariant (render checks READ per reference); inherits, deny
+  cuts, invalid on a Drive Root; unpublish = revoke or deny; one activity row
+  per grant write, no publish verb.
+
+- [WebDAV mapping](tickets/009-webdav-mapping.md) — one mount, the
+  Personal Root (amended 2026-09-03 while resolving Quota policy; the
+  original answer was three mounts); one role-per-method table,
+  DELETE and LOCK-create tightened; documents appear as read-only export
+  files and are leaves; GET streams with an opt-in signed redirect; PUT is
+  one `put_blob` and every replace versions (empty head excepted);
+  cross-root MOVE is a UI operation only; COPY copies no grants or versions;
+  `file_modified` becomes `content_modified`; DAV uses the same Drive
+  implementation workflows and
+  activity rows; auth stays Basic with no link principals; protocol modules
+  kept, storage machinery deleted.
+
+- [Link sharing semantics](tickets/008-link-sharing-semantics.md) — clear
+  22-char token in `$LINK:<token>`, many per node; stateless
+  `X-Drive-Links` header, no cookie; password unlock returns an HMAC ticket
+  bound to token and hash, 30 days, no server state; two-pass resolution:
+  own principals first and a deny is final, else max with nearest-wins over
+  `$PUBLIC` and links; no creator grant on link uploads; actor stays
+  `Guest` with `via_link` on activity; collab socket re-checks on an
+  interval; `expires_on` on every grant, `password_hash` on links only,
+  rotate is one op, daily sweep; no link on a root, none over WebDAV, URL
+  is `/drive/l/<token>`.
+
+- [Quota policy](tickets/010-quota-policy.md) — logical size, each node
+  reference pays; Active and Trashed nodes, every version, and every
+  reservation count; previews, exports, and document bodies are free;
+  `Drive Root.used_bytes` counter, admission by one conditional UPDATE,
+  daily recompute, Redis owner lock dropped; browser upload preflights the
+  declared size and charges the actual size at node create; `quota_bytes`
+  0 = inherit, site has `default_personal_quota` and `shared_quota`,
+  `Drive Settings.quota` dropped; archived roots pay for themselves, no
+  reclaim clock, Suite Admin purge only; UI cross-root move rebills nodes
+  plus versions, reservations never move; DAV props read the counter;
+  amends WebDAV mapping to one mount.
+
+- [Migration mapping](tickets/011-migration-mapping.md) — two patches:
+  additive Build, then Cleanup one release later; Build throws without
+  storage_v2, runs the framework backfill inline, and copies Drive's S3
+  objects into the framework layout (suite.frappe.io is on S3); ids
+  survive (node = File name); `Drive` becomes the Shared Root, each
+  `Users/<email>` a Personal Root (Archived if the user is gone); trashed
+  subtrees share a `trash_root`, Removed rows skipped; Active-sibling
+  title dedupe; dead-principal and guardrail grant rows dropped and
+  reported; side tables reshaped (`Drive Activity`, `Drive Recent`,
+  `Drive Favourite`, `Drive Notification` as an activity pointer);
+  DocShare to grants, Writer/Sheet versions and comments to Drive tables;
+  depth-ordered, batch-committed, id-keyed reruns; JSON report. Amended
+  2026-09-04: one storage location via a framework `relocate_blobs()`.
+
+- [Slides media to nodes](tickets/012-slides-media-to-nodes.md) — slide media
+  becomes child nodes of the deck node and a content document node is always a
+  leaf in every listing; the slide holds the node id and the wire carries a
+  short-TTL signed `/f/` link the page refreshes, so the 122-line endpoint and
+  its streamer go; paste copies the node across decks and reuses it inside one;
+  Drive sweeps unused media and each app declares only "list the nodes you
+  still use"; a template becomes `Drive Node.is_template` plus a grant for
+  every content app, deleting the Slides and Writer bypasses; a composite
+  authorizes through each reference and may reference anything its author
+  reads; the deck preview is a preview row written without a touch; webp
+  conversion happens before the node exists.
+
+- [HTTP API surface](tickets/014-http-api-surface.md) — real routes at
+  `/api/suite/drive/...`, not RPC; an app segment because eight apps share the
+  site; mounted by a `before_request` translator that rewrites `PATH_INFO` to
+  `/api/v2/method/...` and keeps framework auth, CSRF and rate limits (a full
+  dispatcher was rejected: `validate_auth()` runs after the hook); PATCH for
+  rename, move, trash and restore so DAV MOVE keeps one path, DELETE for the
+  one terminal act; Drive checks permission and the HTTP layer only
+  translates; v2 envelopes both ways (`{data}` / `{errors}`), exception class
+  as the code, six classes with status codes; opaque cursor paging; one node
+  shape with `?expand=access,breadcrumbs,preview`; a batch route reporting
+  ok/failed per node; the 69 old methods shimmed in Build and dropped in
+  Cleanup, except three that are permanent (`api.s3.fetch` in stored URLs,
+  `get_file_for_doc` in a built bundle, `/dav`); no upstream ask — `useCall`
+  already reads the v2 shape, `useList` and `useDoc` do not fit.
+
+- [Draft the spec](tickets/013-draft-the-spec.md) — the destination:
+  [`drive-layer-spec.md`](drive-layer-spec.md) (fourteen sections, every
+  schema, query, route, and number) and
+  [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership, an architecture
+  gate, and nine numbered stages); agents wrote and audited both. Thirteen
+  spec picks and one new framework ask (upload gates for Drive and guests)
+  are listed on the ticket for review.
+
+## Not yet specified
+
+- Search-within-shared derived index. Only if the ancestor-union round trip
+  proves too slow on real data; benchmark said it is fine synthetic.
+- Concurrency validation under live load. All benchmark numbers are
+  single-connection.
+
+## Out of scope
+
+- Frontend/UI changes (share dialog, upload client, list views). Backend +
+  HTTP API only; UI is a later effort. Decided 2026-09-09: that effort is a
+  from-scratch rebuild inside a unified suite frontend, starting from route
+  design, and gets its own wayfinder map.
+- Standalone frappe/drive migration (Drive Team model). This spec covers
+  suite sites only.
+- Many shared spaces (a `Space` root kind with its own quota and member list).
+  Ruled out in [Shared spaces and offboarding model](tickets/001-shared-spaces-and-offboarding-model.md):
+  it rebuilds the Drive Team model `remove_teams.py` dissolved, and neither
+  deployment model needs it. A third `kind` is a Select option if that changes.
+- Blind drop-box (upload without seeing the folder). Ruled out in
+  [Link sharing semantics](tickets/008-link-sharing-semantics.md): UPLOAD
+  contains READ in the strict ladder, so the state is unrepresentable.
+- Site-wide API hardening: enforcing `DENIED_WILDCARD_PATHS = ["/api/"]`
+  across mail, calendar, meet, writer, sheets and slides, with a Desk
+  carve-out for system users. Wanted eventually for the whole codebase, but it
+  must not block the Drive rewrite, so it is a separate effort. The Drive-shaped
+  part stays in [HTTP API surface](tickets/014-http-api-surface.md): add
+  `/api/suite/drive/`, drop `/api/method/suite.drive.api.` in Cleanup. Note for
+  that effort: the lists are already declared at `suite/hooks.py:403-452` and
+  nothing in suite or frappe reads them — the gate is external (Frappe Cloud),
+  so a self-hosted bench denies nothing today.
+- Frappe Cloud allowlisting of the `storage_driver` and
+  `storage_driver_config` site_config keys for suite.frappe.io. An
+  operational precondition surfaced by
+  [Migration mapping](tickets/011-migration-mapping.md), not a spec
+  decision.

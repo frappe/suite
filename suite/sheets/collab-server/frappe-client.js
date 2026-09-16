@@ -1,18 +1,32 @@
 // Thin wrapper around the three Frappe endpoints that back collab:
 //
-//   * checkAccess(sid, sheet)  — POST /api/method/suite.sheets.collab.check_collab_access
-//                                forwarding the user's session cookie
+//   * checkAccess(credentials, sheet)
+//                                — POST /api/method/suite.sheets.collab.check_collab_access
+//                                forwarding the user's session cookie and any
+//                                link credentials the browser presented
 //   * loadState(sheet)         — GET-equivalent for the persisted Y.Doc binary
 //   * persistState(sheet, b64) — debounced write of the Y.Doc binary
 //
-// The first call uses cookie auth (so it inherits the user's permissions);
-// the last two use the shared secret in the X-Collab-Secret header.
+// The first call uses cookie auth (so it inherits the user's permissions) plus
+// the `X-Drive-Links` header Drive reads link grants from; the last two use the
+// shared secret in the X-Collab-Secret header. The secret never travels on the
+// access call: that call must carry exactly the caller's own authority and
+// nothing of the server's.
 //
 // We deliberately *don't* retry — the caller (Hocuspocus) treats a failed
 // auth check as a connection refusal, and a failed persist is fine to drop
 // (the next debounce window will write the latest state again).
+//
+// Every call is bounded by `REQUEST_TIMEOUT_MS`. A `fetch` that never settles
+// throws nothing, so an unbounded one would leave the five-minute recheck
+// awaiting an answer forever: no rejection to count, no timer pending, and a
+// revoked caller connected for as long as the socket lives. A wedged Frappe
+// worker or a stalled proxy is enough. A timeout is a rejection, which the
+// recheck counts and fails closed on.
 
 import { config } from './env.js'
+
+export const REQUEST_TIMEOUT_MS = 15_000
 
 async function call(method, params = {}, { headers = {} } = {}) {
 	const url = `${config.frappeBaseUrl}/api/method/${method}`
@@ -20,6 +34,7 @@ async function call(method, params = {}, { headers = {} } = {}) {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
 		body: JSON.stringify(params),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	})
 	if (!res.ok) {
 		const body = await res.text().catch(() => '')
@@ -31,13 +46,20 @@ async function call(method, params = {}, { headers = {} } = {}) {
 	return json.message
 }
 
-export async function checkAccess(sid, sheetName) {
-	if (!sid) throw new Error('checkAccess: missing sid')
-	return call(
-		'suite.sheets.collab.check_collab_access',
-		{ name: sheetName },
-		{ headers: { Cookie: `sid=${sid}` } },
-	)
+// `credentials` is a parsed connection token: { sid, links }. A caller may
+// present either — a signed-in user has a sid, a link holder may have only a
+// link — but never neither, which `parseToken` already refuses.
+export async function checkAccess(credentials, sheetName) {
+	const { sid = '', links = [] } = credentials || {}
+	if (!sid && links.length === 0) throw new Error('checkAccess: no credentials')
+	const headers = {}
+	if (sid) headers.Cookie = `sid=${sid}`
+	// One comma-separated list, the grammar
+	// `suite.drive._core.principals.parse_link_header` reads. It is the one
+	// place the 20-item limit is enforced, so an over-long list is refused
+	// there and this call fails with its message.
+	if (links.length) headers['X-Drive-Links'] = links.join(',')
+	return call('suite.sheets.collab.check_collab_access', { name: sheetName }, { headers })
 }
 
 export async function loadState(sheetName) {

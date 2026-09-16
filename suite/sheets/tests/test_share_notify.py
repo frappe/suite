@@ -22,6 +22,13 @@ class CustomShareNotification(unittest.TestCase):
         patcher = mock.patch("suite.sheets.api.frappe")
         self.frappe = patcher.start()
         self.addCleanup(patcher.stop)
+        # Ticket 19: every legacy endpoint reads the sheet's node column first
+        # and refuses a sheet Drive owns. These tests are about the legacy
+        # notification, so the sheet here has no node. The refusal itself is
+        # covered in `suite.sheets.tests.test_drive_adoption`.
+        node = mock.patch("suite.sheets.drive.node_of", return_value=None)
+        node.start()
+        self.addCleanup(node.stop)
         self.frappe.session.user = "alice@example.com"
         self.frappe.has_permission.return_value = True
         # Recipient lookup (`enabled` check) — return 1 so share proceeds.

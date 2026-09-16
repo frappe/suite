@@ -75,6 +75,24 @@ def count(entity: str) -> int:
     return frappe.db.count("Drive DAV Property", {"entity": entity})
 
 
+def existing_tags(entity: str, tags: set[str]) -> set[str]:
+    """Which of these Clark-notation tags the entity already stores.
+
+    `upsert` replaces a row it finds, so a `set` on a property already there
+    adds nothing to the per-entity count. The cap has to be told that, or a
+    client sitting at it gets 507 for overwriting its own property.
+    """
+    if not tags:
+        return set()
+    by_pair = {split_clark(tag): tag for tag in tags}
+    rows = frappe.get_all(
+        "Drive DAV Property",
+        filters={"entity": entity, "prop_name": ["in", sorted({local for _, local in by_pair})]},
+        fields=["ns", "prop_name"],
+    )
+    return {by_pair[pair] for row in rows if (pair := (row.ns or "", row.prop_name)) in by_pair}
+
+
 def copy_props(source: str, target: str) -> None:
     for row in frappe.get_all(
         "Drive DAV Property",

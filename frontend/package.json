@@ -17,6 +17,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
+    "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
   "dependencies": {

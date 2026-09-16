@@ -51,6 +51,13 @@ def maybe_snapshot(sheet: str, expected_head_seq: int | None = None) -> str | No
     the seq the request thought was the head — used only for telemetry, not
     correctness (we always snapshot the *current* head).
     """
+    # A linked sheet's history is Drive's, so it takes no legacy snapshot. This
+    # one path declines instead of refusing: `versioning.save` runs it inline on
+    # every autosave and turns any exception into an `Error Log` row, so a
+    # refusal here would file one error per keystroke batch for the whole Build
+    # release. `create` still refuses, so no caller can write one deliberately.
+    if is_drive_native(sheet):
+        return None
     doc = frappe.db.get_value("Sheet", sheet, ["head_seq", "head_snapshot"], as_dict=True)
     if not doc:
         return None
@@ -68,6 +75,7 @@ def create(
     actor: str | None = None,
 ) -> str:
     """Create a snapshot at the sheet's current head. Returns the snapshot name."""
+    _refuse_linked_sheet(sheet)
     if kind not in _VALID_KINDS:
         frappe.throw(f"Unknown snapshot kind: {kind}")
 
@@ -152,3 +160,17 @@ def decode_payload(snap_name: str) -> str:
     """Return the snapshot's payload as plain JSON (decompressed)."""
     stored = frappe.db.get_value("Sheet Snapshot", snap_name, "sheets_data")
     return decode_sheets_data(stored)
+
+
+def _refuse_linked_sheet(sheet: str) -> None:
+    # Local import avoids making the Writer/Sheets content declaration depend
+    # on this legacy history module at import time.
+    from suite.sheets.drive import refuse_drive_native
+
+    refuse_drive_native(sheet, "Drive version history")
+
+
+def is_drive_native(sheet: str) -> bool:
+    from suite.sheets.drive import is_drive_native as _is_drive_native
+
+    return _is_drive_native(sheet)

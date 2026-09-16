@@ -8,16 +8,27 @@
 //   4. Start the server on $COLLAB_HOST:$COLLAB_PORT.
 //
 // Auth happens in `onAuthenticate`: the browser forwards its Frappe `sid`
-// cookie as the connection token, we POST it to check_collab_access, and
-// reject the socket if the caller can't read the sheet. Read-only sharees
-// stay connected (so they see updates and emit awareness) but their own
-// updates are dropped server-side via `connection.readOnly = true`.
+// cookie and any link credentials as the connection token, we POST them to
+// check_collab_access, and reject the socket if the caller can't read the
+// sheet. Read-only callers stay connected (so they see updates and emit
+// awareness) but their own updates are dropped server-side.
+//
+// Auth does not end there. §6.7 makes access a live question, so every
+// accepted connection starts a recheck on the cadence Frappe states in its
+// answer. A revoked grant or an expired link closes the socket; a downgrade
+// across the EDIT line turns the open connection read-only.
+//
+// The policy is in `access-recheck.js` with the transport injected. The
+// binding is in `hooks.js`, with the Frappe call and the close injected, so
+// `node --test` drives the whole connection lifecycle against the installed
+// `@hocuspocus/server`. This file is boot and nothing else.
 
 import { Server } from '@hocuspocus/server'
 import { Database } from '@hocuspocus/extension-database'
 import { Redis } from '@hocuspocus/extension-redis'
 
 import { config } from './env.js'
+import { createHooks } from './hooks.js'
 import { checkAccess, loadState, persistState } from './frappe-client.js'
 
 const extensions = [
@@ -51,37 +62,7 @@ if (config.redisHost) {
 const server = new Server({
 	port: config.port,
 	extensions,
-
-	async onAuthenticate({ token, documentName, connection }) {
-		// token = Frappe sid cookie value (the frontend passes it via the
-		// y-provider's `token` option). No sid → can't even ask the server,
-		// reject immediately.
-		if (!token) throw new Error('Missing auth token')
-
-		const access = await checkAccess(token, documentName)
-		if (!access.canRead) throw new Error('Forbidden: no read access')
-
-		// Read-only sharee: keep the connection (they receive updates and
-		// publish awareness) but their own document updates are dropped
-		// before fan-out. This is enforced inside Hocuspocus.
-		if (!access.canWrite) connection.readOnly = true
-
-		// Attached to the connection context — used by awareness payloads
-		// and surfaces in logs.
-		return {
-			user:      access.user,
-			fullName:  access.fullName,
-			initials:  access.initials,
-			userImage: access.userImage,
-			canWrite:  access.canWrite,
-		}
-	},
-
-	onListen({ port }) {
-		// One line, easy to grep in supervisor logs.
-		// eslint-disable-next-line no-console
-		console.log(`[collab-server] listening on :${port}`)
-	},
+	...createHooks({ check: checkAccess }),
 })
 
 await server.listen()

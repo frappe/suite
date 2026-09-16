@@ -2,8 +2,10 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
+from suite.drive._core.quota import site_quota_bytes
 from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
 
 
@@ -19,6 +21,7 @@ class DriveDiskSettings(Document):
         aws_key: DF.Data | None
         aws_secret: DF.Password | None
         bucket: DF.Data | None
+        default_personal_quota: DF.LongInt
         enabled: DF.Check
         endpoint_url: DF.Data | None
         flat: DF.Check
@@ -26,6 +29,7 @@ class DriveDiskSettings(Document):
         quota: DF.Int
         root_folder: DF.Data | None
         signature_version: DF.Data | None
+        shared_quota: DF.LongInt
         thumbnail_prefix: DF.Data | None
         webdav_allowed_methods: DF.SmallText | None
         webdav_enabled: DF.Check
@@ -36,7 +40,17 @@ class DriveDiskSettings(Document):
         # under it, which times out on large folders.
         if self.enabled:
             self.flat = 1
+        self._validate_drive_quotas()
         self._validate_webdav_methods()
+
+    def _validate_drive_quotas(self):
+        # Both quotas are `Long Int` on a Single, so a reloaded doc carries them as
+        # text. Normalize to the integer the quota engine and the counters expect.
+        self.set(
+            "default_personal_quota",
+            site_quota_bytes(self.get("default_personal_quota"), _("Default personal quota")),
+        )
+        self.set("shared_quota", site_quota_bytes(self.get("shared_quota"), _("Shared quota")))
 
     def _validate_webdav_methods(self):
         methods, unknown = parse_webdav_methods(self.webdav_allowed_methods)

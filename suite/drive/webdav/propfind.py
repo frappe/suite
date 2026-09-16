@@ -1,8 +1,13 @@
 """PROPFIND: Depth 0/1 property listings as 207 multistatus.
 
 Depth infinity is refused with the RFC 4918 §9.1 propfind-finite-depth
-precondition (Apache's default too) — an unbounded walk over the adjacency
-list with permission fanout is a DoS vector, and no target client uses it.
+precondition (Apache's default too) - an unbounded walk over the tree with
+permission fanout is a DoS vector, and no target client uses it.
+
+Depth 1 spends the engine's folder page (§5.3) and nothing per child: three
+queries for the window and the two grant sets, then one dead-property fetch,
+one lock fetch, and one blob read for the page's validators. The count does
+not move with the number of children.
 """
 
 from dataclasses import dataclass
@@ -11,25 +16,28 @@ import frappe
 from lxml import etree
 from werkzeug.wrappers import Response
 
-from suite.drive.utils import ROOT_FOLDER, generate_upward_path, get_user_folder
-from suite.drive.webdav import pathmap, perms
+from suite.drive._core import quota as quota_core
+from suite.drive._core.access import chain_ids, require
+from suite.drive._core.nodes import MAX_PAGE_SIZE
+from suite.drive._core.nodes import children as node_children
+from suite.drive._core.roles import READ
+from suite.drive.webdav import pathmap
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError
-from suite.drive.webdav.properties import live_properties
+from suite.drive.webdav.properties import checksums_for, live_properties
 from suite.drive.webdav.xmlutil import XML_BODY_CAP, MultistatusBuilder, dav, parse_xml
 
-VIRTUAL_ROOT_NAME = "Frappe Drive"
 # RFC 4331 §2: quota properties SHOULD NOT be returned on allprop
 QUOTA_PROPS = frozenset({dav("quota-used-bytes"), dav("quota-available-bytes")})
 
 
 @dataclass
 class Resource:
-    row: frappe._dict | None  # None only for the virtual root
+    row: frappe._dict
     segments: list[str]
     is_collection: bool
     display_name: str
-    ancestors: list[str] | None = None  # for lockdiscovery inheritance
+    ancestors: list[str]  # for lockdiscovery inheritance
 
 
 def handle(ctx: DavContext) -> Response:
@@ -42,18 +50,34 @@ def handle(ctx: DavContext) -> Response:
 
     mode, requested = _parse_body(ctx)
     resources = _collect_resources(ctx, depth)
-    quota = _current_quota(ctx.user) if mode == "prop" and QUOTA_PROPS & set(requested) else None
+    # quota lives on collections only, so a probe at a file pays nothing
+    wants_quota = bool(QUOTA_PROPS & set(requested)) and any(resource.is_collection for resource in resources)
+    quota = _mount_quota(resources[0].row) if wants_quota else None
 
     from suite.drive.webdav import deadprops, locks
 
-    dead = deadprops.get_dead_props([r.row.name for r in resources if r.row is not None])
-    lock_map = locks.discovery_map({r.row.name: r.ancestors or [] for r in resources if r.row is not None})
+    rows = [resource.row for resource in resources]
+    # the page's validators cost one read, and a client that did not ask for
+    # `getetag` should not pay it (§12.5). `propname` needs it to say which
+    # rows define the property at all.
+    wants_etag = mode in ("allprop", "propname") or dav("getetag") in requested
+    checksums = checksums_for(rows) if wants_etag else {}
+    dead = deadprops.get_dead_props([row.name for row in rows])
+    lock_map = locks.discovery_map({r.row.name: r.ancestors for r in resources})
 
     builder = MultistatusBuilder()
     for resource in resources:
-        dead_props = dead.get(resource.row.name, {}) if resource.row is not None else {}
-        row_locks = lock_map.get(resource.row.name, []) if resource.row is not None else []
-        _render(builder, resource, mode, requested, quota, dead_props, row_locks, ctx.user)
+        _render(
+            builder,
+            resource,
+            mode,
+            requested,
+            quota,
+            dead.get(resource.row.name, {}),
+            lock_map.get(resource.row.name, []),
+            checksums.get(resource.row.name),
+            ctx.user,
+        )
     return builder.build()
 
 
@@ -78,63 +102,90 @@ def _parse_body(ctx: DavContext) -> tuple[str, list[str]]:
 
 def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
-
-    if resolved.root == "virtual" and resolved.is_mount:
-        return _virtual_root_resources(ctx, depth)
-
     if not resolved.exists:
+        # a hidden document, a node in somebody else's root, and a name that
+        # was never there are one answer over DAV (§12.1, §12.2)
         raise NotFoundError("Resource not found.")
 
-    row = resolved.entity
-    display = _display_name(resolved)
-    parent_path = generate_upward_path(row.name, ctx.user)
-    if row.get("attached_to_doctype"):
-        access = perms.resolve_entity_access(row, ctx.user)
-    else:
-        access = perms.parent_access(parent_path, row, ctx.user)
-    if not access["read"]:
-        # indistinguishable from absent, matching Drive's anti-enumeration stance
-        raise NotFoundError("Resource not found.")
+    principals = ctx.principals
+    row = resolved.node
 
-    target_ancestors = [node["name"] for node in parent_path[:-1]]
-    resources = [Resource(row, list(ctx.segments), resolved.is_collection, display, target_ancestors)]
     if depth == "1" and resolved.is_collection:
-        child_ancestors = [*target_ancestors, row.name]
-        children = pathmap.list_children(row.name)
-        child_access = perms.resolve_children_access(parent_path, children, ctx.user)
-        for child in children:
-            if not child_access[child.name]["read"]:
-                continue
-            resources.append(
-                Resource(
-                    child,
-                    [*ctx.segments, child.file_name],
-                    bool(child.is_folder),
-                    child.file_name,
-                    child_ancestors,
-                )
+        row, children = _read_page(principals, row.name)
+    else:
+        # `require` is the point check, and it raises DriveNotFound below READ,
+        # which the dispatcher's mapping turns into 404 rather than 403
+        require(row, READ, principals)
+        children = []
+
+    ancestors = chain_ids(row)[:-1]
+    resources = [Resource(row, list(ctx.segments), _is_collection(row), row.title, ancestors)]
+    child_ancestors = [*ancestors, row.name]
+    for child in _one_row_per_name(children):
+        resources.append(
+            Resource(
+                child,
+                [*ctx.segments, child.title],
+                _is_collection(child),
+                child.title,
+                child_ancestors,
             )
+        )
     return resources
 
 
-def _virtual_root_resources(ctx: DavContext, depth: str) -> list[Resource]:
-    resources = [Resource(None, [], True, VIRTUAL_ROOT_NAME)]
-    if depth != "1":
-        return resources
+def _one_row_per_name(children: list[frappe._dict]) -> list[frappe._dict]:
+    """Publish each title once, keeping the row a path lookup would reach.
 
-    home = pathmap.fetch(get_user_folder(ctx.user).name)
-    resources.append(Resource(home, [pathmap.HOME_ALIAS], True, pathmap.HOME_ALIAS))
+    `Drive Node` indexes `(parent, state, title)` but does not make it unique,
+    so two Active siblings can carry the same title. `href_for` quotes the
+    title, so those two share one URL: listing both puts two sizes and two
+    ETags at one href, while every GET of it answers from the one row
+    `pathmap._child` picks, the oldest. The shadowed row has no URL of its own
+    and is not published. Titles that differ only by case keep separate hrefs
+    and are both published, because `_child` resolves each of them exactly.
+    """
+    oldest: dict[str, frappe._dict] = {}
+    for child in children:
+        current = oldest.get(child.title)
+        if current is None or child.creation < current.creation:
+            oldest[child.title] = child
+    published = {id(row) for row in oldest.values()}
+    return [child for child in children if id(child) in published]
 
-    everyone = pathmap.fetch(ROOT_FOLDER)
-    if everyone is not None and perms.resolve_entity_access(everyone, ctx.user)["read"]:
-        resources.append(Resource(everyone, [pathmap.EVERYONE_ALIAS], True, pathmap.EVERYONE_ALIAS))
-    return resources
+
+def _read_page(principals, parent: str) -> tuple[frappe._dict, list[frappe._dict]]:
+    """The listable children of one collection, already filtered to READ.
+
+    §5.3's window is a page, and PROPFIND has no cursor to hand a client, so a
+    folder wider than one window is read to the end rather than truncated. Each
+    window is three queries; a folder inside one window - which is every
+    ordinary folder - is exactly the three the spec budgets.
+    """
+    rows: list[frappe._dict] = []
+    parent_row = None
+    cursor = None
+    while True:
+        page = node_children(principals, parent, cursor=cursor, limit=MAX_PAGE_SIZE)
+        parent_row = page["parent"]
+        rows.extend(row for row in page["rows"] if pathmap.visible(row))
+        cursor = page["next_cursor"]
+        if cursor is None:
+            return parent_row, rows
 
 
-def _display_name(resolved: pathmap.ResolvedPath) -> str:
-    if resolved.is_mount:
-        return pathmap.HOME_ALIAS if resolved.root == "home" else pathmap.EVERYONE_ALIAS
-    return resolved.entity.file_name
+def _is_collection(row: frappe._dict) -> bool:
+    return row.kind in ("root", "folder")
+
+
+def _mount_quota(row: frappe._dict) -> tuple[int, int]:
+    """§7.9: both quota properties read the Personal Root, the only DAV mount.
+
+    The mount is the caller's own root, so the accounting root is on the row
+    already and no second lookup is needed to find it.
+    """
+    usage = quota_core.get_storage_usage(row.name if row.kind == "root" else row.root)
+    return int(usage.used_bytes or 0), int(usage.effective_quota or 0)
 
 
 def _render(
@@ -145,6 +196,7 @@ def _render(
     quota: tuple[int, int] | None,
     dead_props: dict[str, etree._Element],
     row_locks: list,
+    checksum: str | None,
     viewer: str,
 ) -> None:
     from suite.drive.webdav import locks
@@ -154,6 +206,7 @@ def _render(
         is_collection=resource.is_collection,
         display_name=resource.display_name,
         quota=quota if resource.is_collection else None,
+        checksum=checksum,
     )
     available[dav("supportedlock")] = locks.supportedlock_xml()
     available[dav("lockdiscovery")] = locks.lockdiscovery_xml(row_locks, viewer)
@@ -185,9 +238,7 @@ def _render(
             missing.append(etree.Element(tag))
     response.propstat(200, found)
     response.propstat(404, missing)
-
-
-def _current_quota(user: str) -> tuple[int, int]:
-    from suite.drive.api.storage import get_quota, get_storage_usage
-
-    return get_storage_usage(user)["total_size"], get_quota(user)
+    if not found and not missing:
+        # RFC 4918 §14.24: a response is an href plus propstat or status, and
+        # an empty <D:prop/> body leaves no propstat to write
+        response.status(200)

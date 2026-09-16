@@ -1,0 +1,772 @@
+# 17 — Move Writer lifecycle and history into Drive
+
+**What to build:** Create, edit, copy, version, and purge Writer documents through the Drive contract.
+
+**Blocked by:** [16 — Create content documents and media through one Drive contract](16-content-contract.md)
+
+**Status:** done
+
+**Owner:** Suite Writer
+
+**Starting revisions:** Suite `f33ceb9224b5befb0e1cead4acdf61dc95e3c209`;
+Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`.
+
+**Final revision:** Suite `c5e544fe60de2a029cc1cb9c61ec6cb4248b6f28`;
+Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (unchanged, read only).
+
+**Claimed files:** `suite/writer/drive.py`,
+`suite/writer/doctype/writer_document/writer_document.py`,
+`suite/writer/doctype/writer_document/writer_document.json`,
+`suite/writer/doctype/writer_document/test_writer_document.py`,
+`suite/writer/api/docs.py`, `suite/writer/overrides/__init__.py`,
+`suite/writer/tests/test_drive_adoption.py`, `suite/writer/tests/__init__.py`,
+`suite/hooks.py`, `suite/tests/test_architecture.py`,
+`suite/drive/tests/test_content.py`, `suite/drive/api/tests/test_files.py`,
+and this ticket.
+
+`suite/drive/api/tests/test_files.py` is back at its ticket-16 state and is
+absent from the final diff. The correction below removed the reason it had
+changed.
+
+The review and the two contract corrections also changed ticket 16's files:
+`suite/drive/_core/content.py`, `suite/drive/_core/nodes.py`,
+`suite/drive/_core/roots.py`, `suite/drive/_core/versions.py`, and
+`suite/drive/framework.py`. Recorded as deviations from the plan's file
+ownership, not hidden. Three reasons:
+
+- The §8.8 trashed read-only rule has one home per seam and Writer is not it.
+  Writing the guard in Writer would have left Slides and Sheets to repeat it.
+- The `DriveContent` mixin had to work before its doctype is registered. That
+  is ticket 16's contract, not Writer's, and Slides and Sheets need the same
+  thing at tickets 18 and 19.
+- The two ticket 16 defects this ticket's review found are ticket 16's shared
+  code. Their evidence lives there. See "Ticket 16 corrections" below.
+
+**Execution gate:** None beyond completed blockers.
+
+**Source:** [Drive spec](../../drive-layer-spec.md), §10.7 Writer; §14.6–14.7.
+Read [execution rules and source precedence](../README.md#execution-rules) before claiming this ticket.
+
+## Scope: this is the expand phase
+
+The README is the source for integration order: "This is a wide replacement
+using expand, migrate, then contract. New workflows stay beside legacy paths
+until their replacement and migration tests pass." and "Stage content registry
+activation and permission-hook changes after required node links exist."
+
+So this ticket ships everything Writer needs and activates none of it:
+
+| Ships here | Waits |
+|---|---|
+| `suite/writer/drive.py`: `SPEC` and all eight callbacks | — |
+| The `node` Link on `Writer Document`, and the `DriveContent` mixin | — |
+| Drive-native create, copy, version, restore, purge, media sweep | — |
+| `drive_content_types = ["suite.writer.drive.SPEC"]` | 29 |
+| Both `Writer Document` permission hooks pointing at `suite.drive.framework` | 29 |
+| `suite.writer.api.docs.create_document` returning a Drive node | 21, 23 |
+| The legacy `File` read path, `new_version`, `save_comments` | 23, 34 |
+
+Ticket 29 owns the activation, because it is the first ticket that runs after
+Build has linked every `Writer Document` row and checked the result.
+
+## Acceptance criteria
+
+- [x] Declare the Writer content adapter and immutable node link. Use package-root Drive workflows.
+- [x] Implement creation, duplicate, version bytes, restoration, purge, and used-node discovery.
+- [x] Keep explicit HTML export available. Set default_export=None so Writer stays hidden over DAV.
+- [x] Replace title/file synchronization, private history, and comment behavior with Drive ownership.
+- [x] Keep legacy columns and source rows until Build copies them and Cleanup permits deletion.
+- [x] Cover ordinary documents and templates. Keep WebRTC collaboration unchanged and authorize saves.
+
+Criterion four holds for a document that carries a node. A legacy row keeps
+the `File` title mirror, the private `Writer Version` history, and the comment
+blob, because §14.6 has not copied them and nothing may drop them early. That
+is criterion five, and the two only agree through the dual path below.
+
+Criterion three is proved at the declaration and through the callback. Nothing
+reads `default_export` or `export_formats` at this HEAD except the registry
+validator (`suite/drive/_core/content.py:391-396`); there is no DAV or HTTP
+export route yet. Tickets 22 and 24 are the first consumers, and
+`content.call_app_stream` is the entry point they must use.
+
+## Verification
+
+Run Writer integration tests and the shared adapter contract, including
+inherited access, trash read-only behavior, HTML export, and copy/version
+round trips.
+
+### Commands run, and results
+
+Run on the shared site `slides.localhost`. `migrate` ran first. It added the
+`node` column and nothing else: `suite/patches.txt` is untouched.
+
+| Command | Result |
+|---|---|
+| `bench --site slides.localhost migrate` | Pass. Writer registry and both Drive permission hooks dormant. |
+| `run-tests --module suite.writer.tests.test_drive_adoption` | 23 unit, 38 integration, all OK |
+| `run-tests --module suite.writer.doctype.writer_document.test_writer_document` | 2 OK |
+| `run-tests --module suite.drive.tests.test_content` | 53 unit, 44 integration, all OK |
+| `run-tests --module suite.drive.api.tests.test_files` | 49 OK |
+| `run-tests --module suite.tests.test_architecture` | 7 OK |
+
+The 38 Writer integration tests are `TestWriterInDrive` (34) and
+`TestWriterBeforeActivation` (4). The 44 in `test_content` are
+`TestContentWorkflows`, which includes the three adversarial tests ticket 16's
+contract corrections added and could not run there.
+
+Regression modules, same site, same run. They cover every seam the two ticket
+16 corrections moved, plus the Sheets adapters that share the framework hooks:
+
+| Module | Result |
+|---|---|
+| `suite.drive.tests.test_comments` | 3 unit, 5 integration |
+| `suite.drive.tests.test_nodes` | 13 unit, 23 integration |
+| `suite.drive.tests.test_versions` | 7 unit, 10 integration |
+| `suite.drive.tests.test_previews` | 14 unit, 13 integration |
+| `suite.tests.test_scheduler_events` | 2 |
+| `suite.tests.test_composition` | 3 |
+| `suite.sheets.tests.test_permissions` | 9 |
+| `suite.sheets.tests.test_share_notify` | 6 |
+| `suite.sheets.tests.test_api_security` | 11 |
+
+All OK. Nothing is outstanding.
+
+`after_migrate` calls `validate_content_registry`
+(`suite/composition/lifecycle.py:57,65`), which is a no-op for Writer while the
+registry is empty: it inspects no doctype and no `DocShare`. The migration
+above proves it on a site that carries Writer data.
+
+### Static checks
+
+`compileall` over `suite/writer`, `suite/drive`, `suite/hooks.py`, and
+`suite/tests` is clean at this HEAD.
+
+The ruff results are recorded at `f7d23614d` and were not re-run after the two
+test commits, because ruff is not installed in this worktree. `ruff check` on
+the changed `.py` files reported two errors, both pre-existing:
+`suite/writer/api/docs.py` raises `E731` at line 108 and `E722` at line 145.
+Both fire on the starting revision as well. Neither is new and neither was
+fixed here; both are outside this ticket's change. `ruff format --check` and
+`ruff check --select=I` were clean. The two test commits changed one test file
+only, so nothing there can move those two errors.
+
+## Completion evidence
+
+Implemented 2026-09-06. Five commits, in order:
+
+| Commit | What it did |
+|---|---|
+| `5754bc220` | The adapter, the node link, the mixin, and the Drive-native workflows. |
+| `e48aa3400` | Review corrections. See "Review" below. |
+| `f7d23614d` | Staged the activation and wrote the dual path. See "Correction" below. |
+| `87f05ee7a` | Dropped freezegun and matched the non-disclosure contract. |
+| `c5e544fe6` | Proved the save stamp against the creation stamp. |
+
+The review branch `review/drive-17-writer-adoption` carries the same work as
+`86bda351d` and `197a083dd`. Those hashes are not ancestors of this HEAD. The
+patches are byte-identical to `5754bc220` and `e48aa3400`; only the hashes
+differ, from the rebase onto the integration branch.
+
+### Changed behavior
+
+- New `suite/writer/drive.py` declares `SPEC` and every callback: `create_empty`,
+  `duplicate`, `export`, `version_bytes`, `restore_version`, `on_purge`,
+  `used_nodes`, and `remap_media`. `pushes_preview` is false, `satellites` is
+  empty, `default_export` is None, and `export_formats` is `("html",)`.
+- `Writer Document` gains a read-only `node` Link to `Drive Node` with a search
+  index, first in `field_order`. It is the only schema change: no legacy column
+  and no legacy doctype is dropped. The controller extends `drive.DriveContent`.
+  The link is mandatory and immutable in Python, not in the JSON, because a
+  legacy row must still be able to carry no node.
+- `hooks.py` keeps `drive_content_types` empty. Both `Writer Document`
+  permission entries point at `suite.writer.overrides`, one line below the
+  comment naming what ticket 29 replaces them with.
+- `WriterDocument` runs one explicit dual path. A row that carries a node is
+  Drive-native: `save_doc`, `save_html`, and `update_settings` ask Drive for
+  EDIT at the node through `drive_check`; `take_version` calls
+  `drive_take_version`. A row with no node keeps the `File` permission check,
+  the `File` title and size mirror, and `new_version`'s private
+  `Writer Version` write.
+- The two body writes are the ones Drive stamps. `save_doc` and `save_html`
+  write with `update_modified=False` and then call `drive_touch`, so the node's
+  `content_modified` is the document's only stamp. `update_settings` authorizes
+  at the node and then saves through the ORM: editor settings are not the body,
+  so they take no content stamp.
+- The path only ever runs one way. `new_version`, `save_comments`, and
+  `update_file` refuse a linked row, and `take_version` refuses a legacy one.
+  Nothing lets a Drive-native document answer from a `File`.
+- `suite.writer.overrides.document_has_permission` and
+  `document_query_conditions` do the same at the framework boundary. A linked
+  row is refused by the row hook and excluded from the list predicate by
+  `node IS NULL`, because only `Drive Grant` may open it and the hook that
+  reads grants arrives at ticket 29.
+- `version_query_conditions` now reuses `document_query_conditions`, so the
+  `Writer Version` row check and its list predicate agree on a linked
+  document: both refuse it.
+- `suite.drive._core.content` resolves a content document's node column from
+  the registry when the doctype is registered and from the controller's
+  `drive_node_field` when it is not. `require_node` demands a node only from a
+  governed doctype; a legacy row with none is legal, and a legacy row that
+  acquires one is held to the same link rules. `_validate_mixin` refuses an
+  activation where the declaration and the controller name different columns.
+- `suite.writer.api.docs.create_document` and `save_comments` are unchanged
+  from ticket 16. Both are live frontend and e2e contracts, and every read
+  path around them is still `File`-based.
+
+### Decisions
+
+- **Activation is staged, not taken here.** Reversed from the implementation
+  commit, which registered `Writer Document` immediately. The README stages
+  registry activation and permission-hook changes after the required node
+  links exist, ticket 16's accepted criterion repeats it, and the graph puts
+  backend compatibility at 23 and the frontend at 34. Registering now made
+  every legacy row 409 on its next permission check and made every newly
+  created document unreachable. Ticket 29 activates. See "Blockers".
+- **The dual path is explicit, and it never falls back.** Where a controller
+  or a hook must serve both shapes, it branches on the node column, once, in
+  the open. Drive decides for a linked row. A node-less row keeps its exact
+  legacy behavior. There is no arm that answers a linked row from the `File`,
+  because that would be a way around `Drive Grant` (§1).
+- **The mixin reads its node column from the controller while dormant.** The
+  registry is the activation switch, so it cannot also be what makes the
+  mixin work. `drive_node_field` names the column, the declaration names it
+  again for the SQL predicate, and `_validate_mixin` proves they agree before
+  activation. Slides and Sheets need the same at 18 and 19.
+- **The open baseline DocPerm stays.** `Writer Document` keeps its wide-open
+  `All` role row. A Frappe permission hook can only deny, never grant
+  (`frappe/permissions.py:244-246`), so a governed doctype needs a baseline
+  for Drive to narrow at activation. The doctype carries no `DocShare` rule
+  yet: `refuse_governed_share` is a no-op while the registry is empty, so Desk
+  assignment keeps working. The migration above ran on that state.
+- **Legacy guards stay with the legacy rows.** §10.4 lists the old permission
+  code for deletion. `Writer Version` and `Writer Template` rows are still
+  readable until Build copies them (§14.6, §14.7), so deleting their guards
+  would leak them. They go at Cleanup, with the doctypes.
+- **The version payload is a `writer-document/1` JSON envelope** carrying the
+  Yjs body and its HTML together. A bare HTML payload is refused rather than
+  half-applied: a Yjs body cannot be rebuilt from HTML outside the editor, so
+  restoring one would leave the collaborative body and the rendered HTML
+  disagreeing. §14.6 migrates `Writer Version` rows as snapshot HTML, so Build
+  owes the envelope. See "Handoffs".
+- **`remap_media` is declared** although the §10.7 example block predates the
+  callback. Without it a copied document's pictures still point at the source's
+  media nodes.
+- **`used_nodes` reads `content` through pycrdt and `html` as text.** pycrdt
+  answers the live element attributes exactly. A raw byte scan would match
+  every id-shaped run of text in the update, including deleted content Yjs has
+  not collected, so a removed picture could stay charged for ever.
+- **Templateness is Drive's, not Writer's.** `create_empty` and `duplicate`
+  take no template argument and set no template flag. `nodes.create_document`
+  carries `is_template`, and new-from-template is that same call with the flag
+  left false, routed through `duplicate`. So the copy drops the flag with no
+  Writer code.
+- **A refusal below Read is a 404, not a 403.** `require` answers
+  `DriveNotFound` for a caller with no grant, because an unreadable node is
+  never disclosed (§5.4, [009 §2]). A caller who already holds Read but cannot
+  upload gets `DriveForbidden`. Both refusals leave no row. Two tests hold the
+  two halves.
+- **WebRTC collaboration is unchanged.** The editor still syncs peer to peer
+  through `wss://signal.frappe.cloud`; there is no backend collab endpoint to
+  authorize. Authorization is on the save, at the node. The whole change set is
+  backend: no file under `frontend/` is in the diff.
+
+### Failure and rollback evidence
+
+- `test_a_failed_reference_rewrite_leaves_no_copy_and_no_charge` patches
+  `writer._remap_body` to raise and asserts the copy leaves no node, no
+  document, and no charge.
+- `test_a_refused_create_leaves_neither_a_node_nor_a_document` replaces the
+  spec with `dataclasses.replace(SPEC, create_empty=explode)` and asserts the
+  node is gone too.
+- `test_a_body_pycrdt_cannot_read_refuses_as_an_ordinary_validation_error`
+  covers a real defect found during implementation. pycrdt is a Rust extension
+  and raises `pyo3_runtime.PanicException`, which derives from `BaseException`.
+  Unconverted it would pass straight through the `except Exception` that rolls
+  Drive's copy savepoint back and leave the savepoint open. `_loaded_body` now
+  converts it to `UnreadableBody`, a `frappe.ValidationError`.
+  `test_a_body_that_applies_and_then_panics_still_refuses_as_a_validation_error`
+  covers the second panic site, the first child read.
+- `test_an_undecodable_body_over_reports_instead_of_losing_a_picture` proves the
+  other side: the daily media sweep falls back to a raw scan instead of
+  crashing, and over-reporting only keeps media alive.
+- `test_a_stranger_cannot_create_a_document_in_somebody_elses_drive` and
+  `test_a_reader_who_cannot_upload_is_refused_and_not_hidden_from` count
+  `Drive Node` and `Writer Document` rows on both sides of the refusal.
+
+### Criteria to tests
+
+`TestWriterInDrive` runs under `activated()`, a context manager that injects
+the registry and the two hook targets ticket 29 installs. It patches
+`frappe.get_hooks` and drops the per-request registry cache on both sides, so
+nothing it proves depends on the site being activated and nothing it does
+activates one.
+
+| Criterion | Tests |
+|---|---|
+| Adapter and immutable node link | `test_writer_declares_the_identity_section_ten_seven_fixes`, `test_the_controller_carries_the_drive_mixin`, `test_a_new_document_carries_its_node_and_its_node_carries_it`, `test_a_document_without_a_node_cannot_exist`, `test_a_saved_document_cannot_repoint_itself_at_another_node` |
+| Package-root workflows only | `suite.tests.test_architecture`, `test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were` |
+| Create, duplicate, version bytes, restore, purge, used nodes | `test_a_copy_carries_the_body_and_repoints_it_at_the_copied_pictures`, `test_a_version_round_trips_the_collaborative_body_and_its_html`, `test_a_restore_keeps_the_state_it_replaced_as_history`, `test_a_purge_removes_the_document_its_media_and_its_legacy_versions`, `test_a_purge_keeps_no_recoverable_copy_of_the_body`, `test_the_body_answers_only_the_pictures_it_still_names` |
+| HTML export, hidden over DAV | `test_writer_stays_hidden_over_dav_and_keeps_its_explicit_html_export`, `test_the_html_export_streams_the_stored_body`, `test_an_export_format_writer_does_not_offer_is_refused` |
+| Drive owns title, history, comments, for a linked row | `test_the_document_owns_no_field_drive_owns`, `test_the_title_is_read_from_the_node_and_never_mirrored`, `test_a_save_stamps_the_node_and_never_the_document_title`, `test_the_document_method_takes_a_version_through_drive`, `test_a_copy_carries_no_comment_blob`, `test_a_linked_row_refuses_every_legacy_method` |
+| Legacy rows and columns keep working | `test_the_legacy_columns_and_doctypes_survive_adoption`, `test_a_legacy_version_row_survives_an_ordinary_save`, `test_a_legacy_row_still_has_no_node_and_stays_legacy`, `test_delete_purges_versions`, `test_a_legacy_document_still_takes_its_private_history` |
+| No unreachable new document | `test_a_document_the_api_creates_is_reachable_by_the_legacy_read_path` |
+| Dormant hooks, and no `migrate` failure | `test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were`, `test_a_dormant_registry_leaves_a_docshare_alone`, `test_a_docshare_on_a_writer_document_does_not_fail_a_migration` |
+| Activation, proved without activating | `test_activation_registers_the_declaration_and_moves_both_hooks`, `test_activation_would_accept_the_declaration_itself`, `test_activation_refuses_a_controller_that_names_another_node_field` |
+| No Drive-native document bypasses Drive | `test_the_staged_legacy_guards_never_answer_for_a_linked_row`, `test_a_linked_row_refuses_every_legacy_method`, `test_a_docshare_cannot_open_a_document_the_grants_refuse` |
+| Templates | `test_a_template_starts_a_new_document_and_drops_the_template_flag` |
+| Saves are authorized, collab untouched | `test_a_reader_cannot_save_the_body_and_an_editor_can`, `test_a_stranger_cannot_create_a_document_in_somebody_elses_drive`, `test_a_reader_who_cannot_upload_is_refused_and_not_hidden_from` |
+| Inherited access, trash read-only | `test_an_inherited_folder_grant_reaches_the_row_and_the_list`, `test_a_stranger_reads_neither_the_row_nor_the_list`, `test_a_trashed_document_stays_readable_and_leaves_the_list`, `test_a_trashed_document_refuses_every_write_the_editor_makes`, `test_a_trashed_document_refuses_the_generic_orm_write_too`, `test_a_trashed_document_still_reads_and_still_restores` |
+
+Three of those tests live outside the Writer adoption module.
+`test_a_legacy_row_still_has_no_node_and_stays_legacy` and
+`test_delete_purges_versions` are in
+`suite/writer/doctype/writer_document/test_writer_document.py`.
+`test_activation_refuses_a_controller_that_names_another_node_field` is in
+`suite/drive/tests/test_content.py:426`, because the cross-check it proves is
+ticket 16's. Every other test above is in
+`suite/writer/tests/test_drive_adoption.py`.
+
+### Migration
+
+No new patch. `suite/patches.txt` is untouched. The only schema change is the
+`node` column, which `migrate` adds from the doctype JSON. It ran green on
+`slides.localhost`.
+
+`validate_content_registry` runs from `after_install` and `after_migrate`
+(`suite/composition/lifecycle.py:57,65`). With the registry empty it iterates
+nothing: no doctype is proved, and no `DocShare` is inspected. A site with
+assigned Writer documents migrates unchanged, and Desk assignment keeps
+working.
+
+At activation (ticket 29) the same call refuses the site if `Writer Document`
+lacks the `node` field, owns a field Drive owns, names a different node column
+than its declaration, or carries any `DocShare` row. The last is what ticket
+28 owes a rewrite for.
+
+## Review, 2026-09-06
+
+An independent review of the implementation commit, `86bda351d` on
+`review/drive-17-writer-adoption`, which reached this branch as `5754bc220`. It
+read the ticket, §8.8, §10.1–10.7 and §14.6–14.7, ARCHITECTURE.md, ticket 16,
+the Frappe sources the ticket cites, and every changed file and test. It ran
+static and no-database checks only.
+
+### Corrections made, `e48aa3400`
+
+| Severity | Defect | Fix |
+|---|---|---|
+| High | A picture written as a plain `data-node` attribute was invisible in the Yjs body. `MEDIA_PATTERNS` needs the literal text `data-node="x"`, but Yjs holds the attribute name apart from its value, so `used_nodes` did not name it and `remap_media` did not rewrite it. The daily sweep would trash a picture the document still shows, and a copy's pictures would still point at the source's nodes. Untested: every body fixture used the URL spelling. | `_attribute_ids` and `_remapped_attribute` read the attribute name as well. |
+| High | pycrdt panics were converted for `apply_update` and nowhere else. A body whose `default` root was written as a `Text` or an `Array` applies cleanly and panics on the first child read. `PanicException` derives from `BaseException`, so it escapes the `except Exception` that rolls back `nodes.copy`'s and `nodes.create_document`'s savepoints, leaving a half-written copy, and it kills `sweep_unused_media` past its own rollback. Reproduced. | `_readable_body()` wraps every pycrdt call, not one. |
+| High | A trashed document was still writable. §8.8 says a trashed node opens read-only; `versions` and `comments` both enforce it, `content` and the row hook did not. `save_doc`, `save_html`, `update_settings`, `frappe.client.save`, and `frappe.client.set_value` all landed on a node in the bin. The existing test asserted "the bin opens read-only" in a comment and only checked `read`. | `content._refuse_trashed_write` in `drive_check` and `touch`; `framework._node_allows` denies any role above READ on a node that is not Active. |
+| Medium | `on_purge` left the whole body behind. Without `delete_permanently`, `frappe.delete_doc` writes a `Deleted Document` row holding `doc.as_json()`: the Yjs body, the HTML, and the comment blob all outlive a §8.8 purge. | `delete_permanently=True`. |
+| Medium | `_decoded_body` folded "no body" and "undecodable body" into `None`. An undecodable body answered "I use no pictures", so the sweep trashed its media, and `remap_media` skipped `content`, so the copy kept the source's ids — the exact outcome `_remap_body`'s docstring promises to refuse. `content` is written straight from the client with no validation, so it is reachable. | `_decoded_body` refuses; `_body_ids` falls back to a raw scan of the column, `_remap_body` raises. |
+| Medium | `test_a_save_stamps_the_node_and_never_the_document_title` could not fail. `create_document` already stamps `content_modified`, and `assertGreaterEqual` passes on equality, so deleting `drive_touch()` left it green. | Move the clock, then `assertGreater`. Finished at `c5e544fe6`; see below. |
+| Low | Three claims in the code were false: that `content.app_callback()` wraps every callback (it wraps three of eight), that the `Writer Version` cascade works around a link check `force=1` already skips, and two stale `frappe/share.py` line citations. | Corrected in place. |
+
+Each new test was run against the implementation commit first and fails there
+for the defect it names.
+
+### Blockers, both resolved
+
+1. **Activation was not staged, and the accepted plan says it must be.**
+   Resolved by `f7d23614d`: `drive_content_types` is empty, both permission
+   hooks stay on `suite.writer.overrides`, and ticket 29 owns the step. The two
+   consequences the blocker named are gone with it. No legacy row 409s, because
+   no hook resolves a node. No new document is unreachable, because
+   `create_document` still writes a `File`.
+
+2. **`migrate` could fail on a site with real Writer data.**
+   Resolved by the same change, and now proved on the site.
+   `validate_content_registry` iterates the registry, the registry is empty, so
+   no `DocShare` is inspected and Desk assignment still writes one. Ticket 28
+   owes the rewrite before ticket 29 activates;
+   `test_a_docshare_on_a_writer_document_does_not_fail_a_migration` asserts
+   both halves.
+
+## Correction, 2026-09-06
+
+Applied on the same branch, after the review, as `f7d23614d`. It reverses one
+decision and refactors the ticket into a deployable expand phase.
+
+### What changed
+
+- `suite/hooks.py`: `drive_content_types` back to `[]`. Both `Writer Document`
+  permission entries point at `suite.writer.overrides`, with the ticket-29
+  replacement named in a comment beside each.
+- `suite/writer/doctype/writer_document/writer_document.py`: the dual path.
+  `new_version`, `save_comments`, `update_file`, and `notify_comments` are
+  restored for legacy rows and refuse a linked one. `save_doc`, `save_html`,
+  and `update_settings` branch on the node.
+- `suite/writer/overrides/__init__.py`: `document_has_permission` and
+  `document_query_conditions` added, the second one excluding linked rows from
+  the legacy predicate. `version_query_conditions` now agrees with
+  `version_has_permission` on a linked document.
+- `suite/writer/api/docs.py`: `create_document` and `save_comments` back to
+  their ticket-16 form, with a comment naming what replaces them and when.
+- `suite/drive/_core/content.py`: `node_field_of`, `drive_node_field`, the
+  registry-aware `require_node` and `refuse_node_change`, and the
+  `_validate_mixin` cross-check.
+- `suite/drive/api/tests/test_files.py`: reverted; `Writer Document` is again
+  a valid subject for the content-link hijack tests.
+- `suite/drive/tests/test_content.py`: the registry is empty again, and the
+  node accessor and mixin validation tests cover both sides of activation.
+- `suite/writer/tests/test_drive_adoption.py`: `activated()`, a third class
+  `TestWriterBeforeActivation`, and six new tests.
+
+### Review findings this correction also fixed
+
+- **Medium**, `version_has_permission` and `version_query_conditions`
+  disagreed on a Drive-native document: the row check denied everyone but
+  Administrator while the list predicate still returned the owner's rows.
+  `version_query_conditions` now goes through `document_query_conditions`.
+- **Low**, the evidence text described
+  `test_a_failed_reference_rewrite_leaves_no_copy_and_no_charge` as using
+  `dataclasses.replace`. It patches `writer._remap_body`;
+  `dataclasses.replace` belongs to the refused-create test. Corrected above.
+- **Low**, `docs.py:47`'s comment implied the untitled loop could swallow a
+  `frappe.PermissionError`. The loop is gone with the Drive-native
+  `create_document`.
+
+## Test corrections, `87f05ee7a` and `c5e544fe6`
+
+Two test errors the site run exposed, both in the tests, neither in the
+product.
+
+- **freezegun is not a dependency.** The stamp test called `self.freeze_time`.
+  It is gone from the module and from the app.
+- **A refusal below Read is a 404.** The create test expected `DriveForbidden`
+  for a caller with no grant. `require` answers `DriveNotFound`, because an
+  unreadable node is never disclosed (§5.4, [009 §2]). The product is right, so
+  the test now expects `DriveNotFound` and counts `Drive Node` rows.
+  `test_a_reader_who_cannot_upload_is_refused_and_not_hidden_from` holds the
+  other half: a Read holder who cannot upload gets `DriveForbidden`.
+  `TestWriterInDrive` goes to 34 tests.
+- **The stamp is proved against the creation stamp.** The intermediate fix
+  backdated `Drive Node.content_modified` with `frappe.db.set_value`, a rule 5.5
+  write from outside Drive. That write is gone. `content_modified` is a
+  `datetime(6)`, and the creation stamp and the save stamp sit a node insert, a
+  factory call, and a grant apart, so the creation stamp is a value the save
+  must beat. A no-op `drive_touch` leaves it in place and fails the test.
+
+## Ticket 16 corrections, `f1d303244` and `7fd04f7d0`
+
+Both were this ticket's review findings against ticket 16's shared code, so the
+fixes and their evidence live in
+[16 — Create content documents and media through one Drive contract](16-content-contract.md)
+under "Contract corrections". That section names the two commits by their
+review-branch hashes, `c36991fb8` and `a5d3d44e8`; the patches that reached
+this HEAD are identical and are `f1d303244` and `7fd04f7d0`. In short:
+
+- **Medium.** Five of the eight `ContentTypeSpec` callbacks ran outside
+  `content.app_callback()`: `on_purge`, `restore_version`, `version_bytes`,
+  `export`, and `used_nodes`. Every call into app code now goes through
+  `content.call_app`, and the two stream callbacks through
+  `content.call_app_stream`, which keeps the guard on the stream Drive reads
+  after the callback returned. `test_no_core_module_calls_a_spec_callback_outside_the_guard`
+  walks the `_core` AST and fails on any unguarded call, so the rule holds for
+  Slides and Sheets too. Writer's own callbacks commit nothing, so no Writer
+  code changed; only its module note, which now names `call_app` and
+  `call_app_stream`.
+- **Medium.** `doc_has_permission` asked the row's own node for `create`. It
+  now asks that node's parent for UPLOAD (§4.3) and fails closed when the
+  parent cannot be resolved. Still unreachable for Writer at this HEAD: the
+  registry is empty behind the Build stage gate, and `create_document` inserts
+  with `ignore_permissions`.
+
+The site run above covers both. `test_content` is 53 unit and 44 integration,
+which includes the 11 new contract tests and the three adversarial workflow
+tests that could not run when the corrections landed.
+
+## Staged share fix, `524f62c46`
+
+Ticket 18's review found the same `DocShare` bypass in both apps' staged
+guards, fixed Slides, and recorded Writer as ticket 17's file
+([18 — Move Slides documents and media into Drive](18-slides-adoption.md),
+Blocker 2). This closes the Writer half, on the same review branch.
+
+### The defect
+
+Between Build and ticket 29 the two guards in
+`suite/writer/overrides/__init__.py` are the only ones running for
+`Writer Document`, and both answered `False` for a linked row. `False` is not a
+denial:
+
+| Composition | What Frappe does next | Effect |
+|---|---|---|
+| row | `perm = false_if_not_shared()` after the hook denied (`frappe/permissions.py:214-216`) | one `DocShare` re-grants read, write, share, submit, email, and print |
+| list | `where_condition \|= table.name.isin(shared_docs)` (`frappe/database/query.py:1739-1742`) | the shared names are ORed around any predicate the hook returns |
+
+`frappe.share.get_shared` matches an `everyone = 1` row for every signed-in
+user (`frappe/share.py:188-190`), so one such row reached every linked document
+on the site. `Drive Grant` is the only authority (§1), so this was a way around
+it for the whole Build-to-activation window.
+
+### The fix
+
+- `document_has_permission` calls `drive.refuse_shared_row` before it returns
+  `False` for a linked row.
+- `document_query_conditions` calls `drive.refuse_shared_linked_rows`.
+- `version_query_conditions` takes its SQL from the new private
+  `_document_predicate`, so the version list does not inherit that refusal.
+
+Both calls are Drive package-root entries the Slides fix added, so Writer
+imports nothing below Drive's root and reads no `Drive Grant` itself. Both are
+scoped to a row that carries a node: a legacy row is still the app's to share,
+and no row carries a node before Build. Activation timing does not move, the
+registry stays dormant, and no `DocShare` row is rewritten.
+
+The split matters because Frappe ORs the shared names of the doctype being
+listed. A `DocShare` on a `Writer Document` never widens a `Writer Version`
+list, so refusing there would deny a legacy reader their own history for a row
+that could not have opened it, and it would raise out of
+`suite/writer/api/general.py:130`, the desk version list, and search.
+
+### Tests
+
+Five, in `suite/writer/tests/test_drive_adoption.py`.
+
+| Test | What it proves |
+|---|---|
+| `test_a_docshare_cannot_open_a_linked_row_through_the_staged_guards` | a user share is refused on the row and on the list, and the Administrator list is not refused |
+| `test_an_everyone_docshare_reaches_a_linked_row_no_more_easily` | an `everyone` row is refused for a signed-in user, and matches no Guest, so the guard refuses a Guest nothing |
+| `test_the_row_guard_refuses_exactly_the_rights_the_share_carries` | `write` on a write-only row, `read`, `email`, and `print` on a read-only one, silence for `select` and `delete` |
+| `test_a_share_on_a_linked_row_leaves_the_legacy_version_list_alone` | the version predicate still answers, with the node clause intact |
+| `test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it` | a node-less row keeps its exact legacy behaviour: `frappe.has_permission` answers True through the share and `frappe.get_list` returns the name |
+
+The share rows are hand-written with `ignore_validate`, because
+`refuse_governed_share` refuses a new one under `activated()` and because no
+tool rewrites the rows a site already had. That is the state Build inherits.
+
+Counts at this HEAD: `TestWriterDeclaration` 23, `TestWriterBeforeActivation`
+5, `TestWriterInDrive` 38, 66 in total. **The 43 integration tests are
+unverified.** They have not run: this worktree may not touch
+`slides.localhost`.
+
+### Checks run here
+
+No bench, no migrate, no shared-site command.
+
+| Check | Result |
+|---|---|
+| `python -m compileall suite/writer suite/drive suite/tests suite/hooks.py` | Clean |
+| `ruff 0.14.5 check` on both changed files | Clean |
+| `ruff 0.14.5 format --check` on both changed files | 2 files already formatted |
+| `ruff 0.14.5 check suite/writer` | 4 errors, every one pre-existing in a file this commit does not touch: `E731` and `E722` in `api/docs.py`, two `RUF012` in `search.py` |
+| `suite.tests.test_architecture`, 7 tests, no database | OK, 0.95s |
+| `TestWriterDeclaration`, 23 tests, no database | OK, 0.15s |
+
+Ruff is 0.14.5 here, not the 0.12.3 recorded above. The two `api/docs.py`
+errors are the same two; the two `RUF012` are new to the version, not to the
+code.
+
+The pure runs use `frappe.init(site="slides.localhost")` with no connection,
+from `/home/faris/benches/suite-bench/sites`, with `PYTHONPATH` set to this
+worktree. `suite.writer.overrides.__file__` is asserted to come from the
+worktree.
+
+### The site gate, expanded
+
+Run from `/home/faris/benches/suite-bench`, with `PYTHONPATH` set to this
+worktree. The first three are what this commit adds to ticket 18's gate.
+
+```
+bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.writer.doctype.writer_document.test_writer_document
+bench --site slides.localhost run-tests --module suite.tests.test_architecture
+bench --site slides.localhost migrate
+bench --site slides.localhost run-tests --module suite.slides.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.drive.tests.test_content
+```
+
+`migrate` still adds the `node` column and nothing else. `test_content` is in
+the list because it freezes the four hook signatures the two guards borrow.
+
+### Not fixed, recorded
+
+- **`Writer Version` is open on both sides once Build runs.**
+  `version_has_permission` answers from the backing `File` of the parent
+  document, and returns `False` when there is none, which the row composition
+  above reopens. Build links documents that already carry version rows and
+  keeps the `File` until Cleanup (§14.10), so after Build that guard answers a
+  Drive-owned document's history from the legacy `File`, and a `DocShare` on
+  the version row reopens it. The list side is the same: `Writer Version`
+  grants role read to `Suite User`, so the predicate is built and the shared
+  names are ORed around it. Neither staged guard reaches it. `Writer Version`
+  carries no node column for `refuse_shared_linked_rows` to scope on, and
+  `suite.writer.drive.SPEC` declares `satellites=()`, so activation does not
+  govern it either. Unreachable today: the only two writers of the node column
+  insert a new document, so no linked row has a version except one an
+  Administrator writes by hand. Owned by 28 and 29; the module docstring in
+  `suite/writer/overrides/__init__.py` names it.
+- **The list guard refuses a Suite Admin.** `refuse_shared_linked_rows` skips
+  the literal `Administrator` only, while `_refuse_shared_list`, the guard
+  after activation, skips `is_drive_admin`. A Suite Admin who holds a
+  `DocShare` on a linked row therefore loses the whole `Writer Document` list
+  until the row is deleted. Drive's file, not this one's, and Slides carries
+  the same behaviour from ticket 18.
+- **A wrong citation, twice.** `suite/drive/framework.py:257` and
+  `suite/slides/doctype/presentation/presentation.py:648` cite
+  `frappe/database/query.py:1737-1741`; the block is 1738-1742 and the OR is
+  1742. The two copies in `suite/writer/overrides/__init__.py` and its tests
+  say 1739-1742. Not corrected here: both files are outside this commit.
+
+## Site gate repair, `25bdc25af`
+
+The three errors ticket 18's site gate recorded against this ticket are fixed.
+They were not a defect in the list-permission path. The Writer adoption test
+module poisoned the site it ran on, and the poison failed the next run.
+
+### The defect
+
+`TestWriterBeforeActivation.test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it`
+writes a legacy `Writer Document` and a `DocShare` on it, then commits. An
+`addCleanup` deletes each row.
+
+`IntegrationTestCase` rolls back once per class, not once per test. `setUpClass`
+registers `_rollback_db` with `addClassCleanup`
+(`frappe/tests/classes/integration_test_case.py:72`), and neither `setUp` nor
+`tearDown` rolls back. So the commit made both rows permanent, the two
+`delete_doc` cleanups deleted them inside the transaction, and the class
+rollback threw those deletes away. One `Writer Document` and one `DocShare` for
+`writer-adoption-other@example.com` survived every run of the module.
+`slides.localhost` carried six such pairs, one per historical run.
+
+The surviving share is what failed the next run. Each guard gave the correct
+fail-closed answer:
+
+| Test | Guard | Answer |
+|---|---|---|
+| `test_activation_would_accept_the_declaration_itself` | `validate_content_registry` | `DriveConflict`, the type still has shares |
+| `test_a_stranger_reads_neither_the_row_nor_the_list` | `_refuse_shared_list` | `DriveForbidden` on `frappe.get_list` |
+| `test_an_inherited_folder_grant_reaches_the_row_and_the_list` | `_refuse_shared_list` | `DriveForbidden` on `frappe.get_list` |
+
+`frappe.has_permission` passed in both `TestWriterInDrive` tests.
+`refuse_shared_row` filters on `share_name`, so a share written against another
+row never reaches it. Only the list guard is unscoped by row, and that is the
+design: the engine ORs every shared name around whatever the hook returns
+(`frappe/database/query.py:1738-1742`), so a governed doctype holding one
+readable share has to refuse the whole list. Nothing here was relaxed.
+
+Two of the three errors appear on a clean site, in the first run.
+`TestWriterBeforeActivation` rolls back before `TestWriterInDrive` starts, which
+resurrects the committed share inside the same process.
+`test_activation_would_accept_the_declaration_itself` sits in the leaking class,
+where the delete is still pending, so it fails on the second run and later.
+That is why the gate saw three errors and a clean site sees two.
+
+Ticket 18 recorded these as "Writer's list-permission path". That reading is
+wrong. Ticket 18's own suspicion 1 named the real shape: "a pre-existing
+`DocShare` on any `Presentation` or `Writer Document` refuses activation". The
+source of the row was the Writer test module.
+
+### The fix
+
+`TestWriterBeforeActivation` now carries `_remove_fixture_rows`, the helper
+`TestWriterInDrive` already had. It is registered first in `setUp`, so it runs
+last, after every `delete_doc` cleanup a test queues. It deletes the
+`Writer Document` and `DocShare` rows the test added, then commits, so the
+removals outlive the class rollback.
+
+`test_a_committed_fixture_row_does_not_outlive_the_class_rollback` asserts it in
+the run that causes the leak: commit a share, run the helper, roll back, and
+both rows are gone. Removing the `frappe.db.commit()` from the helper turns that
+test red and brings back `test_a_stranger_reads_neither_the_row_nor_the_list`
+and `test_an_inherited_folder_grant_reaches_the_row_and_the_list` in the same
+run. That mutation was run, and it is what proves the guard is not vacuous.
+
+### Checks run, 2026-09-06
+
+Run from `/home/faris/benches/suite-bench` against the main checkout, serialised.
+No `migrate`, no install, no restart: the change touches one test file.
+
+| Module | Result |
+|---|---|
+| `suite.writer.tests.test_drive_adoption` | 23 unit OK, 44 integration OK |
+| `suite.writer.doctype.writer_document.test_writer_document` | 2 OK |
+| `suite.writer.api.tests.test_general` | 2 OK |
+| `suite.slides.tests.test_drive_adoption` | 30 unit OK, 70 integration OK |
+| `suite.drive.tests.test_content` | 53 unit OK, 49 integration OK |
+| `suite.drive.tests.test_nodes` | 13 unit OK, 23 integration OK |
+| `suite.tests.test_architecture` | 7 OK |
+| `suite.tests.test_composition` | 3 OK |
+
+Integration is 44, not 43: the guard test is the new one.
+`test_writer_template` and `test_writer_version` hold no tests and were skipped
+by the runner, not by choice.
+
+The Writer module was run twice in a row on a cleaned site. Both runs are green
+and both leave `DocShare` and `Writer Document` at zero rows, which is the
+idempotence the leak broke. `ruff@0.12.3 check` and `format --check` pass on the
+changed file.
+
+The six leaked row pairs were deleted from `slides.localhost`. Every one was a
+node-less `Writer Document` owned by `Administrator` carrying a read `DocShare`
+for `writer-adoption-other@example.com`. No other site data was touched.
+
+### Not fixed, recorded
+
+- **`suite/slides/tests/test_drive_adoption.py` leaks the same way.**
+  `TestSlidesBeforeActivation` has no `_remove_fixture_rows`, and its committing
+  tests leak one `Presentation` per run: `slides.localhost` went from 10 rows to
+  11 across one run. No `DocShare` leaks, by accident rather than by design. A
+  later test in the same class commits, which flushes the earlier tests' pending
+  cleanup deletes; only the last committing test's rows survive. So the module
+  is green today and its garbage is inert, because `_refuse_shared_list` trips
+  on shares and not on rows. It becomes a poison the day a share outlives the
+  last commit. Ticket 18's file, not this one's.
+
+  **Fixed at ticket 18**, in `d5ac8beb6`, `c1157620f`, and `db645102f`. The
+  reading above was too narrow: the leak also stranded the backing `File` rows,
+  which outlive a deck the cleanup deleted. Ticket 18 records the row footprint
+  and the mutations that prove each swept line.
+
+## Handoffs
+
+| To | What is owed |
+|---|---|
+| 21, 23 | Move `suite.writer.api.docs.create_document` onto `drive.create_document`, and the read path with it: `docs.get_document`, `general.get_document_list`, `:get_versions`, the search mapping at `:190`, `drive/api/list.py:files`, `writer/api/embed.py`. Until then `suite/writer/tests/test_drive_adoption.py` reaches `suite.drive._core`, recorded as owned debt in `suite/tests/test_architecture.py` under owner "Suite Writer", to be removed when tickets 21 and 22 expose those workflows over HTTP. The listing filter is `mime_type == "frappe_doc"` while a node carries `frappe/writer`. |
+| 22, 24 | First consumers of `export`. `content.call_app_stream` is the guarded entry point an export route must use; nothing reads `default_export` or `export_formats` yet. |
+| 28 (Build) | Link every legacy `Writer Document` row to a node. Write `Writer Version` history as `writer-document/1` envelopes, not bare HTML, or restore refuses it. Rewrite every `DocShare` on `Writer Document` as a grant, or ticket 29 refuses the site. Rewrite the `Writer Version` rows too, or the version history of a linked document stays reachable through a share and through the surviving `File`: see "Not fixed, recorded" above. |
+| 29 | The activation, as three changes in one step: `drive_content_types = ["suite.writer.drive.SPEC"]`, `has_permission["Writer Document"] = "suite.drive.framework.doc_has_permission"`, and `permission_query_conditions["Writer Document"] = "suite.drive.framework.doc_query_conditions"`. `activated()` in `suite/writer/tests/test_drive_adoption.py` is that step, written out. Then delete `suite.writer.overrides.document_has_permission` and `document_query_conditions`. |
+| 34 (frontend) | Adopt `take_version` in place of `new_version` (`useDocument.ts:37`, `CoreEditor.vue:320`, `NewVersionDialog.vue:10`) and Drive comments in place of `save_comments` (`resources/index.js:37`, `useYjs.ts:83`). Both still work today; both go with the legacy row. `newVersion` takes different arguments and returns a different shape from `take_version`, so no alias exists. |
+| 35 (Cleanup) | `suite/drive/overrides/file.py:146-152` deletes the content document behind a deleted `File`. Once Build links the rows, that second delete authority can take a `Writer Document` out from under a live `Drive Node`. |
+
+## Remaining risks
+
+- The dual path doubles the surface until 23, 29, and 34 close it. Every
+  branch is one `if` on the node column, and each has a test on both sides,
+  but a fifth caller added meanwhile has to choose a side.
+- **Open Low, `restore_version` bumps `modified`.** It writes without
+  `update_modified=False` while every other body write uses it, so a restore
+  bumps `Writer Document.modified` and a concurrent `update_settings` then
+  throws `TimestampMismatchError`. Unchanged at this HEAD.
+- **Open Low, `update_settings` is refused between Build and activation.** It
+  writes through `self.save()`, and `_save` calls `check_permission("write")`
+  (`frappe/model/document.py:837`), which runs the staged row hook. That hook
+  refuses every linked row, so a non-Administrator EDIT holder passes
+  `drive_check(EDIT)` and then raises `frappe.PermissionError` on the next
+  line. Unreachable today, because no site row carries a node. It becomes
+  reachable in the window after ticket 28 links rows and before ticket 29
+  moves the hook, where `save_doc` and `save_html` still work because they
+  write through `db.set_value`. Ticket 29 closes it. No test covers it: every
+  test that calls `update_settings` runs inside `activated()`, where the Drive
+  hook answers and an EDIT holder is allowed.
+- **Open Low, no API path creates a template.** `docs.create_document` has no
+  `is_template` parameter, so "cover ordinary documents and templates" holds
+  through `_core` and through Build (§14.7), not through HTTP. Ticket 21 owns
+  the route.
+- "Nothing lets a Drive-native document answer from a `File`" is proved for
+  the controller and both hooks, not for the whitelisted read path.
+  `suite/writer/api/docs.py:88` `get_document` still resolves permission
+  through `get_entity_with_permissions` on the `File`, then reads the row. Once Build links a row that keeps its `File`, that path answers a
+  linked row from the `File`. Same shape as the ticket 35 finding below;
+  tickets 21 and 23 own it.
+- `duplicate` carries `settings` verbatim, so a legacy row whose settings hold
+  a stale `"template"` key passes it to every copy once Build links it.
+  Nothing reads it.
+- A legacy row that acquires a node through an ordinary save is validated, not
+  refused, so Build may use either `db.set_value` or a save. The validation is
+  `require_node`, so it cannot take a node that already names another
+  document.
+- `suite/writer/api/docs.py` keeps two pre-existing ruff errors, `E731` and
+  `E722`. Outside this ticket's change; they go with the rewrite at 21 and 23.

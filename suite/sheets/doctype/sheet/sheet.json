@@ -5,6 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "node",
   "title",
   "sheets_data",
   "head_seq",
@@ -15,11 +16,20 @@
  ],
  "fields": [
   {
+   "description": "The Drive node that owns this sheet's title, place, grants, lifecycle, and versions.",
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Title",
-   "reqd": 1
+   "description": "Legacy title. Drive owns a linked sheet's title on its node. Frozen once the declaration is registered; §14.10 drops this column at Cleanup."
   },
   {
    "fieldname": "sheets_data",
@@ -37,7 +47,8 @@
    "fieldname": "head_snapshot",
    "fieldtype": "Link",
    "options": "Sheet Snapshot",
-   "label": "Latest snapshot"
+   "label": "Latest snapshot",
+   "description": "Legacy head pointer. \u00a710.7 retargets it to a Drive Node Version, but only \u00a714.10 may do it: an unlinked sheet keeps writing Sheet Snapshot names here until Cleanup drops that doctype, and Frappe validates the link on every Sheet.save()."
   },
   {
    "fieldname": "trashed",
@@ -88,13 +99,17 @@
    "delete": 1,
    "email": 1,
    "export": 1,
-   "if_owner": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "All",
+   "select": 1,
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Guest"
   }
  ],
  "row_format": "Dynamic",

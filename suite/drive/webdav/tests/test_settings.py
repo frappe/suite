@@ -24,15 +24,29 @@ class TestWebDAVSettings(IntegrationTestCase):
         ensure_user(FRESH)
 
     def setUp(self):
+        super().setUp()
         self._set_global(0)
+        # `allowed_webdav_methods` reads this Single, and nothing else in the
+        # class establishes it. A site or an earlier module that left a list
+        # behind would silently change what every case here is measuring.
+        self._set_method_list("")
 
     def tearDown(self):
         self._set_global(0)
+        self._set_method_list("")
+        frappe.set_user("Administrator")
+        # the opt-in cases write `Drive Settings` for a real user, and
+        # `IntegrationTestCase` rolls back only once the class is finished
+        frappe.db.delete("Drive Settings", {"user": ["in", (USER, FRESH)]})
         frappe.set_user("Administrator")
         super().tearDown()
 
     def _set_global(self, value: int):
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+
+    def _set_method_list(self, value: str):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", value)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
 
     def test_config_is_empty_for_users_while_disabled(self):
@@ -110,6 +124,12 @@ class TestWebDAVSettings(IntegrationTestCase):
             doc.save()
 
     def test_allowed_methods_runtime_gate(self):
+        """The stored list narrows the implemented surface, and never widens it.
+
+        Ticket 25 relinked the write verbs, so the ceiling is now
+        `ALLOWED_METHODS` itself: an admin who narrows nothing gets a
+        read-write mount, and one who names a subset gets exactly that subset.
+        """
         from suite.drive.webdav import ALLOWED_METHODS
 
         self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
@@ -121,9 +141,16 @@ class TestWebDAVSettings(IntegrationTestCase):
         try:
             methods = allowed_webdav_methods()
             self.assertEqual(methods, ("OPTIONS", "GET", "HEAD", "PROPFIND"))
-            # no locking allowed -> no class 2 advertised
+            # no locking offered -> no class 2 advertised
             self.assertEqual(dav_compliance(methods), "1, 3")
             self.assertEqual(dav_compliance(ALLOWED_METHODS), "1, 2, 3")
+
+            # the write verbs are real now, so a list naming them offers them
+            frappe.db.set_single_value(
+                "Drive Disk Settings", "webdav_allowed_methods", "PUT, LOCK, UNLOCK, PROPFIND"
+            )
+            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            self.assertEqual(allowed_webdav_methods(), ("OPTIONS", "PUT", "PROPFIND", "LOCK", "UNLOCK"))
 
             # unvalidated garbage in the DB must not take every request down
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "BREW")

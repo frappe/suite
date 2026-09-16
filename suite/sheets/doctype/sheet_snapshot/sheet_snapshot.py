@@ -33,9 +33,18 @@ class SheetSnapshot(Document):
     # end: auto-generated types
 
     def validate(self):
+        self._refuse_linked_parent()
         if self.kind not in {"auto", "milestone", "named"}:
             frappe.throw(f"Unknown snapshot kind: {self.kind}")
         if self.kind == "named" and not (self.label or "").strip():
             frappe.throw("Named snapshots require a label")
         if self.seq is None or self.seq < 0:
             frappe.throw("seq must be non-negative")
+
+    def on_trash(self):
+        self._refuse_linked_parent()
+
+    def _refuse_linked_parent(self):
+        from suite.sheets.drive import refuse_drive_native
+
+        refuse_drive_native(self.sheet, "Drive version history")

@@ -1,12 +1,56 @@
+"""Harness for the WebDAV suites.
+
+The DAV namespace is one mount: the caller's own Personal Root at `/dav/`
+(§12). Fixtures here therefore build a Personal Root and `Drive Node` rows
+through the workflows the product itself uses — `frappe.storage.blob.put_blob`
+for the bytes, `_core.roots.create_root` and `_core.nodes.create_folder` /
+`create_file` for the tree — so no suite asserts against a shape only a test
+can make. Cleanup goes through `suite/drive/tests/fixtures.py`.
+
+`raw_child_node` is the one exception, for the two shapes `_core` will not
+build: a content document, and a sibling whose title collides with a live one.
+Both are shapes `pathmap` still has to answer for.
+"""
+
 import base64
+import io
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
+from frappe.storage.blob import put_blob
+from frappe.utils import cint
 from frappe.utils.password import update_password
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request, Response
 
+from suite.drive._core import nodes as node_core
+from suite.drive._core.principals import Principals
+from suite.drive._core.roots import create_root, personal_root_for
+from suite.drive.tests.fixtures import drop_node_rows, drop_personal_root, drop_record_rows
 from suite.drive.webdav.dispatch import DAVResponseException, handle_before_request
 from suite.tests.utils import ensure_user
+
+__all__ = [
+    "basic_header",
+    "dispatch",
+    "drop_dav_root",
+    "drop_nodes",
+    "enable_user_webdav",
+    "ensure_system_settings_saveable",
+    "ensure_user_with_password",
+    "file_node",
+    "folder_node",
+    "global_webdav_enabled",
+    "make_ctx",
+    "node_principals",
+    "personal_dav_root",
+    "raw_child_node",
+    "raw_document_node",
+    "reset_dav_request",
+    "set_dav_request",
+    "set_global_webdav",
+]
 
 
 def ensure_system_settings_saveable() -> None:
@@ -37,6 +81,35 @@ def enable_user_webdav(user: str, commit: bool = False) -> None:
         frappe.db.commit()
 
 
+def set_global_webdav(value) -> None:
+    """Write the site-wide WebDAV switch and commit it.
+
+    Committed, because every refusal path in the dispatcher calls `db.rollback`
+    and `clear_document_cache` re-clears the cached Single on rollback. An
+    uncommitted toggle is therefore discarded by the first 401/403/405 of a
+    case, and the next request reads the site as feature-off.
+    """
+    frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", cint(value))
+    frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+    frappe.db.commit()
+
+
+@contextmanager
+def global_webdav_enabled():
+    """Turn the site switch on for the block, then put back what it held.
+
+    Restoring a hard-coded 0 is not a restore. These suites commit, so on a
+    site where an admin had WebDAV on, one test run turned the feature off for
+    every real client and left it off - a test changing the site it measures.
+    """
+    previous = frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled")
+    set_global_webdav(1)
+    try:
+        yield
+    finally:
+        set_global_webdav(previous)
+
+
 def basic_header(user: str, password: str) -> str:
     return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
@@ -59,8 +132,33 @@ def set_dav_request(
     return frappe.local.request
 
 
+def reset_dav_request() -> None:
+    """Drop the request-scoped state a DAV call leaves on `frappe.local`.
+
+    In production `frappe.destroy()` clears `frappe.local` between requests. A
+    test process has no such boundary, so both of these outlive the case that
+    set them:
+
+    - `frappe.local.request`, planted by `set_dav_request`. It carries an
+      `Authorization` header for a test user, and `framework._request_credentials`
+      reads it on every principal build.
+    - `frappe.local.drive_activity_client`, bound by `dispatch._dispatch` from
+      the User-Agent. `_core.nodes._record_activity` stamps it into
+      `Drive Activity.client` on every write, so one dispatched case would name
+      its client on every row the rest of the process writes.
+    """
+    frappe.local.request = None
+    frappe.local.drive_activity_client = None
+
+
 def dispatch(*args, **kwargs) -> Response | None:
     """Run the before_request hook; return the DAV response, or None on passthrough."""
+    from suite.drive.webdav import pathmap
+
+    # the same reset `make_ctx` does. The dispatcher clears the memo only after
+    # a mutating handler, so a raw fixture write before this call would
+    # otherwise be resolved from the previous request's map.
+    pathmap.reset_memo()
     set_dav_request(*args, **kwargs)
     try:
         handle_before_request()
@@ -79,18 +177,136 @@ def make_ctx(method: str, path: str, user: str, **kwargs):
     return context.build(request, user)
 
 
-def write_file_fixture(parent: str, name: str, data: bytes, mime_type: str = "text/plain"):
-    """A Drive file whose bytes really exist on local disk."""
-    from suite.drive.utils import create_drive_file
-    from suite.drive.utils.files import FileManager
+# --------------------------------------------------------------------------
+# Node fixtures
+# --------------------------------------------------------------------------
 
-    manager = FileManager()
 
-    def entity_path(file):
-        relative = manager.get_disk_path(file)
-        full = manager.site_folder / relative
-        full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_bytes(data)
-        return "/" + str(relative)
+def node_principals(user: str) -> Principals:
+    """The principals a fixture writes with.
 
-    return create_drive_file(name, parent, "Text", entity_path, mime_type, len(data))
+    `framework.principals_for` reads this request's `X-Drive-Links` header only
+    when `user` is the session user, and a DAV session never carries link
+    principals anyway (§6.9), so a fixture built with these reaches exactly what
+    the handler under test will reach.
+    """
+    from suite.drive import framework
+
+    return framework.principals_for(user)
+
+
+def personal_dav_root(user: str, *, title: str = "My Drive", quota_bytes: int = 0) -> str:
+    """The user's Personal Root node id — the whole of the DAV mount.
+
+    `ensure_user` provisions one through `after_user_insert`, so a suite that
+    wants its own quota or title drops that pair first (`drop_dav_root`) and
+    calls this; otherwise the provisioned root is returned as it stands.
+    """
+    existing = personal_root_for(user)
+    if existing:
+        return existing
+    return create_root(kind="Personal", title=title, user=user, quota_bytes=quota_bytes).node
+
+
+def drop_dav_root(user: str) -> None:
+    """Remove the user's Personal Root and everything charged to it."""
+    drop_personal_root(user)
+
+
+def folder_node(user: str, parent: str, title: str) -> str:
+    return node_core.create_folder(node_principals(user), parent, title)
+
+
+def file_node(
+    user: str,
+    parent: str,
+    title: str,
+    data: bytes = b"",
+    *,
+    content_modified=None,
+) -> frappe._dict:
+    """One blob-backed file node, with the blob metadata the DAV suites assert on.
+
+    Returns name/blob/size/mime/checksum/data rather than just the id: the
+    strong ETag is the blob's checksum and `getcontenttype` is the blob's
+    sniffed mime, so a test that hard-coded either would be asserting against
+    its own guess instead of the bytes on the wire.
+
+    The mime is the blob's own and cannot be chosen. `put_blob` sniffs it from
+    the content and takes no override, and `_core.nodes._validated_blob` refuses
+    a file whose mime differs from its blob's, so a fixture that named one would
+    only build a shape the product refuses.
+
+    The render enqueue is suppressed, the same way `test_previews._file` and the
+    three `test_drive_adoption` suites suppress it. These suites arrange about
+    140 files in `setUp` alone and commit, so an unsuppressed fixture leaves that
+    many `previews.render` jobs on the site's short queue after every run - a
+    suite changing the site it measures, and on a bench with no worker it fills
+    the queue for every real client. No row and no node field changes, so every
+    shape a DAV assertion reads is still the one `create_file` writes. A verb
+    handler under test still enqueues for real; only the fixture is quiet.
+    """
+    blob = put_blob(io.BytesIO(data), is_private=True, filename=title)
+    with patch("suite.drive._core.previews.enqueue_render"):
+        node = node_core.create_file(
+            node_principals(user),
+            parent,
+            title,
+            blob=blob.name,
+            size=blob.file_size,
+            mime=blob.mime_type,
+            content_modified=content_modified,
+        )
+    return frappe._dict(
+        name=node,
+        blob=blob.name,
+        size=blob.file_size,
+        mime=blob.mime_type,
+        checksum=blob.checksum,
+        data=data,
+    )
+
+
+def raw_child_node(parent: str, title: str, *, kind: str = "folder", **fields) -> str:
+    """Insert one child below `parent` without going through `_core`.
+
+    Two shapes need this. A `kind="document"` node cannot be created by
+    `nodes.create_document`: it needs a registered content type and
+    `hooks.py drive_content_types` is empty. A title that collides with a live
+    sibling — an exact duplicate, or a case variant, which MariaDB's default
+    collation makes the same title — is refused by `_refuse_sibling_collision`,
+    and both are exactly what `pathmap`'s BINARY-first walk has to answer for.
+    The `path`/`root` fields are the ones `_core._insert_node` would write.
+    """
+    parent_row = frappe.db.get_value("Drive Node", parent, ["name", "kind", "root", "path"], as_dict=True)
+    row = {
+        "doctype": "Drive Node",
+        "title": title,
+        "parent": parent_row.name,
+        "root": parent_row.name if parent_row.kind == "root" else parent_row.root,
+        "path": "" if parent_row.kind == "root" else f"{parent_row.path or '/'}{parent_row.name}/",
+        "kind": kind,
+        "state": "Active",
+        "is_template": 0,
+    }
+    row.update(fields)
+    return frappe.get_doc(row).insert(ignore_permissions=True, ignore_links=True).name
+
+
+def raw_document_node(parent: str, title: str = "Notes") -> str:
+    """A `kind="document"` node — §12.2's hidden Writer/Slides/Sheets shape."""
+    return raw_child_node(
+        parent,
+        title,
+        kind="document",
+        content_doctype="ToDo",
+        content_docname="fake-content",
+        mime="frappe/fake",
+    )
+
+
+def drop_nodes(node_ids) -> None:
+    """Delete a set of nodes and every row that hangs off them."""
+    node_ids = [node for node in node_ids if node]
+    drop_record_rows(node_ids)
+    drop_node_rows(node_ids)

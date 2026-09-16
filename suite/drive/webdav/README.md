@@ -1,5 +1,11 @@
 # Drive WebDAV Server
 
+Status: current-server operations plus the accepted rewrite target. The target
+behavior is authoritative in
+[`../../../wayfinder/drive-layer-spec/drive-layer-spec.md`](../../../wayfinder/drive-layer-spec/drive-layer-spec.md)
+§12, and its module boundaries come from
+[`../../../ARCHITECTURE.md`](../../../ARCHITECTURE.md).
+
 A first-class WebDAV server (RFC 4918 Class 1, 2, 3 — full litmus compliance)
 built into Drive. Any WebDAV client — Windows Explorer, macOS Finder, Linux
 GVFS/KDE, Cyberduck, rclone, mobile file apps, MS Office — manages Drive files
@@ -13,10 +19,24 @@ directly at `https://<site>/dav/`.
    (off by default), then connect a client to `https://<site>/dav/` and sign
    in with the Frappe username and password.
 
-The mount shows two folders: **Home** (the user's personal files) and
-**Everyone** (the shared site tree). All Drive permissions apply exactly as in
-the web app; entities WebDAV cannot represent (Writer/Sheets/Slides documents,
-links) are not shown.
+`/dav/` mounts the caller's Personal Root directly. The **Home** and
+**Everyone** aliases are gone.
+
+## Rewrite target
+
+- `/dav/` mounts the caller's Personal Root directly. It does not expose a
+  Shared Root or a “shared with me” mount.
+- The same Drive roles apply in WebDAV and the web app. A DAV session never
+  carries a Share Link principal.
+- Content documents (Writer, Slides, Sheets) are hidden outright. §12.2
+  drops them from listings and from path lookup, and an available export
+  function does not make one reachable. Their media children go with them.
+- HTTP and WebDAV call the same private Drive workflows in
+  `suite/drive/_core/`. WebDAV owns protocol translation, not permission,
+  quota, activity, or node policy.
+- `perms.py` is deleted. Folder pages use the Drive engine's batched access
+  resolution. Direct storage-manager calls and the staging machinery in
+  `put.py` are replaced by the node/upload workflows and `frappe.storage`.
 
 Notes on behavior:
 
@@ -37,7 +57,7 @@ Notes on behavior:
   blocked by DAV locks. Administrators can force-unlock a stuck document by
   deleting its **Drive DAV Lock** row (or via UNLOCK).
 
-## Architecture
+## Current implementation architecture
 
 The dispatcher (`dispatch.py`) is a `before_request` hook — the only point in
 the Frappe request lifecycle that sees WebDAV verbs — and answers `/dav/*`
@@ -48,12 +68,17 @@ path fast; a password change invalidates instantly). Request bodies stream
 when frappe supports the `streaming_request_paths` hook, and fall back to
 frappe's buffered/capped body handling otherwise.
 
-Module map: `auth` (Basic + lockout tracking), `pathmap` (URL ↔ entity,
-naming policy), `perms` (batched Depth:1 permission resolution — constant
-query count per listing), `propfind`/`proppatch` (+ `deadprops` store),
-`get`/`put` (streamed content, Range, conditionals), `structure`
-(MKCOL/DELETE/MOVE), `copy` (recursive COPY with quota checks), `locks` +
-`ifheader` + `lock` (Class 2), `xmlutil` (hardened lxml + multistatus).
+Module map: `auth` (Basic + lockout tracking), `pathmap` (URL to `Drive Node`,
+naming policy), `propfind`/`proppatch` (+ `deadprops` store), `get`/`put`
+(streamed content, Range, conditionals), `structure` (MKCOL/DELETE/MOVE),
+`copy` (recursive COPY), `locks` + `ifheader` + `lock` (Class 2), `xmlutil`
+(hardened lxml + multistatus). Permission, quota, and node policy are the
+Drive engine's, reached through `suite/drive/_core/`; `perms.py` is gone.
+
+During the rewrite, protocol-focused modules remain under
+`suite/drive/webdav/`; policy and state transitions move behind the private
+Drive implementation described above. Code outside Drive must not import this
+adapter.
 
 ## Deployment caveats (admin-facing; no end-user setup needed)
 
@@ -103,10 +128,11 @@ Explorer's `Win32LastModifiedTime` PROPPATCH is honored too.
 ## Compliance testing
 
 `tests/run_litmus.sh <site>` runs the full litmus suite (http, basic,
-copymove, props, locks) against a throwaway user's Home and compares the
-outcome with `tests/litmus_expected.txt` — CI fails on unledgered failures
-and on stale ledger lines. Current status: **all 110 tests pass**; one
-advisory warning is ledgered.
+copymove, props, locks) against a throwaway user's Personal Root at `/dav/`
+and compares the outcome with `tests/litmus_expected.txt`. CI fails on
+unledgered failures and on stale ledger lines. Current status: **not run
+since the Drive Node relink**; the ledger holds one advisory warning and may
+only grow from a real run.
 
 Python integration tests live beside the code:
 `bench --site <site> run-tests --module suite.drive.webdav.tests.<module>`.

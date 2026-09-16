@@ -27,6 +27,8 @@ dependencies = [
     "tantivy~=0.26.0",
     "icalendar~=6.1.0",
     "pydenticon~=0.3.1",
+    # sheets
+    "openpyxl~=3.1.5",  # sheets: xlsx import (previously only a transitive dep via frappe)
     # sheets — AI Assist (Claude)
     "anthropic>=0.40",
 ]
