@@ -12,16 +12,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
 import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
 import { settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
-import { useRootStore } from '@/stores/root'
 
 const route = useRoute()
-const root = useRootStore()
 const session = useSessionStore()
 
 const appsUsingCommonSettings = ['slides', 'sheets', 'writer']
@@ -30,10 +28,4 @@ const showCommonSettings = computed(() => {
   const appId = route.meta.appId as string | undefined
   return appsUsingCommonSettings.includes(appId || '') || (appId === 'meet' && route.name !== 'meet-meeting')
 })
-
-watch(
-  () => route.meta.appId as string | undefined,
-  (appId) => root.setActiveApp(appId ?? null),
-  { immediate: true },
-)
 </script>
