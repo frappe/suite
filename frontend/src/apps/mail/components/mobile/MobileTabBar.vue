@@ -74,6 +74,16 @@
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
+			<!-- The desktop sidebar's Apps menu, as the last tab: it opens a sheet of the
+			     other apps rather than going anywhere itself. It wears the mark and the
+			     name of the app you are in — the tab says which of the suite this is,
+			     and the sheet it opens is where the others are. It never reads as
+			     selected: it is not a place in this app the way the others are, and
+			     the sheet it raises is its own feedback. -->
+			<button :class="tabClass(false)" @click="openApps">
+				<img :src="app.logo" class="size-6 shrink-0 rounded-2" alt="" />
+				<span :class="labelClass(false)">{{ __(app.name) }}</span>
+			</button>
 		</div>
 	</nav>
 
@@ -82,6 +92,7 @@
 	     header's search button raises it through the shared state. -->
 	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
+	<MobileAppsSheet v-model:open="showAppsSheet" current-app="mail" />
 </template>
 
 <script setup lang="ts">
@@ -91,6 +102,7 @@ import { Avatar, Button } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Icon } from 'frappe-ui/experimental'
 
+import { SUITE_APPS } from '@/apps/registry'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import {
 	useFolderSheet,
@@ -102,6 +114,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
+import MobileAppsSheet from '@/components/mobile/MobileAppsSheet.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -130,6 +143,8 @@ const currentFolder = computed(() => {
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
 
+const showAppsSheet = ref(false)
+const app = SUITE_APPS.find((app) => app.id === 'mail')!
 
 // Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
 // whole screen to lay itself out in rather than floating over this one.
@@ -165,6 +180,14 @@ const openMail = () => {
 	// tap must land there — restoring the last-viewed folder made a dotted tab
 	// open Sent. (/mail redirects to the inbox.)
 	router.push('/mail')
+}
+
+// Apps is the one tab that is not a navigation: the sheet it raises is the
+// destination, and the app you pick there is where you go. The query editor
+// overlay steps aside for it like for every other tab.
+const openApps = () => {
+	showSearchModal.value = false
+	showAppsSheet.value = true
 }
 
 const openScreener = () => {

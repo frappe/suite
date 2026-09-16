@@ -5,7 +5,7 @@
 	     edge then. Geometry, tint and label treatment follow mail's tab bar: on a phone
 	     the two apps are one product. -->
 	<Button
-		v-if="calendarActive && !sheetOpen"
+		v-if="calendarActive && !sheetOpen && !showAppsSheet"
 		variant="solid"
 		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
 		:aria-label="__('New event')"
@@ -42,21 +42,34 @@
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
+			<!-- The desktop sidebar's Apps menu, as the last tab, placed as mail's is:
+			     it opens a sheet of the other apps rather than going anywhere itself. It
+			     wears the calendar's own mark and name — the tab says which of the suite
+			     this is, and the sheet it opens is where the others are. It never reads
+			     as selected: it is not a place in this app the way the others are, and
+			     the sheet it raises is its own feedback. -->
+			<button :class="tabClass(false)" @click="openApps">
+				<img :src="app.logo" class="size-6 shrink-0 rounded-2" alt="" />
+				<span :class="labelClass(false)">{{ __(app.name) }}</span>
+			</button>
 		</div>
 	</nav>
 
 	<MobileViewSheet />
+	<MobileAppsSheet v-model:open="showAppsSheet" current-app="calendar" />
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { CalendarPlus } from 'lucide-vue-next'
 
+import { SUITE_APPS } from '@/apps/registry'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useViewSheet } from '@/apps/calendar/composables/useViewSheet'
 import MobileViewSheet from '@/apps/calendar/components/mobile/MobileViewSheet.vue'
+import MobileAppsSheet from '@/components/mobile/MobileAppsSheet.vue'
 import { lastCalendarView } from '@/apps/calendar/utils/lastView'
 import { routeForView, viewForRoute, viewIcon, viewLabel } from '@/apps/calendar/utils/mobileView'
 
@@ -74,6 +87,9 @@ const sheetOpen = computed(
 )
 
 const profileActive = computed(() => route.name === 'calendar-profile')
+
+const showAppsSheet = ref(false)
+const app = SUITE_APPS.find((app) => app.id === 'calendar')!
 
 // The URL is what says which view is up. Off the calendar — on Profile — there
 // is no view in the URL to read, so the tab names the one a tap would land in,
@@ -107,6 +123,10 @@ const openCalendar = () => {
 	}
 	router.push(calendarRoute())
 }
+
+// Apps is the one tab that is not a navigation: the sheet it raises is the
+// destination, and the app you pick there is where you go.
+const openApps = () => (showAppsSheet.value = true)
 
 // Re-tapping Profile pops back to the root of its own stack: the open settings
 // sub-page is a query on this route, so dropping the query closes it.
