@@ -126,7 +126,7 @@ const deleteReport = createResource({
 const deleteOptions = computed(() => ({
 	title: __('Delete Report'),
 	message: __('Delete this report? This cannot be undone.'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteReport.submit }],
 }))
 

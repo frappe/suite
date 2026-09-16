@@ -396,7 +396,7 @@ const cancelOptions = computed(() => ({
 	message: data.value?.email_deleted
 		? __('Cancel the scheduled delivery?')
 		: __('Cancel the scheduled delivery and move the message back to Drafts?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),

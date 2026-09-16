@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
 
@@ -35,17 +35,24 @@ const upcoming = computed(() => {
 		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
 })
 
-// The row whose detail panel is open renders like the active nav tab.
+// The row whose card is open renders like the active nav tab.
 const isOpen = (event: any) =>
 	!!selectedEvent.value &&
 	selectedEvent.value.id === event.id &&
 	selectedEvent.value.recurrence_id === event.recurrence_id
 
-// Desktop toggles the event detail sidebar in place (hosted by DefaultLayout);
+// Desktop toggles the event's card, hung on the row (hosted by DefaultLayout);
 // mobile has no room for it, so it falls back to the calendar app's day view.
-const handleClick = (event: any) => {
+const handleClick = (event: any, e: MouseEvent) => {
 	if (isMobile.value) router.push(eventDayRoute(event, store.accountId))
 	else if (isOpen(event)) selectedEvent.value = null
-	else openEvent(event)
+	else if (e.currentTarget instanceof Element)
+		openEvent(event, { anchor: { element: e.currentTarget, side: 'right' } })
 }
+
+// A row's card goes with its row: an event that ends, or is deleted, leaves the
+// list, and a card with nothing to hang on would drift to the corner.
+watch(upcoming, (list) => {
+	if (selectedEvent.value?._tracked && !list.some(isOpen)) selectedEvent.value = null
+})
 </script>

@@ -41,7 +41,7 @@
           dragOverItem === row.name ? '!bg-surface-gray-3' : '',
         ]"
         :draggable="renamingEntity !== row.name"
-        :to="routeFor(row)"
+        :route="routeFor(row)"
         :data-testid="`drive-entity-${row.name}`"
         :data-selected="selections.has(row.name) || undefined"
         @contextmenu="(e) => !selections.size && contextMenu(e, row)"

@@ -242,14 +242,14 @@ const removeContacts = createResource({
 const deleteAddressBookOptions = computed(() => ({
 	title: __('Delete Address Book'),
 	message: __('Are you sure you want to delete {0}?', [addressBook.doc?._name]),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteAddressBook.submit }],
 }))
 
 const removeContactsOptions = computed(() => ({
 	title: __('Remove Contacts'),
 	message: __('Are you sure you want to remove the selected contacts?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: removeContacts.submit }],
 }))
 

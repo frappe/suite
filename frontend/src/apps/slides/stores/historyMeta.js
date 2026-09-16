@@ -40,10 +40,10 @@ const actionOrder = {
 	},
 }
 
-const jumpToSlideByIndex = (index, focus) => {
+const jumpToSlideByIndex = (index, focus, force = false) => {
 	const onActiveSlide = index === slideIndex.value
 
-	if (!onActiveSlide && index != null) {
+	if ((force || !onActiveSlide) && index != null) {
 		changeEditorSlide(index, focus)
 
 		recentlyRestored.value = true
@@ -121,8 +121,10 @@ const handleJumpToSlide = (action, command, operation) => {
 
 	const slideIdx = getSlideIndexForJump(action, command, operation)
 	const focus = command.key === 'removeSlide' && operation === 'undo' ? false : true
+	// adding or removing a slide swaps what is on screen even when the index stays
+	const force = ['addSlide', 'removeSlide'].includes(command.key)
 
-	return jumpToSlideByIndex(slideIdx, focus)
+	return jumpToSlideByIndex(slideIdx, focus, force)
 }
 
 const handleJumpToElements = (action, command, operation) => {

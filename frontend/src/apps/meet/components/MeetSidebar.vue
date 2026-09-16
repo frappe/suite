@@ -117,11 +117,11 @@ const showShortcutsDialog = inject(
 				<CommandPaletteSidebarItem />
 				<SidebarItem
 					label="Home"
-					to="/meet"
+					route="/meet"
 					:icon="LucideHome"
 					:active="route.name === 'meet-home'"
 				/>
-				<SidebarItem label="Calendar" to="/calendar" :icon="LucideCalendar" />
+				<SidebarItem label="Calendar" route="/calendar" :icon="LucideCalendar" />
 			</SidebarSection>
 		</div>
 		<div class="p-2">

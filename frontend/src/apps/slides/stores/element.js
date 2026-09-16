@@ -971,10 +971,11 @@ const selectAllElements = (e) => {
 }
 
 const resetFocus = () => {
+	// a jump that empties the selection keeps a live caret, so the focus can outlast it
+	focusElementId.value = null
 	if (!activeElementIds.value.length) return
 
 	activeElementIds.value = []
-	focusElementId.value = null
 	pairElementId.value = null
 }
 

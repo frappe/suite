@@ -265,7 +265,7 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete Group'),
 	message: __('Are you sure you want to delete this group? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteGroup.submit }],
 }))
 

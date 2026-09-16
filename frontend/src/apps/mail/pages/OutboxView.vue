@@ -49,18 +49,18 @@
 									v-else-if="column.key === 'status'"
 									class="flex w-full items-center justify-between gap-2"
 								>
-									<!-- The failure detail rides on the badge's hover title. -->
-									<span :title="deliveryErrorTitle(row) || undefined">
+									<!-- Show failure details when hovering the status badge. -->
+									<Tooltip :text="deliveryErrorTitle(row)" :disabled="!deliveryErrorTitle(row)">
 										<Badge
 											:label="undoStatusLabel(row.undo_status)"
 											:theme="undoStatusTheme(row.undo_status)"
 										/>
-									</span>
+									</Tooltip>
 									<div class="flex items-center">
 										<Button
 											v-if="!row.email_deleted && row.thread_id"
 											variant="ghost"
-											:title="__('Open email')"
+											:tooltip="__('Open email')"
 											@click.stop.prevent="openEmail(row)"
 										>
 											<template #icon>
@@ -117,6 +117,7 @@ import {
 	Button,
 	Dialog,
 	LoadingIndicator,
+	Tooltip,
 	call,
 	createResource,
 	usePageMeta,
@@ -138,7 +139,7 @@ import {
 } from '@/apps/mail/utils/submission'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -514,7 +515,7 @@ const cancelOptions = computed(() => ({
 	message: selected.value?.email_deleted
 		? __('Cancel the scheduled delivery?')
 		: __('Cancel the scheduled delivery and move the message back to Drafts?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),

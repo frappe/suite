@@ -60,7 +60,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
 import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'
 import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'

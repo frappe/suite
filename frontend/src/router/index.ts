@@ -4,6 +4,7 @@ import {
   type NavigationGuardReturn,
   type RouteLocationNormalized,
   type RouteLocationNormalizedLoaded,
+  type RouteRecordNormalized,
   type RouteRecordRaw,
 } from 'vue-router'
 import { createResource } from 'frappe-ui'
@@ -222,13 +223,27 @@ router.afterEach((to, from, failure) => {
   if (appId) loadedAppRuntimes.get(appId)?.afterEach?.(to)
 })
 
+/**
+ * The view a matched record renders, for asking whether two routes draw the
+ * same one. The resolved component rather than the record: the calendar's
+ * month, week, day and agenda are four records rendering one CalendarView, and
+ * switching between them leaves that component mounted. Records with no
+ * component of their own stand for themselves.
+ */
+function viewOf(record?: RouteRecordNormalized) {
+  return record?.components?.default ?? record
+}
+
 export function setDocumentTitle(
   to: RouteLocationNormalizedLoaded,
   from: RouteLocationNormalizedLoaded,
 ) {
-  // a same-view replace leaves the view mounted, so its usePageMeta title stands
+  // A navigation that leaves the same view mounted leaves its usePageMeta title
+  // standing: the view is not re-created, so nothing would write the real title
+  // back after this reset — the calendar spent the rest of the session called
+  // "Frappe Calendar" after one switch from Month to Week.
   const view = to.matched.at(-1)
-  if (view && view === from.matched.at(-1)) return
+  if (view && viewOf(view) === viewOf(from.matched.at(-1))) return
 
   if (to.meta.title) {
     document.title = to.meta.title

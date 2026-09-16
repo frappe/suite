@@ -6,9 +6,11 @@ import { slideIndex, insertSlide, getNewSlide } from '@/apps/slides/stores/slide
 import {
 	activeElements,
 	activeElementIds,
+	isSelectionLocked,
 	focusElementId,
 	addTextElement,
 	duplicateElements,
+	deleteElements,
 	resetFocus,
 } from '@/apps/slides/stores/element'
 
@@ -27,11 +29,12 @@ const { activeEditor } = useTextEditor()
 const isCopyTriggeredByButton = ref(false)
 
 // the source travels with the payload: a copy in one tab is pasted in another
-const getCopiedElementsJSON = () =>
+const getCopiedElementsJSON = (isCut = false) =>
 	JSON.stringify({
 		srcPresentation: presentationId.value,
 		srcSlide: slideIndex.value,
-		elements: activeElements.value,
+		isCut,
+		elements: isCut ? activeElements.value.filter((el) => !el.locked) : activeElements.value,
 	})
 
 const getCopiedSlideJSON = () => {
@@ -45,8 +48,8 @@ const copySlide = (e) => {
 	toast.success('Slide copied to clipboard')
 }
 
-const copyElements = (e) => {
-	const clipboardJSON = getCopiedElementsJSON()
+const copyElements = (e, isCut = false) => {
+	const clipboardJSON = getCopiedElementsJSON(isCut)
 	e.clipboardData.setData('application/json', clipboardJSON)
 }
 
@@ -64,6 +67,15 @@ const handleCopy = (e) => {
 	} else {
 		copySlide(e)
 	}
+}
+
+const handleCut = (e) => {
+	if (isInputElement(e.target) || inCropMode.value) return
+	if (!activeElementIds.value.length || isSelectionLocked.value) return
+
+	e.preventDefault()
+	copyElements(e, true)
+	deleteElements()
 }
 
 const copyToClipboard = async (text) => {
@@ -95,7 +107,7 @@ const handlePastedText = async (clipboardText, clipboardHTML = '') => {
 	addTextElement(clipboardText, undefined, listHTML)
 }
 
-const handlePastedJSON = async ({ srcPresentation, srcSlide, elements }) => {
+const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) => {
 	const pastedArray = Array.isArray(elements) ? elements : []
 
 	if (
@@ -119,7 +131,7 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, elements }) => {
 
 	// a foreign slide index means nothing here, and there is no original to displace from
 	const sameSource = srcPresentation === presentationId.value
-	duplicateElements(null, json, sameSource ? srcSlide : null, sameSource)
+	duplicateElements(null, json, sameSource ? srcSlide : null, sameSource && !isCut)
 }
 
 const handleSvgText = (svgText) => {
@@ -235,4 +247,4 @@ const handlePaste = (e) => {
 	if (clipboardItems) return handleUploadedMedia(clipboardItems)
 }
 
-export { handleCopy, handlePaste, copyToClipboard }
+export { handleCopy, handleCut, handlePaste, copyToClipboard }

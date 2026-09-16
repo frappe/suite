@@ -230,7 +230,7 @@ const confirmDialogOptions = computed(() => {
 		title: config.title,
 		message: config.message,
 		size: 'xl',
-		icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+		icon: 'lucide-alert-triangle', theme: 'amber',
 		actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: config.action }],
 	}
 })

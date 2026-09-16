@@ -100,7 +100,7 @@
                   variant="ghost"
                   size="sm"
                   :label="crumb.file_name"
-                  :title="crumb.file_name"
+                  :tooltip="crumb.file_name"
                   class="truncate max-w-20"
                   :class="index === slicedBreadcrumbs.length - 1
                     ? 'text-ink-gray-9 font-medium'

@@ -2,7 +2,7 @@
 	<Dropdown :options="options" side="top" align="center" :offset="12">
 		<template #default="{ open }">
 			<div>
-				<Tooltip :text="tooltip" :hover-delay="0.7">
+				<Tooltip :text="tooltip" :hover-delay="700">
 					<div :class="triggerClass(open)">
 						<component :is="icon" class="size-4 stroke-[1.5] text-ink-gray-7" />
 						<ChevronDown class="size-3 text-ink-gray-5" />

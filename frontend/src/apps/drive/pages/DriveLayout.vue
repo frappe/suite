@@ -32,9 +32,9 @@
       <component :is="Component" />
     </router-view>
     <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
+    <KeyboardShortcutsDialog v-model:open="showShortcuts" />
     <FileUploader
       v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name) && !($route.name === 'drive-Home' && shareView)" />
-    <SettingsDialog v-if="normalView" v-model="showSettings" :suggested-tab="suggestedTab" />
     <FDialogs />
   </FrappeUIProvider>
 </template>
@@ -43,42 +43,34 @@ import Sidebar from '@/apps/drive/components/Sidebar.vue'
 import FDialogs from '@/apps/drive/components/FDialogs.vue'
 import BottomBar from '@/apps/drive/components/BottomBar.vue'
 import FileUploader from '@/apps/drive/components/FileUploader.vue'
-import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import { useSessionStore } from '@/boot/session'
 import { computed, onMounted, onScopeDispose, provide, ref } from 'vue'
 import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
-import { onKeyDown, useMediaQuery } from '@vueuse/core'
+import { useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
 import { initSocket } from '@/apps/drive/socket'
-import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
-import { useRoute } from 'vue-router'
+import { DesktopShell, FrappeUIProvider, KeyboardShortcutsDialog, MobileShell, useKeyboardShortcut } from 'frappe-ui'
+import { useRoute, useRouter } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
 import { useRootStore } from '@/stores/root'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import { rootInfo } from '@/apps/drive/resources/files'
+import { isApple } from '@/apps/drive/utils/files'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)
 provide('socket', initSocket())
 
 const route = useRoute()
+const router = useRouter()
 const isDesktop = useMediaQuery('(min-width: 768px)')
 const shellScroll = computed(() => route.meta.shellScroll !== false)
 const inIframe = window.self !== window.top
 provide('inIframe', inIframe)
 
+const showShortcuts = ref(false)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const normalView = computed(() => !inIframe && isLoggedIn.value)
 const root = useRootStore()
-const showSettings = ref(false)
-const suggestedTab = ref('profile')
-useEmitter('showSettings', (tab = 'profile') => {
-  if (tab === -1) showSettings.value = false
-  else {
-    suggestedTab.value = tab
-    showSettings.value = true
-  }
-})
-
 const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () => {
   if (!normalView.value) return []
 
@@ -126,40 +118,44 @@ onMounted(() => {
   setupTheme()
 })
 
-const EMITTERS = {
-  u: () => emitter.emit('uploadFile'),
-  n: () => emitter.emit('newFolder'),
-  m: () => emitter.emit('move'),
-  p: () => emitter.emit('share'),
-  e: () => emitter.emit('rename'),
-}
-for (const k in EMITTERS) {
-  const btn = document.createElement('button')
-  btn.style.display = 'none'
-  btn.accessKey = k
-  btn.onclick = EMITTERS[k]
-  document.body.appendChild(btn)
+const accessKey = (key) => {
+  if (isApple()) return `Ctrl+Alt+${key}`
+  if (navigator.userAgent.includes('Firefox')) return `Alt+Shift+${key}`
+  return `Alt+${key}`
 }
 
-onKeyDown((e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.key == '?') emitter.emit('toggleShortcuts')
-
-  if (e.metaKey) {
-    if (e.shiftKey) {
-      if (e.key == 'ArrowRight') {
-        sidebarCollapsed.value = false
-      } else if (e.key == 'ArrowLeft') {
-        sidebarCollapsed.value = true
-        e.preventDefault()
-      }
-    }
-  }
-
+const shortcut = (combo, description, group, handler) => ({
+  combo,
+  description: __(description),
+  group: __(group),
+  enabled: normalView,
+  handler,
 })
+
+useKeyboardShortcut([
+  shortcut('Mod+Shift+Comma', 'Open Settings', 'General', () => emitter.emit('showSettings')),
+  shortcut('Mod+Shift+ArrowRight', 'Expand sidebar', 'General', () => (sidebarCollapsed.value = false)),
+  shortcut('Mod+Shift+ArrowLeft', 'Collapse sidebar', 'General', () => (sidebarCollapsed.value = true)),
+  {
+    combo: 'Shift+Slash',
+    description: __('View Shortcuts'),
+    group: __('General'),
+    enabled: normalView,
+    allowInDialog: true,
+    handler: () => (showShortcuts.value = !showShortcuts.value),
+  },
+  shortcut(accessKey('I'), 'Inbox', 'Navigation', () => router.push({ name: 'drive-Inbox' })),
+  shortcut(accessKey('H'), 'Home', 'Navigation', () => router.push({ name: 'drive-Home' })),
+  shortcut(accessKey('E'), 'Everyone', 'Navigation', () => {
+    if (rootInfo.data?.root) router.push({ name: 'drive-Folder', params: { entityName: rootInfo.data.root } })
+  }),
+  shortcut(accessKey('R'), 'Recents', 'Navigation', () => router.push({ name: 'drive-Recents' })),
+  shortcut(accessKey('F'), 'Favourites', 'Navigation', () => router.push({ name: 'drive-Favourites' })),
+  shortcut(accessKey('A'), 'Attachments', 'Navigation', () => router.push({ name: 'drive-Attachments' })),
+  shortcut(accessKey('D'), 'Documents', 'Navigation', () => router.push({ name: 'drive-Documents' })),
+  shortcut(accessKey('S'), 'Share selected file', 'List', () => emitter.emit('share')),
+  shortcut(accessKey('U'), 'Upload a file', 'List', () => emitter.emit('uploadFile')),
+  shortcut(accessKey('N'), 'Create a folder', 'List', () => emitter.emit('newFolder')),
+])
+
 </script>

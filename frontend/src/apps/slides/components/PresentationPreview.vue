@@ -37,7 +37,7 @@
 				<Tooltip
 					v-for="action in presentationActions"
 					:text="action.label"
-					:hover-delay="0.3"
+					:hover-delay="300"
 					side="right"
 				>
 					<div :class="getActionButtonClasses(action.label)" @click="action.onClick">

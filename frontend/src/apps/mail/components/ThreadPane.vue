@@ -3,8 +3,7 @@
 	     takes the rest (see constants.ts, shared with the screener); otherwise it
 	     fills the width and the pane overlays it (or, on mobile, slides in over it). -->
 	<!-- border-r only in Split View: full-width mode has nothing of its own to
-	     the right, and anything that does sit there (the event detail sidebar)
-	     brings its own border-l — keeping both would double the hairline. -->
+	     the right to rule off from. -->
 	<div
 		class="sticky top-16 flex flex-col"
 		:class="!isMobile && showReadingPane ? SPLIT_LIST_CLASS : 'w-full'"

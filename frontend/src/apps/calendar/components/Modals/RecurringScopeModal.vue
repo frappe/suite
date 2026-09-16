@@ -18,14 +18,16 @@ const show = defineModel<boolean>()
 
 const {
 	title,
-	icon = { name: 'lucide-repeat' },
+	icon = 'lucide-repeat',
 	options,
 	confirmLabel,
 	theme = 'gray',
 	loading = false,
 } = defineProps<{
 	title: string
-	icon?: { name: string; theme?: 'amber' | 'blue' | 'red' | 'green' }
+	/** A `lucide-*` name, and the tone its badge is drawn in. */
+	icon?: string
+	iconTheme?: 'amber' | 'blue' | 'red' | 'green'
 	/** Safest first: the first one that can be picked is the one pre-selected. */
 	options: RecurringScopeOption[]
 	confirmLabel: string
@@ -53,7 +55,7 @@ const confirm = () => {
 </script>
 
 <template>
-	<Dialog v-model:open="show" size="sm" :title="title" :icon="icon">
+	<Dialog v-model:open="show" size="sm" :title="title" :icon="icon" :theme="iconTheme">
 		<template #default>
 			<RadioGroup v-model="scope" padded>
 				<Radio

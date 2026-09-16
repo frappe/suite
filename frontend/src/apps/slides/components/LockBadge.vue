@@ -1,5 +1,5 @@
 <template>
-	<Tooltip text="Unlock" :hover-delay="0.7">
+	<Tooltip text="Unlock" :hover-delay="700">
 		<div
 			:style="[styles.handle, { pointerEvents: 'auto' }]"
 			class="flex cursor-pointer items-center justify-center"

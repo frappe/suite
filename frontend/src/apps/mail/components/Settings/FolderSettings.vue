@@ -65,7 +65,7 @@ import {
 	createResource,
 } from 'frappe-ui'
 
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 

@@ -58,6 +58,18 @@ class CoverageReportTest(unittest.TestCase):
     def test_renders_rounded_zero_delta_as_percentage(self):
         self.assertEqual(coverage_report.delta(34.6, 34.6), " (+0%)")
 
+    def test_uses_baseline_when_suite_was_skipped_as_unchanged(self):
+        baseline = coverage_report.Coverage(80, 100, 60, 100)
+
+        self.assertIs(coverage_report.effective_coverage(None, baseline, "unchanged"), baseline)
+
+    def test_does_not_mask_missing_coverage_after_test_attempt(self):
+        baseline = coverage_report.Coverage(80, 100, 60, 100)
+
+        for status in ("failure", "skipped", "unknown"):
+            with self.subTest(status=status):
+                self.assertIsNone(coverage_report.effective_coverage(None, baseline, status))
+
 
 class UpdatePrCoverageTest(unittest.TestCase):
     def test_appends_and_replaces_one_block(self):

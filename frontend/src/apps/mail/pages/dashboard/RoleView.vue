@@ -161,7 +161,7 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete Role'),
 	message: __('Are you sure you want to delete this role? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteRole.submit }],
 }))
 

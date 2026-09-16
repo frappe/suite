@@ -7,13 +7,23 @@ import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import { userStore } from '@/apps/mail/stores/user'
 
 // Module singletons: the sidebar widget renders the list while DefaultLayout
-// hosts the detail sidebar, so both need the same resource and selection.
+// hosts the detail card, so both need the same resource and selection.
 const selectedEvent = ref<any>(null)
 let events: any = null
 
+/**
+ * What the card hangs on, and which side of it: the row in the sidebar's
+ * Upcoming events widget, to its right, or the invite strip's button in a
+ * message, beneath it. Set by whoever opens the event; an open that brings no
+ * anchor — the strip handing over a fresh copy after an RSVP — keeps the one
+ * the card already has.
+ */
+export type CardAnchor = { element: Element; side: 'right' | 'bottom' }
+const cardAnchor = ref<CardAnchor | null>(null)
+
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 
-// The detail sidebar's "delete following instances" path reads `date` (the
+// The detail card's "delete following instances" path reads `date` (the
 // clicked instance's day, attached by the calendar grid in the calendar app);
 // derive it from the instance start here.
 const withInstanceDate = (event: any) => ({
@@ -25,9 +35,14 @@ const withInstanceDate = (event: any) => ({
 // picked from it can be kept in step with the resource below. An event opened
 // from anywhere else — mail's invite strip, whose event sits on whatever date
 // the invite names — usually isn't in that slice at all, and `tracked: false`
-// stops a reload from reading its absence as "deleted" and closing the panel.
-const openEvent = (event: any, { tracked = true } = {}) =>
-	(selectedEvent.value = { ...withInstanceDate(event), _tracked: tracked })
+// stops a reload from reading its absence as "deleted" and closing the card.
+const openEvent = (
+	event: any,
+	{ tracked = true, anchor }: { tracked?: boolean; anchor?: CardAnchor } = {},
+) => {
+	if (anchor) cardAnchor.value = anchor
+	selectedEvent.value = { ...withInstanceDate(event), _tracked: tracked }
+}
 
 export function useUpcomingEvents() {
 	if (!events) {
@@ -57,11 +72,13 @@ export function useUpcomingEvents() {
 				{ immediate: true },
 			)
 
-			// The detail sidebar reads RSVP identity from the calendar app's user
+			// The detail card reads RSVP identity from the calendar app's user
 			// store; initialize it on first open rather than on every mail load.
-			watch(selectedEvent, (event) => event && calendarUserStore())
+			// Closing lets go of the anchor too, so the next open cannot land on a
+			// stale one.
+			watch(selectedEvent, (event) => (event ? calendarUserStore() : (cardAnchor.value = null)))
 
-			// Keep the detail sidebar in sync after edits/RSVPs (mirrors
+			// Keep the detail card in sync after edits/RSVPs (mirrors
 			// CalendarView): swap in the fresh copy of the selected event, or close
 			// it if the event no longer exists.
 			watch(
@@ -79,11 +96,11 @@ export function useUpcomingEvents() {
 		})
 	}
 
-	return { events, selectedEvent, openEvent }
+	return { events, selectedEvent, openEvent, cardAnchor }
 }
 
 // Day view of the calendar app on the event's start date (1-indexed month),
-// deep-linked to the event itself (?event=) so its detail sidebar opens on
+// deep-linked to the event itself (?event=) so its detail card opens on
 // arrival. The edit modal has its own address, ?edit=<id> (&editRecurrence=).
 // By PATH, not route name: the suite router registers each app's routes
 // lazily on the first navigation into its prefix, so a named push from mail

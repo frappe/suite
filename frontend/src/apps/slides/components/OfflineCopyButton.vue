@@ -122,7 +122,7 @@ const dialog = computed(() => {
 	if (status.value === 'available') {
 		return {
 			title: 'Available offline',
-			icon: { name: 'lucide-cloud-check', theme: 'blue' },
+			icon: 'lucide-cloud-check', theme: 'blue',
 			message: 'Saved in this browser. Opens and presents without internet.',
 			actions: [cancelAction, { ...removeAction, variant: 'solid' }],
 		}
@@ -130,7 +130,7 @@ const dialog = computed(() => {
 	if (status.value === 'outdated') {
 		return {
 			title: 'Update offline copy',
-			icon: { name: 'lucide-cloud-alert', theme: 'amber' },
+			icon: 'lucide-cloud-alert', theme: 'amber',
 			message: 'New images are not saved offline yet.',
 			actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
 		}

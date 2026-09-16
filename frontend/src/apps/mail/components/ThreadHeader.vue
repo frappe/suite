@@ -118,7 +118,7 @@ import {
 import { Button, Tooltip } from 'frappe-ui'
 
 import { FLAGGED_STAR_STYLE, FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'

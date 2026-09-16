@@ -1,7 +1,18 @@
 import frappe
 from frappe import _
-from frappe.model import default_fields, no_value_fields
 from frappe.utils import cstr
+
+# the only fields the editor may set; a new Slide field is not client-writable by default
+SLIDE_FIELDS = frozenset(
+    {
+        "client_id",
+        "background",
+        "elements",
+        "transition",
+        "transition_duration",
+        "fade_unmatched_elements",
+    }
+)
 
 
 # a save over GET would report success and then be rolled back after responding
@@ -31,29 +42,20 @@ def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
 
 
 def merge_rows(existing_rows, incoming):
-    """Existing rows keep their name when the editor still lists their client_id;
-    everything else is a new row. A client_id listed twice keeps one row and
-    inserts another, so a stray duplicate never collapses two slides into one."""
+    """Rows match on client_id; anything unmatched is inserted, so a client_id
+    listed twice keeps one row and gets a second."""
     by_client_id = {row.client_id: row for row in existing_rows if row.client_id}
-    fields = slide_value_fields()
     rows = []
     for idx, slide in enumerate(incoming, start=1):
-        values = {field: slide.get(field) for field in fields if field in slide}
-        row = by_client_id.pop(values.get("client_id"), None)
+        # loud, not dropped: a field the editor sends and the server ignores looks saved until reload
+        unknown = set(slide) - SLIDE_FIELDS
+        if unknown:
+            frappe.throw(_("Slide fields not accepted: {0}").format(", ".join(sorted(unknown))))
+        row = by_client_id.pop(slide.get("client_id"), None)
         if row:
-            row.update(values)
+            row.update(slide)
         else:
-            row = frappe.new_doc("Slide").update(values)
+            row = frappe.new_doc("Slide").update(slide)
         row.idx = idx
         rows.append(row)
     return rows
-
-
-def slide_value_fields() -> set[str]:
-    """Fields the editor may set; name, parent, idx and timestamps stay framework-owned."""
-    meta = frappe.get_meta("Slide")
-    return {
-        df.fieldname
-        for df in meta.fields
-        if df.fieldtype not in no_value_fields and df.fieldname not in default_fields
-    }

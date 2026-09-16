@@ -20,7 +20,7 @@ const activeScript = computed(() => sieveScripts.data?.find((s) => s.active)?._n
 const dialogOptions = computed(() => ({
 	title: title.value,
 	message: message.value,
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label:

@@ -50,7 +50,6 @@ import {
   isVirtual,
   isManaged,
   isAttachmentRef,
-  isModKey,
 } from '@/apps/drive/utils/files'
 import {
   toggleFav,
@@ -62,8 +61,8 @@ import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/driv
 import { entitiesDownload } from '@/apps/drive/utils/download'
 import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { onKeyDown, useEventListener } from '@vueuse/core'
-import { frappeRequest, shellScrollContainer as scrollHost } from 'frappe-ui'
+import { useEventListener } from '@vueuse/core'
+import { frappeRequest, shellScrollContainer as scrollHost, useKeyboardShortcut } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
 import { uploads } from '@/apps/drive/data/uploads'
@@ -217,50 +216,48 @@ function clearSelection() {
   selections.value = new Set()
 }
 
-// Shared by both views, as selections is Drive's own Set-based model.
-const isTyping = (e) =>
-  e.target.classList.contains('ProseMirror') ||
-  e.target.tagName === 'INPUT' ||
-  e.target.tagName === 'TEXTAREA'
-
 // Links keep their own confirm flow and virtual nodes have no standalone
 // page, so neither can be opened in a new tab. Shared by the context-menu
 // action and the mod+Enter shortcut.
 const canOpenInNewTab = (entity) =>
   !isVirtual(entity) && entity.file_type !== 'Link'
 
-onKeyDown('a', (e) => {
-  if (isTyping(e)) return
-  if (e.metaKey || e.ctrlKey) {
-    toggleSelectAll()
-    e.preventDefault()
-  }
-})
-onKeyDown('Backspace', (e) => {
-  if (isTyping(e)) return
-  if (e.metaKey) emitter.emit('remove')
-})
-onKeyDown('m', (e) => {
-  if (isTyping(e)) return
-  if (e.ctrlKey) emitter.emit('move')
-})
-onKeyDown('Enter', (e) => {
-  if (isTyping(e)) return
-  if (document.querySelector('.dialog-content[data-state="open"]')) return
-  if (route.name === 'drive-Trash' || !isModKey(e)) return
-  if (selectedEntitities.value.length !== 1) return
-  const [entity] = selectedEntitities.value
-  if (!canOpenInNewTab(entity)) return
-  e.preventDefault()
-  openEntity(entity, true)
-})
-onKeyDown('Escape', (e) => {
-  if (isTyping(e)) return
-  // Let an open dialog handle its own Escape.
-  if (document.querySelector('.dialog-content[data-state="open"]')) return
-  clearSelection()
-  e.preventDefault()
-})
+useKeyboardShortcut([
+  {
+    combo: 'Mod+A',
+    description: __('Select all'),
+    group: __('List'),
+    handler: toggleSelectAll,
+  },
+  {
+    combo: 'Escape',
+    description: __('Unselect all'),
+    group: __('List'),
+    handler: clearSelection,
+  },
+  {
+    combo: 'Ctrl+M',
+    description: __('Move selected files'),
+    group: __('List'),
+    handler: () => emitter.emit('move'),
+  },
+  {
+    combo: 'Mod+Backspace',
+    description: __('Delete selected files'),
+    group: __('List'),
+    handler: () => emitter.emit('remove'),
+  },
+  {
+    combo: 'Mod+Enter',
+    description: __('Open selected file in new tab'),
+    group: __('List'),
+    handler: () => {
+      if (route.name === 'drive-Trash' || selectedEntitities.value.length !== 1) return
+      const [entity] = selectedEntitities.value
+      if (canOpenInNewTab(entity)) openEntity(entity, true)
+    },
+  },
+])
 
 const verifyAccess = computed(() => props.verify?.data || !props.verify)
 watchEffect(() => {

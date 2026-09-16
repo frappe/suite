@@ -123,7 +123,7 @@ import {
 import { Icon as FeatherIcon, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'

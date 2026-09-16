@@ -156,7 +156,8 @@ export function useEventDelete(
 
 	const deleteScopeModalProps = computed(() => ({
 		title: __('Delete repeating event'),
-		icon: { name: 'lucide-trash-2', theme: 'red' as const },
+		icon: 'lucide-trash-2',
+		iconTheme: 'red' as const,
 		// No line above the list: the title already says what is being deleted.
 		// Every answer is the server's to give here: an instance delete, a rule that ends
 		// earlier, the series itself. Editing has no equivalent of the middle one yet.
@@ -175,15 +176,19 @@ export function useEventDelete(
 
 	// The one entry a host drops into its own dropdown. A recurring event asks
 	// which occurrences first; a one-off has nothing to ask.
+	// Red: the one item in these menus that does not come back. Every host of this
+	// option is a menu of ordinary actions, and the colour is what tells them apart
+	// before the word is read.
 	const deleteOption = computed(() => ({
 		label: __('Delete'),
 		icon: Trash2,
+		theme: 'red',
 		onClick: requestDelete,
 	}))
 
 	const NOTIFY_DELETE_OPTIONS = {
 		title: __('Notify Participants'),
-		icon: { name: 'lucide-bell' },
+		icon: 'lucide-bell',
 		message: __('Send a cancellation email to let attendees know this event was deleted?'),
 	}
 

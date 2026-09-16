@@ -15,19 +15,27 @@
 				<div id="scrollContainer" class="w-full overflow-auto max-sm:flex max-sm:flex-col max-sm:overflow-hidden">
 					<slot />
 				</div>
-				<!-- Detail view for an event picked in the sidebar's Upcoming events
-				     widget — the calendar app's own component, hosted here so the
-				     event opens without leaving mail. Desktop only; mobile navigates
-				     to the calendar instead. -->
-				<EventDetailSidebar
-					v-if="selectedEvent && !isMobile"
-					:key="selectedEvent.id + (selectedEvent.recurrence_id ?? '')"
-					:calendar-event="selectedEvent"
+				<!-- The event picked in the sidebar's Upcoming events widget, or from a
+				     message's invite strip, as a card hung on what was clicked — the
+				     calendar app's own card, hosted here so the event opens without
+				     leaving mail. Desktop only; mobile navigates to the calendar instead. -->
+				<EventPopover
+					:open="!!selectedEvent && !!cardAnchor && !isMobile"
+					:anchor="cardAnchor?.element ?? null"
+					:side="cardAnchor?.side ?? 'right'"
 					@close="selectedEvent = null"
-					@edit="openEventInCalendar"
-					@reload-events="events.reload()"
-					@email-participants="emailParticipants"
-				/>
+				>
+					<EventDetail
+						v-if="selectedEvent"
+						:key="selectedEvent.id + (selectedEvent.recurrence_id ?? '')"
+						variant="popover"
+						:calendar-event="selectedEvent"
+						@close="selectedEvent = null"
+						@edit="openEventInCalendar"
+						@reload-events="events.reload()"
+						@email-participants="emailParticipants"
+					/>
+				</EventPopover>
 				<!-- Compose prefilled with the event's participants; keyed so each
 				     open starts a fresh draft rather than resuming the last one.
 				     Desktop only — mobile composes on its own page, which openCompose
@@ -49,7 +57,8 @@ import { provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
-import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
+import EventDetail from '@/apps/calendar/components/EventDetail.vue'
+import EventPopover from '@/apps/calendar/components/EventPopover.vue'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { useComposeMail, useListReload, useScreenSize } from '@/apps/mail/utils/composables'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
@@ -67,15 +76,15 @@ const { isMobile } = useScreenSize()
 const { requestListReload } = useListReload()
 
 const router = useRouter()
-const { events, selectedEvent } = useUpcomingEvents()
+const { events, selectedEvent, cardAnchor } = useUpcomingEvents()
 
-// EventDetailSidebar is a calendar component and expects the calendar layout's
+// EventDetail is a calendar component and expects the calendar layout's
 // $dayjs injection (the instance with duration/tz/utc plugins installed).
 provide('$dayjs', dayjs)
 
 // Full editing (participants, recurrence) lives in the calendar app's modal;
 // hand over via its deep link (?edit=<id>) so the modal is already open on
-// arrival — the modal alone, not the detail sidebar the day route would open.
+// arrival — the modal alone, not the detail card the day route would open.
 // Clear the selection so the sidebar isn't still open when the user comes
 // back to mail.
 const openEventInCalendar = () => {

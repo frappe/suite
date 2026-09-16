@@ -50,7 +50,7 @@ import {
 import { Button, createResource } from 'frappe-ui'
 
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 import {
 	downloadUrlAsFile,

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { frappeRequest } from 'frappe-ui'
 
-import { presentationDoc, presentationId, inReadonlyMode } from '@/apps/slides/stores/presentation'
+import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
@@ -165,7 +165,7 @@ const saveOfflineCopy = async (id) => {
 
 	const targets = getMediaTargets()
 	const loadOptions = {
-		readonly: inReadonlyMode.value,
+		readonly: viewOnly.value,
 		composite: !!presentationDoc.value?.is_composite,
 	}
 	offlineCopyProgress.value = { running: true, done: 0, total: targets.length, failed: [] }

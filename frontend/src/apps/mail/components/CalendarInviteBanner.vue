@@ -10,7 +10,7 @@
 		<!-- Opening the event is the first thing anyone tries to tap, so the target is the dates and
 		     the text together rather than the title alone — but it stops at the content: no flex-1,
 		     or the empty space between the strip's two halves would answer to a click. Only offered
-		     once the event is on a calendar of the reader's: the detail panel is a view of a real
+		     once the event is on a calendar of the reader's: the detail card is a view of a real
 		     event, not of a parsed preview. -->
 		<component
 			:is="canViewEvent ? 'button' : 'div'"
@@ -43,7 +43,7 @@
 		<div class="flex shrink-0 items-center justify-end sm:ml-auto">
 			<!-- On mobile the answers get the width the row was already spending: full-bleed, and
 			     40px tall inside a 44px control, against the ~26px the intrinsic-width version gave
-			     them. Same overrides the calendar app's event detail sidebar uses, held to max-sm so
+			     them. Same overrides the calendar app's event detail card uses, held to max-sm so
 			     the desktop strip keeps its compact right-aligned control. -->
 			<TabButtons
 				v-if="invite.participant"
@@ -190,7 +190,7 @@ const addInvite = createResource({
 	onError: (error: { message?: string }) => raiseToast(error.message || '', 'error'),
 })
 
-// --- RSVP (the same segmented control the calendar app's event detail sidebar uses) ---
+// --- RSVP (the same segmented control the calendar app's event detail card uses) ---
 
 const RSVP_OPTIONS = [
 	{ label: __('Yes'), value: 'ACCEPTED' },
@@ -232,7 +232,7 @@ const handleRsvp = (response?: string | number) => {
 	rsvp.submit(response.toLowerCase())
 }
 
-// Opening the event — in the panel or in the calendar — needs its own id, which only a copy on
+// Opening the event — in the card or in the calendar — needs its own id, which only a copy on
 // one of the reader's calendars has; a parsed preview of an invite they haven't added yet has none.
 const canViewEvent = computed(() => !!invite.value?.exists && !!invite.value.event.id)
 
@@ -241,20 +241,22 @@ const viewInCalendar = () => {
 	if (canViewEvent.value && event) router.push(eventDayRoute(event, account))
 }
 
-// Whether the detail panel is currently showing this strip's event.
+// Whether the detail card is currently showing this strip's event.
 const isOpen = computed(
 	() => !!selectedEvent.value && selectedEvent.value.id === invite.value?.event.id,
 )
 
 // Reading an invite and leaving the thread to read the event are different things: the strip
-// opens the same detail panel the sidebar's Upcoming events widget uses, hosted by DefaultLayout,
-// so the message stays where it is. Mobile has no room for that panel (DefaultLayout only mounts
-// it on desktop), so there it still hands over to the calendar app's day view.
-const openEventDetail = () => {
+// opens the same detail card the sidebar's Upcoming events widget uses, hosted by DefaultLayout
+// and hung beneath this strip, so the message stays where it is. Mobile has no room for that
+// card (DefaultLayout only opens it on desktop), so there it still hands over to the calendar
+// app's day view.
+const openEventDetail = (e: MouseEvent) => {
 	const event = invite.value?.event
 	if (!canViewEvent.value || !event) return
 	if (isMobile.value) router.push(eventDayRoute(event, account))
 	else if (isOpen.value) selectedEvent.value = null
-	else openEvent(event, { tracked: false })
+	else if (e.currentTarget instanceof Element)
+		openEvent(event, { tracked: false, anchor: { element: e.currentTarget, side: 'bottom' } })
 }
 </script>

@@ -86,7 +86,7 @@
 								:tooltip="isVisible ? 'More options' : undefined"
 							>
 								<template #icon>
-									<MeetSettingsIcon />
+									<MeetMoreIcon />
 								</template>
 							</Button>
 						</template>
@@ -112,6 +112,7 @@
 				@mouseleave="onMouseLeave"
 			>
 				<MeetingInfoPopover
+					v-if="!isMobile"
 					v-model:open="showMeetingInfo"
 					:meeting-id="meetingId"
 					:show-tooltip="isVisible"
@@ -159,10 +160,20 @@
 		:isPreview="false"
 		@device-changed="$emit('device-changed', $event)"
 	/>
+	<Dialog
+		v-if="isMobile"
+		v-model:open="showMeetingInfo"
+		title="Meeting information"
+		size="sm"
+	>
+		<template #default>
+			<MeetingInfoContent :meeting-id="meetingId" :show-heading="false" />
+		</template>
+	</Dialog>
 </template>
 
 <script setup lang="ts">
-import { Button, Dropdown } from "frappe-ui";
+import { Button, Dialog, Dropdown } from "frappe-ui";
 import {
 	type Component,
 	computed,
@@ -183,14 +194,15 @@ import MeetChatIcon from "../icons/MeetChatIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
 import MeetHandIcon from "../icons/MeetHandIcon.vue";
 import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
+import MeetMoreIcon from "../icons/MeetMoreIcon.vue";
 import MeetPeopleIcon from "../icons/MeetPeopleIcon.vue";
 import MeetPhoneOffIcon from "../icons/MeetPhoneOffIcon.vue";
 import MeetPresentIcon from "../icons/MeetPresentIcon.vue";
 import MeetPresentPauseIcon from "../icons/MeetPresentPauseIcon.vue";
-import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
 import MeetSmileIcon from "../icons/MeetSmileIcon.vue";
 import { canScreenShare, getPlatform } from "../utils/device";
 import MeetingInfoPopover from "./MeetingInfoPopover.vue";
+import MeetingInfoContent from "./MeetingInfoContent.vue";
 import ReactionPicker from "./ReactionPicker.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
 import ToolbarButton from "./ToolbarButton.vue";
@@ -298,6 +310,14 @@ const moreOptions = computed(() => [
 	},
 	...(isMobile.value
 		? [
+				{
+					icon: "lucide-info",
+					label: "Meeting information",
+					onClick: () => {
+						showMeetingInfo.value = true;
+						resetHideTimer();
+					},
+				},
 				{
 					icon: "lucide-users",
 					label: "People",

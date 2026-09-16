@@ -5,7 +5,7 @@
       :key="tab.label"
       :label="tab.label"
       :icon="tab.icon"
-      :to="tab.route"
+      :route="tab.route"
       :active="tab.highlight()"
     />
   </MobileNav>

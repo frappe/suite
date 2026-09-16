@@ -139,7 +139,8 @@ const addSlideCommand = ({ slide, index, slideIndex }) => ({
 
 const removeSlideCommand = ({ slide, index, slideIndex }) => ({
 	key: 'removeSlide',
-	jumpToSlideIndex: index - 1,
+	// the jump runs before the removal, so the new last index is one short of the current count
+	jumpToSlideIndex: Math.min(index, slidesLength.value - 2),
 	fromSlideIndex: slideIndex,
 	debug: `Remove slide at index ${index}`,
 	execute(state) {

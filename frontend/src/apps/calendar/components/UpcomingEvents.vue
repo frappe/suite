@@ -1,7 +1,7 @@
 <template>
 	<!-- Variant B of the Sidebar Events design doc: flat two-line rows at nav
 	     rhythm — no card chrome, surface-gray-2 hover like every other row, and
-	     the row whose detail panel is open gets the active-nav-item treatment.
+	     the row whose detail card is open gets the active-nav-item treatment.
 	     No horizontal padding: the sidebar body already provides it (p-2), so the
 	     label's own px-2 lands on the same 16px inset as the nav group labels.
 	     Stays mounted while the sidebar collapses, fading like frappe-ui's own
@@ -26,10 +26,11 @@
 				{{ events.length }}
 			</span>
 		</div>
-		<!-- Four rows tall, then scrolls. -mx/px (and -mb/pb at scroll end) keep
-		     the clip edge off the active row's shadow, same trick as the sidebar
-		     body. -->
-		<div class="-mx-1 -mb-1 flex max-h-49 flex-col gap-1 overflow-y-auto px-1 pb-1">
+		<!-- Four rows tall, then scrolls. -m/p on all four sides keeps the clip
+		     edge off the active row's ring and shadow, same trick as the sidebar
+		     body — the top included: without it the first row's ring is cut along
+		     its top edge, which reads as a box missing a side. -->
+		<div class="-m-1 flex max-h-49 flex-col gap-1 overflow-y-auto p-1">
 			<button
 				v-for="event in events"
 				:key="event.id + (event.recurrence_id ?? '')"
@@ -40,7 +41,7 @@
 						? 'bg-surface-elevation-3 shadow-sm ring-1 ring-outline-gray-2'
 						: 'hover:bg-surface-gray-2'
 				"
-				@click="emit('select', event)"
+				@click="emit('select', event, $event)"
 			>
 				<div
 					class="w-0.5 shrink-0 self-stretch rounded-full"
@@ -77,13 +78,14 @@ const {
 	/** Already filtered to what is still to come, earliest first. */
 	events: any[]
 	isCollapsed: boolean
-	/** Whether the event's detail panel is open — that row reads as the active nav item. */
+	/** Whether the event's detail card is open — that row reads as the active nav item. */
 	isOpen?: (event: any) => boolean
 	/** The colour of the strip beside a row, as CSS. */
 	eventColor?: (event: any) => string
 }>()
 
-const emit = defineEmits<{ select: [event: any] }>()
+/** The click goes with the event: the host hangs the event's card on the row. */
+const emit = defineEmits<{ select: [event: any, e: MouseEvent] }>()
 
 const formatEventTime = (event: any) => {
 	if (isAllDayEvent(event)) return __('All day')

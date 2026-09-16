@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, reactive, watch } from 'vue'
 import { Repeat } from 'lucide-vue-next'
-import { Button, Dialog, FormControl, TabButtons } from 'frappe-ui'
+import { BottomSheet, Button, Dialog, FormControl, TabButtons } from 'frappe-ui'
+
+import { useScreenSize } from '@/composables/useScreenSize'
 
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 
@@ -168,6 +170,8 @@ const END_OPTIONS = [
 	{ label: __('After Occurrences'), value: 'After Occurrences' },
 ]
 
+const { isMobile } = useScreenSize()
+
 const DIALOG_OPTIONS = { title: __('Repeat') }
 
 const apply = () => {
@@ -182,9 +186,22 @@ const removeRepeat = () => {
 </script>
 
 <template>
-	<Dialog v-model:open="show" v-bind="DIALOG_OPTIONS">
+	<!-- One set of fields, two shells. A centred dialog is right at a desk and wrong
+	     over a form that fills the phone: everything else this form opens — the alert,
+	     availability, visibility — comes up from the bottom, and repeat arriving in the
+	     middle of the screen read as a different layer of the app. The fields are
+	     written once and handed to whichever shell the device asks for. -->
+	<component
+		:is="isMobile ? BottomSheet : Dialog"
+		v-bind="DIALOG_OPTIONS"
+		:open="show"
+		@update:open="(value: boolean) => (show = value)"
+	>
 		<template #default>
-			<div class="space-y-4">
+			<div
+				class="space-y-4"
+				:class="isMobile && 'px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]'"
+			>
 				<!-- Interval + segmented frequency -->
 				<div>
 					<label class="mb-1.5 block text-xs text-ink-gray-5">{{ __('Repeat Every') }}</label>
@@ -230,8 +247,19 @@ const removeRepeat = () => {
 					<label class="mb-1.5 block text-xs text-ink-gray-5">{{ __('Ends') }}</label>
 					<div class="grid grid-cols-2 items-center gap-2.5">
 						<FormControl v-model="repeat.end" type="select" :options="END_OPTIONS" />
+						<!-- The platform's own picker on a phone, as the rest of this form
+						     uses for the event's dates and its alerts. `FormControl type="date"`
+						     is frappe-ui's DatePicker — a popover calendar, which inside a
+						     bottom sheet is a layer on a layer, where the native control opens
+						     as a sheet of the system's own. -->
+						<input
+							v-if="isMobile && repeat.end === 'On Date'"
+							v-model="repeat.until"
+							type="date"
+							class="w-full rounded-4 border-outline-gray-2 bg-surface-base px-2 py-1 text-p-base text-ink-gray-8 focus:border-outline-gray-3 focus:ring-0"
+						/>
 						<FormControl
-							v-if="repeat.end === 'On Date'"
+							v-else-if="repeat.end === 'On Date'"
 							v-model="repeat.until"
 							type="date"
 							class="w-full"
@@ -246,19 +274,43 @@ const removeRepeat = () => {
 				</div>
 
 				<!-- Summary -->
+				<!-- Plain text over a rule, not a filled box: every filled box above it is
+				     something to fill in, and a sentence wearing the same fill read as one
+				     more field — one that ignored being typed in. The rule is what separates
+				     the reading of the rule from the setting of it.
+
+				     The summary is a sentence, not a chip: pick enough days and it wraps,
+				     and a centred icon then floats against the middle of a two-line
+				     block with nothing on its own line. It sits on the first line
+				     instead — mt-1 is the half-leading that puts a 14px glyph on the
+				     optical centre of a 21px line — and the text takes the rest of the
+				     width so the block reads as a paragraph rather than as a label that
+				     outgrew its badge.
+
+				     text-p-sm, not text-sm: the size's own line-height is meant for a label
+				     that never wraps, and this wraps as soon as enough days are picked —
+				     two lines of it would sit with the descenders of one nearly touching
+				     the caps of the next. The paragraph variant of the same size leaves
+				     the leading a sentence needs. -->
 				<div
-					class="flex items-center gap-2.5 rounded-4 bg-surface-gray-2 px-3 py-2 text-base text-ink-gray-8"
+					class="flex items-start gap-2.5 border-t border-outline-gray-1 pt-3 text-p-sm text-ink-gray-8"
 				>
-					<Repeat :size="14" class="shrink-0 text-ink-gray-5" />
-					{{ getRepeatMessage(recurrenceRule) }}
+					<Repeat :size="14" class="mt-1 shrink-0 text-ink-gray-5" />
+					<span class="min-w-0 flex-1">{{ getRepeatMessage(recurrenceRule) }}</span>
+				</div>
+				<!-- On a phone the actions travel with the fields: a sheet has no actions
+				     slot of its own, and a full-width pair is what a thumb reaches anyway. -->
+				<div v-if="isMobile" class="flex gap-2 pt-1">
+					<Button class="flex-1" :label="__('Remove Repeat')" @click="removeRepeat" />
+					<Button class="flex-1" :label="__('Apply')" variant="solid" @click="apply" />
 				</div>
 			</div>
 		</template>
-		<template #actions>
+		<template v-if="!isMobile" #actions>
 			<div class="flex justify-end gap-2">
 				<Button :label="__('Remove Repeat')" @click="removeRepeat" />
 				<Button :label="__('Apply')" variant="solid" @click="apply" />
 			</div>
 		</template>
-	</Dialog>
+	</component>
 </template>

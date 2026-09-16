@@ -1,4 +1,6 @@
 import { computed, inject, markRaw, type Component } from 'vue'
+
+import { settingsGroups } from '@/composables/settingsGroups'
 import {
 	BellRing,
 	Eye,
@@ -130,19 +132,5 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 			.filter((group) => group.items.length > 0)
 	})
 
-	const groups = computed(() =>
-		allGroups.value
-			.map((group) => ({
-				...group,
-				items: group.items.filter((tab) => !exclude.includes(tab.value)),
-			}))
-			.filter((group) => group.items.length > 0),
-	)
-
-	// Excluded rows are still reachable this way — that's how the identity card opens
-	// the Profile tab it took the place of.
-	const findTab = (value: string) =>
-		allGroups.value.flatMap((group) => group.items).find((tab) => tab.value === value)
-
-	return { groups, findTab }
+	return settingsGroups(allGroups, exclude)
 }

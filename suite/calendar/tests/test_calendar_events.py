@@ -3,7 +3,11 @@
 
 import frappe
 
-from suite.calendar.api import edit_calendar_event, get_calendar_events
+from suite.calendar.api import (
+    edit_calendar_event,
+    get_calendar_event_density,
+    get_calendar_events,
+)
 from suite.calendar.doctype.calendar.calendar import add_calendar
 from suite.calendar.doctype.calendar_event.calendar_event import (
     add_calendar_event,
@@ -75,6 +79,45 @@ class TestCalendarEvents(StalwartIntegrationTestCase):
 
             delete_calendar_events(self.account, [event_id])
             self.assertEqual(get_events_by_ids(self.account, [event_id]), [])
+
+    def test_event_density_carries_only_what_a_tick_needs(self):
+        """The mini month's source: enough to place a mark, and nothing else."""
+
+        title = f"Density {unique_name('event')}"
+        with self.set_user(self.member.email):
+            event_id = add_calendar_event(
+                self.account,
+                title=title,
+                start="2026-09-08T10:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+                description="Should not travel with a tick",
+                locations=[{"name": "Room 1"}],
+            )
+
+        self._wait_for_event(title)
+
+        with self.set_user(self.member.email):
+            rows = get_calendar_event_density(self.account, RANGE[0], RANGE[1], "UTC")
+
+        self.assertTrue(rows, "Density returned nothing for a range holding an event.")
+
+        # Placed by when it runs and whose calendar it is on — the two things a tick is.
+        on_the_day = [row for row in rows if (row["start"] or "").startswith("2026-09-08")]
+        self.assertTrue(on_the_day, "The event's own day is missing from the density.")
+        self.assertEqual(on_the_day[0]["duration"], "PT1H")
+        self.assertTrue(on_the_day[0]["calendars"])
+        self.assertFalse(on_the_day[0]["is_declined"])
+
+        # The point of a separate call: none of the payload a full event drags along.
+        for row in rows:
+            self.assertNotIn("description", row)
+            self.assertNotIn("participants", row)
+            self.assertNotIn("locations", row)
+            self.assertNotIn("title", row)
+
+        with self.set_user(self.member.email):
+            delete_calendar_events(self.account, [event_id])
 
     def test_all_day_event(self):
         title = f"Holiday {unique_name('event')}"

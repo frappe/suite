@@ -19,25 +19,25 @@
         </ListHeaderCell>
         <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
           {{ __('Name') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
           {{ __('Owner') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort :direction="directionFor('modified')" @click="toggleSort('modified', __('Last Modified'), false)">
           {{ __('Last Modified') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
           {{ __('Size') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>

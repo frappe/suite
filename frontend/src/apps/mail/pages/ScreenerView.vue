@@ -467,7 +467,7 @@ import {
 } from '@/apps/mail/utils/composables'
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'

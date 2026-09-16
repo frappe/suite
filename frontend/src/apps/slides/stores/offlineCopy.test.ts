@@ -3,11 +3,11 @@ import { ref } from 'vue'
 
 const presentationDoc = ref<any>({ is_composite: 0 })
 const presentationId = ref('p1')
-const inReadonlyMode = ref(false)
+const viewOnly = ref(false)
 const slides = ref<any[]>([])
 const apiCalls: string[] = []
 
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, inReadonlyMode }))
+vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, viewOnly }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({
 	getAttachmentUrl: (src: string) => `/private${src}?slides_media=1`,

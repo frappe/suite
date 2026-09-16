@@ -78,6 +78,38 @@ jobs:
             --branch "${{ steps.pr.outputs.base_ref }}" \
             --output artifacts/baseline
 
+      - name: Resolve coverage step status
+        id: coverage-status
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          jobs="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100")"
+
+          step_conclusion() {
+            jq -r --arg job "$1" --arg step "$2" \
+              '[.jobs[] | select(.name == $job) | .steps[] | select(.name == $step) | .conclusion][0] // "unknown"' <<<"$jobs"
+          }
+
+          backend="$(step_conclusion Backend 'Run Backend Tests')"
+          if [ "$backend" = "skipped" ] \
+              && [ "$(step_conclusion Backend 'Check backend changes')" = "success" ] \
+              && [ "$(step_conclusion Backend 'Setup Python')" = "skipped" ]; then
+            backend=unchanged
+          fi
+
+          frontend="$(step_conclusion Frontend 'Test')"
+          if [ "$frontend" = "skipped" ] \
+              && [ "$(step_conclusion Frontend 'Check frontend changes')" = "success" ] \
+              && [ "$(step_conclusion Frontend 'Setup Node')" = "skipped" ]; then
+            frontend=unchanged
+          fi
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
       - name: Build coverage report
         if: steps.pr.outputs.number != ''
         run: |
@@ -86,6 +118,8 @@ jobs:
             --frontend artifacts/current/frontend/cobertura-coverage.xml \
             --backend-baseline artifacts/baseline/backend.xml \
             --frontend-baseline artifacts/baseline/frontend.xml \
+            --backend-status "${{ steps.coverage-status.outputs.backend }}" \
+            --frontend-status "${{ steps.coverage-status.outputs.frontend }}" \
             --baseline-ref "${{ steps.pr.outputs.base_ref }}" \
             --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${{ github.event.workflow_run.id }}" \
             --commit "${{ github.event.workflow_run.head_sha }}" \

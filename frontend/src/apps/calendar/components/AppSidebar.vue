@@ -10,7 +10,7 @@ import {
 	SidebarSection,
 	Tooltip,
 } from 'frappe-ui'
-import { CalendarColorMap } from 'frappe-ui/experimental'
+import { eventColor } from '@/apps/calendar/utils/color'
 import { useNow, useStorage } from '@vueuse/core'
 
 import { useSessionStore } from '@/boot/session'
@@ -32,24 +32,24 @@ const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	/** The month the calendar shows; the mini month mirrors it. */
 	month?: number
 	year?: number
-	/** The day it is on and the view it is in, for the mini month's selection. */
+	/** The day it is on, for the mini month's selection. */
 	day?: number
-	view?: 'Month' | 'Week' | 'Day'
-	/** The calendar's own events: `fromDate`/`toDate` in the viewer's zone, a palette `color`. */
+	/** Today's events: `fromDate`/`toDate` in the viewer's zone, a palette `color`. */
 	events?: any[]
-	/** The event whose detail panel is open, so its row reads as active. */
+	/** The open event, so its row reads as active. */
 	selectedEvent?: any
+	/** Palette colour per calendar id, for the mini month's dots. */
+	calendarColor: (calendar: string) => string
 }>()
 
 const emit = defineEmits<{
 	'update:visibleCalendars': [name: string]
 	selectDate: [date: Date]
-	selectEvent: [event: any]
+	selectEvent: [event: any, e: MouseEvent]
 }>()
 
-const paletteColor = (color?: string) => (CalendarColorMap[color] || CalendarColorMap.green).color
 
-const dotStyle = (color: string) => ({ background: paletteColor(color) })
+const dotStyle = (color: string) => ({ background: eventColor(color) })
 
 // A JMAP calendar is often named after its account — "Frappe Calendar
 // (akash@frappe.io)" — which never fits a sidebar row. The email moves to a
@@ -60,6 +60,8 @@ const calendarLabel = (calendar: any) => {
 }
 
 // --- Upcoming events: what is left of today, like mail's sidebar shows ---
+// The events handed over are today's already; this drops what is over, cancelled
+// or declined, and puts the rest in order.
 
 const now = useNow({ interval: 30_000 })
 
@@ -83,7 +85,8 @@ const isOpen = (event: any) =>
 	selectedEvent.id === event.id &&
 	(selectedEvent.recurrence_id ?? '') === (event.recurrence_id ?? '')
 
-const eventColor = (event: any) => paletteColor(event.color)
+/** The dot beside an upcoming event, in its calendar's colour. */
+const eventDotColor = (event: any) => eventColor(event.color)
 
 const route = useRoute()
 const router = useRouter()
@@ -167,20 +170,25 @@ const menuItems = computed(() => [
 				     (they animate w-0/opacity-0; height is our axis). A fixed width
 				     — the expanded sidebar's inner 224px — keeps the seven columns
 				     from reflowing while the width is mid-transition: the rail's
-				     overflow clips the card instead. -->
+				     overflow clips the card instead.
+
+				     The open end of that fold is a clamp, not a height, so it has to
+				     clear the card rather than describe it: 384px against a card of
+				     roughly 330 once its days grew a circled numeral and a tick
+				     under it. At 288 it cut the last row of dates off, and a clamp
+				     that clips reads as a card that ends mid-month. -->
 				<div
 					v-if="month != null && year != null"
 					class="w-56 transition-all duration-300 ease-in-out"
 					:class="
-						isSidebarCollapsed ? 'mb-0 max-h-0 overflow-hidden opacity-0' : 'mb-3 mt-3 max-h-72 opacity-100'
+						isSidebarCollapsed ? 'mb-0 max-h-0 overflow-hidden opacity-0' : 'mb-3 mt-3 max-h-96 opacity-100'
 					"
 				>
 					<MiniMonth
 						:month
 						:year
-						:events="events || []"
+						:calendar-color="calendarColor"
 						:selected="day != null ? new Date(year, month, day) : undefined"
-						:view
 						@select="(date) => emit('selectDate', date)"
 					/>
 				</div>
@@ -224,8 +232,8 @@ const menuItems = computed(() => [
 					:events="upcoming"
 					:is-collapsed="isSidebarCollapsed"
 					:is-open
-					:event-color
-					@select="(event) => emit('selectEvent', event)"
+					:event-color="eventDotColor"
+					@select="(event, e) => emit('selectEvent', event, e)"
 				/>
 				<SidebarCollapseToggle />
 			</div>

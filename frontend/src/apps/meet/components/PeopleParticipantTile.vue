@@ -36,29 +36,32 @@
 
 		<div class="flex flex-shrink-0 items-center gap-1">
 			<!-- Raised Hand Indicator -->
-			<div v-if="isHandRaised" class="flex items-center justify-center p-1.5 rounded-6" :title="`${participant.user_name || participant.user_id} has raised their hand`">
-				<div class="rounded-full bg-amber-500 p-0.5">
-					<lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
+			<Tooltip v-if="isHandRaised" :text="`${participant.user_name || participant.user_id} has raised their hand`">
+				<div
+					class="flex items-center justify-center p-1.5 rounded-6"
+					:aria-label="`${participant.user_name || participant.user_id} has raised their hand`"
+				>
+					<div class="rounded-full bg-amber-500 p-0.5">
+						<lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
+					</div>
 				</div>
-			</div>
+			</Tooltip>
 
 			<!-- Video Status -->
-			<span
-				class="flex items-center justify-center p-1.5 text-ink-gray-6"
-				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
-			>
-				<MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
-				<MeetCameraOffIcon v-else class="size-4" />
-			</span>
+			<Tooltip :text="participant.video_enabled ? 'Camera on' : 'Camera off'">
+				<span class="flex items-center justify-center p-1.5 text-ink-gray-6">
+					<MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
+					<MeetCameraOffIcon v-else class="size-4" />
+				</span>
+			</Tooltip>
 
 			<!-- Audio Status -->
-			<span
-				class="flex items-center justify-center p-1.5 text-ink-gray-6"
-				:title="participant.audio_enabled ? 'Microphone on' : 'Microphone off'"
-			>
-				<MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
-				<MeetMicOffIcon v-else class="size-4" />
-			</span>
+			<Tooltip :text="participant.audio_enabled ? 'Microphone on' : 'Microphone off'">
+				<span class="flex items-center justify-center p-1.5 text-ink-gray-6">
+					<MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
+					<MeetMicOffIcon v-else class="size-4" />
+				</span>
+			</Tooltip>
 
 			<!-- Host Controls -->
 			<div v-if="canControlParticipant" class="relative">
@@ -88,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { Dropdown } from "frappe-ui";
+import { Dropdown, Tooltip } from "frappe-ui";
 import { computed, ref } from "vue";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";

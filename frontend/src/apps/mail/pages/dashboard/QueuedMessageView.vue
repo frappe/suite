@@ -238,7 +238,7 @@ const cancel = createResource({
 const cancelDialogOptions = computed(() => ({
 	title: __('Cancel Message'),
 	message: __('Cancel (delete) this queued message? This cannot be undone.'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: cancel.submit }],
 }))
 

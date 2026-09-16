@@ -27,7 +27,7 @@ test.describe("Reactions and raise hand", { tag: "@meet-group-2" }, () => {
 		await expect(hostPage.locator("[aria-label*='has raised their hand']")).toBeVisible();
 		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 		await expect(
-			hostPage.getByTestId("people-panel").locator("[title*='has raised their hand']"),
+			hostPage.getByTestId("people-panel").getByLabel(/has raised their hand/),
 		).toBeVisible();
 	});
 });

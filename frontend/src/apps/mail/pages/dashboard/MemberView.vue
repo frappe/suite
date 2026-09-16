@@ -381,7 +381,7 @@ const DELETE_MEMBER_OPTIONS = {
 	title: __('Delete Member'),
 	message: __('Are you sure you want to delete this member? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),

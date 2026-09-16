@@ -15,7 +15,10 @@
 			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
 			@click="openFolderSheet"
 		>
-			<Menu :size="18" />
+			<!-- 24px at stroke 2, against the 1.5 the app draws its icons at:
+			     three strokes on their own, at a size no glyph accompanies, went
+			     thin against the title beside them. -->
+			<Menu :size="24" class="[stroke-width:2]" />
 		</button>
 		<button
 			v-else-if="withBack"

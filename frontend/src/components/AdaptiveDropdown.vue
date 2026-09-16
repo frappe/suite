@@ -46,12 +46,16 @@ import { Check } from 'lucide-vue-next'
 import { BottomSheet, Dropdown } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
-import { stripShortcutHint } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
+import { stripShortcutHint } from '@/utils/actionLabel'
+import { useScreenSize } from '@/composables/useScreenSize'
 
 // Drop-in Dropdown replacement: desktop renders a frappe-ui Dropdown untouched,
 // mobile renders the same options as a bottom sheet (popup menus at the bottom
 // edge are thumb-hostile). Supports flat and grouped option arrays.
+//
+// Shared rather than mail's own: the calendar's phone form asks the same question of
+// a row whose value is one of a few — alert, visibility, availability — and a second
+// sheet built to look like this one is a second sheet to keep looking like it.
 
 interface OptionItem {
 	label: string

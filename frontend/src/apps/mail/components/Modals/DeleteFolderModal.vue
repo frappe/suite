@@ -7,7 +7,7 @@
 				`Are you sure you want to delete '{0}'? Mails in this folder will be permanently removed.`,
 				[mailbox?._name],
 			),
-			icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+			icon: 'lucide-alert-triangle', theme: 'amber',
 			actions: [{ label: __('Confirm'), theme: 'red', onClick: deleteFolder.submit }],
 		}"
 	/>

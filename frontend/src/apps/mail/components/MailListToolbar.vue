@@ -66,7 +66,7 @@ import { Button, Dropdown } from 'frappe-ui'
 import { ChevronDown, RefreshCw } from 'lucide-vue-next'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import SplitViewToggle from '@/apps/mail/components/SplitViewToggle.vue'
 

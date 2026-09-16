@@ -62,9 +62,9 @@ export const FLAGGED_STAR_STYLE =
  * sits. Anything that changes the proportions belongs here, not at one of the call sites.
  *
  * The column is a share of the VIEWPORT (vw, not a fraction of the row): the viewport doesn't change
- * when something else joins the row, so opening e.g. the event detail sidebar squeezes only the
- * pane. The min-w floors keep the list usable on cramped windows; past them the pane shrinks to its
- * own floor and then the row scrolls.
+ * when something else joins the row, so whatever does squeezes only the pane. The min-w floors keep
+ * the list usable on cramped windows; past them the pane shrinks to its own floor and then the row
+ * scrolls.
  */
 export const SPLIT_LIST_CLASS = 'w-[28vw] min-w-64 shrink-0 border-r lg:min-w-80'
 

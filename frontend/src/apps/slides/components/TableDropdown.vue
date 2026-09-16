@@ -2,7 +2,7 @@
 	<Popover side="top" align="center" :offset="12">
 		<template #trigger="{ open }">
 			<div>
-				<Tooltip text="Table" :hover-delay="0.7">
+				<Tooltip text="Table" :hover-delay="700">
 					<div :class="triggerClass(open)">
 						<Table class="size-4 stroke-[1.5] text-ink-gray-7" />
 						<ChevronDown class="size-3 text-ink-gray-5" />

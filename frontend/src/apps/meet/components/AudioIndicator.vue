@@ -6,9 +6,8 @@
 			class="audio-bar"
 			:class="bar.className"
 			:style="{
-				height: `${bar.height}px`,
-				maxHeight: `${props.maxHeight || 80}px`,
-				transition: 'height 0.1s ease-out',
+				height: `${props.maxHeight || 80}px`,
+				transform: `scaleY(${bar.scale})`,
 			}"
 		/>
 	</div>
@@ -27,13 +26,13 @@ const props = defineProps<{
 }>();
 
 interface BarState {
-	height: number;
+	scale: number;
 	className: string;
 }
 
 const bars = ref<BarState[]>(
 	Array.from({ length: 3 }, () => ({
-		height: 4,
+		scale: Math.min(4 / (props.maxHeight || 80), 1),
 		className: props.activeColorClass,
 	})),
 );
@@ -128,13 +127,14 @@ const startListening = async () => {
 					smoothedLevels[i] * responsiveSmoothing +
 					target * (1 - responsiveSmoothing);
 
-				const displayHeight = Math.max(
-					4,
-					Math.min(maxHeight, smoothedLevels[i] * maxHeight),
-				);
+				const displayScale =
+					Math.max(
+						Math.min(4, maxHeight),
+						Math.min(maxHeight, smoothedLevels[i] * maxHeight),
+					) / maxHeight;
 				const className = props.activeColorClass;
 
-				bars.value[i] = { height: displayHeight, className };
+				bars.value[i] = { scale: displayScale, className };
 			}
 
 			animationFrame = requestAnimationFrame(animate);
@@ -146,7 +146,7 @@ const startListening = async () => {
 		isListening = false;
 
 		bars.value = bars.value.map(() => ({
-			height: 4,
+			scale: Math.min(4 / (props.maxHeight || 80), 1),
 			className: props.activeColorClass,
 		}));
 	}
@@ -182,7 +182,7 @@ const stopListening = () => {
 	analyser = null;
 
 	bars.value = bars.value.map(() => ({
-		height: 4,
+		scale: Math.min(4 / (props.maxHeight || 80), 1),
 		className: props.activeColorClass,
 	}));
 };
@@ -251,6 +251,6 @@ onUnmounted(() => {
 .audio-bar {
 	width: 3px;
 	border-radius: 1px;
-	transition: height 0.1s ease-out;
+	transform-origin: center;
 }
 </style>

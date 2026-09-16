@@ -108,7 +108,7 @@ import {
 	getBindableAt,
 } from '@/apps/slides/stores/interaction'
 
-import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
+import { handleCopy, handleCut, handlePaste } from '@/apps/slides/stores/copyPaste'
 
 import { registerElementDiv, getElementDiv } from '@/apps/slides/stores/elementRegistry'
 
@@ -652,12 +652,14 @@ const initSlideAndListeners = () => {
 	updateSlideBounds()
 
 	document.addEventListener('copy', handleCopy)
+	document.addEventListener('cut', handleCut)
 	document.addEventListener('paste', handlePaste)
 	window.addEventListener('resize', updateSlideBounds)
 }
 
 const clearListeners = () => {
 	document.removeEventListener('copy', handleCopy)
+	document.removeEventListener('cut', handleCut)
 	document.removeEventListener('paste', handlePaste)
 	window.removeEventListener('resize', updateSlideBounds)
 }

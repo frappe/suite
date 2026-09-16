@@ -278,7 +278,7 @@ const deleteContact = createResource({
 const deleteContactOptions = computed(() => ({
 	title: __('Delete Contact'),
 	message: __('Are you sure you want to delete the contact for {0}?', [contact.doc?.full_name]),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContact.submit }],
 }))
 
@@ -286,7 +286,7 @@ const addressBooksList = useTemplateRef('addressBooksList')
 const removeAddressBooksOptions = computed(() => ({
 	title: __('Remove from Address Books'),
 	message: __('Are you sure you want to remove this contact from the selected address books?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),
@@ -307,7 +307,7 @@ const emailsList = useTemplateRef('emailsList')
 const removeEmailsOptions = computed(() => ({
 	title: __('Remove Emails'),
 	message: __('Are you sure you want to remove the selected emails?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),
@@ -328,7 +328,7 @@ const phonesList = useTemplateRef('phonesList')
 const removePhonesOptions = computed(() => ({
 	title: __('Remove Phones'),
 	message: __('Are you sure you want to remove the selected phones?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),
@@ -349,7 +349,7 @@ const addressesList = useTemplateRef('addressesList')
 const removeAddressesOptions = computed(() => ({
 	title: __('Remove Addresses'),
 	message: __('Are you sure you want to remove the selected addresses?'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),

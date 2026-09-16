@@ -17,9 +17,11 @@ vi.mock('@/apps/slides/stores/slide', () => ({
 vi.mock('@/apps/slides/stores/element', () => ({
 	activeElements,
 	activeElementIds,
+	isSelectionLocked: ref(false),
 	focusElementId: ref(null),
 	addTextElement: vi.fn(),
 	duplicateElements: vi.fn(),
+	deleteElements: vi.fn(),
 	resetFocus: vi.fn(),
 }))
 vi.mock('@/apps/slides/stores/imageCrop', () => ({ inCropMode: ref(false) }))
@@ -38,7 +40,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({
 	handleUploadedMedia: vi.fn(),
 }))
 
-const { handleCopy } = await import('./copyPaste')
+const { handleCopy, handleCut } = await import('./copyPaste')
 const { toast } = await import('frappe-ui')
 
 const makeCopyEvent = (target: EventTarget | null) => ({
@@ -135,5 +137,19 @@ describe('handleCopy from the canvas', () => {
 		expect(e.preventDefault).toHaveBeenCalled()
 		expect(e.clipboardData.setData).toHaveBeenCalledWith('application/json', expect.any(String))
 		expect(toast.success).toHaveBeenCalledWith('Slide copied to clipboard')
+	})
+})
+
+describe('handleCut', () => {
+	it('copies only the elements the cut removes', () => {
+		activeElementIds.value = ['e1', 'e2']
+		activeElements.value = [{ id: 'e1', locked: true }, { id: 'e2' }]
+
+		const e = makeCopyEvent(document.body)
+		handleCut(e as any)
+
+		const payload = JSON.parse(e.clipboardData.setData.mock.calls[0][1])
+		expect(payload.isCut).toBe(true)
+		expect(payload.elements.map((el: any) => el.id)).toEqual(['e2'])
 	})
 })

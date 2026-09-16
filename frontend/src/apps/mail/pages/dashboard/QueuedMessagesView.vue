@@ -193,7 +193,7 @@ const retrySelectedOptions = computed(() => ({
 const cancelSelectedOptions = computed(() => ({
 	title: __('Cancel Messages'),
 	message: __('Cancel (delete) the selected messages? This cannot be undone.'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: cancelSelected.submit }],
 }))
 const retryAllOptions = computed(() => ({
@@ -204,7 +204,7 @@ const retryAllOptions = computed(() => ({
 const cancelAllOptions = computed(() => ({
 	title: __('Cancel All Messages'),
 	message: __('Cancel (delete) every message matching the current filter? This cannot be undone.'),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: cancelAll.submit }],
 }))
 </script>

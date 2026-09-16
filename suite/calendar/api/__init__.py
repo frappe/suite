@@ -26,32 +26,132 @@ from suite.utils.rate_limiter import dynamic_rate_limit
 
 @frappe.whitelist()
 def get_calendars(account: str) -> list[dict[str, str]]:
-    """Returns a list of the specified account's calendars."""
+    """Returns a list of the specified account's calendars.
+
+    The colour comes with them: it is the calendar's own, set wherever its owner
+    set it, and the views draw their events and their dots in it rather than in
+    a colour assigned by position.
+    """
 
     ensure_default_alerts(account)
     calendars = fetch_calendars(account)
 
-    return [{key: cal[key] for key in ["name", "_name"]} for cal in calendars]
+    return [{key: cal[key] for key in ["name", "_name", "color"]} for cal in calendars]
+
+
+# Stalwart answers a range query one page at a time, and a window wide enough for the
+# Agenda — plus the months either side of it — can outrun a single page once a calendar
+# carries a few daily recurrences. Asking for one page of 999 and returning it took the
+# first 999 and said nothing about the rest: the grid simply stopped, with nothing on
+# screen to say why.
+EVENT_PAGE_SIZE = 999
+
+# Where walking the pages stops. Past this the answer is not something anyone is reading
+# day by day, and an unbounded loop against a shared server is its own kind of bug — so
+# it stops, and says so in the error log rather than silently.
+MAX_EVENTS_IN_WINDOW = 5000
+
+
+def _events_in_window(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+    """Every event in the window, page by page rather than the first page alone."""
+
+    # The API listens UTC: a naive range value is read as UTC, not system time.
+    query = {"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)}
+    events: list[dict] = []
+    position = 0
+    total = 0
+
+    while len(events) < MAX_EVENTS_IN_WINDOW:
+        # The last page asks for what is left under the ceiling, not a whole one:
+        # a full page on top of 4,995 is a thousand events past the bound.
+        page, total = fetch_calendar_events(
+            account,
+            query,
+            position=position,
+            limit=min(EVENT_PAGE_SIZE, MAX_EVENTS_IN_WINDOW - len(events)),
+            time_zone=time_zone,
+            expand_recurrences=True,
+        )
+        events.extend(page)
+        position += len(page)
+        # An empty page ends it whatever the total claims: a total that never comes
+        # down is how a loop against a paging server runs forever.
+        if not page or position >= total:
+            break
+
+    if position < total:
+        frappe.log_error(
+            title="Calendar range query truncated",
+            message=(
+                f"Account {account} has {total} events between {from_date} and {to_date}; "
+                f"{len(events)} were returned (ceiling {MAX_EVENTS_IN_WINDOW})."
+            ),
+        )
+
+    return events
 
 
 @frappe.whitelist()
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
     """Fetches calendar events between from_date and to_date for the specified account."""
 
-    # The API listens UTC: a naive range value is read as UTC, not system time.
-    events = fetch_calendar_events(
-        account,
-        {"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)},
-        limit=999,
-        time_zone=time_zone,
-        expand_recurrences=True,
-    )[0]
+    events = _events_in_window(account, from_date, to_date, time_zone)
 
     enrich_events_with_master_data(account, events)
     events = merge_own_copies(account, events)
     enrich_participants_with_avatars(events)
 
     return events
+
+
+@frappe.whitelist()
+def get_calendar_event_density(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+    """The bare minimum needed to mark a day as busy, for the sidebar's mini month.
+
+    That card is a navigation aid: it has to draw a tick under any day with something on
+    it, in whatever month it is paged to, which is not the window the main view fetched.
+    Asking `get_calendar_events` for a month to draw at most three dots a day would pull
+    every description, location, link and participant avatar in it, so this returns only
+    what a tick is made of — when the event runs, and whose calendar it is on.
+
+    Deliberately NOT bucketed into days here. Which day an event lands on is the viewer's
+    zone, all-day-ness and inclusive-end arithmetic that the client already does for the
+    grid (`isAllDayEvent`, `eventLastDay`); a second implementation of it in Python is a
+    second implementation to disagree with the first. The client places these rows with
+    the same code it places real events with.
+    """
+
+    events = _events_in_window(account, from_date, to_date, time_zone)
+
+    # A decline gives the time back, so a declined event is not density. Matching the
+    # viewer's own addresses is what tells a decline of theirs from anyone else's.
+    own_emails = {(identity.get("email") or "").lower() for identity in get_participant_identities(account)}
+
+    return [
+        {
+            "start": event.get("start"),
+            "duration": event.get("duration"),
+            "time_zone": event.get("time_zone"),
+            "show_without_time": event.get("show_without_time"),
+            "calendars": [
+                cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")
+            ],
+            "is_declined": _declined_by_viewer(event, own_emails),
+        }
+        for event in events
+    ]
+
+
+def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:
+    """True when one of the account's own addresses said no to this event."""
+
+    for participant in event.get("participants") or []:
+        if participant.get("participation_status") != "DECLINED":
+            continue
+        email = (participant.get("email") or "").lower().replace("mailto:", "")
+        if email in own_emails:
+            return True
+    return False
 
 
 # What an occurrence inherits from its series, as (our name, the JMAP name the override uses).

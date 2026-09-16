@@ -3,6 +3,12 @@ import { watch } from 'vue'
 import { Button, FormControl } from 'frappe-ui'
 
 import { requestAlertPermission } from '@/utils/calendarAlert'
+import {
+	ALERT_ACTION_OPTIONS,
+	DIRECTION_OPTIONS,
+	RELATIVE_TO_OPTIONS,
+	UNIT_OPTIONS,
+} from '@/apps/calendar/utils/eventOptions'
 
 const { alerts } = defineProps<{ alerts: any[] }>()
 
@@ -24,32 +30,6 @@ const removeAlert = (i: number) => {
 	const updated = alerts.filter((_, idx) => idx !== i)
 	emit('update:alerts', updated)
 }
-
-// Display is delivered as a device push and an in-app toast; Email is sent by
-// the calendar server. `Audio` exists in the schema only so imported calendars
-// keep their alarms — it plays nothing here, so it is not offered and an
-// existing one reads as Display.
-const ALERT_ACTION_OPTIONS = [
-	{ label: __('Notification'), value: 'Display' },
-	{ label: __('Email'), value: 'Email' },
-]
-
-const UNIT_OPTIONS = [
-	{ label: __('Minutes'), value: 'minutes' },
-	{ label: __('Hours'), value: 'hours' },
-	{ label: __('Days'), value: 'days' },
-	{ label: __('Weeks'), value: 'weeks' },
-]
-
-const DIRECTION_OPTIONS = [
-	{ label: __('Before'), value: -1 },
-	{ label: __('After'), value: 1 },
-]
-
-const RELATIVE_TO_OPTIONS = [
-	{ label: __('Start'), value: 'Start' },
-	{ label: __('End'), value: 'End' },
-]
 </script>
 
 <template>

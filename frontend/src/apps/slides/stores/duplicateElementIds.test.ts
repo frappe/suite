@@ -62,6 +62,24 @@ describe('a slide inserted from a layout', () => {
 	})
 })
 
+describe('a duplicated slide', () => {
+	it('keeps the transition of its source', () => {
+		const source = {
+			clientId: 'c1',
+			elements: [],
+			transition: 'Magic Move',
+			transitionDuration: 2,
+			fadeUnmatchedElements: 0,
+		}
+
+		const copy = getNewSlide(true, null, source as any)
+
+		expect(copy.transition).toBe('Magic Move')
+		expect(copy.transitionDuration).toBe(2)
+		expect(copy.fadeUnmatchedElements).toBe(0)
+	})
+})
+
 describe('replacing an image whose id repeats on an earlier slide', () => {
 	beforeEach(() => seedSharedId())
 

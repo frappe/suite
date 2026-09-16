@@ -20,7 +20,7 @@
 			</Badge>
 			<OfflineCopyButton v-if="canPin" />
 			<Button
-				v-if="!inReadonlyMode && presentationDoc"
+				v-if="!viewOnly && presentationDoc"
 				variant="ghost"
 				tooltip="Export"
 				@click="emit('performDropdownAction', 'export')"
@@ -29,7 +29,7 @@
 					<LucideDownload class="size-4 stroke-[1.5]" />
 				</template>
 			</Button>
-			<SharePopover v-if="!inReadonlyMode && presentationDoc" />
+			<SharePopover v-if="!viewOnly && presentationDoc" />
 		</template>
 	</Navbar>
 </template>
@@ -45,7 +45,8 @@ import PresentationHeader from '@/apps/slides/components/PresentationHeader.vue'
 import SharePopover from '@/apps/slides/components/SharePopover.vue'
 import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
 
-import { presentationDoc } from '@/apps/slides/stores/presentation'
+// export and share need write access, not the edit lock: a second tab keeps both
+import { presentationDoc, viewOnly } from '@/apps/slides/stores/presentation'
 import { saveFailed } from '@/apps/slides/stores/saving'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { useSessionStore } from '@/boot/session'

@@ -19,10 +19,8 @@
 	</SettingsDialog>
 </template>
 <script setup lang="ts">
-import { computed, markRaw, ref } from 'vue'
-import { Code, Contact, HardDriveDownload, HardDriveUpload, Palette, User } from 'lucide-vue-next'
+import { ref } from 'vue'
 import {
-	createResource,
 	SettingsContent,
 	SettingsDialog,
 	SettingsNavGroup,
@@ -31,84 +29,13 @@ import {
 	SettingsSidebar,
 } from 'frappe-ui'
 
-import AdvancedSettings from '@/apps/calendar/components/Settings/AdvancedSettings.vue'
-import AppearanceSettings from '@/apps/calendar/components/Settings/AppearanceSettings.vue'
-import ExportSettings from '@/apps/calendar/components/Settings/ExportSettings.vue'
-import ImportSettings from '@/apps/calendar/components/Settings/ImportSettings.vue'
-import ParticipantIdentitySettings from '@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'
-import ProfileSettings from '@/apps/calendar/components/Settings/ProfileSettings.vue'
+import { useSettingsTabs } from '@/apps/calendar/composables/useSettingsTabs'
 
 const show = defineModel<boolean>({ default: false })
 
-const TAB_GROUPS = [
-	{
-		label: __('General'),
-		items: [
-			{
-				label: __('Profile'),
-				value: 'profile',
-				icon: User,
-				component: markRaw(ProfileSettings),
-			},
-			{
-				label: __('Participant Identity'),
-				value: 'participant-identity',
-				icon: Contact,
-				component: markRaw(ParticipantIdentitySettings),
-			},
-			{
-				label: __('Appearance'),
-				value: 'appearance',
-				icon: Palette,
-				component: markRaw(AppearanceSettings),
-			},
-		],
-	},
-	{
-		label: __('Data'),
-		items: [
-			{
-				label: __('Import'),
-				value: 'import',
-				icon: HardDriveDownload,
-				component: markRaw(ImportSettings),
-			},
-			{
-				label: __('Export'),
-				value: 'export',
-				icon: HardDriveUpload,
-				component: markRaw(ExportSettings),
-			},
-		],
-	},
-	{
-		label: __('Developer'),
-		items: [
-			{
-				label: __('Advanced'),
-				value: 'advanced',
-				icon: Code,
-				component: markRaw(AdvancedSettings),
-			},
-		],
-	},
-]
-
-// The Advanced tab only holds the CalDAV client config, which the server withholds
-// unless Mail Settings enables it — hide the whole Developer group when it's empty.
-const clientConfig = createResource({
-	url: 'suite.mail.api.account.get_calendar_client_config',
-	cache: 'calendar-client-config',
-	auto: true,
-})
-
-const tabGroups = computed(() =>
-	clientConfig.data?.server_url
-		? TAB_GROUPS
-		: TAB_GROUPS.filter((group) => group.label !== __('Developer')),
-)
-
-const tabs = computed(() => tabGroups.value.flatMap((group) => group.items))
+// The same list the phone's Profile page reads, so a tab added in one place shows
+// up in both.
+const { groups: tabGroups, tabs } = useSettingsTabs()
 
 const activeTab = ref(tabs.value[0].value)
 </script>

@@ -91,13 +91,11 @@
 			<lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
 		</div>
 
-		<div
-			v-if="showNetworkState && showNetworkIndicator"
-			class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
-			:title="networkQualityMessage"
-		>
-			<WifiAlertIcon class="w-4 h-4 text-white" />
-		</div>
+		<Tooltip v-if="showNetworkState && showNetworkIndicator" :text="networkQualityMessage" class="contents">
+			<div class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800">
+				<WifiAlertIcon class="w-4 h-4 text-white" />
+			</div>
+		</Tooltip>
 
 		<!-- Participant action toolbar -->
 		<div
@@ -157,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from "frappe-ui";
+import { Button, Tooltip } from "frappe-ui";
 import { type ComputedRef, computed, inject, type Ref, ref, watch } from "vue";
 import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
