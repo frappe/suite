@@ -11,7 +11,7 @@
       <SidebarCollapseToggle />
     </div>
   </Sidebar>
-  <SettingsDialog v-model="showSettings" :suggested-tab="suggestedTab" />
+  <SettingsDialog v-model:open="showSettings" :suggested-tab="suggestedTab" />
 </template>
 <script setup>
 import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'

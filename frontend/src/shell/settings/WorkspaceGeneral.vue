@@ -28,7 +28,9 @@
             :disabled="uploading || saveWorkspace.loading"
             @click="openFileSelector"
           >
-            <Avatar :image="logo" :label="name" shape="square" size="3xl" class="!h-16 !w-16" />
+            <Avatar :label="name" shape="square" size="3xl" class="!h-16 !w-16">
+              <span class="lucide-image-up size-full" aria-hidden="true" />
+            </Avatar>
           </button>
         </div>
         <div class="flex min-w-0 flex-1 flex-col">

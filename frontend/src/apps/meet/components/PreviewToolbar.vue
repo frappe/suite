@@ -46,7 +46,7 @@
 	</Transition>
 
 	<SettingsDialog
-		v-model="showSettingsDialog"
+		v-model:open="showSettingsDialog"
 		:meetingId="meetingId"
 		:isPreview="true"
 		@device-changed="$emit('device-changed', $event)"

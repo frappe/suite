@@ -12,8 +12,6 @@
   "user_folder",
   "quota",
   "preferences_section",
-  "auto_detect_links",
-  "preferences_column_break",
   "webdav_enabled",
   "writer_section",
   "writer_settings"
@@ -53,21 +51,10 @@
    "label": "Quota"
   },
   {
-   "description": "Personal Drive behavior; each user manages their own.",
+   "description": "External access to this user's Drive files.",
    "fieldname": "preferences_section",
    "fieldtype": "Section Break",
-   "label": "Preferences"
-  },
-  {
-   "default": "0",
-   "description": "Watch the clipboard for copied URLs and offer to add them to Drive as links.",
-   "fieldname": "auto_detect_links",
-   "fieldtype": "Check",
-   "label": "Auto Detect Links"
-  },
-  {
-   "fieldname": "preferences_column_break",
-   "fieldtype": "Column Break"
+   "label": "External Access"
   },
   {
    "default": "0",

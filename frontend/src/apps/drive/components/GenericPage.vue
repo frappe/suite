@@ -673,33 +673,6 @@ const actionItems = computed(() => {
   }
 })
 
-async function newLink() {
-  if (!document.hasFocus()) return
-  try {
-    const text = await navigator.clipboard.readText()
-    if (localStorage.getItem('prevClip') === text) return
-    localStorage.setItem('prevClip', text)
-    const url = new URL(text)
-    if (url.host)
-      toast('Link detected', {
-        description: text,
-        action: {
-          label: 'Add',
-          onClick: () => {
-            listDialog.value = 'l'
-          },
-        },
-      })
-  } catch { }
-}
-
-// JS doesn't allow direct reading of clipboard
-if (settings.data?.auto_detect_links) {
-  newLink()
-  window.addEventListener('focus', newLink)
-  window.addEventListener('copy', newLink)
-}
-
 const socket = inject('socket')
 socket.on('list-add', ({ file }) => {
   if (

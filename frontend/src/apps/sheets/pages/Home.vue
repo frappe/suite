@@ -316,6 +316,7 @@ import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useRootStore } from '@/stores/root'
+import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { setupTheme } from '@/utils/setupTheme'
 
 const router = useRouter()
@@ -323,6 +324,7 @@ const root = useRootStore()
 const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('sheets')
 const themeMenuOption = useThemeMenuOption()
+const settingsMenuOption = useSettingsMenuOption()
 
 setupTheme()
 
@@ -331,6 +333,7 @@ const brandMenuOptions = computed(() => [
   {
     group: '',
     options: [
+      settingsMenuOption,
       themeMenuOption,
       ...(sessionStore.isLoggedIn
         ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]

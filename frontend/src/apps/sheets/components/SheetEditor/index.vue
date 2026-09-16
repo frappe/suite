@@ -1266,6 +1266,7 @@ import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
@@ -1341,6 +1342,7 @@ const appsMenuOption = useAppSwitcher('sheets', async () => {
   return !saveError.value
 })
 const themeMenuOption = useThemeMenuOption()
+const settingsMenuOption = useSettingsMenuOption()
 const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
   { label: 'Sheets', route: { name: 'sheets-home' } },
@@ -1357,6 +1359,7 @@ const brandMenuOptions = computed(() => [
   {
     group: '',
     options: [
+      settingsMenuOption,
       themeMenuOption,
       ...(sessionStore.isLoggedIn
         ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]

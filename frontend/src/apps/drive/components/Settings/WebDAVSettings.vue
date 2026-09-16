@@ -1,7 +1,7 @@
 <template>
 	<AppSettingsHeader
-		:title="__('WebDAV')"
-		:description="__('Manage your files from any WebDAV client')"
+		:title="__('External Access')"
+		:description="__('Connect Drive to desktop, mobile, and other file apps')"
 	/>
 	<AppSettingsBody>
 		<div class="flex flex-col gap-6">

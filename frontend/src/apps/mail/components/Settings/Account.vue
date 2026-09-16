@@ -15,14 +15,18 @@
 	<template v-if="jmapAccount.doc">
 		<div class="flex flex-col gap-5">
 		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
-		<FormControl
-			v-model="jmapAccount.doc.default_outgoing_email"
-			type="combobox"
-			:label="__('Default Outgoing Email')"
-			variant="outline"
-			:options="identities.data.map((i: Identity) => i.email)"
-			:open-on-click="true"
-		/>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Default Outgoing Email')"
+			:description="__('The address selected automatically when composing a message.')"
+		>
+			<Combobox
+				v-model="jmapAccount.doc.default_outgoing_email"
+				trigger="button"
+				align="end"
+				:options="identities.data.map((i: Identity) => i.email)"
+			/>
+		</SettingsRow>
 		<SettingsRow
 			class="!py-0"
 			:title="__('Create Contacts After Sending Email')"
@@ -51,11 +55,7 @@
 		<SettingsRow
 			class="!py-0"
 			:title="__('Keep Forwarded Email In Thread')"
-			:description="
-				__(
-					'Keep forwarded emails in the same thread as the original by referencing it in the In-Reply-To header.',
-				)
-			"
+			:description="__('Keep forwarded emails in the original thread.')"
 		>
 			<Switch v-model="keepForwardedEmailInThread" />
 		</SettingsRow>
@@ -64,11 +64,7 @@
 		<SettingsRow
 			class="!py-0"
 			:title="__('Screen New Senders')"
-			:description="
-				__(
-					'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
-				)
-			"
+			:description="__('Send emails from new senders to the Screener until accepted.')"
 		>
 			<Switch v-model="enableScreening" />
 		</SettingsRow>
@@ -79,13 +75,13 @@
 		>
 			<Switch v-model="blockRemoteImages" />
 		</SettingsRow>
-		<FormControl
-			v-model="jmapAccount.doc.on_mark_as_junk"
-			type="select"
-			:label="__('When Marking as Junk')"
-			variant="outline"
-			:options="ON_MARK_AS_JUNK_OPTIONS"
-		/>
+		<SettingsRow
+			class="!py-0"
+			:title="__('When Marking as Junk')"
+			:description="__('Choose how to handle future messages from this sender.')"
+		>
+			<Select v-model="jmapAccount.doc.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
+		</SettingsRow>
 
 		<!-- Read-only, so it sits after the settings rather than ahead of them; the
 		     sidebar shows this meter only once the account is nearly full. -->
@@ -104,9 +100,10 @@
 import { computed, inject, ref } from 'vue'
 import {
 	Button,
+	Combobox,
 	Dialog,
 	ErrorMessage,
-	FormControl,
+	Select,
 	SettingsRow,
 	Switch,
 	createDocumentResource,
@@ -172,7 +169,7 @@ const blockRemoteImages = computed({
 
 const ON_MARK_AS_JUNK_OPTIONS = [
 	{
-		label: __("Move the sender's future emails to Junk automatically"),
+		label: __('Move future emails to Junk'),
 		value: "Junk Sender's Mail",
 	},
 	{ label: __('Ask whether to block the sender'), value: 'Ask to Block Sender' },

@@ -106,6 +106,9 @@ export function useCurrentUser() {
         ? ((userResource.data.roles as string[]) ?? []).includes('System Manager')
         : systemUser.value,
     ),
+    isSystemManager: computed(() =>
+      ((userResource.data?.roles as string[] | undefined) ?? []).includes('System Manager'),
+    ),
     jmapUser: computed(() => (userResource.data ? !!userResource.data.is_jmap_configured : jmapUser.value)),
   }
 }

@@ -31,7 +31,11 @@ const RENAMED_ZONES: Record<string, string> = {
   'Europe/Kiev': 'Europe/Kyiv',
 }
 
+export function normalizeTimezone(zone: string): string {
+  return RENAMED_ZONES[zone] ?? zone
+}
+
 export function detectTimezone(): string {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return RENAMED_ZONES[zone] ?? zone
+  return normalizeTimezone(zone)
 }

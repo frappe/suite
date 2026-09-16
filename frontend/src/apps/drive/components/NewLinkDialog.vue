@@ -30,7 +30,7 @@ const open = ref(true)
 const dialogType = defineModel()
 
 const file_name = ref('')
-const link = ref(localStorage.getItem('prevClip') || '')
+const link = ref('')
 
 const createLink = createResource({
   url: 'suite.drive.api.files.create_link',

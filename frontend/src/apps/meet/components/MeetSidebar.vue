@@ -12,6 +12,7 @@ import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
 import { useAppSwitcher } from "@/composables/useAppSwitcher";
+import { useSettingsMenuOption } from "@/composables/useSettingsMenuOption";
 import { setupTheme, switchTheme, themeMode } from "@/utils/setupTheme";
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
@@ -41,6 +42,7 @@ function selectTheme(theme: string) {
 }
 
 const appsMenuOption = useAppSwitcher("meet");
+const settingsMenuOption = useSettingsMenuOption();
 
 const userName = computed(
 	() => userResource.data?.full_name || userResource.data?.name || "User",
@@ -52,6 +54,7 @@ const settingsItems = computed(() => [
 		hideLabel: true,
 		options: [
 			appsMenuOption.value,
+			settingsMenuOption,
 			{
 				icon: LucideKeyboard,
 				label: "Shortcuts",

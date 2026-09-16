@@ -16,7 +16,6 @@ class DriveSettings(Document):
     if TYPE_CHECKING:
         from frappe.types import DF
 
-        auto_detect_links: DF.Check
         quota: DF.Int
         user: DF.Link | None
         user_folder: DF.Link | None
