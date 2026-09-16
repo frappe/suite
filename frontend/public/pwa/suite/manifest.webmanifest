@@ -4,7 +4,7 @@
   "short_name": "Frappe Suite",
   "description": "Mail, calendar and more, powered by Frappe",
   "display": "standalone",
-  "start_url": "/mail",
+  "start_url": "/suite/start",
   "scope": "/",
   "theme_color": "#ffffff",
   "background_color": "#ffffff",

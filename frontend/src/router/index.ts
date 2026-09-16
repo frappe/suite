@@ -10,6 +10,7 @@ import {
 import { createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO, isInstallableApp } from '@/apps/registry'
+import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import { routes as calendarRoutes } from '@/apps/calendar/routes'
 import { routes as driveRoutes } from '@/apps/drive/routes'
 import { routes as mailRoutes } from '@/apps/mail/routes'
@@ -119,6 +120,14 @@ const routes: RouteRecordRaw[] = [
     meta: { isShell: true, title: 'Frappe Suite', favicon: SUITE_FAVICON },
   },
   {
+    // The installed suite's start URL (see public/pwa/suite/manifest.webmanifest):
+    // a launch opens the app the phone was last in, so this is a redirect the
+    // manifest can point at while the target moves. Nothing else links here.
+    path: '/suite/start',
+    name: 'suite-start',
+    redirect: () => lastAppPrefix(),
+  },
+  {
     path: '/suite/setup',
     name: 'suite-setup',
     component: () => import('@/shell/SetupView.vue'),
@@ -219,6 +228,7 @@ router.afterEach((to, from, failure) => {
   setDocumentTitle(to, from)
   setFavicon(to)
   setPwaTags(to)
+  rememberLastApp(to.meta.appId)
   const appId = to.meta.appId
   if (appId) loadedAppRuntimes.get(appId)?.afterEach?.(to)
 })
@@ -284,6 +294,9 @@ function getFaviconElement() {
  * (beforeinstallprompt) and iOS (which reads <head> at the moment the user taps
  * Add to Home Screen) evaluate them live, so this is enough to scope the offer.
  * Elsewhere the browser falls back to a plain bookmark/shortcut.
+ *
+ * The manifest starts at /suite/start, which redirects to the app the phone
+ * was last in (see utils/lastApp.ts), mail until there is one.
  *
  * The manifest's id stays `/mail`, the id the mail-only PWA installed under:
  * Chrome keys an install on it and refreshes the name and icon from the

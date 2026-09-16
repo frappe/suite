@@ -26,6 +26,16 @@ describe('suite route table', () => {
     expect(router.getRoutes().some((route) => String(route.name).endsWith('-placeholder'))).toBe(false)
   })
 
+  it('starts the installed suite in the app it was last in', () => {
+    // resolve() reports the record, not where its redirect leads; ask the redirect.
+    const start = router.getRoutes().find((route) => route.name === 'suite-start')!
+    const redirect = start.redirect as (to: unknown) => string
+    localStorage.setItem('suite:last-app', 'calendar')
+    expect(redirect(router.resolve('/suite/start'))).toBe('/calendar')
+    localStorage.removeItem('suite:last-app')
+    expect(redirect(router.resolve('/suite/start'))).toBe('/mail')
+  })
+
   it('keeps the runtime load error available to guests', () => {
     expect(router.resolve('/suite/load-error').meta.allowGuest).toBe(true)
   })
