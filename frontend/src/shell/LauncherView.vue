@@ -34,7 +34,7 @@
       </div>
     </div>
 
-    <SuiteSettingsDialog />
+    <SuiteSettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" />
   </div>
 </template>
 
@@ -49,7 +49,7 @@ import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import LauncherTile from '@/shell/LauncherTile.vue'
 import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
-import { openSettings } from '@/shell/settings/useSettingsDialog'
+import { openSettings, settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
 import { useWorkspace } from '@/shell/useWorkspace'
 import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'

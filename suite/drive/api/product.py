@@ -174,8 +174,6 @@ def set_settings(updates: dict[str, int | str]):
 
     if "single_click" in updates:
         settings.single_click = int(updates["single_click"])
-    if "auto_detect_links" in updates:
-        settings.auto_detect_links = int(updates["auto_detect_links"])
     if "webdav_enabled" in updates:
         settings.webdav_enabled = int(updates["webdav_enabled"])
     settings.save()

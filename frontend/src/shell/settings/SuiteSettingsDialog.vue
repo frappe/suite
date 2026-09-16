@@ -1,8 +1,13 @@
 <template>
-  <SettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" size="5xl">
+  <SettingsDialog
+    v-model:open="open"
+    v-model:tab="activeTab"
+    size="5xl"
+    :shortcut="shortcut"
+  >
     <template #title>{{ __('Settings') }}</template>
     <SettingsSidebar>
-      <SettingsNavGroup v-for="group in tabGroups" :key="group.label" :label="__(group.label)">
+      <SettingsNavGroup v-for="group in visibleGroups" :key="group.id" :label="__(group.label)">
         <SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
           <template #prefix>
             <Avatar
@@ -12,7 +17,16 @@
               size="xs"
               class="shrink-0"
             />
-            <component :is="tab.icon" v-else class="size-4 shrink-0 text-ink-gray-6 stroke-[1.5]" />
+            <span
+              v-else-if="typeof tab.icon === 'string'"
+              :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']"
+              aria-hidden="true"
+            />
+            <component
+              :is="tab.icon"
+              v-else
+              class="size-4 shrink-0 text-ink-gray-6 stroke-[1.5]"
+            />
           </template>
           {{ __(tab.label) }}
         </SettingsNavItem>
@@ -20,14 +34,14 @@
     </SettingsSidebar>
     <SettingsContent>
       <SettingsPanel v-for="tab in visibleTabs" :key="tab.value" :value="tab.value">
-        <component :is="tab.component" />
+        <component :is="tab.component" v-bind="tab.props" v-on="tab.listeners || {}" />
       </SettingsPanel>
     </SettingsContent>
   </SettingsDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, watch } from 'vue'
+import { computed, watch } from 'vue'
 import {
   Avatar,
   SettingsContent,
@@ -37,46 +51,43 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
-import { Settings, SlidersHorizontal } from 'lucide-vue-next'
-
 import { useCurrentUser } from '@/boot/session'
-import UserProfileSettings from '@/components/settings/UserProfileSettings.vue'
-import PreferencesSettings from '@/shell/settings/PreferencesSettings.vue'
-import { settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
-import WorkspaceSettings from '@/shell/settings/WorkspaceSettings.vue'
+import { getVisibleSettingsGroups } from '@/components/settings/settingsCatalog'
+import type { SettingsGroup } from '@/components/settings/types'
+import { useCommonSettingsGroups } from '@/components/settings/useCommonSettingsGroups'
 
-const { fullName, imageURL, systemUser } = useCurrentUser()
-
-const allGroups = [
+const props = withDefaults(
+  defineProps<{
+    groups?: SettingsGroup[]
+    includeCommon?: boolean
+    shortcut?: boolean
+  }>(),
   {
-    label: 'Account',
-    items: [
-      { label: 'Profile', value: 'profile', component: markRaw(UserProfileSettings) },
-      {
-        label: 'Preferences',
-        value: 'preferences',
-        icon: SlidersHorizontal,
-        component: markRaw(PreferencesSettings),
-      },
-    ],
+    groups: () => [],
+    includeCommon: true,
+    shortcut: true,
   },
-  {
-    label: 'Workspace',
-    condition: () => systemUser.value,
-    items: [
-      { label: 'General', value: 'workspace', icon: Settings, component: markRaw(WorkspaceSettings) },
-    ],
-  },
-]
+)
 
-const tabGroups = computed(() => allGroups.filter((group) => !group.condition || group.condition()))
-const visibleTabs = computed(() => tabGroups.value.flatMap((group) => group.items))
+const open = defineModel<boolean>('open', { default: false })
+const activeTab = defineModel<string>('tab', { default: 'profile' })
+
+const { fullName, imageURL } = useCurrentUser()
+const commonGroups = useCommonSettingsGroups()
+
+const visibleGroups = computed(() =>
+  getVisibleSettingsGroups([
+    ...(props.includeCommon ? commonGroups.value : []),
+    ...props.groups,
+  ]),
+)
+const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.items))
 
 watch(
   visibleTabs,
   (tabs) => {
-    if (!tabs.some((tab) => tab.value === settingsTab.value)) {
-      settingsTab.value = 'profile'
+    if (!tabs.some((tab) => tab.value === activeTab.value)) {
+      activeTab.value = tabs[0]?.value ?? 'profile'
     }
   },
   { immediate: true },

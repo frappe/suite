@@ -20,10 +20,8 @@
 					__('How long a sent message waits before delivery, so you can still take it back.')
 				"
 			>
-				<FormControl
+				<Select
 					v-model="undoSendPeriod"
-					type="select"
-					variant="outline"
 					:options="UNDO_SEND_OPTIONS"
 				/>
 			</SettingsRow>
@@ -33,7 +31,7 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { Button, FormControl, SettingsRow, createResource } from 'frappe-ui'
+import { Button, Select, SettingsRow, createResource } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 

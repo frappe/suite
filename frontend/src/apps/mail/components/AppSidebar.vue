@@ -99,7 +99,7 @@
 		</Sidebar>
 	</Transition>
 
-	<SettingsModal v-if="!isMobile" v-model="showSettings" />
+	<SettingsModal v-if="!isMobile" v-model:open="showSettings" />
 	<!-- Mobile settings pushes in from the right like a thread: its back-chevron
 	     header is push-navigation language (slide-up is reserved for summoned
 	     tasks — compose/search). Teleported to body: inside the layout's isolate

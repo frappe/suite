@@ -1,5 +1,5 @@
 <template>
-	<AppSettingsHeader :title="__('Appearance')">
+	<AppSettingsHeader :title="__('Mail layout')">
 		<template #actions>
 			<Button
 				:label="__('Save')"
@@ -7,21 +7,12 @@
 				:size="isMobile ? 'md' : 'sm'"
 				:loading="saving"
 				:disabled="isNotDirty"
-				@click="saveAppearance"
+				@click="saveLayout"
 			/>
 		</template>
 	</AppSettingsHeader>
 	<AppSettingsBody>
 		<div class="flex flex-col gap-5">
-			<FormControl
-				v-model="colorScheme"
-				:label="__('Color Scheme')"
-				type="select"
-				variant="outline"
-				:options="COLOR_SCHEMES"
-			/>
-			<!-- Desktop-only concepts: the reading pane doesn't exist on mobile and
-			     the mobile list renders without group headers. -->
 			<template v-if="user.data.is_jmap_configured && !isMobile">
 				<SettingsRow
 					class="!py-0"
@@ -33,14 +24,17 @@
 						@update:model-value="(v) => (showReadingPane = v)"
 					/>
 				</SettingsRow>
-				<FormControl
-					:model-value="groupMessagesBy"
-					:label="__('Group Messages By')"
-					type="select"
-					variant="outline"
-					:options="GROUP_MESSAGES_OPTIONS"
-					@update:model-value="(v) => (groupMessagesBy = v)"
-				/>
+				<SettingsRow
+					class="!py-0"
+					:title="__('Group Messages By')"
+					:description="__('Organize the message list into date-based sections.')"
+				>
+					<Select
+						:model-value="groupMessagesBy"
+						:options="GROUP_MESSAGES_OPTIONS"
+						@update:model-value="(v) => (groupMessagesBy = v)"
+					/>
+				</SettingsRow>
 			</template>
 		</div>
 	</AppSettingsBody>
@@ -50,7 +44,7 @@
 import { computed, inject, ref } from 'vue'
 import {
 	Button,
-	FormControl,
+	Select,
 	SettingsRow,
 	Switch,
 	createResource,
@@ -60,19 +54,16 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const user = inject('$user')
 const { isMobile } = useScreenSize()
 
-const colorScheme = ref(themeMode.value)
 const showReadingPane = ref(!!user.data.show_reading_pane)
 const groupMessagesBy = ref(user.data.group_messages_by)
 const saving = ref(false)
 
 const isNotDirty = computed(
 	() =>
-		colorScheme.value === themeMode.value &&
 		showReadingPane.value === !!user.data.show_reading_pane &&
 		groupMessagesBy.value === user.data.group_messages_by,
 )
@@ -89,25 +80,18 @@ const saveSettings = createResource({
 	}),
 })
 
-const saveAppearance = async () => {
+const saveLayout = async () => {
 	saving.value = true
 	try {
-		const [, themeSaved] = await Promise.all([saveSettings.submit(), switchTheme(colorScheme.value)])
-		if (!themeSaved) return
-		raiseToast(__('Appearance updated.'))
+		await saveSettings.submit()
+		raiseToast(__('Mail layout updated.'))
 		user.reload()
 	} catch {
-		raiseToast(__('Unable to save appearance settings.'), 'error')
+		raiseToast(__('Unable to save mail layout settings.'), 'error')
 	} finally {
 		saving.value = false
 	}
 }
-
-const COLOR_SCHEMES = [
-	{ label: __('Automatic'), value: 'automatic' },
-	{ label: __('Light'), value: 'light' },
-	{ label: __('Dark'), value: 'dark' },
-]
 
 const GROUP_MESSAGES_OPTIONS = [
 	{ label: __('None'), value: 'None' },

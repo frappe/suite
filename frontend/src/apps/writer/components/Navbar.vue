@@ -114,6 +114,7 @@ import { toggleFav } from '@/apps/drive/resources/files'
 import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import emitter from '@/apps/writer/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { createDocument, apps } from '@/apps/writer/resources/'
@@ -223,6 +224,7 @@ const route = useRoute()
 const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('writer')
 const themeMenuOption = useThemeMenuOption()
+const settingsMenuOption = useSettingsMenuOption()
 const navbarMenuOptions = computed(() => [
   {
     group: '',
@@ -231,6 +233,7 @@ const navbarMenuOptions = computed(() => [
   {
     group: '',
     options: [
+      settingsMenuOption,
       themeMenuOption,
       ...(sessionStore.isLoggedIn
         ? [

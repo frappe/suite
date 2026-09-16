@@ -1,29 +1,9 @@
 <template>
-	<SettingsDialog v-model:open="show" v-model:tab="activeTab" size="5xl">
-		<template #title>{{ __('Settings') }}</template>
-		<SettingsSidebar>
-			<SettingsNavGroup
-				v-for="group in tabGroups"
-				:key="group.label"
-				:label="group.label"
-			>
-				<SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
-					<template #prefix>
-						<component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6" />
-					</template>
-					{{ tab.label }}
-				</SettingsNavItem>
-			</SettingsNavGroup>
-		</SettingsSidebar>
-		<SettingsContent>
-			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<component :is="tab.component" />
-			</SettingsPanel>
-		</SettingsContent>
-	</SettingsDialog>
+	<SuiteSettingsDialog v-model:open="open" v-model:tab="activeTab" :groups="groups" />
 </template>
+
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, watch, type Component } from 'vue'
+import { computed, inject, markRaw, ref, watch } from 'vue'
 import {
 	BellRing,
 	Code,
@@ -35,221 +15,94 @@ import {
 	HardDriveUpload,
 	KeyRound,
 	Mailbox,
-	Palette,
+	Columns2,
 	PenLine,
 	TreePalm,
-	User,
 	Zap,
 } from 'lucide-vue-next'
-import {
-	SettingsContent,
-	SettingsDialog,
-	SettingsNavGroup,
-	SettingsNavItem,
-	SettingsPanel,
-	SettingsSidebar,
-} from 'frappe-ui'
 
-import { useSettings } from '@/apps/mail/utils/composables'
 import Account from '@/apps/mail/components/Settings/Account.vue'
 import AdvancedSettings from '@/apps/mail/components/Settings/AdvancedSettings.vue'
-import CredentialsSettings from '@/apps/mail/components/Settings/CredentialsSettings.vue'
-import AppearanceSettings from '@/apps/mail/components/Settings/AppearanceSettings.vue'
+import MailLayoutSettings from '@/apps/mail/components/Settings/MailLayoutSettings.vue'
 import AutomationSettings from '@/apps/mail/components/Settings/AutomationSettings.vue'
 import ComposeSettings from '@/apps/mail/components/Settings/ComposeSettings.vue'
+import CredentialsSettings from '@/apps/mail/components/Settings/CredentialsSettings.vue'
 import ExportSettings from '@/apps/mail/components/Settings/ExportSettings.vue'
 import FolderSettings from '@/apps/mail/components/Settings/FolderSettings.vue'
 import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.vue'
 import ImportSettings from '@/apps/mail/components/Settings/ImportSettings.vue'
-import ProfileSettings from '@/apps/mail/components/Settings/ProfileSettings.vue'
 import PushSubscriptionSettings from '@/apps/mail/components/Settings/PushSubscriptionSettings.vue'
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
+import { useSettings } from '@/apps/mail/utils/composables'
+import type { SettingsGroup } from '@/components/settings/types'
+import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
 
-type SettingsTab = {
-	label: string
-	value: string
-	icon: Component
-	component: ReturnType<typeof markRaw>
-	condition?: boolean
-}
-
-type SettingsTabGroup = {
-	label: string
-	items: SettingsTab[]
-}
-
-const show = defineModel<boolean>()
+const open = defineModel<boolean>('open', { default: false })
+const activeTab = ref('profile')
 const { settingsTab } = useSettings()
-
 const user = inject('$user') as { data: Record<string, any> }
 
-const tabGroups = computed((): SettingsTabGroup[] => {
-	const jmap = !!user.data.is_jmap_configured
-
-	const groups: SettingsTabGroup[] = [
+const groups = computed<SettingsGroup[]>(() => {
+	const jmap = () => Boolean(user.data.is_jmap_configured)
+	return [
 		{
-			label: __('General'),
+			id: 'mail-account',
+			label: 'Mail account',
 			items: [
-				{
-					label: __('Profile'),
-					value: 'profile',
-					icon: User,
-					component: markRaw(ProfileSettings),
-				},
-				{
-					label: __('Credentials'),
-					value: 'credentials',
-					icon: KeyRound,
-					component: markRaw(CredentialsSettings),
-				},
-				{
-					label: __('Account'),
-					value: 'account',
-					icon: Mailbox,
-					component: markRaw(Account),
-					condition: jmap,
-				},
-				{
-					label: __('Identity'),
-					value: 'identity',
-					icon: Fingerprint,
-					component: markRaw(IdentitySettings),
-					condition: jmap,
-				},
-				{
-					label: __('Appearance'),
-					value: 'appearance',
-					icon: Palette,
-					component: markRaw(AppearanceSettings),
-				},
+				{ label: 'Credentials', value: 'credentials', icon: KeyRound, component: markRaw(CredentialsSettings) },
+				{ label: 'Account', value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
+				{ label: 'Identity', value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
+				{ label: 'Mail layout', value: 'mail-layout', icon: Columns2, component: markRaw(MailLayoutSettings), condition: jmap },
 			],
 		},
 		{
-			label: __('Mail'),
+			id: 'mail',
+			label: 'Mail',
 			items: [
-				{
-					label: __('Folders'),
-					value: 'folders',
-					icon: Folders,
-					component: markRaw(FolderSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Signatures'),
-					value: 'signatures',
-					icon: Feather,
-					component: markRaw(SignatureSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Compose'),
-					value: 'compose',
-					icon: PenLine,
-					component: markRaw(ComposeSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Vacation Response'),
-					value: 'vacation-response',
-					icon: TreePalm,
-					component: markRaw(VacationResponseSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Automation'),
-					value: 'automation',
-					icon: Zap,
-					component: markRaw(AutomationSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Push Subscriptions'),
-					value: 'push-subscriptions',
-					icon: BellRing,
-					component: markRaw(PushSubscriptionSettings),
-					condition: jmap,
-				},
+				{ label: 'Folders', value: 'folders', icon: Folders, component: markRaw(FolderSettings), condition: jmap },
+				{ label: 'Signatures', value: 'signatures', icon: Feather, component: markRaw(SignatureSettings), condition: jmap },
+				{ label: 'Compose', value: 'compose', icon: PenLine, component: markRaw(ComposeSettings), condition: jmap },
+				{ label: 'Vacation Response', value: 'vacation-response', icon: TreePalm, component: markRaw(VacationResponseSettings), condition: jmap },
+				{ label: 'Automation', value: 'automation', icon: Zap, component: markRaw(AutomationSettings), condition: jmap },
+				{ label: 'Push Subscriptions', value: 'push-subscriptions', icon: BellRing, component: markRaw(PushSubscriptionSettings), condition: jmap },
 			],
 		},
 		{
-			label: __('Privacy'),
+			id: 'mail-privacy',
+			label: 'Privacy',
 			items: [
-				{
-					label: __('Screener'),
-					value: 'screened-senders',
-					icon: Eye,
-					component: markRaw(ScreenedEmailAddressSettings),
-					condition: jmap,
-				},
+				{ label: 'Screener', value: 'screened-senders', icon: Eye, component: markRaw(ScreenedEmailAddressSettings), condition: jmap },
 			],
 		},
 		{
-			label: __('Data'),
+			id: 'mail-data',
+			label: 'Data',
 			items: [
-				{
-					label: __('Import'),
-					value: 'import',
-					icon: HardDriveDownload,
-					component: markRaw(ImportSettings),
-					condition: jmap,
-				},
-				{
-					label: __('Export'),
-					value: 'export',
-					icon: HardDriveUpload,
-					component: markRaw(ExportSettings),
-					condition: jmap,
-				},
+				{ label: 'Import', value: 'import', icon: HardDriveDownload, component: markRaw(ImportSettings), condition: jmap },
+				{ label: 'Export', value: 'export', icon: HardDriveUpload, component: markRaw(ExportSettings), condition: jmap },
 			],
 		},
 		{
-			label: __('Developer'),
+			id: 'mail-developer',
+			label: 'Developer',
 			items: [
-				{
-					label: __('Advanced'),
-					value: 'advanced',
-					icon: Code,
-					component: markRaw(AdvancedSettings),
-					condition: jmap,
-				},
+				{ label: 'Advanced', value: 'advanced', icon: Code, component: markRaw(AdvancedSettings), condition: jmap },
 			],
 		},
 	]
-
-	return groups
-		.map((group) => ({
-			...group,
-			items: group.items.filter((tab) => tab.condition === undefined || tab.condition),
-		}))
-		.filter((group) => group.items.length > 0)
 })
 
-const tabs = computed(() => tabGroups.value.flatMap((group) => group.items))
-
-const activeTab = ref(tabs.value[0]?.value ?? 'profile')
-
-watch(show, (open) => {
-	if (!open || !settingsTab.value) return
-	const raw = settingsTab.value
-	if (raw === __('Block List') || raw === 'Block List') {
-		activeTab.value = 'screened-senders'
-	} else {
-		const match = tabs.value.find((tab) => tab.label === raw || tab.value === raw)
-		if (match) activeTab.value = match.value
-	}
+watch(open, (isOpen) => {
+	if (!isOpen || !settingsTab.value) return
+	const requested = settingsTab.value
+	activeTab.value =
+		requested === __('Block List') || requested === 'Block List'
+			? 'screened-senders'
+			: groups.value
+					.flatMap((group) => group.items)
+					.find((tab) => tab.value === requested || __(tab.label) === requested)?.value || activeTab.value
 	settingsTab.value = ''
 })
-
-watch(
-	tabs,
-	(newTabs) => {
-		if (!newTabs.length) return
-		if (!newTabs.some((tab) => tab.value === activeTab.value)) {
-			activeTab.value = newTabs[0].value
-		}
-	},
-	{ immediate: true },
-)
 </script>

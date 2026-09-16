@@ -236,5 +236,5 @@ const menuItems = computed(() => [
 			</div>
 		</div>
 	</Sidebar>
-	<SettingsModal v-model="showSettings" />
+	<SettingsModal v-model:open="showSettings" />
 </template>

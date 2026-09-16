@@ -155,7 +155,7 @@
 	</div>
 
 	<SettingsDialog
-		v-model="showSettingsDialog"
+		v-model:open="showSettingsDialog"
 		:meetingId="meetingId"
 		:isPreview="false"
 		@device-changed="$emit('device-changed', $event)"

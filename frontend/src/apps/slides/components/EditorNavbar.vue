@@ -1,7 +1,7 @@
 <template>
 	<Navbar
 		:primaryButton="primaryButtonProps"
-		:dropdown="showNavbarDropdown ? 'context' : null"
+		:dropdown="route.name === 'slides-editor-new' ? 'home' : 'context'"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
 		<template #default>
@@ -73,5 +73,4 @@ const primaryButtonProps = computed(() => ({
 	hide: route.name === 'slides-editor-new',
 }))
 
-const showNavbarDropdown = computed(() => route.name !== 'slides-editor-new')
 </script>

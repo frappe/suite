@@ -1,216 +1,135 @@
 <template>
-	<UiSettingsDialog
-		v-model:open="show"
-		v-model:tab="activeTabValue"
-		size="5xl"
-	>
-		<template #title>Settings</template>
-		<SettingsSidebar>
-			<SettingsNavGroup
-				v-for="group in tabs"
-				:key="group.label"
-				:label="group.label"
-			>
-				<SettingsNavItem
-					v-for="item in group.items"
-					:key="item.value"
-					:value="item.value"
-				>
-					<template #prefix>
-						<component
-							:is="item.icon"
-							class="size-4 shrink-0 text-ink-gray-6"
-						/>
-					</template>
-					{{ item.label }}
-				</SettingsNavItem>
-			</SettingsNavGroup>
-		</SettingsSidebar>
-		<SettingsContent>
-			<SettingsPanel
-				v-for="item in flatTabs"
-				:key="item.value"
-				:value="item.value"
-			>
-				<component
-					:is="item.component"
-					@device-changed="$emit('device-changed', $event)"
-					:is-visible="show && activeTabValue === item.value"
-					:meeting-id="meetingId"
-				/>
-			</SettingsPanel>
-		</SettingsContent>
-	</UiSettingsDialog>
+	<SuiteSettingsDialog
+		v-model:open="open"
+		v-model:tab="activeTab"
+		:groups="groups"
+		:include-common="false"
+	/>
 </template>
 
 <script setup lang="ts">
+import { computed, markRaw, ref } from 'vue'
 import {
-	SettingsContent,
-	SettingsDialog as UiSettingsDialog,
-	SettingsNavGroup,
-	SettingsNavItem,
-	SettingsPanel,
-	SettingsSidebar,
-	useDoc,
-} from "frappe-ui";
-import { type Component, computed, h, markRaw, ref, watch } from "vue";
-import { session } from "@/boot/session";
-import LucideAudioLines from "~icons/lucide/audio-lines";
-import LucideBell from "~icons/lucide/bell";
-import LucideCamera from "~icons/lucide/camera";
-import LucideLayoutDashboard from "~icons/lucide/layout-dashboard";
-import LucideMonitorSmartphone from "~icons/lucide/monitor-smartphone";
-import LucideUser from "~icons/lucide/user";
-import AudioSettingsTab from "./AudioSettingsTab.vue";
-import BackgroundSettingsTab from "./BackgroundSettingsTab.vue";
-import DeviceSettingsTab from "./DeviceSettingsTab.vue";
-import LayoutSettingsTab from "./LayoutSettingsTab.vue";
-import MeetingAccessSettingsTab from "./MeetingAccessSettingsTab.vue";
-import NotificationSettingsTab from "./NotificationSettingsTab.vue";
+	AudioLines,
+	Bell,
+	Camera,
+	LayoutDashboard,
+	MonitorSmartphone,
+	User,
+} from 'lucide-vue-next'
+import { useDoc } from 'frappe-ui'
 
-interface TabItem {
-	label: string;
-	value: string;
-	icon: Component;
-	component: ReturnType<typeof markRaw>;
-	condition?: () => boolean;
-}
-
-interface TabGroup {
-	label: string;
-	items: TabItem[];
-}
+import { session } from '@/boot/session'
+import type { SettingsGroup } from '@/components/settings/types'
+import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
+import AudioSettingsTab from './AudioSettingsTab.vue'
+import BackgroundSettingsTab from './BackgroundSettingsTab.vue'
+import DeviceSettingsTab from './DeviceSettingsTab.vue'
+import LayoutSettingsTab from './LayoutSettingsTab.vue'
+import MeetingAccessSettingsTab from './MeetingAccessSettingsTab.vue'
+import NotificationSettingsTab from './NotificationSettingsTab.vue'
 
 const props = defineProps<{
-	modelValue?: boolean;
-	meetingId?: string;
-	isPreview?: boolean;
-}>();
+	meetingId?: string
+	isPreview?: boolean
+}>()
 
 const emit = defineEmits<{
-	"device-changed": [event: unknown];
-	"update:modelValue": [value: boolean];
-}>();
+	'device-changed': [event: unknown]
+}>()
+
+const open = defineModel<boolean>('open', { default: false })
+const activeTab = ref('devices')
 
 const meetingDoc = useDoc<{
-	name: string;
-	owner?: string;
-	co_hosts?: { user: string }[];
+	name: string
+	owner?: string
+	co_hosts?: { user: string }[]
 }>({
-	doctype: "Meet Room",
-	name: () => props.meetingId || "",
-});
-const isCurrentUserHost = computed(
-	() => meetingDoc.doc?.owner === session.user?.sessionUser,
-);
-const isCurrentUserCohost = computed(() =>
-	Boolean(
-		session.user?.sessionUser &&
-			meetingDoc.doc?.co_hosts?.some(
-				(row) => row.user === session.user?.sessionUser,
-			),
-	),
-);
+	doctype: 'Meet Room',
+	name: () => props.meetingId || '',
+})
 
-const show = computed({
-	get: () => props.modelValue,
-	set: (value) => emit("update:modelValue", value),
-});
+const canManageMeeting = computed(
+	() =>
+		!props.isPreview &&
+		(meetingDoc.doc?.owner === session.user?.sessionUser ||
+			meetingDoc.doc?.co_hosts?.some((row) => row.user === session.user?.sessionUser)),
+)
 
-function isTabVisible(tab: TabItem) {
-	return typeof tab.condition === "function" ? tab.condition() : true;
-}
+const groups = computed<SettingsGroup[]>(() => {
+	const panelProps = (value: string) => ({
+		isVisible: open.value && activeTab.value === value,
+		meetingId: props.meetingId,
+	})
+	const deviceListener = { 'device-changed': (event: unknown) => emit('device-changed', event) }
 
-const tabs = computed((): TabGroup[] => {
-	const allTabs: TabGroup[] = [];
-
-	if (
-		(isCurrentUserHost.value || isCurrentUserCohost.value) &&
-		!props.isPreview
-	) {
-		allTabs.push({
-			label: "Meeting",
+	return [
+		{
+			id: 'meet-controls',
+			label: 'Meeting',
+			condition: () => Boolean(canManageMeeting.value),
 			items: [
 				{
-					label: "Controls",
-					value: "meeting-access",
-					icon: h(LucideUser),
+					label: 'Controls',
+					value: 'meeting-access',
+					icon: User,
 					component: markRaw(MeetingAccessSettingsTab),
+					props: panelProps('meeting-access'),
 				},
 			],
-		});
-	}
-
-	allTabs.push(
+		},
 		{
-			label: "Media",
+			id: 'meet-media',
+			label: 'Media',
 			items: [
 				{
-					label: "Devices",
-					value: "devices",
-					icon: h(LucideMonitorSmartphone),
+					label: 'Devices',
+					value: 'devices',
+					icon: MonitorSmartphone,
 					component: markRaw(DeviceSettingsTab),
+					props: panelProps('devices'),
+					listeners: deviceListener,
 				},
 				{
-					label: "Audio",
-					value: "audio",
-					icon: h(LucideAudioLines),
+					label: 'Audio',
+					value: 'audio',
+					icon: AudioLines,
 					component: markRaw(AudioSettingsTab),
+					props: panelProps('audio'),
+					listeners: deviceListener,
 				},
 				{
-					label: "Video",
-					value: "background",
-					icon: h(LucideCamera),
+					label: 'Video',
+					value: 'background',
+					icon: Camera,
 					component: markRaw(BackgroundSettingsTab),
+					props: panelProps('background'),
+					listeners: deviceListener,
 				},
 			],
 		},
 		{
-			label: "Interface",
+			id: 'meet-interface',
+			label: 'Interface',
 			items: [
 				{
-					label: "Notifications",
-					value: "notifications",
-					icon: h(LucideBell),
+					label: 'Notifications',
+					value: 'notifications',
+					icon: Bell,
 					component: markRaw(NotificationSettingsTab),
+					props: panelProps('notifications'),
 				},
 				{
-					label: "Layout",
-					value: "layout",
-					icon: h(LucideLayoutDashboard),
-					condition: () => !props.isPreview,
+					label: 'Layout',
+					value: 'layout',
+					icon: LayoutDashboard,
 					component: markRaw(LayoutSettingsTab),
+					condition: () => !props.isPreview,
+					props: panelProps('layout'),
 				},
 			],
 		},
-	);
-
-	return allTabs
-		.map((group) => ({
-			...group,
-			items: group.items.filter(isTabVisible),
-		}))
-		.filter((group) => group.items.length > 0);
-});
-
-const flatTabs = computed(() =>
-	tabs.value.flatMap((group) => group.items),
-);
-
-const activeTabValue = ref<string | undefined>(undefined);
-
-watch(
-	flatTabs,
-	(newTabs) => {
-		if (!newTabs.length) {
-			activeTabValue.value = undefined;
-			return;
-		}
-
-		if (!newTabs.some((tab) => tab.value === activeTabValue.value)) {
-			activeTabValue.value = newTabs[0].value;
-		}
-	},
-	{ immediate: true },
-);
+	]
+})
 </script>

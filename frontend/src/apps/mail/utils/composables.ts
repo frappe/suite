@@ -28,7 +28,7 @@ export const useReadingPane = () => {
 }
 
 /**
- * Flipping Split View from the list toolbar. Appearance settings writes the same field behind a
+ * Flipping Split View from the list toolbar. Mail layout settings writes the same field behind a
  * Save button; this one is a layout switch, so it applies on click — the local value flips first
  * and the whole split re-lays out from it, then rolls back if the write doesn't land.
  */

@@ -693,12 +693,10 @@ async function newLink() {
   } catch { }
 }
 
-// JS doesn't allow direct reading of clipboard
-if (settings.data?.auto_detect_links) {
-  newLink()
-  window.addEventListener('focus', newLink)
-  window.addEventListener('copy', newLink)
-}
+// Clipboard reads require a focused document, so retry when focus or copied content changes.
+newLink()
+useEventListener(window, 'focus', newLink)
+useEventListener(window, 'copy', newLink)
 
 const socket = inject('socket')
 socket.on('list-add', ({ file }) => {

@@ -1277,6 +1277,7 @@ import { call } from '../../utils/api.js'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
@@ -1359,6 +1360,7 @@ const appsMenuOption = useAppSwitcher('sheets', async () => {
   return !saveError.value
 })
 const themeMenuOption = useThemeMenuOption()
+const settingsMenuOption = useSettingsMenuOption()
 const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
   { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
@@ -1375,6 +1377,7 @@ const brandMenuOptions = computed(() => [
   {
     group: '',
     options: [
+      settingsMenuOption,
       themeMenuOption,
       ...(sessionStore.isLoggedIn
         ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]

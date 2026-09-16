@@ -23,7 +23,7 @@ import { ChevronRight } from 'lucide-vue-next'
 const props = withDefaults(
 	defineProps<{
 		label: string
-		icon?: Component
+		icon?: Component | string
 		chevron?: boolean
 		theme?: 'gray' | 'red'
 	}>(),

@@ -1,8 +1,6 @@
 <template>
-  <SettingsHeader>
-    <h2 class="text-md-semibold text-ink-gray-8">{{ __('Preferences') }}</h2>
-  </SettingsHeader>
-  <SettingsBody>
+  <AppSettingsHeader :title="__('Preferences')" />
+  <AppSettingsBody>
     <!-- pt-2.5 + first row's py-3.5 = 24px, level with the profile tab's pt-6 -->
     <div class="divide-y divide-outline-gray-1 pt-2.5">
       <SettingsRow
@@ -36,7 +34,7 @@
         <Combobox
           trigger="button"
           align="end"
-          :model-value="user.doc?.time_zone"
+          :model-value="normalizeTimezone(user.doc?.time_zone || '')"
           :options="timezoneOptions"
           :placeholder="__('Select time zone')"
           :disabled="saving"
@@ -44,7 +42,7 @@
         />
       </SettingsRow>
     </div>
-  </SettingsBody>
+  </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -52,8 +50,6 @@ import { computed, ref } from 'vue'
 import {
   Combobox,
   Select,
-  SettingsBody,
-  SettingsHeader,
   SettingsRow,
   createDocumentResource,
   createResource,
@@ -61,13 +57,15 @@ import {
 } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
-import { useTimezones } from '@/shell/useTimezones'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
 import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const THEME_OPTIONS = [
-  { label: __('Light'), value: 'light' },
-  { label: __('Dark'), value: 'dark' },
-  { label: __('Automatic'), value: 'automatic' },
+  { label: __('Light'), value: 'light', icon: 'lucide-sun' },
+  { label: __('Dark'), value: 'dark', icon: 'lucide-moon' },
+  { label: __('Automatic'), value: 'automatic', icon: 'lucide-monitor' },
 ]
 
 const session = useSessionStore()
