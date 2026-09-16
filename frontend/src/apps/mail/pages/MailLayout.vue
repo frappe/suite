@@ -7,7 +7,6 @@
 		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
-		<InstallPrompt v-if="isMobile" />
 		<ShortcutsModal v-model="showShortcuts" />
 	</FrappeUIProvider>
 </template>
@@ -21,14 +20,13 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useTheme, useUndo } from '@/apps/mail/utils/composables'
+import { useTheme, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
-import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 
 import type { NotificationPayload } from '@/apps/mail/types'
@@ -117,7 +115,6 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
 const { cycleTheme } = useTheme()
-const { isMobile } = useScreenSize()
 const route = useRoute()
 
 provide('$user', userResource)

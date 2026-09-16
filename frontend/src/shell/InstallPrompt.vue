@@ -1,7 +1,13 @@
 <template>
-	<Dialog v-model:open="showDialog">
+	<!-- The offer to install the suite. Mounted once by the shell on phones and
+	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
+	     listener that is not there at the time misses it. Shown only while the
+	     route is inside an app the phone can use (`pwa` in the registry): Chrome
+	     only fires inside those anyway, since that is where the manifest is
+	     attached (see setPwaTags), and the iOS hint follows the same gate. -->
+	<Dialog :open="showDialog && installable" @update:open="showDialog = $event">
 		<template #title>
-			<h2 class="text-lg-bold">{{ __('Install Frappe Mail') }}</h2>
+			<h2 class="text-lg-bold">{{ __('Install Frappe Suite') }}</h2>
 		</template>
 		<template #default>
 			<p>{{ __('Get the app on your device for easy access & a better experience!') }}</p>
@@ -18,15 +24,21 @@
 	     block the app behind it, and the viewport (not the content) bounds its width.
 	     Teleported to body and lifted past z-50: it lives in the app tree, so the
 	     body-portaled surfaces (bottom sheets, dialogs — z-50) would otherwise paint
-	     their backdrops over it. -->
+	     their backdrops over it. Those surfaces are modal: reka makes everything
+	     outside them inert, and treats a pointer or focus that lands outside as a
+	     dismissal. So the banner opts back in to pointer events, and keeps both
+	     events to itself so the sheet under it neither ignores the tap nor closes on
+	     it — the X closes the banner and only the banner. -->
 	<Teleport to="body">
 		<div
-			v-if="iosInstallMessage"
-			class="bg-surface-blue-2 fixed inset-x-2 bottom-4 z-[60] flex flex-col gap-3 rounded-4 py-5 drop-shadow-xl"
+			v-if="iosInstallMessage && installable"
+			class="bg-surface-blue-2 pointer-events-auto fixed inset-x-2 bottom-4 z-[60] flex flex-col gap-3 rounded-4 py-5 drop-shadow-xl"
+			@pointerdown.stop
+			@focusin.stop
 		>
 			<div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
 				<span class="text-base-bold">
-					{{ __('Install Frappe Mail') }}
+					{{ __('Install Frappe Suite') }}
 				</span>
 				<span class="inline-flex items-baseline">
 					<FeatherIcon
@@ -57,9 +69,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Button, Dialog } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
+
+import { isInstallableApp } from '@/apps/registry'
+
+const route = useRoute()
+const installable = computed(() => isInstallableApp(route.meta.appId))
 
 // Initialize deferredPrompt for use later to show browser install prompt.
 const deferredPrompt = ref(null)
@@ -97,3 +115,4 @@ const install = () => {
 	showDialog.value = false
 }
 </script>
+
