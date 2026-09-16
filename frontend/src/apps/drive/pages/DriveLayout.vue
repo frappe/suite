@@ -116,12 +116,7 @@ useKeyboardShortcut([
   shortcut(accessKey('F'), 'Favourites', 'Navigation', () => router.push({ name: 'drive-Favourites' })),
   shortcut(accessKey('A'), 'Attachments', 'Navigation', () => router.push({ name: 'drive-Attachments' })),
   shortcut(accessKey('D'), 'Documents', 'Navigation', () => router.push({ name: 'drive-Documents' })),
-  shortcut('Mod+A', 'Select all', 'List', () => emitter.emit('selectAll')),
-  shortcut('Escape', 'Unselect all', 'List', () => emitter.emit('clearSelection')),
   shortcut(accessKey('S'), 'Share selected file', 'List', () => emitter.emit('share')),
-  shortcut('Ctrl+M', 'Move selected files', 'List', () => emitter.emit('move')),
-  shortcut('Mod+Backspace', 'Delete selected files', 'List', () => emitter.emit('remove')),
-  shortcut('Mod+Enter', 'Open selected file in new tab', 'List', () => emitter.emit('openInNewTab')),
   shortcut(accessKey('U'), 'Upload a file', 'List', () => emitter.emit('uploadFile')),
   shortcut(accessKey('N'), 'Create a folder', 'List', () => emitter.emit('newFolder')),
 ])
