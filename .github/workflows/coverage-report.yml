@@ -100,7 +100,7 @@ jobs:
             backend=unchanged
           fi
 
-          frontend="$(step_conclusion Frontend Test)"
+          frontend="$(step_conclusion Frontend 'Test')"
           if [ "$frontend" = "skipped" ] \
               && [ "$(step_conclusion Frontend 'Check frontend changes')" = "success" ] \
               && [ "$(step_conclusion Frontend 'Setup Node')" = "skipped" ]; then
