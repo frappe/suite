@@ -60,7 +60,7 @@
     "echarts": "^6.1.0",
     "file-saver": "^2.0.5",
     "firebase": "^12.2.1",
-    "frappe-ui": "frappe/frappe-ui#5e3289815df545e4be0acc92cd6b1d5519ba42c1",
+    "frappe-ui": "frappe/frappe-ui#4fede41aec287fe629d8d3d2041d06b9dbce1046",
     "fuzzysort": "^3.1.0",
     "gemoji": "^8.1.0",
     "hast-util-to-html": "^9.0.5",
