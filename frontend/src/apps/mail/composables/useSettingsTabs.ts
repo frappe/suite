@@ -38,12 +38,12 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 		const mailGroups: SettingsGroup[] = [
 			{
 				id: 'mail-general',
-				label: __('Mail account'),
+				label: __('Mail Account'),
 				items: [
 					{ label: __('Account'), value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
 					{ label: __('Identity'), value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
 					{
-						label: __('Mail layout'),
+						label: __('Layout'),
 						value: 'mail-layout',
 						icon: Columns2,
 						component: markRaw(MailLayoutSettings),
