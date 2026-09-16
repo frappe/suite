@@ -162,6 +162,7 @@ const isSearchModalOpen = ref(false)
 
 export const useMobileSearch = () => {
 	const route = useRoute()
+	const router = useRouter()
 	const store = userStore()
 
 	const isSearchRoute = computed(
