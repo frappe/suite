@@ -88,7 +88,7 @@ def summary_metric(label: str, coverage: Coverage | None, baseline: Coverage | N
 def effective_coverage(
     current: Coverage | None, baseline: Coverage | None, test_status: str
 ) -> Coverage | None:
-    if current is None and test_status == "skipped":
+    if current is None and test_status == "unchanged":
         return baseline
     return current
 

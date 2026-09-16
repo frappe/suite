@@ -87,8 +87,26 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           jobs="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100")"
-          backend="$(jq -r '[.jobs[] | select(.name == "Backend") | .steps[] | select(.name == "Run Backend Tests") | .conclusion][0] // "unknown"' <<<"$jobs")"
-          frontend="$(jq -r '[.jobs[] | select(.name == "Frontend") | .steps[] | select(.name == "Test") | .conclusion][0] // "unknown"' <<<"$jobs")"
+
+          step_conclusion() {
+            jq -r --arg job "$1" --arg step "$2" \
+              '[.jobs[] | select(.name == $job) | .steps[] | select(.name == $step) | .conclusion][0] // "unknown"' <<<"$jobs"
+          }
+
+          backend="$(step_conclusion Backend 'Run Backend Tests')"
+          if [ "$backend" = "skipped" ] \
+              && [ "$(step_conclusion Backend 'Check backend changes')" = "success" ] \
+              && [ "$(step_conclusion Backend 'Setup Python')" = "skipped" ]; then
+            backend=unchanged
+          fi
+
+          frontend="$(step_conclusion Frontend Test)"
+          if [ "$frontend" = "skipped" ] \
+              && [ "$(step_conclusion Frontend 'Check frontend changes')" = "success" ] \
+              && [ "$(step_conclusion Frontend 'Setup Node')" = "skipped" ]; then
+            frontend=unchanged
+          fi
+
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
 
