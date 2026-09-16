@@ -181,9 +181,8 @@ export const useMobileSearch = () => {
 			})
 		isSearchModalOpen.value = true
 	}
-	const closeSearch = () => (isSearchModalOpen.value = false)
 
-	return { isSearchModalOpen, isSearchRoute, openSearch, closeSearch }
+	return { isSearchModalOpen, isSearchRoute, openSearch }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the tab bar and FAB

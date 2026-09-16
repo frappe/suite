@@ -12,7 +12,7 @@
 		<button
 			v-if="withMenu"
 			:aria-label="__('Folders')"
-			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+			:class="ROW_BUTTON"
 			@click="openFolderSheet"
 		>
 			<!-- 20px at the 1.5 the app draws its icons at: the title's own size, so
@@ -27,7 +27,7 @@
 		<button
 			v-else-if="withBack"
 			:aria-label="__('Back')"
-			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+			:class="ROW_BUTTON"
 			@click="emit('back')"
 		>
 			<ChevronLeft :size="18" />
@@ -45,7 +45,7 @@
 		<button
 			v-if="withSearch"
 			:aria-label="__('Search')"
-			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+			:class="ROW_BUTTON"
 			@click="openSearch"
 		>
 			<Search class="size-5" />
@@ -68,6 +68,9 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ back: [] }>()
+
+/** The round 40px hit area every button in the row shares, at either end of the title. */
+const ROW_BUTTON = 'text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
 
 const { openFolderSheet } = useFolderSheet()
 const { openSearch } = useMobileSearch()

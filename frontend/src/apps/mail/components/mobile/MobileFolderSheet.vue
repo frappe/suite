@@ -5,7 +5,7 @@
 		<div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
 			<button
 				v-if="showAllInboxes"
-				:class="rowClass(allInboxesActive)"
+				:class="sheetRowClass(allInboxesActive)"
 				@click="go({ name: 'mail-all-inboxes' })"
 			>
 				<Mails class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
@@ -20,7 +20,7 @@
 				<button
 					v-for="folder in group.rows"
 					:key="folder.id"
-					:class="rowClass(folder.active)"
+					:class="sheetRowClass(folder.active)"
 					@click="go(folder.to)"
 				>
 					<Icon
@@ -32,7 +32,7 @@
 					<span v-if="folder.count" class="text-ink-gray-5 text-sm">{{ folder.count }}</span>
 				</button>
 				<!-- Folder creation lives here now that the mobile drawer is gone. -->
-				<button v-if="group.isCustom" :class="rowClass(false)" @click="createFolder">
+				<button v-if="group.isCustom" :class="sheetRowClass(false)" @click="createFolder">
 					<Plus class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
 					<span class="flex-1 truncate text-left">{{ __('New Folder') }}</span>
 				</button>
@@ -50,6 +50,7 @@ import { BottomSheet } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
 
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
+import { sheetRowClass } from '@/components/mobile/mobileClasses'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
@@ -162,10 +163,4 @@ const go = (to: RouteLocationRaw) => {
 	closeFolderSheet()
 	router.push(to)
 }
-
-const rowClass = (active: boolean) =>
-	[
-		'flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base text-ink-gray-8',
-		active ? 'bg-surface-gray-2 !font-semibold' : 'active:bg-surface-gray-1',
-	].join(' ')
 </script>

@@ -76,6 +76,16 @@ const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
   spa: false,
 }
 
+/**
+ * The phone's switcher: the app you are in first, then the other apps with a phone
+ * layout (`pwa`) that the desktop menu would offer you. Desk has none, so it is left out.
+ */
+export function getPhoneAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
+  const current = SUITE_APP_SWITCHER_ITEMS.find((app) => app.name === currentApp)
+  const others = getAppSwitcherItems(currentApp).filter((app) => isInstallableApp(app.name))
+  return [...(current ? [current] : []), ...others]
+}
+
 export function getAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
   const items = [
     ...(systemUser.value ? [DESK_APP_SWITCHER_ITEM] : []),

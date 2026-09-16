@@ -13,7 +13,7 @@
 			<button
 				v-for="view in MOBILE_VIEWS"
 				:key="view"
-				:class="rowClass(view === currentView)"
+				:class="sheetRowClass(view === currentView)"
 				@click="select(view)"
 			>
 				<component
@@ -41,6 +41,7 @@ import {
 	viewLabel,
 } from '@/apps/calendar/utils/mobileView'
 import { userStore } from '@/apps/calendar/stores/user'
+import { sheetRowClass } from '@/components/mobile/mobileClasses'
 
 import type { MobileView } from '@/apps/calendar/utils/mobileView'
 
@@ -70,10 +71,4 @@ const select = (view: MobileView) => {
 		query: route.query,
 	})
 }
-
-const rowClass = (active: boolean) =>
-	[
-		'flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base text-ink-gray-8',
-		active ? 'bg-surface-gray-2 !font-semibold' : 'active:bg-surface-gray-1',
-	].join(' ')
 </script>

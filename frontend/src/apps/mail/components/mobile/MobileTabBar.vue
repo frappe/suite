@@ -74,16 +74,8 @@
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
-			<!-- The desktop sidebar's Apps menu, as the last tab: it opens a sheet of the
-			     other apps rather than going anywhere itself. It wears the mark and the
-			     name of the app you are in — the tab says which of the suite this is,
-			     and the sheet it opens is where the others are. It never reads as
-			     selected: it is not a place in this app the way the others are, and
-			     the sheet it raises is its own feedback. -->
-			<button :class="tabClass(false)" @click="openApps">
-				<img :src="app.logo" class="size-6 shrink-0 rounded-2" alt="" />
-				<span :class="labelClass(false)">{{ __(app.name) }}</span>
-			</button>
+			<!-- Opening the apps sheet dismisses the query editor overlay, as every other tab does. -->
+			<MobileAppTab app-id="mail" @update:open="(open) => open && (showSearchModal = false)" />
 		</div>
 	</nav>
 
@@ -92,17 +84,15 @@
 	     header's search button raises it through the shared state. -->
 	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
-	<MobileAppsSheet v-model:open="showAppsSheet" current-app="mail" />
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Icon } from 'frappe-ui/experimental'
 
-import { SUITE_APPS } from '@/apps/registry'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import {
 	useFolderSheet,
@@ -114,7 +104,8 @@ import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
-import MobileAppsSheet from '@/components/mobile/MobileAppsSheet.vue'
+import MobileAppTab from '@/components/mobile/MobileAppTab.vue'
+import { iconClass, labelClass, tabClass } from '@/components/mobile/mobileClasses'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -142,9 +133,6 @@ const currentFolder = computed(() => {
 	const mailbox = mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
-
-const showAppsSheet = ref(false)
-const app = SUITE_APPS.find((app) => app.id === 'mail')!
 
 // Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
 // whole screen to lay itself out in rather than floating over this one.
@@ -180,14 +168,6 @@ const openMail = () => {
 	// tap must land there — restoring the last-viewed folder made a dotted tab
 	// open Sent. (/mail redirects to the inbox.)
 	router.push('/mail')
-}
-
-// Apps is the one tab that is not a navigation: the sheet it raises is the
-// destination, and the app you pick there is where you go. The query editor
-// overlay steps aside for it like for every other tab.
-const openApps = () => {
-	showSearchModal.value = false
-	showAppsSheet.value = true
 }
 
 const openScreener = () => {
@@ -246,26 +226,4 @@ const mailUnreadCount = computed(() => {
 // against the translucent bar.
 const dotClass =
 	'bg-surface-red-6 absolute -right-1 -top-1 block size-2 rounded-full border border-[var(--surface-base)]'
-
-// Active/inactive contrast rides two channels: ink (9 vs 5) and weight (stroke
-// 1.75 vs 1.5, semibold vs medium), so the active tab pops without the rest
-// going faint. Inactive sits at 5, not the 4 used for meta text elsewhere —
-// at 4 the whole bar read as disabled rather than as three tappable tabs.
-const tabClass = (active: boolean) =>
-	[
-		'flex flex-1 flex-col items-center justify-center gap-1',
-		active ? 'text-ink-gray-9' : 'text-ink-gray-5',
-	].join(' ')
-
-const iconClass = (active: boolean) =>
-	['h-6 w-6 shrink-0', active ? '[stroke-width:1.75]' : '[stroke-width:1.5]'].join(' ')
-
-// 11px sits below the type scale's floor (text-xs is 12), so it's spelled out —
-// along with the 0.02em the scale's own tokens carry, which an arbitrary size
-// doesn't bring with it.
-const labelClass = (active: boolean) =>
-	[
-		'text-[11px] tracking-[0.02em] !leading-3',
-		active ? '!font-semibold' : '!font-medium',
-	].join(' ')
 </script>

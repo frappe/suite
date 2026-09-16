@@ -10,7 +10,7 @@
 			<button
 				v-for="app in apps"
 				:key="app.name"
-				:class="rowClass(app.name === currentApp)"
+				:class="sheetRowClass(app.name === currentApp)"
 				@click="select(app)"
 			>
 				<!-- The marks sit at 28px, above the desktop menu's 24 and well past the
@@ -29,7 +29,8 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { BottomSheet } from 'frappe-ui'
 
-import { SUITE_APPS, getAppSwitcherItems } from '@/apps/registry'
+import { getPhoneAppSwitcherItems } from '@/apps/registry'
+import { sheetRowClass } from '@/components/mobile/mobileClasses'
 import { openApp } from '@/composables/useAppSwitcher'
 
 import type { SuiteAppSwitcherItem } from '@/apps/registry'
@@ -43,23 +44,9 @@ const open = defineModel<boolean>('open', { default: false })
 
 const router = useRouter()
 
-// Only the apps with a phone layout for now: mail and the calendar. The rest
-// of the desktop menu's list comes in as each app gets one. The app you are in
-// leads, selected, as the current folder or view does in the other sheets.
-const MOBILE_APPS = ['mail', 'calendar']
-
-const apps = computed<SuiteAppSwitcherItem[]>(() => {
-	// The switcher list leaves the current app out, so its row is made here from
-	// the app list, in the same shape the others come in.
-	const app = SUITE_APPS.find((app) => app.id === props.currentApp)
-	const current = app
-		? [{ name: app.id, title: app.name, route: app.prefix, logo: app.logo, spa: true }]
-		: []
-	const others = getAppSwitcherItems(props.currentApp).filter((app) =>
-		MOBILE_APPS.includes(app.name),
-	)
-	return [...current, ...others]
-})
+// The apps with a phone layout, the one you are in leading, selected, as the current
+// folder or view does in the other sheets. The rest come in as each gets a layout.
+const apps = computed(() => getPhoneAppSwitcherItems(props.currentApp))
 
 // The sheet closes on a pick, as the folder and view sheets do; the app you are
 // already in does nothing but close it.
@@ -69,9 +56,4 @@ const select = (app: SuiteAppSwitcherItem) => {
 	openApp(router, app)
 }
 
-const rowClass = (active: boolean) =>
-	[
-		'flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base text-ink-gray-8',
-		active ? 'bg-surface-gray-2 !font-semibold' : 'active:bg-surface-gray-1',
-	].join(' ')
 </script>
