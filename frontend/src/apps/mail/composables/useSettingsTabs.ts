@@ -38,7 +38,7 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 		const mailGroups: SettingsGroup[] = [
 			{
 				id: 'mail-general',
-				label: __('Mail Account'),
+				label: __('Mail Setup'),
 				items: [
 					{ label: __('Account'), value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
 					{ label: __('Identity'), value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
@@ -54,7 +54,7 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 			},
 			{
 				id: 'mail',
-				label: __('Mail'),
+				label: __('Mail Preferences'),
 				items: [
 					{ label: __('Folders'), value: 'folders', icon: Folders, component: markRaw(FolderSettings), condition: jmap },
 					{ label: __('Signatures'), value: 'signatures', icon: Feather, component: markRaw(SignatureSettings), condition: jmap },
