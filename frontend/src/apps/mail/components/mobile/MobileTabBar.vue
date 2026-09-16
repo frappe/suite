@@ -1,9 +1,9 @@
 <template>
 	<!-- Compose FAB — floats above the bar, right thumb zone. Both the FAB and the
 	     bar step aside while a thread is open: the thread's own reply actions own
-	     the bottom edge there (the modals below stay mounted regardless). Hidden in
-	     search results, the screener and the profile page too — composing isn't part of
-	     those tasks. -->
+	     the bottom edge there (the overlay and sheets below stay mounted regardless).
+	     Hidden in search results, the screener and the profile page too — composing
+	     isn't part of those tasks. -->
 	<Button
 		v-if="
 			!isThreadOpen &&
@@ -59,10 +59,6 @@
 				</span>
 				<span :class="labelClass(screenerActive)">{{ __('Screener') }}</span>
 			</button>
-			<button :class="tabClass(searchActive)" @click="openSearch">
-				<Icon name="search" :class="iconClass(searchActive)" />
-				<span :class="labelClass(searchActive)">{{ __('Search') }}</span>
-			</button>
 			<!-- The tab stands for the person, so it carries their photo when there is one
 			     and falls back to the active account's initial. A photo has no stroke to
 			     thicken the way the other icons do, so selection draws a ring instead —
@@ -81,6 +77,9 @@
 		</div>
 	</nav>
 
+	<!-- The search overlay is mounted here, outside the views, so it outlives the
+	     navigation to the search page that opening it begins with; the title
+	     header's search button raises it through the shared state. -->
 	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
 </template>
@@ -93,7 +92,12 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Icon } from 'frappe-ui/experimental'
 
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
-import { useFolderSheet, useKeyboardOpen, useMobileSelection } from '@/apps/mail/utils/composables'
+import {
+	useFolderSheet,
+	useKeyboardOpen,
+	useMobileSearch,
+	useMobileSelection,
+} from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
@@ -107,6 +111,7 @@ const store = userStore()
 const user = inject('$user') as { data: Record<string, any> }
 const { mailboxes, allInboxesUnread } = store
 const { openFolderSheet } = useFolderSheet()
+const { isSearchModalOpen: showSearchModal, isSearchRoute } = useMobileSearch()
 const { isMobileSelectionActive } = useMobileSelection()
 const keyboardOpen = useKeyboardOpen()
 
@@ -115,6 +120,8 @@ const activeAccountName = computed(
 )
 
 // The folder currently shown by a mail route; null elsewhere (tab falls back to "Inbox").
+// Search is not a folder: the virtual 'search' mailbox matches nothing here, so the tab
+// reads "Inbox" on the results page, and a tap on it is the way back out of search.
 const currentFolder = computed(() => {
 	if (route.name === 'mail-all-inboxes') return { label: __('All Inboxes'), icon: 'mails' }
 	if (route.name !== 'mail-mailbox') return null
@@ -123,7 +130,6 @@ const currentFolder = computed(() => {
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
 
-const showSearchModal = ref(false)
 
 // Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
 // whole screen to lay itself out in rather than floating over this one.
@@ -132,10 +138,7 @@ const openCompose = () => openComposePage(router, store.accountId)
 const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
 const isThreadOpen = computed(() => !!route.params.threadID)
 // Search results live on the mailbox route with the virtual 'search' mailbox, but
-// they belong to the Search tab — the Mail tab must not read as active there.
-const isSearchRoute = computed(
-	() => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
-)
+// search is the title header's, not a tab's — no tab reads as active there.
 const mailActive = computed(
 	() => MAIL_ROUTES.includes(route.name as string) && !isSearchRoute.value,
 )
@@ -143,28 +146,14 @@ const mailActive = computed(
 const screenerActive = computed(() =>
 	['mail-screener', 'mail-screener-sender'].includes(route.name as string),
 )
-const searchActive = computed(() => showSearchModal.value || isSearchRoute.value)
 const profileActive = computed(() => route.name === 'mail-profile')
-
-// The Search tab is a navigation like the others: it lands on the search page (so tab
-// selection stays route-driven — an overlay over a mail route read as two active tabs),
-// then opens the query editor on top of it. Navigate first: the editor pushes its own
-// history state, which must sit above the search page's entry for back to unwind cleanly.
-const openSearch = async () => {
-	if (!isSearchRoute.value)
-		await router.push({
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox: 'search' },
-		})
-	showSearchModal.value = true
-}
 
 const openMail = () => {
 	// The query editor overlay leaves the bar visible; a tab tap first dismisses it. It
-	// only ever covers the search page now, so the tap always navigates on to the inbox.
+	// only ever covers the search page, so the tap always navigates on to the inbox.
 	if (showSearchModal.value) {
 		showSearchModal.value = false
-		if (!mailActive.value) router.push('/mail')
+		router.push('/mail')
 		return
 	}
 	// Re-tapping the active Mail tab opens the folder switcher.
@@ -214,7 +203,7 @@ const screenerCount = computed(
 // unread when the tab reads "Inbox" from elsewhere. Starred is virtual — no count.
 const mailUnreadCount = computed(() => {
 	if (route.name === 'mail-all-inboxes') return allInboxesUnread.data ?? 0
-	// In search the tab reads "Inbox" (below), so fall through to the Inbox's count.
+	// In search the tab reads "Inbox" (above), so fall through to the Inbox's count.
 	if (route.name === 'mail-mailbox' && !isSearchRoute.value) {
 		if (route.params.mailbox === 'starred') return 0
 		return (
