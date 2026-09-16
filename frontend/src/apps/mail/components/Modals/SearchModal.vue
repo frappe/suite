@@ -1,12 +1,16 @@
 <template>
 	<!-- One host, two shells: frappe-ui's Dialog on the desktop, the full-page mobile
-	     layout on a phone. Both take `v-model`; the Dialog's own props go only to the
-	     Dialog — the mobile layout has a Teleport root, so Vue could not forward them
-	     and warned on every mount. -->
+	     layout on a phone. Each gets its own model contract — `open` is the Dialog's
+	     canonical binding, `v-model` the mobile layout's — and the Dialog's props go
+	     only to the Dialog: the mobile layout has a Teleport root, so Vue could not
+	     forward them and warned on every mount. -->
 	<component
 		:is="isMobile ? SearchMobileLayout : Dialog"
-		v-model="show"
-		v-bind="isMobile ? {} : { size: '2xl', paddingTop: '2%', bare: true }"
+		v-bind="
+			isMobile
+				? { modelValue: show, 'onUpdate:modelValue': setShow }
+				: { open: show, 'onUpdate:open': setShow, size: '2xl', paddingTop: '2%', bare: true }
+		"
 	>
 		<template #default>
 			<div class="bg-surface-base">
@@ -297,6 +301,7 @@ import ContactCombobox from '@/apps/mail/components/ContactCombobox.vue'
 import type { MailboxData, Recipient } from '@/apps/mail/types'
 
 const show = defineModel<boolean>()
+const setShow = (value: boolean) => (show.value = value)
 // Set by the results page when a filter chip is clicked: the filter key to reopen inline on open.
 const editFilterKey = defineModel<string>('editFilter', { default: '' })
 

@@ -35,7 +35,7 @@ interface SuiteApp {
   pwa?: boolean
 }
 
-interface SuiteAppSwitcherItem {
+export interface SuiteAppSwitcherItem {
   name: string
   title: string
   route: string
