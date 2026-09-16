@@ -15,10 +15,13 @@
 			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
 			@click="openFolderSheet"
 		>
-			<!-- 24px at stroke 2, against the 1.5 the app draws its icons at:
-			     three strokes on their own, at a size no glyph accompanies, went
-			     thin against the title beside them. -->
-			<Menu :size="24" class="[stroke-width:2]" />
+			<!-- 20px at the 1.5 the app draws its icons at: the title's own size, so
+			     the glyph and the word beside it stand the same height. It once asked
+			     for 24 at stroke 2 against a thinness that was never this svg's:
+			     frappe-ui's `lucide-*` mask rule was drawing it at 1em through its own
+			     1.5 shape, and the request was silently ignored. Drawn for real, 24 at
+			     2 was heavy and 24 at 1.5 still too big beside the title. -->
+			<Menu :size="20" />
 		</button>
 		<button
 			v-else-if="withBack"
@@ -44,7 +47,7 @@
 			class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
 			@click="openSearch"
 		>
-			<Search :size="24" class="[stroke-width:2]" />
+			<Search :size="20" />
 		</button>
 		<slot name="actions" />
 	</div>
