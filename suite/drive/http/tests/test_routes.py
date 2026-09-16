@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, call, patch
 import frappe
 from frappe.tests import UnitTestCase
 from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
+from werkzeug.wrappers import Request, Response
 
 from suite.drive import framework
 from suite.drive._core import nodes as node_core
@@ -253,6 +253,20 @@ class TestPageEnvelope(BoundaryCase):
             routes.node_children(node="f1", cursor="")
         self.assertIsNone(listed.call_args.kwargs["cursor"])
 
+    def test_presentation_changes_start_from_an_absent_cursor(self):
+        result = {"rows": [], "next_cursor": None, "parent": frappe._dict({"name": "f1"})}
+        with patch.object(routes.node_core, "children", return_value=result) as listed:
+            routes.node_children(
+                node="f1",
+                order_by="modified",
+                ascending="0",
+                group_by="owner",
+                kind="folder",
+            )
+        self.assertIsNone(listed.call_args.kwargs["cursor"])
+        self.assertEqual(listed.call_args.kwargs["group_by"], "owner")
+        self.assertEqual(listed.call_args.kwargs["kind"], "folder")
+
     def test_a_cursor_seeking_past_the_bound_is_a_bad_request_not_a_query(self):
         # MariaDB parses OFFSET as an unsigned bigint and fails the statement
         # on a larger literal, which is a 500 with a traceback rather than one
@@ -436,6 +450,47 @@ class TestContentAnswer(BoundaryCase):
 
     def test_a_title_with_nothing_printable_still_names_the_download(self):
         self.assertEqual(routes._disposition_names("\n\t"), {"filename": "download"})
+
+
+class TestArchiveRoutes(BoundaryCase):
+    def test_start_and_status_are_thin_workflow_calls(self):
+        ready = {"status": "ready", "file_name": "Folder.zip", "size": 12, "error": None}
+        with patch.object(routes.archive, "start", return_value=ready) as start:
+            self.assertEqual(routes.node_archive_start(node="f1"), ready)
+        start.assert_called_once_with(SOMEONE, "f1")
+
+        with patch.object(routes.archive, "status", return_value=ready) as status:
+            self.assertEqual(routes.node_archive_status(node="f1"), ready)
+        status.assert_called_once_with(SOMEONE, "f1")
+
+    def test_download_streams_the_ready_private_blob(self):
+        blob = frappe._dict(name="blob-1")
+        request = MagicMock()
+        request.environ = {"REQUEST_METHOD": "GET"}
+        with local_attribute("request", request):
+            with patch.object(routes.archive, "download", return_value=(blob, "Folder.zip")) as download:
+                with patch("frappe.storage.serve.stream_blob", return_value=Response(b"zip")) as streamed:
+                    answer = routes.node_archive_download(node="f1")
+        download.assert_called_once_with(SOMEONE, "f1")
+        streamed.assert_called_once_with(
+            blob,
+            "Folder.zip",
+            as_attachment=True,
+            environ=request.environ,
+        )
+        self.assertEqual(answer.get_data(), b"zip")
+
+
+class TestRootDiscoveryRoute(BoundaryCase):
+    def test_roots_are_returned_without_transport_policy(self):
+        result = {
+            "personal": {"node": "p1", "title": "My files"},
+            "organization": None,
+        }
+        with patch.object(routes.roots, "discover", return_value=result) as workflow:
+            answer = routes.roots_discover()
+        workflow.assert_called_once_with(SOMEONE)
+        self.assertEqual(answer, result)
 
 
 class TestChunkBody(BoundaryCase):
@@ -679,14 +734,23 @@ class TestViewRoutes(BoundaryCase):
         self.minted.assert_called_once_with(["n1"])
         self.assertEqual(answer["rows"][0]["preview"], {"url": "/f/x", "expires": 99})
 
-    def test_a_view_refuses_the_two_expansions_it_cannot_answer(self):
-        for name in ("access", "breadcrumbs"):
-            with self.subTest(expansion=name):
-                with self.assertRaises(DriveError) as caught:
-                    routes.view_list(view="recents", expand=name)
-                self.assertEqual(caught.exception.http_status_code, 400)
+    def test_access_is_published_for_a_node_view(self):
+        self.row.access = {"role": 40, "via_link": None}
+        answer = routes.view_list(view="recents", expand="access")
+        self.assertEqual(answer["rows"][0]["access"], self.row.access)
+        self.assertTrue(self.workflow.call_args.kwargs["with_access"])
+
+    def test_breadcrumbs_are_search_only(self):
+        with self.assertRaises(DriveError) as caught:
+            routes.view_list(view="recents", expand="breadcrumbs")
+        self.assertEqual(caught.exception.http_status_code, 400)
         self.workflow.assert_not_called()
         self.minted.assert_not_called()
+
+        self.row.breadcrumbs = [{"name": "r1", "title": "My files"}]
+        answer = routes.view_list(view="search", term="t", expand="breadcrumbs")
+        self.assertEqual(answer["rows"][0]["breadcrumbs"], self.row.breadcrumbs)
+        self.assertTrue(self.workflow.call_args.kwargs["with_breadcrumbs"])
 
     def test_an_unknown_expansion_is_a_bad_request(self):
         with self.assertRaises(DriveError) as caught:
@@ -720,7 +784,14 @@ class TestViewRoutes(BoundaryCase):
                 passed = dict(self.workflow.call_args.kwargs)
                 passed.pop("cursor")
                 passed.pop("limit")
+                passed.pop("with_access")
+                passed.pop("with_breadcrumbs")
                 self.assertEqual(passed, filters)
+
+    def test_recents_publish_the_visit_time_beside_the_base_node(self):
+        self.row.opened_at = "2026-09-15 12:30:00"
+        answer = routes.view_list(view="recents")
+        self.assertEqual(answer["rows"][0]["opened_at"], "2026-09-15 12:30:00")
 
     def test_trash_without_a_root_and_search_without_a_term_page_nothing(self):
         for kwargs in ({"view": "trash"}, {"view": "search"}):
@@ -913,6 +984,12 @@ class TestRecordRoutes(BoundaryCase):
         self.assertEqual(answer["rows"][0]["activity"]["action"], "comment")
         self.assertEqual(workflow.call_args.kwargs["cursor"], "b2Zmc2V0OjAw")
         self.assertTrue(workflow.call_args.kwargs["only_unread"])
+
+    def test_unread_count_is_the_scalar_workflow_result(self):
+        with patch.object(routes.activity_core, "unread_count", return_value=17) as workflow:
+            answer = routes.notifications_unread_count()
+        workflow.assert_called_once_with(SOMEONE)
+        self.assertEqual(answer, {"unread": 17})
 
     def test_marking_read_needs_either_a_list_or_the_all_flag(self):
         with patch.object(routes.activity_core, "mark_read") as workflow:

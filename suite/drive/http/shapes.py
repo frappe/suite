@@ -19,6 +19,7 @@ boundary maps to 400.
 
 from collections.abc import Mapping
 from datetime import date, datetime
+from typing import Generic, Literal, NotRequired, TypedDict, TypeVar
 
 import frappe
 from frappe import _
@@ -35,8 +36,203 @@ MAX_BATCH_NODES = nodes.MAX_PAGE_SIZE
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("0", "false", "no", "off")
 
+T = TypeVar("T")
 
-def node_shape(row: Mapping) -> dict:
+
+class AccessShape(TypedDict, total=False):
+    role: int
+    via_link: str | None
+    source_node: str | None
+    source_principal: str | None
+
+
+class BreadcrumbShape(TypedDict):
+    name: str
+    title: str
+
+
+class PreviewShape(TypedDict):
+    url: str
+    expires: int
+
+
+class NodeShape(TypedDict):
+    name: str
+    title: str
+    kind: str
+    parent: str | None
+    root: str
+    state: str
+    size: int
+    mime: str | None
+    url: str | None
+    content_doctype: str | None
+    content_docname: str | None
+    is_template: int
+    owner: str
+    creation: str | None
+    modified: str | None
+    content_modified: str | None
+    access: NotRequired[AccessShape]
+    breadcrumbs: NotRequired[list[BreadcrumbShape]]
+    preview: NotRequired[PreviewShape | None]
+    opened_at: NotRequired[str | None]
+
+
+class ActivityShape(TypedDict):
+    name: str
+    node: str
+    action: str
+    actor: str
+    at: str | None
+    via_link: str | None
+    client: str | None
+    detail: dict
+
+
+class NotificationShape(TypedDict):
+    name: str
+    read: int
+    creation: str | None
+    activity: ActivityShape
+
+
+class Page(TypedDict, Generic[T]):
+    rows: list[T]
+    next_cursor: str | None
+
+
+class Rename(TypedDict):
+    title: str
+
+
+class Move(TypedDict):
+    parent: str
+
+
+class Trash(TypedDict):
+    state: Literal["Trashed"]
+
+
+class Restore(TypedDict):
+    state: Literal["Active"]
+    parent: NotRequired[str]
+
+
+class Stamp(TypedDict):
+    content_modified: str
+
+
+class NodeGetQuery(TypedDict, total=False):
+    expand: str
+
+
+class ChildrenQuery(TypedDict, total=False):
+    limit: int
+    cursor: str
+    order_by: str
+    ascending: bool
+    mime_prefix: str
+    kind: Literal["folder"]
+    group_by: Literal["type", "owner", "modified"]
+    expand: str
+
+
+class CopyNode(TypedDict):
+    parent: str
+    title: NotRequired[str]
+
+
+class BatchPatch(TypedDict, total=False):
+    title: str
+    parent: str
+    state: Literal["Active", "Trashed"]
+    content_modified: str
+
+
+class BatchNodes(TypedDict):
+    nodes: list[str]
+    patch: BatchPatch
+
+
+class BatchFailure(TypedDict):
+    node: str
+    type: str
+    message: str
+
+
+class BatchResult(TypedDict):
+    ok: list[str]
+    failed: list[BatchFailure]
+
+
+class Empty(TypedDict):
+    pass
+
+
+class ViewQuery(TypedDict, total=False):
+    limit: int
+    cursor: str
+    root: str
+    content_doctype: str
+    term: str
+    expand: str
+
+
+class NotificationsQuery(TypedDict, total=False):
+    limit: int
+    cursor: str
+    unread: bool
+
+
+class NotificationNames(TypedDict):
+    notifications: list[str]
+
+
+class AllNotifications(TypedDict):
+    all: Literal[True]
+
+
+class ReadResult(TypedDict):
+    read: int
+
+
+class UnreadCount(TypedDict):
+    unread: int
+
+
+class RootLocation(TypedDict):
+    node: str
+    title: str
+
+
+class RootLocations(TypedDict):
+    personal: RootLocation
+    organization: RootLocation | None
+
+
+class ArchivedRootShape(TypedDict):
+    root: str
+    user: str | None
+    used_bytes: int
+    quota_bytes: int
+
+
+class ArchiveStatus(TypedDict):
+    status: Literal["building", "ready", "failed"]
+    file_name: str | None
+    size: int | None
+    error: str | None
+
+
+class RootUsage(TypedDict):
+    used_bytes: int
+    reserved_bytes: int
+    quota_bytes: int | None
+    effective_quota: int
+
+
+def node_shape(row: Mapping) -> NodeShape:
     """Return one stored node row as §11.3's shape."""
     return {
         "name": row.get("name"),
@@ -79,7 +275,7 @@ def version_shape(row: Mapping) -> dict:
     }
 
 
-def activity_shape(row: Mapping) -> dict:
+def activity_shape(row: Mapping) -> ActivityShape:
     """Return one activity row as §9.4's columns, times formatted.
 
     Every link token is masked to the bare `$LINK`. §11.2 answers this history
@@ -119,7 +315,7 @@ def _masked_detail(detail: Mapping) -> dict:
     return answer
 
 
-def notification_shape(row: Mapping) -> dict:
+def notification_shape(row: Mapping) -> NotificationShape:
     """Return one notification pointer with the activity it renders from.
 
     `to_user` is withheld: §11.2 scopes this route to the caller, so the only
@@ -216,7 +412,7 @@ def stamp(value) -> str | None:
     return str(value)
 
 
-def page(result: Mapping, rows: list) -> dict:
+def page(result: Mapping, rows: list[T]) -> Page[T]:
     """Wrap already-shaped rows in §11.4's opaque-cursor page."""
     return {"rows": rows, "next_cursor": result.get("next_cursor")}
 

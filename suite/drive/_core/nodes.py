@@ -6,6 +6,7 @@ import collections
 import io
 import os
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import IO
 from uuid import uuid4
@@ -20,7 +21,8 @@ from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
     POINT_SQL,
-    _resolve_rows,
+    _admin_description,
+    _describe_rows,
     add_creator_grant,
     chain_ids,
     chain_roles,
@@ -117,11 +119,12 @@ FROM (
           AND state = 'Active'
           AND kind <> 'root'
           AND is_template = 0
-        ORDER BY {inner_order} {direction}
+          AND (%(kind)s IS NULL OR kind = %(kind)s)
+        ORDER BY {inner_order}
         LIMIT %(limit)s OFFSET %(offset)s
     ) children
 ) page
-ORDER BY page._drive_parent, {outer_order} {direction}
+ORDER BY page._drive_parent, {outer_order}
 """
 
 SHARED_SQL = """
@@ -1238,6 +1241,9 @@ def _stamp_content_time(
         _content_time(content_modified),
         update_modified=False,
     )
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(current.name)
     return _node(current.name)
 
 
@@ -1369,6 +1375,11 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
         delta = _subtree_charge(current)
         if source_root != destination_root:
             admit(destination_root, delta)
+        # The old parent-chain holders must refresh too. After the rewrite,
+        # the ordinary activity emission can only see the destination chain.
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(current.name)
         _rewrite_subtree(current, destination, destination_root, actor=principals.user)
         if source_root != destination_root:
             release(source_root, delta)
@@ -2483,6 +2494,9 @@ def _record_activity(
             "detail": detail,
         }
     ).insert(ignore_permissions=True)
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(node)
 
 
 def children(
@@ -2494,6 +2508,8 @@ def children(
     order_by: str = "title",
     ascending: bool = True,
     mime_prefix: str | None = None,
+    kind: str | None = None,
+    group_by: str | None = None,
     with_access: bool = False,
 ) -> dict:
     """Return one three-query SQL window of readable, ordinary children.
@@ -2504,11 +2520,13 @@ def children(
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     order_column = _order_column(order_by)
+    _validate_kind_filter(kind)
+    _validate_group(group_by)
     direction = "ASC" if ascending else "DESC"
-    query = _folder_page_query(order_column, direction)
+    query = _folder_page_query(order_column, direction, group_by=group_by)
     result = frappe.db.sql(
         query,
-        {"parent": parent, "limit": page_size, "offset": offset},
+        {"parent": parent, "limit": page_size, "offset": offset, "kind": kind},
         as_dict=True,
     )
     return _folder_page_from_result(
@@ -2522,14 +2540,18 @@ def children(
     )
 
 
-def _folder_page_query(order_column: str = "title", direction: str = "ASC") -> str:
+def _folder_page_query(
+    order_column: str = "title",
+    direction: str = "ASC",
+    *,
+    group_by: str | None = None,
+) -> str:
     return FOLDER_PAGE_SQL.format(
         parent_fields=", ".join(f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
-        inner_order=ORDER_TERMS[order_column].format(p=""),
-        outer_order=ORDER_TERMS[order_column].format(p="page."),
-        direction=direction,
+        inner_order=_listing_order(order_column, direction, group_by=group_by, prefix=""),
+        outer_order=_listing_order(order_column, direction, group_by=group_by, prefix="page."),
     )
 
 
@@ -2591,6 +2613,8 @@ def views(
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
+    with_access: bool = False,
+    with_breadcrumbs: bool = False,
     **filters,
 ) -> dict:
     """Return one SQL window of a frozen Drive discovery view.
@@ -2601,7 +2625,14 @@ def views(
     them here is what lets every view page answer in node shapes.
     """
     if name in ("recents", "favourites"):
-        return _personal_view(principals, name, cursor=cursor, limit=limit)
+        return _personal_view(
+            principals,
+            name,
+            cursor=cursor,
+            limit=limit,
+            with_access=with_access,
+            with_breadcrumbs=with_breadcrumbs,
+        )
 
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
@@ -2610,7 +2641,12 @@ def views(
     if name == "shared":
         values["personal_root"] = personal_root_for(principals.user)
         window = frappe.db.sql(SHARED_SQL, values, as_dict=True)
-        rows = _readable_rows(window, principals)
+        rows = _readable_rows(
+            window,
+            principals,
+            with_access=with_access,
+            with_breadcrumbs=with_breadcrumbs,
+        )
     elif name == "archived-roots":
         query = ADMIN_ARCHIVED_SQL if principals.is_admin else ARCHIVED_SQL
         window = frappe.db.sql(query, values, as_dict=True)
@@ -2621,14 +2657,24 @@ def views(
             frappe.throw(_("The trash view requires a Drive root"), frappe.ValidationError)
         values["root"] = root
         window = frappe.db.sql(TRASH_SQL, values, as_dict=True)
-        rows = _readable_rows(window, principals)
+        rows = _readable_rows(
+            window,
+            principals,
+            with_access=with_access,
+            with_breadcrumbs=with_breadcrumbs,
+        )
     elif name == "templates":
         content_doctype = filters.get("content_doctype")
         if content_doctype is not None and not isinstance(content_doctype, str):
             frappe.throw(_("The template content type is invalid"), frappe.ValidationError)
         values["content_doctype"] = content_doctype
         window = frappe.db.sql(TEMPLATES_SQL, values, as_dict=True)
-        rows = _readable_rows(window, principals)
+        rows = _readable_rows(
+            window,
+            principals,
+            with_access=with_access,
+            with_breadcrumbs=with_breadcrumbs,
+        )
     elif name == "search":
         term = filters.get("term")
         if not isinstance(term, str) or not term:
@@ -2636,20 +2682,39 @@ def views(
         values["visible_roots"] = _sql_values(_visible_root_ids(principals))
         values["term"] = f"%{term}%"
         window = frappe.db.sql(SEARCH_SQL, values, as_dict=True)
-        rows = _readable_rows(window, principals)
+        rows = _readable_rows(
+            window,
+            principals,
+            with_access=with_access,
+            with_breadcrumbs=with_breadcrumbs,
+        )
     else:
         frappe.throw(_("Drive view {0} is not supported").format(name), frappe.ValidationError)
 
     return page_of(rows, offset, len(window), page_size)
 
 
-def _personal_view(principals: Principals, name: str, *, cursor: str | None, limit: int) -> dict:
+def _personal_view(
+    principals: Principals,
+    name: str,
+    *,
+    cursor: str | None,
+    limit: int,
+    with_access: bool,
+    with_breadcrumbs: bool,
+) -> dict:
     """Answer a personal list as node rows, keeping its own cursor."""
     from suite.drive._core import activity
 
     reader = activity.recents if name == "recents" else activity.favourites
-    result = reader(principals, cursor=cursor, limit=limit)
+    result = reader(principals, cursor=cursor, limit=limit, with_access=with_access)
     rows = _view_eligible([row.node for row in result["rows"]])
+    if with_breadcrumbs:
+        rows = _readable_rows(rows, principals, with_breadcrumbs=True)
+    if name == "recents":
+        opened = {row.node.name: row.opened_at for row in result["rows"]}
+        for row in rows:
+            row.opened_at = opened.get(row.name)
     return {"rows": rows, "next_cursor": result["next_cursor"]}
 
 
@@ -2747,11 +2812,46 @@ ORDER_TERMS = {
     "size": "{p}size",
 }
 
+GROUP_TERMS = {
+    # The kind value is already in the node shape. A fixed rank keeps the
+    # folder group first and keeps the remaining groups deterministic.
+    "type": "CASE {p}kind WHEN 'folder' THEN 0 WHEN 'document' THEN 1 WHEN 'file' THEN 2 ELSE 3 END",
+    "owner": "COALESCE({p}owner, '')",
+    # Drive stores row times in the site's system timezone. One calendar date
+    # is one group, and newer dates are always shown first.
+    "modified": "DATE({p}modified)",
+}
+
+
+def _listing_order(order_by: str, direction: str, *, group_by: str | None, prefix: str) -> str:
+    terms = []
+    if group_by:
+        group_direction = "DESC" if group_by == "modified" else "ASC"
+        terms.append(f"{GROUP_TERMS[group_by].format(p=prefix)} {group_direction}")
+    terms.extend(
+        (
+            f"CASE WHEN {prefix}kind = 'folder' THEN 0 ELSE 1 END ASC",
+            f"{ORDER_TERMS[order_by].format(p=prefix)} {direction}",
+            f"{prefix}name ASC",
+        )
+    )
+    return ", ".join(terms)
+
 
 def _order_column(order_by: str) -> str:
     if order_by not in ORDER_TERMS:
         frappe.throw(_("The Drive listing order is invalid"), frappe.ValidationError)
     return order_by
+
+
+def _validate_group(group_by: str | None) -> None:
+    if group_by is not None and group_by not in GROUP_TERMS:
+        frappe.throw(_("The Drive listing group is invalid"), frappe.ValidationError)
+
+
+def _validate_kind_filter(kind: str | None) -> None:
+    if kind is not None and kind != "folder":
+        frappe.throw(_("The Drive child kind filter is invalid"), frappe.ValidationError)
 
 
 def _grant_rows(node_ids: list[str], principals: Principals) -> list:
@@ -2766,12 +2866,18 @@ def _grant_rows(node_ids: list[str], principals: Principals) -> list:
     )
 
 
-def _readable_rows(rows: list, principals: Principals) -> list:
-    if principals.is_admin:
-        return rows
+def _readable_rows(
+    rows: list,
+    principals: Principals,
+    *,
+    with_access: bool = False,
+    with_breadcrumbs: bool = False,
+) -> list:
+    if not rows:
+        return []
     chains = {row.name: chain_ids(row) for row in rows}
     union = {node_id for chain in chains.values() for node_id in chain}
-    grant_rows = _grant_rows(list(union), principals)
+    grant_rows = [] if principals.is_admin else _grant_rows(list(union), principals)
     by_node = collections.defaultdict(list)
     for grant_row in grant_rows:
         by_node[grant_row.node].append(grant_row)
@@ -2782,17 +2888,63 @@ def _readable_rows(rows: list, principals: Principals) -> list:
         chain = chains[row.name]
         depth = {node_id: index for index, node_id in enumerate(chain)}
         candidate_rows = [grant_row for node_id in chain for grant_row in by_node[node_id]]
-        if (
-            _resolve_rows(
-                candidate_rows,
-                depth,
-                principals,
-                ticket_results=ticket_results,
-            )
-            >= READ
-        ):
-            visible.append(row)
+        detail = (
+            _admin_description()
+            if principals.is_admin
+            else _describe_rows(candidate_rows, depth, principals, ticket_results)
+        )
+        if detail["role"] < READ:
+            continue
+        if with_access:
+            row.access = detail
+        visible.append(row)
+    if with_breadcrumbs:
+        _attach_breadcrumbs_from_union(visible, chains, by_node, principals, ticket_results)
     return visible
+
+
+def _attach_breadcrumbs_from_union(
+    rows: list,
+    chains: dict[str, list[str]],
+    grants_by_node: Mapping,
+    principals: Principals,
+    ticket_results: dict,
+) -> None:
+    """Attach every trail after one title read over the ancestor-id union."""
+    ancestor_ids = sorted({node for row in rows for node in chains[row.name][:-1]})
+    titles = (
+        {
+            row.name: row.title
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"name": ("in", ancestor_ids)},
+                fields=["name", "title"],
+            )
+        }
+        if ancestor_ids
+        else {}
+    )
+    for row in rows:
+        chain = chains[row.name][:-1]
+        trail = []
+        for end, node_id in enumerate(chain, start=1):
+            prefix = chain[:end]
+            candidate_rows = [grant for ancestor in prefix for grant in grants_by_node[ancestor]]
+            role = (
+                MANAGE
+                if principals.is_admin
+                else _describe_rows(
+                    candidate_rows,
+                    {ancestor: index for index, ancestor in enumerate(prefix)},
+                    principals,
+                    ticket_results,
+                )["role"]
+            )
+            if role < READ or node_id not in titles:
+                trail = []
+                continue
+            trail.append({"name": node_id, "title": titles[node_id]})
+        row.breadcrumbs = trail
 
 
 def _readable_archived_roots(rows: list, principals: Principals, values: dict) -> list:

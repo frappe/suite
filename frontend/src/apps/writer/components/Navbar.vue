@@ -107,9 +107,9 @@
 </template>
 <script setup>
 import { Button, Dropdown } from 'frappe-ui'
-import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
-import { getFileLink } from '@/apps/drive/sdk'
-import { toggleFav } from '@/apps/drive/resources/files'
+import EditableBreadcrumbs from '@/apps/drive/legacy/components/EditableBreadcrumbs.vue'
+import { getFileLink } from '@/apps/drive/legacy/sdk'
+import { toggleFav } from '@/apps/drive/legacy/resources/files'
 
 import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'

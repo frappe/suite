@@ -981,6 +981,20 @@ def effective_roles(chain: list[str], child_rows: dict[str, list], chain_rows, p
 The caller drops every row whose role is below READ and returns the rest.
 `expand=access` adds the role and the derived flags to each row (§11).
 
+The child window always sorts folders before non-folders. With no grouping,
+that folder partition is global. `group_by=type|owner|modified` first makes
+the selected groups contiguous, then sorts folders before non-folders inside
+each group. `order_by` is the stable secondary order. Every form ends with
+the node id as its final tie-breaker. Type groups use the stored node kind.
+Owner groups use the stored owner. Modified groups use one calendar date per
+bucket in the database session's site timezone, newest bucket first. The
+server owns these bucket boundaries.
+
+`kind=folder` is the only kind filter. It is part of the child-window SQL,
+before `LIMIT` and `OFFSET`, so picker pages do not become short because
+non-folder rows occupied the window. Permission filtering still runs after
+the SQL window.
+
 **Preview URLs are opt-in.** A page mints them only when the caller asks
 for `expand=preview` (§9.2, §11.3). Ticket [006 §4] has the folder listing
 mint a URL for every row; ticket [014 §7] makes `preview` an `?expand=`.
@@ -1160,6 +1174,10 @@ for match in matches:
 
 The union is at most 42 ids per match and deduplicates hard, because
 matches share ancestors. One query per page, whatever the hit count.
+
+`expand=breadcrumbs` reuses that ancestor-id union. It fetches every ancestor
+title in one query for the page, then builds each visible row's ordered trail
+in memory. It never issues one ancestor query per match.
 
 ### 5.8 `explain`
 
@@ -2389,9 +2407,18 @@ Rules.
 | `Drive Notification` (`activity`, `to_user`, `read`) | mentions, and grant writes naming a user | the notification list | mark-read |
 
 - Opening a node writes a Recent, never an Activity [011 §10].
+- A `recents` view row adds `opened_at`, the visit timestamp, to the base node
+  fields.
 - A Notification is a pointer at one Activity row. Its message renders from
   that row and cannot drift [011 §10].
 - All three are deleted when their node is purged (§8.8).
+
+Every mutating Drive workflow publishes one payload-free `drive:changed`
+realtime event after commit to each affected user's room. Affected users are
+the node owner and user or group grant holders that can be resolved for the
+changed tree. Grant replacement also includes the displaced direct holder.
+Frappe deduplicates identical user/event publications in one transaction.
+Rollback publishes nothing. The event carries no node or root id.
 
 ---
 
@@ -2860,8 +2887,11 @@ are listed.
 | GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
 | PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{parent, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409, 413 |
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403 |
-| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&mime_prefix=` | cursor page of node shapes | 409 on a document node |
+| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&mime_prefix=&kind=folder&group_by=type\|owner\|modified&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent` | `{parent, title?}` | node shape | 403, 409, 413 |
+| POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
+| GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
+| GET | `/nodes/<id>/archive/download` | READ on folder | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents | 302 to a signed `/f/` URL, or the streamed export | 403 |
@@ -2875,6 +2905,15 @@ are listed.
 `GET /nodes/<id>/media` is the deck-media call. It runs one READ check on
 the document, then mints a signed `/f/` URL per child node with a 15-minute
 TTL. The page calls it again at 10 minutes [012 §2, §3, 014].
+
+Folder archives build synchronously. The server caps total uncompressed file
+and document bytes at 512 MiB, spools the ZIP, and stores it as a private blob
+for one hour. The build checks READ on the folder and on every included active
+node before writing bytes. One unreadable descendant refuses the whole build.
+The download route streams the ready blob through the active storage driver.
+The legacy `_build_zip` helper is coupled to legacy `File` rows and
+`FileManager.iter_blocks()`. The workflow does not import that layer. It keeps
+the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
 
 **Uploads**
 
@@ -2942,7 +2981,7 @@ caller cannot read marked as unreadable, instead of dropping it silently
 | Name | Rows | Role |
 |---|---|---|
 | `shared` | the caller's grant roots outside their own Personal Root | per grant |
-| `recents` | `Drive Recent` for the caller, newest first | READ |
+| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at` | READ |
 | `favourites` | `Drive Favourite` for the caller | READ |
 | `trash` | Trashed nodes where `trash_root = name`, in roots the caller reaches | READ to list; EDIT or MANAGE to restore (§8.8) |
 | `archived-roots` | Archived Roots holding a grant for the caller | per grant [001] |
@@ -2954,6 +2993,11 @@ never touches favourites [014]. Every view excludes `is_template` nodes
 except `templates`. Root nodes appear only through explicit root entry
 points, not general node views. No view returns the children of a document node
 [012 §1, 014].
+
+Every node-valued view accepts `expand=access`; the workflow resolves roles
+with one grant union for the page. Search also accepts
+`expand=breadcrumbs`; it fetches ancestor titles from one union for the page.
+There is no per-row access or breadcrumb query.
 
 **Versions, comments**
 
@@ -2977,7 +3021,9 @@ points, not general node views. No view returns the children of a document node
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
 | GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` |
+| GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
 | POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{read: <n>}` |
+| GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
 | GET | `/roots/<id>/usage` | own root, or Suite Admin for any | none | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}` |
 | PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
@@ -2988,6 +3034,10 @@ after descendant and reference cleanup (§3.2). The route id is the shared
 root-node/metadata id. There is no reclaim clock
 [010 §7]. The reservation functions stay Python-only for Meet and get no
 HTTP endpoint [010 §3, 014].
+
+`GET /roots` returns active root entry points only. `personal` is the
+caller's Personal Root. `organization` is the active Shared Root when the
+site has one, otherwise it is explicitly null.
 
 ### 11.3 The node shape
 
@@ -3015,6 +3065,12 @@ copy archive state or quota counters into the node's stored fields.
 | `access` | `{"role": 40, "via_link": "$LINK:...", "source_node": "...", "source_principal": "..."}` |
 | `breadcrumbs` | `[{"name", "title"}]` from the root down to the parent |
 | `preview` | `{"url": "/f/<blob>/<file>?e=&s=", "expires": <epoch>}` |
+
+`access` is available on every node-valued detail, children page, and frozen
+view. It is resolved in one batch per page. `breadcrumbs` is available on a
+node detail and children page, and on search with one ancestor-title union per
+page. A `recents` row additionally carries `opened_at`; this is a view field,
+not a stored node field.
 
 ### 11.4 Cursor
 
@@ -3107,14 +3163,14 @@ code on this bench: 69 methods in 11 files, 26 of them guest-callable.
 | `get_file_content` | `GET /nodes/<id>/content` |
 | `stream_file_content` | `GET /nodes/<id>/content` |
 | `get_thumbnail` | `GET /nodes/<id>?expand=preview` |
-| `download_folder` | `GET /nodes/<id>/content` on a folder |
-| `download_status` | `GET /nodes/<id>/content` on a folder |
-| `download_archive` | `GET /nodes/<id>/content` on a folder |
+| `download_folder` | `POST /nodes/<id>/archive` |
+| `download_status` | `GET /nodes/<id>/archive` |
+| `download_archive` | `GET /nodes/<id>/archive/download` |
 | `create_auth_token` | dropped; `/f/` signatures replace it [008] |
 | `does_entity_exist` | `GET /nodes/<id>` |
 | `get_new_title` | dropped; `DriveConflict` replaces it (§8.6) |
 | `get_entity_type` | `GET /nodes/<id>` |
-| `get_root_folder` | `GET /roots/<id>/usage` and the node shape's `root` |
+| `get_root_folder` | `GET /roots` |
 | `redirect_to_original` | `GET /nodes/<id>` |
 | `translate_old_name` | kept as a forwarder over `Drive Legacy Route` |
 | `resolve_legacy_route` | kept as a forwarder over `Drive Legacy Route` |
@@ -3132,9 +3188,9 @@ to `GET /nodes/<id>/grants`.
 **`suite.drive.api.activity` (1)**: `get_entity_activity_log` to
 `GET /nodes/<id>/activity`.
 
-**`suite.drive.api.notifications` (3)**: `get_notifications` and
-`get_unread_count` to `GET /notifications`; `mark_as_read` to
-`POST /notifications/read`.
+**`suite.drive.api.notifications` (3)**: `get_notifications` to
+`GET /notifications`; `get_unread_count` to
+`GET /notifications/unread-count`; `mark_as_read` to `POST /notifications/read`.
 
 **`suite.drive.api.storage` (2)**: `storage_breakdown` and
 `storage_bar_data` to `GET /roots/<id>/usage`.

@@ -46,6 +46,14 @@ sqlite_search = ["suite.writer.search.WriterSearch"]
 # links (which use the bare prefix) both hit the SPA on first load.
 website_route_rules = [
     {"from_route": "/suite/<path:app_path>", "to_route": "suite"},
+    # unified frontend — canonical area and document routes (ticket 001).
+    # Additive during grow-beside; ticket 014 owns the legacy redirects.
+    # In production nginx serves a real public upload under /files/ first
+    # and falls through to these rules for everything else.
+    {"from_route": "/home", "to_route": "suite"},
+    {"from_route": "/files", "to_route": "suite"},
+    {"from_route": "/files/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/d/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
     # drive — the share-link landing page (§11.2). It must be declared before
     # the catch-all below is read, although werkzeug would rank it first
@@ -431,14 +439,11 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
-# drive — WebDAV protocol dispatcher, then the /api/suite/drive/ translator
-# (list hook, additive). The two own disjoint prefixes: /dav and
-# /api/suite/drive/. The translator is reached through suite.drive.framework,
-# which is where ARCHITECTURE.md puts a Frappe dotted target that enters Drive;
-# the WebDAV entry predates that rule and is carried as declared debt.
+# WebDAV protocol dispatcher, then the Suite resource dispatcher. The two own
+# disjoint prefixes. WebDAV's entry predates the framework-adapter rule.
 before_request = [
     "suite.drive.webdav.dispatch.handle_before_request",
-    "suite.drive.framework.handle_http_request",
+    "suite.composition.http.handle_before_request",
 ]
 
 # drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
@@ -549,6 +554,11 @@ ALLOWED_PATHS = [
     "/api/v2/method/suite.calendar.api.get_calendar_events",
     # drive — WebDAV mount root
     "/dav",
+    # Suite-owned resource singletons and collections
+    "/api/suite/account",
+    "/api/suite/site",
+    "/api/suite/users",
+    "/api/suite/invitations",
 ]
 
 ALLOWED_WILDCARD_PATHS = [
@@ -568,6 +578,9 @@ ALLOWED_WILDCARD_PATHS = [
     # drive — the §11.2 route namespace. Additive: the legacy method prefix
     # above stays until Cleanup removes it, one release after Build (§11.7).
     "/api/suite/drive/",
+    "/api/suite/mail/",
+    "/api/suite/calendar/",
+    "/api/suite/meet/",
     "/api/method/suite.writer.api.",
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).

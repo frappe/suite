@@ -25,3 +25,12 @@
 # Calendar
 /suite/calendar/ @krantheman @s-aga-r
 /frontend/src/apps/calendar/ @krantheman
+
+# Unified frontend
+/frontend/src/composition/ @netchampfaris
+/frontend/src/shell/ @netchampfaris
+/frontend/src/platform/ @netchampfaris
+/frontend/scripts/ @netchampfaris
+/e2e/unified-frontend/shell/ @netchampfaris
+/frontend/src/apps/drive/ @BreadGenie @netchampfaris
+/e2e/unified-frontend/files/ @BreadGenie @netchampfaris

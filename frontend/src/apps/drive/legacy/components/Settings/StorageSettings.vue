@@ -1,0 +1,109 @@
+<template>
+  <AppSettingsHeader :title="__('Statistics')" />
+  <AppSettingsBody>
+  <div class="flex items-center justify-between w-full mb-2">
+    <span class="text-base-medium text-ink-gray-8"
+      >You have used
+      {{ formatSize(usedSpace) ? formatSize(usedSpace) + ' out' : 'none' }} of your
+      {{ base2BlockSize(spaceLimit) }} ({{ formatPercent((usedSpace / spaceLimit) * 100) }})</span
+    >
+  </div>
+  <div
+    v-if="usedSpace > 0"
+    class="w-full flex justify-start items-start bg-surface-sidebar border rounded-4 overflow-clip h-7 pl-0 mb-4"
+  >
+    <Tooltip v-for="[file_kind, i] in storageBreakdown.data?.total" :key="file_kind">
+      <template #content>
+        {{ i.kind }} <br />{{ i.h_size }} ({{ i.percentageFormat }})
+      </template>
+      <div
+        class="h-7"
+        :style="{
+          backgroundColor: i.color,
+          width: i.percentageFormat,
+          paddingRight: `${1 + i.percentageRaw}px`,
+        }"
+      />
+    </Tooltip>
+  </div>
+  <div v-if="!usedSpace" class="w-full flex flex-col items-center justify-center my-10">
+    <LucideCloud class="h-7 stroke-1 text-ink-gray-5" />
+    <span class="text-ink-gray-8 text-sm mt-2">No Storage Used</span>
+  </div>
+  <div
+    v-if="storageBreakdown.data?.entities?.length"
+    class="mt-1 text-ink-gray-8 text-base-medium py-2"
+    :class="storageBreakdown.data?.entities?.length ? 'border-b' : ''"
+  >
+    Large Files:
+  </div>
+  <div class="flex flex-col items-start justify-start w-full rounded-4 full px-1.5 overflow-y-auto">
+    <div
+      v-for="(i, index) in storageBreakdown.data?.entities"
+      :key="i.name"
+      class="w-full h-10 flex items-center justify-start py-3 gap-x-2"
+      :class="index > 0 ? 'border-t' : ''"
+      @mouseenter="hoveredRow = i.name"
+      @mouseleave="hoveredRow = null"
+    >
+      <img :src="getIconUrl(i.file_type)" />
+      <span class="text-ink-gray-8 text-sm truncate">{{ i.file_name }}</span>
+
+      <div class="text-ink-gray-8 text-sm ml-auto flex items-center gap-2 h-10">
+        <Button
+          v-if="hoveredRow === i.name"
+          variant="ghost"
+          class="self-center"
+          @click="openEntity(i), $emit('close')"
+        >
+          <LucideArrowRight class="size-4 text-ink-gray-5" />
+        </Button>
+        {{ formatSize(i.file_size) }}
+      </div>
+    </div>
+  </div>
+  </AppSettingsBody>
+</template>
+<script setup>
+import { formatSize, base2BlockSize, COLOR_MAP, formatPercent } from '@/apps/drive/legacy/utils/format'
+import { Tooltip, Button } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import { getIconUrl, openEntity, MIME_LIST_MAP } from '@/apps/drive/legacy/utils/files'
+import { createResource } from 'frappe-ui'
+import { ref } from 'vue'
+import LucideCloud from '~icons/lucide/cloud'
+
+const hoveredRow = ref(null)
+const usedSpace = ref(0)
+const spaceLimit = ref(0)
+
+const storageBreakdown = createResource({
+  url: 'suite.drive.api.storage.storage_breakdown',
+  onSuccess(data) {
+    const res = {}
+    usedSpace.value = 0
+    spaceLimit.value = data.limit
+    data.total.forEach((item) => {
+      const kind =
+        Object.entries(MIME_LIST_MAP).find(([type, list]) =>
+          list.includes(item.mime_type) ? type : false
+        )?.[0] || 'Unknown'
+      res[kind] = res[kind] || { file_size: 0 }
+      res[kind].file_size += item.file_size
+      usedSpace.value += item.file_size
+    })
+    Object.keys(res).forEach((kind) => {
+      res[kind].color = COLOR_MAP[kind]
+      res[kind].kind = kind
+      res[kind].percentageRaw = (100 * res[kind].file_size) / spaceLimit.value
+      res[kind].percentageFormat = formatPercent(res[kind].percentageRaw)
+      res[kind].h_size = formatSize(res[kind].file_size)
+    })
+    data.total = Object.entries(res).sort((a, b) => b[1].file_size - a[1].file_size)
+  },
+  auto: true,
+})
+
+defineEmits(['close'])
+</script>

@@ -1,0 +1,161 @@
+<template>
+  <div class="flex w-full h-full">
+    <div class="w-full h-full flex flex-col">
+      <Navbar v-if="!file?.error" :root-resource="file" :breadcrumbs="pageBreadcrumbs" />
+      <ErrorPage v-if="file.error" :error="file.error" />
+      <div
+        v-else
+        id="renderContainer"
+        :draggable="false"
+        class="w-full px-10 py-5 flex-grow w-full flex justify-center align-center items-center relative"
+      >
+        <FilePreviewSkeleton v-if="file.loading" />
+        <FileRender v-else-if="file.data" :preview-entity="file.data" />
+      </div>
+      <div
+        class="hidden sm:flex absolute bottom-4 left-1/2 transform -translate-x-1/2 w-fit items-center justify-center p-1 gap-1 rounded-4 shadow-xl l bg-surface-base"
+      >
+        <Button
+          :disabled="!prevEntity?.name"
+          :variant="'ghost'"
+          icon="lucide-arrow-left"
+          @click="scrollEntity(true)"
+        />
+        <Button :variant="'ghost'" @click="enterFullScreen">
+          <LucideScan class="size-4" />
+        </Button>
+        <Button
+          :disabled="!nextEntity?.name"
+          :variant="'ghost'"
+          icon="lucide-arrow-right"
+          @click="scrollEntity()"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { setActiveEntity } from '@/apps/drive/legacy/data/selection'
+import {
+  pageBreadcrumbs,
+  setCrumbEntity,
+  clearCrumbEntity,
+} from '@/apps/drive/legacy/data/breadcrumbs'
+import Navbar from '@/apps/drive/legacy/components/Navbar.vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Button } from 'frappe-ui'
+import FileRender from '@/apps/drive/legacy/components/FileRender.vue'
+import FilePreviewSkeleton from '@/apps/drive/legacy/components/FileTypePreview/FilePreviewSkeleton.vue'
+import { createResource } from 'frappe-ui'
+import { appDocumentTitle } from '@/utils/documentTitle'
+import { useRouter } from 'vue-router'
+import LucideScan from '~icons/lucide/scan'
+import { onKeyStroke } from '@vueuse/core'
+import {
+  prettyData,
+  enterFullScreen,
+  updateURLSlug,
+  isWriterDocument,
+  hasHostedContent,
+} from '@/apps/drive/legacy/utils/files'
+import { currentFolder } from '@/apps/drive/legacy/data/currentFolder'
+import ErrorPage from '@/apps/drive/legacy/components/ErrorPage.vue'
+
+const router = useRouter()
+const props = defineProps({
+  entityName: String,
+  slug: String,
+})
+
+const currentEntity = ref(props.entityName)
+
+const folderEntities = computed(() => currentFolder.value.entities || [])
+const filteredEntities = computed(() =>
+  folderEntities.value.filter(
+    (item) => !item.is_folder && !hasHostedContent(item) && item.file_type !== 'Link',
+  ),
+)
+
+const index = computed(() => {
+  return filteredEntities.value.findIndex(
+    (item) => item.name === props.entityName
+  )
+})
+const prevEntity = computed(() => filteredEntities.value[index.value - 1])
+const nextEntity = computed(() => filteredEntities.value[index.value + 1])
+
+function fetchFile(currentEntity) {
+  file.fetch({ entity_name: currentEntity })
+  router.push({
+    params: {
+      entityName: currentEntity,
+    },
+  })
+}
+
+onKeyStroke('ArrowLeft', (e) => {
+  if (!e.shiftKey) return
+  e.preventDefault()
+  scrollEntity(true)
+})
+onKeyStroke('ArrowRight', (e) => {
+  if (!e.shiftKey) return
+  e.preventDefault()
+  scrollEntity()
+})
+
+const onSuccess = async (entity) => {
+  // temporary hack: #475
+  if (isWriterDocument(entity)) {
+    await router.push({ name: 'writer-document', params: { id: entity.name } })
+    return
+  }
+  document.title = appDocumentTitle(entity.file_name, 'Drive')
+  setCrumbEntity(entity)
+  updateURLSlug(entity.file_name)
+  trackVisit.submit({ entity_name: entity.name })
+}
+
+onUnmounted(() => clearCrumbEntity(props.entityName))
+
+const trackVisit = createResource({
+  url: 'suite.drive.api.files.track_visit',
+})
+
+const file = createResource({
+  url: 'suite.drive.api.permissions.get_entity_with_permissions',
+  params: { entity_name: props.entityName },
+  transform(entity) {
+    setActiveEntity(entity)
+    return prettyData([entity])[0]
+  },
+  onSuccess,
+})
+
+function scrollEntity(negative = false) {
+  currentEntity.value = negative ? prevEntity.value : nextEntity.value
+  if (currentEntity.value) fetchFile(currentEntity.value.name)
+}
+
+onMounted(() => {
+  fetchFile(props.entityName)
+})
+</script>
+
+<style scoped>
+.center-transform {
+  transform: translate(-50%, -50%);
+}
+
+#renderContainer::backdrop {
+  background-color: rgb(0, 0, 0);
+  min-width: 100vw;
+  min-height: 100vh;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  top: 0;
+}
+</style>

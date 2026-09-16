@@ -1,0 +1,430 @@
+{
+  "owner": "suite",
+  "prefix": "/api/suite/",
+  "operations": [
+    {
+      "id": "account_get",
+      "method": "GET",
+      "path": "account",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Account": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "avatar": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Avatar"
+              },
+              "roles": {
+                "$ref": "#/$defs/AccountRoles"
+              },
+              "is_jmap_configured": {
+                "title": "Is Jmap Configured",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "avatar",
+              "roles",
+              "is_jmap_configured"
+            ],
+            "title": "Account",
+            "type": "object"
+          },
+          "AccountRoles": {
+            "properties": {
+              "system_manager": {
+                "title": "System Manager",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "system_manager"
+            ],
+            "title": "AccountRoles",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Account"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "site_get",
+      "method": "GET",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "site_patch.complete_onboarding",
+      "method": "PATCH",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "is_onboarded": {
+            "const": true,
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded"
+        ],
+        "title": "CompleteOnboarding",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "site_patch.update_site_settings",
+      "method": "PATCH",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_name"
+        ],
+        "title": "UpdateSiteSettings",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "users_get",
+      "method": "GET",
+      "path": "users",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "User": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "is_admin"
+            ],
+            "title": "User",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/User"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "invitations_get",
+      "method": "GET",
+      "path": "invitations",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Invitation": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "invited_by": {
+                "title": "Invited By",
+                "type": "string"
+              },
+              "invited_by_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Invited By Name"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "creation",
+              "invited_by",
+              "invited_by_name"
+            ],
+            "title": "Invitation",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Invitation"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "invitations_post",
+      "method": "POST",
+      "path": "invitations",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "emails": {
+            "title": "Emails",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emails"
+        ],
+        "title": "InviteUsers",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "disabled_user_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disabled User Emails",
+            "type": "array"
+          },
+          "accepted_invite_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted Invite Emails",
+            "type": "array"
+          },
+          "pending_invite_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Invite Emails",
+            "type": "array"
+          },
+          "invited_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Invited Emails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "disabled_user_emails",
+          "accepted_invite_emails",
+          "pending_invite_emails",
+          "invited_emails"
+        ],
+        "title": "InvitationResult",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
+    }
+  ]
+}

@@ -8,6 +8,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"frappe-ui/list": path.resolve(__dirname, "../node_modules/frappe-ui/src/molecules/list/index.ts"),
 			"frappe-ui": path.resolve(__dirname, "recorder/frappeUi.ts"),
 			"~icons/lucide/scan": path.resolve(__dirname, "src/test/icon-stub.ts"),
 			"~icons/lucide/chevron-down": path.resolve(__dirname, "src/test/icon-stub.ts"),
@@ -30,10 +31,35 @@ export default defineConfig({
 	},
 	test: {
 		environment: "jsdom",
-		include: ["src/**/*.test.{js,ts}", "recorder/**/*.test.{js,ts}"],
+		passWithNoTests: true,
 		setupFiles: ["fake-indexeddb/auto"],
 		retry: process.env.CI ? 2 : 0,
 		silent: true,
+		projects: [
+			{
+				extends: true,
+				test: {
+					name: "unified",
+					include: [
+						"src/{shell,platform,composition}/**/*.test.{js,ts}",
+						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+						"src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}",
+					],
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: "legacy",
+					include: ["src/**/*.test.{js,ts}", "recorder/**/*.test.{js,ts}"],
+					exclude: [
+						"src/{shell,platform,composition}/**/*.test.{js,ts}",
+						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
+						"src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}",
+					],
+				},
+			},
+		],
 		coverage: {
 			provider: "v8",
 			include: ["src/**/*.{js,ts,vue}", "recorder/**/*.{ts,vue}"],

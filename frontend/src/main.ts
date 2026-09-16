@@ -1,31 +1,35 @@
-import './index.css'
+import "./index.css";
 
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import { spritePlugin } from 'frappe-ui/experimental'
+import { createApp, type App as VueApp } from "vue";
+import { createPinia } from "pinia";
 
-import App from '@/App.vue'
-import router from '@/router'
-import { configureFrappeUI } from '@/boot/config'
-import { translationPlugin } from '@/boot/translation'
-import { userResource, getSessionUser } from '@/boot/session'
-import { initSentry } from '@/boot/sentry'
+import App from "@/App.vue";
+import router from "@/router";
+import { initSentry } from "@/boot/sentry";
+import { initializeTheme } from "@/platform/theme";
+import {
+  ready as translationsReady,
+  translationPlugin,
+} from "@/platform/translation";
 
-// One frappe-ui resource/session configuration for the whole suite.
-configureFrappeUI()
-if (getSessionUser()) {
-  userResource.fetch()
+const app = createApp(App);
+
+await Promise.all([
+  initSentry(app, router),
+  translationsReady,
+  initializeTheme(),
+  import("@/boot/config").then(({ configureFrappeUI }) => configureFrappeUI()),
+]);
+
+app.use(createPinia());
+app.use(router);
+app.use(translationPlugin);
+
+Promise.all([router.isReady(), installLegacySprite(app)]).then(() => {
+  app.mount("#app");
+});
+
+async function installLegacySprite(target: VueApp) {
+  const { spritePlugin } = await import("frappe-ui/experimental");
+  target.use(spritePlugin);
 }
-
-const app = createApp(App)
-
-await initSentry(app, router)
-
-app.use(createPinia())
-app.use(router)
-app.use(spritePlugin)
-app.use(translationPlugin)
-
-router.isReady().then(() => {
-  app.mount('#app')
-})

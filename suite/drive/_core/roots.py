@@ -7,7 +7,7 @@ from frappe import _
 
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import MANAGE, UPLOAD
+from suite.drive._core.roles import MANAGE, READ, UPLOAD
 
 PERSONAL = "Personal"
 SHARED = "Shared"
@@ -42,6 +42,9 @@ def create_root(
         )
         _insert_anchor_grant(node=node.name, kind=kind, user=user)
         validate_root_pair(node.name)
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(node.name)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise
@@ -60,6 +63,39 @@ def active_root_for(*, kind: str, user: str | None = None, for_update: bool = Fa
 def personal_root_for(user: str) -> str | None:
     """Return a user's active Personal root node id."""
     return active_root_for(kind=PERSONAL, user=user)
+
+
+def discover(principals: Principals) -> dict:
+    """Return the caller's active Personal root and the active Shared root."""
+    if principals.user == "Guest":
+        raise DriveForbidden(_("Sign in to discover Drive roots"))
+    rows = frappe.db.sql(
+        """
+        SELECT r.name AS node, r.kind, n.title
+        FROM `tabDrive Root` r
+        JOIN `tabDrive Node` n ON n.name = r.node
+        WHERE r.state = 'Active'
+          AND ((r.kind = 'Personal' AND r.user = %(user)s) OR r.kind = 'Shared')
+        ORDER BY CASE r.kind WHEN 'Personal' THEN 0 ELSE 1 END, r.name
+        """,
+        {"user": principals.user},
+        as_dict=True,
+    )
+    personal = next((row for row in rows if row.kind == PERSONAL), None)
+    if personal is None:
+        raise DriveNotFound(_("The caller's active Personal Drive root was not found"))
+
+    from suite.drive._core.access import require
+
+    require(validate_root_pair(personal.node).node, READ, principals)
+    organization = next((row for row in rows if row.kind == SHARED), None)
+    if organization is not None:
+        require(validate_root_pair(organization.node).node, READ, principals)
+
+    def item(row):
+        return {"node": row.node, "title": row.title} if row is not None else None
+
+    return {"personal": item(personal), "organization": item(organization)}
 
 
 def provision_personal_root(user: str, *, title: str = "My Drive") -> str | None:
@@ -82,6 +118,9 @@ def archive_personal_root(user: str) -> str | None:
     if pair.root.user != user:
         raise frappe.ValidationError(_("The Personal Drive root owner does not match"))
     frappe.db.set_value("Drive Root", root, "state", "Archived", update_modified=False)
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(root)
     return root
 
 
@@ -106,6 +145,9 @@ def update_root(
             raise DriveConflict(_("A Drive root can only transition from Active to Archived"))
         frappe.db.set_value("Drive Root", root, "state", state, update_modified=False)
         pair.root.state = state
+    from suite.drive._core.changes import emit_for_node
+
+    emit_for_node(root)
     return _root_shape(pair)
 
 
@@ -146,6 +188,9 @@ def purge_root(root: str, principals: Principals) -> frappe._dict:
         descendants = _locked_root_descendants(root)
         _require_archived(validate_root_pair(root, for_update=True))
         _validate_root_descendants(root, descendants)
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(root)
         _purge_root_rows(root, descendants)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)

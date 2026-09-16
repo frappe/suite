@@ -1,0 +1,31 @@
+<template>
+  <GenericPage :get-entities="shareView ? getShared : getPersonal" :empty="shareView
+    ? {
+      icon: LucideUsers,
+      title: 'No shared files',
+      description: 'You can share files easily on Drive - try it out!',
+    }
+    : {
+      icon: LucideHome,
+      title: 'No files yet',
+      description: 'Upload to get started!',
+    }
+    " :verify="!shareView && {
+          data: {
+            write: 1,
+            upload: 1,
+          },
+        }
+        " />
+</template>
+
+<script setup>
+import GenericPage from '@/apps/drive/legacy/components/GenericPage.vue'
+import { getPersonal, getShared } from '@/apps/drive/legacy/resources/files'
+import { shareView } from '@/apps/drive/legacy/data/prefs'
+import { setCurrentFolder } from '@/apps/drive/legacy/data/currentFolder'
+import LucideHome from '~icons/lucide/home'
+import LucideUsers from '~icons/lucide/users'
+
+setCurrentFolder({ name: '' })
+</script>

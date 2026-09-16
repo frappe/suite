@@ -1,4 +1,4 @@
-import { allUsers } from '@/apps/drive/sdk'
+import { allUsers } from '@/apps/drive/legacy/sdk'
 
 /**
  * The suite main.ts does not set global properties, so components that use

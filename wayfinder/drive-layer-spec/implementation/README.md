@@ -99,7 +99,7 @@ Record required measurements and remaining risks. Keep acceptance boxes unchecke
 |---|---|
 | Backend implementation and isolated tests | Completed blocking tickets; existing execution scope |
 | Real migration rehearsal | Approved export, selected target, backup, and authority to overwrite that target |
-| Frontend adoption | Separate wayfinder map for the unified suite frontend. Does not block backend work. Still blocks Cleanup activation (ticket 36) |
+| Frontend adoption | Separate [wayfinder map](../../unified-frontend/MAP.md) for the unified suite frontend. Does not block backend work. Still blocks Cleanup activation (ticket 36) |
 | Cleanup preparation | Fixture tests only; patch stays inactive |
 | Cleanup activation | A release after Build, migrated clients, all runtime gates, backup, and destructive-deployment authority |
 | Actual blob relocation | Verified Build, configured destination, and relocation/source-deletion authority |
@@ -149,7 +149,7 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [33 — Make sharing actions and relevant link credentials explicit](issues/33-frontend-sharing-and-links.md) | Suite frontend Drive sharing | [32](issues/32-frontend-drive-adoption.md) | superseded |
 | [34 — Adopt document media, grouped composites, and collab credentials](issues/34-frontend-content-adoption.md) | Suite frontend Writer, Slides, and Sheets | [33](issues/33-frontend-sharing-and-links.md) | superseded |
 | [35 — Implement Cleanup with refusal gates and fixture tests](issues/35-cleanup-implementation.md) | Suite migration | [29](issues/29-build-records-and-report.md) | ready-for-agent |
-| [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [35](issues/35-cleanup-implementation.md), unified suite frontend map (not yet charted) | blocked |
+| [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [35](issues/35-cleanup-implementation.md), [unified frontend map](../../unified-frontend/MAP.md) | blocked |
 | [37 — Consolidate storage after a successful Build](issues/37-relocation-execution.md) | Frappe storage operations | [06](issues/06-relocation-implementation.md), [31](issues/31-migration-rehearsal.md) | blocked |
 | [38 — Make a fresh suite install succeed with the Presentation template fixtures](issues/38-fresh-install-fixture-node.md) | Suite Drive content | None | ready-for-agent |
 

@@ -240,6 +240,9 @@ def label_version(
         if pinned is not KEEP:
             changes["pinned"] = int(pinned)
         frappe.db.set_value("Drive Node Version", version.name, changes)
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(current.name)
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
         raise
@@ -266,6 +269,9 @@ def delete_version(principals: Principals, node: str, seq: int) -> None:
         version = _version(current.name, seq, for_update=True)
         frappe.db.delete("Drive Node Version", {"name": version.name})
         release(current.root, int(version.size or 0))
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(current.name)
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
         raise

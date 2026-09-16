@@ -1,0 +1,146 @@
+<template>
+  <AppSettingsHeader :title="__('Storage')">
+    <template #actions>
+      <Button :label="__('Sync')" @click="confirmSync" />
+    </template>
+  </AppSettingsHeader>
+  <AppSettingsBody>
+    <div v-if="getDiskSettings.loading" class="flex flex-col gap-4">
+      <div v-for="i in 4" :key="i" class="flex flex-col gap-1.5">
+        <Skeleton class="h-3 rounded-4 w-24" />
+        <Skeleton class="h-7 rounded-4 w-full" />
+      </div>
+    </div>
+    <div v-else class="flex flex-col gap-4">
+      <FormControl
+        v-model="generalSettings.root_folder"
+        label="Root Folder Name"
+        placeholder="/"
+        description="Where to store Drive files, defaults to the root folder."
+      />
+      <FormControl
+        v-model="generalSettings.backend_type"
+        type="select"
+        label="Backend Type"
+        :options="[
+          { label: 'Disk', value: 'disk' },
+          { label: 'S3', value: 's3' },
+        ]"
+        description="Whether to store on disk or on an S3 bucket."
+      />
+      <div v-if="generalSettings.backend_type === 's3'" class="flex flex-col gap-4 mt-2">
+        <h3 class="font-semibold text-md">S3 Settings</h3>
+        <FormControl
+          v-model="s3Settings.aws_key"
+          label="AWS Key"
+          required
+          placeholder="Enter AWS Key"
+        />
+        <FormControl
+          v-model="s3Settings.aws_secret"
+          label="AWS Secret"
+          required
+          placeholder="Enter AWS Secret"
+          description="This isn't shown after you submit it."
+          type="password"
+        />
+        <FormControl
+          v-model="s3Settings.bucket"
+          required
+          label="S3 Bucket"
+          placeholder="bucket.example"
+        />
+        <FormControl
+          v-model="s3Settings.endpoint_url"
+          label="Endpoint URL"
+          placeholder="Enter Endpoint URL"
+          description="Optional, only if using a custom endpoint."
+        />
+        <FormControl
+          v-model="s3Settings.signature_version"
+          label="Signature Version"
+          placeholder="s3v4"
+          description="Optional. Some providers only support 's3'."
+        />
+      </div>
+      <Button
+        label="Update"
+        variant="solid"
+        :disabled="!edited"
+        :loading="updateSettings.isLoading"
+        class="mt-4"
+        @click="updateSettings.submit()"
+      />
+    </div>
+  </AppSettingsBody>
+</template>
+
+<script setup>
+import { ref, reactive, watch, markRaw } from 'vue'
+import {
+  FormControl,
+  Button,
+  createResource,
+  Skeleton,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import { toast } from '@/apps/drive/legacy/utils/toasts'
+import { createDialog } from '@/apps/drive/legacy/utils/dialogs'
+import { getDiskSettings } from '@/apps/drive/legacy/resources/permissions'
+import SyncBreakdown from '@/apps/drive/legacy/components/SyncBreakdown.vue'
+
+const edited = ref(false)
+
+const generalSettings = reactive({
+  root_folder: '',
+  backend_type: 'disk',
+})
+const s3Settings = reactive({
+  aws_key: '',
+  aws_secret: '',
+  bucket: '',
+  endpoint_url: '',
+  signature_version: '',
+})
+
+let count = 0
+watch(
+  [generalSettings, s3Settings],
+  () => {
+    if (count > 0) edited.value = true
+    else count++
+  },
+  {
+    deep: true,
+  }
+)
+
+function confirmSync() {
+  createDialog({
+    title: 'Sync files from S3',
+    component: markRaw(SyncBreakdown),
+  })
+}
+
+getDiskSettings.fetch(null, {
+  onSuccess: (data) => {
+    delete data.aws_secret
+    for (const [key, value] of Object.entries(data)) {
+      if (key in generalSettings) generalSettings[key] = value
+      if (key in s3Settings) s3Settings[key] = value
+    }
+    generalSettings.backend_type = data.enabled ? 's3' : 'disk'
+  },
+})
+
+const updateSettings = createResource({
+  url: 'suite.drive.api.product.disk_settings',
+  method: 'PUT',
+  makeParams: () => ({ ...generalSettings, ...s3Settings }),
+  onSuccess() {
+    edited.value = false
+    toast.success('S3 settings updated successfully')
+  },
+})
+</script>

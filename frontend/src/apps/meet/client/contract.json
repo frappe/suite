@@ -1,0 +1,152 @@
+{
+  "owner": "meet",
+  "prefix": "/api/suite/meet/",
+  "operations": [
+    {
+      "id": "rooms_post",
+      "method": "POST",
+      "path": "rooms",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "type": {
+            "enum": [
+              "instant",
+              "restricted"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "CreateRoom",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "url"
+        ],
+        "title": "Room",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "scheduled_meetings_post",
+      "method": "POST",
+      "path": "scheduled-meetings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "$defs": {
+          "Attendee": {
+            "properties": {
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "email"
+            ],
+            "title": "Attendee",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "attendees": {
+            "items": {
+              "$ref": "#/$defs/Attendee"
+            },
+            "title": "Attendees",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "start",
+          "end",
+          "attendees"
+        ],
+        "title": "ScheduleMeeting",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "Room": {
+            "properties": {
+              "code": {
+                "title": "Code",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "url"
+            ],
+            "title": "Room",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "meeting": {
+            "$ref": "#/$defs/Room"
+          },
+          "calendar_event_id": {
+            "title": "Calendar Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting",
+          "calendar_event_id"
+        ],
+        "title": "ScheduledMeeting",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest"
+      ],
+      "entity": null,
+      "nodeParams": []
+    }
+  ]
+}

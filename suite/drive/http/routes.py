@@ -50,7 +50,7 @@ from frappe import _
 from werkzeug.wrappers import Response
 
 from suite.drive import framework
-from suite.drive._core import access, comments, content, previews, roots, versions
+from suite.drive._core import access, archive, comments, content, previews, roots, versions
 from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
@@ -144,7 +144,7 @@ def node_create(
     content_doctype: Given = None,
     from_node: Given = None,
     is_template: Given = None,
-) -> dict:
+) -> shapes.NodeShape:
     """Create one node of any kind a client may create below `parent` (§8.3).
 
     `blob`, `size`, and `mime` are §11.2's declared body, and they are claims
@@ -175,7 +175,7 @@ def node_create(
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_get(node: Given = None, expand: Given = None) -> dict:
+def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
     """Answer one readable node, with the expansions the caller asked for."""
     principals = _principals()
     asked = shapes.expansions(expand)
@@ -198,7 +198,7 @@ def node_patch(
     parent: Given = None,
     state: Given = None,
     content_modified: Given = None,
-) -> dict:
+) -> shapes.NodeShape:
     """Rename, move, trash, restore, or stamp one node (§8.2).
 
     §11.2 gives this route five whole bodies and no more: `{title}`,
@@ -244,8 +244,10 @@ def node_children(
     order_by: Given = None,
     ascending: Given = None,
     mime_prefix: Given = None,
+    kind: Given = None,
+    group_by: Given = None,
     expand: Given = None,
-) -> dict:
+) -> shapes.Page[shapes.NodeShape]:
     """Page one folder's readable children in §11.4's opaque-cursor envelope."""
     principals = _principals()
     asked = shapes.expansions(expand)
@@ -258,6 +260,8 @@ def node_children(
         order_by=shapes.text(order_by, "order_by") or "title",
         ascending=shapes.flag(ascending, "ascending", True),
         mime_prefix=shapes.text(mime_prefix, "mime_prefix"),
+        kind=shapes.text(kind, "kind"),
+        group_by=shapes.text(group_by, "group_by"),
         with_access="access" in asked,
     )
     rows = [shapes.node_shape(row) for row in result["rows"]]
@@ -282,7 +286,7 @@ def node_children(
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_copy(node: Given = None, parent: Given = None, title: Given = None) -> dict:
+def node_copy(node: Given = None, parent: Given = None, title: Given = None) -> shapes.NodeShape:
     """Copy one readable tree into `parent`, sharing blobs but no authority."""
     principals = _principals()
     copied = node_core.copy(
@@ -296,7 +300,36 @@ def node_copy(node: Given = None, parent: Given = None, title: Given = None) -> 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_batch(nodes: Given = None, patch: Given = None) -> dict:
+def node_archive_start(node: Given = None) -> shapes.ArchiveStatus:
+    """Build one bounded folder archive synchronously."""
+    return archive.start(_principals(), shapes.required_text(node, "node"))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def node_archive_status(node: Given = None) -> shapes.ArchiveStatus:
+    """Report this caller's current folder archive build."""
+    return archive.status(_principals(), shapes.required_text(node, "node"))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def node_archive_download(node: Given = None) -> Response:
+    """Stream a ready folder archive through the active storage driver."""
+    from frappe.storage.serve import stream_blob
+
+    blob, filename = archive.download(_principals(), shapes.required_text(node, "node"))
+    return stream_blob(
+        blob,
+        filename,
+        as_attachment=True,
+        environ=frappe.local.request.environ,
+    )
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@_route
+def node_batch(nodes: Given = None, patch: Given = None) -> shapes.BatchResult:
     """Apply one patch to many nodes, isolating each failure (§11.5).
 
     Partial success is a result, not an error, so the response is 200. Each
@@ -524,7 +557,14 @@ def _chunk_bytes() -> bytes:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def root_usage(root: Given = None) -> dict:
+def roots_discover() -> shapes.RootLocations:
+    """Return the signed-in caller's active Files locations."""
+    return roots.discover(_principals())
+
+
+@frappe.whitelist(methods=["GET"])
+@_route
+def root_usage(root: Given = None) -> shapes.RootUsage:
     """Report one root's counters to its own user, its managers, or an admin."""
     return dict(roots.usage_for(shapes.required_text(root, "root"), _principals()))
 
@@ -713,7 +753,7 @@ def view_list(
     content_doctype: Given = None,
     term: Given = None,
     expand: Given = None,
-) -> dict:
+) -> shapes.Page[shapes.NodeShape | shapes.ArchivedRootShape]:
     """Page one of §11.2's seven frozen discovery views.
 
     Session only. Five of the seven are answered from the caller's own
@@ -721,11 +761,8 @@ def view_list(
     nothing to be shown here and a shared `Guest` recents list would be one
     list for every anonymous visitor on the site.
 
-    `expand=preview` is the one expansion a view can answer: the page's ids are
-    already permission-filtered, so the URLs cost one query for the whole page
-    (§9.2). `access` and `breadcrumbs` are refused rather than faked - the
-    first needs the grant rows the view query does not collect, the second
-    costs an ancestry read per row.
+    Access and preview expansions are built once for the whole page. Search
+    also accepts breadcrumbs, whose ancestor titles are fetched as one union.
 
     `archived-roots` answers root metadata, not nodes (§5.5), so its rows are
     passed through as they are.
@@ -733,7 +770,12 @@ def view_list(
     principals = _principals()
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
-    unsupported = sorted(asked - {"preview"})
+    supported = {"preview", "access"}
+    if name == "search":
+        supported.add("breadcrumbs")
+    if name == "archived-roots":
+        supported = set()
+    unsupported = sorted(asked - supported)
     if unsupported:
         frappe.throw(
             _("A Drive view cannot expand {0}").format(", ".join(unsupported)),
@@ -744,11 +786,20 @@ def view_list(
         name,
         cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
+        with_access="access" in asked,
+        with_breadcrumbs="breadcrumbs" in asked,
         **_view_filters(name, root, content_doctype, term),
     )
     if name == "archived-roots":
         return shapes.page(result, [dict(row) for row in result["rows"]])
     rows = [shapes.node_shape(row) for row in result["rows"]]
+    for answer, row in zip(rows, result["rows"], strict=True):
+        if "access" in asked:
+            answer["access"] = row.access
+        if "breadcrumbs" in asked:
+            answer["breadcrumbs"] = row.breadcrumbs
+        if name == "recents":
+            answer["opened_at"] = shapes.stamp(row.opened_at)
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:
@@ -1005,7 +1056,7 @@ def node_activity(node: Given = None, limit: Given = None, cursor: Given = None)
 
 @frappe.whitelist(methods=["POST"])
 @_route
-def node_visit(node: Given = None) -> dict:
+def node_visit(node: Given = None) -> shapes.Empty:
     """Record that the caller opened this node. One Recent, no Activity."""
     activity_core.visit(_principals(), shapes.required_text(node, "node"))
     return {}
@@ -1013,7 +1064,7 @@ def node_visit(node: Given = None) -> dict:
 
 @frappe.whitelist(methods=["PUT"])
 @_route
-def node_put_favourite(node: Given = None) -> dict:
+def node_put_favourite(node: Given = None) -> shapes.Empty:
     """Star one readable node for the caller alone."""
     activity_core.set_favourite(_principals(), shapes.required_text(node, "node"), True)
     return {}
@@ -1021,7 +1072,7 @@ def node_put_favourite(node: Given = None) -> dict:
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_delete_favourite(node: Given = None) -> dict:
+def node_delete_favourite(node: Given = None) -> shapes.Empty:
     """Unstar one node for the caller alone.
 
     Clearing takes no check on the node, deliberately: a star on something the
@@ -1039,7 +1090,9 @@ def node_delete_favourite(node: Given = None) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def notifications_list(limit: Given = None, cursor: Given = None, unread: Given = None) -> dict:
+def notifications_list(
+    limit: Given = None, cursor: Given = None, unread: Given = None
+) -> shapes.Page[shapes.NotificationShape]:
     """Page the caller's own inbox. A notification points at one activity row."""
     result = activity_core.notifications(
         _principals(),
@@ -1050,9 +1103,16 @@ def notifications_list(limit: Given = None, cursor: Given = None, unread: Given 
     return shapes.page(result, [shapes.notification_shape(row) for row in result["rows"]])
 
 
+@frappe.whitelist(methods=["GET"])
+@_route
+def notifications_unread_count() -> shapes.UnreadCount:
+    """Return the exact unread notification badge count."""
+    return {"unread": activity_core.unread_count(_principals())}
+
+
 @frappe.whitelist(methods=["POST"])
 @_route
-def notifications_read(notifications: Given = None, all: Given = None) -> dict:
+def notifications_read(notifications: Given = None, all: Given = None) -> shapes.ReadResult:
     """Mark named, or all, of the caller's notifications read (§11.2).
 
     Caller-scoped on both sides: the workflow reads the caller's own unread
