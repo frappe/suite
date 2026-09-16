@@ -1,10 +1,12 @@
 <template>
+	<!-- One host, two shells: frappe-ui's Dialog on the desktop, the full-page mobile
+	     layout on a phone. Both take `v-model`; the Dialog's own props go only to the
+	     Dialog — the mobile layout has a Teleport root, so Vue could not forward them
+	     and warned on every mount. -->
 	<component
 		:is="isMobile ? SearchMobileLayout : Dialog"
 		v-model="show"
-		v-model:open="show"
-		v-bind="{ size: '2xl', paddingTop: '2%' }"
-		:bare="!isMobile"
+		v-bind="isMobile ? {} : { size: '2xl', paddingTop: '2%', bare: true }"
 	>
 		<template #default>
 			<div class="bg-surface-base">
