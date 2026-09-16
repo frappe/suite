@@ -49,12 +49,12 @@ const groups = computed<SettingsGroup[]>(() => {
 	return [
 		{
 			id: 'mail-account',
-			label: 'Mail account',
+			label: 'Mail Account',
 			items: [
 				{ label: 'Credentials', value: 'credentials', icon: KeyRound, component: markRaw(CredentialsSettings) },
 				{ label: 'Account', value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
 				{ label: 'Identity', value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
-				{ label: 'Mail layout', value: 'mail-layout', icon: Columns2, component: markRaw(MailLayoutSettings), condition: jmap },
+				{ label: 'Layout', value: 'mail-layout', icon: Columns2, component: markRaw(MailLayoutSettings), condition: jmap },
 			],
 		},
 		{
