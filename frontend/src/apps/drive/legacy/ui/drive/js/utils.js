@@ -2,7 +2,7 @@ import { toast } from 'frappe-ui'
 import slugify from 'slugify'
 import { useTimeAgo } from '@vueuse/core'
 
-import router from '@/apps/drive/router'
+import router from '@/apps/drive/legacy/router'
 
 import dayjs from 'dayjs'
 import localizedFormat from 'dayjs/plugin/localizedFormat'

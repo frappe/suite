@@ -47,7 +47,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from "vue";
-import { Rail as FrappeRail, ScrollArea } from "frappe-ui";
+import { SidebarRail as FrappeRail, ScrollArea } from "frappe-ui";
 
 import type { AreaDefinition } from "@/platform/contracts";
 import AccountMenu from "@/shell/AccountMenu.vue";

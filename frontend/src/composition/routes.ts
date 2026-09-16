@@ -1,8 +1,6 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
-import { lastAppPrefix } from "@/utils/lastApp";
-
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
 const driveLogo = "/assets/suite/drive/images/logo.svg";
 const mailLogo = "/assets/suite/mail/images/logo.svg";
@@ -131,11 +129,6 @@ export const routes: RouteRecordRaw[] = [
       title: "Frappe Suite",
       favicon: suiteLogo,
     },
-  },
-  {
-    path: "/suite/start",
-    name: "suite-start",
-    redirect: () => lastAppPrefix(),
   },
   {
     path: "/suite/setup",

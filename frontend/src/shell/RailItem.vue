@@ -2,7 +2,7 @@
   <FrappeRailItem
     :label="label"
     :description="description"
-    :to="to"
+    :route="to"
     :active="resolvedActive"
     :badge="hasBadgeSlot ? 0 : badge"
     :badge-style="badgeStyle"
@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { computed, useSlots, type Component } from "vue";
-import { RailItem as FrappeRailItem } from "frappe-ui";
+import { SidebarRailItem as FrappeRailItem } from "frappe-ui";
 import { useRoute, type RouteLocationRaw } from "vue-router";
 
 const props = withDefaults(
@@ -34,7 +34,7 @@ const props = withDefaults(
     active?: boolean;
     badge?: number;
     badgeStyle?: "count" | "dot";
-    variant?: "tile" | "ghost";
+    variant?: "subtle" | "ghost";
   }>(),
   {
     active: undefined,

@@ -7,7 +7,7 @@ import {
 } from 'vue-router'
 
 import { SUITE_APPS, isInstallableApp } from '@/apps/registry'
-import { rememberLastApp } from '@/utils/lastApp'
+import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import {
   areaDefinitions,
   areaIsAvailable,
@@ -61,6 +61,11 @@ const legacyPlaceholderGroups: RouteRecordRaw[] = legacyApps.map((app) => ({
 const notFoundRoute = routes.at(-1)!
 const routerRoutes = [
   ...routes.slice(0, -1),
+  {
+    path: '/suite/start',
+    name: 'suite-start',
+    redirect: () => lastAppPrefix(),
+  },
   ...legacyPlaceholderGroups,
   notFoundRoute,
 ]

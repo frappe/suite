@@ -82,3 +82,4 @@ export const MoveDialog = defineAsyncComponent(
 export const InfoDialog = defineAsyncComponent(
   () => import('@/apps/drive/legacy/ui/drive/components/InfoDialog.vue'),
 )
+export { default as InlineRenameInput } from '@/apps/drive/legacy/components/InlineRenameInput.vue'
