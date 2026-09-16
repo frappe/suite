@@ -3,7 +3,7 @@
     <SidebarHeader title="Drive" :subtitle="currentUserFullName" :menu-items="settingsItems" :logo="FrappeDriveLogo" />
     <div class="flex-1 overflow-y-auto px-2">
       <SidebarSection v-for="(section, index) in sidebarItems" :key="section.label || index" :label="section.label" :collapsible="section.collapsible">
-        <SidebarItem v-for="item in section.items" :key="item.label" :class="draggedSpace === item.label && 'ring-1 ring-outline-gray-3 !bg-surface-gray-3'" :label="item.label" :access-key="item.accessKey" :icon="item.icon" :suffix="item.suffix" :route="item.to" :active="item.isActive" :on-click="item.onClick" @dragover.prevent=";['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)" @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
+        <SidebarItem v-for="item in section.items" :key="item.label" :class="draggedSpace === item.label && 'ring-1 ring-outline-gray-3 !bg-surface-gray-3'" :label="item.label" :icon="item.icon" :suffix="item.suffix" :route="item.to" :active="item.isActive" :on-click="item.onClick" @dragover.prevent=";['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)" @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
       </SidebarSection>
     </div>
     <div class="p-2">
@@ -12,7 +12,6 @@
     </div>
   </Sidebar>
   <SettingsDialog v-model="showSettings" :suggested-tab="suggestedTab" />
-  <ShortcutsDialog v-if="showShortcuts" v-model="showShortcuts" />
 </template>
 <script setup>
 import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'
@@ -39,7 +38,6 @@ import LucideFileText from '~icons/lucide/file-text'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
 
 import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
-import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { useEmitter } from '@/apps/drive/utils/useEmitter'
 import { ref, computed, watch } from 'vue'
@@ -63,7 +61,6 @@ notifCount.fetch()
 rootInfo.fetch()
 
 const showSettings = ref(false)
-const showShortcuts = ref(false)
 const suggestedTab = ref('profile')
 useEmitter('showSettings', (val = 'profile') => {
   if (val === -1) showSettings.value = false
@@ -72,10 +69,6 @@ useEmitter('showSettings', (val = 'profile') => {
     suggestedTab.value = val
   }
 })
-useEmitter('toggleShortcuts', () => {
-  showShortcuts.value = !showShortcuts.value
-})
-
 const appsMenuOption = useAppSwitcher('drive')
 
 const settingsItems = computed(() => [
@@ -157,7 +150,6 @@ const sidebarItems = computed(() => {
           icon: LucideInbox,
           to: { name: 'drive-Inbox' },
           isActive: active('drive-Inbox'),
-          accessKey: 'i',
           suffix: notifCount.data ? String(notifCount.data) : undefined,
         },
       ],
@@ -169,21 +161,18 @@ const sidebarItems = computed(() => {
           to: { name: 'drive-Home' },
           icon: LucideHome,
           isActive: active('drive-Home'),
-          accessKey: 'h',
         },
         {
           label: 'Recents',
           to: { name: 'drive-Recents' },
           icon: LucideClock,
           isActive: active('drive-Recents'),
-          accessKey: 'r',
         },
         {
           label: 'Favourites',
           to: { name: 'drive-Favourites' },
           icon: LucideStar,
           isActive: active('drive-Favourites'),
-          accessKey: 'f',
         },
         {
           label: 'Everyone',
@@ -197,7 +186,6 @@ const sidebarItems = computed(() => {
           isActive:
             route.params.entityName === rootInfo.data?.root ||
             first.name === rootInfo.data?.root,
-          accessKey: 'e',
         },
         {
           label: 'Trash',
@@ -216,14 +204,12 @@ const sidebarItems = computed(() => {
           to: { name: 'drive-Attachments' },
           icon: LucidePaperclip,
           isActive: active('drive-Attachments'),
-          accessKey: 'a',
         },
         {
           label: 'Documents',
           to: { name: 'drive-Documents' },
           icon: LucideFileText,
           isActive: active('drive-Documents'),
-          accessKey: 'd',
         },
         {
           label: 'Presentations',

@@ -1,52 +1,54 @@
 <template>
-	<Dialog v-bind="{ title: __('Shortcuts'), size: '5xl' }">
+	<KeyboardShortcutsDialog v-model:open="open" :title="__('Keyboard Shortcuts')">
 		<template #default>
-			<div class="grid max-h-[75vh] w-full grid-cols-2 gap-10 overflow-y-auto py-1">
-				<div v-for="(column, index) in shortcutGroups" :key="index">
-					<div v-for="group in column" :key="group.title" class="pb-8">
-						<h2 class="text-ink-gray-8 mb-4 text-lg-semibold">
+			<div class="grid max-h-[70vh] grid-cols-1 gap-8 gap-x-6 overflow-y-auto pr-1 md:grid-cols-2 lg:grid-cols-3">
+				<div v-for="(column, index) in columns" :key="index" class="space-y-8">
+					<div v-for="group in column" :key="group.title" class="space-y-1">
+						<h3 class="mb-3 text-base-medium tracking-wide text-ink-gray-8">
 							{{ group.title }}
-						</h2>
-						<ul class="space-y-2">
-							<li
-								v-for="(shortcut, sIndex) in group.shortcuts"
-								:key="sIndex"
-								class="flex items-start justify-between"
-							>
-								<div class="text-ink-gray-7 text-base">{{ shortcut[1] }}</div>
-								<div class="flex w-[14rem] justify-start gap-1 space-x-1">
-									<span
-										v-for="(key, kIndex) in shortcut[0]"
-										:key="kIndex"
-										class="text-ink-gray-8 my-auto text-xs"
-										:class="{
-											'bg-surface-gray-2 border-outline-gray-2 rounded-1 border px-2 py-0.5 font-mono shadow-sm':
-												![__('or'), __('then')].includes(key),
-										}"
+						</h3>
+						<div
+							v-for="shortcut in group.shortcuts"
+							:key="shortcut[1]"
+							class="grid grid-cols-[1fr_auto] items-start gap-3 rounded-4 py-0.5"
+						>
+							<span class="text-p-base text-ink-gray-6">{{ shortcut[1] }}</span>
+							<div class="flex shrink-0 items-center gap-1.5">
+								<template v-if="shortcutPresentation(shortcut[0]).sequence">
+									<template
+										v-for="(combo, comboIndex) in shortcutPresentation(shortcut[0]).combos"
+										:key="combo"
 									>
-										{{ key }}
-									</span>
-								</div>
-							</li>
-						</ul>
+										<span v-if="comboIndex" class="text-xs text-ink-gray-4">{{ __('then') }}</span>
+										<KeyboardShortcut :combo="combo" bg />
+									</template>
+								</template>
+								<KeyboardShortcut
+									v-else
+									:combo="shortcutPresentation(shortcut[0]).combos[0]"
+									:alt-combos="shortcutPresentation(shortcut[0]).combos.slice(1)"
+									bg
+								/>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
 		</template>
-	</Dialog>
+	</KeyboardShortcutsDialog>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Dialog } from 'frappe-ui'
+import { KeyboardShortcut, KeyboardShortcutsDialog } from 'frappe-ui'
 
-import { isMac } from '@/apps/mail/utils'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 
 const { mailboxes } = userStore()
 
 const mailboxName = (role: MailboxRole) => mailboxes.data?.find((m) => m.role === role)?._name
 
-const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
+const open = defineModel<boolean>('open', { default: false })
+const modifier = 'Mod'
 
 const shortcutGroups = computed(() => [
 	[
@@ -54,10 +56,10 @@ const shortcutGroups = computed(() => [
 			title: __('Compose'),
 			shortcuts: [
 				[['C'], __('Compose New Mail')],
-				[[modifier.value, 'Enter'], __('Send Mail')],
-				[[modifier.value, 'Shift', 'Enter'], __('Schedule Send')],
-				[[modifier.value, 'Z'], __('Undo Send')],
-				[[modifier.value, 'D'], __('Discard Draft')],
+				[[modifier, 'Enter'], __('Send Mail')],
+				[[modifier, 'Shift', 'Enter'], __('Schedule Send')],
+				[[modifier, 'Z'], __('Undo Send')],
+				[[modifier, 'D'], __('Discard Draft')],
 				[['R'], __('Reply to Mail')],
 				[['Shift', 'R'], __('Reply All to Mail')],
 				[['F'], __('Forward Mail')],
@@ -67,7 +69,7 @@ const shortcutGroups = computed(() => [
 		{
 			title: __('Actions'),
 			shortcuts: [
-				[[modifier.value, 'A'], __('Select All Mails')],
+				[[modifier, 'A'], __('Select All Mails')],
 				[['Esc'], __('Clear All Mails')],
 				[['Shift', '↓', __('or'), 'Shift', 'J'], __('Toggle Select Downwards')],
 				[['Shift', '↑', __('or'), 'Shift', 'K'], __('Toggle Select Upwards')],
@@ -77,7 +79,7 @@ const shortcutGroups = computed(() => [
 				[['E'], __('Archive')],
 				[['Delete'], __('Move to Trash')],
 				[['Shift', 'Delete'], __('Permanently Delete')],
-				[[modifier.value, 'Z'], __('Undo Last Action')],
+				[[modifier, 'Z'], __('Undo Last Action')],
 			],
 		},
 
@@ -103,7 +105,7 @@ const shortcutGroups = computed(() => [
 				[['G', __('then'), 'G'], __('Go to Top of List')],
 				[['Shift', 'G'], __('Go to Bottom of List')],
 				[['Enter'], __('Open Mail, or Fold Stack')],
-				[[modifier.value, 'K'], __('Search Mail')],
+				[[modifier, 'K'], __('Search Mail')],
 				[['G', __('then'), 'I'], __('Go to {0}', [mailboxName('inbox')])],
 				[['G', __('then'), 'F'], __('Go to Starred')],
 				[['G', __('then'), 'S'], __('Go to {0}', [mailboxName('sent')])],
@@ -119,12 +121,55 @@ const shortcutGroups = computed(() => [
 		{
 			title: __('Other'),
 			shortcuts: [
-				[[modifier.value, 'Shift', ','], __('Open Settings')],
-				[[modifier.value, ';'], __('Toggle Sidebar')],
-				[[modifier.value, 'Shift', 'L'], __('Cycle Theme')],
+				[[modifier, 'Shift', ','], __('Open Settings')],
+				[[modifier, ';'], __('Toggle Sidebar')],
+				[[modifier, 'Shift', 'L'], __('Cycle Theme')],
 				[['?'], __('View Shortcuts')],
 			],
 		},
 	],
 ])
+
+const columns = computed(() => {
+	const [compose, actions, screener, navigation, other] = shortcutGroups.value.flat()
+	return [
+		[compose, screener],
+		[actions, other],
+		[navigation],
+	]
+})
+
+const keyNames: Record<string, string> = {
+	'↓': 'ArrowDown',
+	'↑': 'ArrowUp',
+	'!': 'Shift+Digit1',
+	'?': 'Shift+Slash',
+	',': 'Comma',
+	';': 'Semicolon',
+	Esc: 'Escape',
+}
+
+function combo(tokens: string[]) {
+	return tokens.map((token) => keyNames[token] || token).join('+')
+}
+
+function shortcutPresentation(keys: string[]) {
+	const thenIndex = keys.indexOf(__('then'))
+	if (thenIndex !== -1) {
+		return {
+			sequence: true,
+			combos: [combo(keys.slice(0, thenIndex)), combo(keys.slice(thenIndex + 1))],
+		}
+	}
+
+	const combos: string[] = []
+	let start = 0
+	for (let index = 0; index <= keys.length; index++) {
+		if (index === keys.length || keys[index] === __('or')) {
+			combos.push(combo(keys.slice(start, index)))
+			start = index + 1
+		}
+	}
+	return { sequence: false, combos }
+}
 </script>
