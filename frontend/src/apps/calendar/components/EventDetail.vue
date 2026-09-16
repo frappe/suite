@@ -570,7 +570,7 @@ const openUrl = (location: string) => {
 								variant="ghost"
 								:disabled="isDeleting"
 							>
-								<MoreHorizontal class="icon size-4 text-ink-gray-7" />
+								<MoreHorizontal class="icon size-3.5 text-ink-gray-7" />
 							</Button>
 						</Dropdown>
 						<!-- A sheet is dismissed by dragging it down or tapping outside, so a
@@ -582,7 +582,7 @@ const openUrl = (location: string) => {
 							:tooltip="__('Close')"
 							@click="emit('close')"
 						>
-							<X class="icon size-4 text-ink-gray-7" />
+							<X class="icon size-3.5 text-ink-gray-7" />
 						</Button>
 					</div>
 				</div>
@@ -883,7 +883,7 @@ const openUrl = (location: string) => {
 			>
 				<div class="flex h-12 shrink-0 items-center gap-2 px-3">
 					<Button variant="ghost" :tooltip="__('Back')" @click="backToEvent">
-						<ChevronLeft class="icon size-4 text-ink-gray-7" />
+						<ChevronLeft class="icon size-3.5 text-ink-gray-7" />
 					</Button>
 					<h3 class="text-ink-gray-8 min-w-0 truncate text-md font-semibold">
 						{{ __('Participants') }}
