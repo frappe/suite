@@ -247,6 +247,9 @@ const config = computed(() => {
 const agenda = useTemplateRef<{
 	setCalendarDate: (date: string) => void
 	currentMonthYear: string
+	currentYear: number
+	currentMonth: number
+	currentDay: number | null
 	activeView: 'Day' | 'Week' | 'Month' | 'Agenda'
 	decrement: () => void
 	increment: () => void
@@ -260,13 +263,22 @@ const agenda = useTemplateRef<{
  * It happens where a view offers a way into another — the month's "+n more" and
  * its date numbers open the day, and so does a tap on the week's own date heads.
  * Left alone, the Calendar drew a day while everything round it still said month.
+ *
+ * The day it went to comes along: the view is a new Calendar, handed this view's
+ * date, and without it the "+n" of the 18th opened on whatever day the month was
+ * anchored on. After the flush, once the library has settled on that day.
  */
 watch(
 	() => agenda.value?.activeView,
 	(mode) => {
 		const view = mode && viewForMode(mode)
-		if (view && view !== props.view) emit('selectView', view)
+		if (!view || view === props.view) return
+		const { currentYear, currentMonth, currentDay } = agenda.value!
+		if (currentDay != null)
+			emit('selectDate', dayjs(new Date(currentYear, currentMonth, currentDay)).format('YYYY-MM-DD'))
+		emit('selectView', view)
 	},
+	{ flush: 'post' },
 )
 
 // The library's own name for the span it is listing. Empty for the first tick, before
