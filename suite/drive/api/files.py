@@ -13,7 +13,7 @@ import frappe
 import mimemapper
 from frappe.rate_limiter import rate_limit
 from pypika import Order
-from werkzeug.utils import secure_filename, send_file
+from werkzeug.utils import send_file
 from werkzeug.wrappers import Response
 from werkzeug.wsgi import wrap_file
 
@@ -46,6 +46,10 @@ from .permissions import user_has_permission
 
 FORBIDDEN_DOWNLOAD_TYPES = ["Folder", "Link", "Document", "Presentation"]
 
+# How long a partial upload's staging file and chunk ledger are kept before
+# `clear_stale_uploads` reclaims them.
+UPLOAD_SESSION_TTL = 24 * 60 * 60
+
 
 @frappe.whitelist(allow_guest=True)
 def upload_file(
@@ -76,7 +80,8 @@ def upload_file(
         parent = ensure_path(fullpath, parent)
 
     # Support both chunked and non-chunked uploads
-    if frappe.form_dict.chunk_index:
+    chunked = bool(frappe.form_dict.chunk_index)
+    if chunked:
         current_chunk = int(frappe.form_dict.chunk_index)
         total_chunks = int(frappe.form_dict.total_chunk_count)
         offset = int(frappe.form_dict.chunk_byte_offset)
@@ -85,6 +90,7 @@ def upload_file(
         current_chunk = 0
         total_chunks = 1
 
+    total_file_size = int(total_file_size or 0)
     file = frappe.request.files["file"]
     file_name = get_new_file_name(file.filename, parent)
     upload_session = frappe.form_dict.uuid
@@ -92,42 +98,109 @@ def upload_file(
         upload_session = frappe.generate_hash(12)
     if not isinstance(upload_session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", upload_session):
         frappe.throw("Invalid upload session.", frappe.ValidationError)
-    temp_path = get_upload_path(f"{upload_session}_{secure_filename(file_name)}")
-    with temp_path.open("ab") as f:
-        f.seek(offset)
-        f.write(file.stream.read())
-        if not f.tell() >= int(total_file_size) or current_chunk != total_chunks - 1:
-            return
 
-    # Validate that file size is matching
-    file_size = temp_path.stat().st_size
-    acquire_owner_storage_lock(frappe.session.user)
+    # chunk_byte_offset is client-supplied and decides where a write lands, so
+    # bound it before anything touches disk.
+    if total_chunks < 1 or not 0 <= current_chunk < total_chunks:
+        frappe.throw("Invalid chunk index.", frappe.ValidationError)
+    if offset < 0:
+        frappe.throw("Invalid chunk offset.", frappe.ValidationError)
+    if chunked and total_file_size <= 0:
+        frappe.throw("Chunked uploads must declare the total file size.", frappe.ValidationError)
+
+    data = file.stream.read()
+    if total_file_size and offset + len(data) > total_file_size:
+        frappe.throw("Chunk falls outside the declared file size.", frappe.ValidationError)
+
+    # Check quota before writing, not after.
+    validate_quota(incoming_size=total_file_size or len(data))
+
+    staging_name = get_staging_name(upload_session)
+    staging_path = get_upload_path(staging_name)
+
+    # pwrite at the chunk's own offset, instead of opening in append mode and
+    # seeking: POSIX O_APPEND ignores the seek and always writes at EOF, so a
+    # re-sent chunk (e.g. a retried upload) would duplicate bytes instead of
+    # overwriting them.
+    fd = os.open(staging_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
+        os.pwrite(fd, data, offset)
+    finally:
+        os.close(fd)
+
+    # Track which chunks have actually arrived instead of inferring completion
+    # from file size, which can't tell "every chunk arrived" from "one chunk
+    # arrived twice".
+    cache = frappe.cache()
+    chunks_key = f"drive-upload-chunks:{staging_name}"
+    cache.hset(chunks_key, current_chunk, len(data))
+    # RedisWrapper namespaces keys inside hset/hgetall but not inside expire.
+    cache.expire(cache.make_key(chunks_key), UPLOAD_SESSION_TTL)
+    received = cache.hgetall(chunks_key)
+    if len(received) < total_chunks:
+        return
+
+    try:
+        staged_size = staging_path.stat().st_size
+    except FileNotFoundError:
+        # A concurrent request for this session already finalized and moved
+        # the staging file; it owns the insert.
+        return
+    if total_file_size and (staged_size != total_file_size or sum(received.values()) != total_file_size):
+        # Every index arrived but the bytes don't add up - could be a sparse
+        # file (a write at a far offset inflates st_size without allocating
+        # anything) or overlapping chunks. Leave it for the sweep rather than
+        # committing a short or fake-sized file.
+        return
+
+    # With a complete ledger, two concurrent requests can both reach this line;
+    # the winner of this claim is the one that finalizes. No TTL: a completed
+    # session must never be re-finalizable, at any distance in time, not just
+    # within a window - an expiring claim would let a sufficiently late resend
+    # (or a deliberate replay) insert the file a second time.
+    claim = cache.make_key(f"drive-upload-done:{staging_name}")
+    if not cache.set(claim, frappe.session.user, nx=True):
+        return
+
+    try:
+        file_size = staged_size
+        acquire_owner_storage_lock(frappe.session.user)
         validate_quota(incoming_size=file_size)
+
+        # mimemapper reads the extension off this string, not the file's actual
+        # bytes - it must be the uploaded name, not the staging path, which is
+        # a content-addressed `.part` file with no extension of its own.
+        mime_type = mimemapper.get_mime_type(file_name, native_first=False)
+        file_type = get_file_type(mime_type)
+        manager = FileManager()
+
+        drive_file = create_drive_file(
+            file_name,
+            parent,
+            file_type,
+            lambda file: "/" + str(manager.get_disk_path(file, embed)),
+            mime_type,
+            file_size,
+            int(file_modified) / 1000 if file_modified else None,
+        )
+
+        # Upload and update parent folder size
+        manager.upload_file(staging_path, drive_file, not embed)
+        # Change path to be s3 compatible
+        if manager.s3_enabled:
+            drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
+            drive_file.save()
     except Exception:
-        temp_path.unlink(missing_ok=True)
+        # Let the same uuid be retried from scratch instead of inheriting a
+        # half-finalized partial. The claim is released only here - on
+        # success it is never released, so a resend of the same session
+        # (e.g. the client never saw the response, or a later replay) can't
+        # re-finalize and insert the file twice.
+        staging_path.unlink(missing_ok=True)
+        cache.delete_value(claim, make_keys=False)
         raise
-
-    mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
-    file_type = get_file_type(mime_type)
-    manager = FileManager()
-
-    drive_file = create_drive_file(
-        file_name,
-        parent,
-        file_type,
-        lambda file: "/" + str(manager.get_disk_path(file, embed)),
-        mime_type,
-        file_size,
-        int(file_modified) / 1000 if file_modified else None,
-    )
-
-    # Upload and update parent folder size
-    manager.upload_file(temp_path, drive_file, not embed)
-    # Change path to be s3 compatible
-    if manager.s3_enabled:
-        drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-        drive_file.save()
+    finally:
+        cache.delete_value(chunks_key)
 
     try:
         update_file_size(parent, file_size)
@@ -994,6 +1067,16 @@ def track_visit(
         "read",
         True,
     )
+
+
+def get_staging_name(upload_session: str) -> str:
+    """Staging file name for an upload session, hashed from the session user
+    and upload id rather than taken from the request - `.uploads` is a single
+    namespace shared by every caller, so this keeps one user's chunks out of
+    another's staging file. Deliberately excludes the uploaded file's name,
+    which can change mid-upload if a same-named sibling appears."""
+    digest = hashlib.blake2b(f"{frappe.session.user}\0{upload_session}".encode(), digest_size=16).hexdigest()
+    return f"{digest}.part"
 
 
 def get_upload_path(file_name):
