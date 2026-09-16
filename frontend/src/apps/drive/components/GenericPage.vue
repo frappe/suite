@@ -673,31 +673,6 @@ const actionItems = computed(() => {
   }
 })
 
-async function newLink() {
-  if (!document.hasFocus()) return
-  try {
-    const text = await navigator.clipboard.readText()
-    if (localStorage.getItem('prevClip') === text) return
-    localStorage.setItem('prevClip', text)
-    const url = new URL(text)
-    if (url.host)
-      toast('Link detected', {
-        description: text,
-        action: {
-          label: 'Add',
-          onClick: () => {
-            listDialog.value = 'l'
-          },
-        },
-      })
-  } catch { }
-}
-
-// Clipboard reads require a focused document, so retry when focus or copied content changes.
-newLink()
-useEventListener(window, 'focus', newLink)
-useEventListener(window, 'copy', newLink)
-
 const socket = inject('socket')
 socket.on('list-add', ({ file }) => {
   if (
