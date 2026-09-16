@@ -44,6 +44,7 @@ const frappeUI = vi.hoisted(() => ({ request: vi.fn(), scrollHost: null as null 
 vi.mock('frappe-ui', () => ({
   frappeRequest: frappeUI.request,
   shellScrollContainer: (frappeUI.scrollHost = ref(null)),
+  useKeyboardShortcut: vi.fn(),
 }))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ name: 'drive-Recents', params: {} }),

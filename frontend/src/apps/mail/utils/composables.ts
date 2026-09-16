@@ -571,4 +571,11 @@ export const useSettings = () => {
 	return { showSettings, settingsTab, openSettings }
 }
 
+const showShortcuts = ref(false)
+
+export const useShortcuts = () => ({
+	showShortcuts,
+	openShortcuts: () => (showShortcuts.value = true),
+})
+
 export const useTheme = () => useSuiteTheme()

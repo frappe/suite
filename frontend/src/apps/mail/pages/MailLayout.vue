@@ -7,12 +7,12 @@
 		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
-		<ShortcutsModal v-model="showShortcuts" />
+		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
@@ -20,7 +20,7 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useTheme, useUndo } from '@/apps/mail/utils/composables'
+import { useShortcuts, useTheme, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -52,7 +52,7 @@ const router = useRouter()
 // list happens to be mounted: they were only reachable from a mailbox view before, so they
 // died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
 // its own layout and never sees these.
-const showShortcuts = ref(false)
+const { showShortcuts } = useShortcuts()
 const gPrefix = useGPrefix()
 
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
