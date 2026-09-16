@@ -32,7 +32,7 @@
 			>
 				<!-- 20px at the 1.5 the app draws its icons at, as mail's is: the
 				     title's own size, so glyph and word stand the same height. -->
-				<Menu :size="20" />
+				<Menu class="size-5" />
 			</button>
 			<!-- The title is also the way to a date: the month card is a tap on it
 			     away, which is the one navigation the arrows beside it cannot do — they
