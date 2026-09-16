@@ -79,11 +79,11 @@
 						v-model:edit-filter="searchEditFilter"
 					/>
 
-					<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+					<!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
 					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-					     Search skips both rows (SearchResultsHeader is the header there; the tab
-					     bar carries the "you are in search" cue), keeping only the selection
+					     Search skips both rows (SearchResultsHeader is the header there; no tab
+					     in the bar reads as active), keeping only the selection
 					     toolbar and the loading bar — the border goes with the rows it underlines. -->
 					<div
 						v-if="isMobile"
@@ -93,6 +93,7 @@
 						<MobileTitleHeader
 							v-if="mailbox !== 'search'"
 							with-menu
+							with-search
 							:title="mailboxName"
 							:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
 						/>
