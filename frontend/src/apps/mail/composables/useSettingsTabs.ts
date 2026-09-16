@@ -42,13 +42,6 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 				items: [
 					{ label: __('Account'), value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
 					{ label: __('Identity'), value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
-					{
-						label: __('Layout'),
-						value: 'mail-layout',
-						icon: Columns2,
-						component: markRaw(MailLayoutSettings),
-						condition: () => jmap() && !isMobile.value,
-					},
 					{ label: __('Notifications'), value: 'notifications', icon: BellRing },
 				],
 			},
@@ -56,6 +49,13 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 				id: 'mail',
 				label: __('Mail Preferences'),
 				items: [
+					{
+						label: __('Layout'),
+						value: 'mail-layout',
+						icon: Columns2,
+						component: markRaw(MailLayoutSettings),
+						condition: () => jmap() && !isMobile.value,
+					},
 					{ label: __('Folders'), value: 'folders', icon: Folders, component: markRaw(FolderSettings), condition: jmap },
 					{ label: __('Signatures'), value: 'signatures', icon: Feather, component: markRaw(SignatureSettings), condition: jmap },
 					{ label: __('Compose'), value: 'compose', icon: PenLine, component: markRaw(ComposeSettings), condition: jmap },

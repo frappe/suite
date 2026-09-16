@@ -54,13 +54,13 @@ const groups = computed<SettingsGroup[]>(() => {
 				{ label: 'Credentials', value: 'credentials', icon: KeyRound, component: markRaw(CredentialsSettings) },
 				{ label: 'Account', value: 'account', icon: Mailbox, component: markRaw(Account), condition: jmap },
 				{ label: 'Identity', value: 'identity', icon: Fingerprint, component: markRaw(IdentitySettings), condition: jmap },
-				{ label: 'Layout', value: 'mail-layout', icon: Columns2, component: markRaw(MailLayoutSettings), condition: jmap },
 			],
 		},
 		{
 			id: 'mail',
 			label: 'Mail Preferences',
 			items: [
+				{ label: 'Layout', value: 'mail-layout', icon: Columns2, component: markRaw(MailLayoutSettings), condition: jmap },
 				{ label: 'Folders', value: 'folders', icon: Folders, component: markRaw(FolderSettings), condition: jmap },
 				{ label: 'Signatures', value: 'signatures', icon: Feather, component: markRaw(SignatureSettings), condition: jmap },
 				{ label: 'Compose', value: 'compose', icon: PenLine, component: markRaw(ComposeSettings), condition: jmap },
