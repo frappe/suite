@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose } from 'vue'
 import { useKeyboardShortcut } from 'frappe-ui'
+import { useRoute } from 'vue-router'
 import SuiteCommandPalette from './SuiteCommandPalette.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme } from '@/composables/useTheme'
@@ -21,10 +22,12 @@ import { useRootStore } from '@/stores/root'
 import { nextTheme, themeActionLabel } from '@/utils/themeValues'
 
 const root = useRootStore()
+const route = useRoute()
 const { isMobile } = useScreenSize()
 const { cycleTheme, themeMode } = useTheme()
 const nextThemeMode = computed(() => nextTheme(themeMode.value))
 const nextThemeAction = computed(() => themeActionLabel(nextThemeMode.value))
+const canChangeTheme = computed(() => route.name !== 'meet-meeting')
 const settingsCommand = computed(() =>
   root.paletteGroups
     .flatMap((group) => group.commands)
@@ -33,7 +36,7 @@ const settingsCommand = computed(() =>
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', computed(() => [
   {
-    commands: [
+    commands: canChangeTheme.value ? [
       {
         id: 'suite-cycle-theme',
         label: nextThemeAction.value,
@@ -48,7 +51,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', compu
         keepOpen: true,
         run: cycleTheme,
       },
-    ],
+    ] : [],
   },
 ]))
 
@@ -64,6 +67,9 @@ useKeyboardShortcut([
     combo: 'Mod+Shift+L',
     description: 'Cycle Theme',
     group: 'Suite',
+    enabled: canChangeTheme,
+    allowInInput: true,
+    allowInDialog: true,
     handler: cycleTheme,
   },
 ])
