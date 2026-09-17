@@ -515,10 +515,6 @@ const toggleRepeat = () => {
 // their frame corner to corner and read a size above the round ones beside them.
 const FIELD_ICON_SIZE = 16
 
-// Only offered where there is a choice: with one calendar the row would name it and do nothing.
-const calendarOptions = computed(() =>
-	(calendars.data ?? []).map((cal) => ({ label: cal._name, value: cal.id, color: cal.color })),
-)
 const eventCalendar = computed({
 	get: () => event.calendar_ids?.[0],
 	set: (id: string) => (event.calendar_ids = [id]),
@@ -1202,13 +1198,14 @@ const recurringScopeModalProps = computed(() => ({
 							</div>
 
 							<!-- calendar -->
-							<div v-if="calendarOptions.length > 1" class="flex gap-3">
+							<!-- Only where there is a choice: with one calendar the row would name it and do nothing. -->
+							<div v-if="store.calendarOptions.length > 1" class="flex gap-3">
 								<CalendarDays :size="FIELD_ICON_SIZE" class="icon mt-7 shrink-0 text-ink-gray-5" />
 								<FormControl
 									v-model="eventCalendar"
 									type="select"
 									:label="__('Calendar')"
-									:options="calendarOptions"
+									:options="store.calendarOptions"
 									class="min-w-0 flex-1"
 								>
 									<template #item-prefix="{ item }">

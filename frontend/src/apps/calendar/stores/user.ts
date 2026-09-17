@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
 import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
+import { calendarColor } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
@@ -71,6 +72,15 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['calendars', accountId.value],
 	})
 
+	// The calendars as select options, each in the colour it is drawn in.
+	const calendarOptions = computed(() =>
+		(calendars.data ?? []).map((cal) => ({
+			label: cal._name,
+			value: cal.id,
+			color: calendarColor(calendars.data, cal.name),
+		})),
+	)
+
 	// The organizer of a new event. Invites go out as mail from the organizer's address,
 	// so only a participant identity that is also a mail identity qualifies. Among those
 	// the one flagged default wins, else the first. Undefined until both lists have
@@ -90,6 +100,7 @@ export const userStore = defineStore('calendar-user', () => {
 		identities,
 		participantIdentities,
 		calendars,
+		calendarOptions,
 		organizerIdentity,
 	}
 })

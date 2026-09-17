@@ -31,8 +31,6 @@ const show = defineModel<boolean>()
 
 const { calendar } = defineProps<{ calendar?: CalendarRow }>()
 
-const emit = defineEmits<{ deleted: [] }>()
-
 const store = userStore()
 
 const deleteCalendar = createResource({
@@ -42,7 +40,6 @@ const deleteCalendar = createResource({
 		raiseToast(__('Calendar deleted.'))
 		show.value = false
 		store.calendars.reload()
-		emit('deleted')
 	},
 	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
 })

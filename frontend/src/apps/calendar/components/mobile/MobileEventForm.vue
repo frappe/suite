@@ -245,13 +245,13 @@
 							<!-- where it is kept, and how it reads to everyone else -->
 							<div :class="GROUP">
 								<button
-									v-if="store.calendars.data?.length > 1"
+									v-if="store.calendarOptions.length > 1"
 									:class="ROW"
 									@click="showCalendarSheet = true"
 								>
 									<CalendarDays :class="ICON" />
 									<span class="shrink-0">{{ __('Calendar') }}</span>
-									<span :class="VALUE_LONG">{{ eventCalendar?._name }}</span>
+									<span :class="VALUE_LONG">{{ calendarOptions.find((option) => option.selected)?.label }}</span>
 									<ChevronRight :class="CHEVRON" />
 								</button>
 								<button :class="ROW" @click="showAvailabilitySheet = true">
@@ -559,18 +559,14 @@ const asDropdownOptions = (
 		onClick: () => choose(option.value),
 	}))
 
-const eventCalendar = computed(() =>
-	store.calendars.data?.find((cal) => cal.id === event.calendar_ids?.[0]),
-)
-
 const calendarOptions = computed(() =>
-	(store.calendars.data ?? []).map((cal) => ({
-		label: cal._name,
+	store.calendarOptions.map(({ label, value, color }) => ({
+		label,
 		icon: h('span', { class: 'grid place-items-center' }, [
-			h('span', { class: 'size-2 rounded-full', style: { background: eventColor(cal.color) } }),
+			h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
 		]),
-		selected: event.calendar_ids?.[0] === cal.id,
-		onClick: () => (event.calendar_ids = [cal.id]),
+		selected: event.calendar_ids?.[0] === value,
+		onClick: () => (event.calendar_ids = [value]),
 	})),
 )
 

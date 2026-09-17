@@ -320,9 +320,6 @@ watch(
 )
 
 const calendarColor = (name: string) => colorOf(calendars.data, name)
-const coloredCalendars = computed(
-	() => calendars.data?.map((cal) => ({ ...cal, color: calendarColor(cal.name) })) || [],
-)
 
 // The period the calendar is showing, as it reports it on every change of view or
 // date. Declared above the resource that reads it: makeParams runs late enough
@@ -1024,7 +1021,6 @@ const NOTIFY_MODAL_OPTIONS = {
 	<div class="flex h-full min-h-0 w-full min-w-0 flex-col sm:h-screen">
 		<div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
 			<AppSidebar
-				:calendars="coloredCalendars"
 				:calendar-color="calendarColor"
 				:visible-calendars
 				:month="calendarRef?.currentMonth"

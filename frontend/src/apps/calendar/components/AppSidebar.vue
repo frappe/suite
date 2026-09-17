@@ -30,9 +30,7 @@ import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 
-const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
-	/** Each with a palette `color`, the one its events wear. */
-	calendars: any[]
+const { visibleCalendars, events, selectedEvent } = defineProps<{
 	visibleCalendars: string[]
 	/** The month the calendar shows; the mini month mirrors it. */
 	month?: number
@@ -43,7 +41,7 @@ const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	events?: any[]
 	/** The open event, so its row reads as active. */
 	selectedEvent?: any
-	/** Palette colour per calendar id, for the mini month's dots. */
+	/** Palette colour per calendar id, for its dot here and the mini month's. */
 	calendarColor: (calendar: string) => string
 }>()
 
@@ -120,9 +118,6 @@ const appsMenuOption = useAppSwitcher('calendar')
 const calendarActions = useCalendarActions()
 const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
 	calendarActions
-// The rows here wear a colour filled in by position; the actions want the calendar as saved.
-const calendarMenu = (calendar: any) =>
-	calendarActions.menuOptions(store.calendars.data?.find((cal) => cal.name === calendar.name) ?? calendar)
 
 const showSettings = ref(false)
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
@@ -209,7 +204,7 @@ const menuItems = computed(() => [
 				<SidebarSection :label="__('Calendars')" class="[&_hr]:hidden">
 					<!-- A calendar that is switched off keeps its place but loses its colour. -->
 					<SidebarItem
-						v-for="calendar in calendars"
+						v-for="calendar in store.calendars.data"
 						:key="calendar.name"
 						:label="calendar._name"
 						:on-click="() => emit('update:visibleCalendars', calendar.name)"
@@ -221,7 +216,7 @@ const menuItems = computed(() => [
 								<span
 									class="size-2.5 rounded-full transition-opacity"
 									:class="!visibleCalendars.includes(calendar.name) && 'opacity-30'"
-									:style="dotStyle(calendar.color)"
+									:style="dotStyle(calendarColor(calendar.name))"
 								/>
 							</span>
 						</template>
@@ -234,7 +229,7 @@ const menuItems = computed(() => [
 							</span>
 						</Tooltip>
 						<template #suffix>
-							<Dropdown :options="calendarMenu(calendar)">
+							<Dropdown :options="calendarActions.menuOptions(calendar)">
 								<Button
 									variant="ghost"
 									class="!bg-transparent"

@@ -92,7 +92,8 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
 import { userStore } from '@/apps/calendar/stores/user'
 
-const { accountId } = userStore()
+const store = userStore()
+const { accountId } = store
 
 const user = inject('$user')
 const socket = inject('$socket')
@@ -113,20 +114,7 @@ const filter = reactive({
 	before: '',
 })
 
-const calendars = createResource({
-	url: 'suite.calendar.doctype.calendar.calendar.fetch_calendars',
-	auto: true,
-	makeParams: () => ({ account: accountId, limit: 100 }),
-})
-
-const calendarOptions = computed(() =>
-	[{ label: __(''), value: ' ' }].concat(
-		(calendars.data || []).map((c: { id: string; _name: string }) => ({
-			label: c._name,
-			value: c.id,
-		})),
-	),
-)
+const calendarOptions = computed(() => [{ label: __(''), value: ' ' }, ...store.calendarOptions])
 
 const sortOptions = computed(() => [
 	{ label: __('Oldest Events'), value: 'Start (ASC)' },
