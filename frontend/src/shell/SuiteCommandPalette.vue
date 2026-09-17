@@ -151,7 +151,11 @@
 					</template>
 					{{ command.label }}
 					<template v-if="command.shortcut" #suffix>
-						<KeyboardShortcut :combo="command.shortcut" bg />
+						<KeyboardShortcut
+							class="palette-command-shortcut"
+							:combo="command.shortcut"
+							bg
+						/>
 					</template>
 					<template v-else-if="command.description" #suffix>
 						<span class="text-p-xs text-ink-gray-5">{{
@@ -1073,6 +1077,18 @@ onScopeDispose(() => {
 </script>
 
 <style>
+.palette-command-shortcut [data-slot='key'] {
+	height: 1.25rem;
+	min-width: 1.25rem;
+	padding-inline: 0.25rem;
+}
+
+[data-slot='command-palette-item'][data-state='active']
+	.palette-command-shortcut
+	[data-slot='key'] {
+	background-color: var(--surface-base);
+}
+
 @media (max-width: 767px) {
 	.dialog-overlay:has(+ .dialog-scroll-container .mail-mobile-search-page) {
 		display: none;
