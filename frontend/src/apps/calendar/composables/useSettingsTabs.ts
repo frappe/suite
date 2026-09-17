@@ -1,5 +1,5 @@
 import { computed, markRaw } from 'vue'
-import { Code, Contact, HardDriveDownload, HardDriveUpload } from 'lucide-vue-next'
+import { CalendarDays, Code, Contact, HardDriveDownload, HardDriveUpload } from 'lucide-vue-next'
 import { createResource } from 'frappe-ui'
 
 import { getVisibleSettingsGroups } from '@/components/settings/settingsCatalog'
@@ -8,6 +8,7 @@ import { useCommonSettingsGroups } from '@/components/settings/useCommonSettings
 import { settingsGroups } from '@/composables/settingsGroups'
 
 import AdvancedSettings from '@/apps/calendar/components/Settings/AdvancedSettings.vue'
+import CalendarsSettings from '@/apps/calendar/components/Settings/CalendarsSettings.vue'
 import ExportSettings from '@/apps/calendar/components/Settings/ExportSettings.vue'
 import ImportSettings from '@/apps/calendar/components/Settings/ImportSettings.vue'
 import ParticipantIdentitySettings from '@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'
@@ -43,6 +44,12 @@ export const useSettingsTabs = (exclude: string[] = []) => {
 				id: 'calendar',
 				label: __('Calendar'),
 				items: [
+					{
+						label: __('Calendars'),
+						value: 'calendars',
+						icon: CalendarDays,
+						component: markRaw(CalendarsSettings),
+					},
 					{
 						label: __('Participant Identity'),
 						value: 'participant-identity',

@@ -306,7 +306,7 @@ def ensure_default_alerts(account: str) -> None:
     place to clear defaults on purpose, empty always means unseeded. A day-long cache mark
     keeps the extra round-trip off every sidebar load."""
 
-    cache_key = f"calendar|default_alerts_seeded|{account}"
+    cache_key = _default_alerts_cache_key(account)
     if frappe.cache.get_value(cache_key):
         return
 
@@ -339,6 +339,16 @@ def ensure_default_alerts(account: str) -> None:
         return
 
     frappe.cache.set_value(cache_key, True, expires_in_sec=24 * 60 * 60)
+
+
+def _default_alerts_cache_key(account: str) -> str:
+    return f"calendar|default_alerts_seeded|{account}"
+
+
+def forget_default_alerts_seeded(account: str) -> None:
+    """Has the next listing seed again, for a calendar created since the last one."""
+
+    frappe.cache.delete_value(_default_alerts_cache_key(account))
 
 
 @frappe.whitelist()

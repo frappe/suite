@@ -1,5 +1,11 @@
 import { CalendarColorMap } from 'frappe-ui/experimental'
 
+import { CALENDAR_COLORS } from '@/apps/calendar/utils/calendars'
+
+const NAME_BY_HEX: Record<string, string> = Object.fromEntries(
+	CALENDAR_COLORS.map(({ name, hex }) => [hex, name]),
+)
+
 /**
  * The CSS colour to draw an event or a calendar in.
  *
@@ -13,7 +19,7 @@ import { CalendarColorMap } from 'frappe-ui/experimental'
  * came out green in four different places at once.
  */
 export const eventColor = (color?: string): string => {
-	const named = color ? CalendarColorMap[color] : undefined
+	const named = color ? CalendarColorMap[NAME_BY_HEX[color.toLowerCase()] ?? color] : undefined
 	if (named) return named.color
 	// Anything the palette does not name is a colour in its own right: a hex from
 	// the server, or a function like `rgb()` or `var()`.

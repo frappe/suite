@@ -4,6 +4,7 @@ import {
 	AlignLeft,
 	Bell,
 	Briefcase,
+	CalendarDays,
 	ChevronDown,
 	Clock,
 	Copy,
@@ -37,6 +38,8 @@ import {
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
+import { defaultCalendar } from '@/apps/calendar/utils/calendars'
+import { eventColor } from '@/apps/calendar/utils/color'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -56,7 +59,7 @@ const emit = defineEmits(['reloadEvents'])
 const user = inject('$user')
 const dayjs = inject('$dayjs')
 const store = userStore()
-const { participantIdentities } = store
+const { participantIdentities, calendars } = store
 const { isMobile } = useScreenSize()
 
 const isNew = computed(() => !selectedEvent?.calendarEvent)
@@ -96,6 +99,8 @@ const getEventData = () => {
 	return {
 		title: ev.title || '',
 		organizer: ev.organizer,
+		// Every calendar it is on: an event on two stays on both unless the picker moves it.
+		calendar_ids: ev.calendars?.map((c) => c.calendar_id) ?? [],
 		isAllDay: ev.isAllDay,
 		repeat: !!ev.recurrence_rule?.frequency,
 		startDate: start.format('YYYY-MM-DD'),
@@ -163,6 +168,8 @@ const getDefaultEventData = () => {
 	return {
 		title: '',
 		organizer: identity?.email,
+		// Empty until the list has loaded, and then the server puts it in the default.
+		calendar_ids: [defaultCalendar(calendars.data)?.id].filter(Boolean),
 		isAllDay,
 		repeat: false,
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
@@ -247,6 +254,8 @@ const eventParams = computed(() => {
 	}
 
 	if (event.title) params.title = event.title
+	// Updates are a full replace: an event saved without its calendars lands in the default one.
+	if (event.calendar_ids?.length) params.calendar_ids = event.calendar_ids
 	if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
 
 	// Saving the whole series from one of its occurrences. The start on screen belongs to that
@@ -506,6 +515,15 @@ const toggleRepeat = () => {
 // their frame corner to corner and read a size above the round ones beside them.
 const FIELD_ICON_SIZE = 16
 
+// Only offered where there is a choice: with one calendar the row would name it and do nothing.
+const calendarOptions = computed(() =>
+	(calendars.data ?? []).map((cal) => ({ label: cal._name, value: cal.id, color: cal.color })),
+)
+const eventCalendar = computed({
+	get: () => event.calendar_ids?.[0],
+	set: (id: string) => (event.calendar_ids = [id]),
+})
+
 const repeatLabel = computed(() => {
 	if (!event.recurrence_rule?.frequency) return __('Repeat')
 	const message = getRepeatMessage(event.recurrence_rule)
@@ -554,7 +572,8 @@ const createMeetEvent = {
 // nothing the series says about it. So the edited wall clock is converted into the event's own
 // zone and the zone itself is not sent.
 const instancePatch = computed(() => {
-	const { time_zone: zone, ...rest } = patch.value
+	// Nor its calendars: an override can't move one occurrence to another calendar.
+	const { time_zone: zone, calendar_ids: _, ...rest } = patch.value
 	const eventZone = selectedEvent.calendarEvent?.time_zone
 	// An all-day start is a date, held and shown in the event's own terms — there is no viewer
 	// clock to translate, and translating anyway moves the occurrence off its day.
@@ -899,7 +918,7 @@ const handleSaveClick = () => {
 }
 
 const dialogTitle = computed(() =>
-	isNew.value ? __('Add Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
+	isNew.value ? __('New Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
 )
 
 const AVAILABILITY_OPTIONS = [
@@ -928,7 +947,11 @@ const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
 	// At the head of a series "this and following" reaches exactly what "all events"
 	// reaches, so the list does not ask the same question twice.
-	options: scopeOptions({ isFirst: isFirstOccurrence(selectedEvent?.calendarEvent) }),
+	options: scopeOptions({
+		isFirst: isFirstOccurrence(selectedEvent?.calendarEvent),
+		// An occurrence can't sit on a calendar its series is not on, so a move takes more than one.
+		unavailable: 'calendar_ids' in patch.value ? ['instance'] : [],
+	}),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))
@@ -1176,6 +1199,25 @@ const recurringScopeModalProps = computed(() => ({
 										:options="addAlertOptions"
 									/>
 								</div>
+							</div>
+
+							<!-- calendar -->
+							<div v-if="calendarOptions.length > 1" class="flex gap-3">
+								<CalendarDays :size="FIELD_ICON_SIZE" class="icon mt-7 shrink-0 text-ink-gray-5" />
+								<FormControl
+									v-model="eventCalendar"
+									type="select"
+									:label="__('Calendar')"
+									:options="calendarOptions"
+									class="min-w-0 flex-1"
+								>
+									<template #item-prefix="{ item }">
+										<span
+											class="size-2.5 shrink-0 rounded-full"
+											:style="{ background: eventColor(item.color) }"
+										/>
+									</template>
+								</FormControl>
 							</div>
 
 							<!-- availability & visibility -->

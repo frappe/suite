@@ -8,7 +8,13 @@ from frappe.utils import cint
 from icalendar.prop import vRecur
 
 from suite.calendar.api.rsvp import record_rsvp
-from suite.calendar.doctype.calendar.calendar import ensure_default_alerts, fetch_calendars
+from suite.calendar.doctype.calendar.calendar import (
+    add_calendar,
+    delete_calendars,
+    ensure_default_alerts,
+    fetch_calendars,
+    forget_default_alerts_seeded,
+)
 from suite.calendar.doctype.calendar_event.calendar_event import (
     add_calendar_event,
     delete_calendar_events,
@@ -19,9 +25,12 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
-from suite.mail.jmap import get_calendar_event_service, get_participant_identities
+from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
+
+# `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
+MAX_CALENDARS = 1000
 
 
 @frappe.whitelist()
@@ -34,9 +43,82 @@ def get_calendars(account: str) -> list[dict[str, str]]:
     """
 
     ensure_default_alerts(account)
-    calendars = fetch_calendars(account)
+    calendars = fetch_calendars(account, limit=MAX_CALENDARS)
 
-    return [{key: cal[key] for key in ["name", "_name", "color"]} for cal in calendars]
+    return [
+        {key: cal[key] for key in ["name", "id", "_name", "color", "default", "may_delete"]}
+        for cal in calendars
+    ]
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def create_calendar(account: str, name: str, color: str | None = None) -> str:
+    """Creates a calendar and returns its `account|id` name."""
+
+    name = _calendar_name(name)
+    calendar_id = add_calendar(account, name, color=color)
+    # Seeded on the next listing, which the app asks for straight after creating.
+    forget_default_alerts_seeded(account)
+    return f"{account}|{calendar_id}"
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def edit_calendar(
+    account: str,
+    id: str,
+    name: str | None = None,
+    color: str | None = None,
+    default: bool = False,
+) -> None:
+    """Renames, recolours or makes default one calendar, touching nothing else on it.
+
+    The doctype's `update_calendar` writes every property, so renaming through it
+    clears the description and time zone another client may have set. This patches
+    only what it is given."""
+
+    patch = {}
+    if name is not None:
+        patch["name"] = _calendar_name(name)
+    if color is not None:
+        patch["color"] = color or None
+
+    kwargs = {"onSuccessSetIsDefault": id} if default else {}
+    service = get_calendar_service(account)
+    response = service._update({id: patch}, **kwargs)
+
+    method_responses = response.get("methodResponses") or []
+    result = method_responses[0][1] if method_responses else {}
+    if id not in (result.get("updated") or {}):
+        error = (result.get("notUpdated") or {}).get(id) or result
+        frappe.throw(
+            error.get("description") or _("Could not update the calendar."),
+            title=_("Calendar Update Error"),
+        )
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def delete_calendar(account: str, id: str) -> None:
+    """Deletes a calendar and the events on it. The default calendar stays: it is
+    where new events go, invitations included."""
+
+    service = get_calendar_service(account)
+    calendar = next((c for c in service.get([id])), None)
+    if not calendar:
+        frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
+    if calendar.get("isDefault"):
+        frappe.throw(_("The default calendar can't be deleted. Make another calendar the default first."))
+
+    delete_calendars(account, [id], remove_events=True)
+
+
+def _calendar_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        frappe.throw(_("A calendar needs a name."))
+    return name
 
 
 # Stalwart answers a range query one page at a time, and a window wide enough for the

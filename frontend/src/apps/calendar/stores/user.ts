@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
 import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
+import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 
@@ -36,6 +37,7 @@ export const userStore = defineStore('calendar-user', () => {
 		localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
 		identities.fetch()
 		participantIdentities.fetch()
+		calendars.fetch()
 	}
 
 	const userResource = createResource({
@@ -61,6 +63,14 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['participantIdentities', accountId.value],
 	})
 
+	// The account's calendars. One list for the grid, the sidebar, the event form
+	// and settings, so a calendar added or renamed in one is there in the others.
+	const calendars = createResource<CalendarRow[]>({
+		url: 'suite.calendar.api.get_calendars',
+		makeParams: () => ({ account: accountId.value }),
+		cache: ['calendars', accountId.value],
+	})
+
 	// The organizer of a new event. Invites go out as mail from the organizer's address,
 	// so only a participant identity that is also a mail identity qualifies. Among those
 	// the one flagged default wins, else the first. Undefined until both lists have
@@ -79,6 +89,7 @@ export const userStore = defineStore('calendar-user', () => {
 		userResource,
 		identities,
 		participantIdentities,
+		calendars,
 		organizerIdentity,
 	}
 })

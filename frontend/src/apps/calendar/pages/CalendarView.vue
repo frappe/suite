@@ -9,6 +9,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
+import { calendarColor as colorOf, visibleAfterReload } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -154,7 +155,7 @@ watch(
 watch(
 	() => store.accountId,
 	() => {
-		calendars.reload()
+		// The store fetches the account's calendars itself when it switches.
 		reloadEvents()
 	},
 )
@@ -299,25 +300,26 @@ const getEventRole = (event) => {
 	return 'Viewer'
 }
 
-const calendars = createResource({
-	url: 'suite.calendar.api.get_calendars',
-	makeParams: () => ({ account: store.accountId }),
-	auto: true,
-	onSuccess: (data) => (visibleCalendars.value = data.map((cal) => cal.name)),
-	onError: (error) => raiseToast(error.message, 'error'),
-})
+const { calendars } = store
 
+// Calendars switched off in the sidebar stay off through a reload — see visibleAfterReload.
 const visibleCalendars = ref<string[]>([])
+let knownCalendars: string[] = []
+watch(
+	() => calendars.data,
+	(data) => {
+		if (!data) return
+		visibleCalendars.value = visibleAfterReload(knownCalendars, visibleCalendars.value, data)
+		knownCalendars = data.map((cal) => cal.name)
+	},
+	{ immediate: true },
+)
+watch(
+	() => calendars.error,
+	(error) => error && raiseToast(error.message, 'error'),
+)
 
-// A calendar's colour is its own — set wherever its owner set it, and sent with
-// the calendar. Only where it has none does one come from the palette by
-// position, which is what every calendar used to get; its events and its dot in
-// the sidebar share whichever it is.
-const PALETTE = ['green', 'blue', 'violet', 'amber', 'pink', 'cyan', 'orange']
-const calendarColor = (name: string) => {
-	const index = calendars.data?.findIndex((cal) => cal.name === name) ?? -1
-	return calendars.data?.[index]?.color || PALETTE[Math.max(index, 0) % PALETTE.length]
-}
+const calendarColor = (name: string) => colorOf(calendars.data, name)
 const coloredCalendars = computed(
 	() => calendars.data?.map((cal) => ({ ...cal, color: calendarColor(cal.name) })) || [],
 )

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LogOut, Settings, User } from 'lucide-vue-next'
+import { Ellipsis, LogOut, Plus, Settings, User } from 'lucide-vue-next'
 import {
+	Button,
+	Dropdown,
 	Sidebar,
 	SidebarCollapseToggle,
 	SidebarHeader,
@@ -24,6 +26,9 @@ import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
+import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
+import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
+import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 
 const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	/** Each with a palette `color`, the one its events wear. */
@@ -112,6 +117,13 @@ const subtitle = computed(() => {
 
 const appsMenuOption = useAppSwitcher('calendar')
 
+const calendarActions = useCalendarActions()
+const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
+	calendarActions
+// The rows here wear a colour filled in by position; the actions want the calendar as saved.
+const calendarMenu = (calendar: any) =>
+	calendarActions.menuOptions(store.calendars.data?.find((cal) => cal.name === calendar.name) ?? calendar)
+
 const showSettings = ref(false)
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
@@ -190,9 +202,11 @@ const menuItems = computed(() => [
 					/>
 				</div>
 				<!-- Collapsed, frappe-ui swaps a section's label for a divider line. That
-				     separates groups in mail's rail, but with a single section here it
-				     is a stray line under the header — so the label goes with the width. -->
-				<SidebarSection :label="isSidebarCollapsed ? undefined : __('Calendars')">
+				     separates groups in mail's rail, but with a single section here it is a
+				     stray line under the header — so the line is hidden. The label itself
+				     stays: frappe-ui fades it with the width, where unsetting it dropped it
+				     in one frame and jumped the rows up. -->
+				<SidebarSection :label="__('Calendars')" class="[&_hr]:hidden">
 					<!-- A calendar that is switched off keeps its place but loses its colour. -->
 					<SidebarItem
 						v-for="calendar in calendars"
@@ -201,16 +215,15 @@ const menuItems = computed(() => [
 						:on-click="() => emit('update:visibleCalendars', calendar.name)"
 					>
 						<template #prefix>
-							<!-- Fills the 16px icon box: a dot beside the label, a swatch the size
-							     of an icon once the rail is all that is left. -->
-							<span
-								class="shrink-0 rounded-full transition-all"
-								:class="[
-									isSidebarCollapsed ? 'mx-0.5 size-3' : 'mx-1 size-2',
-									!visibleCalendars.includes(calendar.name) && 'opacity-30',
-								]"
-								:style="dotStyle(calendar.color)"
-							/>
+							<!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
+							     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
+							<span class="grid size-4 place-items-center">
+								<span
+									class="size-2.5 rounded-full transition-opacity"
+									:class="!visibleCalendars.includes(calendar.name) && 'opacity-30'"
+									:style="dotStyle(calendar.color)"
+								/>
+							</span>
 						</template>
 						<Tooltip :text="calendarLabel(calendar).email" side="right">
 							<span
@@ -220,7 +233,24 @@ const menuItems = computed(() => [
 								{{ calendarLabel(calendar).label }}
 							</span>
 						</Tooltip>
+						<template #suffix>
+							<Dropdown :options="calendarMenu(calendar)">
+								<Button
+									variant="ghost"
+									class="!bg-transparent"
+									:aria-label="__('Calendar options')"
+									@click.stop
+								>
+									<template #icon>
+										<Ellipsis
+											class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
+										/>
+									</template>
+								</Button>
+							</Dropdown>
+						</template>
 					</SidebarItem>
+					<SidebarItem :label="__('New Calendar')" :icon="Plus" :on-click="calendarActions.create" />
 				</SidebarSection>
 			</div>
 			<!-- Pinned under the scrolling body, as mail's sidebar keeps it. -->
@@ -237,4 +267,6 @@ const menuItems = computed(() => [
 		</div>
 	</Sidebar>
 	<SettingsModal v-model:open="showSettings" />
+	<CalendarModal v-model="showCalendarModal" :calendar="selectedCalendar" />
+	<DeleteCalendarModal v-model="showDeleteCalendar" :calendar="selectedCalendar" />
 </template>
