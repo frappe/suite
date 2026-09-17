@@ -40,7 +40,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', compu
       {
         id: 'suite-cycle-theme',
         label: nextThemeAction.value,
-        shortcut: 'Mod+Shift+L',
+        shortcut: 'Mod+Shift+K',
         enterHint: nextThemeAction.value.toLowerCase(),
         icon: nextThemeMode.value === 'light'
           ? 'lucide-sun'
@@ -64,7 +64,7 @@ useKeyboardShortcut([
     handler: () => settingsCommand.value?.run({ query: '' }),
   },
   {
-    combo: 'Mod+Shift+L',
+    combo: 'Mod+Shift+K',
     description: 'Cycle Theme',
     group: 'Suite',
     enabled: canChangeTheme,
