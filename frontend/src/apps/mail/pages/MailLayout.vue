@@ -139,14 +139,6 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 				{
 					commands: [
 						{
-							id: 'mail-shortcuts',
-							label: 'Shortcuts',
-							description: '?',
-							enterHint: 'open shortcuts',
-							icon: 'lucide-keyboard',
-							run: () => (showShortcuts.value = true),
-						},
-						{
 							id: 'mail-settings',
 							label: 'Settings',
 							enterHint: 'open settings',
