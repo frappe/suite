@@ -7,7 +7,7 @@
 		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
-		<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model="showSettings" />
+		<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model:open="showSettings" />
 		<Teleport v-else-if="!mailServerUnavailable" to="body">
 			<Transition
 				enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
@@ -139,8 +139,9 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 					commands: [
 						{
 							id: 'mail-settings',
-							label: 'Mail settings',
-							enterHint: 'open Mail settings',
+							label: 'Settings',
+							shortcut: 'Mod+Shift+Comma',
+							enterHint: 'open settings',
 							icon: 'lucide-settings',
 							run: () => openSettings(),
 						},

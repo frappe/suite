@@ -17,31 +17,22 @@ import SuiteCommandPalette from './SuiteCommandPalette.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme } from '@/composables/useTheme'
 import InstallPrompt from '@/shell/InstallPrompt.vue'
-import { openSettings } from '@/shell/settings/useSettingsDialog'
-import { useSessionStore } from '@/boot/session'
 import { useRootStore } from '@/stores/root'
 import { nextTheme } from '@/utils/themeValues'
 
 const root = useRootStore()
-const session = useSessionStore()
 const { isMobile } = useScreenSize()
 const { cycleTheme, themeMode } = useTheme()
 const nextThemeMode = computed(() => nextTheme(themeMode.value))
+const settingsCommand = computed(() =>
+  root.paletteGroups
+    .flatMap((group) => group.commands)
+    .find((command) => command.shortcut === 'Mod+Shift+Comma'),
+)
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', computed(() => [
   {
     commands: [
-      ...(session.isLoggedIn
-        ? [{
-            id: 'suite-settings',
-            label: 'Settings',
-            shortcut: 'Mod+Shift+Comma',
-            enterHint: 'open settings',
-            icon: 'lucide-settings',
-            keywords: ['profile', 'preferences', 'workspace'],
-            run: () => openSettings(),
-          }]
-        : []),
       {
         id: 'suite-cycle-theme',
         label: `Switch to ${nextThemeMode.value} mode`,
@@ -65,8 +56,8 @@ useKeyboardShortcut([
     combo: 'Mod+Shift+Comma',
     description: 'Open Settings',
     group: 'Suite',
-    enabled: () => session.isLoggedIn,
-    handler: () => openSettings(),
+    enabled: () => Boolean(settingsCommand.value),
+    handler: () => settingsCommand.value?.run({ query: '' }),
   },
   {
     combo: 'Mod+Shift+L',

@@ -146,8 +146,6 @@
 				</div>
 			</template>
 		</Dialog>
-
-		<SettingsDialog v-model="showSettingsDialog" :isPreview="true" />
 	</div>
 </template>
 
@@ -173,7 +171,6 @@ import { useConnectionState } from "../composables/useConnectionState";
 import { submit } from "../utils/request";
 import { useRootStore } from "@/stores/root";
 import MeetSidebar from "../components/MeetSidebar.vue";
-import SettingsDialog from "../components/settings/SettingsDialog.vue";
 import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import LucideCalendarPlus from "~icons/lucide/calendar-plus";
 import LucideZap from "~icons/lucide/zap";
@@ -197,7 +194,6 @@ const meetingCode = ref("");
 const meetingCodeError = ref("");
 const showJoinDialog = ref(false);
 const showScheduleDialog = ref(false);
-const showSettingsDialog = ref(false);
 const scheduleTitle = ref("");
 const scheduleDate = ref(dayjs().format("YYYY-MM-DD"));
 const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:mm"));
@@ -419,14 +415,6 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 				icon: "lucide-calendar-plus",
 				keywords: ["calendar", "new"],
 				run: openScheduleDialog,
-			},
-			{
-				id: "meet-settings",
-				label: "Meet settings",
-				enterHint: "open meet settings",
-				icon: "lucide-settings",
-				keywords: ["audio", "video", "camera", "microphone", "devices"],
-				run: () => (showSettingsDialog.value = true),
 			},
 		],
 	},
