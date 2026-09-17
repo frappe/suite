@@ -16,38 +16,52 @@ export const useStartMeeting = () => {
 		immediate: false,
 	});
 
-	const startMeeting = (meetingType: MeetingType) => {
+	const copyMeetingLink = (meetingCode: string) => {
+		const path = router.resolve({
+			name: "meet-meeting",
+			params: { meetingId: meetingCode },
+		}).href;
+		navigator.clipboard.writeText(new URL(path, window.location.origin).href);
+	};
+
+	const startMeeting = async (meetingType: MeetingType) => {
 		const creatingToastId = toast.loading("Creating meeting...");
-		return submit(createMeeting, { meeting_type: meetingType })
-			.then((meetingCode) => {
-				toast.dismiss(creatingToastId);
-				connectionState.justCreated = true;
-				return router.push({
-					name: "meet-meeting",
-					params: { meetingId: meetingCode },
-				}).then(() => {
-					toast.success("Meeting created successfully!", {
-						duration: 8000,
-						action: {
-							label: "Copy link",
-							onClick: () => {
-								const path = router.resolve({
-									name: "meet-meeting",
-									params: { meetingId: meetingCode },
-								}).href;
-								navigator.clipboard.writeText(
-									new URL(path, window.location.origin).href,
-								);
-							},
-						},
-					});
-				});
-			})
-			.catch((error: unknown) => {
-				toast.dismiss(creatingToastId);
-				console.error("Error creating meeting:", error);
-				toast.error("Failed to create meeting. Please try again.");
+		let meetingCode: string;
+		try {
+			meetingCode = await submit(createMeeting, { meeting_type: meetingType });
+		} catch (error) {
+			toast.dismiss(creatingToastId);
+			console.error("Error creating meeting:", error);
+			toast.error("Failed to create meeting. Please try again.");
+			return;
+		}
+
+		toast.dismiss(creatingToastId);
+		connectionState.justCreated = true;
+		try {
+			await router.push({
+				name: "meet-meeting",
+				params: { meetingId: meetingCode },
 			});
+		} catch (error) {
+			console.error("Error opening meeting:", error);
+			toast.error("Meeting created, but could not open it.", {
+				duration: 8000,
+				action: {
+					label: "Copy link",
+					onClick: () => copyMeetingLink(meetingCode),
+				},
+			});
+			return;
+		}
+
+		toast.success("Meeting created successfully!", {
+			duration: 8000,
+			action: {
+				label: "Copy link",
+				onClick: () => copyMeetingLink(meetingCode),
+			},
+		});
 	};
 
 	return {
