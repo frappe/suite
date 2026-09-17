@@ -29,6 +29,9 @@
 				/>
 
 				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+					<SidebarSection>
+						<CommandPaletteSidebarItem />
+					</SidebarSection>
 					<SidebarSection
 						v-for="section in sidebarItems"
 						:key="section.key ?? section.label"
@@ -99,21 +102,6 @@
 		</Sidebar>
 	</Transition>
 
-	<SettingsModal v-if="!isMobile" v-model:open="showSettings" />
-	<!-- Mobile settings pushes in from the right like a thread: its back-chevron
-	     header is push-navigation language (slide-up is reserved for summoned
-	     tasks — compose/search). Teleported to body: inside the layout's isolate
-	     stacking context the tab bar/FAB would paint over it. -->
-	<Teleport v-else to="body">
-		<Transition
-			enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			enter-from-class="translate-x-full"
-			leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			leave-to-class="translate-x-full"
-		>
-			<PWASettings v-if="showSettings" @close="showSettings = false" />
-		</Transition>
-	</Teleport>
 	<FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
 	<DeleteFolderModal v-model="showDeleteMailbox" :mailbox="selectedMailbox" />
 </template>
@@ -145,10 +133,9 @@ import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
-import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
-import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 

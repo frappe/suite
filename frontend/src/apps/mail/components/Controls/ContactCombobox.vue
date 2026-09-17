@@ -9,7 +9,7 @@
 		@update:query="search"
 	>
 		<template #item-prefix="{ item, query }">
-			<Avatar :image="item.image" :label="item.label || query" size="lg" />
+			<Avatar :image="item.image" :label="item.label || query" size="sm" />
 		</template>
 		<template #item-label="{ item }">
 			<ContactOption :contact="item" />
@@ -43,7 +43,13 @@ const contactSearch = createResource({
 	transform: (data: { email: string; name?: string; user_image?: string }[]) =>
 		data.map((o) => {
 			const name = o.name || ''
-			return { value: o.email, label: name || o.email, email: o.email, display_name: name, image: o.user_image }
+			return {
+				value: o.email,
+				label: name || o.email,
+				email: o.email,
+				display_name: name,
+				image: o.user_image,
+			}
 		}),
 })
 const searchText = ref('')

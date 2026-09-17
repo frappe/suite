@@ -46,12 +46,42 @@ class IntegrationTestGetDriveFileMeta(IntegrationTestCase):
 
 
 class TestWriterSearch(IntegrationTestCase):
+    @patch("suite.writer.api.general.search_drive_files")
+    @patch("suite.writer.api.general.WriterSearch")
+    def test_search_matches_current_drive_filename(self, mock_writer_search, mock_drive_search):
+        mock_writer_search.return_value.search.return_value = {
+            "results": [],
+            "summary": {
+                "total_matches": 0,
+                "returned_matches": 0,
+                "filtered_matches": 0,
+                "corrected_words": None,
+                "corrected_query": None,
+            },
+        }
+        mock_drive_search.return_value = [
+            {
+                "name": "file1",
+                "file_name": "JASA Full Name",
+                "content_doctype": "Writer Document",
+            }
+        ]
+
+        result = search("JASA Full Name")
+
+        self.assertEqual(
+            result["results"],
+            [{"name": "file1", "title": "JASA Full Name", "content": ""}],
+        )
+
+    @patch("suite.writer.api.general.search_drive_files")
     @patch("suite.writer.api.general.WriterSearch")
     @patch("suite.writer.api.general.get_drive_file_meta")
     @patch("suite.writer.api.general.get_user_access")
     def test_search_summary_filters_unreadable_documents(
-        self, mock_get_user_access, mock_get_meta, mock_writer_search
+        self, mock_get_user_access, mock_get_meta, mock_writer_search, mock_drive_search
     ):
+        mock_drive_search.return_value = []
         mock_search_instance = mock_writer_search.return_value
         mock_search_instance.search.return_value = {
             "results": [{"name": "doc1"}, {"name": "doc2"}],

@@ -25,6 +25,7 @@ import {
 	toast,
 	useCall,
 } from 'frappe-ui'
+import { DialogDescription } from 'reka-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import { submit as submitCall } from '@/apps/meet/utils/request'
@@ -966,6 +967,9 @@ const recurringScopeModalProps = computed(() => ({
 		@update:open="(open) => (open ? (show = true) : leave())"
 	>
 		<template #default>
+			<DialogDescription class="sr-only">
+				{{ isNew ? __('Create a calendar event.') : __('Edit this calendar event.') }}
+			</DialogDescription>
 			<!-- On a phone the dialog is the screen: 85vh of a 4xl box left the form in
 			     a letterbox with its own scrollbar inside the page's. -->
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">

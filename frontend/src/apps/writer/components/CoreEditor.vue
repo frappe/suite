@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col w-full bg-surface-base">
+  <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
     <TextEditorFixedMenu v-if="editable"
       class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
       :editor="editor" :items="menuButtons" />
@@ -7,13 +7,12 @@
       <ToC v-if="editor" :editor :anchors />
       <div id="editor-scroll-container"
         class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
-        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick"
-          @keydown="onEditorKeydown">
+        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick">
           <div class="hidden md:block" />
           <div class="flex flex-col grow min-w-0">
             <FTextEditor ref="textEditor" :upload-function="uploadFunction"
               :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
-              :editable @change="(val) => emit('editor-change', val)">
+              :editable @change="handleEditorChange">
               <template #default="{ editor }">
                 <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
                 <EditorTableMenu :editor />
@@ -94,6 +93,7 @@ import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
 
 import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
+import { useRootStore } from '@/stores/root'
 import {
   COMMON_EXTENSIONS,
   isModKey,
@@ -121,6 +121,7 @@ const emit = defineEmits(['save', 'editor-change', 'cleanup'])
 
 const showSettings = defineModel('showSettings')
 const edited = defineModel('edited')
+const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
 watch(
@@ -306,8 +307,9 @@ const onBackgroundClick = (e) => {
   }
 }
 
-const onEditorKeydown = async (e) => {
-  if (!props.editable || e.metaKey || e.ctrlKey || edited.value) return
+const handleEditorChange = async (value) => {
+  emit('editor-change', value)
+  if (!props.editable || edited.value) return
   edited.value = true
   await nextTick()
   autoversion()
@@ -387,6 +389,19 @@ const addComment = () => {
 }
 
 const manualSave = (func) => emit('save', true, null, func)
+
+const openCommandPalette = (event) => {
+  if (
+    !props.editable ||
+    (!event.metaKey && !event.ctrlKey) ||
+    event.shiftKey ||
+    event.altKey ||
+    event.key.toLowerCase() !== 'k'
+  ) return
+  event.preventDefault()
+  event.stopPropagation()
+  root.paletteOpen = true
+}
 
 onKeyDown('p', (e) => {
   if (!isModKey(e)) return

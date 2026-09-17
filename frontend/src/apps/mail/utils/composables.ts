@@ -8,6 +8,7 @@ import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/m
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import { useRootStore } from '@/stores/root'
 
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
@@ -154,35 +155,28 @@ export const useFolderSheet = () => {
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
 }
 
-// The mobile search overlay is mounted once, by the tab bar, outside the views: opening it
-// begins with a navigation to the search page, which the view that asked for it may not
-// survive (All Inboxes is a different component from the mailbox). Its open state sits here
-// so the title header's search button, in whichever view, can raise it.
-const isSearchModalOpen = ref(false)
-
 export const useMobileSearch = () => {
 	const route = useRoute()
 	const router = useRouter()
 	const store = userStore()
+	const root = useRootStore()
 
 	const isSearchRoute = computed(
 		() => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
 	)
 
-	// Searching is a navigation: it lands on the search page (results live on the mailbox
-	// route with the virtual 'search' mailbox), then opens the query editor on top of it.
-	// Navigate first: the editor pushes its own history state, which must sit above the
-	// search page's entry for back to unwind cleanly.
+	// Keep the search route behind the palette so browser Back dismisses search and the
+	// route watcher in the tab bar closes the palette.
 	const openSearch = async () => {
 		if (!isSearchRoute.value)
 			await router.push({
 				name: 'mail-mailbox',
 				params: { accountId: store.accountId, mailbox: 'search' },
 			})
-		isSearchModalOpen.value = true
+		root.paletteOpen = true
 	}
 
-	return { isSearchModalOpen, isSearchRoute, openSearch }
+	return { isSearchRoute, openSearch }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the tab bar and FAB

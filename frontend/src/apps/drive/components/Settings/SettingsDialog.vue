@@ -1,5 +1,5 @@
 <template>
-  <SuiteSettingsDialog v-model:open="open" v-model:tab="activeTab" :groups="groups" :shortcut="false" />
+  <SuiteSettingsDialog v-model:open="open" v-model:tab="activeTab" :groups="groups" />
 </template>
 
 <script setup lang="ts">

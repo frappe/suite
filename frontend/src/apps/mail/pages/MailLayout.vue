@@ -7,12 +7,23 @@
 		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
+		<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model:open="showSettings" />
+		<Teleport v-else-if="!mailServerUnavailable" to="body">
+			<Transition
+				enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+				enter-from-class="translate-x-full"
+				leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+				leave-to-class="translate-x-full"
+			>
+				<PWASettings v-if="showSettings" @close="showSettings = false" />
+			</Transition>
+		</Teleport>
 		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
@@ -20,7 +31,7 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useShortcuts, useTheme, useUndo } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -28,6 +39,9 @@ import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
+import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
+import PWASettings from '@/apps/mail/components/PWASettings.vue'
+import { useRootStore } from '@/stores/root'
 
 import type { NotificationPayload } from '@/apps/mail/types'
 
@@ -114,8 +128,28 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
-const { cycleTheme } = useTheme()
 const route = useRoute()
+const { showSettings, openSettings } = useSettings()
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layout', () =>
+	mailServerUnavailable.value
+		? []
+		: [
+				{
+					commands: [
+						{
+							id: 'mail-settings',
+							label: 'Settings',
+							shortcut: 'Mod+Shift+Comma',
+							enterHint: 'open settings',
+							icon: 'lucide-settings',
+							run: () => openSettings(),
+						},
+					],
+				},
+			],
+)
+onScopeDispose(unregisterPaletteGroups)
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
@@ -133,20 +167,6 @@ const Layout = computed(() => {
 // suite apps are unaffected.
 onMounted(() => document.body.classList.add('mail-app'))
 onUnmounted(() => document.body.classList.remove('mail-app'))
-
-// App-wide Cmd/Ctrl+Shift+L to cycle the color scheme. MailLayout is the
-// mounted mail root, so the listener lives here to fire on any mail page.
-const handleThemeShortcut = (e: KeyboardEvent) => {
-	if (
-		(e.metaKey || e.ctrlKey) &&
-		e.shiftKey &&
-		e.key.toLowerCase() === 'l' &&
-		!shouldIgnoreKeypress(e, true)
-	) {
-		e.preventDefault()
-		cycleTheme()
-	}
-}
 
 /* -------------------------------------------------------------------------- */
 /* Push-notification service worker.                                          */
@@ -208,13 +228,11 @@ onMounted(() => {
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
-	window.addEventListener('keydown', handleThemeShortcut)
 	window.addEventListener('keydown', handleGlobalShortcuts)
 	window.addEventListener('focusout', resetDocumentScroll)
 })
 
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleThemeShortcut)
 	window.removeEventListener('keydown', handleGlobalShortcuts)
 	window.removeEventListener('focusout', resetDocumentScroll)
 })

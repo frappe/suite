@@ -892,20 +892,6 @@
       @navigate-to="onNavigateTo"
     />
 
-    <!-- Cmd+K command palette -->
-    <CommandPalette v-model:open="showCmdPalette" v-model:query="cmdQuery" @select="onCmdSelect">
-      <CommandPaletteInput placeholder="Search commands" />
-      <CommandPaletteList>
-        <CommandPaletteGroup v-for="group in cmdGroups" :key="group.title" :label="group.title">
-          <CommandPaletteItem v-for="item in group.items" :key="item.name" :value="item">
-            {{ item.title }}
-            <template v-if="item.description" #suffix>{{ item.description }}</template>
-          </CommandPaletteItem>
-        </CommandPaletteGroup>
-      </CommandPaletteList>
-      <CommandPaletteEmpty />
-    </CommandPalette>
-
     <!-- Hyperlink dialog (Ctrl+L) — stores fmt.hyperlink on the active cell -->
     <Dialog v-model:open="showHyperlinkDialog" title="Insert hyperlink" size="sm">
       <template #default>
@@ -1269,7 +1255,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount, onScopeDispose } from 'vue'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
@@ -1277,6 +1263,9 @@ import { call } from '../../utils/api.js'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useRootStore } from '@/stores/root'
+import { confirmLeave } from '@/utils/confirmLeave'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
@@ -1317,7 +1306,6 @@ import { useCollaboration }    from './useCollaboration.js'
 import { useExportImport }     from './useExportImport.js'
 import { useVersionHistory }   from './useVersionHistory.js'
 import { useSplitText }        from './useSplitText.js'
-import { buildCommandGroups }  from './commandPalette.config.js'
 import FindReplace             from './FindReplace.vue'
 import VersionHistory          from './VersionHistory.vue'
 import VersionPreviewBanner    from './VersionPreviewBanner.vue'
@@ -1343,12 +1331,6 @@ import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import {
    Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip, usePageMeta } from 'frappe-ui'
 import {
-  CommandPalette,
-  CommandPaletteEmpty,
-  CommandPaletteGroup,
-  CommandPaletteInput,
-  CommandPaletteItem,
-  CommandPaletteList,
   Icon as FeatherIcon,
 } from 'frappe-ui/experimental'
 
@@ -1363,7 +1345,7 @@ const themeMenuOption = useThemeMenuOption()
 const settingsMenuOption = useSettingsMenuOption()
 const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
-  { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
+  { label: 'Sheets', route: { name: 'sheets-home' } },
 ])
 const sheetBreadcrumbs = computed(() => [
   ...sheetHomeBreadcrumbs.value,
@@ -2088,6 +2070,20 @@ const userInitial = computed(() => userInitials(userFullName.value, userEmail.va
 const shareOpen   = ref(false)
 const shareCount  = ref(0)   // explicit share count (excluding owner); updated by ShareDialog
 const aiSettingsOpen = ref(false)
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('sheets-editor-settings', () => {
+  if (!window.frappe?.boot?.ai_assist_can_configure) return []
+
+  return [{
+    commands: [{
+      id: 'sheets-settings',
+      label: 'AI settings',
+      icon: 'lucide-cpu',
+      keywords: ['AI', 'assist', 'configure'],
+      run: () => (aiSettingsOpen.value = true),
+    }],
+  }]
+})
+onScopeDispose(unregisterPaletteGroups)
 const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
   getSheet:        () => sheet,
   getCurrentTitle: () => currentTitle.value,
@@ -3518,7 +3514,7 @@ onBeforeUnmount(() => {
 // Browser-level guard (tab close / refresh / cross-app nav). The native
 // "Leave site?" prompt is the only thing that can preempt a unload reliably.
 function onBeforeUnloadGuard(e) {
-  if (!isDirty.value) return
+  if (!hasUnsavedChanges()) return
   e.preventDefault()
   e.returnValue = ''   // Chrome requires returnValue to show the prompt
 }
@@ -3526,6 +3522,20 @@ function onBeforeUnloadGuard(e) {
 let _autoSaveTimer = null
 let _savePromise = null
 let _pendingSaveBatch = null
+
+function hasUnsavedChanges() {
+  return isDirty.value || isSaving.value
+}
+
+const confirmUnsavedNavigation = () => {
+  if (!hasUnsavedChanges() || readOnly.value) return true
+  return confirmLeave()
+}
+onBeforeRouteLeave(confirmUnsavedNavigation)
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.id === from.params.id) return true
+  return confirmUnsavedNavigation()
+})
 
 // Operation queue — populated by _queueOp() at write sites (paste, fill,
 // import, cell edit, etc.).  Flushed after each successful save so each
@@ -3877,11 +3887,6 @@ watch(saveError, (msg) => {
   }, 30_000)
 })
 
-async function flushAndClose() {
-  await flushSave()
-  emit('close')
-}
-
 // Watch for any dirty change → schedule auto-save
 watch(isDirty, (dirty) => { if (dirty) _triggerAutoSave() })
 
@@ -3891,9 +3896,8 @@ watch(showSortFilter, () => { grid?.render?.() })
 
 // Title focus/blur — mark `isDirty` when the value changed during the focus
 // session so `_doAutoSave` doesn't bail on its `!isDirty` guard. Without
-// this, a rename-then-leave flow (no cell edit in between) silently dropped
-// the new title: the 2 s autosave ran but exited early, and `flushAndClose`
-// → `flushSave` did the same. Snapshotting on focus avoids spurious saves
+// this, a rename-then-save flow (no cell edit in between) silently dropped
+// the new title because `flushSave` exited early. Snapshotting on focus avoids spurious saves
 // when the user just clicks into and out of the field without typing.
 let _titleAtFocus = ''
 function startTitleEditing() {
@@ -5881,27 +5885,6 @@ function doUnhideAllCols() {
   history.push(); isDirty.value = true
 }
 
-
-// ── Cmd+K command palette ─────────────────────────────────────────────────────
-// CommandPalette ships its own Cmd+K listener that flips `showCmdPalette`.
-const showCmdPalette = ref(false)
-const cmdQuery       = ref('')
-
-const cmdGroups = computed(() => buildCommandGroups({
-  toggleFmt, setAlign, setValign, adjustDecimals, toggleWrap, clearFormatting,
-  undo, redo, repeatLast, showFindReplace, openFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
-  contextMenu, getGrid: () => grid,
-  doInsertRow, doDeleteRow, doInsertCol, doDeleteCol,
-  doMoveColLeft, doMoveColRight,
-  doHideRows, doHideCols, doUnhideAllRows, doUnhideAllCols,
-  doAutoFitCol, doAutoFitRow, toggleMerge, addRowsCount, doAddMoreRows,
-  doFreezeRow, doFreezeCol, doUnfreezeRows, doUnfreezeCols, showSortFilter,
-  openPivotDialog,
-  addSheet, currentSheet, openRenameDialog, doDuplicateSheet, doDeleteSheet,
-  onSave, exportCSV, exportXLSX, exportPDF, csvInputRef, xlsxInputRef,
-}))
-
-function onCmdSelect(item) { item?.fn?.() }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

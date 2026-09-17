@@ -54,6 +54,8 @@
 </template>
 
 <script setup lang="ts">
+import { onScopeDispose } from "vue";
+import { useRootStore } from "@/stores/root";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
 import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
@@ -65,7 +67,7 @@ import ToolbarButton from "./ToolbarButton.vue";
 
 const $platform = getPlatform();
 
-defineProps({
+const props = defineProps({
 	isMicOn: {
 		type: Boolean,
 		required: true,
@@ -94,4 +96,24 @@ const showSettingsDialog = defineModel({
 	type: Boolean,
 	default: false,
 });
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	"meet-preview-toolbar",
+	() => props.cameraPermissionGranted || props.microphonePermissionGranted ? [
+		{
+			commands: [
+				{
+					id: "meet-settings",
+					label: "Settings",
+					shortcut: "Mod+Shift+Comma",
+					enterHint: "open meet settings",
+					icon: "lucide-settings",
+					keywords: ["audio", "video", "camera", "microphone", "devices"],
+					run: () => (showSettingsDialog.value = true),
+				},
+			],
+		},
+	] : [],
+);
+onScopeDispose(unregisterPaletteGroups);
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onScopeDispose, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
 import { Button, Dialog, TabButtons, createResource, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
@@ -17,6 +17,7 @@ import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
+import { useRootStore } from '@/stores/root'
 import { invalidateEventDensity } from '@/apps/calendar/composables/useEventDensity'
 import { rememberCalendarView } from '@/apps/calendar/utils/lastView'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
@@ -101,20 +102,6 @@ watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
 	// A new month is outside the window that was fetched for the old one.
 	if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.reload()
 })
-
-// The tab bar's FAB lives outside this view, so it asks for a new event through the
-// URL (?new=1) and this answers — then drops the flag, so a reload or a Back does not
-// reopen the modal.
-watch(
-	() => route.query.new,
-	(flag) => {
-		if (!flag || !isMobile.value) return
-		const { new: _new, ...query } = route.query
-		router.replace({ query })
-		handleOpenEvent({ date: dayjs(mobileDate.value).toDate() })
-	},
-	{ immediate: true },
-)
 
 // Back/Forward and the account switch write the route; the phone follows it,
 // the way applyRoute has the desktop calendar follow it.
@@ -222,6 +209,7 @@ onMounted(() => {
 	// The desktop's first fetch is a side effect of the fui Calendar mounting and
 	// announcing its month; the phone has no such component, so it asks itself.
 	if (isMobile.value) events.fetch()
+	openNewEventFromRoute(route.query.new)
 })
 
 // Watched as one string, not as an array the getter rebuilds: a getter returning
@@ -610,6 +598,35 @@ const newEventDate = () => {
 	const start = dayjs(range.startDate)
 	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
+
+// The mobile tab bar and Suite launcher ask for a new event through the URL
+// (?new=1). Consume the flag so reload or Back does not reopen the modal.
+const openNewEventFromRoute = (flag) => {
+	if (!flag) return
+	const { new: _new, ...query } = route.query
+	router.replace({ query })
+	handleOpenEvent({
+		date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
+	})
+}
+
+watch(() => route.query.new, openNewEventFromRoute)
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
+	{
+		commands: [
+			{
+				id: 'calendar-new-event',
+				label: 'New event',
+				enterHint: 'create event',
+				icon: 'lucide-calendar-plus',
+				keywords: ['create', 'add'],
+				run: () => handleOpenEvent({ date: newEventDate() }),
+			},
+		],
+	},
+])
+onScopeDispose(unregisterPaletteGroups)
 
 // The grid's own keys are switched off (`enableShortcuts`) and registered here instead, with
 // frappe-ui's shortcut registry, so the shortcuts dialog lists them beside the app's own.

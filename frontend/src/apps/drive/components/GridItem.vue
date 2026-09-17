@@ -39,7 +39,7 @@
           v-if="showTypeIcon"
           loading="lazy"
           class="h-4 w-auto"
-          :src="getIconUrl(file.file_type)"
+          :src="getEntityIconUrl(file)"
           :draggable="false"
         />
         <p class="truncate">
@@ -53,7 +53,7 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
+import { getEntityIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
 import { Tooltip } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import InlineRenameInput from './InlineRenameInput.vue'

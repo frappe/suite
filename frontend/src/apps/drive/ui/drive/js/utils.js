@@ -21,6 +21,8 @@ export function getFileLink(entity, copy = true) {
   if (entity.file_type === 'Link') link = entity.file_url
   else if (entity.content_doctype === 'Presentation') {
     link = `${window.location.origin}/slides/presentation/${entity.content_docname}`
+  } else if (entity.content_doctype === 'Sheet') {
+    link = `${window.location.origin}/sheets/${entity.content_docname || entity.name}`
   } else if (entity.file_type === 'Document' || entity.file_type === 'Markdown') {
     link = `${window.location.origin}/writer/w/${entity.name}`
   } else {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Ellipsis, Keyboard, LogOut, Plus, Settings, User } from 'lucide-vue-next'
 import {
@@ -25,10 +25,10 @@ import { userStore } from '@/apps/calendar/stores/user'
 import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
-import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 const { visibleCalendars, events, selectedEvent } = defineProps<{
@@ -121,7 +121,7 @@ const calendarActions = useCalendarActions()
 const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
 	calendarActions
 
-const showSettings = ref(false)
+const openSettings = inject<() => void>('openCalendarSettings')!
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 const menuItems = computed(() => [
@@ -135,7 +135,7 @@ const menuItems = computed(() => [
 			{
 				icon: Settings,
 				label: __('Settings'),
-				onClick: () => (showSettings.value = true),
+				onClick: openSettings,
 			},
 			{
 				icon: Keyboard,
@@ -176,6 +176,9 @@ const menuItems = computed(() => [
 		<div class="flex h-full flex-col">
 			<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
 			<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+				<SidebarSection>
+					<CommandPaletteSidebarItem />
+				</SidebarSection>
 				<!-- Stays mounted through a collapse and folds in step with the
 				     sidebar's 300ms width animation, like frappe-ui's own labels
 				     (they animate w-0/opacity-0; height is our axis). A fixed width
@@ -268,7 +271,6 @@ const menuItems = computed(() => [
 			</div>
 		</div>
 	</Sidebar>
-	<SettingsModal v-model:open="showSettings" />
 	<CalendarModal v-model="showCalendarModal" :calendar="selectedCalendar" />
 	<DeleteCalendarModal v-model="showDeleteCalendar" :calendar="selectedCalendar" />
 </template>

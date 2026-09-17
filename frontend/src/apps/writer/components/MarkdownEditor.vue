@@ -1,5 +1,5 @@
 <script setup>
-import { provide, computed, ref, useTemplateRef } from 'vue'
+import { provide, computed, ref, useTemplateRef, watch } from 'vue'
 import {
   Editor,
   EditorFixedMenu,
@@ -17,6 +17,9 @@ const props = defineProps({
 })
 
 const content = ref(props.document.doc.file_content)
+const dirty = defineModel('dirty', { default: false })
+const initialContent = content.value
+watch(content, (value) => (dirty.value = value !== initialContent))
 const editorEl = useTemplateRef('editorEl')
 const editor = computed(() => editorEl.value?.editor)
 provide('editor', editor)

@@ -14,9 +14,9 @@
 				:placeholder="__('Search')"
 				:aria-label="__('Edit search')"
 				class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-base focus:ring-0"
-				@mousedown.prevent="openSearch()"
+				@mousedown.prevent="openSearch"
 			/>
-			<Button variant="ghost" :aria-label="__('Filters')" @click="openSearch(true)">
+			<Button variant="ghost" :aria-label="__('Filters')" @click="openAdvancedSearch">
 				<template #icon>
 					<SlidersHorizontal class="text-ink-gray-5 h-4 w-4" />
 				</template>
@@ -33,7 +33,7 @@
 			:aria-label="__('Edit search')"
 			readonly
 			variant="outline"
-			@mousedown.prevent="openSearch()"
+			@mousedown.prevent="openSearch"
 		>
 			<template #prefix>
 				<Search class="text-ink-gray-5 size-4" />
@@ -42,7 +42,7 @@
 				<button
 					class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
 					:aria-label="__('Filters')"
-					@mousedown.stop.prevent="openSearch(true)"
+					@mousedown.stop.prevent="openAdvancedSearch"
 				>
 					<SlidersHorizontal class="size-4" />
 				</button>
@@ -57,11 +57,8 @@
 				v-for="chip in searchFilterChips"
 				:key="chip.key"
 				class="bg-surface-gray-2 inline-flex items-center gap-1 rounded-4 pl-2 pr-1"
-				:class="[
-					isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
-					{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) },
-				]"
-				@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
+				:class="[isMobile ? 'h-8 text-sm' : 'h-7 text-xs', 'hover:bg-surface-gray-3 cursor-pointer']"
+				@click="openAdvancedSearch"
 			>
 				<span class="max-w-40 truncate">{{ chip.label }}</span>
 				<button
@@ -92,6 +89,7 @@ import { Button, FormControl } from 'frappe-ui'
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import { useRootStore } from '@/stores/root'
 
 import type { MailboxData, UserResource } from '@/apps/mail/types'
 
@@ -99,60 +97,20 @@ import type { MailboxData, UserResource } from '@/apps/mail/types'
 // It owns the whole search-query surface — every edit here re-runs the search by pushing a new route,
 // which is what the results below already read from. Labels mirror the search dialog's.
 //
-// The modal itself belongs to HeaderActions, so its three pieces of state are models rather than local:
-// this header opens the modal, HeaderActions renders it.
+// The modal belongs to HeaderActions, so this header opens it through the shared model.
 const showSearch = defineModel<boolean>('showSearch', { required: true })
-const showAdvanced = defineModel<boolean>('showAdvanced', { required: true })
-// Set when a filter chip is clicked; the modal reopens that filter inline for editing.
-const editFilter = defineModel<string>('editFilter', { required: true })
 
 const route = useRoute()
 const router = useRouter()
 const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
 const { accountId, mailboxes, mailboxIds } = userStore()
+const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 
-// Open the search modal — to the filter form when `advanced` (clicking a pill / "Add filter"), or to the
-// plain search input otherwise (clicking the query).
-const openSearch = (advanced = false) => {
-	showAdvanced.value = advanced
-	showSearch.value = true
-}
-
-// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
-// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
-// these keys are clickable.
-const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
-const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
-// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
-// Read ↔ Unread — instead of opening the modal.
-const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
-const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
-const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
-
-// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
-// chips only expose the remove button.
-const handleChipClick = (key: string) => {
-	if (isToggleableChip(key)) return toggleSearchFilter(key)
-	if (isEditableChip(key)) return editSearchFilter(key)
-}
-
-// Clicking an editable chip opens the modal (plain search view) with that filter dropped back into the
-// query as an editable token — the same effect as clicking the chip inside the modal.
-const editSearchFilter = (key: string) => {
-	showAdvanced.value = false
-	editFilter.value = key
-	showSearch.value = true
-}
-
-// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
-const toggleSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	query[key] = query[key] === 'true' ? 'false' : 'true'
-	searchWith(query)
-}
+const openSearch = () => (root.paletteOpen = true)
+const openAdvancedSearch = () => (showSearch.value = true)
 
 const SEARCH_FILTER_LABELS: Record<string, string> = {
 	inMailbox: __('In'),

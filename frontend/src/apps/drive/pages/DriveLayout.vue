@@ -31,7 +31,7 @@
     <router-view v-else :key="$route.fullPath" v-slot="{ Component }">
       <component :is="Component" />
     </router-view>
-    <SearchPopup v-if="isLoggedIn && showSearchPopup" v-model="showSearchPopup" />
+    <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
     <KeyboardShortcutsDialog v-model:open="showShortcuts" />
     <FileUploader
       v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name) && !($route.name === 'drive-Home' && shareView)" />
@@ -40,20 +40,19 @@
 </template>
 <script setup>
 import Sidebar from '@/apps/drive/components/Sidebar.vue'
-import SearchPopup from '@/apps/drive/components/SearchPopup.vue'
 import FDialogs from '@/apps/drive/components/FDialogs.vue'
 import BottomBar from '@/apps/drive/components/BottomBar.vue'
 import FileUploader from '@/apps/drive/components/FileUploader.vue'
 import { useSessionStore } from '@/boot/session'
-import { ref, computed, onMounted, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, provide, ref } from 'vue'
 import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
 import { useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
 import { initSocket } from '@/apps/drive/socket'
 import { DesktopShell, FrappeUIProvider, KeyboardShortcutsDialog, MobileShell, useKeyboardShortcut } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
+import { useRootStore } from '@/stores/root'
 import { rootInfo } from '@/apps/drive/resources/files'
 import { isApple } from '@/apps/drive/utils/files'
 
@@ -68,13 +67,53 @@ const shellScroll = computed(() => route.meta.shellScroll !== false)
 const inIframe = window.self !== window.top
 provide('inIframe', inIframe)
 
-const showSearchPopup = ref(false)
 const showShortcuts = ref(false)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const normalView = computed(() => !inIframe && isLoggedIn.value)
-useEmitter('showSearchPopup', (data) => {
-  showSearchPopup.value = data
+const root = useRootStore()
+const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () => {
+  if (!normalView.value) return []
+
+  const commands = [
+    {
+      id: 'drive-settings',
+      label: 'Settings',
+      shortcut: 'Mod+Shift+Comma',
+      enterHint: 'open settings',
+      icon: 'lucide-settings',
+      run: () => emitter.emit('showSettings'),
+    },
+  ]
+
+  if (
+    ['drive-Folder', 'drive-Home'].includes(String(route.name)) &&
+    !(route.name === 'drive-Home' && shareView.value)
+  ) {
+    commands.push(
+      {
+        id: 'drive-new-folder',
+        label: 'New folder',
+        enterHint: 'create folder',
+        icon: 'lucide-folder-plus',
+        description: 'Create in the current Drive folder',
+        keywords: ['create'],
+        run: () => emitter.emit('newFolder'),
+      },
+      {
+        id: 'drive-upload-file',
+        label: 'Upload file',
+        enterHint: 'upload file',
+        icon: 'lucide-file-up',
+        description: 'Upload to the current Drive folder',
+        keywords: ['create', 'add'],
+        run: () => emitter.emit('uploadFile'),
+      },
+    )
+  }
+
+  return commands.length ? [{ commands }] : []
 })
+onScopeDispose(unregisterPaletteGroups)
 
 onMounted(() => {
   setupTheme()
@@ -95,8 +134,6 @@ const shortcut = (combo, description, group, handler) => ({
 })
 
 useKeyboardShortcut([
-  shortcut('Mod+K', 'Find Files', 'General', () => (showSearchPopup.value = true)),
-  shortcut('Mod+Shift+Comma', 'Open Settings', 'General', () => emitter.emit('showSettings')),
   shortcut('Mod+Shift+ArrowRight', 'Expand sidebar', 'General', () => (sidebarCollapsed.value = false)),
   shortcut('Mod+Shift+ArrowLeft', 'Collapse sidebar', 'General', () => (sidebarCollapsed.value = true)),
   {

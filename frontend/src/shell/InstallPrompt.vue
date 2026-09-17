@@ -115,4 +115,3 @@ const install = () => {
 	showDialog.value = false
 }
 </script>
-

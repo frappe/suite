@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { jmapUser, systemUser } from '@/boot/session'
-import { getPhoneAppSwitcherItems } from './registry'
+import { getAppSwitcherItems, getPhoneAppSwitcherItems } from './registry'
 
 const names = (currentApp: string) => getPhoneAppSwitcherItems(currentApp).map((app) => app.name)
 
@@ -26,5 +26,10 @@ describe('getPhoneAppSwitcherItems', () => {
 	it('offers no other app the desktop menu would not', () => {
 		jmapUser.value = false
 		expect(names('mail')).toEqual(['mail'])
+	})
+
+	it('can include the current app for the command palette', () => {
+		jmapUser.value = true
+		expect(getAppSwitcherItems('mail', true).map((app) => app.name)).toContain('mail')
 	})
 })

@@ -40,6 +40,7 @@ import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
 import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import { useRootStore } from '@/stores/root'
 import { ref, computed, watch } from 'vue'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useRouter, useRoute } from 'vue-router'
@@ -54,7 +55,6 @@ import LucideMonitor from '~icons/lucide/monitor'
 import LucideCheck from '~icons/lucide/check'
 import { themeMode, switchTheme } from '@/utils/setupTheme'
 
-defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
 const route = useRoute()
 notifCount.fetch()
@@ -117,7 +117,7 @@ const settingsItems = computed(() => [
       {
         icon: 'lucide-settings',
         label: __('Settings'),
-        onClick: () => (showSettings.value = true),
+        onClick: () => emitter.emit('showSettings'),
       },
       {
         icon: 'lucide-log-out',
@@ -142,7 +142,7 @@ const sidebarItems = computed(() => {
         {
           label: __('Search'),
           icon: LucideSearch,
-          onClick: () => emitter.emit('showSearchPopup', true),
+          onClick: () => (useRootStore().paletteOpen = true),
           suffix: isApple() ? '⌘ + K' : 'Ctrl + K',
         },
         {

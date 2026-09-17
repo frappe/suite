@@ -178,10 +178,12 @@ import {
 	type Component,
 	computed,
 	onMounted,
+	onScopeDispose,
 	onUnmounted,
 	ref,
 	watch,
 } from "vue";
+import { useRootStore } from "@/stores/root";
 import LucideBug from "~icons/lucide/bug";
 import { useE2EEState } from "../composables/useE2EEState";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
@@ -335,10 +337,7 @@ const moreOptions = computed(() => [
 	{
 		icon: "lucide-settings",
 		label: "Settings",
-		onClick: () => {
-			showSettingsDialog.value = true;
-			resetHideTimer();
-		},
+		onClick: openSettings,
 	},
 ]);
 
@@ -375,6 +374,31 @@ const resetHideTimer = (force = false) => {
 		isVisible.value = false;
 	}, 10000);
 };
+
+function openSettings() {
+	showSettingsDialog.value = true;
+	resetHideTimer();
+}
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	"meet-meeting-toolbar",
+	[
+		{
+			commands: [
+				{
+					id: "meet-settings",
+					label: "Settings",
+					shortcut: "Mod+Shift+Comma",
+					enterHint: "open meet settings",
+					icon: "lucide-settings",
+					keywords: ["audio", "video", "camera", "microphone", "devices"],
+					run: openSettings,
+				},
+			],
+		},
+	],
+);
+onScopeDispose(unregisterPaletteGroups);
 
 const handleActivity = () => {
 	showControls();

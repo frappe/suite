@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, provide } from 'vue'
+import { onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
 import { FrappeUIProvider, useKeyboardShortcut } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
 import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
+import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
+import { useRootStore } from '@/stores/root'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 /**
@@ -23,35 +24,43 @@ import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
-const { cycleTheme } = useTheme()
+const showSettings = ref(false)
 const { showShortcuts } = useShortcuts()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
 provide('$socket', initSocket())
+provide('openCalendarSettings', () => (showSettings.value = true))
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-layout', [
+	{
+		commands: [
+			{
+				id: 'calendar-settings',
+				label: 'Settings',
+				shortcut: 'Mod+Shift+Comma',
+				enterHint: 'open settings',
+				icon: 'lucide-settings',
+				run: () => (showSettings.value = true),
+			},
+		],
+	},
+])
+onScopeDispose(unregisterPaletteGroups)
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
 onMounted(() => document.body.classList.add('calendar-app'))
 onUnmounted(() => document.body.classList.remove('calendar-app'))
 
-useKeyboardShortcut([
-	{
-		combo: 'Mod+Shift+L',
-		description: __('Cycle Theme'),
-		group: __('Other'),
-		allowInDialog: true,
-		handler: cycleTheme,
-	},
-	{
-		combo: 'Shift+Slash',
-		description: __('View Shortcuts'),
-		group: __('Other'),
-		enabled: () => !isMobile.value,
-		allowInDialog: true,
-		handler: () => (showShortcuts.value = !showShortcuts.value),
-	},
-])
+useKeyboardShortcut({
+	combo: 'Shift+Slash',
+	description: __('View Shortcuts'),
+	group: __('Other'),
+	enabled: () => !isMobile.value,
+	allowInDialog: true,
+	handler: () => (showShortcuts.value = !showShortcuts.value),
+})
 </script>
 
 <template>
@@ -65,6 +74,7 @@ useKeyboardShortcut([
 			<CalendarTabBar />
 		</div>
 		<router-view v-else />
+		<SettingsModal v-model:open="showSettings" />
 		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
