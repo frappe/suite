@@ -150,7 +150,12 @@
 						</span>
 					</template>
 					{{ command.label }}
-					<template v-if="command.description" #suffix>
+					<template v-if="command.suffix" #suffix>
+						<span class="shrink-0 whitespace-nowrap pl-2 text-ink-gray-5">{{
+							command.suffix
+						}}</span>
+					</template>
+					<template v-else-if="command.description" #suffix>
 						<span class="text-p-xs text-ink-gray-5">{{
 							command.description
 						}}</span>

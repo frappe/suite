@@ -29,7 +29,7 @@ import { FrappeUIProvider } from 'frappe-ui'
 
 import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
-import { shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { isMac, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize, useSettings, useShortcuts, useTheme, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
@@ -141,6 +141,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 						{
 							id: 'mail-settings',
 							label: 'Settings',
+							suffix: isMac ? '⌘ + ⇧ + ,' : 'Ctrl + Shift + ,',
 							enterHint: 'open settings',
 							icon: 'lucide-settings',
 							run: () => openSettings(),

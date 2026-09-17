@@ -12,6 +12,7 @@ export interface PaletteCommand {
   label: string;
   enterHint?: string;
   description?: string;
+  suffix?: string;
   icon?: string;
   keywords?: string[];
   disabled?: boolean;
