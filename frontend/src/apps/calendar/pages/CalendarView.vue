@@ -208,6 +208,7 @@ onMounted(() => {
 	// The desktop's first fetch is a side effect of the fui Calendar mounting and
 	// announcing its month; the phone has no such component, so it asks itself.
 	if (isMobile.value) events.fetch()
+	openNewEventFromRoute(route.query.new)
 })
 
 // Watched as one string, not as an array the getter rebuilds: a getter returning
@@ -601,18 +602,16 @@ const newEventDate = () => {
 
 // The mobile tab bar and Suite launcher ask for a new event through the URL
 // (?new=1). Consume the flag so reload or Back does not reopen the modal.
-watch(
-	() => route.query.new,
-	(flag) => {
-		if (!flag) return
-		const { new: _new, ...query } = route.query
-		router.replace({ query })
-		handleOpenEvent({
-			date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
-		})
-	},
-	{ immediate: true },
-)
+const openNewEventFromRoute = (flag) => {
+	if (!flag) return
+	const { new: _new, ...query } = route.query
+	router.replace({ query })
+	handleOpenEvent({
+		date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
+	})
+}
+
+watch(() => route.query.new, openNewEventFromRoute)
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
 	{

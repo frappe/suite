@@ -11,11 +11,16 @@
 		@keydown.capture="handleModifiedEnter"
 		@select="selectItem"
 	>
+		<DialogDescription class="sr-only">
+			Search across Suite apps, commands, and content.
+		</DialogDescription>
 		<CommandPaletteInput
 			ref="paletteInput"
 			:placeholder="
 				mailAppliedFilters.length
-					? 'Add another filter or search mail'
+					? `Add another filter or search mail · ${removeMailFilterShortcut} removes last filter`
+					: activeApp === 'mail'
+						? 'Search mail or filter with from:, to:, in:'
 					: palettePlaceholder
 			"
 			@keydown.backspace="handleMailFilterBackspace"
@@ -391,6 +396,7 @@ import {
 	CommandPaletteList,
 	type CommandPaletteSelectEvent,
 } from 'frappe-ui/experimental'
+import { DialogDescription } from 'reka-ui'
 import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
 import {
 	mailFilterOptions,
@@ -496,6 +502,9 @@ const route = useRoute()
 const router = useRouter()
 const keyboardOpen = useKeyboardOpen()
 const { isMobile } = useScreenSize()
+const removeMailFilterShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+	? '⌘⌫'
+	: 'Ctrl+Backspace'
 const paletteInput = ref<{ $el: HTMLElement } | null>(null)
 const query = ref('')
 const navigationMode = ref(false)

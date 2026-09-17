@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import { h, onMounted, onUnmounted } from 'vue'
-import { Avatar, Dropdown } from 'frappe-ui'
+import { Avatar, Dropdown, toast } from 'frappe-ui'
 import { CircleUser, LogOut } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 
@@ -66,7 +66,20 @@ const composeMail = () => router.push({ path: '/mail', query: { compose: '1' } }
 
 const startInstantMeeting = () => startMeeting('open')
 
-const createCalendarEvent = () => router.push({ path: '/calendar', query: { new: '1' } })
+const createCalendarEvent = async () => {
+  const { userStore } = await import('@/apps/calendar/stores/user')
+  const calendarStore = userStore()
+  try {
+    if (!calendarStore.userResource.data) await calendarStore.userResource.fetch()
+    if (!calendarStore.accountId) {
+      toast.error('Set up Calendar before creating an event.')
+      return
+    }
+    await router.push({ path: '/calendar', query: { new: '1' } })
+  } catch {
+    toast.error('Could not load Calendar account.')
+  }
+}
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () => [
   {
