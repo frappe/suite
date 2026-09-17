@@ -78,6 +78,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () =>
     {
       id: 'drive-settings',
       label: 'Settings',
+      shortcut: 'Mod+Shift+Comma',
       enterHint: 'open settings',
       icon: 'lucide-settings',
       run: () => emitter.emit('showSettings'),

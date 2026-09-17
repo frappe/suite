@@ -157,6 +157,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
           {
             id: 'writer-settings',
             label: 'Settings',
+            shortcut: 'Mod+Shift+Comma',
             icon: 'lucide-settings',
             keywords: ['document', 'preferences'],
             run: () => (showSettings.value = true),

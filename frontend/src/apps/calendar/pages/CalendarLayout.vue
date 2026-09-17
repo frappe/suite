@@ -38,6 +38,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-l
 			{
 				id: 'calendar-settings',
 				label: 'Settings',
+				shortcut: 'Mod+Shift+Comma',
 				enterHint: 'open settings',
 				icon: 'lucide-settings',
 				run: () => (showSettings.value = true),
