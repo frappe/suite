@@ -719,6 +719,9 @@ function commandRank(command: PaletteCommand) {
 
 function enterHint(item: unknown) {
 	if (!item || typeof item !== 'object') return 'to open'
+	if ('id' in item) {
+		item = filteredCommands.value.find((command) => command.id === item.id) ?? item
+	}
 	if ('resultType' in item) {
 		if (item.resultType === 'mail') return 'to view thread'
 		if (item.resultType === 'mail-contact') return 'to choose contact'

@@ -18,12 +18,13 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme } from '@/composables/useTheme'
 import InstallPrompt from '@/shell/InstallPrompt.vue'
 import { useRootStore } from '@/stores/root'
-import { nextTheme } from '@/utils/themeValues'
+import { nextTheme, themeActionLabel } from '@/utils/themeValues'
 
 const root = useRootStore()
 const { isMobile } = useScreenSize()
 const { cycleTheme, themeMode } = useTheme()
 const nextThemeMode = computed(() => nextTheme(themeMode.value))
+const nextThemeAction = computed(() => themeActionLabel(nextThemeMode.value))
 const settingsCommand = computed(() =>
   root.paletteGroups
     .flatMap((group) => group.commands)
@@ -35,9 +36,9 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', compu
     commands: [
       {
         id: 'suite-cycle-theme',
-        label: `Switch to ${nextThemeMode.value} mode`,
+        label: nextThemeAction.value,
         shortcut: 'Mod+Shift+L',
-        enterHint: `switch to ${nextThemeMode.value} mode`,
+        enterHint: nextThemeAction.value.toLowerCase(),
         icon: nextThemeMode.value === 'light'
           ? 'lucide-sun'
           : nextThemeMode.value === 'dark'
