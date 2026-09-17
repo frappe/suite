@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, provide } from 'vue'
-import { FrappeUIProvider } from 'frappe-ui'
+import { FrappeUIProvider, useKeyboardShortcut } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
+import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
 
-import { shouldIgnoreKeypress } from '@/apps/calendar/utils'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 /**
  * Calendar route-group layout.
@@ -17,12 +18,13 @@ import { initSocket } from '@/apps/calendar/socket'
  * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
  *     and `$socket` injections that calendar components depend on,
- *   - ports the Cmd/Ctrl+Shift+L theme-cycle shortcut,
+ *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
 const { cycleTheme } = useTheme()
+const { showShortcuts } = useShortcuts()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
@@ -30,24 +32,26 @@ provide('$socket', initSocket())
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
-onMounted(() => {
-	document.body.classList.add('calendar-app')
-	window.addEventListener('keydown', handleKeyDown)
-})
-onUnmounted(() => {
-	document.body.classList.remove('calendar-app')
-	window.removeEventListener('keydown', handleKeyDown)
-})
+onMounted(() => document.body.classList.add('calendar-app'))
+onUnmounted(() => document.body.classList.remove('calendar-app'))
 
-const handleKeyDown = (e: KeyboardEvent) => {
-	const key = e.key.toLowerCase()
-
-	// Handle Ctrl/Cmd+Shift+L (Cycle Theme)
-	if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		return cycleTheme()
-	}
-}
+useKeyboardShortcut([
+	{
+		combo: 'Mod+Shift+L',
+		description: __('Cycle Theme'),
+		group: __('Other'),
+		allowInDialog: true,
+		handler: cycleTheme,
+	},
+	{
+		combo: 'Shift+Slash',
+		description: __('View Shortcuts'),
+		group: __('Other'),
+		enabled: () => !isMobile.value,
+		allowInDialog: true,
+		handler: () => (showShortcuts.value = !showShortcuts.value),
+	},
+])
 </script>
 
 <template>
@@ -61,6 +65,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 			<CalendarTabBar />
 		</div>
 		<router-view v-else />
+		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 

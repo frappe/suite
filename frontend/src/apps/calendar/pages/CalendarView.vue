@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
-import { Button, Dialog, TabButtons, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, TabButtons, createResource, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
 import { Calendar, CalendarActiveEvent, calendarDaySpan } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -612,6 +612,26 @@ const newEventDate = () => {
 	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
 
+// The grid's own keys are switched off (`enableShortcuts`) and registered here instead, with
+// frappe-ui's shortcut registry, so the shortcuts dialog lists them beside the app's own.
+const calendarShortcut = (combo: string, description: string, handler: () => void) => ({
+	combo,
+	description: __(description),
+	group: __('Calendar'),
+	enabled: () => !isMobile.value && !!calendarRef.value,
+	handler,
+})
+useKeyboardShortcut([
+	calendarShortcut('E', 'New Event', () => handleOpenEvent({ date: newEventDate() })),
+	calendarShortcut('T', 'Go to Today', () => calendarRef.value.setCalendarDate()),
+	calendarShortcut('ArrowLeft', 'Previous', () => calendarRef.value.decrement()),
+	calendarShortcut('ArrowRight', 'Next', () => calendarRef.value.increment()),
+	calendarShortcut('D', 'Day View', () => (calendarRef.value.activeView = 'Day')),
+	calendarShortcut('W', 'Week View', () => (calendarRef.value.activeView = 'Week')),
+	calendarShortcut('M', 'Month View', () => (calendarRef.value.activeView = 'Month')),
+	calendarShortcut('A', 'Agenda View', () => (calendarRef.value.activeView = 'Agenda')),
+])
+
 // A pill in the grid and a row in the sidebar's upcoming list toggle the open
 // event the way mail's list does: a second click on the open one closes it. The
 // element clicked is kept, since on desktop the event opens as a card hung on it
@@ -1044,7 +1064,7 @@ const NOTIFY_MODAL_OPTIONS = {
 					ref="calendar"
 					:events="visibleEvents"
 					:loading="eventsPending"
-					:config="{ isEditMode: true }"
+					:config="{ isEditMode: true, enableShortcuts: false }"
 					:on-click="({ e, calendarEvent }) => toggleEventDetail(calendarEvent, pillOf(e))"
 					:on-dbl-click="(event) => handleOpenEvent(event)"
 					:on-cell-click="(event) => handleOpenEvent(event)"
@@ -1061,9 +1081,24 @@ const NOTIFY_MODAL_OPTIONS = {
 						     right, past the view switcher. -->
 						<div class="mb-4 flex items-center justify-between">
 							<div class="flex items-center gap-x-1">
-								<Button variant="ghost" icon="lucide-chevron-left" @click="decrement" />
-								<Button variant="ghost" :label="__('Today')" @click="setCalendarDate()" />
-								<Button variant="ghost" icon="lucide-chevron-right" @click="increment" />
+								<Button
+									variant="ghost"
+									icon="lucide-chevron-left"
+									:tooltip="__('Previous (←)')"
+									@click="decrement"
+								/>
+								<Button
+									variant="ghost"
+									:label="__('Today')"
+									:tooltip="__('Go to Today (T)')"
+									@click="setCalendarDate()"
+								/>
+								<Button
+									variant="ghost"
+									icon="lucide-chevron-right"
+									:tooltip="__('Next (→)')"
+									@click="increment"
+								/>
 								<div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
 									<span class="font-medium text-ink-gray-9">{{ headerTitle(currentMonthYear).label }}</span>
 									<span v-if="headerTitle(currentMonthYear).year" class="text-ink-gray-4">
@@ -1084,6 +1119,7 @@ const NOTIFY_MODAL_OPTIONS = {
 									variant="solid"
 									icon-left="lucide-calendar-plus"
 									:label="__('Event')"
+									:tooltip="__('New Event (E)')"
 									@click="handleOpenEvent({ date: newEventDate() })"
 								/>
 							</div>
