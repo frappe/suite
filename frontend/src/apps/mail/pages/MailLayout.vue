@@ -18,7 +18,6 @@
 				<PWASettings v-if="showSettings" @close="showSettings = false" />
 			</Transition>
 		</Teleport>
-		<InstallPrompt v-if="isMobile" />
 		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
@@ -39,7 +38,6 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
-import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
 import PWASettings from '@/apps/mail/components/PWASettings.vue'
@@ -131,7 +129,6 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
 const { cycleTheme } = useTheme()
-const { isMobile } = useScreenSize()
 const route = useRoute()
 const { showSettings, openSettings } = useSettings()
 

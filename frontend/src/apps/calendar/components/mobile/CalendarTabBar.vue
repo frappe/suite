@@ -2,10 +2,10 @@
 	<!-- New event — the one thing the calendar is for that a tab cannot be. It floats
 	     above the bar in the right thumb zone. It belongs to the calendar itself, so it
 	     steps aside on the Profile page and while a sheet is up, which owns the bottom
-	     edge then. Geometry, tint and label treatment follow mail's tab bar: on a phone
-	     the two apps are one product. -->
+	     edge then. Geometry, tint and label treatment are mail's tab bar's, shared: on a
+	     phone the two apps are one product. -->
 	<Button
-		v-if="calendarActive && !sheetOpen"
+		v-if="calendarActive && !sheetOpen && !showAppsSheet"
 		variant="solid"
 		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
 		:aria-label="__('New event')"
@@ -42,6 +42,8 @@
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
+			<!-- Bound so the new-event button steps aside while the apps sheet is up. -->
+			<MobileAppTab v-model:open="showAppsSheet" app-id="calendar" />
 		</div>
 	</nav>
 
@@ -49,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { CalendarPlus } from 'lucide-vue-next'
@@ -57,6 +59,8 @@ import { CalendarPlus } from 'lucide-vue-next'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useViewSheet } from '@/apps/calendar/composables/useViewSheet'
 import MobileViewSheet from '@/apps/calendar/components/mobile/MobileViewSheet.vue'
+import MobileAppTab from '@/components/mobile/MobileAppTab.vue'
+import { iconClass, labelClass, tabClass } from '@/components/mobile/mobileClasses'
 import { lastCalendarView } from '@/apps/calendar/utils/lastView'
 import { routeForView, viewForRoute, viewIcon, viewLabel } from '@/apps/calendar/utils/mobileView'
 
@@ -74,6 +78,8 @@ const sheetOpen = computed(
 )
 
 const profileActive = computed(() => route.name === 'calendar-profile')
+
+const showAppsSheet = ref(false)
 
 // The URL is what says which view is up. Off the calendar — on Profile — there
 // is no view in the URL to read, so the tab names the one a tap would land in,
@@ -121,24 +127,4 @@ const openProfile = () => {
 // Creating is a query the calendar view answers, the way mail's compose is a route:
 // the bar stands outside the view that owns the event modal.
 const openCreate = () => router.replace({ query: { ...route.query, new: '1' } })
-
-// Active/inactive contrast rides ink and weight together, so the active tab pops
-// without the rest reading as disabled — the same two channels, and the same
-// values, as mail's bar.
-const tabClass = (active: boolean) =>
-	[
-		'flex flex-1 flex-col items-center justify-center gap-1',
-		active ? 'text-ink-gray-9' : 'text-ink-gray-5',
-	].join(' ')
-
-const iconClass = (active: boolean) =>
-	['h-6 w-6 shrink-0', active ? '[stroke-width:1.75]' : '[stroke-width:1.5]'].join(' ')
-
-// 11px sits below the type scale's floor (text-xs is 12), so it is spelled out
-// along with the 0.02em the scale's own tokens carry.
-const labelClass = (active: boolean) =>
-	[
-		'text-[11px] tracking-[0.02em] !leading-3',
-		active ? '!font-semibold' : '!font-medium',
-	].join(' ')
 </script>

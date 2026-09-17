@@ -111,9 +111,10 @@ export default defineConfig(({ mode }) => ({
     // (injectRegister: null).
     // `manifest: false`: the webmanifest is NOT generated here. All seven apps
     // share one HTML shell, so a <link rel="manifest"> injected into <head> at
-    // build time would make drive/calendar/... install as Frappe Mail too. It
-    // lives at public/pwa/mail/ instead and is linked at runtime only
-    // while the route is inside /mail (see router/index.ts setPwaTags).
+    // build time would offer the install from every app, phone layout or not.
+    // It lives at public/pwa/suite/ instead and is linked at runtime only
+    // while the route is inside an installable app (see router/index.ts
+    // setPwaTags).
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/apps/mail',

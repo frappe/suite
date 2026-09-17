@@ -31,9 +31,9 @@
       content="{{ '#171717' if desk_theme and desk_theme.lower() == 'dark' else '#ffffff' }}"
     />
     <!-- No manifest / standalone metas here on purpose: this shell is shared by
-         all seven apps, so anything installable in <head> makes drive, calendar,
-         ... add to the home screen as Frappe Mail. Mail injects its own set on
-         entering /mail (see router/index.ts setPwaTags). -->
+         all seven apps, and only those with a phone layout offer the install.
+         The router attaches the suite's set on entering one of them and removes
+         it on leaving (see router/index.ts setPwaTags). -->
   </head>
   <body>
     <div id="app" class="h-screen"></div>

@@ -4,16 +4,22 @@
       <slot />
     </main>
     <SuiteCommandPalette />
+    <!-- The suite is one PWA, so the offer to install it is the shell's, not
+         an app's; it decides for itself when to show. -->
+    <InstallPrompt v-if="isMobile" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onScopeDispose } from 'vue'
 import SuiteCommandPalette from './SuiteCommandPalette.vue'
+import { useScreenSize } from '@/composables/useScreenSize'
+import InstallPrompt from '@/shell/InstallPrompt.vue'
 import { useRootStore } from '@/stores/root'
 import { resolvedTheme, switchTheme } from '@/utils/setupTheme'
 
 const root = useRootStore()
+const { isMobile } = useScreenSize()
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-layout', computed(() => [
   {

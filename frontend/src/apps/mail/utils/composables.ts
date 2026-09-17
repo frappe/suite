@@ -8,6 +8,7 @@ import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/m
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import { useRootStore } from '@/stores/root'
 
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
@@ -152,6 +153,30 @@ export const useFolderSheet = () => {
 	const closeFolderSheet = () => (isFolderSheetOpen.value = false)
 
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
+}
+
+export const useMobileSearch = () => {
+	const route = useRoute()
+	const router = useRouter()
+	const store = userStore()
+	const root = useRootStore()
+
+	const isSearchRoute = computed(
+		() => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
+	)
+
+	// Keep the search route behind the palette so browser Back dismisses search and the
+	// route watcher in the tab bar closes the palette.
+	const openSearch = async () => {
+		if (!isSearchRoute.value)
+			await router.push({
+				name: 'mail-mailbox',
+				params: { accountId: store.accountId, mailbox: 'search' },
+			})
+		root.paletteOpen = true
+	}
+
+	return { isSearchRoute, openSearch }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the tab bar and FAB

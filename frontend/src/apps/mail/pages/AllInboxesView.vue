@@ -1,7 +1,7 @@
 <template>
 	<!-- Mobile title header — no thread count since the merged view has no total.
 	     The toolbar below carries the bottom border, matching the mailbox structure. -->
-	<MobileTitleHeader v-if="isMobile" with-menu :title="__('All Inboxes')" />
+	<MobileTitleHeader v-if="isMobile" with-menu with-search :title="__('All Inboxes')" />
 
 	<!-- Header -->
 	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and

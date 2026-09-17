@@ -27,9 +27,15 @@ interface SuiteApp {
   prefix: string
   /** Imported, build-fingerprinted brand-logo URL. */
   logo: string
+  /**
+   * Has a phone layout, so the suite PWA offers to install from inside it.
+   * The install is one app, Frappe Suite; this only says where the offer
+   * appears. Set it as each app gets its phone layout.
+   */
+  pwa?: boolean
 }
 
-interface SuiteAppSwitcherItem {
+export interface SuiteAppSwitcherItem {
   name: string
   title: string
   route: string
@@ -45,9 +51,14 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: 'writer', name: 'Writer', prefix: '/writer', logo: writerLogo },
   { id: 'sheets', name: 'Sheets', prefix: '/sheets', logo: sheetsLogo },
   { id: 'meet', name: 'Meet', prefix: '/meet', logo: meetLogo },
-  { id: 'mail', name: 'Mail', prefix: '/mail', logo: mailLogo },
-  { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo },
+  { id: 'mail', name: 'Mail', prefix: '/mail', logo: mailLogo, pwa: true },
+  { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo, pwa: true },
 ]
+
+/** Whether the suite PWA's manifest and install offer belong on this app's routes. */
+export function isInstallableApp(appId: unknown): boolean {
+  return !!SUITE_APPS.find((app) => app.id === appId)?.pwa
+}
 
 const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((app) => ({
   name: app.id,
@@ -63,6 +74,16 @@ const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
   route: '/app',
   logo: '/assets/frappe/images/framework.png',
   spa: false,
+}
+
+/**
+ * The phone's switcher: the app you are in first, then the other apps with a phone
+ * layout (`pwa`) that the desktop menu would offer you. Desk has none, so it is left out.
+ */
+export function getPhoneAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
+  const current = SUITE_APP_SWITCHER_ITEMS.find((app) => app.name === currentApp)
+  const others = getAppSwitcherItems(currentApp).filter((app) => isInstallableApp(app.name))
+  return [...(current ? [current] : []), ...others]
 }
 
 export function getAppSwitcherItems(
