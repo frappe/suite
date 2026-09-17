@@ -167,7 +167,7 @@ import {
 	adjustScheduleEndTime,
 	adjustScheduleStartTime,
 } from "@/apps/calendar/utils/scheduleTime";
-import { useConnectionState } from "../composables/useConnectionState";
+import { useStartMeeting } from "../composables/useStartMeeting";
 import { submit } from "../utils/request";
 import { useRootStore } from "@/stores/root";
 import MeetSidebar from "../components/MeetSidebar.vue";
@@ -188,7 +188,7 @@ interface CalendarParticipant {
 
 const router = useRouter();
 const root = useRootStore();
-const connectionState = useConnectionState();
+const { isStartingMeeting, startMeeting } = useStartMeeting();
 const calendarStore = useCalendarUserStore();
 const meetingCode = ref("");
 const meetingCodeError = ref("");
@@ -216,23 +216,6 @@ const userResource = useCall<{ name?: string; full_name?: string; user_image?: s
 const firstName = computed(() => {
 	const name = userResource.data?.full_name || userResource.data?.name || "";
 	return name.split(" ")[0] || "there";
-});
-
-const createMeeting = useCall<string, { meeting_type: "open" | "restricted" }>({
-	url: "/api/v2/method/suite.meet.api.meeting.create",
-	method: "POST",
-	immediate: false,
-	onSuccess: (meeting_code: string) => {
-		router.push({
-			name: "meet-meeting",
-			params: { meetingId: meeting_code },
-		});
-		connectionState.justCreated = true;
-	},
-	onError: (error: unknown) => {
-		console.error("Error creating meeting:", error);
-		toast.error("Failed to create meeting. Please try again.");
-	},
 });
 
 const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`));
@@ -297,28 +280,6 @@ const scheduleMeeting = useCall({
 		console.error("Error scheduling meeting:", error);
 	},
 });
-
-const startMeeting = (meetingType: "open" | "restricted") => {
-	const toastId = toast.loading("Creating meeting...");
-	submit(createMeeting, { meeting_type: meetingType })
-		.then((meetingCode: string) => {
-			toast.dismiss(toastId);
-			toast.success("Meeting created successfully!", {
-				duration: 8000,
-				action: {
-					label: "Copy link",
-					onClick: () => {
-						const path = router.resolve({
-							name: "meet-meeting",
-							params: { meetingId: meetingCode },
-						}).href;
-						navigator.clipboard.writeText(new URL(path, window.location.origin).href);
-					},
-				},
-			});
-		})
-		.catch(() => toast.dismiss(toastId));
-};
 
 const startInstantMeeting = () => startMeeting("open");
 
@@ -388,7 +349,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 				enterHint: "start instant meet",
 				icon: "lucide-zap",
 				keywords: ["new", "instant", "room"],
-				disabled: createMeeting.loading,
+				disabled: isStartingMeeting.value,
 				run: startInstantMeeting,
 			},
 			{
@@ -397,7 +358,7 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 				enterHint: "start restricted meet",
 				icon: "lucide-lock",
 				keywords: ["new", "private", "room"],
-				disabled: createMeeting.loading,
+				disabled: isStartingMeeting.value,
 				run: startRestrictedMeeting,
 			},
 			{

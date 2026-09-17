@@ -102,20 +102,6 @@ watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
 	if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.reload()
 })
 
-// The tab bar's FAB lives outside this view, so it asks for a new event through the
-// URL (?new=1) and this answers — then drops the flag, so a reload or a Back does not
-// reopen the modal.
-watch(
-	() => route.query.new,
-	(flag) => {
-		if (!flag || !isMobile.value) return
-		const { new: _new, ...query } = route.query
-		router.replace({ query })
-		handleOpenEvent({ date: dayjs(mobileDate.value).toDate() })
-	},
-	{ immediate: true },
-)
-
 // Back/Forward and the account switch write the route; the phone follows it,
 // the way applyRoute has the desktop calendar follow it.
 // One string rather than a rebuilt array, for the reason applyRoute's watcher
@@ -612,6 +598,21 @@ const newEventDate = () => {
 	const start = dayjs(range.startDate)
 	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
+
+// The mobile tab bar and Suite launcher ask for a new event through the URL
+// (?new=1). Consume the flag so reload or Back does not reopen the modal.
+watch(
+	() => route.query.new,
+	(flag) => {
+		if (!flag) return
+		const { new: _new, ...query } = route.query
+		router.replace({ query })
+		handleOpenEvent({
+			date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
+		})
+	},
+	{ immediate: true },
+)
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
 	{

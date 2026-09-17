@@ -40,11 +40,12 @@
 
 <script setup lang="ts">
 import { h, onMounted, onUnmounted } from 'vue'
-import { Avatar, createResource, Dropdown, toast } from 'frappe-ui'
+import { Avatar, Dropdown } from 'frappe-ui'
 import { CircleUser, LogOut } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 
 import { SUITE_APPS } from '@/apps/registry'
+import { useStartMeeting } from '@/apps/meet/composables/useStartMeeting'
 import settingsLogo from '@/assets/app-logos/settings.svg'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
@@ -58,58 +59,18 @@ import { setupTheme } from '@/utils/setupTheme'
 const apps = SUITE_APPS
 const router = useRouter()
 const root = useRootStore()
-const { fullName, imageURL, systemUser } = useCurrentUser()
+const { fullName, imageURL } = useCurrentUser()
+const { startMeeting } = useStartMeeting()
 
-const mailUser = createResource({ url: 'suite.mail.api.account.get_user_info' })
-const createMeeting = createResource({
-  url: 'suite.meet.api.meeting.create',
-  method: 'POST',
-})
+const composeMail = () => router.push({ path: '/mail', query: { compose: '1' } })
 
-const composeMail = async () => {
-  const user = await mailUser.submit()
-  const accounts = user?.accounts ?? []
-  const savedAccount = localStorage.getItem('mail-account-id')
-  const account =
-    accounts.find(({ id }: { id: string }) => id === savedAccount) ??
-    accounts.find(({ is_personal }: { is_personal?: boolean }) => is_personal) ??
-    accounts[0]
+const startInstantMeeting = () => startMeeting('open')
 
-  if (account) await router.push(`/mail/account/${account.id}/compose`)
-  else await router.push('/mail')
-}
-
-const startInstantMeeting = async () => {
-  const toastId = toast.loading('Creating meeting...')
-  try {
-    const meetingCode = await createMeeting.submit({ meeting_type: 'open' })
-    toast.dismiss(toastId)
-    await router.push(`/meet/${meetingCode}`)
-  } catch {
-    toast.dismiss(toastId)
-    toast.error('Failed to create meeting. Please try again.')
-  }
-}
+const createCalendarEvent = () => router.push({ path: '/calendar', query: { new: '1' } })
 
 const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () => [
   {
     commands: [
-      {
-        id: 'suite-new-sheet',
-        label: 'New sheet',
-        enterHint: 'create sheet',
-        icon: 'lucide-table-2',
-        keywords: ['create', 'spreadsheet', 'sheets'],
-        run: () => router.push('/sheets/new'),
-      },
-      {
-        id: 'suite-new-presentation',
-        label: 'New presentation',
-        enterHint: 'create presentation',
-        icon: 'lucide-presentation',
-        keywords: ['create', 'slides'],
-        run: () => router.push('/slides/presentation/new'),
-      },
       {
         id: 'suite-compose-mail',
         label: 'Compose mail',
@@ -127,31 +88,38 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () 
         run: startInstantMeeting,
       },
       {
-        id: 'suite-profile-settings',
-        label: 'Profile settings',
-        enterHint: 'open profile settings',
-        icon: 'lucide-user-round',
-        keywords: ['account', 'personal', 'settings'],
-        run: () => openSettings('profile'),
+        id: 'suite-new-event',
+        label: 'New event',
+        enterHint: 'create event',
+        icon: 'lucide-calendar-plus',
+        keywords: ['create', 'calendar'],
+        run: createCalendarEvent,
       },
       {
-        id: 'suite-preferences-settings',
-        label: 'Preferences',
-        enterHint: 'open preferences',
-        icon: 'lucide-settings-2',
-        keywords: ['settings', 'appearance', 'language', 'timezone'],
-        run: () => openSettings('preferences'),
+        id: 'suite-new-sheet',
+        label: 'New sheet',
+        enterHint: 'create sheet',
+        icon: 'lucide-table-2',
+        keywords: ['create', 'spreadsheet', 'sheets'],
+        run: () => router.push('/sheets/new'),
       },
-      ...(systemUser.value
-        ? [{
-            id: 'suite-workspace-settings',
-            label: 'Workspace settings',
-            enterHint: 'open workspace settings',
-            icon: 'lucide-building-2',
-            keywords: ['settings', 'organization', 'users', 'members'],
-            run: () => openSettings('workspace'),
-          }]
-        : []),
+      {
+        id: 'suite-new-presentation',
+        label: 'New presentation',
+        enterHint: 'create presentation',
+        icon: 'lucide-presentation',
+        keywords: ['create', 'slides'],
+        run: () => router.push('/slides/presentation/new'),
+      },
+      {
+        id: 'suite-settings',
+        label: 'Settings',
+        shortcut: 'Mod+Shift+Comma',
+        enterHint: 'open settings',
+        icon: 'lucide-settings',
+        keywords: ['account', 'personal', 'preferences', 'workspace'],
+        run: () => openSettings(),
+      },
     ],
   },
 ])
