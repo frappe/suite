@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Ellipsis, LogOut, Plus, Settings, User } from 'lucide-vue-next'
+import { Ellipsis, Keyboard, LogOut, Plus, Settings, User } from 'lucide-vue-next'
 import {
 	Button,
 	Dropdown,
@@ -29,6 +29,7 @@ import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 const { visibleCalendars, events, selectedEvent } = defineProps<{
 	visibleCalendars: string[]
@@ -114,6 +115,7 @@ const subtitle = computed(() => {
 })
 
 const appsMenuOption = useAppSwitcher('calendar')
+const { openShortcuts } = useShortcuts()
 
 const calendarActions = useCalendarActions()
 const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
@@ -134,6 +136,11 @@ const menuItems = computed(() => [
 				icon: Settings,
 				label: __('Settings'),
 				onClick: () => (showSettings.value = true),
+			},
+			{
+				icon: Keyboard,
+				label: __('Shortcuts'),
+				onClick: openShortcuts,
 			},
 		],
 	},
