@@ -150,10 +150,8 @@
 						</span>
 					</template>
 					{{ command.label }}
-					<template v-if="command.suffix" #suffix>
-						<span class="shrink-0 whitespace-nowrap pl-2 text-ink-gray-5">{{
-							command.suffix
-						}}</span>
+					<template v-if="command.shortcut" #suffix>
+						<KeyboardShortcut :combo="command.shortcut" bg />
 					</template>
 					<template v-else-if="command.description" #suffix>
 						<span class="text-p-xs text-ink-gray-5">{{
@@ -373,7 +371,12 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
-import { Button, createResource, useKeyboardShortcut } from 'frappe-ui'
+import {
+	Button,
+	createResource,
+	KeyboardShortcut,
+	useKeyboardShortcut,
+} from 'frappe-ui'
 import {
 	CommandPalette,
 	CommandPaletteEmpty,
