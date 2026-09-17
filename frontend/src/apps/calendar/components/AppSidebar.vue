@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LogOut, Settings, User } from 'lucide-vue-next'
+import { Keyboard, LogOut, Settings, User } from 'lucide-vue-next'
 import {
 	Sidebar,
 	SidebarCollapseToggle,
@@ -24,6 +24,7 @@ import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	/** Each with a palette `color`, the one its events wear. */
@@ -111,6 +112,7 @@ const subtitle = computed(() => {
 })
 
 const appsMenuOption = useAppSwitcher('calendar')
+const { openShortcuts } = useShortcuts()
 
 const openSettings = inject<() => void>('openCalendarSettings')!
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
@@ -127,6 +129,11 @@ const menuItems = computed(() => [
 				icon: Settings,
 				label: __('Settings'),
 				onClick: openSettings,
+			},
+			{
+				icon: Keyboard,
+				label: __('Shortcuts'),
+				onClick: openShortcuts,
 			},
 		],
 	},

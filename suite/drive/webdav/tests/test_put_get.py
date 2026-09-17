@@ -370,7 +370,8 @@ class TestWebDAVPut(IntegrationTestCase):
     def test_put_overwrite_promotion_failure_reverts_metadata(self):
         # if the commit-time promotion itself fails, the transaction is
         # already committed — compensation must step the metadata and rollup
-        # back to match the unchanged bytes, and the failure must surface
+        # back to match the unchanged bytes; Frappe logs failed post-commit
+        # callbacks because the database transaction is already durable
         from unittest.mock import patch
 
         with self.set_user(OWNER):
@@ -380,7 +381,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
         response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
         self.assertEqual(response.status_code, 204)
-        with patch("os.replace", side_effect=OSError), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=OSError):
             frappe.db.commit()
 
         self.assertEqual(blob_path.read_bytes(), b"version-one")
@@ -402,7 +403,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
         row = self._resolve(f"Home/{self.base_name}/ghost.txt").entity
         blob_path = FileManager().get_local_path(row.file_url)
-        with patch("os.replace", side_effect=OSError), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=OSError):
             frappe.db.commit()
 
         self.assertFalse(frappe.db.exists("File", row.name))
@@ -429,7 +430,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.set_value("File", target.name, {"file_size": 7, "content_hash": "newer"})
             raise OSError
 
-        with patch("os.replace", side_effect=newer_write_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=newer_write_then_fail):
             frappe.db.commit()
 
         # the newer write survives untouched...
@@ -458,7 +459,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.set_value("File", row.name, {"content_hash": "newer"})
             raise OSError
 
-        with patch("os.replace", side_effect=newer_write_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=newer_write_then_fail):
             frappe.db.commit()
 
         self.assertTrue(frappe.db.exists("File", row.name))
@@ -491,10 +492,9 @@ class TestWebDAVPut(IntegrationTestCase):
             patch("os.replace", side_effect=OSError),
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
             patch("frappe.enqueue", side_effect=RuntimeError),
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
-        frappe.db.rollback()  # what dispatch does before answering the 500
+        frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
         record = frappe.db.get_value(
             "Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name}, "error"
@@ -541,10 +541,9 @@ class TestWebDAVPut(IntegrationTestCase):
             patch("frappe.enqueue") as enqueue_mock,
             # the stderr rung fires; keep it off the runner's console
             contextlib.redirect_stderr(io.StringIO()),
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
-        frappe.db.rollback()  # what dispatch does before answering the 500
+        frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
         self.assertTrue(
             frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
@@ -578,7 +577,7 @@ class TestWebDAVPut(IntegrationTestCase):
             blob_path.write_bytes(b"v2!")
             raise OSError
 
-        with patch("os.replace", side_effect=identical_winner_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=identical_winner_then_fail):
             frappe.db.commit()
 
         # the winner's write stands: claim, bytes and accounting untouched
@@ -625,7 +624,7 @@ class TestWebDAVPut(IntegrationTestCase):
             twin_staged.write_bytes(b"v2!")
             raise OSError
 
-        with patch("os.replace", side_effect=twin_committed_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=twin_committed_then_fail):
             frappe.db.commit()
 
         # no restore: claim, delta and the staged twin all stand
@@ -685,7 +684,6 @@ class TestWebDAVPut(IntegrationTestCase):
 
         with (
             patch("os.replace", side_effect=twin_commits_then_move_lands_then_fail),
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
 
@@ -724,7 +722,7 @@ class TestWebDAVPut(IntegrationTestCase):
             bumped.append(frappe.db.get_value("File", target.name, "modified"))
             raise OSError
 
-        with patch("os.replace", side_effect=rename_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=rename_then_fail):
             frappe.db.commit()
 
         # content claim and rollup reverted to match the unchanged bytes...
@@ -767,7 +765,7 @@ class TestWebDAVPut(IntegrationTestCase):
             apply_file_size_delta(sub.name, size_now)
             raise OSError
 
-        with patch("os.replace", side_effect=move_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=move_then_fail):
             frappe.db.commit()
 
         self.assertEqual(frappe.db.get_value("File", target.name, "folder"), sub.name)
@@ -794,7 +792,7 @@ class TestWebDAVPut(IntegrationTestCase):
             ).insert(ignore_permissions=True)
             raise OSError
 
-        with patch("os.replace", side_effect=link_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=link_then_fail):
             frappe.db.commit()
 
         self.assertFalse(frappe.db.exists("File", row.name))
@@ -833,7 +831,7 @@ class TestWebDAVPut(IntegrationTestCase):
             apply_file_size_delta(dest.name, size_now)
             raise OSError
 
-        with patch("os.replace", side_effect=move_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=move_then_fail):
             frappe.db.commit()
 
         self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
@@ -912,7 +910,7 @@ class TestWebDAVPut(IntegrationTestCase):
             apply_file_size_delta(self.base.name, -size_now)
             raise OSError
 
-        with patch("os.replace", side_effect=trash_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=trash_then_fail):
             frappe.db.commit()
 
         # content claim stepped back, so a restore-from-trash is consistent
@@ -943,7 +941,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.set_value("File", target.name, "file_modified", frappe.utils.now_datetime())
             raise OSError
 
-        with patch("os.replace", side_effect=touch_then_fail), self.assertRaises(OSError):
+        with patch("os.replace", side_effect=touch_then_fail):
             frappe.db.commit()
 
         self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
@@ -1592,15 +1590,19 @@ class TestWebDAVPut(IntegrationTestCase):
                 raise RuntimeError
             return real_logger(name, *args, **kwargs)
 
+        def broken_suite_log_error(message, *args, **kwargs):
+            if message == "Failed to run after transaction callback":
+                return
+            raise RuntimeError
+
         err = io.StringIO()
         with (
             patch("os.replace", side_effect=OSError),
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
             patch("frappe.logger", side_effect=broken_drive_logger),
-            patch("frappe.log_error", side_effect=RuntimeError),
+            patch("frappe.log_error", side_effect=broken_suite_log_error),
             patch("frappe.enqueue", side_effect=RuntimeError),
             contextlib.redirect_stderr(err),
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
 
@@ -1639,7 +1641,6 @@ class TestWebDAVPut(IntegrationTestCase):
         with (
             patch("os.replace", side_effect=OSError),
             patch.object(put_module, "apply_file_size_delta", side_effect=flaky_delta),
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
 
@@ -1652,9 +1653,9 @@ class TestWebDAVPut(IntegrationTestCase):
         )
 
     def test_put_compensation_double_failure_leaves_durable_trace(self):
-        # when the compensation fails twice, the drift record must survive the
-        # rollback the dispatcher issues after the 500 — an uncommitted Error
-        # Log row would vanish with it, leaving the inconsistency invisible
+        # when the compensation fails twice, the drift record must survive a
+        # later rollback — an uncommitted Error Log row would vanish with it,
+        # leaving the inconsistency invisible
         from unittest.mock import patch
 
         from suite.drive.webdav import put as put_module
@@ -1673,10 +1674,9 @@ class TestWebDAVPut(IntegrationTestCase):
             patch("os.replace", side_effect=OSError),
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
             patch("frappe.enqueue") as enqueue_mock,
-            self.assertRaises(OSError),
         ):
             frappe.db.commit()
-        frappe.db.rollback()  # what dispatch does before answering the 500
+        frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
         self.assertTrue(
             frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})

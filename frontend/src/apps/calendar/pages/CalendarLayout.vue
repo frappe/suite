@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
-import { FrappeUIProvider } from 'frappe-ui'
+import { FrappeUIProvider, useKeyboardShortcut } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
+import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
+import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
-import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 import { useRootStore } from '@/stores/root'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 /**
  * Calendar route-group layout.
@@ -17,11 +19,13 @@ import { useRootStore } from '@/stores/root'
  * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
  *     and `$socket` injections that calendar components depend on,
+ *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
 const showSettings = ref(false)
+const { showShortcuts } = useShortcuts()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
@@ -46,11 +50,16 @@ onScopeDispose(unregisterPaletteGroups)
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
-onMounted(() => {
-	document.body.classList.add('calendar-app')
-})
-onUnmounted(() => {
-	document.body.classList.remove('calendar-app')
+onMounted(() => document.body.classList.add('calendar-app'))
+onUnmounted(() => document.body.classList.remove('calendar-app'))
+
+useKeyboardShortcut({
+	combo: 'Shift+Slash',
+	description: __('View Shortcuts'),
+	group: __('Other'),
+	enabled: () => !isMobile.value,
+	allowInDialog: true,
+	handler: () => (showShortcuts.value = !showShortcuts.value),
 })
 </script>
 
@@ -66,6 +75,7 @@ onUnmounted(() => {
 		</div>
 		<router-view v-else />
 		<SettingsModal v-model:open="showSettings" />
+		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 
