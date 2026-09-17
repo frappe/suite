@@ -77,9 +77,8 @@ const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () =>
   const commands = [
     {
       id: 'drive-settings',
-      label: 'Settings',
-      shortcut: 'Mod+Shift+Comma',
-      enterHint: 'open settings',
+      label: 'Drive settings',
+      enterHint: 'open Drive settings',
       icon: 'lucide-settings',
       run: () => emitter.emit('showSettings'),
     },
@@ -134,7 +133,6 @@ const shortcut = (combo, description, group, handler) => ({
 })
 
 useKeyboardShortcut([
-  shortcut('Mod+Shift+Comma', 'Open Settings', 'General', () => emitter.emit('showSettings')),
   shortcut('Mod+Shift+ArrowRight', 'Expand sidebar', 'General', () => (sidebarCollapsed.value = false)),
   shortcut('Mod+Shift+ArrowLeft', 'Collapse sidebar', 'General', () => (sidebarCollapsed.value = true)),
   {

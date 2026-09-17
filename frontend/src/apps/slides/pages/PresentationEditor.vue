@@ -197,9 +197,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
 			{
 				commands: [
 					{
-						id: 'slides-settings',
+						id: 'slides-presentation-theme',
 						label: 'Change presentation theme',
-						shortcut: 'Mod+Shift+Comma',
 						icon: 'lucide-palette',
 						keywords: ['slides', 'theme', 'appearance'],
 						run: () => {

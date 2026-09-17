@@ -993,6 +993,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 		return
 	}
 	if ('run' in item) {
+		if (item.keepOpen) event.preventDefault()
 		await item.run({ query: query.value })
 		return
 	}

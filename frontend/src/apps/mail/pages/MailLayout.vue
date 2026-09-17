@@ -31,7 +31,7 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useSettings, useShortcuts, useTheme, useUndo } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -128,7 +128,6 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
-const { cycleTheme } = useTheme()
 const route = useRoute()
 const { showSettings, openSettings } = useSettings()
 
@@ -140,9 +139,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 					commands: [
 						{
 							id: 'mail-settings',
-							label: 'Settings',
-							shortcut: 'Mod+Shift+Comma',
-							enterHint: 'open settings',
+							label: 'Mail settings',
+							enterHint: 'open Mail settings',
 							icon: 'lucide-settings',
 							run: () => openSettings(),
 						},
@@ -168,20 +166,6 @@ const Layout = computed(() => {
 // suite apps are unaffected.
 onMounted(() => document.body.classList.add('mail-app'))
 onUnmounted(() => document.body.classList.remove('mail-app'))
-
-// App-wide Cmd/Ctrl+Shift+L to cycle the color scheme. MailLayout is the
-// mounted mail root, so the listener lives here to fire on any mail page.
-const handleThemeShortcut = (e: KeyboardEvent) => {
-	if (
-		(e.metaKey || e.ctrlKey) &&
-		e.shiftKey &&
-		e.key.toLowerCase() === 'l' &&
-		!shouldIgnoreKeypress(e, true)
-	) {
-		e.preventDefault()
-		cycleTheme()
-	}
-}
 
 /* -------------------------------------------------------------------------- */
 /* Push-notification service worker.                                          */
@@ -243,13 +227,11 @@ onMounted(() => {
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
-	window.addEventListener('keydown', handleThemeShortcut)
 	window.addEventListener('keydown', handleGlobalShortcuts)
 	window.addEventListener('focusout', resetDocumentScroll)
 })
 
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleThemeShortcut)
 	window.removeEventListener('keydown', handleGlobalShortcuts)
 	window.removeEventListener('focusout', resetDocumentScroll)
 })

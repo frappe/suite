@@ -16,6 +16,7 @@ export interface PaletteCommand {
   icon?: string;
   keywords?: string[];
   disabled?: boolean;
+  keepOpen?: boolean;
   run: (context?: {
     query: string;
     filters?: Record<string, string>;

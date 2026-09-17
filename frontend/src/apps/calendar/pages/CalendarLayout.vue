@@ -5,9 +5,7 @@ import { FrappeUIProvider } from 'frappe-ui'
 import { useScreenSize } from '@/composables/useScreenSize'
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
 
-import { shouldIgnoreKeypress } from '@/apps/calendar/utils'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
 import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
@@ -19,12 +17,10 @@ import { useRootStore } from '@/stores/root'
  * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
  *     and `$socket` injections that calendar components depend on,
- *   - ports the Cmd/Ctrl+Shift+L theme-cycle shortcut,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
-const { cycleTheme } = useTheme()
 const showSettings = ref(false)
 
 provide('$user', userResource)
@@ -37,9 +33,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-l
 		commands: [
 			{
 				id: 'calendar-settings',
-				label: 'Settings',
-				shortcut: 'Mod+Shift+Comma',
-				enterHint: 'open settings',
+				label: 'Calendar settings',
+				enterHint: 'open Calendar settings',
 				icon: 'lucide-settings',
 				run: () => (showSettings.value = true),
 			},
@@ -52,22 +47,10 @@ onScopeDispose(unregisterPaletteGroups)
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
 onMounted(() => {
 	document.body.classList.add('calendar-app')
-	window.addEventListener('keydown', handleKeyDown)
 })
 onUnmounted(() => {
 	document.body.classList.remove('calendar-app')
-	window.removeEventListener('keydown', handleKeyDown)
 })
-
-const handleKeyDown = (e: KeyboardEvent) => {
-	const key = e.key.toLowerCase()
-
-	// Handle Ctrl/Cmd+Shift+L (Cycle Theme)
-	if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		return cycleTheme()
-	}
-}
 </script>
 
 <template>
