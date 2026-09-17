@@ -99,9 +99,14 @@ const onFileSelected = async (event: Event) => {
 	}
 }
 
+// Kept while it is still one of the account's calendars; otherwise the first — a calendar
+// that was deleted, or belongs to the account switched away from, is no target at all.
 watch(
 	() => store.calendarOptions,
-	(options) => (calendarImport.calendar ||= options[0]?.value ?? ''),
+	(options) => {
+		if (!options.some((option) => option.value === calendarImport.calendar))
+			calendarImport.calendar = options[0]?.value ?? ''
+	},
 	{ immediate: true },
 )
 
