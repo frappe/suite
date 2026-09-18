@@ -624,12 +624,11 @@ export class ParticipantConnection {
 			this.participantManager.syncParticipants([
 				...this.reconciliation.participants.values(),
 			]);
+			this.initialSyncInProgress = false;
+			this.flushBufferedMediaStateUpdates();
 			for (const event of bufferedEvents)
 				if (event.type === "producer-closed")
 					this.clearParticipantMediaStateForClosedProducer(event.value);
-
-			this.initialSyncInProgress = false;
-			this.flushBufferedMediaStateUpdates();
 			await this.flushBufferedProducers(signal);
 		} catch (error) {
 			if (!signal.aborted) {
