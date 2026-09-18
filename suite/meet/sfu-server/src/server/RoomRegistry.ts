@@ -573,6 +573,7 @@ export class RoomRegistry {
 			roomId,
 			participantId: data.participantId,
 			producerId: data.producerId,
+			kind: data.kind,
 			isScreen: data.isScreen,
 		});
 		const state = this.getRecorderProjectionState(roomId);
