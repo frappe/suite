@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import UnitTestCase
 
+from suite.calendar.hr import source as hr_source
 from suite.calendar.hr import sync as hr_sync
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events, strip_html
 from suite.calendar.hr.source import HRSource, validate_site_url
@@ -255,6 +256,65 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
         ]
         with patch.object(hr_sync, "get_principal_service", return_value=service):
             self.assertEqual(_principals("acc", {"akash@x.io", "team@x.io"}), ["p1"])
+
+
+class UnitTestWhoFollowsAHolidayList(UnitTestCase):
+    def assignment(self, holder: str, holiday_list: str, start: str) -> dict:
+        return {"assigned_to": holder, "holiday_list": holiday_list, "from_date": start}
+
+    def follows(self, assignments: list[dict]) -> list[str]:
+        staff = [employee("EMP-1", company="Acme")]
+        return hr_sync._lists_by_assignment(assignments, staff, TODAY.isoformat())["EMP-1"]
+
+    def test_the_company_list_is_for_those_with_none_of_their_own(self):
+        company = self.assignment("Acme", "India 2026", "2026-01-01")
+        self.assertEqual(self.follows([company]), ["India 2026"])
+        own = self.assignment("EMP-1", "Dubai 2026", "2026-01-01")
+        self.assertEqual(self.follows([company, own]), ["Dubai 2026"])
+
+    def test_the_one_in_force_and_what_comes_after_it(self):
+        rows = [
+            self.assignment("Acme", "India 2025", "2025-01-01"),
+            self.assignment("Acme", "India 2026", "2026-01-01"),
+            self.assignment("Acme", "India 2027", "2027-01-01"),
+        ]
+        self.assertEqual(self.follows(rows), ["India 2026", "India 2027"])
+
+    def test_the_company_list_holds_until_their_own_begins(self):
+        rows = [
+            self.assignment("Acme", "India 2026", "2026-01-01"),
+            self.assignment("Acme", "India 2027", "2027-01-01"),
+            self.assignment("EMP-1", "Dubai 2026", "2026-11-01"),
+        ]
+        self.assertEqual(self.follows(rows), ["India 2026", "Dubai 2026"])
+
+    def test_another_companys_list_is_not_theirs(self):
+        self.assertEqual(self.follows([self.assignment("Globex", "US 2026", "2026-01-01")]), [])
+
+    def holiday_lists(self, source: MagicMock, staff: list[dict]) -> dict:
+        settings = MagicMock()
+        settings.chosen_holiday_lists.return_value = set()
+        return hr_sync._holiday_lists(settings, source, staff, TODAY)
+
+    def test_the_fields_hr_left_behind_are_not_read(self):
+        source = MagicMock()
+        source.holiday_list_assignments.return_value = [self.assignment("Acme", "India 2026", "2026-01-01")]
+        staff = [employee("EMP-1", company="Acme", holiday_list="Stale 2024", user_id="a@x.io")]
+        self.assertEqual(self.holiday_lists(source, staff), {"India 2026": ["a@x.io"]})
+        self.assertNotIn("holiday_list", hr_source.EMPLOYEE_FIELDS)
+
+    def test_a_long_answer_is_read_to_the_end(self):
+        source = HRSource("https://hr.example.com", lambda: "token a:b")
+        pages = [[{"name": f"EMP-{n}"} for n in range(hr_source.PAGE_LENGTH)], [{"name": "EMP-last"}]]
+
+        def get(url, params, **kwargs):
+            response = MagicMock(status_code=200)
+            page = pages[params["limit_start"] // hr_source.PAGE_LENGTH]
+            response.raw.read.return_value = frappe.as_json({"data": page}).encode()
+            return response
+
+        with patch("suite.calendar.hr.source.requests.get", side_effect=get):
+            self.assertEqual(len(source.employees()), hr_source.PAGE_LENGTH + 1)
 
 
 class UnitTestOwnedCalendars(UnitTestCase):

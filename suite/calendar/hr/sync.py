@@ -121,7 +121,7 @@ def _run() -> dict:
     # events, audience, and which of our events it holds.
     plans = []
     if settings.sync_holidays:
-        for holiday_list, audience in _holiday_lists(settings, source, employees).items():
+        for holiday_list, audience in _holiday_lists(settings, source, employees, today).items():
             events = holiday_events(holiday_list, source.holidays(holiday_list))
             key = f"holiday:{holiday_list}"
             plans.append((key, holiday_list, settings.holidays_color, events, audience, "hr-holiday-"))
@@ -230,29 +230,59 @@ def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[d
     }
 
 
-def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[str, list[str]]:
+def _holiday_lists(settings, source: HRSource, employees: list[dict], today: date) -> dict[str, list[str]]:
     """Which holiday lists to draw, and whose calendar each belongs on.
 
-    An employee follows their own list where they have one, and their company's otherwise —
-    the same order HR itself resolves them in — so a list is shared with exactly the people
-    it applies to.
+    Asked the way HR itself resolves them, so a list is shared with exactly the people it applies
+    to: by Holiday List Assignment, the employee's own, else their company's.
     """
 
     chosen = settings.chosen_holiday_lists()
-    default_by_company: dict[str, str | None] = {}
     audiences: dict[str, list[str]] = {}
+    follows = _lists_by_assignment(source.holiday_list_assignments(), employees, today.isoformat())
 
     for employee in employees:
-        company = employee.get("company")
-        if company not in default_by_company:
-            default_by_company[company] = source.default_holiday_list(company) if company else None
-
-        holiday_list = employee.get("holiday_list") or default_by_company.get(company)
-        if not holiday_list or (chosen and holiday_list not in chosen):
-            continue
-        audiences.setdefault(holiday_list, []).append(employee.get("user_id"))
+        for holiday_list in follows.get(employee["name"], []):
+            if not chosen or holiday_list in chosen:
+                audiences.setdefault(holiday_list, []).append(employee.get("user_id"))
 
     return audiences
+
+
+def _lists_by_assignment(assignments: list[dict], employees: list[dict], today: str) -> dict[str, list[str]]:
+    """The lists each employee follows from today on: the one in force, and any already assigned
+    to come after it — next year's list belongs on the calendar before the year turns.
+
+    An employee's own assignments come before their company's, as in HR. The company's count only
+    for someone with none of their own, or until their first one starts.
+    """
+
+    # By name alone, employee or company: that is all HR itself asks an assignment.
+    by_holder: dict[str, list[dict]] = {}
+    for row in assignments:
+        start = str(row.get("from_date") or "")[:10]
+        if row.get("holiday_list") and start:
+            by_holder.setdefault(row.get("assigned_to"), []).append({"holiday_list": row["holiday_list"], "start": start})
+    for rows in by_holder.values():
+        rows.sort(key=lambda row: row["start"])
+
+    def from_today(rows: list[dict], until: str | None = None) -> list[dict]:
+        rows = [row for row in rows if until is None or row["start"] < until]
+        in_force = [row for row in rows if row["start"] <= today][-1:]
+        return in_force + [row for row in rows if row["start"] > today]
+
+    follows = {}
+    for employee in employees:
+        own = from_today(by_holder.get(employee["name"], []))
+        company = by_holder.get(employee.get("company"), [])
+        if not own:
+            rows = from_today(company)
+        elif own[0]["start"] > today:
+            rows = from_today(company, until=own[0]["start"]) + own
+        else:
+            rows = own
+        follows[employee["name"]] = list(dict.fromkeys(row["holiday_list"] for row in rows))
+    return follows
 
 
 def _sync_calendar(

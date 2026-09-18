@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from datetime import date
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -90,14 +92,19 @@ class HRCalendarSyncSettings(Document):
     def _test_connection(self) -> dict:
         from suite.mail.jmap import get_calendar_service
 
+        from suite.calendar.hr.sync import _holiday_lists
+
         source = self.hr_source()
         employees = source.employees()
+        followers = _holiday_lists(self, source, employees, date.today())
         return {
             "employees": len(employees),
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
             "with_joining_date": sum(1 for employee in employees if employee.get("date_of_joining")),
             "with_mail_address": sum(1 for employee in employees if employee.get("user_id")),
             "holiday_lists": source.holiday_lists(),
+            # Who the sync would share each list with, resolved as HR resolves it.
+            "followers": {name: len(people) for name, people in followers.items()},
             "calendars": [calendar["name"] for calendar in get_calendar_service(self.account).get()],
         }
 

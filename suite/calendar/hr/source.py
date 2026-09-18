@@ -24,13 +24,14 @@ EMPLOYEE_FIELDS = [
     "employee_name",
     "user_id",
     "company",
-    "holiday_list",
     "date_of_birth",
     "date_of_joining",
 ]
 
-# One page for a company's employees and its holiday lists: both are in the hundreds at most,
-# and a run that silently stopped at 20 would delete every event past the cut as no longer in HR.
+ASSIGNMENT_FIELDS = ["assigned_to", "holiday_list", "from_date"]
+
+# Read in pages of this, to the end: a run that silently stopped at 20 would delete every event
+# past the cut as no longer in HR, and assignments gather by the year.
 PAGE_LENGTH = 5000
 
 TIMEOUT = (10, 60)
@@ -45,8 +46,10 @@ class HRSource:
 
     def __init__(self, site_url: str | None = None, authorization: Callable[[], str] | None = None):
         site_url = validate_site_url(site_url)
-        if not site_url and not frappe.db.exists("DocType", "Employee"):
-            frappe.throw(_("Frappe HR is not installed on this site. Enter the HR site's URL."))
+        # Holiday List Assignment rather than Employee: ERPNext alone has employees, and a Frappe HR
+        # from before 16 has no assignments to say who follows which holiday list.
+        if not site_url and not frappe.db.exists("DocType", "Holiday List Assignment"):
+            frappe.throw(_("Frappe HR 16 or later is not installed on this site. Enter the HR site's URL."))
 
         self.site_url = site_url
         self._authorization = authorization() if site_url and authorization else ""
@@ -70,20 +73,39 @@ class HRSource:
 
         return self._doc("Holiday List", holiday_list).get("holidays") or []
 
-    def default_holiday_list(self, company: str) -> str | None:
-        """What an employee with no list of their own follows."""
+    def holiday_list_assignments(self) -> list[dict]:
+        """Who follows which holiday list from when, as submitted. Frappe HR reads nothing else:
+        the holiday list on an employee and the default on a company are fields it has left
+        behind, so they are not asked for here either."""
 
-        return self._doc("Company", company).get("default_holiday_list")
+        return self._list("Holiday List Assignment", ASSIGNMENT_FIELDS, {"docstatus": 1})
 
     def _list(self, doctype: str, fields: list[str], filters: dict) -> list[dict]:
+        rows: list[dict] = []
+        while True:
+            page = self._page(doctype, fields, filters, len(rows))
+            rows += page
+            if len(page) < PAGE_LENGTH:
+                return rows
+
+    def _page(self, doctype: str, fields: list[str], filters: dict, start: int) -> list[dict]:
         if not self.site_url:
-            return frappe.get_all(doctype, filters=filters, fields=fields, limit_page_length=PAGE_LENGTH)
+            return frappe.get_all(
+                doctype,
+                filters=filters,
+                fields=fields,
+                order_by="name asc",
+                limit_start=start,
+                limit_page_length=PAGE_LENGTH,
+            )
 
         return self._get(
             f"/api/resource/{doctype}",
             {
                 "fields": frappe.as_json(fields),
                 "filters": frappe.as_json([[key, "=", value] for key, value in filters.items()]),
+                "order_by": "name asc",
+                "limit_start": start,
                 "limit_page_length": PAGE_LENGTH,
             },
         )

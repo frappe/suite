@@ -20,8 +20,12 @@ in step with HR.
   are not in the title, because every occurrence of a repeating event shares one title.
 - Events carry **no organizer and no participants**. They are facts about a day, not invitations,
   which is how every other calendar draws a holiday.
-- **Who sees a holiday list** is who HR says follows it: the employee's own list, else their
-  company's default. Celebrations go to every active employee of the company.
+- **Who sees a holiday list** is who HR says follows it, asked the way HR resolves it: by the
+  submitted **Holiday List Assignment**, the employee's own, else their company's — the one in
+  force today, and any already assigned to follow it, so next year's list is on the calendar
+  before the year turns. The holiday list on an employee and the default on a company are fields
+  Frappe HR no longer reads, and neither does the sync: it needs Frappe HR 16 or later.
+  Celebrations go to every active employee of the company.
 - Each event carries a **uid built from its HR record** (`hr-holiday-<list>-<date>`,
   `hr-birthday-<employee>`, `hr-anniversary-<employee>`). A run therefore adds what is missing,
   rewrites what changed, and removes what HR no longer has — including for an employee who left.
@@ -65,9 +69,9 @@ in step with HR.
 2. **A user on the Suite site for that account**, with its mail credentials, so the sync can
    reach it.
 3. **Read access to HR.** Where Frappe HR is on another site, an integration user there with read
-   access to Employee, Holiday List and Company, and an API key and secret of its own — not a
-   person's, so the sync does not stop when they leave. Where HR is on the same site, nothing is
-   needed.
+   access to Employee, Holiday List and Holiday List Assignment, and an API key and secret of its
+   own — not a person's, so the sync does not stop when they leave. Where HR is on the same site,
+   nothing is needed.
 4. **HR Calendar Sync Settings** (Desk): the service account, the HR site URL and keys, and what to
    sync. **Test Connection** reports what the keys can see — employees, birth dates, joining dates,
    mail addresses, holiday lists — before anything is written; **Sync Now** runs it once.

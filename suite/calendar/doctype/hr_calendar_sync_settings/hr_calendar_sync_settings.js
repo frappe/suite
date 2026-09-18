@@ -16,6 +16,9 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		await frm.events.save_first(frm)
 		frm.call({ doc: frm.doc, method: 'test_connection', freeze: true }).then(({ message }) => {
 			if (!message) return
+			const followers = Object.entries(message.followers)
+				.map(([list, people]) => `${list} (${people})`)
+				.join(', ')
 			frappe.msgprint({
 				title: __('What the settings can see'),
 				indicator: 'blue',
@@ -25,6 +28,7 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 					${__('with joining date')}: ${message.with_joining_date},
 					${__('with a mail address')}: ${message.with_mail_address})</p>
 					<p>${__('Holiday lists')}: ${frappe.utils.escape_html(message.holiday_lists.join(', ') || '—')}</p>
+					<p>${__('Who follows which, by Holiday List Assignment')}: ${frappe.utils.escape_html(followers || '—')}</p>
 					<p>${__("The service account's calendars")}: ${frappe.utils.escape_html(message.calendars.join(', ') || '—')}</p>
 				`,
 			})
