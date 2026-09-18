@@ -177,13 +177,6 @@ onBeforeRouteUpdate((to, from) => {
   return confirmUnsavedNavigation()
 })
 
-const handleBeforeUnload = (event) => {
-  if (!hasUnsavedChanges.value) return
-  event.preventDefault()
-  event.returnValue = ''
-}
-window.addEventListener('beforeunload', handleBeforeUnload)
-onScopeDispose(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 watch(showVersions, (v) => {
   if (!v) versionPreview.value = null
 })

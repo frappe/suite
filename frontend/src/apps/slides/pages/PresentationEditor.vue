@@ -252,14 +252,6 @@ const initAutoSave = () => {
 	autosaveInterval = setInterval(handleAutoSave, 500)
 }
 
-const handleBeforeUnload = (e) => {
-	// a tab that lost the lock has nothing left to save
-	if (dirty.value && !inReadonlyMode.value) {
-		e.preventDefault()
-		e.returnValue = ''
-	}
-}
-
 // best effort: the tab is going away, whatever the draft store manages to take goes in
 const handlePageHide = () => {
 	if (dirty.value) saveDraft()
@@ -273,7 +265,6 @@ const loadTemplates = () => {
 const performBeforeLoadOperations = () => {
 	if (inReadonlyMode.value) return
 
-	window.addEventListener('beforeunload', handleBeforeUnload)
 	window.addEventListener('pagehide', handlePageHide)
 }
 
@@ -386,7 +377,6 @@ const handleDeactivated = () => {
 
 const handleBeforeUnmount = () => {
 	handleDeactivated()
-	window.removeEventListener('beforeunload', handleBeforeUnload)
 	window.removeEventListener('pagehide', handlePageHide)
 	window.removeEventListener('popstate', hideOpenDialogs)
 }

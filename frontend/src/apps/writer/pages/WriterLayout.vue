@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { provide } from 'vue'
+import { computed, onScopeDispose, provide } from 'vue'
 import { FrappeUIProvider } from 'frappe-ui'
+import { useRoute, useRouter } from 'vue-router'
 
 import FDialogs from '@/apps/writer/components/FDialogs.vue'
+import { createDocument } from '@/apps/writer/resources'
+import { useSessionStore } from '@/boot/session'
+import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
 
 /**
@@ -19,6 +23,36 @@ import { setupTheme } from '@/utils/setupTheme'
 const inIframe = window.self !== window.top
 provide('inIframe', inIframe)
 setupTheme()
+
+const router = useRouter()
+const route = useRoute()
+const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('writer-layout', () => {
+  if (!isLoggedIn.value || route.name !== 'writer-home') return []
+
+  return [
+    {
+      commands: [
+        {
+          id: 'writer-new-document',
+          label: 'New document',
+          enterHint: 'create document',
+          icon: 'lucide-plus',
+          keywords: ['create', 'writer'],
+          run: () =>
+            createDocument.submit(null, {
+              onSuccess: (document) =>
+                router.push({
+                  name: 'writer-document',
+                  params: { id: document.name },
+                }),
+            }),
+        },
+      ],
+    },
+  ]
+})
+onScopeDispose(unregisterPaletteGroups)
 
 </script>
 

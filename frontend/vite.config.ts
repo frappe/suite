@@ -195,6 +195,9 @@ export default defineConfig(({ mode }) => ({
       // left alone Vite resolves it through its `browser` field to a UMD build that has no
       // default export, and the page fails to load.
       '@iframe-resizer/core',
+      // Legacy frappe-ui FeatherIcon imports the CommonJS package as a default;
+      // pre-bundle it so Vite provides the interop instead of serving raw CJS as ESM.
+      'feather-icons',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',

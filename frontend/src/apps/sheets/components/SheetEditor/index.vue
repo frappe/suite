@@ -3409,7 +3409,6 @@ function _setupEventListeners() {
   // dragging the canvas off-position. Pin it back the instant that happens.
   gridWrapRef.value.addEventListener('scroll', _pinGridWrapScroll, { passive: true })
   window.addEventListener('keydown',      onGlobalKey)
-  window.addEventListener('beforeunload', onBeforeUnloadGuard)
   document.addEventListener('paste',     onDocPaste)
   document.addEventListener('copy',      onDocCopy)
   document.addEventListener('cut',       onDocCut)
@@ -3496,7 +3495,6 @@ onBeforeUnmount(() => {
   if (isDirty.value && !readOnly.value && props.id && props.id !== 'new') {
     saveExisting(props.id, currentTitle.value, { keepalive: true })
   }
-  window.removeEventListener('beforeunload', onBeforeUnloadGuard)
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
   grid?.destroy()
@@ -3510,14 +3508,6 @@ onBeforeUnmount(() => {
 })
 
 // ── Save ──────────────────────────────────────────────────────────────────────
-
-// Browser-level guard (tab close / refresh / cross-app nav). The native
-// "Leave site?" prompt is the only thing that can preempt a unload reliably.
-function onBeforeUnloadGuard(e) {
-  if (!hasUnsavedChanges()) return
-  e.preventDefault()
-  e.returnValue = ''   // Chrome requires returnValue to show the prompt
-}
 
 let _autoSaveTimer = null
 let _savePromise = null
