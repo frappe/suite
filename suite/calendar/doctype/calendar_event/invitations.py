@@ -479,7 +479,9 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
     attachment.add_header("Content-Disposition", "attachment", filename="invite.ics")
     root.attach(attachment)
 
-    return root.as_string()
+    # CRLF line endings, as RFC 5322 requires. Python's default is a bare LF, which a relay
+    # rewrites in transit: the DKIM body hash then fails and the invite lands in Junk.
+    return root.as_string(policy=root.policy.clone(linesep="\r\n"))
 
 
 def _plain_text(html: str) -> str:

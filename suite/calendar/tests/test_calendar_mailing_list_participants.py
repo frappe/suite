@@ -394,6 +394,23 @@ class TestMailingListInviteAddressing(IntegrationTestCase):
             {kw["recipients"][0]["email"] for kw in sent}, {"alice@example.com", "boss@example.org"}
         )
 
+    def test_the_invite_mail_has_no_bare_line_feeds(self):
+        """A bare LF is rewritten in transit, which breaks the DKIM body hash (Outlook junks it)."""
+
+        sent = []
+
+        with (
+            patch(f"{INVITATIONS}.get_user_for_jmap_account", return_value="organizer@example.com"),
+            patch(f"{INVITATIONS}.get_participant_identities", return_value=[]),
+            patch(f"{INVITATIONS}.MailQueue._create", side_effect=lambda **kw: sent.append(kw)),
+            patch(f"{INVITATIONS}.log_error", side_effect=AssertionError),
+        ):
+            notify_participants("acc", "invite", event_snapshot=self.event() | {"id": "e1"})
+
+        self.assertTrue(sent)
+        for kw in sent:
+            self.assertNotIn("\n", kw["raw_message"].replace("\r\n", ""))
+
     def test_the_itip_attendee_records_the_membership(self):
         event = self.event() | {
             "uid": "abc",
