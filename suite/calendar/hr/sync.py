@@ -22,6 +22,10 @@ from suite.calendar.hr.mapping import anniversary_events, birthday_events, holid
 from suite.calendar.hr.source import HRSource
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_principal_service
 
+# What marks an event as this sync's. Every JMAP event has a uid, so without a mark of our own
+# a calendar an admin points us at would have everything else on it deleted as "no longer in HR".
+UID_PREFIX = "hr-"
+
 READ_ONLY = {
     "mayReadFreeBusy": True,
     "mayReadItems": True,
@@ -88,6 +92,8 @@ def sync_hr_calendars() -> dict:
                 anniversary_events(employees, today),
                 everyone,
             )
+
+        summary.update(_retire(account, set(summary)))
     except Exception:
         # Without the variables, and `from None`: a failing job's traceback is written to the
         # Error Log with its frames' contents, and the frames behind a sync hold HR's credentials.
@@ -124,7 +130,32 @@ def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[st
     return audiences
 
 
-def _sync_calendar(account: str, name: str, color: str, events: list[dict], audience: list[str]) -> dict:
+def _retire(account: str, synced: set[str]) -> dict[str, dict]:
+    """Calendars this sync used to keep and HR no longer has — a holiday list nobody follows any
+    more, or one switched off in the settings.
+
+    They are emptied of our events and shared with nobody, so a former follower loses them. The
+    calendar itself stays: an admin may have added something to it, and deleting a calendar takes
+    whatever else is on it with it.
+    """
+
+    retired = {}
+    for calendar in get_calendar_service(account).get():
+        if calendar["name"] in synced:
+            continue
+        if not _has_our_events(account, calendar["id"]):
+            continue
+        retired[calendar["name"]] = _sync_calendar(account, calendar["name"], None, [], [])
+    return retired
+
+
+def _has_our_events(account: str, calendar_id: str) -> bool:
+    return bool(_existing_events(get_calendar_event_service(account), calendar_id))
+
+
+def _sync_calendar(
+    account: str, name: str, color: str | None, events: list[dict], audience: list[str]
+) -> dict:
     """Makes one calendar say what HR says, and shares it with the people it is about."""
 
     calendar_id = _ensure_calendar(account, name, color)
@@ -133,7 +164,7 @@ def _sync_calendar(account: str, name: str, color: str, events: list[dict], audi
     return result
 
 
-def _ensure_calendar(account: str, name: str, color: str) -> str:
+def _ensure_calendar(account: str, name: str, color: str | None) -> str:
     """The calendar by that name in the service account, made if it isn't there yet. Matched by
     name rather than remembered, so an admin can point the sync at one they already have."""
 
@@ -172,15 +203,20 @@ def _sync_events(account: str, calendar_id: str, events: list[dict]) -> dict:
 
 
 def _existing_events(service, calendar_id: str) -> dict[str, dict]:
-    """What the sync has already put on the calendar, by uid. Anything without one was put there
-    by hand and is left alone."""
+    """What this sync has already put on the calendar, by uid.
+
+    Only its own: every event has a uid, so anything not in our namespace was put there by
+    somebody and is not ours to rewrite or remove.
+    """
 
     ids = service.query({"inCalendar": calendar_id}, 0, 5000).get("ids") or []
     if not ids:
         return {}
 
     rows = service._get(ids, properties=[*JMAP_FIELDS.values(), "id"])["methodResponses"][0][1]
-    return {row["uid"]: row for row in rows.get("list") or [] if row.get("uid")}
+    return {
+        row["uid"]: row for row in rows.get("list") or [] if (row.get("uid") or "").startswith(UID_PREFIX)
+    }
 
 
 def _payload(event: dict, calendar_id: str) -> dict:

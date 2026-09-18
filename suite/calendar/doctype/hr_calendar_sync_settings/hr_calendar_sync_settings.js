@@ -26,25 +26,14 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 	},
 
 	sync_now(frm) {
-		frm.call({ doc: frm.doc, method: 'sync_now', freeze: true, freeze_message: __('Syncing…') }).then(
-			({ message }) => {
-				frm.reload_doc()
-				const rows = Object.entries(message || {}).map(
-					([calendar, counts]) =>
-						`<tr><td>${frappe.utils.escape_html(calendar)}</td><td>${counts.created}</td>` +
-						`<td>${counts.updated}</td><td>${counts.removed}</td><td>${counts.shared_with}</td></tr>`,
-				)
-				frappe.msgprint({
-					title: __('Sync complete'),
-					indicator: 'green',
-					message: rows.length
-						? `<table class="table table-bordered"><thead><tr>
-								<th>${__('Calendar')}</th><th>${__('Added')}</th><th>${__('Updated')}</th>
-								<th>${__('Removed')}</th><th>${__('Shared with')}</th>
-							</tr></thead><tbody>${rows.join('')}</tbody></table>`
-						: __('Nothing to sync.'),
-				})
-			},
-		)
+		frm.call({ doc: frm.doc, method: 'sync_now', freeze: true }).then(() => {
+			frappe.msgprint({
+				title: __('Sync started'),
+				indicator: 'blue',
+				message: __(
+					'It runs in the background. Reload this page in a minute: what it did shows as Last Sync, and anything that went wrong as Last Error.',
+				),
+			})
+		})
 	},
 })

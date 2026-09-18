@@ -84,11 +84,19 @@ class HRCalendarSyncSettings(Document):
         return report
 
     @frappe.whitelist()
-    def sync_now(self) -> dict:
-        from suite.calendar.hr.sync import sync_hr_calendars
+    def sync_now(self) -> None:
+        """Runs the sync in the background: it reads HR and writes a calendar per holiday list,
+        which is more than a web worker should be held open for. What it did lands in Last Sync,
+        or in Last Error."""
 
         self.check_permission("write")
-        return sync_hr_calendars()
+        frappe.enqueue(
+            "suite.calendar.hr.sync.sync_hr_calendars",
+            queue="long",
+            timeout=1800,
+            job_id=f"hr-calendar-sync::{frappe.session.user}",
+            deduplicate=True,
+        )
 
 
 def get_user_jmap_accounts_for(account: str | None) -> list[str]:
