@@ -874,17 +874,6 @@ onBeforeRouteUpdate((to, from) => {
 	return confirmMeetingLeave();
 });
 
-const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-	if (
-		canLeaveMeeting.value ||
-		(!sfuConnection.isSetupComplete.value && !sfuConnection.isConnecting.value)
-	) return;
-	event.preventDefault();
-	event.returnValue = "";
-};
-window.addEventListener("beforeunload", handleBeforeUnload);
-onUnmounted(() => window.removeEventListener("beforeunload", handleBeforeUnload));
-
 // Soft connecting feedback: only if join takes longer than 5s (no full-page spinner).
 const CONNECTING_TOAST_ID = "meet-connecting";
 const CONNECTING_TOAST_DELAY_MS = 5000;
