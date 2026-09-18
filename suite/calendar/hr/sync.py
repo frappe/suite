@@ -257,12 +257,14 @@ def _lists_by_assignment(assignments: list[dict], employees: list[dict], today: 
     for someone with none of their own, or until their first one starts.
     """
 
-    # By name alone, employee or company: that is all HR itself asks an assignment.
-    by_holder: dict[str, list[dict]] = {}
+    # By kind as well as name: an employee whose id is also a company's name is not that company,
+    # and its lists are not theirs.
+    by_holder: dict[tuple, list[dict]] = {}
     for row in assignments:
         start = str(row.get("from_date") or "")[:10]
         if row.get("holiday_list") and start:
-            by_holder.setdefault(row.get("assigned_to"), []).append({"holiday_list": row["holiday_list"], "start": start})
+            holder = (row.get("applicable_for"), row.get("assigned_to"))
+            by_holder.setdefault(holder, []).append({"holiday_list": row["holiday_list"], "start": start})
     for rows in by_holder.values():
         rows.sort(key=lambda row: row["start"])
 
@@ -273,8 +275,8 @@ def _lists_by_assignment(assignments: list[dict], employees: list[dict], today: 
 
     follows = {}
     for employee in employees:
-        own = from_today(by_holder.get(employee["name"], []))
-        company = by_holder.get(employee.get("company"), [])
+        own = from_today(by_holder.get(("Employee", employee["name"]), []))
+        company = by_holder.get(("Company", employee.get("company")), [])
         if not own:
             rows = from_today(company)
         elif own[0]["start"] > today:

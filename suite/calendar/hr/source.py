@@ -28,7 +28,7 @@ EMPLOYEE_FIELDS = [
     "date_of_joining",
 ]
 
-ASSIGNMENT_FIELDS = ["assigned_to", "holiday_list", "from_date"]
+ASSIGNMENT_FIELDS = ["applicable_for", "assigned_to", "holiday_list", "from_date"]
 
 # Read in pages of this, to the end: a run that silently stopped at 20 would delete every event
 # past the cut as no longer in HR, and assignments gather by the year.

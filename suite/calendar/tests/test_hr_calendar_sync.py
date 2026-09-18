@@ -259,8 +259,14 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
 
 
 class UnitTestWhoFollowsAHolidayList(UnitTestCase):
-    def assignment(self, holder: str, holiday_list: str, start: str) -> dict:
-        return {"assigned_to": holder, "holiday_list": holiday_list, "from_date": start}
+    def assignment(self, holder: str, holiday_list: str, start: str, kind: str | None = None) -> dict:
+        kind = kind or ("Employee" if holder.startswith("EMP") else "Company")
+        return {
+            "applicable_for": kind,
+            "assigned_to": holder,
+            "holiday_list": holiday_list,
+            "from_date": start,
+        }
 
     def follows(self, assignments: list[dict]) -> list[str]:
         staff = [employee("EMP-1", company="Acme")]
@@ -287,6 +293,13 @@ class UnitTestWhoFollowsAHolidayList(UnitTestCase):
             self.assignment("EMP-1", "Dubai 2026", "2026-11-01"),
         ]
         self.assertEqual(self.follows(rows), ["India 2026", "Dubai 2026"])
+
+    def test_a_company_named_like_an_employee_is_not_that_employee(self):
+        rows = [
+            self.assignment("Acme", "India 2026", "2026-01-01"),
+            self.assignment("EMP-1", "Subsidiary 2026", "2026-01-01", kind="Company"),
+        ]
+        self.assertEqual(self.follows(rows), ["India 2026"])
 
     def test_another_companys_list_is_not_theirs(self):
         self.assertEqual(self.follows([self.assignment("Globex", "US 2026", "2026-01-01")]), [])

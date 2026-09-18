@@ -90,9 +90,8 @@ class HRCalendarSyncSettings(Document):
         return saved_settings()._test_connection()
 
     def _test_connection(self) -> dict:
-        from suite.mail.jmap import get_calendar_service
-
         from suite.calendar.hr.sync import _holiday_lists
+        from suite.mail.jmap import get_calendar_service
 
         source = self.hr_source()
         employees = source.employees()
