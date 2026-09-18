@@ -95,6 +95,30 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
+	it("updates participant media state when a participant reconnects", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", audio_enabled: false, video_enabled: false },
+		});
+
+		await manager.connect("token");
+		handlers.get("participant_updated")?.({
+			participantId: "remote-1",
+			userData: {
+				name: "Remote",
+				userId: "remote-1",
+				audio_enabled: true,
+				video_enabled: false,
+			},
+		});
+
+		expect(participantManager.getParticipant("remote-1")).toMatchObject({
+			audio_enabled: true,
+			video_enabled: false,
+		});
+	});
+
 	it("preserves remote progress while the subscription remains present", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");

@@ -807,6 +807,7 @@ export class SFUClient {
 				}
 			},
 			participant_joined: () => {},
+			participant_updated: () => {},
 			participant_left: () => {},
 			producer_created: () => {},
 			producer_closed: () => {},

@@ -217,6 +217,12 @@ export interface ParticipantJoinedEvent {
 	userData: UserData | Pick<UserData, 'name' | 'avatar'>;
 }
 
+export interface ParticipantUpdatedEvent {
+	roomId: string;
+	participantId: string;
+	userData: UserData;
+}
+
 export interface ParticipantLeftEvent {
 	roomId: string;
 	participantId: string;

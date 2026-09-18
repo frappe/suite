@@ -845,6 +845,11 @@ export class RoomRegistry {
 		participantId: string,
 		userData: UserData,
 	): void {
+		this.emitToFullAccessParticipants(roomId, 'participant_updated', {
+			roomId,
+			participantId,
+			userData,
+		});
 		const state = this.getRecorderProjectionState(roomId);
 		if (!state.participants.has(participantId)) return;
 		const observedAt = this.observeProjectionAt(state);

@@ -1388,6 +1388,31 @@ export class ParticipantConnection {
 			}
 		});
 
+		this.sfuClient.on("participant_updated", (value: unknown) => {
+			const data = normalizeParticipantData(value);
+			if (!data?.participantId) return;
+
+			const updates: ParticipantUpdate = {};
+			if (data.userData?.name !== undefined || data.user_name !== undefined) {
+				updates.user_name = data.userData?.name ?? data.user_name ?? "";
+			}
+			if (data.userData && "avatar" in data.userData) {
+				updates.avatar = data.userData.avatar ?? null;
+			} else if (data.avatar !== undefined) {
+				updates.avatar = data.avatar;
+			}
+			if (data.userData?.audio_enabled !== undefined || data.audio_enabled !== undefined) {
+				updates.audio_enabled = data.userData?.audio_enabled ?? data.audio_enabled;
+			}
+			if (data.userData?.video_enabled !== undefined || data.video_enabled !== undefined) {
+				updates.video_enabled = data.userData?.video_enabled ?? data.video_enabled;
+			}
+			if (data.userData?.is_guest !== undefined || data.is_guest !== undefined) {
+				updates.is_guest = data.userData?.is_guest ?? data.is_guest;
+			}
+			this.participantManager.updateParticipant(data.participantId, updates);
+		});
+
 		this.sfuClient.on("participant_left", (value: unknown) => {
 			const participant = normalizeParticipantData(value);
 			if (participant?.participantId) {

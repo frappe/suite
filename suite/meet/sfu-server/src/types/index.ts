@@ -39,6 +39,7 @@ import type {
 	ParticipantInfo,
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
+	ParticipantUpdatedEvent,
 	PinnedChatMessage,
 	PreviewParticipantInfo,
 	ProducerCloseDetails,
@@ -111,6 +112,7 @@ export interface ServerToClientEvents {
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
+	participant_updated: (data: ParticipantUpdatedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
 	participant_connection_replaced: (data: {
 		reason: 'takeover' | 'reconnect';
