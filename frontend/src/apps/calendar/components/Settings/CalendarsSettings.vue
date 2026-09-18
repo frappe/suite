@@ -19,11 +19,18 @@
 				@click="canEdit(calendar) && edit(calendar)"
 			>
 				<div class="flex min-w-0 items-center gap-2 max-sm:gap-3">
+					<!-- Dimmed when its events aren't drawn, as the sidebar dims it. -->
 					<span
 						class="size-2.5 shrink-0 rounded-full"
+						:class="!calendar.visible && 'opacity-30'"
 						:style="{ background: eventColor(calendarColor(calendars.data, calendar.name)) }"
 					/>
-					<span class="truncate text-base text-ink-gray-8">{{ calendar._name }}</span>
+					<span
+						class="truncate text-base"
+						:class="calendar.visible ? 'text-ink-gray-8' : 'text-ink-gray-4'"
+					>
+						{{ calendar._name }}
+					</span>
 				</div>
 				<div class="flex shrink-0 items-center gap-3 max-sm:-mr-1.5">
 					<Badge v-if="calendar.default" :label="__('Default')" />

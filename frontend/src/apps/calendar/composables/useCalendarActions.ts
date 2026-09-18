@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { Pencil, Pin, Trash2 } from 'lucide-vue-next'
+import { Eye, EyeOff, Pencil, Pin, Trash2 } from 'lucide-vue-next'
 import { createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/calendar/utils'
@@ -71,6 +71,13 @@ export const useCalendarActions = () => {
 	const canEdit = (calendar: CalendarRow) => !!calendar.may_write_all
 
 	const menuOptions = (calendar: CalendarRow) => [
+		// The sidebar's row does this on a click, and the phone has no sidebar: there, this is
+		// the only way to show a calendar that starts out hidden, or to hide one.
+		{
+			label: calendar.visible ? __('Hide') : __('Show'),
+			icon: calendar.visible ? EyeOff : Eye,
+			onClick: () => toggleVisible(calendar),
+		},
 		{
 			label: __('Edit'),
 			icon: Pencil,
