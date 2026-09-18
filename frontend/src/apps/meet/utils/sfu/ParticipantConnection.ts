@@ -1422,6 +1422,19 @@ export class ParticipantConnection {
 		this.sfuClient.on("participant_updated", (value: unknown) => {
 			const data = normalizeParticipantData(value);
 			if (!data?.participantId) return;
+			if (this.initialSyncInProgress) {
+				const updates = this.bufferedMediaStateUpdates.get(data.participantId) ?? {};
+				if (data.userData?.audio_enabled !== undefined || data.audio_enabled !== undefined) {
+					updates.audioEnabled = data.userData?.audio_enabled ?? data.audio_enabled;
+				}
+				if (data.userData?.video_enabled !== undefined || data.video_enabled !== undefined) {
+					updates.videoEnabled = data.userData?.video_enabled ?? data.video_enabled;
+				}
+				if (Object.keys(updates).length) {
+					this.bufferedMediaStateUpdates.set(data.participantId, updates);
+				}
+				return;
+			}
 
 			const updates: ParticipantUpdate = {};
 			if (data.userData?.name !== undefined || data.user_name !== undefined) {
