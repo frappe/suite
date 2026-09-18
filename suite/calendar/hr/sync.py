@@ -71,24 +71,32 @@ def sync_hr_calendars() -> dict:
     if not identifier:
         return {}
 
+    # Filled in by the run as it makes calendars: their ids, which a failed run must not forget.
+    made: dict = {}
     try:
-        return _run()
+        return _run(made)
     except Exception:
-        _record_failure()
+        _record_failure(made)
         raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
     finally:
         release_lock(LOCK, identifier)
 
 
-def _record_failure() -> None:
+def _record_failure(made: dict) -> None:
+    """What went wrong, and any calendar made before it did — in the one commit a failed run
+    makes. The calendar exists on the mail server whatever the database rolls back, and a run
+    that forgot it would make another on every retry."""
+
     traceback = frappe.get_traceback(with_context=False)
     frappe.db.rollback()
     frappe.db.set_single_value("HR Calendar Sync Settings", "last_error", traceback[-2000:])
+    if made:
+        frappe.db.set_single_value("HR Calendar Sync Settings", "synced_calendars", frappe.as_json(made))
     frappe.log_error(title="HR Calendar Sync failed", message=traceback)
     frappe.db.commit()  # nosemgrep: the job is failing; what it says has to outlive the rollback
 
 
-def _run() -> dict:
+def _run(made: dict) -> dict:
     # Read fresh rather than from the cache: the sync acts on what is saved now.
     settings = frappe.get_doc("HR Calendar Sync Settings")
     if not settings.enabled:
@@ -126,7 +134,7 @@ def _run() -> dict:
     if len(names) != len(set(names)):
         frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
 
-    owned = OwnedCalendars(settings, account)
+    owned = OwnedCalendars(settings, account, made)
     summary = {}
     for key, name, color, events, audience, prefix in plans:
         calendar_id = owned.ensure(key, name, color)
@@ -154,8 +162,9 @@ class OwnedCalendars:
     there, and anything else in the account — whatever it is called — is left alone.
     """
 
-    def __init__(self, settings, account: str):
+    def __init__(self, settings, account: str, made: dict | None = None):
         self.account = account
+        self.made = made if made is not None else {}
         stored = frappe.parse_json(settings.synced_calendars or "{}") or {}
         # Remembered for one account: pointed at another, the sync starts over there.
         known = stored.get("calendars", {}) if stored.get("account") == account else {}
@@ -165,20 +174,19 @@ class OwnedCalendars:
     def ensure(self, key: str, name: str, color: str | None) -> str:
         if key not in self.calendars:
             self.calendars[key] = add_calendar(self.account, name, color=color)
-            # Remembered at once, and past a rollback: a run that failed further on and forgot
-            # the calendar it had just made would make another one on every retry.
-            self.save()
-            frappe.db.commit()  # nosemgrep: the calendar exists on the mail server whatever happens next
+            # Handed to whoever started the run, to be saved even if it fails further on.
+            self.made.update(self.state())
         return self.calendars[key]
 
     def others(self, planned: set[str]) -> dict[str, str]:
         return {key: id for key, id in self.calendars.items() if key not in planned}
 
+    def state(self) -> dict:
+        return {"account": self.account, "calendars": dict(self.calendars)}
+
     def save(self) -> None:
         frappe.db.set_single_value(
-            "HR Calendar Sync Settings",
-            "synced_calendars",
-            frappe.as_json({"account": self.account, "calendars": self.calendars}),
+            "HR Calendar Sync Settings", "synced_calendars", frappe.as_json(self.state())
         )
 
 

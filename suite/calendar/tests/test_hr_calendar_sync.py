@@ -277,3 +277,15 @@ class UnitTestOwnedCalendars(UnitTestCase):
         stored = {"account": "acc", "calendars": {"holiday:2025": "old", "holiday:2026": "new"}}
         owned = self.owned(stored, [{"id": "old", "name": "2025"}, {"id": "new", "name": "2026"}])
         self.assertEqual(owned.others({"holiday:2026"}), {"holiday:2025": "old"})
+
+    def test_a_calendar_made_before_a_failure_is_not_forgotten(self):
+        made: dict = {}
+        settings = MagicMock(synced_calendars="{}")
+        service = MagicMock()
+        service.get.return_value = []
+        with patch.object(hr_sync, "get_calendar_service", return_value=service):
+            owned = OwnedCalendars(settings, "acc", made)
+        with patch.object(hr_sync, "add_calendar", return_value="made"):
+            owned.ensure("birthday:Acme", "Birthdays", "#fff")
+        # what the failure handler is handed, to save in its one commit
+        self.assertEqual(made, {"account": "acc", "calendars": {"birthday:Acme": "made"}})
