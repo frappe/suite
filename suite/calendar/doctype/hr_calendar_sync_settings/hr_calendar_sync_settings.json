@@ -27,7 +27,8 @@
   "anniversaries_color",
   "status_section",
   "last_sync",
-  "last_error"
+  "last_error",
+  "synced_calendars"
  ],
  "fields": [
   {
@@ -166,6 +167,15 @@
    "fieldname": "last_error",
    "fieldtype": "Small Text",
    "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "description": "The calendars the sync made, by id. It touches no others.",
+   "fieldname": "synced_calendars",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Synced Calendars",
+   "no_copy": 1,
    "read_only": 1
   }
  ],

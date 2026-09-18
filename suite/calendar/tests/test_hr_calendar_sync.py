@@ -10,7 +10,7 @@ from frappe.tests import UnitTestCase
 from suite.calendar.hr import sync as hr_sync
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events, strip_html
 from suite.calendar.hr.source import HRSource, validate_site_url
-from suite.calendar.hr.sync import _by_company, _differs, _principals
+from suite.calendar.hr.sync import OwnedCalendars, _by_company, _differs, _principals
 
 TODAY = date(2026, 9, 18)
 
@@ -166,6 +166,7 @@ class UnitTestNothingPrivateIsLogged(UnitTestCase):
             patch.object(hr_sync, "release_lock"),
             patch.object(hr_sync, "_record_failure"),
             patch.object(hr_sync.frappe, "get_doc", return_value=settings),
+            patch.object(hr_sync, "OwnedCalendars"),
             patch.object(hr_sync, "_sync_calendar", side_effect=RuntimeError("mail server down")),
         ):
             logged = logged_traceback(hr_sync.sync_hr_calendars)
@@ -218,8 +219,9 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
 
     def test_milestones_stay_within_a_company(self):
         staff = [employee("EMP-1", company="Acme"), employee("EMP-2", company="Globex")]
-        self.assertEqual(set(_by_company("Birthdays", staff)), {"Birthdays — Acme", "Birthdays — Globex"})
-        self.assertEqual(set(_by_company("Birthdays", staff[:1])), {"Birthdays"})
+        names = {company: name for company, (name, _staff) in _by_company("Birthdays", staff).items()}
+        self.assertEqual(names, {"Acme": "Birthdays — Acme", "Globex": "Birthdays — Globex"})
+        self.assertEqual(_by_company("Birthdays", staff[:1])["Acme"][0], "Birthdays")
 
     def test_a_share_goes_only_to_the_people_hr_named(self):
         service = MagicMock()
@@ -234,3 +236,44 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
         ]
         with patch.object(hr_sync, "get_principal_service", return_value=service):
             self.assertEqual(_principals("acc", {"akash@x.io", "team@x.io"}), ["p1"])
+
+
+class UnitTestOwnedCalendars(UnitTestCase):
+    """The sync touches the calendars it made, and no calendar because of what it is called."""
+
+    def owned(self, stored: dict, in_account: list[dict]) -> OwnedCalendars:
+        settings = MagicMock(synced_calendars=frappe.as_json(stored))
+        service = MagicMock()
+        service.get.return_value = in_account
+        with patch.object(hr_sync, "get_calendar_service", return_value=service):
+            return OwnedCalendars(settings, "acc")
+
+    def test_a_calendar_of_the_same_name_is_never_adopted(self):
+        # "Birthdays" is already in the account, and is somebody's own.
+        owned = self.owned({}, [{"id": "private", "name": "Birthdays"}])
+        with patch.object(hr_sync, "add_calendar", return_value="made") as add:
+            self.assertEqual(owned.ensure("birthday:Acme", "Birthdays", "#fff"), "made")
+        add.assert_called_once()
+
+    def test_its_own_calendar_is_reused_whatever_it_is_called_now(self):
+        stored = {"account": "acc", "calendars": {"birthday:Acme": "made"}}
+        owned = self.owned(stored, [{"id": "made", "name": "Renamed by an admin"}])
+        with patch.object(hr_sync, "add_calendar") as add:
+            self.assertEqual(owned.ensure("birthday:Acme", "Birthdays", "#fff"), "made")
+        add.assert_not_called()
+
+    def test_a_calendar_deleted_by_hand_is_made_again(self):
+        stored = {"account": "acc", "calendars": {"birthday:Acme": "gone"}}
+        owned = self.owned(stored, [])
+        with patch.object(hr_sync, "add_calendar", return_value="made"):
+            self.assertEqual(owned.ensure("birthday:Acme", "Birthdays", "#fff"), "made")
+
+    def test_another_accounts_calendars_are_not_this_ones(self):
+        stored = {"account": "other", "calendars": {"birthday:Acme": "made"}}
+        owned = self.owned(stored, [{"id": "made", "name": "Birthdays"}])
+        self.assertEqual(owned.calendars, {})
+
+    def test_what_is_no_longer_planned_is_what_gets_retired(self):
+        stored = {"account": "acc", "calendars": {"holiday:2025": "old", "holiday:2026": "new"}}
+        owned = self.owned(stored, [{"id": "old", "name": "2025"}, {"id": "new", "name": "2026"}])
+        self.assertEqual(owned.others({"holiday:2026"}), {"holiday:2025": "old"})

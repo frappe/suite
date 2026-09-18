@@ -34,6 +34,7 @@ class HRCalendarSyncSettings(Document):
         sync_anniversaries: DF.Check
         sync_birthdays: DF.Check
         sync_holidays: DF.Check
+        synced_calendars: DF.LongText | None
     # end: auto-generated types
 
     def validate(self) -> None:

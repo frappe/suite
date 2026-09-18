@@ -99,41 +99,90 @@ def _run() -> dict:
     employees = source.employees()
     today = date.today()
 
-    # Every calendar this run keeps: name, colour, events, audience, and which of our events it holds.
+    # Every calendar this run keeps: what it is (the key it is remembered by), its name, colour,
+    # events, audience, and which of our events it holds.
     plans = []
     if settings.sync_holidays:
         for holiday_list, audience in _holiday_lists(settings, source, employees).items():
             events = holiday_events(holiday_list, source.holidays(holiday_list))
-            plans.append((holiday_list, settings.holidays_color, events, audience, "hr-holiday-"))
+            key = f"holiday:{holiday_list}"
+            plans.append((key, holiday_list, settings.holidays_color, events, audience, "hr-holiday-"))
     if settings.sync_birthdays:
-        for name, staff in _by_company(settings.birthdays_calendar, employees).items():
+        for company, (name, staff) in _by_company(settings.birthdays_calendar, employees).items():
             audience = [person.get("user_id") for person in staff]
-            plans.append(
-                (name, settings.birthdays_color, birthday_events(staff, today), audience, "hr-birthday-")
-            )
+            events = birthday_events(staff, today)
+            key = f"birthday:{company}"
+            plans.append((key, name, settings.birthdays_color, events, audience, "hr-birthday-"))
     if settings.sync_anniversaries:
-        for name, staff in _by_company(settings.anniversaries_calendar, employees).items():
+        for company, (name, staff) in _by_company(settings.anniversaries_calendar, employees).items():
             audience = [person.get("user_id") for person in staff]
             events = anniversary_events(staff, today)
-            plans.append((name, settings.anniversaries_color, events, audience, "hr-anniversary-"))
+            key = f"anniversary:{company}"
+            plans.append((key, name, settings.anniversaries_color, events, audience, "hr-anniversary-"))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
     # share: a holiday list named "Birthdays" would hand the birthdays to the wrong people.
-    names = [plan[0] for plan in plans]
+    names = [plan[1] for plan in plans]
     if len(names) != len(set(names)):
         frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
 
+    owned = OwnedCalendars(settings, account)
     summary = {}
-    for name, color, events, audience, prefix in plans:
-        summary[name] = _sync_calendar(account, name, color, events, audience, prefix)
+    for key, name, color, events, audience, prefix in plans:
+        calendar_id = owned.ensure(key, name, color)
+        summary[name] = _sync_calendar(account, calendar_id, events, audience, prefix)
 
-    summary.update(_retire(account, set(summary)))
+    # What this sync used to keep and HR no longer has — a holiday list nobody follows any more,
+    # or a kind switched off. Emptied of our events and shared with nobody, so a former follower
+    # loses it; the calendar stays, remembered, for the day the list comes back.
+    planned = {plan[0] for plan in plans}
+    for key, calendar_id in owned.others(planned).items():
+        summary[f"({key})"] = _sync_calendar(account, calendar_id, [], [], UID_PREFIX)
 
+    owned.save()
     frappe.db.set_single_value("HR Calendar Sync Settings", {"last_sync": now_datetime(), "last_error": None})
     return summary
 
 
-def _by_company(name: str, employees: list[dict]) -> dict[str, list[dict]]:
+class OwnedCalendars:
+    """The calendars this sync made, by what they are — and the only ones it will ever touch.
+
+    Names are no way to find them. A calendar's name comes from HR (a holiday list, a company),
+    and a name that happened to match a calendar already in the service account would have the
+    sync adopt it and share it, showing its events to people they were never meant for. So what
+    the sync created is remembered by id in the settings, a calendar is only ever reused from
+    there, and anything else in the account — whatever it is called — is left alone.
+    """
+
+    def __init__(self, settings, account: str):
+        self.account = account
+        stored = frappe.parse_json(settings.synced_calendars or "{}") or {}
+        # Remembered for one account: pointed at another, the sync starts over there.
+        known = stored.get("calendars", {}) if stored.get("account") == account else {}
+        existing = {calendar["id"] for calendar in get_calendar_service(account).get()}
+        self.calendars = {key: id for key, id in known.items() if id in existing}
+
+    def ensure(self, key: str, name: str, color: str | None) -> str:
+        if key not in self.calendars:
+            self.calendars[key] = add_calendar(self.account, name, color=color)
+            # Remembered at once, and past a rollback: a run that failed further on and forgot
+            # the calendar it had just made would make another one on every retry.
+            self.save()
+            frappe.db.commit()  # nosemgrep: the calendar exists on the mail server whatever happens next
+        return self.calendars[key]
+
+    def others(self, planned: set[str]) -> dict[str, str]:
+        return {key: id for key, id in self.calendars.items() if key not in planned}
+
+    def save(self) -> None:
+        frappe.db.set_single_value(
+            "HR Calendar Sync Settings",
+            "synced_calendars",
+            frappe.as_json({"account": self.account, "calendars": self.calendars}),
+        )
+
+
+def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[dict]]]:
     """One milestones calendar per company, as HR's own birthday reminders go to the company and
     no further: companies sharing an HR site are not each other's colleagues. A single company
     keeps the plain name."""
@@ -143,8 +192,10 @@ def _by_company(name: str, employees: list[dict]) -> dict[str, list[dict]]:
         companies.setdefault(employee.get("company") or "", []).append(employee)
 
     if len(companies) <= 1:
-        return {name: employees}
-    return {f"{name} — {company}" if company else name: staff for company, staff in companies.items()}
+        return {company: (name, staff) for company, staff in companies.items()}
+    return {
+        company: (f"{name} — {company}" if company else name, staff) for company, staff in companies.items()
+    }
 
 
 def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[str, list[str]]:
@@ -172,50 +223,15 @@ def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[st
     return audiences
 
 
-def _retire(account: str, synced: set[str]) -> dict[str, dict]:
-    """Calendars this sync used to keep and HR no longer has — a holiday list nobody follows any
-    more, or one switched off in the settings.
-
-    They are emptied of our events and shared with nobody, so a former follower loses them. The
-    calendar itself stays: an admin may have added something to it, and deleting a calendar takes
-    whatever else is on it with it.
-    """
-
-    retired = {}
-    for calendar in get_calendar_service(account).get():
-        if calendar["name"] in synced:
-            continue
-        if not _has_our_events(account, calendar["id"]):
-            continue
-        retired[calendar["name"]] = _sync_calendar(account, calendar["name"], None, [], [], UID_PREFIX)
-    return retired
-
-
-def _has_our_events(account: str, calendar_id: str) -> bool:
-    return bool(_existing_events(get_calendar_event_service(account), calendar_id, UID_PREFIX))
-
-
 def _sync_calendar(
-    account: str, name: str, color: str | None, events: list[dict], audience: list[str], prefix: str
+    account: str, calendar_id: str, events: list[dict], audience: list[str], prefix: str
 ) -> dict:
-    """Makes one calendar say what HR says, and shares it with the people it is about. `prefix`
-    is the kind of event it holds: only those are ever rewritten or removed."""
+    """Makes one of the sync's own calendars say what HR says, and shares it with the people it is
+    about. `prefix` is the kind of event it holds: only those are ever rewritten or removed."""
 
-    calendar_id = _ensure_calendar(account, name, color)
     result = _sync_events(account, calendar_id, events, prefix)
     result["shared_with"] = _share(account, calendar_id, audience)
     return result
-
-
-def _ensure_calendar(account: str, name: str, color: str | None) -> str:
-    """The calendar by that name in the service account, made if it isn't there yet. Matched by
-    name rather than remembered, so an admin can point the sync at one they already have."""
-
-    for calendar in get_calendar_service(account).get():
-        if calendar["name"] == name:
-            return calendar["id"]
-
-    return add_calendar(account, name, color=color)
 
 
 def _sync_events(account: str, calendar_id: str, events: list[dict], prefix: str) -> dict:

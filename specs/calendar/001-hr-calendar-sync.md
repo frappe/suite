@@ -39,6 +39,10 @@ list, and optional company-wide birthday and work anniversary calendars, kept in
 - **The HR site URL** is fetched by this server, so it must be a plain https site (http only for
   localhost): no path, query, fragment or credentials, and redirects are not followed. An answer
   over 25 MB is refused.
+- **Only the sync's own calendars.** The ones it made are remembered by id in the settings, and it
+  reuses a calendar only from there. A calendar's name comes from HR, so a name is never how one
+  is found: a calendar already in the account that happens to share it is left alone, not adopted
+  and shared.
 - **Only the sync's own events** (`hr-holiday-`, `hr-birthday-`, `hr-anniversary-` uids) are ever
   rewritten or removed; two synced calendars may not share a name.
 - **A share goes only to a person HR named:** an address must match exactly, and a group is never
