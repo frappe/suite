@@ -42,6 +42,7 @@ from suite.meet.doctype.meet_recording.meet_recording import recording_storage_r
 from suite.meet.recording.callback_auth import CALLBACK_AUDIENCE, CALLBACK_TYPE, authenticate_callback
 from suite.meet.recording.ingest import (
     InfrastructureFinalizationError,
+    _recording_email_content,
     _upload_path,
     append_chunk,
     begin_upload,
@@ -693,6 +694,22 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
         finally:
             frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
+
+    def test_untitled_room_email_uses_room_id(self):
+        self.room.db_set("title", None)
+        recording = Mock(
+            meet_room=self.room.name,
+            status="Ready",
+            started_at=now_datetime(),
+            creation=now_datetime(),
+            artifact=None,
+        )
+
+        subject, args = _recording_email_content(recording)
+
+        self.assertIn(self.room.name, subject)
+        self.assertNotIn("Untitled Meet Room", subject)
+        self.assertIn(self.room.name, args["description"])
 
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))

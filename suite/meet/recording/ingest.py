@@ -588,7 +588,7 @@ def deliver_recording_notification(recording_name: str):
 
 
 def _recording_email_content(recording) -> tuple[str, dict]:
-    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or _("Untitled Meet Room")
+    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or recording.meet_room
     recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
 
     if recording.status == "Ready":
