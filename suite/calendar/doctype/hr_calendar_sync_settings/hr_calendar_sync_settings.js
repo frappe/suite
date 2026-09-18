@@ -16,6 +16,7 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		await frm.events.save_first(frm)
 		frm.call({ doc: frm.doc, method: 'test_connection', freeze: true }).then(({ message }) => {
 			if (!message) return
+			const unknown = frappe.utils.escape_html(message.unknown_holiday_lists.join(', '))
 			// The names are HR's: escaped here, as one string, before any of it is markup.
 			const followers = frappe.utils.escape_html(
 				Object.entries(message.followers)
@@ -31,6 +32,7 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 					${__('with joining date')}: ${message.with_joining_date},
 					${__('with a mail address')}: ${message.with_mail_address})</p>
 					<p>${__('Holiday lists')}: ${frappe.utils.escape_html(message.holiday_lists.join(', ') || '—')}</p>
+					${unknown && `<p class="text-danger">${__('Not among them, so never synced')}: ${unknown}</p>`}
 					<p>${__('Who follows which, by Holiday List Assignment')}: ${followers || '—'}</p>
 					<p>${__("The service account's calendars")}: ${frappe.utils.escape_html(message.calendars.join(', ') || '—')}</p>
 				`,

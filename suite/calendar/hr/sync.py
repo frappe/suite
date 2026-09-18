@@ -188,14 +188,31 @@ class OwnedCalendars:
         stored = frappe.parse_json(settings.synced_calendars or "{}") or {}
         # Remembered for one account: pointed at another, the sync starts over there.
         known = stored.get("calendars", {}) if stored.get("account") == account else {}
-        existing = {calendar["id"] for calendar in get_calendar_service(account).get()}
-        self.calendars = {key: id for key, id in known.items() if id in existing}
+        self.service = get_calendar_service(account)
+        self.existing = {calendar["id"]: calendar for calendar in self.service.get()}
+        self.calendars = {key: id for key, id in known.items() if id in self.existing}
 
     def ensure(self, key: str, name: str, color: str | None) -> str:
         if key not in self.calendars:
             self.calendars[key] = add_calendar(self.account, name, color=color)
             self.created = True
+        else:
+            self._keep_as_set(self.calendars[key], name, color)
         return self.calendars[key]
+
+    def _keep_as_set(self, calendar_id: str, name: str, color: str | None) -> None:
+        """A calendar the sync made goes on saying what the settings and HR say: a name or a colour
+        changed there is changed here, not only on the day the calendar was made. Nothing is
+        written when they already agree."""
+
+        has = self.existing[calendar_id]
+        patch = {}
+        if has.get("name") != name:
+            patch["name"] = name
+        if color and (has.get("color") or "").lower() != color.lower():
+            patch["color"] = color
+        if patch:
+            _raise_for_errors(self.service._update({calendar_id: patch}), "notUpdated")
 
     def made(self) -> dict:
         """What to save even if the run fails further on: nothing, unless a calendar was made."""

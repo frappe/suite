@@ -6,12 +6,13 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
-  "account",
   "hr_section",
   "hr_site_url",
-  "api_key",
   "column_break_hr",
+  "api_key",
   "api_secret",
+  "calendars_section",
+  "account",
   "holidays_section",
   "sync_holidays",
   "holiday_lists",
@@ -36,14 +37,6 @@
    "label": "Enabled"
   },
   {
-   "description": "The account that owns the synced calendars. Use one nobody logs in as, and not a group: a group's members get write access to its calendars.",
-   "fieldname": "account",
-   "fieldtype": "Link",
-   "label": "Service Account",
-   "mandatory_depends_on": "eval:doc.enabled",
-   "options": "JMAP Account"
-  },
-  {
    "fieldname": "hr_section",
    "fieldtype": "Section Break",
    "label": "Frappe HR"
@@ -55,14 +48,14 @@
    "label": "HR Site URL"
   },
   {
+   "fieldname": "column_break_hr",
+   "fieldtype": "Column Break"
+  },
+  {
    "depends_on": "hr_site_url",
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key"
-  },
-  {
-   "fieldname": "column_break_hr",
-   "fieldtype": "Column Break"
   },
   {
    "depends_on": "hr_site_url",
@@ -71,23 +64,36 @@
    "label": "API Secret"
   },
   {
+   "fieldname": "calendars_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "The account that owns the synced calendars. Use one nobody logs in as, and not a group: a group's members get write access to its calendars.",
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "label": "Service Account",
+   "mandatory_depends_on": "eval:doc.enabled",
+   "options": "JMAP Account"
+  },
+  {
    "fieldname": "holidays_section",
    "fieldtype": "Section Break",
-   "label": "Holidays"
+   "label": "Holidays",
+   "description": "A calendar per holiday list, shared with the employees who follow it."
   },
   {
    "default": "1",
-   "description": "A calendar per holiday list, shared with the employees who follow it.",
    "fieldname": "sync_holidays",
    "fieldtype": "Check",
    "label": "Sync Holidays"
   },
   {
    "depends_on": "sync_holidays",
-   "description": "One per line. Leave empty for every list an employee follows.",
+   "description": "One per line, as HR names them. Leave empty for every list an employee follows. Test Connection says if a name is not one of HR's.",
    "fieldname": "holiday_lists",
    "fieldtype": "Small Text",
-   "label": "Holiday Lists"
+   "label": "Holiday Lists",
+   "max_height": "6rem"
   },
   {
    "fieldname": "column_break_holidays",
@@ -98,7 +104,7 @@
    "depends_on": "sync_holidays",
    "fieldname": "holidays_color",
    "fieldtype": "Color",
-   "label": "Holidays Colour"
+   "label": "Holidays Color"
   },
   {
    "description": "Birthdays and work anniversaries share one calendar, for everyone in the company.",
@@ -126,15 +132,16 @@
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
    "fieldname": "milestones_calendar",
    "fieldtype": "Data",
-   "label": "Celebrations Calendar",
-   "mandatory_depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries"
+   "label": "Calendar Name",
+   "mandatory_depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
+   "description": "What the sync calls the calendar it makes. With more than one company each gets its own, named after it."
   },
   {
    "default": "#e34aa6",
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
    "fieldname": "milestones_color",
    "fieldtype": "Color",
-   "label": "Celebrations Colour"
+   "label": "Celebrations Color"
   },
   {
    "fieldname": "status_section",
@@ -166,7 +173,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-18 13:20:37.000000",
+ "modified": "2026-09-18 15:56:39.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "HR Calendar Sync Settings",

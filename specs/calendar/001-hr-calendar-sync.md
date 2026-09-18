@@ -50,6 +50,10 @@ in step with HR.
   reuses a calendar only from there. A calendar's name comes from HR, so a name is never how one
   is found: a calendar already in the account that happens to share it is left alone, not adopted
   and shared.
+- **The settings and HR name and colour them.** A calendar the sync made is kept to the name and
+  colour it would be given today — a holiday list renamed in HR, a colour or the Celebrations name
+  changed in the settings — on every run, not only the day it was made. A name given to it by hand
+  in the calendar is therefore put back.
 - **Only the sync's own events** (`hr-holiday-`, `hr-birthday-`, `hr-anniversary-` uids) are ever
   rewritten or removed; two synced calendars may not share a name.
 - **A share goes only to a person HR named:** an address must match exactly, and a group is never

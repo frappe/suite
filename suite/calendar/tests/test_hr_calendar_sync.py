@@ -337,6 +337,7 @@ class UnitTestOwnedCalendars(UnitTestCase):
         settings = MagicMock(synced_calendars=frappe.as_json(stored))
         service = MagicMock()
         service.get.return_value = in_account
+        service._update.return_value = {}
         with patch.object(hr_sync, "get_calendar_service", return_value=service):
             return OwnedCalendars(settings, "acc")
 
@@ -353,6 +354,23 @@ class UnitTestOwnedCalendars(UnitTestCase):
         with patch.object(hr_sync, "add_calendar") as add:
             self.assertEqual(owned.ensure("birthday:Acme", "Birthdays", "#fff"), "made")
         add.assert_not_called()
+
+    def test_a_name_or_colour_changed_in_the_settings_is_changed_on_the_calendar(self):
+        stored = {"account": "acc", "calendars": {"milestones:Acme": "made"}}
+        owned = self.owned(stored, [{"id": "made", "name": "Milestones", "color": "#761acb"}])
+        owned.ensure("milestones:Acme", "Celebrations", "#761ACB")
+        owned.service._update.assert_called_once_with({"made": {"name": "Celebrations"}})
+
+        owned.service._update.reset_mock()
+        owned.ensure("milestones:Acme", "Milestones", "#00ff00")
+        owned.service._update.assert_called_once_with({"made": {"color": "#00ff00"}})
+
+    def test_a_calendar_that_already_says_so_is_not_written_to(self):
+        stored = {"account": "acc", "calendars": {"milestones:Acme": "made"}}
+        owned = self.owned(stored, [{"id": "made", "name": "Celebrations", "color": "#761ACB"}])
+        owned.ensure("milestones:Acme", "Celebrations", "#761acb")
+        owned.ensure("milestones:Acme", "Celebrations", None)
+        owned.service._update.assert_not_called()
 
     def test_a_calendar_deleted_by_hand_is_made_again(self):
         stored = {"account": "acc", "calendars": {"birthday:Acme": "gone"}}

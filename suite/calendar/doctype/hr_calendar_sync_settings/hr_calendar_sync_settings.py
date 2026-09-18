@@ -96,12 +96,15 @@ class HRCalendarSyncSettings(Document):
         source = self.hr_source()
         employees = source.employees()
         followers = _holiday_lists(self, source, employees, date.today())
+        holiday_lists = source.holiday_lists()
         return {
             "employees": len(employees),
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
             "with_joining_date": sum(1 for employee in employees if employee.get("date_of_joining")),
             "with_mail_address": sum(1 for employee in employees if employee.get("user_id")),
-            "holiday_lists": source.holiday_lists(),
+            "holiday_lists": holiday_lists,
+            # Typed by hand, and a name HR doesn't have would quietly sync nothing.
+            "unknown_holiday_lists": sorted(self.chosen_holiday_lists() - set(holiday_lists)),
             # Who the sync would share each list with, resolved as HR resolves it.
             "followers": {name: len(people) for name, people in followers.items()},
             "calendars": [calendar["name"] for calendar in get_calendar_service(self.account).get()],
