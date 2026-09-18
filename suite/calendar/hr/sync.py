@@ -1,7 +1,7 @@
 """Keeping the HR calendars in step with HR.
 
-One calendar per holiday list, plus a birthdays and a work anniversaries calendar, all owned
-by a service account and shared read-only with the people they are about. Every run works out
+One calendar per holiday list, plus a celebrations calendar for birthdays and work anniversaries,
+all owned by a service account and shared read-only with the people they are about. Every run works out
 what should be on each calendar and makes the calendar say that: events HR no longer has are
 removed, changed ones are rewritten, and the rest are left alone. So a run is repeatable, and
 a holiday moved or cancelled in HR moves or goes here too.
@@ -74,15 +74,22 @@ def sync_hr_calendars() -> dict:
     if not identifier:
         return {}
 
-    # Filled in by the run as it makes calendars: their ids, which a failed run must not forget.
-    made: dict = {}
     try:
-        return _run(made)
-    except Exception:
-        _record_failure(made)
+        return _run()
+    except Exception as error:
+        _record_failure(error.made if isinstance(error, RunFailed) else {})
         raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
     finally:
         release_lock(LOCK, identifier)
+
+
+class RunFailed(Exception):
+    """A run that failed after it had calendars in hand. It carries what the run made — their
+    ids, which a failed run must not forget — and what went wrong as its cause."""
+
+    def __init__(self, made: dict):
+        super().__init__("The HR calendar sync failed.")
+        self.made = made
 
 
 def _record_failure(made: dict) -> None:
@@ -99,7 +106,7 @@ def _record_failure(made: dict) -> None:
     frappe.db.commit()  # nosemgrep: the job is failing; what it says has to outlive the rollback
 
 
-def _run(made: dict) -> dict:
+def _run() -> dict:
     # Read fresh rather than from the cache: the sync acts on what is saved now.
     settings = frappe.get_doc("HR Calendar Sync Settings")
     if not settings.enabled:
@@ -134,7 +141,18 @@ def _run(made: dict) -> dict:
     if len(names) != len(set(names)):
         frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
 
-    owned = OwnedCalendars(settings, account, made)
+    owned = OwnedCalendars(settings, account)
+    try:
+        summary = _reconcile(account, owned, plans)
+    except Exception as error:
+        raise RunFailed(owned.made()) from error
+
+    owned.save()
+    _record_success()
+    return summary
+
+
+def _reconcile(account: str, owned: OwnedCalendars, plans: list[tuple]) -> dict:
     summary = {}
     for key, name, color, events, audience, prefix in plans:
         calendar_id = owned.ensure(key, name, color)
@@ -146,9 +164,6 @@ def _run(made: dict) -> dict:
     planned = {plan[0] for plan in plans}
     for key, calendar_id in owned.others(planned).items():
         summary[f"({key})"] = _sync_calendar(account, calendar_id, [], [], UID_PREFIX)
-
-    owned.save()
-    _record_success()
     return summary
 
 
@@ -166,9 +181,9 @@ class OwnedCalendars:
     there, and anything else in the account — whatever it is called — is left alone.
     """
 
-    def __init__(self, settings, account: str, made: dict | None = None):
+    def __init__(self, settings, account: str):
         self.account = account
-        self.made = made if made is not None else {}
+        self.created = False
         stored = frappe.parse_json(settings.synced_calendars or "{}") or {}
         # Remembered for one account: pointed at another, the sync starts over there.
         known = stored.get("calendars", {}) if stored.get("account") == account else {}
@@ -178,9 +193,13 @@ class OwnedCalendars:
     def ensure(self, key: str, name: str, color: str | None) -> str:
         if key not in self.calendars:
             self.calendars[key] = add_calendar(self.account, name, color=color)
-            # Handed to whoever started the run, to be saved even if it fails further on.
-            self.made.update(self.state())
+            self.created = True
         return self.calendars[key]
+
+    def made(self) -> dict:
+        """What to save even if the run fails further on: nothing, unless a calendar was made."""
+
+        return self.state() if self.created else {}
 
     def others(self, planned: set[str]) -> dict[str, str]:
         return {key: id for key, id in self.calendars.items() if key not in planned}

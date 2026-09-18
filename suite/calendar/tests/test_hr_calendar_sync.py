@@ -279,16 +279,34 @@ class UnitTestOwnedCalendars(UnitTestCase):
         self.assertEqual(owned.others({"holiday:2026"}), {"holiday:2025": "old"})
 
     def test_a_calendar_made_before_a_failure_is_not_forgotten(self):
-        made: dict = {}
         settings = MagicMock(synced_calendars="{}")
         service = MagicMock()
         service.get.return_value = []
         with patch.object(hr_sync, "get_calendar_service", return_value=service):
-            owned = OwnedCalendars(settings, "acc", made)
+            owned = OwnedCalendars(settings, "acc")
+        self.assertEqual(owned.made(), {})
         with patch.object(hr_sync, "add_calendar", return_value="made"):
             owned.ensure("birthday:Acme", "Birthdays", "#fff")
         # what the failure handler is handed, to save in its one commit
-        self.assertEqual(made, {"account": "acc", "calendars": {"birthday:Acme": "made"}})
+        self.assertEqual(owned.made(), {"account": "acc", "calendars": {"birthday:Acme": "made"}})
+
+    def test_a_failed_run_hands_over_what_it_made(self):
+        settings = MagicMock(
+            enabled=1, account="acc", sync_holidays=0, sync_birthdays=1, sync_anniversaries=0
+        )
+        settings.milestones_calendar = "Celebrations"
+        settings.hr_source.return_value.employees.return_value = [employee("EMP-1", company="Acme")]
+        made = {"account": "acc", "calendars": {"milestones:Acme": "made"}}
+        with (
+            patch.object(hr_sync.frappe, "get_doc", return_value=settings),
+            patch.object(hr_sync, "OwnedCalendars") as owned,
+            patch.object(hr_sync, "_sync_calendar", side_effect=RuntimeError("mail server down")),
+        ):
+            owned.return_value.made.return_value = made
+            with self.assertRaises(hr_sync.RunFailed) as failure:
+                hr_sync._run()
+        self.assertEqual(failure.exception.made, made)
+        self.assertIsInstance(failure.exception.__cause__, RuntimeError)
 
 
 class UnitTestMilestonesShareACalendar(UnitTestCase):
@@ -312,7 +330,7 @@ class UnitTestMilestonesShareACalendar(UnitTestCase):
             patch.object(hr_sync, "OwnedCalendars"),
             patch.object(hr_sync, "_sync_calendar", side_effect=lambda *args: synced.append(args) or {}),
         ):
-            hr_sync._run({})
+            hr_sync._run()
         return synced
 
     def test_birthdays_and_anniversaries_land_on_one_calendar(self):
