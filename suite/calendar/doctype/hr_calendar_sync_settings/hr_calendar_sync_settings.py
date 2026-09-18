@@ -37,6 +37,7 @@ class HRCalendarSyncSettings(Document):
 
     def validate(self) -> None:
         self.hr_site_url = validate_site_url(self.hr_site_url)
+        self.validate_key_goes_where_it_was_made_for()
         # A calendar needs a name, and a settings document saved before the field existed has none.
         self.milestones_calendar = (self.milestones_calendar or "").strip() or "Celebrations"
 
@@ -49,6 +50,17 @@ class HRCalendarSyncSettings(Document):
             frappe.throw(
                 _("No user on this site can reach the account {0}.").format(frappe.bold(self.account))
             )
+
+    def validate_key_goes_where_it_was_made_for(self) -> None:
+        """A saved secret can't be read back, but it can be sent: point the settings at another
+        address, press Sync Now, and the key arrives there in a header. Whoever may edit these
+        settings is not thereby a manager on the HR site. So a new address needs the secret typed
+        again, by someone who has it."""
+
+        if not self.hr_site_url or not self.has_value_changed("hr_site_url"):
+            return
+        if self.api_secret and self.is_dummy_password(self.api_secret):
+            frappe.throw(_("Enter the API key and secret again: the saved ones are for another HR site."))
 
     def hr_source(self) -> HRSource:
         # The credentials go in as something to call, not as values: see the note in source.py on

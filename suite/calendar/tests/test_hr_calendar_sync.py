@@ -201,6 +201,21 @@ class UnitTestSiteUrl(UnitTestCase):
             with self.subTest(url=url):
                 self.assertRaises(frappe.ValidationError, validate_site_url, url)
 
+    def test_a_saved_key_does_not_follow_the_settings_to_another_site(self):
+        def settings(url: str, secret: str, before: str | None):
+            doc = frappe.new_doc("HR Calendar Sync Settings")
+            doc.update({"hr_site_url": url, "api_key": "*****", "api_secret": secret})
+            doc._doc_before_save = frappe._dict(hr_site_url=before)
+            return doc
+
+        moved = settings("https://elsewhere.example.com", "*****", "https://hr.example.com")
+        self.assertRaises(frappe.ValidationError, moved.validate_key_goes_where_it_was_made_for)
+
+        # typed again, left where it was, or not sent anywhere at all
+        settings("https://elsewhere.example.com", "typed-again", "https://hr.example.com").validate()
+        settings("https://hr.example.com", "*****", "https://hr.example.com").validate()
+        settings("", "*****", "https://hr.example.com").validate()
+
     def test_redirects_are_not_followed(self):
         source = HRSource("https://hr.example.com", lambda: "token a:b")
         response = MagicMock(status_code=302)
