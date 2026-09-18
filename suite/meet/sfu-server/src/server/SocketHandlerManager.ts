@@ -128,6 +128,7 @@ export class SocketHandlerManager {
 			this.registry.emitProducerClosed(event.roomId, {
 				participantId: event.participantId,
 				producerId: event.producerId,
+				kind: event.kind,
 				isScreen: event.isScreen,
 				reason: event.reason,
 				source: event.source,

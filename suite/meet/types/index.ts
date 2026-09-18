@@ -243,6 +243,7 @@ export interface ProducerClosedEvent {
 	roomId: string;
 	producerId: string;
 	participantId: string;
+	kind: ProducerKind;
 	isScreen: boolean;
 	reason?: ProducerCloseReason;
 	source?: ProducerCloseSource;

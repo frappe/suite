@@ -50,6 +50,7 @@ type ReconciliationEvent = MeetingReconciliationEvent<ReconciledParticipant>;
 interface SFUProducerClosedEvent {
 	participantId?: string;
 	producerId?: string;
+	kind?: "audio" | "video";
 	isScreen?: boolean;
 }
 
@@ -90,6 +91,8 @@ function normalizeProducerClosedEvent(
 			typeof value.participantId === "string" ? value.participantId : undefined,
 		producerId:
 			typeof value.producerId === "string" ? value.producerId : undefined,
+		kind:
+			value.kind === "audio" || value.kind === "video" ? value.kind : undefined,
 		isScreen: value.isScreen === true,
 	};
 }
@@ -602,15 +605,6 @@ export class ParticipantConnection {
 				throw new DOMException("Participant sync cancelled", "AbortError");
 			}
 			const bufferedEvents = this.bufferedReconciliationEvents.splice(0);
-			for (const event of bufferedEvents) {
-				if (event.type !== "producer-closed" || event.value.kind) continue;
-				const producer = existingProducers.find(
-					(candidate) => candidate.id === event.value.producerId,
-				);
-				if (producer?.kind === "audio" || producer?.kind === "video") {
-					event.value.kind = producer.kind;
-				}
-			}
 			this.reconciliation = reconcileMeetingSnapshot(
 				this.reconciliation,
 				{
@@ -630,12 +624,9 @@ export class ParticipantConnection {
 			this.participantManager.syncParticipants([
 				...this.reconciliation.participants.values(),
 			]);
-			for (const event of bufferedEvents) {
-				if (event.type === "producer-closed") {
+			for (const event of bufferedEvents)
+				if (event.type === "producer-closed")
 					this.clearParticipantMediaStateForClosedProducer(event.value);
-					this.removeProducerConsumers(event.value);
-				}
-			}
 
 			this.initialSyncInProgress = false;
 			this.flushBufferedMediaStateUpdates();
@@ -1514,6 +1505,7 @@ export class ParticipantConnection {
 				value: {
 					participantId: d.participantId,
 					producerId: d.producerId,
+					kind: d.kind,
 					isScreen: d.isScreen === true,
 				},
 			};

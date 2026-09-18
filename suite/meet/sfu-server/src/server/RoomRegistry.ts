@@ -558,6 +558,7 @@ export class RoomRegistry {
 		data: {
 			participantId: string;
 			producerId: string;
+			kind: 'audio' | 'video';
 			isScreen: boolean;
 			reason?: ProducerCloseReason;
 			source?: ProducerCloseSource;

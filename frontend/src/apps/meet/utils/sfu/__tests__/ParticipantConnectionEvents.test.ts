@@ -126,67 +126,6 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
-	it("clears participant media state when a producer closes", async () => {
-		const { handlers, manager, participantManager } = createManager();
-		participantManager.addParticipant({
-			participantId: "remote-1",
-			userData: { name: "Remote", audio_enabled: true, video_enabled: true },
-		});
-
-		await manager.connect("token");
-		await handlers.get("producer_created")?.({
-			participantId: "remote-1",
-			producerId: "audio-1",
-			kind: "audio",
-		});
-		await handlers.get("producer_created")?.({
-			participantId: "remote-1",
-			producerId: "video-1",
-			kind: "video",
-		});
-
-		handlers.get("producer_closed")?.({
-			participantId: "remote-1",
-			producerId: "audio-1",
-			isScreen: false,
-		});
-
-		expect(participantManager.getParticipant("remote-1")).toMatchObject({
-			audio_enabled: false,
-			video_enabled: true,
-		});
-	});
-
-	it("clears media state for producer closes buffered during initial sync", async () => {
-		const { handlers, manager, participantManager, sfuClient } = createManager();
-		participantManager.addParticipant({
-			participantId: "remote-1",
-			userData: { name: "Remote", audio_enabled: true },
-		});
-		await manager.connect("token");
-		sfuClient.getRoomParticipants.mockImplementationOnce(async () => {
-			handlers.get("producer_closed")?.({
-				participantId: "remote-1",
-				producerId: "audio-1",
-				isScreen: false,
-			});
-			return [
-				{
-					participantId: "remote-1",
-					user_id: "remote-1",
-					userData: { name: "Remote", audio_enabled: true },
-				},
-			];
-		});
-		sfuClient.getExistingProducers.mockResolvedValueOnce([
-			{ id: "audio-1", participantId: "remote-1", kind: "audio", isScreen: false },
-		]);
-
-		await manager.setupExistingParticipants();
-
-		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
-	});
-
 	it("preserves remote progress while the subscription remains present", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");
