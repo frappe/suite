@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.calendar.hr.source import HRSource
+from suite.calendar.hr.source import HRSource, validate_site_url
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 
 
@@ -37,6 +37,8 @@ class HRCalendarSyncSettings(Document):
     # end: auto-generated types
 
     def validate(self) -> None:
+        self.hr_site_url = validate_site_url(self.hr_site_url)
+
         if not self.enabled:
             return
 
@@ -61,6 +63,10 @@ class HRCalendarSyncSettings(Document):
     def test_connection(self) -> dict:
         """What the settings can actually see, before a sync is trusted to run: HR's answer to
         each question the sync asks, and whether the service account can be written to."""
+
+        # It reaches HR and the mail server and reports what they hold, so it asks for the right
+        # to change the settings rather than the right to read them.
+        self.check_permission("write")
 
         source = self.hr_source()
         employees = source.employees()

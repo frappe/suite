@@ -89,8 +89,11 @@ def sync_hr_calendars() -> dict:
                 everyone,
             )
     except Exception:
+        # Without the variables, and `from None`: a failing job's traceback is written to the
+        # Error Log with its frames' contents, and the frames behind a sync hold HR's credentials.
         settings.db_set({"last_error": frappe.get_traceback(with_context=False)[-2000:]}, commit=True)
-        raise
+        frappe.log_error(title="HR Calendar Sync failed", message=frappe.get_traceback())
+        raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
 
     settings.db_set({"last_sync": now_datetime(), "last_error": None}, commit=True)
     return summary
