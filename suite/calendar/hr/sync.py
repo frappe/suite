@@ -33,6 +33,8 @@ UID_PREFIX = "hr-"
 # The kinds a celebrations calendar holds. Switching one off removes its events: they are still
 # this calendar's to reconcile, and HR's answer for them is now "none".
 MILESTONES = ("hr-birthday-", "hr-anniversary-")
+# What a celebrations calendar is remembered under, before the company it is for.
+CELEBRATIONS_KEY = "milestones:"
 
 READ_ONLY = {
     "mayReadFreeBusy": True,
@@ -132,7 +134,7 @@ def _run() -> dict:
             events = birthday_events(staff, today) if settings.sync_birthdays else []
             if settings.sync_anniversaries:
                 events += anniversary_events(staff, today)
-            key = f"milestones:{company}"
+            key = f"{CELEBRATIONS_KEY}{company}"
             plans.append((key, name, settings.milestones_color, events, audience, MILESTONES))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
@@ -229,6 +231,24 @@ class OwnedCalendars:
         frappe.db.set_single_value(
             "HR Calendar Sync Settings", "synced_calendars", frappe.as_json(self.state())
         )
+
+
+def celebrations_calendars() -> set[str]:
+    """The celebrations calendars the sync keeps, as `account|id`.
+
+    For the calendar to start them out unticked: a birthday or an anniversary most days, for
+    everyone in the company, is more than most people want drawn over their own week. It is
+    theirs to switch on. Holidays are few and change what a day is, so those stay shown.
+    """
+
+    stored = frappe.db.get_single_value("HR Calendar Sync Settings", "synced_calendars", cache=True)
+    remembered = frappe.parse_json(stored or "{}") or {}
+    account = remembered.get("account")
+    return {
+        f"{account}|{id}"
+        for key, id in (remembered.get("calendars") or {}).items()
+        if key.startswith(CELEBRATIONS_KEY)
+    }
 
 
 def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[dict]]]:

@@ -506,3 +506,33 @@ class UnitTestMilestonesShareACalendar(UnitTestCase):
     def test_neither_kind_means_no_milestones_calendar(self):
         self.assertEqual(self.plans(sync_birthdays=0, sync_anniversaries=0), [])
 
+
+class UnitTestCelebrationsStartHidden(UnitTestCase):
+    def test_the_celebrations_calendars_are_named_and_the_holiday_ones_are_not(self):
+        stored = {
+            "account": "acc",
+            "calendars": {"holiday:India 2026": "h", "milestones:Acme": "m1", "milestones:Globex": "m2"},
+        }
+        with patch.object(hr_sync.frappe.db, "get_single_value", return_value=frappe.as_json(stored)):
+            self.assertEqual(hr_sync.celebrations_calendars(), {"acc|m1", "acc|m2"})
+
+    def test_a_site_that_has_never_synced_has_none(self):
+        with patch.object(hr_sync.frappe.db, "get_single_value", return_value=None):
+            self.assertEqual(hr_sync.celebrations_calendars(), set())
+
+    def test_only_a_reader_has_it_start_hidden(self):
+        from suite.calendar import api
+
+        rows = [
+            {"name": "acc|m1", "id": "m1", "may_write_all": 0},
+            {"name": "acc|h", "id": "h", "may_write_all": 0},
+            # its owner's copy: shown or hidden by the calendar's own isVisible
+            {"name": "acc|m1", "id": "m1", "may_write_all": 1},
+        ]
+        with (
+            patch.object(api, "ensure_default_alerts"),
+            patch.object(api, "_with_shared", return_value=rows),
+            patch.object(api, "celebrations_calendars", return_value={"acc|m1"}),
+        ):
+            tagged = api.get_calendars_with_shared("me")
+        self.assertEqual([row.get("default_hidden") for row in tagged], [1, None, None])

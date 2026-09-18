@@ -18,6 +18,10 @@ in step with HR.
   its events. They repeat yearly and carry no year. A 29 February birthday
   falls on the 28th in years without one. An anniversary starts at the first one; the years served
   are not in the title, because every occurrence of a repeating event shares one title.
+- **Celebrations start out unticked** in Suite's calendar: a birthday or an anniversary most days
+  is more than most people want drawn over their own week, so it is theirs to switch on, in the
+  sidebar, per browser. Holiday calendars start shown. Another calendar client shows both — the
+  mail server lets only someone who can write to a calendar set whether it is shown.
 - Events carry **no organizer and no participants**. They are facts about a day, not invitations,
   which is how every other calendar draws a holiday.
 - **Who sees a holiday list** is who HR says follows it, asked the way HR resolves it: by the

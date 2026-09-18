@@ -5,6 +5,7 @@ import {
 	canEditEvent,
 	defaultCalendar,
 	destinationOptions,
+	sharedCalendarVisible,
 } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
@@ -80,5 +81,21 @@ describe('canEditEvent', () => {
 	it('is true on a calendar the list does not know', () => {
 		expect(canEditEvent(on('elsewhere'), calendars)).toBe(true)
 		expect(canEditEvent(on('shared'), undefined)).toBe(true)
+	})
+})
+
+describe('sharedCalendarVisible', () => {
+	it('draws a shared calendar until it is hidden', () => {
+		const holidays = cal('holidays', { may_write_all: 0 })
+		expect(sharedCalendarVisible(holidays, [], [])).toBe(true)
+		expect(sharedCalendarVisible(holidays, ['acc|holidays'], [])).toBe(false)
+	})
+
+	it('leaves one that starts hidden undrawn until it is shown', () => {
+		const celebrations = cal('celebrations', { may_write_all: 0, default_hidden: 1 })
+		expect(sharedCalendarVisible(celebrations, [], [])).toBe(false)
+		expect(sharedCalendarVisible(celebrations, [], ['acc|celebrations'])).toBe(true)
+		// hidden is the other kind's list, and says nothing of this one
+		expect(sharedCalendarVisible(celebrations, ['acc|celebrations'], ['acc|celebrations'])).toBe(true)
 	})
 })
