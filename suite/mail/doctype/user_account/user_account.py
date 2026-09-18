@@ -154,7 +154,13 @@ def pick_personal_account(personal_accounts: list[dict], username: str | None) -
 
 
 def get_jmap_account_owner(account: str) -> str | None:
-    """The user whose login the account is, whoever is asking; nobody, if no user is linked."""
+    """The user to act on the account as, whoever is asking; nobody, if no user is linked.
+
+    Of several linked users that is the one whose login it is. A single linked user is returned
+    as they are, and may only have a share in the account — a group's one member here, say. So
+    this finds who to ask, not whether they own it: a caller that needs an owner asks that user's
+    session whether the account is personal to them.
+    """
 
     users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
     return _account_owner(account, users) if users else None

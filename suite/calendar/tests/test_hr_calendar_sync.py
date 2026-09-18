@@ -252,6 +252,21 @@ class UnitTestTheServiceAccount(UnitTestCase):
             with self.subTest(accounts=accounts):
                 self.assertRaises(frappe.ValidationError, self.validate, "member@x.io", accounts)
 
+    def test_a_shared_mailbox_with_one_user_linked_is_refused(self):
+        # One user linked, so they are who the account is asked as — but it is only shared with
+        # them, and their own session says so.
+        settings = frappe.new_doc("HR Calendar Sync Settings")
+        settings.account = "acc"
+        connection = MagicMock(accounts={"acc": {"isPersonal": False}, "own": {"isPersonal": True}})
+        with (
+            patch(
+                "suite.mail.doctype.user_account.user_account.frappe.db.get_all", return_value=["member@x.io"]
+            ),
+            patch("suite.mail.jmap.get_jmap_connection", return_value=connection) as connect,
+        ):
+            self.assertRaises(frappe.ValidationError, settings.validate_service_account)
+        connect.assert_called_once_with("member@x.io")
+
     def test_an_account_nobody_can_reach_is_refused(self):
         settings = frappe.new_doc("HR Calendar Sync Settings")
         settings.account = "acc"
