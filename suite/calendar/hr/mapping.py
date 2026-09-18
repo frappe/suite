@@ -28,7 +28,9 @@ def holiday_events(holiday_list: str, holidays: list[dict]) -> list[dict]:
     for holiday in holidays:
         if holiday.get("weekly_off"):
             continue
-        day = str(holiday["holiday_date"])[:10]
+        day = _day(holiday.get("holiday_date"))
+        if not day:
+            continue
         events.append(
             {
                 "uid": f"hr-holiday-{holiday_list}-{day}",
@@ -46,13 +48,14 @@ def birthday_events(employees: list[dict], today: date) -> list[dict]:
 
     events = []
     for employee in employees:
-        if not employee.get("date_of_birth"):
+        born = _day(employee.get("date_of_birth"))
+        if not born:
             continue
         events.append(
             {
                 "uid": f"hr-birthday-{employee['name']}",
                 "title": f"{employee['employee_name']}'s birthday",
-                "start": f"{_anniversary_of(employee['date_of_birth'], today.year)}T00:00:00",
+                "start": f"{_anniversary_of(born, today.year)}T00:00:00",
                 "recurrence_rule": YEARLY,
                 **ALL_DAY,
             }
@@ -70,21 +73,32 @@ def anniversary_events(employees: list[dict], today: date) -> list[dict]:
 
     events = []
     for employee in employees:
-        joined = employee.get("date_of_joining")
+        joined = _day(employee.get("date_of_joining"))
         if not joined:
             continue
-        year = max(int(str(joined)[:4]) + 1, today.year)
+        year = max(int(joined[:4]) + 1, today.year)
         events.append(
             {
                 "uid": f"hr-anniversary-{employee['name']}",
                 "title": f"{employee['employee_name']}'s work anniversary",
                 "start": f"{_anniversary_of(joined, year)}T00:00:00",
-                "description": f"Joined on {str(joined)[:10]}",
+                "description": f"Joined on {joined}",
                 "recurrence_rule": YEARLY,
                 **ALL_DAY,
             }
         )
     return events
+
+
+def _day(value) -> str | None:
+    """The value as an ISO date, or nothing. What HR sends is somebody else's data: a date that is
+    not one is skipped rather than written into an event the mail server then refuses whole."""
+
+    text = str(value or "")[:10]
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        return None
 
 
 def _anniversary_of(day: str, year: int) -> str:

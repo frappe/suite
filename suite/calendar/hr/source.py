@@ -3,8 +3,16 @@
 Frappe HR may sit on this site or on another one. Both are read through the same three
 questions — the holiday lists, their holidays, and the active employees — so the sync
 never has to know which it is talking to.
+
+A note on what is *not* in this file's frames. Frappe writes a failing background job's
+traceback to the Error Log with every frame's variables, and its redaction goes by exact
+variable name, which `api_key` and `api_secret` are not. So the credentials never appear here
+as a parameter or a local: the source is handed a callable that produces the Authorization
+header, keeps the result as an attribute, and has a `__repr__` that prints neither.
 """
 
+import json
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 import frappe
@@ -27,24 +35,27 @@ PAGE_LENGTH = 5000
 
 TIMEOUT = (10, 60)
 
+# The most an answer from the HR site may weigh. The site is somebody else's server: an answer
+# without end is not one this worker should read to the end of.
+MAX_RESPONSE_BYTES = 25 * 1024 * 1024
+
 
 class HRSource:
     """Reads Frappe HR, on this site or over its REST API."""
 
-    def __init__(
-        self, site_url: str | None = None, api_key: str | None = None, api_secret: str | None = None
-    ):
-        # Checked before anything is kept, so a throw from here carries no credentials in the
-        # frame it is raised from: a failing job's variables are written to the Error Log.
+    def __init__(self, site_url: str | None = None, authorization: Callable[[], str] | None = None):
         site_url = validate_site_url(site_url)
-        if site_url and not (api_key and api_secret):
-            frappe.throw(_("An API key and secret are needed to read HR on another site."))
         if not site_url and not frappe.db.exists("DocType", "Employee"):
             frappe.throw(_("Frappe HR is not installed on this site. Enter the HR site's URL."))
 
         self.site_url = site_url
-        # Held as the header it becomes, never as a local anywhere a traceback would print it.
-        self._authorization = f"token {api_key}:{api_secret}" if site_url else ""
+        self._authorization = authorization() if site_url and authorization else ""
+        if site_url and not self._authorization:
+            frappe.throw(_("An API key and secret are needed to read HR on another site."))
+
+    def __repr__(self) -> str:
+        # getattr: a traceback may print this before __init__ has finished.
+        return f"<HRSource {getattr(self, 'site_url', None) or 'this site'}>"
 
     def employees(self) -> list[dict]:
         """Every active employee, with the dates the calendars are built from."""
@@ -90,10 +101,15 @@ class HRSource:
                 params=params,
                 headers={"Authorization": self._authorization},
                 timeout=TIMEOUT,
+                # A redirect is the HR site sending this server somewhere else — an address on the
+                # inside network, say. The API answers in place, so none is followed.
+                allow_redirects=False,
+                stream=True,
             )
-        except requests.RequestException as e:
-            # `from None`: reported without the request library's own frames, which hold the
-            # header the key is in.
+            body = response.raw.read(MAX_RESPONSE_BYTES + 1, decode_content=True)
+        except Exception as e:
+            # `from None`, and everything: reported without the request library's own frames,
+            # which hold the header the key is in.
             reason = type(e).__name__
             raise frappe.ValidationError(_("The HR site could not be reached: {0}").format(reason)) from None
 
@@ -101,10 +117,17 @@ class HRSource:
             frappe.throw(
                 _("The HR site refused the request: the API key cannot read {0}.").format(path.split("/")[3])
             )
-        if response.status_code >= 400:
+        if response.status_code != 200:
             frappe.throw(_("The HR site answered {0} for {1}.").format(response.status_code, path))
+        if len(body) > MAX_RESPONSE_BYTES:
+            frappe.throw(_("The HR site's answer for {0} is too large to be one.").format(path))
 
-        return response.json()["data"]
+        try:
+            return json.loads(body)["data"]
+        except Exception:
+            raise frappe.ValidationError(
+                _("The HR site's answer for {0} is not Frappe's.").format(path)
+            ) from None
 
 
 def validate_site_url(site_url: str | None) -> str:
@@ -122,7 +145,7 @@ def validate_site_url(site_url: str | None) -> str:
     parsed = urlparse(site_url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         frappe.throw(_("The HR site URL must start with https:// and name a host."))
-    if parsed.username or parsed.password or parsed.path or parsed.query:
+    if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
         frappe.throw(_("The HR site URL is the site alone — no path, query or credentials."))
     if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1"):
         frappe.throw(_("The HR site must be reached over https."))

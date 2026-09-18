@@ -7,7 +7,13 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		frm.add_custom_button(__('Sync Now'), () => frm.trigger('sync_now'))
 	},
 
-	test_connection(frm) {
+	// Both act on what is saved, so anything typed and not yet saved is saved first.
+	async save_first(frm) {
+		if (frm.is_dirty()) await frm.save()
+	},
+
+	async test_connection(frm) {
+		await frm.events.save_first(frm)
 		frm.call({ doc: frm.doc, method: 'test_connection', freeze: true }).then(({ message }) => {
 			if (!message) return
 			frappe.msgprint({
@@ -25,7 +31,8 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		})
 	},
 
-	sync_now(frm) {
+	async sync_now(frm) {
+		await frm.events.save_first(frm)
 		frm.call({ doc: frm.doc, method: 'sync_now', freeze: true }).then(() => {
 			frappe.msgprint({
 				title: __('Sync started'),

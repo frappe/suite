@@ -21,7 +21,7 @@ class HRCalendarSyncSettings(Document):
         account: DF.Link | None
         anniversaries_calendar: DF.Data | None
         anniversaries_color: DF.Color | None
-        api_key: DF.Data | None
+        api_key: DF.Password | None
         api_secret: DF.Password | None
         birthdays_calendar: DF.Data | None
         birthdays_color: DF.Color | None
@@ -39,6 +39,10 @@ class HRCalendarSyncSettings(Document):
     def validate(self) -> None:
         self.hr_site_url = validate_site_url(self.hr_site_url)
 
+        if self.sync_birthdays and self.sync_anniversaries:
+            if (self.birthdays_calendar or "").strip() == (self.anniversaries_calendar or "").strip():
+                frappe.throw(_("Birthdays and work anniversaries need calendars of their own."))
+
         if not self.enabled:
             return
 
@@ -50,8 +54,16 @@ class HRCalendarSyncSettings(Document):
             )
 
     def hr_source(self) -> HRSource:
-        return HRSource(
-            self.hr_site_url, self.api_key, self.get_password("api_secret", raise_exception=False)
+        # The credentials go in as something to call, not as values: see the note in source.py on
+        # what a failing job's traceback writes to the Error Log.
+        return HRSource(self.hr_site_url, self._authorization)
+
+    def _authorization(self) -> str:
+        if not (self.api_key and self.api_secret):
+            return ""
+        return "token {}:{}".format(
+            self.get_password("api_key", raise_exception=False) or "",
+            self.get_password("api_secret", raise_exception=False) or "",
         )
 
     def chosen_holiday_lists(self) -> set[str]:
@@ -62,26 +74,23 @@ class HRCalendarSyncSettings(Document):
     @frappe.whitelist()
     def test_connection(self) -> dict:
         """What the settings can actually see, before a sync is trusted to run: HR's answer to
-        each question the sync asks, and whether the service account can be written to."""
+        each question the sync asks, and whether the service account can be reached."""
 
-        # It reaches HR and the mail server and reports what they hold, so it asks for the right
-        # to change the settings rather than the right to read them.
-        self.check_permission("write")
+        return saved_settings()._test_connection()
+
+    def _test_connection(self) -> dict:
+        from suite.mail.jmap import get_calendar_service
 
         source = self.hr_source()
         employees = source.employees()
-        report = {
+        return {
             "employees": len(employees),
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
             "with_joining_date": sum(1 for employee in employees if employee.get("date_of_joining")),
             "with_mail_address": sum(1 for employee in employees if employee.get("user_id")),
             "holiday_lists": source.holiday_lists(),
+            "calendars": [calendar["name"] for calendar in get_calendar_service(self.account).get()],
         }
-
-        from suite.mail.jmap import get_calendar_service
-
-        report["calendars"] = [calendar["name"] for calendar in get_calendar_service(self.account).get()]
-        return report
 
     @frappe.whitelist()
     def sync_now(self) -> None:
@@ -89,14 +98,29 @@ class HRCalendarSyncSettings(Document):
         which is more than a web worker should be held open for. What it did lands in Last Sync,
         or in Last Error."""
 
-        self.check_permission("write")
+        saved_settings()
         frappe.enqueue(
             "suite.calendar.hr.sync.sync_hr_calendars",
             queue="long",
             timeout=1800,
-            job_id=f"hr-calendar-sync::{frappe.session.user}",
+            # One identity whoever asks: with the lock in the sync itself, two administrators, or
+            # one and the daily run, can't reconcile the same calendars at once.
+            job_id="hr-calendar-sync",
             deduplicate=True,
         )
+
+
+def saved_settings() -> HRCalendarSyncSettings:
+    """The settings as saved, for someone allowed to change them.
+
+    A document method is handed whatever document the browser sends, unsaved edits and all. These
+    methods reach another site and the mail server, so they act on what an administrator saved —
+    never on an address or an account that arrived with the request.
+    """
+
+    settings = frappe.get_doc("HR Calendar Sync Settings")
+    settings.check_permission("write")
+    return settings
 
 
 def get_user_jmap_accounts_for(account: str | None) -> list[str]:

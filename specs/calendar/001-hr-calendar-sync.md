@@ -27,6 +27,29 @@ list, and optional company-wide birthday and work anniversary calendars, kept in
   mail server does not know is skipped: not everyone in HR has a mailbox here.
 - A run is **repeatable**: with nothing changed in HR, nothing is written.
 
+## Security
+
+- **Who can run it:** the settings, Test Connection and Sync Now need the right to change the
+  settings (System Manager). Both buttons act on what is saved, never on values sent with the
+  request.
+- **The HR credentials** are Password fields, and never appear as a variable in the sync's frames:
+  Frappe writes a failing job's traceback to the Error Log with each frame's contents, and its
+  redaction does not cover them. For the same reason the run is wrapped so that employees' names
+  and birth dates are in no frame a failure is reported from. Both are under test.
+- **The HR site URL** is fetched by this server, so it must be a plain https site (http only for
+  localhost): no path, query, fragment or credentials, and redirects are not followed. An answer
+  over 25 MB is refused.
+- **Only the sync's own events** (`hr-holiday-`, `hr-birthday-`, `hr-anniversary-` uids) are ever
+  rewritten or removed; two synced calendars may not share a name.
+- **A share goes only to a person HR named:** an address must match exactly, and a group is never
+  shared with, since that would reach everyone in it.
+- **Milestones stay within a company:** with several companies on one HR site, each gets its own
+  birthdays and anniversaries calendar, as HR's own reminders do.
+- **One run at a time**, held by a lock, whoever starts it.
+- What remains by design: anyone who can edit HR's employee records can give an address read
+  access to that employee's holiday calendar; and what HR sends is taken as HR's word, short of
+  dates that are not dates, which are skipped.
+
 ## Setup
 
 1. **A service account on the mail server.** An individual account nobody logs in as, e.g.

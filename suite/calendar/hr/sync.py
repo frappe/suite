@@ -21,6 +21,11 @@ from suite.calendar.doctype.calendar.calendar import add_calendar
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events
 from suite.calendar.hr.source import HRSource
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_principal_service
+from suite.utils.lock import acquire_lock, release_lock
+
+LOCK = "hr_calendar_sync"
+# Longer than a run takes; a worker that dies mid-run frees it by this, not never.
+LOCK_TIMEOUT = 1800
 
 # What marks an event as this sync's. Every JMAP event has a uid, so without a mark of our own
 # a calendar an admin points us at would have everything else on it deleted as "no longer in HR".
@@ -52,9 +57,40 @@ JMAP_FIELDS = {
 
 
 def sync_hr_calendars() -> dict:
-    """The daily job, and what the settings' Sync Now runs. Returns what it did, per calendar."""
+    """The daily job, and what the settings' Sync Now runs. Returns what it did, per calendar.
 
-    settings = frappe.get_cached_doc("HR Calendar Sync Settings")
+    Deliberately thin. Frappe writes a failing job's traceback to the Error Log with the contents
+    of every frame in it, and the frames that do the work hold employees' names and birth dates.
+    So the work happens in `_run`, and what is raised from here is a new error with none of those
+    frames behind it; what went wrong is recorded without variables.
+
+    One run at a time, whoever asks: two at once would each find a calendar missing and make it.
+    """
+
+    identifier = acquire_lock(LOCK, lock_timeout=LOCK_TIMEOUT)
+    if not identifier:
+        return {}
+
+    try:
+        return _run()
+    except Exception:
+        _record_failure()
+        raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
+    finally:
+        release_lock(LOCK, identifier)
+
+
+def _record_failure() -> None:
+    traceback = frappe.get_traceback(with_context=False)
+    frappe.db.rollback()
+    frappe.db.set_single_value("HR Calendar Sync Settings", "last_error", traceback[-2000:])
+    frappe.log_error(title="HR Calendar Sync failed", message=traceback)
+    frappe.db.commit()  # nosemgrep: the job is failing; what it says has to outlive the rollback
+
+
+def _run() -> dict:
+    # Read fresh rather than from the cache: the sync acts on what is saved now.
+    settings = frappe.get_doc("HR Calendar Sync Settings")
     if not settings.enabled:
         return {}
 
@@ -62,47 +98,53 @@ def sync_hr_calendars() -> dict:
     account = settings.account
     employees = source.employees()
     today = date.today()
+
+    # Every calendar this run keeps: name, colour, events, audience, and which of our events it holds.
+    plans = []
+    if settings.sync_holidays:
+        for holiday_list, audience in _holiday_lists(settings, source, employees).items():
+            events = holiday_events(holiday_list, source.holidays(holiday_list))
+            plans.append((holiday_list, settings.holidays_color, events, audience, "hr-holiday-"))
+    if settings.sync_birthdays:
+        for name, staff in _by_company(settings.birthdays_calendar, employees).items():
+            audience = [person.get("user_id") for person in staff]
+            plans.append(
+                (name, settings.birthdays_color, birthday_events(staff, today), audience, "hr-birthday-")
+            )
+    if settings.sync_anniversaries:
+        for name, staff in _by_company(settings.anniversaries_calendar, employees).items():
+            audience = [person.get("user_id") for person in staff]
+            events = anniversary_events(staff, today)
+            plans.append((name, settings.anniversaries_color, events, audience, "hr-anniversary-"))
+
+    # Two plans for one calendar would each remove the other's events and replace the other's
+    # share: a holiday list named "Birthdays" would hand the birthdays to the wrong people.
+    names = [plan[0] for plan in plans]
+    if len(names) != len(set(names)):
+        frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
+
     summary = {}
+    for name, color, events, audience, prefix in plans:
+        summary[name] = _sync_calendar(account, name, color, events, audience, prefix)
 
-    try:
-        if settings.sync_holidays:
-            for holiday_list, audience in _holiday_lists(settings, source, employees).items():
-                summary[holiday_list] = _sync_calendar(
-                    account,
-                    holiday_list,
-                    settings.holidays_color,
-                    holiday_events(holiday_list, source.holidays(holiday_list)),
-                    audience,
-                )
+    summary.update(_retire(account, set(summary)))
 
-        everyone = [employee.get("user_id") for employee in employees]
-        if settings.sync_birthdays:
-            summary[settings.birthdays_calendar] = _sync_calendar(
-                account,
-                settings.birthdays_calendar,
-                settings.birthdays_color,
-                birthday_events(employees, today),
-                everyone,
-            )
-        if settings.sync_anniversaries:
-            summary[settings.anniversaries_calendar] = _sync_calendar(
-                account,
-                settings.anniversaries_calendar,
-                settings.anniversaries_color,
-                anniversary_events(employees, today),
-                everyone,
-            )
-
-        summary.update(_retire(account, set(summary)))
-    except Exception:
-        # Without the variables, and `from None`: a failing job's traceback is written to the
-        # Error Log with its frames' contents, and the frames behind a sync hold HR's credentials.
-        settings.db_set({"last_error": frappe.get_traceback(with_context=False)[-2000:]}, commit=True)
-        frappe.log_error(title="HR Calendar Sync failed", message=frappe.get_traceback())
-        raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
-
-    settings.db_set({"last_sync": now_datetime(), "last_error": None}, commit=True)
+    frappe.db.set_single_value("HR Calendar Sync Settings", {"last_sync": now_datetime(), "last_error": None})
     return summary
+
+
+def _by_company(name: str, employees: list[dict]) -> dict[str, list[dict]]:
+    """One milestones calendar per company, as HR's own birthday reminders go to the company and
+    no further: companies sharing an HR site are not each other's colleagues. A single company
+    keeps the plain name."""
+
+    companies: dict[str, list[dict]] = {}
+    for employee in employees:
+        companies.setdefault(employee.get("company") or "", []).append(employee)
+
+    if len(companies) <= 1:
+        return {name: employees}
+    return {f"{name} — {company}" if company else name: staff for company, staff in companies.items()}
 
 
 def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[str, list[str]]:
@@ -145,21 +187,22 @@ def _retire(account: str, synced: set[str]) -> dict[str, dict]:
             continue
         if not _has_our_events(account, calendar["id"]):
             continue
-        retired[calendar["name"]] = _sync_calendar(account, calendar["name"], None, [], [])
+        retired[calendar["name"]] = _sync_calendar(account, calendar["name"], None, [], [], UID_PREFIX)
     return retired
 
 
 def _has_our_events(account: str, calendar_id: str) -> bool:
-    return bool(_existing_events(get_calendar_event_service(account), calendar_id))
+    return bool(_existing_events(get_calendar_event_service(account), calendar_id, UID_PREFIX))
 
 
 def _sync_calendar(
-    account: str, name: str, color: str | None, events: list[dict], audience: list[str]
+    account: str, name: str, color: str | None, events: list[dict], audience: list[str], prefix: str
 ) -> dict:
-    """Makes one calendar say what HR says, and shares it with the people it is about."""
+    """Makes one calendar say what HR says, and shares it with the people it is about. `prefix`
+    is the kind of event it holds: only those are ever rewritten or removed."""
 
     calendar_id = _ensure_calendar(account, name, color)
-    result = _sync_events(account, calendar_id, events)
+    result = _sync_events(account, calendar_id, events, prefix)
     result["shared_with"] = _share(account, calendar_id, audience)
     return result
 
@@ -175,11 +218,11 @@ def _ensure_calendar(account: str, name: str, color: str | None) -> str:
     return add_calendar(account, name, color=color)
 
 
-def _sync_events(account: str, calendar_id: str, events: list[dict]) -> dict:
+def _sync_events(account: str, calendar_id: str, events: list[dict], prefix: str) -> dict:
     """Creates what is missing, rewrites what differs, and removes what HR no longer has."""
 
     service = get_calendar_event_service(account)
-    existing = _existing_events(service, calendar_id)
+    existing = _existing_events(service, calendar_id, prefix)
     wanted = {event["uid"]: event for event in events}
 
     create = {
@@ -192,17 +235,19 @@ def _sync_events(account: str, calendar_id: str, events: list[dict]) -> dict:
     }
     destroy = [row["id"] for uid, row in existing.items() if uid not in wanted]
 
-    if create:
-        _raise_for_errors(service._create(create), "notCreated")
-    if update:
-        _raise_for_errors(service._update(update), "notUpdated")
-    if destroy:
-        _raise_for_errors(service._delete(destroy), "notDestroyed")
+    # In the server's own portions: it takes only so many objects in one call.
+    size = service.max_objects_in_set
+    for batch in service.create_batches(list(create.items()), size):
+        _raise_for_errors(service._create(dict(batch)), "notCreated")
+    for batch in service.create_batches(list(update.items()), size):
+        _raise_for_errors(service._update(dict(batch)), "notUpdated")
+    for batch in service.create_batches(destroy, size):
+        _raise_for_errors(service._delete(batch), "notDestroyed")
 
     return {"created": len(create), "updated": len(update), "removed": len(destroy)}
 
 
-def _existing_events(service, calendar_id: str) -> dict[str, dict]:
+def _existing_events(service, calendar_id: str, prefix: str) -> dict[str, dict]:
     """What this sync has already put on the calendar, by uid.
 
     Only its own: every event has a uid, so anything not in our namespace was put there by
@@ -214,9 +259,7 @@ def _existing_events(service, calendar_id: str) -> dict[str, dict]:
         return {}
 
     rows = service._get(ids, properties=[*JMAP_FIELDS.values(), "id"])["methodResponses"][0][1]
-    return {
-        row["uid"]: row for row in rows.get("list") or [] if (row.get("uid") or "").startswith(UID_PREFIX)
-    }
+    return {row["uid"]: row for row in rows.get("list") or [] if (row.get("uid") or "").startswith(prefix)}
 
 
 def _payload(event: dict, calendar_id: str) -> dict:
@@ -282,10 +325,16 @@ def _principals(account: str, emails: set[str]) -> list[str]:
         return []
 
     service = get_principal_service(account)
-    ids = service.query({"operator": "OR", "conditions": [{"email": email} for email in emails]}, 0, 5000)
-    found = service.get(ids.get("ids") or [])
     wanted = {email.lower() for email in emails}
-    return [row["id"] for row in found if (row.get("email") or "").lower() in wanted]
+    principals = []
+    for batch in service.create_batches(sorted(wanted), 50):
+        ids = service.query({"operator": "OR", "conditions": [{"email": email} for email in batch]}, 0, 500)
+        for row in service.get(ids.get("ids") or []):
+            # Exactly an address HR gave, and a person: the search is loose, and a share with a
+            # group is a share with everyone in it, which HR never said.
+            if (row.get("email") or "").lower() in wanted and row.get("type") == "individual":
+                principals.append(row["id"])
+    return principals
 
 
 def _raise_for_errors(response: dict, key: str) -> None:

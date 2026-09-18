@@ -58,7 +58,7 @@
   {
    "depends_on": "hr_site_url",
    "fieldname": "api_key",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "label": "API Key"
   },
   {
