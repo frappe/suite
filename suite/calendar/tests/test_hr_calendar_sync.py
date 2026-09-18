@@ -76,7 +76,7 @@ class UnitTestMilestoneEvents(UnitTestCase):
     def test_an_anniversary_starts_at_the_first_one(self):
         [event] = anniversary_events([employee("EMP-1", date_of_joining="2026-03-01")], TODAY)
         self.assertEqual(event["start"], "2027-03-01T00:00:00")
-        self.assertEqual(event["description"], "Joined on 2026-03-01")
+        self.assertEqual(event["description"], "Joined on 1 March 2026")
 
     def test_a_longer_serving_employee_has_the_current_years(self):
         [event] = anniversary_events([employee("EMP-1", date_of_joining="2020-03-01")], TODAY)

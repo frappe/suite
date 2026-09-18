@@ -82,7 +82,7 @@ def anniversary_events(employees: list[dict], today: date) -> list[dict]:
                 "uid": f"hr-anniversary-{employee['name']}",
                 "title": f"{employee['employee_name']}'s work anniversary",
                 "start": f"{_anniversary_of(joined, year)}T00:00:00",
-                "description": f"Joined on {joined}",
+                "description": f"Joined on {_written_out(joined)}",
                 "recurrence_rule": YEARLY,
                 **ALL_DAY,
             }
@@ -99,6 +99,14 @@ def _day(value) -> str | None:
         return date.fromisoformat(text).isoformat()
     except ValueError:
         return None
+
+
+def _written_out(day: str) -> str:
+    """The date as someone reads it — 15 September 2025 — and with the month as a word, so it is
+    the same date to a reader who writes the day first as to one who writes the month first."""
+
+    value = date.fromisoformat(day)
+    return f"{value.day} {value:%B} {value.year}"
 
 
 def _anniversary_of(day: str, year: int) -> str:
