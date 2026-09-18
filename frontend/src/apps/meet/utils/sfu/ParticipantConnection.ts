@@ -1401,14 +1401,14 @@ export class ParticipantConnection {
 			} else if (data.avatar !== undefined) {
 				updates.avatar = data.avatar;
 			}
-			if (data.userData?.audio_enabled !== undefined || data.audio_enabled !== undefined) {
-				updates.audio_enabled = data.userData?.audio_enabled ?? data.audio_enabled;
-			}
-			if (data.userData?.video_enabled !== undefined || data.video_enabled !== undefined) {
-				updates.video_enabled = data.userData?.video_enabled ?? data.video_enabled;
-			}
 			if (data.userData?.is_guest !== undefined || data.is_guest !== undefined) {
 				updates.is_guest = data.userData?.is_guest ?? data.is_guest;
+			}
+			if (data.userData?.audio_enabled === false || data.audio_enabled === false) {
+				updates.audio_enabled = false;
+			}
+			if (data.userData?.video_enabled === false || data.video_enabled === false) {
+				updates.video_enabled = false;
 			}
 			this.participantManager.updateParticipant(data.participantId, updates);
 		});
@@ -1451,6 +1451,15 @@ export class ParticipantConnection {
 				!this.reconciliation.producers.has(d.producerId)
 			)
 				return;
+			if (!d.isScreen && d.kind === "audio") {
+				this.participantManager.updateMediaState(d.participantId, {
+					audioEnabled: true,
+				});
+			} else if (!d.isScreen && d.kind === "video") {
+				this.participantManager.updateMediaState(d.participantId, {
+					videoEnabled: true,
+				});
+			}
 			await this.subscribeToReconciledProducer(event.value).catch((error) => {
 				console.warn("Failed to subscribe to producer_created event:", error);
 			});

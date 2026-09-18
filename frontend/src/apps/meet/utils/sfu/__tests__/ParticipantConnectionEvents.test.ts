@@ -112,6 +112,13 @@ describe("ParticipantConnection", () => {
 				video_enabled: false,
 			},
 		});
+		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		});
 
 		expect(participantManager.getParticipant("remote-1")).toMatchObject({
 			audio_enabled: true,
