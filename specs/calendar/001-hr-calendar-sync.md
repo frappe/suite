@@ -69,7 +69,8 @@ in step with HR.
 
 1. **A service account on the mail server.** An individual account nobody logs in as, e.g.
    `hr-calendars@example.com`, with an app password. Not a group: a group's members get write
-   access to its calendars, which would let anyone edit the holidays.
+   access to its calendars, which would let anyone edit the holidays. The settings refuse an
+   account that is not its owner's own login — a group, or a mailbox only shared with them.
 2. **A user on the Suite site for that account**, with its mail credentials, so the sync can
    reach it.
 3. **Read access to HR.** Where Frappe HR is on another site, an integration user there with read

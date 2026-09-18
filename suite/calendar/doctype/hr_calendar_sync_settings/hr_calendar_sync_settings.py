@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.calendar.hr.source import HRSource, validate_site_url
-from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+from suite.mail.doctype.user_account.user_account import get_jmap_account_owner
 
 
 class HRCalendarSyncSettings(Document):
@@ -46,11 +46,30 @@ class HRCalendarSyncSettings(Document):
         if not self.enabled:
             return
 
-        # Reachable as the service account, or the sync has nowhere to write. The user the
-        # account belongs to is who the sync acts as, and only they hold its password.
-        if not get_user_jmap_accounts_for(self.account):
+        self.validate_service_account()
+
+    def validate_service_account(self) -> None:
+        """Reachable, and somebody's own login.
+
+        The user the account belongs to is who the sync acts as, and only they hold its password:
+        without one the sync has nowhere to write. And a group's calendars can be written to by
+        every member of it, which would put the holidays and everyone's birthday in the hands of
+        whoever is in the group — so an account that is only shared with the people linked to it,
+        a group or somebody else's mailbox, is refused rather than advised against.
+        """
+
+        from suite.mail.jmap import get_jmap_connection
+
+        owner = get_jmap_account_owner(self.account)
+        if not owner:
             frappe.throw(
                 _("No user on this site can reach the account {0}.").format(frappe.bold(self.account))
+            )
+
+        details = get_jmap_connection(owner).accounts.get(self.account) or {}
+        if not details.get("isPersonal"):
+            frappe.throw(
+                _("The service account must be a mailbox of its own, not a group or one shared with you.")
             )
 
     def validate_key_goes_where_it_was_made_for(self) -> None:
@@ -139,14 +158,6 @@ def saved_settings() -> HRCalendarSyncSettings:
     settings = frappe.get_doc("HR Calendar Sync Settings")
     settings.check_permission("write")
     return settings
-
-
-def get_user_jmap_accounts_for(account: str | None) -> list[str]:
-    """The users who can reach an account, if any."""
-
-    if not account:
-        return []
-    return frappe.get_all("User Account", {"account": account}, pluck="user")
 
 
 def sync_hr_calendars_daily() -> None:

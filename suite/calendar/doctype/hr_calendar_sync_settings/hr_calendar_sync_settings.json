@@ -68,7 +68,7 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "The account that owns the synced calendars. Use one nobody logs in as, and not a group: a group's members get write access to its calendars.",
+   "description": "The account that owns the synced calendars: a mailbox of its own, which nobody uses day to day. A group is refused, since its members get write access to its calendars.",
    "fieldname": "account",
    "fieldtype": "Link",
    "label": "Service Account",
@@ -173,7 +173,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-18 15:56:39.000000",
+ "modified": "2026-09-18 16:23:54.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "HR Calendar Sync Settings",

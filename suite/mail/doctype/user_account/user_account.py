@@ -153,6 +153,13 @@ def pick_personal_account(personal_accounts: list[dict], username: str | None) -
     return own[0] if len(own) == 1 else None
 
 
+def get_jmap_account_owner(account: str) -> str | None:
+    """The user whose login the account is, whoever is asking; nobody, if no user is linked."""
+
+    users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
+    return _account_owner(account, users) if users else None
+
+
 def _account_owner(account: str, users: list[str]) -> str:
     """Of the users linked to an account, the one whose login it is — the rest have something in
     it shared with them, and acting as one of them would reach only that. A team account nobody

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import UnitTestCase
 
+from suite.calendar.doctype.hr_calendar_sync_settings import hr_calendar_sync_settings as hr_settings
 from suite.calendar.hr import source as hr_source
 from suite.calendar.hr import sync as hr_sync
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events, strip_html
@@ -228,6 +229,34 @@ class UnitTestSiteUrl(UnitTestCase):
         with patch("suite.calendar.hr.source.requests.get", return_value=response) as get:
             self.assertRaises(frappe.ValidationError, source.employees)
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
+
+
+class UnitTestTheServiceAccount(UnitTestCase):
+    def validate(self, owner: str | None, accounts: dict) -> None:
+        settings = frappe.new_doc("HR Calendar Sync Settings")
+        settings.account = "acc"
+        connection = MagicMock(accounts=accounts)
+        with (
+            patch.object(hr_settings, "get_jmap_account_owner", return_value=owner),
+            patch("suite.mail.jmap.get_jmap_connection", return_value=connection) as connect,
+        ):
+            settings.validate_service_account()
+        # asked as the account's owner, not as whoever has the form open
+        connect.assert_called_once_with(owner)
+
+    def test_a_mailbox_of_its_own_is_accepted(self):
+        self.validate("hr-calendars@x.io", {"acc": {"isPersonal": True}})
+
+    def test_a_group_or_a_shared_mailbox_is_refused(self):
+        for accounts in ({"acc": {"isPersonal": False}}, {"other": {"isPersonal": True}}, {}):
+            with self.subTest(accounts=accounts):
+                self.assertRaises(frappe.ValidationError, self.validate, "member@x.io", accounts)
+
+    def test_an_account_nobody_can_reach_is_refused(self):
+        settings = frappe.new_doc("HR Calendar Sync Settings")
+        settings.account = "acc"
+        with patch.object(hr_settings, "get_jmap_account_owner", return_value=None):
+            self.assertRaises(frappe.ValidationError, settings.validate_service_account)
 
 
 class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
@@ -476,3 +505,4 @@ class UnitTestMilestonesShareACalendar(UnitTestCase):
 
     def test_neither_kind_means_no_milestones_calendar(self):
         self.assertEqual(self.plans(sync_birthdays=0, sync_anniversaries=0), [])
+
