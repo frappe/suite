@@ -30,7 +30,7 @@
  ],
  "fields": [
   {
-   "description": "Sync HR's holidays and milestones into calendars, daily.",
+   "description": "Sync HR's holidays and celebrations into calendars, daily.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
@@ -104,7 +104,7 @@
    "description": "Birthdays and work anniversaries share one calendar, for everyone in the company.",
    "fieldname": "milestones_section",
    "fieldtype": "Section Break",
-   "label": "Milestones"
+   "label": "Celebrations"
   },
   {
    "description": "Birth dates are personal: switch this on only where everyone expects the whole company to see them.",
@@ -122,11 +122,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "Milestones",
+   "default": "Celebrations",
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
    "fieldname": "milestones_calendar",
    "fieldtype": "Data",
-   "label": "Milestones Calendar",
+   "label": "Celebrations Calendar",
    "mandatory_depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries"
   },
   {
@@ -134,7 +134,7 @@
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
    "fieldname": "milestones_color",
    "fieldtype": "Color",
-   "label": "Milestones Colour"
+   "label": "Celebrations Colour"
   },
   {
    "fieldname": "status_section",
@@ -166,7 +166,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-18 10:00:00.000000",
+ "modified": "2026-09-18 13:20:37.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "HR Calendar Sync Settings",

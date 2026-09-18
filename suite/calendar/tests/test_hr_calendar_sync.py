@@ -152,7 +152,7 @@ class UnitTestNothingPrivateIsLogged(UnitTestCase):
         settings = MagicMock(
             enabled=1, account="acc", sync_holidays=0, sync_birthdays=1, sync_anniversaries=0
         )
-        settings.milestones_calendar = "Milestones"
+        settings.milestones_calendar = "Celebrations"
         settings.hr_source.return_value.employees.return_value = [
             {
                 "name": "EMP-1",
@@ -219,9 +219,9 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
 
     def test_milestones_stay_within_a_company(self):
         staff = [employee("EMP-1", company="Acme"), employee("EMP-2", company="Globex")]
-        names = {company: name for company, (name, _staff) in _by_company("Milestones", staff).items()}
-        self.assertEqual(names, {"Acme": "Milestones — Acme", "Globex": "Milestones — Globex"})
-        self.assertEqual(_by_company("Milestones", staff[:1])["Acme"][0], "Milestones")
+        names = {company: name for company, (name, _staff) in _by_company("Celebrations", staff).items()}
+        self.assertEqual(names, {"Acme": "Celebrations — Acme", "Globex": "Celebrations — Globex"})
+        self.assertEqual(_by_company("Celebrations", staff[:1])["Acme"][0], "Celebrations")
 
     def test_a_share_goes_only_to_the_people_hr_named(self):
         service = MagicMock()
@@ -294,7 +294,7 @@ class UnitTestOwnedCalendars(UnitTestCase):
 class UnitTestMilestonesShareACalendar(UnitTestCase):
     def plans(self, **switches) -> list:
         settings = MagicMock(
-            enabled=1, account="acc", sync_holidays=0, milestones_calendar="Milestones", **switches
+            enabled=1, account="acc", sync_holidays=0, milestones_calendar="Celebrations", **switches
         )
         settings.hr_source.return_value.employees.return_value = [
             employee(

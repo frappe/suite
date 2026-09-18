@@ -38,7 +38,7 @@ class HRCalendarSyncSettings(Document):
     def validate(self) -> None:
         self.hr_site_url = validate_site_url(self.hr_site_url)
         # A calendar needs a name, and a settings document saved before the field existed has none.
-        self.milestones_calendar = (self.milestones_calendar or "").strip() or "Milestones"
+        self.milestones_calendar = (self.milestones_calendar or "").strip() or "Celebrations"
 
         if not self.enabled:
             return

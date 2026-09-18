@@ -30,7 +30,7 @@ LOCK_TIMEOUT = 1800
 # What marks an event as this sync's. Every JMAP event has a uid, so without a mark of our own
 # a calendar an admin points us at would have everything else on it deleted as "no longer in HR".
 UID_PREFIX = "hr-"
-# The kinds a milestones calendar holds. Switching one off removes its events: they are still
+# The kinds a celebrations calendar holds. Switching one off removes its events: they are still
 # this calendar's to reconcile, and HR's answer for them is now "none".
 MILESTONES = ("hr-birthday-", "hr-anniversary-")
 
@@ -195,7 +195,7 @@ class OwnedCalendars:
 
 
 def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[dict]]]:
-    """One milestones calendar per company, as HR's own birthday reminders go to the company and
+    """One celebrations calendar per company, as HR's own birthday reminders go to the company and
     no further: companies sharing an HR site are not each other's colleagues. A single company
     keeps the plain name."""
 
