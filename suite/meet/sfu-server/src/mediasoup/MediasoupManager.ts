@@ -481,7 +481,13 @@ export class MediasoupManager {
 		if (this.sttManager && kind === 'audio') {
 			const peerInfo = peer.info;
 			this.sttManager
-				.startTranscription(roomId, peerId, peerInfo?.name, producer)
+				.startTranscription(
+					roomId,
+					peerId,
+					peerInfo?.name,
+					producer,
+					peerInfo?.userId,
+				)
 				.catch((error) => {
 					loggers.mediasoupManager.warn(
 						'STT start error: %s',
@@ -1109,6 +1115,7 @@ export class MediasoupManager {
 						peerId,
 						peer.info.name,
 						producer,
+						peer.info.userId,
 					);
 					started.push(peerId);
 				} catch (error) {

@@ -132,6 +132,7 @@ export class SttManager {
 		participantId: string,
 		participantName: string | undefined,
 		producer: Producer,
+		transcriptParticipantId = participantId,
 	): Promise<void> {
 		if ((this.stoppingRooms.get(roomId) ?? 0) > 0) return;
 		if (!this.hasSubscribers(roomId)) {
@@ -173,6 +174,7 @@ export class SttManager {
 					participantId,
 					participantName,
 					producer,
+					transcriptParticipantId,
 				).catch((error) => {
 					loggers.stt.warn(
 						'Failed to recover STT stream for %s: %s',
@@ -184,7 +186,7 @@ export class SttManager {
 			onTranscript: (text, isFinal, durationMs) => {
 				this.handleTranscript(
 					roomId,
-					participantId,
+					transcriptParticipantId,
 					participantName,
 					text,
 					isFinal,
@@ -339,6 +341,7 @@ export class SttManager {
 		participantId: string,
 		participantName: string | undefined,
 		producer: Producer,
+		transcriptParticipantId: string,
 	): Promise<void> {
 		if (this.activeSessions.get(sessionKey) !== failedIngester) return;
 		const recovery = Symbol(sessionKey);
@@ -376,6 +379,7 @@ export class SttManager {
 						participantId,
 						participantName,
 						producer,
+						transcriptParticipantId,
 					);
 					const replacement = this.activeSessions.get(sessionKey);
 					if (replacement && replacement !== currentIngester) return;

@@ -66,6 +66,57 @@ describe('SttManager', () => {
 		);
 	});
 
+	it('emits the logical participant ID while retaining the peer ID for the session', async () => {
+		vi.spyOn(AudioIngester.prototype, 'start').mockResolvedValue();
+		const sttClient = createSttClient(true);
+		const manager = new SttManager({ sttClient: sttClient.client });
+		const emit = vi.fn();
+		manager.setGetRouter(() => ({}) as Router);
+		manager.addSubscriber('room-1', 'socket-1');
+		manager.setEmitToSubscribers(emit);
+		const start = manager.startTranscription as unknown as (
+			roomId: string,
+			peerId: string,
+			participantName: string,
+			producer: Producer,
+			participantId: string,
+		) => Promise<void>;
+
+		await start.call(
+			manager,
+			'room-1',
+			'peer-connection-id',
+			'Alice',
+			{ id: 'producer-1', closed: false } as Producer,
+			'user@example.com',
+		);
+		const internals = manager as unknown as {
+			activeSessions: Map<string, AudioIngester>;
+		};
+		const ingester = internals.activeSessions.get(
+			'room-1:peer-connection-id:producer-1',
+		)! as unknown as {
+			onTranscript: (
+				text: string,
+				isFinal: boolean,
+				durationMs: number,
+			) => void;
+		};
+		ingester.onTranscript('Hello', true, 100);
+
+		expect(emit).toHaveBeenCalledWith(
+			'room-1',
+			new Set(['socket-1']),
+			'stt:segment',
+			expect.objectContaining({
+				segment: expect.objectContaining({
+					participantId: 'user@example.com',
+					participantName: 'Alice',
+				}),
+			}),
+		);
+	});
+
 	it('replaces only the ingester whose Realtime stream closed', async () => {
 		vi.spyOn(AudioIngester.prototype, 'start').mockResolvedValue();
 		const stop = vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();

@@ -89,7 +89,7 @@ const getParticipant = (participantId) => {
 
 	const participant = props.participants?.[participantId];
 	return {
-		name: participant?.user_name || participant?.full_name || participantId,
+		name: participant?.user_name || participant?.full_name || "",
 		avatar: participant?.avatar || "",
 	};
 };
