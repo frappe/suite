@@ -7,6 +7,19 @@ MODEL_SAMPLE_RATE = 16000
 REALTIME_SAMPLE_RATE = 24000
 
 
+def normalize_language(language: str | None, default: str) -> str:
+    resolved = (language or default).strip() or default
+    if resolved.lower() == "auto":
+        return "auto"
+    parts = resolved.split("-", 1)
+    canonical = parts[0].lower()
+    if len(parts) == 2:
+        canonical += f"-{parts[1].upper()}"
+    if canonical.startswith("en-") and canonical not in {"en-US", "en-GB"}:
+        return "en-US"
+    return canonical
+
+
 def clean_transcript(text: str) -> str:
     text = re.sub(r"\s*<[a-z]{2,3}(?:-[a-z0-9]{2,8})?>\s*", " ", text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", text).strip()
@@ -59,10 +72,11 @@ def validate_session_update(
     model = transcription.get("model") or default_model
     if model not in supported_models:
         return None, f"Unsupported transcription model: {model}"
-    language = (
+    language = normalize_language(
         transcription.get("language")
         or next(iter(transcription.get("languages") or []), None)
-        or default_language
+        or default_language,
+        default_language,
     )
     return {"model": model, "language": language}, None
 

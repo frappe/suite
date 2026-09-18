@@ -4,7 +4,6 @@
 import asyncio
 import base64
 import binascii
-import copy
 import json
 import os
 import subprocess
@@ -22,15 +21,14 @@ import torch
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from nemo.collections.asr.parts.preprocessing.features import normalize_batch
 from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer
-from omegaconf import OmegaConf
 from protocol import (
     MODEL_SAMPLE_RATE,
     REALTIME_SAMPLE_RATE,
     clean_transcript,
     event_id,
     item_id,
+    normalize_language,
     openai_sse_event,
     realtime_error,
     realtime_session,
@@ -40,7 +38,7 @@ from protocol import (
 from resampling import StreamingResampler
 
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/nemotron-3.5-asr-streaming-0.6b")
-NEMOTRON_LANGUAGE = os.getenv("NEMOTRON_LANGUAGE", "en-US").strip() or "en-US"
+NEMOTRON_LANGUAGE = normalize_language(os.getenv("NEMOTRON_LANGUAGE"), "en-US")
 NEMOTRON_ATT_CONTEXT_SIZE = os.getenv("NEMOTRON_ATT_CONTEXT_SIZE", "56,3")
 NEMOTRON_FINAL_SILENCE_MS = int(os.getenv("NEMOTRON_FINAL_SILENCE_MS", "600"))
 STT_STREAM_QUEUE_FRAMES = max(1, int(os.getenv("STT_STREAM_QUEUE_FRAMES", "400")))
@@ -85,7 +83,7 @@ def move_to_model_device(value):
 
 
 def apply_language(language: str | None) -> str:
-    resolved = (language or NEMOTRON_LANGUAGE).strip() or NEMOTRON_LANGUAGE
+    resolved = normalize_language(language, NEMOTRON_LANGUAGE)
     model.set_inference_prompt(resolved)
     return resolved
 
@@ -155,73 +153,85 @@ def final_transcribe(audio: np.ndarray) -> str:
     return FinalDecoder().transcribe(audio)
 
 
-def _streaming_value(value):
+def _streaming_value(value, step: int = 1):
     if isinstance(value, list | tuple):
-        return value[1] if len(value) > 1 else value[0]
+        return value[0] if step == 0 or len(value) == 1 else value[1]
     return value
 
 
 class StreamingFeatureBuffer:
-    """Rolling normalized mel-feature window for cache-aware inference."""
+    """Bounded, sample-aligned windows matching NeMo's cache-aware buffer."""
 
     def __init__(self):
-        cfg = copy.deepcopy(model._cfg)
-        OmegaConf.set_struct(cfg.preprocessor, False)
-        self.normalize_type = cfg.preprocessor.normalize
-        cfg.preprocessor.normalize = "None"
-        cfg.preprocessor.dither = 0.0
-        cfg.preprocessor.pad_to = 0
-
-        streaming_cfg = model.encoder.streaming_cfg
-        self.chunk_frames = int(_streaming_value(streaming_cfg.chunk_size))
-        self.precache_frames = int(_streaming_value(streaming_cfg.pre_encode_cache_size))
-        self.buffer_frames = self.precache_frames + self.chunk_frames
-        self.chunk_samples = self.chunk_frames * MEL_HOP_SAMPLES
-        self.look_back = 2 * MEL_HOP_SAMPLES
-        self.device = model_device()
-        self.raw_preprocessor = model.from_config_dict(cfg.preprocessor).to(self.device)
+        reference = CacheAwareStreamingAudioBuffer(model, online_normalization=False)
+        if reference.model_normalize_type not in (None, "None", "NA"):
+            raise ValueError(
+                "Bounded streaming requires a model without utterance-wide feature normalization"
+            )
+        self.preprocess_audio = reference.preprocess_audio
+        self.sampling_frames = reference.sampling_frames
+        self.cfg = reference.streaming_cfg
+        self.feature_count = reference.input_features
+        self.right_samples = int(model.cfg.preprocessor.n_fft) // 2
+        # Align the crop to the original hop grid, including pre-emphasis's
+        # previous sample. Never expose an STFT frame before its right context.
+        self.left_frames = (self.right_samples + 1 + MEL_HOP_SAMPLES - 1) // MEL_HOP_SAMPLES
+        for step in (0, 1):
+            if _streaming_value(self.cfg.chunk_size, step) != _streaming_value(self.cfg.shift_size, step):
+                raise ValueError("Bounded streaming requires non-overlapping feature chunks")
+        self.cache_frames = max(_streaming_value(self.cfg.pre_encode_cache_size, step) for step in (0, 1))
         self.reset()
 
     def reset(self) -> None:
-        self.sample_ring = torch.zeros(
-            self.chunk_samples + self.look_back,
-            dtype=torch.float32,
-            device=self.device,
+        self.audio = np.zeros(0, dtype=np.float32)
+        self.sample_offset = 0
+        self.total_samples = 0
+        self.frame_offset = 0
+        self.step = 0
+        self.history = torch.zeros(
+            (1, self.feature_count, self.cache_frames), device=model_device(), dtype=torch.float32
         )
-        silence = torch.zeros(
-            self.buffer_frames * MEL_HOP_SAMPLES + self.look_back,
-            dtype=torch.float32,
-            device=self.device,
+
+    def append(self, samples: np.ndarray) -> None:
+        if samples.size:
+            self.audio = np.concatenate((self.audio, samples))
+            self.total_samples += samples.size
+
+    def pop_chunk(self, final: bool):
+        if not self.audio.size:
+            return None
+        chunk_frames = int(_streaming_value(self.cfg.chunk_size, self.step))
+        end_frame = self.frame_offset + chunk_frames
+        required_samples = (end_frame - 1) * MEL_HOP_SAMPLES + self.right_samples
+        if not final and self.total_samples < required_samples:
+            return None
+        start_frame = max(0, self.frame_offset - self.left_frames)
+        start_sample = start_frame * MEL_HOP_SAMPLES
+        end_sample = self.total_samples if final else required_samples
+        window = self.audio[start_sample - self.sample_offset : end_sample - self.sample_offset]
+        with torch.inference_mode():
+            features, _ = self.preprocess_audio(window)
+        total_frames = start_frame + features.shape[-1]
+        current = features[:, :, self.frame_offset - start_frame : end_frame - start_frame]
+        minimum_frames = (
+            int(_streaming_value(self.sampling_frames, self.step)) if self.sampling_frames is not None else 1
         )
-        zero_level = self._extract(silence)[:, :1]
-        self.feature_buffer = zero_level.repeat(1, self.buffer_frames).contiguous()
-
-    def _extract(self, samples: torch.Tensor) -> torch.Tensor:
-        signal = samples.unsqueeze(0)
-        length = torch.tensor([samples.shape[0]], device=self.device)
-        features, _ = self.raw_preprocessor(input_signal=signal, length=length)
-        return features.squeeze(0)
-
-    def update(self, chunk_audio: np.ndarray) -> None:
-        chunk = torch.from_numpy(np.ascontiguousarray(chunk_audio)).float().to(self.device)
-        self.sample_ring[: -self.chunk_samples] = self.sample_ring[self.chunk_samples :].clone()
-        self.sample_ring[-self.chunk_samples :] = chunk
-        chunk_features = self._extract(self.sample_ring)[:, -self.chunk_frames :]
-        if chunk_features.shape[1] < self.chunk_frames:
-            padding = self.feature_buffer[:, -1:].repeat(1, self.chunk_frames - chunk_features.shape[1])
-            chunk_features = torch.cat([padding, chunk_features], dim=1)
-        self.feature_buffer[:, : -self.chunk_frames] = self.feature_buffer[:, self.chunk_frames :].clone()
-        self.feature_buffer[:, -self.chunk_frames :] = chunk_features
-
-    def normalized_window(self):
-        features = self.feature_buffer.unsqueeze(0)
-        length = torch.tensor([self.buffer_frames], device=self.device)
-        normalized, _, _ = normalize_batch(
-            x=features,
-            seq_len=length,
-            normalize_type=self.normalize_type,
-        )
-        return normalized, length
+        if current.shape[-1] < minimum_frames:
+            return None
+        cache_frames = int(_streaming_value(self.cfg.pre_encode_cache_size, self.step))
+        history = self.history[:, :, -cache_frames:] if cache_frames else self.history[:, :, :0]
+        processed = torch.cat((history, current), dim=-1)
+        length = torch.tensor([processed.shape[-1]], device=processed.device)
+        next_frame = self.frame_offset + int(_streaming_value(self.cfg.shift_size, self.step))
+        is_last = final and next_frame >= total_frames
+        if self.cache_frames:
+            self.history = torch.cat((self.history, current), dim=-1)[:, :, -self.cache_frames :].clone()
+        self.frame_offset = next_frame
+        self.step += 1
+        keep_from = min(self.total_samples, max(0, next_frame - self.left_frames) * MEL_HOP_SAMPLES)
+        self.audio = self.audio[keep_from - self.sample_offset :].copy()
+        self.sample_offset = keep_from
+        return processed, length, is_last
 
 
 class IncrementalDecoder:
@@ -243,31 +253,27 @@ class IncrementalDecoder:
         self.cache_last_channel_len = move_to_model_device(self.cache_last_channel_len)
         self.previous_hypotheses = None
         self.current_text = ""
-        self.audio_buffer = np.zeros(0, dtype=np.float32)
         self.step = 0
         self.features.reset()
 
     def feed(self, audio: np.ndarray) -> str:
-        if audio.size:
-            self.audio_buffer = np.concatenate([self.audio_buffer, audio])
-        while len(self.audio_buffer) >= self.chunk_samples:
-            chunk = self.audio_buffer[: self.chunk_samples]
-            self.audio_buffer = self.audio_buffer[self.chunk_samples :]
-            self.current_text = self._process_chunk(chunk)
+        # Limit storage even when a caller submits a large audio packet.
+        for offset in range(0, len(audio), self.chunk_samples):
+            self.features.append(audio[offset : offset + self.chunk_samples])
+            self._drain(final=False)
         return self.current_text
 
     def flush(self) -> str:
-        if self.audio_buffer.size:
-            padding = self.chunk_samples - len(self.audio_buffer)
-            chunk = np.pad(self.audio_buffer, (0, padding))
-            self.current_text = self._process_chunk(chunk, is_final=True)
+        self._drain(final=True)
         final = self.current_text.strip()
         self.reset()
         return final
 
-    def _process_chunk(self, audio: np.ndarray, is_final: bool = False) -> str:
-        self.features.update(audio)
-        processed, processed_len = self.features.normalized_window()
+    def _drain(self, final: bool) -> None:
+        while (chunk := self.features.pop_chunk(final)) is not None:
+            self.current_text = self._process_chunk(*chunk)
+
+    def _process_chunk(self, processed, processed_len, is_final: bool) -> str:
         with torch.inference_mode():
             (
                 _,
@@ -298,18 +304,20 @@ class RealtimeTranscriptionSession:
     def __init__(self, language: str):
         self.language = language or NEMOTRON_LANGUAGE
         self.last_sent_text = ""
-        self.utterance_audio: list[np.ndarray] = []
+        # Keep fallback audio without growing RAM with utterance duration.
+        self.fallback_audio = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         self.input_sample_count = 0
         self.resampler = StreamingResampler(REALTIME_SAMPLE_RATE, MODEL_SAMPLE_RATE)
         self.incremental_decoder = IncrementalDecoder()
         self.incremental_failed = False
+        self.last_final_used_fallback = False
 
     def append_and_decode(self, audio_bytes: bytes) -> str:
         audio = pcm16le_to_float32(audio_bytes)
         self.input_sample_count += len(audio)
         audio = self.resampler.process(audio)
         if audio.size:
-            self.utterance_audio.append(audio)
+            self.fallback_audio.write(audio.tobytes())
         if self.incremental_failed:
             return ""
         try:
@@ -320,23 +328,28 @@ class RealtimeTranscriptionSession:
             return ""
 
     def finalize(self) -> str:
-        if not self.has_audio:
-            self.incremental_decoder.reset()
+        self.last_final_used_fallback = False
+        try:
+            if not self.has_audio:
+                return ""
+            tail = self.resampler.flush()
+            if tail.size:
+                self.fallback_audio.write(tail.tobytes())
+            silence_samples = max(0, int(MODEL_SAMPLE_RATE * NEMOTRON_FINAL_SILENCE_MS / 1000))
+            if not self.incremental_failed:
+                try:
+                    self.incremental_decoder.feed(tail)
+                    self.incremental_decoder.feed(np.zeros(silence_samples, dtype=np.float32))
+                    return self.incremental_decoder.flush()
+                except Exception as incremental_error:
+                    _label(event="incremental_final_fallback", error=str(incremental_error))
+            self.last_final_used_fallback = True
+            self.fallback_audio.seek(0)
+            audio = np.frombuffer(self.fallback_audio.read(), dtype=np.float32)
+            return FinalDecoder().transcribe(np.pad(audio, (0, silence_samples)))
+        finally:
             self.reset_utterance()
-            return ""
-        tail = self.resampler.flush()
-        if tail.size:
-            self.utterance_audio.append(tail)
-        audio = np.concatenate(self.utterance_audio)
-        if NEMOTRON_FINAL_SILENCE_MS > 0:
-            audio = np.pad(
-                audio,
-                (0, int(MODEL_SAMPLE_RATE * NEMOTRON_FINAL_SILENCE_MS / 1000)),
-            )
-        text = FinalDecoder().transcribe(audio)
-        self.incremental_decoder.reset()
-        self.reset_utterance()
-        return text
+            self.incremental_decoder.reset()
 
     def audio_duration_seconds(self) -> float:
         return self.input_sample_count / REALTIME_SAMPLE_RATE
@@ -351,9 +364,14 @@ class RealtimeTranscriptionSession:
 
     def reset_utterance(self) -> None:
         self.last_sent_text = ""
-        self.utterance_audio = []
+        self.fallback_audio.close()
+        self.fallback_audio = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         self.input_sample_count = 0
         self.resampler = StreamingResampler(REALTIME_SAMPLE_RATE, MODEL_SAMPLE_RATE)
+        self.incremental_failed = False
+
+    def close(self) -> None:
+        self.fallback_audio.close()
         self.incremental_failed = False
 
 
@@ -502,7 +520,7 @@ async def transcribe_audio_file(
     except Exception as error:
         raise HTTPException(status_code=400, detail=f"Failed to process audio: {error}") from error
 
-    resolved_language = language or NEMOTRON_LANGUAGE
+    resolved_language = normalize_language(language, NEMOTRON_LANGUAGE)
     duration = len(audio) / MODEL_SAMPLE_RATE
     if stream:
 
@@ -568,6 +586,7 @@ async def realtime_transcription(websocket: WebSocket):
     )
 
     transcription: RealtimeTranscriptionSession | None = None
+    worker_task: asyncio.Task | None = None
     current_item_id = item_id()
     previous_item_id: str | None = None
     try:
@@ -732,6 +751,7 @@ async def realtime_transcription(websocket: WebSocket):
                             audio_seconds=f"{audio_seconds:.1f}",
                             text_len=len(text),
                             elapsed=f"{time.time() - t0:.2f}s",
+                            fallback=transcription.last_final_used_fallback,
                         )
                         if delta := transcript_delta(previous_text, text):
                             await websocket.send_json(
@@ -786,6 +806,13 @@ async def realtime_transcription(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        if (
+            transcription is not None
+            and worker_task is not None
+            and worker_task.done()
+            and not worker_task.cancelled()
+        ):
+            transcription.close()
         _label(event="realtime_end", session=realtime_session_id)
 
 

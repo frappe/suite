@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from protocol import (
     REALTIME_SAMPLE_RATE,
     clean_transcript,
+    normalize_language,
     openai_sse_event,
     realtime_error,
     realtime_session,
@@ -72,6 +73,12 @@ class ProtocolTest(unittest.TestCase):
             openai_sse_event({"type": "transcript.text.delta", "delta": "Hello"}),
             'data: {"type": "transcript.text.delta", "delta": "Hello"}\n\n',
         )
+
+    def test_normalizes_unsupported_english_locales(self):
+        self.assertEqual(normalize_language("en-gb", "en-US"), "en-GB")
+        self.assertEqual(normalize_language("en-AU", "en-US"), "en-US")
+        self.assertEqual(normalize_language("en-IN", "en-US"), "en-US")
+        self.assertEqual(normalize_language("hi-in", "en-US"), "hi-IN")
 
     def test_transcript_delta_handles_growth_and_hypothesis_rewrites(self):
         self.assertEqual(transcript_delta("Hello", "Hello world"), " world")
