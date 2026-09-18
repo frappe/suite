@@ -39,7 +39,8 @@
   {
    "fieldname": "hr_section",
    "fieldtype": "Section Break",
-   "label": "Frappe HR"
+   "label": "Frappe HR",
+   "description": "Where Frappe HR is on another site, use the key of a user made for this sync, with read access to Employee, Holiday List and Holiday List Assignment and nothing else. Whoever administers this site can use whatever the key can."
   },
   {
    "description": "Leave empty when Frappe HR is installed on this site.",
@@ -173,7 +174,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-18 16:23:54.000000",
+ "modified": "2026-09-18 17:43:22.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "HR Calendar Sync Settings",
@@ -182,11 +183,8 @@
   {
    "create": 1,
    "delete": 1,
-   "email": 1,
-   "print": 1,
    "read": 1,
    "role": "System Manager",
-   "share": 1,
    "write": 1
   }
  ],

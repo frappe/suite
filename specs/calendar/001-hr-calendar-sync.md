@@ -58,6 +58,13 @@ in step with HR.
   colour it would be given today — a holiday list renamed in HR, a colour or the Celebrations name
   changed in the settings — on every run, not only the day it was made. A name given to it by hand
   in the calendar is therefore put back.
+- **The run is the site's**, whoever pressed Sync Now: it acts as the service account's owner, as
+  the daily run does. Sharing a calendar links everyone it is shared with to the account, so an
+  administrator's own login reaches it only as a read-only share.
+- **A call the mail server refuses fails the run.** Read as an answer, a refusal looks like a
+  calendar with nothing on it, or a share that was changed when it wasn't — so events would be
+  made twice, or someone who has left would keep a calendar under a clean Last Sync. What is on
+  a calendar is read in the portions the server allows.
 - **Only the sync's own events** (`hr-holiday-`, `hr-birthday-`, `hr-anniversary-` uids) are ever
   rewritten or removed; two synced calendars may not share a name.
 - **A share goes only to a person HR named:** an address must match exactly, and a group is never

@@ -13,7 +13,7 @@ header, keeps the result as an attribute, and has a `__repr__` that prints neith
 
 import json
 from collections.abc import Callable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import frappe
 import requests
@@ -114,7 +114,9 @@ class HRSource:
         if not self.site_url:
             return frappe.get_doc(doctype, name).as_dict()
 
-        return self._get(f"/api/resource/{doctype}/{name}", {})
+        # The name is HR's, and goes in as one segment of the path: a list called `../method/x`
+        # is asked for by that name, not followed somewhere else on the site.
+        return self._get(f"/api/resource/{doctype}/{quote(name, safe='')}", {})
 
     def _get(self, path: str, params: dict) -> dict | list:
         try:

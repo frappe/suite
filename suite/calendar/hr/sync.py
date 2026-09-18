@@ -47,6 +47,9 @@ READ_ONLY = {
     "mayDelete": False,
 }
 
+# The most events a synced calendar is read for. Past this it is not reconciled at all, and says so.
+MAX_EVENTS = 20000
+
 # What an event of ours is made of, and so what a difference is measured on.
 EVENT_FIELDS = ("uid", "title", "start", "duration", "show_without_time", "description", "recurrence_rule")
 
@@ -76,12 +79,19 @@ def sync_hr_calendars() -> dict:
     if not identifier:
         return {}
 
+    # The run is the site's, whoever asked for it. Sync Now runs as the administrator who pressed
+    # it, and sharing a calendar links everyone it is shared with to the service account — so that
+    # administrator would reach the account through their own read-only share of it, not as its
+    # owner. As the site, the account resolves to its owner, which is who the daily run acts as.
+    asked_by = frappe.session.user
+    frappe.set_user("Administrator")
     try:
         return _run()
     except Exception as error:
         _record_failure(error.made if isinstance(error, RunFailed) else {})
         raise frappe.ValidationError(_("The HR calendar sync failed. See the Error Log.")) from None
     finally:
+        frappe.set_user(asked_by)
         release_lock(LOCK, identifier)
 
 
@@ -113,6 +123,10 @@ def _run() -> dict:
     settings = frappe.get_doc("HR Calendar Sync Settings")
     if not settings.enabled:
         return {}
+
+    # Asked again at the time of the run: who is linked to the account can change after the
+    # settings were saved, and a group's calendars are writable by everyone in it.
+    settings.validate_service_account()
 
     source = settings.hr_source()
     account = settings.account
@@ -371,12 +385,21 @@ def _existing_events(service, calendar_id: str, prefix: str | tuple[str, ...]) -
     somebody and is not ours to rewrite or remove.
     """
 
-    ids = service.query({"inCalendar": calendar_id}, 0, 5000).get("ids") or []
-    if not ids:
-        return {}
+    found = service.query({"inCalendar": calendar_id}, 0, MAX_EVENTS)
+    ids = found.get("ids") or []
+    # No total is a query the server refused, and more than was read is a calendar too large to
+    # see whole. Either way what is there is not known, and "nothing" would be the wrong guess:
+    # every event would be made again beside the ones already there.
+    if found.get("total") is None or found["total"] > len(ids):
+        frappe.throw(_("The mail server did not say what is on the calendar."))
 
-    rows = service._get(ids, properties=[*JMAP_FIELDS.values(), "id"])["methodResponses"][0][1]
-    return {row["uid"]: row for row in rows.get("list") or [] if (row.get("uid") or "").startswith(prefix)}
+    # In the server's own portions, as the writes are: asked for more than it allows in one call,
+    # it answers with an error and no list.
+    rows = []
+    for batch in service.create_batches(ids, service.max_objects_in_get):
+        response = service._get(batch, properties=[*JMAP_FIELDS.values(), "id"])
+        rows += _result(response).get("list") or []
+    return {row["uid"]: row for row in rows if (row.get("uid") or "").startswith(prefix)}
 
 
 def _payload(event: dict, calendar_id: str) -> dict:
@@ -426,7 +449,7 @@ def _share(account: str, calendar_id: str, emails: list[str]) -> int:
     share_with = {principal: READ_ONLY for principal in principals}
 
     service = get_calendar_service(account)
-    stored = service._get([calendar_id], properties=["shareWith"])["methodResponses"][0][1]
+    stored = _result(service._get([calendar_id], properties=["shareWith"]))
     current = ((stored.get("list") or [{}])[0].get("shareWith")) or {}
     if current == share_with:
         return len(share_with)
@@ -446,6 +469,10 @@ def _principals(account: str, emails: set[str]) -> list[str]:
     principals = []
     for batch in service.create_batches(sorted(wanted), 50):
         ids = service.query({"operator": "OR", "conditions": [{"email": email} for email in batch]}, 0, 500)
+        # A search the server refused has no total. Read as "nobody found", it would unshare the
+        # calendar from everyone it is for.
+        if ids.get("total") is None:
+            frappe.throw(_("The mail server did not say who the calendar can be shared with."))
         for row in service.get(ids.get("ids") or []):
             # Exactly an address HR gave, and a person: the search is loose, and a share with a
             # group is a share with everyone in it, which HR never said.
@@ -454,8 +481,19 @@ def _principals(account: str, emails: set[str]) -> list[str]:
     return principals
 
 
-def _raise_for_errors(response: dict, key: str) -> None:
+def _result(response: dict) -> dict:
+    """What the mail server answered, or an error if it refused the call outright. A refusal —
+    forbidden, too large, a failure of its own — comes back in place of an answer, and read as
+    one it looks like success: a share that was never changed, a calendar with nothing on it."""
+
     method_responses = response.get("methodResponses") or []
-    result = method_responses[0][1] if method_responses else {}
+    if not method_responses or method_responses[0][0] == "error":
+        reason = method_responses[0][1].get("type") if method_responses else "no answer"
+        frappe.throw(_("The mail server refused part of the sync: {0}").format(reason))
+    return method_responses[0][1]
+
+
+def _raise_for_errors(response: dict, key: str) -> None:
+    result = _result(response)
     if errors := result.get(key):
         frappe.throw(_("The mail server refused part of the sync: {0}").format(frappe.as_json(errors)))

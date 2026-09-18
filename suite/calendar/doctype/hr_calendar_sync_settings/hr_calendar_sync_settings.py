@@ -73,10 +73,15 @@ class HRCalendarSyncSettings(Document):
             )
 
     def validate_key_goes_where_it_was_made_for(self) -> None:
-        """A saved secret can't be read back, but it can be sent: point the settings at another
-        address, press Sync Now, and the key arrives there in a header. Whoever may edit these
-        settings is not thereby a manager on the HR site. So a new address needs both typed again,
-        by someone who has them: either one left as saved would still be sent."""
+        """A saved key is not sent anywhere but where it was saved for: point the settings at
+        another address, press Sync Now, and it would arrive there in a header. So a new address
+        needs both typed again: either one left as saved would still be sent.
+
+        This keeps a key from leaving by accident, or by a changed address nobody looked at. It
+        does not keep it from this site's administrators, who can read any saved password through
+        Desk — what does is a key that can do little: a user on the HR site made for the sync,
+        with read access to what it reads and nothing else.
+        """
 
         if not self.hr_site_url or not self.has_value_changed("hr_site_url"):
             return
@@ -101,7 +106,7 @@ class HRCalendarSyncSettings(Document):
 
         return {line.strip() for line in (self.holiday_lists or "").splitlines() if line.strip()}
 
-    @frappe.whitelist()
+    @frappe.whitelist(methods=["POST"])
     def test_connection(self) -> dict:
         """What the settings can actually see, before a sync is trusted to run: HR's answer to
         each question the sync asks, and whether the service account can be reached."""
@@ -110,12 +115,16 @@ class HRCalendarSyncSettings(Document):
 
     def _test_connection(self) -> dict:
         from suite.calendar.hr.sync import _holiday_lists
-        from suite.mail.jmap import get_calendar_service
+        from suite.mail.jmap import CalendarService, get_jmap_connection
 
         source = self.hr_source()
         employees = source.employees()
         followers = _holiday_lists(self, source, employees, date.today())
         holiday_lists = source.holiday_lists()
+        # As the account's owner, which is who the sync acts as: whoever has the form open may
+        # only have a share in the account, and would be shown the little they can see of it.
+        owner = get_jmap_account_owner(self.account)
+        calendars = CalendarService(self.account, get_jmap_connection(owner)).get() if owner else []
         return {
             "employees": len(employees),
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
@@ -126,10 +135,10 @@ class HRCalendarSyncSettings(Document):
             "unknown_holiday_lists": sorted(self.chosen_holiday_lists() - set(holiday_lists)),
             # Who the sync would share each list with, resolved as HR resolves it.
             "followers": {name: len(people) for name, people in followers.items()},
-            "calendars": [calendar["name"] for calendar in get_calendar_service(self.account).get()],
+            "calendars": [calendar["name"] for calendar in calendars],
         }
 
-    @frappe.whitelist()
+    @frappe.whitelist(methods=["POST"])
     def sync_now(self) -> None:
         """Runs the sync in the background: it reads HR and writes a calendar per holiday list,
         which is more than a web worker should be held open for. What it did lands in Last Sync,

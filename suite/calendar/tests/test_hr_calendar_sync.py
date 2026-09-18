@@ -290,7 +290,7 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
     def test_a_share_goes_only_to_the_people_hr_named(self):
         service = MagicMock()
         service.create_batches.side_effect = lambda items, size: [items]
-        service.query.return_value = {"ids": ["p1", "p2", "p3"]}
+        service.query.return_value = {"ids": ["p1", "p2", "p3"], "total": 3}
         service.get.return_value = [
             {"id": "p1", "email": "Akash@x.io", "type": "individual"},
             # found by a loose search, never named by HR
@@ -381,7 +381,7 @@ class UnitTestOwnedCalendars(UnitTestCase):
         settings = MagicMock(synced_calendars=frappe.as_json(stored))
         service = MagicMock()
         service.get.return_value = in_account
-        service._update.return_value = {}
+        service._update.return_value = {"methodResponses": [["Calendar/set", {"updated": {}}, "0"]]}
         with patch.object(hr_sync, "get_calendar_service", return_value=service):
             return OwnedCalendars(settings, "acc")
 
@@ -551,3 +551,88 @@ class UnitTestCelebrationsStartHidden(UnitTestCase):
         ):
             tagged = api.get_calendars_with_shared("me")
         self.assertEqual([row.get("default_hidden") for row in tagged], [1, None, None])
+
+
+class UnitTestWhatTheMailServerRefuses(UnitTestCase):
+    """A call the server refuses comes back in place of an answer, and must not be read as one."""
+
+    @property
+    def refused(self) -> dict:
+        return {"methodResponses": [["error", {"type": "requestTooLarge"}, "0"]]}
+
+    def answer(self, body: dict) -> dict:
+        return {"methodResponses": [["CalendarEvent/get", body, "0"]]}
+
+    def test_a_refused_call_is_an_error_not_an_empty_answer(self):
+        self.assertRaises(frappe.ValidationError, hr_sync._result, self.refused)
+        self.assertRaises(frappe.ValidationError, hr_sync._result, {})
+        self.assertRaises(frappe.ValidationError, hr_sync._raise_for_errors, self.refused, "notUpdated")
+        self.assertEqual(hr_sync._result(self.answer({"list": []})), {"list": []})
+
+    def events_service(self, ids: list[str], total: int | None, limit: int = 2) -> MagicMock:
+        service = MagicMock(max_objects_in_get=limit)
+        service.query.return_value = {"ids": ids, "total": total}
+        service.create_batches.side_effect = lambda items, size: [
+            items[i : i + size] for i in range(0, len(items), size)
+        ]
+        service._get.side_effect = lambda batch, properties: self.answer(
+            {"list": [{"id": id, "uid": f"hr-birthday-{id}"} for id in batch]}
+        )
+        return service
+
+    def test_what_is_on_a_calendar_is_read_in_the_servers_portions(self):
+        service = self.events_service(["a", "b", "c", "d", "e"], 5)
+        existing = hr_sync._existing_events(service, "cal", "hr-")
+        self.assertEqual(len(existing), 5)
+        self.assertEqual([len(call.args[0]) for call in service._get.call_args_list], [2, 2, 1])
+
+    def test_a_calendar_it_cannot_see_whole_is_not_taken_for_empty(self):
+        # refused: no total. Too large: more than was read. Either would remake every event.
+        for ids, total in (([], None), (["a"], 2)):
+            with self.subTest(total=total):
+                service = self.events_service(ids, total)
+                self.assertRaises(frappe.ValidationError, hr_sync._existing_events, service, "cal", "hr-")
+
+    def test_a_refused_search_for_people_does_not_unshare_the_calendar(self):
+        service = MagicMock()
+        service.create_batches.side_effect = lambda items, size: [items]
+        service.query.return_value = {"ids": [], "total": None}
+        with patch.object(hr_sync, "get_principal_service", return_value=service):
+            self.assertRaises(frappe.ValidationError, _principals, "acc", {"a@x.io"})
+
+
+class UnitTestTheRunIsTheSites(UnitTestCase):
+    def test_it_acts_as_the_site_whoever_asked_and_hands_the_session_back(self):
+        seen = []
+        with (
+            patch.object(hr_sync, "acquire_lock", return_value="held"),
+            patch.object(hr_sync, "release_lock"),
+            patch.object(hr_sync, "_run", side_effect=lambda: seen.append(frappe.session.user) or {}),
+        ):
+            frappe.set_user("Guest")
+            try:
+                hr_sync.sync_hr_calendars()
+                self.assertEqual(frappe.session.user, "Guest")
+            finally:
+                frappe.set_user("Administrator")
+        self.assertEqual(seen, ["Administrator"])
+
+    def test_the_service_account_is_asked_about_again_at_the_run(self):
+        settings = MagicMock(enabled=1)
+        settings.validate_service_account.side_effect = frappe.ValidationError("a group")
+        with patch.object(hr_sync.frappe, "get_doc", return_value=settings):
+            self.assertRaises(frappe.ValidationError, hr_sync._run)
+        settings.hr_source.assert_not_called()
+
+
+class UnitTestANameFromHRIsOneSegment(UnitTestCase):
+    def test_a_holiday_list_name_cannot_lead_somewhere_else_on_the_site(self):
+        source = HRSource("https://hr.example.com", lambda: "token a:b")
+        response = MagicMock(status_code=200)
+        response.raw.read.return_value = b'{"data": {"holidays": []}}'
+        with patch("suite.calendar.hr.source.requests.get", return_value=response) as get:
+            source.holidays("../../method/ping?x=1#y")
+        url = get.call_args.args[0]
+        self.assertEqual(
+            url, "https://hr.example.com/api/resource/Holiday List/..%2F..%2Fmethod%2Fping%3Fx%3D1%23y"
+        )
