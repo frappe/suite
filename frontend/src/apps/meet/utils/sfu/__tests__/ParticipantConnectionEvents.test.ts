@@ -126,37 +126,6 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
-	it("clears participant media state when a producer closes", async () => {
-		const { handlers, manager, participantManager } = createManager();
-		participantManager.addParticipant({
-			participantId: "remote-1",
-			userData: { name: "Remote", audio_enabled: true, video_enabled: true },
-		});
-
-		await manager.connect("token");
-		await handlers.get("producer_created")?.({
-			participantId: "remote-1",
-			producerId: "audio-1",
-			kind: "audio",
-		});
-		await handlers.get("producer_created")?.({
-			participantId: "remote-1",
-			producerId: "video-1",
-			kind: "video",
-		});
-
-		handlers.get("producer_closed")?.({
-			participantId: "remote-1",
-			producerId: "audio-1",
-			isScreen: false,
-		});
-
-		expect(participantManager.getParticipant("remote-1")).toMatchObject({
-			audio_enabled: false,
-			video_enabled: true,
-		});
-	});
-
 	it("preserves remote progress while the subscription remains present", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");

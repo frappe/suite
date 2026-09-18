@@ -1468,7 +1468,6 @@ export class ParticipantConnection {
 		this.sfuClient.on("producer_closed", (value: unknown) => {
 			const d = normalizeProducerClosedEvent(value);
 			if (!d?.participantId || !d.producerId) return;
-			const producer = this.reconciliation.producers.get(d.producerId);
 			const event: ReconciliationEvent = {
 				type: "producer-closed",
 				value: {
@@ -1484,30 +1483,6 @@ export class ParticipantConnection {
 			const previous = this.reconciliation;
 			this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 			if (previous.closedProducerIds.has(d.producerId)) return;
-			const hasRemainingProducer = (kind: "audio" | "video") =>
-				Array.from(this.reconciliation.producers.values()).some(
-					(entry) =>
-						entry.participantId === d.participantId &&
-						entry.kind === kind &&
-						!entry.isScreen,
-				);
-			if (
-				!d.isScreen &&
-				producer?.kind === "audio" &&
-				!hasRemainingProducer("audio")
-			) {
-				this.participantManager.updateMediaState(d.participantId, {
-					audioEnabled: false,
-				});
-			} else if (
-				!d.isScreen &&
-				producer?.kind === "video" &&
-				!hasRemainingProducer("video")
-			) {
-				this.participantManager.updateMediaState(d.participantId, {
-					videoEnabled: false,
-				});
-			}
 			this.removeProducerConsumers(event.value);
 
 			if (d.isScreen) {
