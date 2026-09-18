@@ -142,13 +142,14 @@ def _run() -> dict:
         frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
 
     owned = OwnedCalendars(settings, account)
+    # To the very end: a calendar is on the mail server from the moment it is made, so a failure
+    # anywhere after that — saving what was made included — has to carry it out.
     try:
         summary = _reconcile(account, owned, plans)
+        owned.save()
+        _record_success()
     except Exception as error:
         raise RunFailed(owned.made()) from error
-
-    owned.save()
-    _record_success()
     return summary
 
 

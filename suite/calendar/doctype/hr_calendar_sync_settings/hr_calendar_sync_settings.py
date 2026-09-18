@@ -54,12 +54,12 @@ class HRCalendarSyncSettings(Document):
     def validate_key_goes_where_it_was_made_for(self) -> None:
         """A saved secret can't be read back, but it can be sent: point the settings at another
         address, press Sync Now, and the key arrives there in a header. Whoever may edit these
-        settings is not thereby a manager on the HR site. So a new address needs the secret typed
-        again, by someone who has it."""
+        settings is not thereby a manager on the HR site. So a new address needs both typed again,
+        by someone who has them: either one left as saved would still be sent."""
 
         if not self.hr_site_url or not self.has_value_changed("hr_site_url"):
             return
-        if self.api_secret and self.is_dummy_password(self.api_secret):
+        if any(value and self.is_dummy_password(value) for value in (self.api_key, self.api_secret)):
             frappe.throw(_("Enter the API key and secret again: the saved ones are for another HR site."))
 
     def hr_source(self) -> HRSource:

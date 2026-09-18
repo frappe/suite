@@ -202,19 +202,23 @@ class UnitTestSiteUrl(UnitTestCase):
                 self.assertRaises(frappe.ValidationError, validate_site_url, url)
 
     def test_a_saved_key_does_not_follow_the_settings_to_another_site(self):
-        def settings(url: str, secret: str, before: str | None):
+        def settings(url: str, key: str, secret: str, before: str | None):
             doc = frappe.new_doc("HR Calendar Sync Settings")
-            doc.update({"hr_site_url": url, "api_key": "*****", "api_secret": secret})
+            doc.update({"hr_site_url": url, "api_key": key, "api_secret": secret})
             doc._doc_before_save = frappe._dict(hr_site_url=before)
             return doc
 
-        moved = settings("https://elsewhere.example.com", "*****", "https://hr.example.com")
-        self.assertRaises(frappe.ValidationError, moved.validate_key_goes_where_it_was_made_for)
+        here, elsewhere = "https://hr.example.com", "https://elsewhere.example.com"
+        # either one left as saved would still be sent
+        for key, secret in (("*****", "*****"), ("*****", "typed-again"), ("typed-again", "*****")):
+            with self.subTest(key=key, secret=secret):
+                moved = settings(elsewhere, key, secret, here)
+                self.assertRaises(frappe.ValidationError, moved.validate_key_goes_where_it_was_made_for)
 
-        # typed again, left where it was, or not sent anywhere at all
-        settings("https://elsewhere.example.com", "typed-again", "https://hr.example.com").validate()
-        settings("https://hr.example.com", "*****", "https://hr.example.com").validate()
-        settings("", "*****", "https://hr.example.com").validate()
+        # both typed again, left where it was, or not sent anywhere at all
+        settings(elsewhere, "typed-again", "typed-again", here).validate()
+        settings(here, "*****", "*****", here).validate()
+        settings("", "*****", "*****", here).validate()
 
     def test_redirects_are_not_followed(self):
         source = HRSource("https://hr.example.com", lambda: "token a:b")
@@ -322,6 +326,23 @@ class UnitTestOwnedCalendars(UnitTestCase):
                 hr_sync._run()
         self.assertEqual(failure.exception.made, made)
         self.assertIsInstance(failure.exception.__cause__, RuntimeError)
+
+    def test_a_run_that_fails_while_saving_still_hands_over_what_it_made(self):
+        settings = MagicMock(enabled=1, account="acc", sync_holidays=0, sync_birthdays=1)
+        settings.milestones_calendar = "Celebrations"
+        settings.hr_source.return_value.employees.return_value = [employee("EMP-1", company="Acme")]
+        made = {"account": "acc", "calendars": {"milestones:Acme": "made"}}
+        with (
+            patch.object(hr_sync.frappe, "get_doc", return_value=settings),
+            patch.object(hr_sync, "OwnedCalendars") as owned,
+            patch.object(hr_sync, "_sync_calendar", return_value={}),
+        ):
+            owned.return_value.made.return_value = made
+            owned.return_value.others.return_value = {}
+            owned.return_value.save.side_effect = RuntimeError("database gone")
+            with self.assertRaises(hr_sync.RunFailed) as failure:
+                hr_sync._run()
+        self.assertEqual(failure.exception.made, made)
 
 
 class UnitTestMilestonesShareACalendar(UnitTestCase):
