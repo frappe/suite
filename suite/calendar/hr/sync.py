@@ -30,6 +30,9 @@ LOCK_TIMEOUT = 1800
 # What marks an event as this sync's. Every JMAP event has a uid, so without a mark of our own
 # a calendar an admin points us at would have everything else on it deleted as "no longer in HR".
 UID_PREFIX = "hr-"
+# The kinds a milestones calendar holds. Switching one off removes its events: they are still
+# this calendar's to reconcile, and HR's answer for them is now "none".
+MILESTONES = ("hr-birthday-", "hr-anniversary-")
 
 READ_ONLY = {
     "mayReadFreeBusy": True,
@@ -115,18 +118,15 @@ def _run(made: dict) -> dict:
             events = holiday_events(holiday_list, source.holidays(holiday_list))
             key = f"holiday:{holiday_list}"
             plans.append((key, holiday_list, settings.holidays_color, events, audience, "hr-holiday-"))
-    if settings.sync_birthdays:
-        for company, (name, staff) in _by_company(settings.birthdays_calendar, employees).items():
+    if settings.sync_birthdays or settings.sync_anniversaries:
+        # One calendar for both: the same people see them, and the titles tell them apart.
+        for company, (name, staff) in _by_company(settings.milestones_calendar, employees).items():
             audience = [person.get("user_id") for person in staff]
-            events = birthday_events(staff, today)
-            key = f"birthday:{company}"
-            plans.append((key, name, settings.birthdays_color, events, audience, "hr-birthday-"))
-    if settings.sync_anniversaries:
-        for company, (name, staff) in _by_company(settings.anniversaries_calendar, employees).items():
-            audience = [person.get("user_id") for person in staff]
-            events = anniversary_events(staff, today)
-            key = f"anniversary:{company}"
-            plans.append((key, name, settings.anniversaries_color, events, audience, "hr-anniversary-"))
+            events = birthday_events(staff, today) if settings.sync_birthdays else []
+            if settings.sync_anniversaries:
+                events += anniversary_events(staff, today)
+            key = f"milestones:{company}"
+            plans.append((key, name, settings.milestones_color, events, audience, MILESTONES))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
     # share: a holiday list named "Birthdays" would hand the birthdays to the wrong people.
@@ -148,8 +148,12 @@ def _run(made: dict) -> dict:
         summary[f"({key})"] = _sync_calendar(account, calendar_id, [], [], UID_PREFIX)
 
     owned.save()
-    frappe.db.set_single_value("HR Calendar Sync Settings", {"last_sync": now_datetime(), "last_error": None})
+    _record_success()
     return summary
+
+
+def _record_success() -> None:
+    frappe.db.set_single_value("HR Calendar Sync Settings", {"last_sync": now_datetime(), "last_error": None})
 
 
 class OwnedCalendars:
@@ -232,7 +236,7 @@ def _holiday_lists(settings, source: HRSource, employees: list[dict]) -> dict[st
 
 
 def _sync_calendar(
-    account: str, calendar_id: str, events: list[dict], audience: list[str], prefix: str
+    account: str, calendar_id: str, events: list[dict], audience: list[str], prefix: str | tuple[str, ...]
 ) -> dict:
     """Makes one of the sync's own calendars say what HR says, and shares it with the people it is
     about. `prefix` is the kind of event it holds: only those are ever rewritten or removed."""
@@ -242,7 +246,7 @@ def _sync_calendar(
     return result
 
 
-def _sync_events(account: str, calendar_id: str, events: list[dict], prefix: str) -> dict:
+def _sync_events(account: str, calendar_id: str, events: list[dict], prefix: str | tuple[str, ...]) -> dict:
     """Creates what is missing, rewrites what differs, and removes what HR no longer has."""
 
     service = get_calendar_event_service(account)
@@ -271,7 +275,7 @@ def _sync_events(account: str, calendar_id: str, events: list[dict], prefix: str
     return {"created": len(create), "updated": len(update), "removed": len(destroy)}
 
 
-def _existing_events(service, calendar_id: str, prefix: str) -> dict[str, dict]:
+def _existing_events(service, calendar_id: str, prefix: str | tuple[str, ...]) -> dict[str, dict]:
     """What this sync has already put on the calendar, by uid.
 
     Only its own: every event has a uid, so anything not in our namespace was put there by

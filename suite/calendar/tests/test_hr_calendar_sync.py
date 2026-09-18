@@ -152,7 +152,7 @@ class UnitTestNothingPrivateIsLogged(UnitTestCase):
         settings = MagicMock(
             enabled=1, account="acc", sync_holidays=0, sync_birthdays=1, sync_anniversaries=0
         )
-        settings.birthdays_calendar = "Birthdays"
+        settings.milestones_calendar = "Milestones"
         settings.hr_source.return_value.employees.return_value = [
             {
                 "name": "EMP-1",
@@ -219,9 +219,9 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
 
     def test_milestones_stay_within_a_company(self):
         staff = [employee("EMP-1", company="Acme"), employee("EMP-2", company="Globex")]
-        names = {company: name for company, (name, _staff) in _by_company("Birthdays", staff).items()}
-        self.assertEqual(names, {"Acme": "Birthdays — Acme", "Globex": "Birthdays — Globex"})
-        self.assertEqual(_by_company("Birthdays", staff[:1])["Acme"][0], "Birthdays")
+        names = {company: name for company, (name, _staff) in _by_company("Milestones", staff).items()}
+        self.assertEqual(names, {"Acme": "Milestones — Acme", "Globex": "Milestones — Globex"})
+        self.assertEqual(_by_company("Milestones", staff[:1])["Acme"][0], "Milestones")
 
     def test_a_share_goes_only_to_the_people_hr_named(self):
         service = MagicMock()
@@ -289,3 +289,45 @@ class UnitTestOwnedCalendars(UnitTestCase):
             owned.ensure("birthday:Acme", "Birthdays", "#fff")
         # what the failure handler is handed, to save in its one commit
         self.assertEqual(made, {"account": "acc", "calendars": {"birthday:Acme": "made"}})
+
+
+class UnitTestMilestonesShareACalendar(UnitTestCase):
+    def plans(self, **switches) -> list:
+        settings = MagicMock(
+            enabled=1, account="acc", sync_holidays=0, milestones_calendar="Milestones", **switches
+        )
+        settings.hr_source.return_value.employees.return_value = [
+            employee(
+                "EMP-1",
+                company="Acme",
+                date_of_birth="1990-07-09",
+                date_of_joining="2020-03-01",
+                user_id="a@x.io",
+            )
+        ]
+        synced = []
+        with (
+            patch.object(hr_sync.frappe, "get_doc", return_value=settings),
+            patch.object(hr_sync, "_record_success"),
+            patch.object(hr_sync, "OwnedCalendars"),
+            patch.object(hr_sync, "_sync_calendar", side_effect=lambda *args: synced.append(args) or {}),
+        ):
+            hr_sync._run({})
+        return synced
+
+    def test_birthdays_and_anniversaries_land_on_one_calendar(self):
+        [(_account, _calendar, events, audience, prefix)] = self.plans(sync_birthdays=1, sync_anniversaries=1)
+        self.assertEqual({event["uid"] for event in events}, {"hr-birthday-EMP-1", "hr-anniversary-EMP-1"})
+        self.assertEqual(audience, ["a@x.io"])
+        self.assertEqual(prefix, hr_sync.MILESTONES)
+
+    def test_a_kind_switched_off_is_left_out_and_so_removed(self):
+        [(_account, _calendar, events, _audience, prefix)] = self.plans(
+            sync_birthdays=0, sync_anniversaries=1
+        )
+        self.assertEqual([event["uid"] for event in events], ["hr-anniversary-EMP-1"])
+        # still reconciled as the calendar's own, so the birthdays already on it go
+        self.assertIn("hr-birthday-", prefix)
+
+    def test_neither_kind_means_no_milestones_calendar(self):
+        self.assertEqual(self.plans(sync_birthdays=0, sync_anniversaries=0), [])

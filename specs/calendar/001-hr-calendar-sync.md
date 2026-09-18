@@ -4,7 +4,8 @@ Status: accepted
 
 Frappe HR knows when the office is closed and when people joined or were born. Suite's calendar
 did not, so everyone read that from emails and a wiki page. This syncs it: a calendar per holiday
-list, and optional company-wide birthday and work anniversary calendars, kept in step with HR.
+list, and an optional company-wide Milestones calendar for birthdays and work anniversaries, kept
+in step with HR.
 
 ## Behaviour
 
@@ -12,13 +13,15 @@ list, and optional company-wide birthday and work anniversary calendars, kept in
   employees each calendar is about, so the events show up under Shared Calendars without anyone
   switching accounts, and nobody can change them (see the read-only rights work in the calendar).
 - **Holidays** are all-day and free. Weekly offs are not synced: a weekend is not news.
-- **Birthdays and work anniversaries** repeat yearly and carry no year. A 29 February birthday
+- **Birthdays and work anniversaries** share one **Milestones** calendar — the same people see
+  both, and the titles tell them apart — each with a switch of its own; switching one off removes
+  its events. They repeat yearly and carry no year. A 29 February birthday
   falls on the 28th in years without one. An anniversary starts at the first one; the years served
   are not in the title, because every occurrence of a repeating event shares one title.
 - Events carry **no organizer and no participants**. They are facts about a day, not invitations,
   which is how every other calendar draws a holiday.
 - **Who sees a holiday list** is who HR says follows it: the employee's own list, else their
-  company's default. Birthdays and anniversaries go to every active employee.
+  company's default. Milestones go to every active employee of the company.
 - Each event carries a **uid built from its HR record** (`hr-holiday-<list>-<date>`,
   `hr-birthday-<employee>`, `hr-anniversary-<employee>`). A run therefore adds what is missing,
   rewrites what changed, and removes what HR no longer has — including for an employee who left.
@@ -48,7 +51,7 @@ list, and optional company-wide birthday and work anniversary calendars, kept in
 - **A share goes only to a person HR named:** an address must match exactly, and a group is never
   shared with, since that would reach everyone in it.
 - **Milestones stay within a company:** with several companies on one HR site, each gets its own
-  birthdays and anniversaries calendar, as HR's own reminders do.
+  Milestones calendar, as HR's own reminders do.
 - **One run at a time**, held by a lock, whoever starts it.
 - What remains by design: anyone who can edit HR's employee records can give an address read
   access to that employee's holiday calendar; and what HR sends is taken as HR's word, short of

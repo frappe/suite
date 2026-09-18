@@ -19,18 +19,16 @@ class HRCalendarSyncSettings(Document):
         from frappe.types import DF
 
         account: DF.Link | None
-        anniversaries_calendar: DF.Data | None
-        anniversaries_color: DF.Color | None
         api_key: DF.Password | None
         api_secret: DF.Password | None
-        birthdays_calendar: DF.Data | None
-        birthdays_color: DF.Color | None
         enabled: DF.Check
         holiday_lists: DF.SmallText | None
         holidays_color: DF.Color | None
         hr_site_url: DF.Data | None
         last_error: DF.SmallText | None
         last_sync: DF.Datetime | None
+        milestones_calendar: DF.Data | None
+        milestones_color: DF.Color | None
         sync_anniversaries: DF.Check
         sync_birthdays: DF.Check
         sync_holidays: DF.Check
@@ -39,10 +37,8 @@ class HRCalendarSyncSettings(Document):
 
     def validate(self) -> None:
         self.hr_site_url = validate_site_url(self.hr_site_url)
-
-        if self.sync_birthdays and self.sync_anniversaries:
-            if (self.birthdays_calendar or "").strip() == (self.anniversaries_calendar or "").strip():
-                frappe.throw(_("Birthdays and work anniversaries need calendars of their own."))
+        # A calendar needs a name, and a settings document saved before the field existed has none.
+        self.milestones_calendar = (self.milestones_calendar or "").strip() or "Milestones"
 
         if not self.enabled:
             return

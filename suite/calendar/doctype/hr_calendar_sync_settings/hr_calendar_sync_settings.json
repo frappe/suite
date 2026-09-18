@@ -19,12 +19,10 @@
   "holidays_color",
   "milestones_section",
   "sync_birthdays",
-  "birthdays_calendar",
-  "birthdays_color",
-  "column_break_milestones",
   "sync_anniversaries",
-  "anniversaries_calendar",
-  "anniversaries_color",
+  "column_break_milestones",
+  "milestones_calendar",
+  "milestones_color",
   "status_section",
   "last_sync",
   "last_error",
@@ -103,34 +101,16 @@
    "label": "Holidays Colour"
   },
   {
+   "description": "Birthdays and work anniversaries share one calendar, for everyone in the company.",
    "fieldname": "milestones_section",
    "fieldtype": "Section Break",
    "label": "Milestones"
   },
   {
-   "description": "One calendar for the whole company. Birth dates are personal: switch this on only where everyone expects it.",
+   "description": "Birth dates are personal: switch this on only where everyone expects the whole company to see them.",
    "fieldname": "sync_birthdays",
    "fieldtype": "Check",
    "label": "Sync Birthdays"
-  },
-  {
-   "default": "Birthdays",
-   "depends_on": "sync_birthdays",
-   "fieldname": "birthdays_calendar",
-   "fieldtype": "Data",
-   "label": "Birthdays Calendar",
-   "mandatory_depends_on": "eval:doc.sync_birthdays"
-  },
-  {
-   "default": "#e34aa6",
-   "depends_on": "sync_birthdays",
-   "fieldname": "birthdays_color",
-   "fieldtype": "Color",
-   "label": "Birthdays Colour"
-  },
-  {
-   "fieldname": "column_break_milestones",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "sync_anniversaries",
@@ -138,19 +118,23 @@
    "label": "Sync Work Anniversaries"
   },
   {
-   "default": "Work Anniversaries",
-   "depends_on": "sync_anniversaries",
-   "fieldname": "anniversaries_calendar",
-   "fieldtype": "Data",
-   "label": "Work Anniversaries Calendar",
-   "mandatory_depends_on": "eval:doc.sync_anniversaries"
+   "fieldname": "column_break_milestones",
+   "fieldtype": "Column Break"
   },
   {
-   "default": "#6846e3",
-   "depends_on": "sync_anniversaries",
-   "fieldname": "anniversaries_color",
+   "default": "Milestones",
+   "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
+   "fieldname": "milestones_calendar",
+   "fieldtype": "Data",
+   "label": "Milestones Calendar",
+   "mandatory_depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries"
+  },
+  {
+   "default": "#e34aa6",
+   "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
+   "fieldname": "milestones_color",
    "fieldtype": "Color",
-   "label": "Work Anniversaries Colour"
+   "label": "Milestones Colour"
   },
   {
    "fieldname": "status_section",
