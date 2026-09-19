@@ -95,6 +95,16 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Upload, restore and batch outcomes](tickets/007-upload-restore-and-batch-outcomes.md) —
+  Drive owns the upload queue and tracker over the platform `upload()`.
+  Uploads survive area changes and resume after reload (IndexedDB record,
+  re-pick check, sha256 on resume). The Files rail item shows queue
+  progress everywhere. Collisions are caught at `create_upload` before
+  bytes move; folder upload has no merge; a browser replace keeps no old
+  version. Restore opens a same-root picker on a new
+  `DriveRestoreDestinationRequired` error. Batch purge and Empty trash get
+  routes; batch outcomes have no Retry button. Six Drive asks recorded.
+
 - [Frontend module layout and import boundaries](tickets/013-frontend-module-layout-and-boundaries.md) —
   Drive owns separate `files` and deletable `legacy` subtrees; eight decided
   platform modules move on day one behind compatibility shims. Package-root
@@ -190,6 +200,8 @@ Scope, decided 2026-09-11:
 - PWA scoping (Mail is installable today) and Sentry ownership.
 - Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K is not among
   them: ticket 012 ruled the palette out of scope.
+- Where the quota and storage breakdown surface lives: settings, the Files
+  panel, or both. Ticket 007 shows quota only when an upload fails.
 - Named Meet rooms: persistent rooms with a handle and a cadence, as the base
   prototype's Rooms dropdown imagined them. No doctype, no list route and no
   such concept in Meet today. A Meet-program idea this effort surfaced.
@@ -209,3 +221,8 @@ Scope, decided 2026-09-11:
 - Drive backend behavior changes. The Drive spec owns them. A new need is
   recorded as an ask.
 - Site-wide API hardening. Already listed on the Drive map.
+- One storage pool for Mail and Meet bytes: Meet recordings as Drive Nodes,
+  Mail usage read from Stalwart into the quota, and the Mail composer's
+  orphaned `File` rows. Findings are in
+  [Upload, restore and batch outcomes](tickets/007-upload-restore-and-batch-outcomes.md);
+  the Drive, Mail and Meet programs own them.

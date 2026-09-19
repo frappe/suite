@@ -59,6 +59,16 @@ A computed Files listing such as Shared with me, Recent, Starred, or Trash. It
 does not own nodes and is not a Drive Root or folder.
 _Avoid_: Smart folder, Root
 
+**Upload queue**:
+The Drive-owned list of browser uploads in one tab. It survives folder and
+area changes, and its progress shows on the Files rail item.
+_Avoid_: Upload manager, Uploader, Upload store
+
+**Interrupted upload**:
+An upload whose tab reloaded or closed before it finished. It can resume for
+24 hours once the user gives the same file back.
+_Avoid_: Paused upload, Failed upload
+
 **Document**:
 A content node (Writer, Sheets, Slides, or a previewable file) opened in the
 content pane with the panel hidden.

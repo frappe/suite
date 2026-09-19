@@ -30,3 +30,8 @@ Settle:
 
 Inputs: Drive spec §4.6, §6.2, §6.3, §6.7, §11.2; ticket 008's resolution;
 `frontend/src/apps/drive/pages/Signup.vue` and the public pages.
+
+Handed from [Upload, restore and batch outcomes](007-upload-restore-and-batch-outcomes.md)
+(2026-09-19): link uploads use the same Drive upload queue. Decide whether
+a Guest surface shows the tracker, and whether resume after reload applies
+to link visitors. `create_upload` already requires a bound link for Guest.
