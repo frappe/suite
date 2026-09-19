@@ -1022,20 +1022,23 @@ const unreadPrefix = computed(() =>
 
 usePageMeta(() => appPageMeta(`${unreadPrefix.value} ${__('All Inboxes')}`, 'Mail'))
 
-// Keep the merged list fresh: poll periodically and react to new-mail push events (which can arrive
-// for any account). Both merge the newest window at the top, preserving scroll.
+// Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
+// on another device — which can arrive for any account. Either way the newest window is merged into
+// the list, preserving scroll.
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const onNewMail = () => refreshThreads()
 
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
 	socket.on('new_mail_created', onNewMail)
+	socket.on('mail_changed', onNewMail)
 	window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	socket.off('new_mail_created', onNewMail)
+	socket.off('mail_changed', onNewMail)
 	window.removeEventListener('keydown', handleKeyDown)
 })
 </script>

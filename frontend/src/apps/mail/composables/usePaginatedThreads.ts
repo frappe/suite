@@ -57,6 +57,11 @@ export const mergeByReceivedAt = (fresh: Thread[], loaded: Thread[]): Thread[] =
  * again) without ever arriving as a new one. Rows past the window keep their loaded copy — the window
  * says nothing about them.
  *
+ * A row the window should have held but doesn't is gone — deleted or moved from another device — and
+ * is dropped: one newer than the window's last row, or any missing row when the window is the whole
+ * list (`windowComplete`). A row tied with the last one may simply have been cut off, so it stays.
+ * `keep` spares rows the server doesn't know about yet (an undo still in flight).
+ *
  * The result is re-sorted: a thread that just got a reply carries a newer received_at than the loaded
  * list was ordered by, and belongs further up. The sort is stable, so untouched rows keep their order.
  */
@@ -64,9 +69,17 @@ export const refreshLoadedThreads = (
 	loaded: Thread[],
 	freshWindow: Thread[],
 	threadKey: (thread: Thread) => string,
+	windowComplete = false,
+	keep: (key: string) => boolean = () => false,
 ): Thread[] => {
 	const updated = new Map(freshWindow.map((thread) => [threadKey(thread), thread]))
+	const windowEnd = freshWindow.at(-1)?.received_at
+	const isGone = (thread: Thread) =>
+		!updated.has(threadKey(thread)) &&
+		!keep(threadKey(thread)) &&
+		(windowComplete || (windowEnd !== undefined && thread.received_at > windowEnd))
 	return loaded
+		.filter((thread) => !isGone(thread))
 		.map((thread) => updated.get(threadKey(thread)) ?? thread)
 		.sort((a, b) => (a.received_at === b.received_at ? 0 : a.received_at > b.received_at ? -1 : 1))
 }
@@ -131,6 +144,9 @@ export const usePaginatedThreads = ({
 	// Rows optimistically removed by an action whose request is still in flight (see
 	// REMOVAL_SUPPRESSION_MS). The merges below skip them.
 	const recentlyRemoved = new Set<string>()
+	// The mirror image: rows put back by an undo whose request is still in flight. The server doesn't
+	// return them yet, so a refresh in that window would take them for deleted elsewhere.
+	const recentlyRestored = new Set<string>()
 
 	const list = () => resource().data ?? []
 
@@ -236,7 +252,14 @@ export const usePaginatedThreads = ({
 			// Threads already loaded are filtered out of `fresh` above, so a reply into one of them
 			// would be dropped on the floor — re-derive those rows from the window instead. Keeping
 			// the snapshot's copy is what left replies invisible until a hard reload.
-			const loaded = refreshLoadedThreads(refreshSnapshot, freshWindow, threadKey)
+			// The same pass drops rows the window shows to be gone (deleted or moved on another device).
+			const loaded = refreshLoadedThreads(
+				refreshSnapshot,
+				freshWindow,
+				threadKey,
+				!hasMore.value,
+				(key) => recentlyRestored.has(key),
+			)
 			// Date-merge rather than blind prepend. A prepend assumes everything in the newest window
 			// that isn't loaded yet is newer than everything that is — true for one account, false for
 			// the merged list, where a second account's newest mail can be older than the first's oldest
@@ -398,8 +421,16 @@ export const usePaginatedThreads = ({
 			setTimeout(() => recentlyRemoved.delete(key), REMOVAL_SUPPRESSION_MS)
 		})
 
-	/** Lift the suppression: the rows are back (a removal failed, or was undone), so they must show. */
-	const unsuppressRemoved = (keys: string[]) => keys.forEach((key) => recentlyRemoved.delete(key))
+	/**
+	 * Lift the suppression: the rows are back (a removal failed, or was undone), so they must show —
+	 * and must survive a refresh until the server has them back too.
+	 */
+	const unsuppressRemoved = (keys: string[]) =>
+		keys.forEach((key) => {
+			recentlyRemoved.delete(key)
+			recentlyRestored.add(key)
+			setTimeout(() => recentlyRestored.delete(key), REMOVAL_SUPPRESSION_MS)
+		})
 
 	return {
 		container,

@@ -96,6 +96,39 @@ class FetchChanges(unittest.TestCase):
         update_sync_state.assert_not_called()
 
 
+class FetchChangesRealtime(unittest.TestCase):
+    """``fetch_changes`` — a change made on one device reaches the user's other open clients."""
+
+    def _events(self, **changes: list[str]) -> list[mock.call]:
+        result = {"created": [], "updated": [], "destroyed": [], "newState": "s2", "hasMoreChanges": False}
+        result.update(changes)
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_connection"),
+            mock.patch.object(mail_message, "MailboxService"),
+            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "_remove_cached_messages"),
+            mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
+        ):
+            email_service.return_value.changes = mock.MagicMock(return_value=result)
+            mail_message.fetch_changes("user@example.test", "f7", email_state="s2")
+
+        return publish_realtime.call_args_list
+
+    def test_deleted_mail_is_announced_to_the_user(self):
+        self.assertEqual(
+            self._events(destroyed=["e1"]), [mock.call("mail_changed", user="user@example.test")]
+        )
+
+    def test_updated_mail_is_announced_to_the_user(self):
+        self.assertEqual(self._events(updated=["e1"]), [mock.call("mail_changed", user="user@example.test")])
+
+    def test_nothing_is_announced_when_nothing_changed(self):
+        self.assertEqual(self._events(), [])
+
+
 class FetchChangesInit(unittest.TestCase):
     """``fetch_changes`` with no stored sync state — how the state gets seeded.
 

@@ -1332,6 +1332,10 @@ const pollForChanges = async () => {
 	if (mailboxObj.value?.total_emails !== prevTotal) refreshThreads(false)
 }
 
+// Mail was read, moved or deleted somewhere else (another device, another tab). Which mailboxes it
+// touched isn't known — a deleted mail can no longer be asked — so every list refreshes.
+const onMailChanged = () => refreshThreads()
+
 onMounted(() => {
 	window.addEventListener('keydown', handleKeyDown)
 	window.addEventListener('keyup', handleKeyUp)
@@ -1340,6 +1344,7 @@ onMounted(() => {
 	socket.on('new_mail_created', (updatedMailboxes: string[]) => {
 		if (updatedMailboxes.includes(mailbox)) refreshThreads()
 	})
+	socket.on('mail_changed', onMailChanged)
 
 	socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
 		raiseToast(payload.message, payload.success ? 'success' : 'error'),
@@ -1354,6 +1359,7 @@ onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeyDown)
 	window.removeEventListener('keyup', handleKeyUp)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
+	socket.off('mail_changed', onMailChanged)
 	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
 	dropViewUndo()
 })

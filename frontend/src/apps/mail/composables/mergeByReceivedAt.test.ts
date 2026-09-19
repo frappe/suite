@@ -105,4 +105,47 @@ describe('refreshLoadedThreads', () => {
 		expect(result[0]).toBe(updatedA)
 		expect(result[1]).toBe(rowB)
 	})
+
+	// Deleted (or moved out) on another device: the window covers the row's date and doesn't hold it.
+	it('drops a row the window should have held', () => {
+		const loaded = [
+			thread('a', '2026-07-30 10:00:00'),
+			thread('b', '2026-07-29 10:00:00'),
+			thread('c', '2026-07-28 10:00:00'),
+		]
+		const freshWindow = [thread('a', '2026-07-30 10:00:00'), thread('c', '2026-07-28 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, freshWindow, key))).toEqual(['a', 'c'])
+	})
+
+	// Same timestamp as the window's last row: the page boundary may have cut it off, so it can't be
+	// called gone.
+	it('keeps a missing row tied with the end of the window', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('b', '2026-07-30 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [loaded[0]], key))).toEqual(['a', 'b'])
+	})
+
+	it('drops every missing row when the window is the whole list', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('old', '2026-06-01 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [loaded[0]], key, true))).toEqual(['a'])
+		expect(refreshLoadedThreads(loaded, [], key, true)).toEqual([])
+	})
+
+	// An empty window that isn't known to be complete says nothing about the loaded rows.
+	it('keeps everything on an empty window', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [], key))).toEqual(['a'])
+	})
+
+	// An undo puts the row back before the server has it, so the window legitimately lacks it.
+	it('spares a missing row the caller vouches for', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('b', '2026-07-29 10:00:00')]
+
+		const result = refreshLoadedThreads(loaded, [loaded[1]], key, true, (k) => k === 'a')
+
+		expect(ids(result)).toEqual(['a', 'b'])
+	})
 })

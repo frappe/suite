@@ -1525,6 +1525,11 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
             logger.info("messages-deleted", count=len(destroyed_ids))
             _remove_cached_messages(account, destroyed_ids)
 
+        if updated_ids or destroyed_ids:
+            # Read, moved or deleted on another device: no new mail, but the lists this user has
+            # open elsewhere are stale.
+            frappe.publish_realtime("mail_changed", user=user)
+
         new_state = result["newState"]
 
         ctx["new_state"] = new_state
