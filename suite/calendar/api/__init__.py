@@ -25,6 +25,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
+from suite.calendar.hr.sync import celebrations_calendars
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -129,12 +130,20 @@ def get_calendars_with_shared(account: str) -> list[dict]:
     # Reminders are seeded on the account's own calendars only: a shared one isn't the user's to
     # change, and its account's seeded mark is shared by everyone who can see it.
     ensure_default_alerts(account)
-    return _with_shared(
+    rows = _with_shared(
         account,
         lambda each, calendar_ids: [
             row for row in _calendar_rows(each) if calendar_ids is None or row["id"] in calendar_ids
         ],
     )
+
+    # Shown or hidden is the reader's own choice either way; this is only where it starts. Said
+    # of a calendar shared read-only alone: its owner's choice is the calendar's own `isVisible`.
+    hidden = celebrations_calendars()
+    for row in rows:
+        if row["name"] in hidden and not row["may_write_all"]:
+            row["default_hidden"] = 1
+    return rows
 
 
 @frappe.whitelist()
