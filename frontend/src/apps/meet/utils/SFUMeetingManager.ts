@@ -368,6 +368,14 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		return this.connectionManager.joinRoom(userData, mediaState);
 	}
 
+	recoverParticipantConnection(reason: string): Promise<boolean> {
+		return this.connectionManager.escalateRecovery({
+			scope: "signaling",
+			direction: "both",
+			reason,
+		});
+	}
+
 	reconcileExpectedMedia(): Promise<void> {
 		return this.connectionManager.reconcileExpectedMedia();
 	}

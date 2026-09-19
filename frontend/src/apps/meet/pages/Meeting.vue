@@ -118,7 +118,7 @@
 				>
 					<div class="flex flex-col min-h-0 relative">
 						<!-- Video area -->
-						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white">
+						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white relative">
 							<div
 								v-if="e2eeJoinPendingMessage"
 								class="flex h-full flex-col items-center justify-center px-4 py-12 text-center"
@@ -140,6 +140,13 @@
 								</Badge>
 							</div>
 							<MeetingLayout v-else @open-people-panel="togglePeople" />
+							<CaptionOverlay
+								v-if="!e2eeJoinPendingMessage"
+								:is-captions-enabled="isCaptionsEnabled"
+								:lines="captionLines"
+								:participants="participantStore.participants"
+								:current-user="currentUser.currentUser.value"
+							/>
 						</div>
 					</div>
 
@@ -224,6 +231,8 @@
 						:statsVisible="showStatsForNerds"
 						:isHandRaised="isHandRaised"
 						:isReactionPickerOpen="isReactionPickerOpen"
+						:isCaptionsEnabled="isCaptionsEnabled"
+						:areCaptionsAvailable="areCaptionsAvailable"
 						@update:isReactionPickerOpen="isReactionPickerOpen = $event"
 						:meetingId="meetingId"
 						:meetingTitle="meetingTitle"
@@ -241,6 +250,7 @@
 						@toggle-screen-share="mediaControls.toggleScreenShare()"
 						@toggle-fullscreen="toggleFullscreen"
 						@toggle-raise-hand="raiseHand.toggleRaiseHand()"
+						@toggle-captions="toggleCaptions"
 						@report-problem="handleReportProblem"
 						@toggle-stats="toggleStatsForNerds"
 						@end-call="confirmAndEndCall"
@@ -304,6 +314,7 @@ import {
 import { submit } from "../utils/request";
 import { useRootStore } from "@/stores/root";
 
+import CaptionOverlay from "../components/CaptionOverlay.vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import JoinRequestNotifications from "../components/JoinRequestNotifications.vue";
 import LobbyOverlay from "../components/LobbyOverlay.vue";
@@ -319,6 +330,7 @@ import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
 import StatsForNerdsOverlay from "../components/StatsForNerdsOverlay.vue";
 import { useBackgroundEffects } from "../composables/useBackgroundEffects";
+import { useCaptions } from "../composables/useCaptions";
 import { useChat } from "../composables/useChat";
 import { useChatStore } from "../composables/useChatStore";
 import { useConnectionState } from "../composables/useConnectionState";
@@ -674,6 +686,8 @@ const sfuConnection = useSFUConnection({
 	onActiveSpeakerChanged: (participantIds: string[]) => {
 		participantStore.activeSpeakerIds = participantIds;
 	},
+	onRoomRejoined: () => void captions.restoreCaptionSubscription(),
+	onE2EERequired: () => captions.disableCaptionsForE2EE(),
 	onRecordingState: recording.syncState,
 	onRecordingEnabled: recording.setGlobalEnabled,
 	onCohostPromoted: () => meetingDoc.reload(),
@@ -764,6 +778,16 @@ const raiseHand = useRaiseHand({
 	currentUser,
 	sfuClient: sfuConnection.sfuClient,
 });
+
+const captions = useCaptions({
+	sfuClient: sfuConnection.sfuClient,
+});
+const {
+	isAvailable: areCaptionsAvailable,
+	isCaptionsEnabled,
+	captionLines,
+	toggleCaptions,
+} = captions;
 
 // --- Lobby ---
 const lobby = useLobby({
@@ -1145,6 +1169,7 @@ onMounted(async () => {
 	lobbyStore.$reset();
 	reactionStore.$reset();
 	raiseHandStore.$reset();
+	captions.reset();
 	gridLayout.resetGridLayout();
 	currentUser.resetCurrentUser();
 	e2eeState.reset();

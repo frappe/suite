@@ -42,7 +42,8 @@
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],
-      "project": ["src/**/*.ts", "scripts/**/*.js"]
+      "project": ["src/**/*.ts", "scripts/**/*.js"],
+      "ignoreBinaries": ["ffmpeg"]
     },
     "suite/meet/recorder-server": {
       "entry": ["src/integration/*.integration.ts"],

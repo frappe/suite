@@ -99,6 +99,7 @@ export const loggers = {
 	socketHandler: new Logger('SocketHandler'),
 	authManager: new Logger('AuthManager'),
 	server: new Logger('Server'),
+	stt: new Logger('STT'),
 	telemetry: new Logger('Telemetry'),
 } as const;
 

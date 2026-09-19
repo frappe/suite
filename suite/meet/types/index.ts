@@ -472,3 +472,22 @@ export interface RaiseHandRequest {
 export interface LeaveRoomRequest {
 	roomId?: string;
 }
+
+export interface TranscriptSegment {
+	participantId: string;
+	participantName?: string;
+	text: string;
+	isFinal: boolean;
+	timestamp: string;
+	segmentStart: number;
+	segmentEnd: number;
+}
+
+export interface SttSegmentEvent {
+	roomId: string;
+	segment: TranscriptSegment;
+}
+
+export interface SttToggleRequest {
+	enabled: boolean;
+}
