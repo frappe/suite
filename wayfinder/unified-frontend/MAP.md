@@ -95,6 +95,14 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Sharing dialog and link credentials](tickets/008-sharing-dialog-and-link-credentials.md) —
+  The Drive client owns link codes: nodes reached through a link are tagged
+  with its code, the store is `localStorage` with eviction and clear on sign
+  out, and reads over 20 codes split while writes refuse. The dialog has
+  People, General access, Share links and a folded inherited part; Remove on
+  local rows, Deny on inherited ones; roles per principal table. Outsiders
+  get their own emailed link. Seven Drive asks and one Suite people search.
+
 - [Upload, restore and batch outcomes](tickets/007-upload-restore-and-batch-outcomes.md) —
   Drive owns the upload queue and tracker over the platform `upload()`.
   Uploads survive area changes and resume after reload (IndexedDB record,
