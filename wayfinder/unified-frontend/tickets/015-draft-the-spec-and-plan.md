@@ -4,7 +4,7 @@ title: Draft the spec and plan
 label: wayfinder:task
 status: open
 assignee:
-blocked-by: [001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012, 013, 014]
+blocked-by: [001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012, 013, 014, 016]
 ---
 
 ## Question

@@ -84,3 +84,12 @@ Resolved with the user on 2026-09-11. The route grammar is:
   without a Suite session whether access comes from a link or `$PUBLIC`. A
   signed-in visitor gets the Suite shell. The shell does not infer presentation
   from URL prefixes, and new routes do not add independent layout booleans.
+
+### Amended 2026-09-21 by ticket 010
+
+- The rail is Home, Files, Mail, Calendar, Meet. Meet is an area; `/meet` is
+  its route and it has no capability gate.
+- The call at `/meet/:meetingId` stays outside the shell. `/meet/audio-test`
+  sits inside it.
+- An app's own layout flags below its layout component, such as Mail's
+  `noLayout` and `isLogin`, stay. This ticket governs shell metadata.

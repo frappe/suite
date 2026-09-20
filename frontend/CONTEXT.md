@@ -1,7 +1,7 @@
 # Suite shell
 
 The Suite shell is the frame every product renders inside: one rail, one
-contextual panel, one content pane. It is being charted at
+area sidebar, one content pane. It is being charted at
 [`wayfinder/unified-frontend/MAP.md`](../wayfinder/unified-frontend/MAP.md).
 Layout authority is the base prototype named there. Module boundaries follow
 [`ARCHITECTURE.md`](../ARCHITECTURE.md) rule 8.
@@ -9,8 +9,8 @@ Layout authority is the base prototype named there. Module boundaries follow
 ## Language
 
 **Shell**:
-The frame around every area: rail, contextual panel, content pane, and on
-mobile the bottom nav and bottom sheet.
+The frame around every area: rail, content pane, and on mobile the bottom
+nav. The area sidebar belongs to the page, not the shell.
 _Avoid_: Layout, App container, Launcher
 
 **Rail**:
@@ -19,20 +19,20 @@ Settings and the account.
 _Avoid_: Sidebar, Nav bar, App switcher
 
 **Area**:
-One rail destination with its own routes, panel body and content. Home,
-Files, Mail and Calendar are areas. An open document is not an area; it is
+One rail destination with its own routes and content. Home, Files, Mail,
+Calendar and Meet are areas. An open document is not an area; it is
 where the shell puts a document.
 _Avoid_: App, Product, Module (those name code ownership, not navigation)
 
-**Contextual panel**:
-The column beside the rail whose content follows the active area. Hidden
-while a document is open. On mobile it is the bottom sheet.
-_Avoid_: Sidebar, Drawer, Left nav
+**Area sidebar**:
+The column beside the rail. The page draws it, not the shell, so a page can
+have one, none or its own. On mobile it is the bottom sheet.
+_Avoid_: Contextual panel, Drawer, Left nav
 
 **Content pane**:
 The main region an area or an open document renders into. Home and Files
-scroll it as a page; Mail, Calendar and an open document manage their own
-scrolling.
+scroll it as a page; Mail, Calendar, Meet and an open document manage their
+own scrolling.
 _Avoid_: Main, Page, Viewport
 
 **Files**:
@@ -110,13 +110,14 @@ _Avoid_: Shell endpoint, Shared app data
   "Drive Root", "Shared Root" or "Personal Root" for the Drive meaning.
 - **App**: `apps/registry.ts` and `SUITE_APPS` mean a product's code and
   route prefix. In the shell's language a product is an Area only if it has a
-  rail item. Writer, Sheets, Slides and Meet are products without an area.
+  rail item. Writer, Sheets and Slides are products without an area.
 
 ## Shell mount seam
 
-The route metadata selects one of three boxes. `scroll: 'shell'` lets the
+An in-shell route gets the rail and one box. `scroll: 'shell'` lets the
 frappe-ui shell viewport scroll the whole page. `scroll: 'content'` gives the
-area a fixed `h-full min-h-0 min-w-0 overflow-hidden` box so it owns scrolling.
-`frame: 'document'` removes the contextual panel and supplies that same full
-width and height box. A fixed-size canvas can mount inside it without growing
-any shell ancestor. The desktop and mobile shells use this seam unchanged.
+page a fixed `h-full min-h-0 min-w-0 overflow-hidden` box so it owns
+scrolling. A fixed-size canvas can mount inside it without growing any shell
+ancestor. A page adds its own Area sidebar inside the box with the platform's
+`<AreaSidebar>`. `frame: 'none'` puts the page outside the shell: the Meet
+call and Mail's sign-in pages.

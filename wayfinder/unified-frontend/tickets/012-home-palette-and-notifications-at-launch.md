@@ -159,3 +159,10 @@ a separate effort together with the palette that fronts it.
 | Drive | notification unread-count route |
 | Calendar | typed `conferencing` field on the event shape |
 | Calendar | optional `account`, omitted means all the caller's accounts |
+
+### Amended 2026-09-21 by ticket 010
+
+- Meet has an area and a rail icon, so the Home Meet control is one of two
+  entry points. Home stays the launcher; `/meet` is the fuller view.
+- `AreaDefinition` is no longer frozen. It loses `loadPanel`, because the
+  shell no longer owns a panel.

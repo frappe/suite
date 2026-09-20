@@ -141,3 +141,19 @@ route rules and badges to the app; those are suite wrappers under `shell/`.
   safe-area behavior but never interprets product actions or branches on a
   product id. Ticket 009 resolves document title bars as part of each
   product-owned document surface.
+
+### Amended 2026-09-21 by ticket 010
+
+The shell no longer owns a contextual panel.
+
+- Every in-shell route gets the rail and one full-height box. A page draws
+  its own sidebar with the platform's `<AreaSidebar>` component.
+- `AreaDefinition` loses `loadPanel`: `id`, `label`, `icon`, `to`,
+  `loadRoutes`, `requires`.
+- `frame` says in the shell or outside it. Outside is the Meet call and
+  Mail's sign-in pages.
+- The shell's phone sheet moves into `<AreaSidebar>`. The shell's bottom nav
+  gains an account entry.
+- Reason: a per-route sidebar needs no new contract for two sidebars, or for
+  a sidebar on one child route. See ticket 010, "The shell gives a rail and a
+  full box".

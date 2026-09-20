@@ -95,6 +95,16 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Mail, Meet and Calendar adoption contract](tickets/010-mail-meet-calendar-adoption-contract.md) —
+  The shell gives a rail and a full box; a page draws its own sidebar through
+  the platform's `<AreaSidebar>`, and `AreaDefinition` loses `loadPanel`.
+  Mail and Calendar keep their sidebars and their phone bars and drop the
+  app switcher, Settings, Theme and Log out. Meet becomes an area with a rail
+  icon and moves its page in as it is. One Suite PWA, registered by the
+  platform. Four shell-breaking fixes before the switch; heights, the 17
+  Calendar imports and per-app catalogs stay as debt. All three flip
+  together. Amends tickets 001, 002 and 012.
+
 - [Sharing dialog and link credentials](tickets/008-sharing-dialog-and-link-credentials.md) —
   The Drive client owns link codes: nodes reached through a link are tagged
   with its code, the store is `localStorage` with eviction and clear on sign
@@ -196,16 +206,15 @@ Scope, decided 2026-09-11:
 
 - Icon source. The prototype uses frappe-ui's lucide sprite; CLAUDE.md
   prefers the Figma set. Decide at the first styling ticket.
-- Settings and account surfaces behind the rail: today's
-  `SuiteSettingsDialog`, per-app settings bodies, the Desk switcher for
-  system users.
 - Notifications: the shape of a cross-product feed. Ticket 012 ships a
   Drive-only bell and names the joined feed as the planned upgrade.
 - The mounting spike must prove the shared full-pane box with Writer, the
   Sheets canvas, and the Slides stage on desktop and mobile; ticket 009 assigns
   all internal geometry, panels and presence presentation to each product.
 - Mobile behaviour per area beyond the shell chrome.
-- PWA scoping (Mail is installable today) and Sentry ownership.
+- Sentry ownership. PWA scoping is decided under ticket 010: one Suite PWA.
+- Recordings and past meetings in the Meet area. Neither has a route or a
+  list endpoint today. A Meet-program ask before the area can show them.
 - Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K is not among
   them: ticket 012 ruled the palette out of scope.
 - Where the quota and storage breakdown surface lives: settings, the Files

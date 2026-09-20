@@ -11,7 +11,7 @@ This file fixes the seams the packages share so they can run in parallel.
 ```text
 frontend/src/
 ├── composition/        # appRegistry, routes, documentRegistry, DocumentHost, Home
-├── shell/              # rail, contextual panel, content pane, mobile nav, sheet
+├── shell/              # rail, content pane, mobile nav
 ├── platform/           # session, transport, server-state, realtime,
 │                       # translation, theme, page-meta, feedback
 └── apps/
@@ -54,7 +54,7 @@ it through a slot; the shell itself never imports a product.
 
 ```ts
 interface RouteMeta {
-  area?: string                       // rail + panel context
+  area?: string                       // rail context
   frame: 'area' | 'document' | 'none'
   scroll: 'shell' | 'content'
   allowGuest?: boolean
@@ -70,7 +70,7 @@ explains it is unavailable), `/` -> `/home`. Legacy `/drive/**`, `/writer/**`,
 `/sheets/**`, `/slides/**`, `/mail/**`, `/calendar/**`, `/meet/**`, `/suite`
 keep their current placeholders.
 
-### Area definition (ticket 002)
+### Area definition (ticket 002, amended by ticket 010)
 
 ```ts
 type PlatformCapability = 'jmap' | 'systemManager'
@@ -80,10 +80,16 @@ interface AreaDefinition {
   icon: Component
   to: string                           // canonical entry route
   loadRoutes: () => Promise<{ routes: RouteRecordRaw[] }>
-  loadPanel: () => Promise<Component>
   requires?: PlatformCapability[]
 }
 ```
+
+Ticket 010 removed `loadPanel`. The shell gives the rail and one full box.
+A page draws its own sidebar with the platform's `<AreaSidebar>`. Rework due:
+delete `shell/ContextualPanel.vue` and the panel branch in `ShellLayout.vue`,
+move `HomePanel.vue` and `FilesPanel.vue` inside their pages, move the phone
+sheet into `<AreaSidebar>`, and add the account entry to the shell's phone
+nav.
 
 `composition/appRegistry.ts` owns order, capability filtering and the badge
 source per area (`useInboxSummary` for Mail). Nothing else is on the interface.
