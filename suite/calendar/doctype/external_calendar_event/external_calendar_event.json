@@ -13,7 +13,6 @@
   "ends_on",
   "all_day",
   "repeats",
-  "time_zone",
   "month_day"
  ],
  "fields": [
@@ -78,12 +77,6 @@
    "fieldtype": "Select",
    "label": "Repeats",
    "options": "\nYearly"
-  },
-  {
-   "description": "The zone a timed event is held in. All-day events have none.",
-   "fieldname": "time_zone",
-   "fieldtype": "Data",
-   "label": "Time Zone"
   },
   {
    "description": "The month and day a yearly repeat falls on, as MM-DD, so a window can ask for it.",

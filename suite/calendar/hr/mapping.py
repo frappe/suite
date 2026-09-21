@@ -6,15 +6,10 @@ built from the HR record it came from, which is how a later run finds the event 
 and updates or removes it instead of adding a second one.
 """
 
-import re
 from datetime import date, timedelta
 
-
-def strip_html(value: str | None) -> str:
-    """HR stores a holiday's name as rich text; a calendar shows plain text."""
-
-    text = re.sub(r"<[^>]+>", " ", value or "")
-    return re.sub(r"\s+", " ", text).strip()
+from suite.calendar.external import yearly_occurrence
+from suite.utils import convert_html_to_text
 
 
 def holiday_events(holiday_list: str, holidays: list[dict]) -> list[dict]:
@@ -30,16 +25,18 @@ def holiday_events(holiday_list: str, holidays: list[dict]) -> list[dict]:
         events.append(
             {
                 "uid": f"hr-holiday-{holiday_list}-{day}",
-                "title": strip_html(holiday.get("description")) or "Holiday",
+                "title": convert_html_to_text(holiday.get("description")) or "Holiday",
                 **_all_day(day),
             }
         )
     return events
 
 
-def birthday_events(employees: list[dict], today: date) -> list[dict]:
+def birthday_events(employees: list[dict]) -> list[dict]:
     """A birthday each year, without the year: whose it is belongs on a calendar, their age
-    does not. Anchored in the current year so the series starts where the calendar is."""
+    does not. Anchored on the day itself, which never moves — the store draws the day in each
+    year the reader looks at, so an anchor that followed the calendar would rewrite every
+    birthday each January for nothing."""
 
     events = []
     for employee in employees:
@@ -54,18 +51,18 @@ def birthday_events(employees: list[dict], today: date) -> list[dict]:
                 # The day they were born, not the day the series is anchored on: anchored in a
                 # year without a 29 February, a leap-day birthday is still a leap-day birthday.
                 "month_day": born[5:10],
-                **_all_day(_anniversary_of(born, today.year)),
+                **_all_day(born),
             }
         )
     return events
 
 
-def anniversary_events(employees: list[dict], today: date) -> list[dict]:
+def anniversary_events(employees: list[dict]) -> list[dict]:
     """A work anniversary each year, from the first one. The years served can't be in the
     title — every occurrence of a repeating event shares one — so the day is the whole of it.
 
-    Someone who joined this year has their first anniversary next year, which is where the
-    series starts; anyone longer-serving gets this year's.
+    Anchored on that first anniversary, the year after they joined: before it there is nothing
+    to mark, and after it the store draws one a year.
     """
 
     events = []
@@ -73,7 +70,7 @@ def anniversary_events(employees: list[dict], today: date) -> list[dict]:
         joined = _day(employee.get("date_of_joining"))
         if not joined:
             continue
-        year = max(int(joined[:4]) + 1, today.year)
+        first = yearly_occurrence(joined[5:10], int(joined[:4]) + 1)
         events.append(
             {
                 "uid": f"hr-anniversary-{employee['name']}",
@@ -81,7 +78,7 @@ def anniversary_events(employees: list[dict], today: date) -> list[dict]:
                 "description": f"Joined on {_written_out(joined)}",
                 "repeats": "Yearly",
                 "month_day": joined[5:10],
-                **_all_day(_anniversary_of(joined, year)),
+                **_all_day(first.isoformat()),
             }
         )
     return events
@@ -112,16 +109,3 @@ def _written_out(day: str) -> str:
 
     value = date.fromisoformat(day)
     return f"{value.day} {value:%B} {value.year}"
-
-
-def _anniversary_of(day: str, year: int) -> str:
-    """The same day in the given year. A 29 February falls on the 28th in a year without one,
-    which is where a yearly rule would otherwise skip three years in four."""
-
-    month_day = str(day)[5:10]
-    if month_day == "02-29":
-        try:
-            date(year, 2, 29)
-        except ValueError:
-            month_day = "02-28"
-    return f"{year}-{month_day}"

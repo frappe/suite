@@ -11,7 +11,7 @@ from suite.calendar import external
 from suite.calendar.doctype.external_calendar.external_calendar import ExternalCalendar
 from suite.calendar.external import _differs, _occurrences, yearly_occurrence
 
-WANTED = {
+HOLIDAY = {
     "uid": "hr-holiday-India 2026-2026-10-02",
     "title": "Gandhi Jayanti",
     "starts_on": "2026-10-02 00:00:00",
@@ -19,14 +19,13 @@ WANTED = {
     "all_day": True,
 }
 STORED = frappe._dict(
-    uid=WANTED["uid"],
+    uid=HOLIDAY["uid"],
     title="Gandhi Jayanti",
     description=None,
     starts_on=datetime(2026, 10, 2),
     ends_on=datetime(2026, 10, 3),
     all_day=1,
     repeats="",
-    time_zone=None,
 )
 
 
@@ -35,16 +34,16 @@ class UnitTestEventDiffing(UnitTestCase):
     else is left alone, so a repeat run writes nothing."""
 
     def test_an_unchanged_event_is_left_alone(self):
-        self.assertFalse(_differs(STORED, WANTED))
+        self.assertFalse(_differs(STORED, HOLIDAY))
 
     def test_a_renamed_or_moved_holiday_is_rewritten(self):
-        self.assertTrue(_differs(STORED, {**WANTED, "title": "Gandhi Jayanthi"}))
-        self.assertTrue(_differs(STORED, {**WANTED, "starts_on": "2026-10-03 00:00:00"}))
-        self.assertTrue(_differs(STORED, {**WANTED, "description": "Now with a note"}))
+        self.assertTrue(_differs(STORED, {**HOLIDAY, "title": "Gandhi Jayanthi"}))
+        self.assertTrue(_differs(STORED, {**HOLIDAY, "starts_on": "2026-10-03 00:00:00"}))
+        self.assertTrue(_differs(STORED, {**HOLIDAY, "description": "Now with a note"}))
 
     def test_a_changed_repeat_is_rewritten(self):
-        self.assertTrue(_differs(STORED, {**WANTED, "repeats": "Yearly"}))
-        self.assertTrue(_differs(frappe._dict({**STORED, "repeats": "Yearly"}), WANTED))
+        self.assertTrue(_differs(STORED, {**HOLIDAY, "repeats": "Yearly"}))
+        self.assertTrue(_differs(frappe._dict({**STORED, "repeats": "Yearly"}), HOLIDAY))
 
 
 class UnitTestOccurrences(UnitTestCase):
@@ -158,15 +157,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         ).insert(ignore_permissions=True)
         return user.name
 
-    @property
-    def holiday(self) -> dict:
-        return {
-            "uid": "hr-holiday-India 2026-2026-10-02",
-            "title": "Gandhi Jayanti",
-            "starts_on": "2026-10-02 00:00:00",
-            "ends_on": "2026-10-03 00:00:00",
-            "all_day": True,
-        }
+    holiday = HOLIDAY
 
     @property
     def birthday(self) -> dict:

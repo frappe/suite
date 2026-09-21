@@ -9,7 +9,7 @@ from frappe.tests import UnitTestCase
 
 from suite.calendar.hr import source as hr_source
 from suite.calendar.hr import sync as hr_sync
-from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events, strip_html
+from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events
 from suite.calendar.hr.source import HRSource, validate_site_url
 from suite.calendar.hr.sync import _by_company
 
@@ -48,8 +48,12 @@ class UnitTestHolidayEvents(UnitTestCase):
         )
 
     def test_rich_text_reads_as_plain_text(self):
-        self.assertEqual(strip_html('<div class="ql-editor"><p>Diwali</p></div>'), "Diwali")
-        self.assertEqual(strip_html(None), "")
+        holidays = [
+            {"holiday_date": "2026-11-08", "description": '<div class="ql-editor"><p>Diwali</p></div>'},
+            {"holiday_date": "2026-12-25", "description": "Christmas &amp; New Year"},
+        ]
+        titles = [event["title"] for event in holiday_events("India 2026", holidays)]
+        self.assertEqual(titles, ["Diwali", "Christmas & New Year"])
 
     def test_a_holiday_with_no_name_is_still_a_holiday(self):
         [event] = holiday_events("India 2026", [{"holiday_date": "2026-10-02", "description": ""}])
@@ -58,31 +62,31 @@ class UnitTestHolidayEvents(UnitTestCase):
 
 class UnitTestMilestoneEvents(UnitTestCase):
     def test_a_birthday_repeats_yearly_without_its_year(self):
-        [event] = birthday_events([employee("EMP-1", date_of_birth="1990-07-09")], TODAY)
+        [event] = birthday_events([employee("EMP-1", date_of_birth="1990-07-09")])
         self.assertEqual(event["uid"], "hr-birthday-EMP-1")
         self.assertEqual(event["title"], "Akash Tom's birthday")
-        self.assertEqual(event["starts_on"], "2026-07-09 00:00:00")
+        # the day itself, which never moves: the store draws it in whichever year is looked at
+        self.assertEqual(event["starts_on"], "1990-07-09 00:00:00")
         self.assertEqual(event["repeats"], "Yearly")
 
-    def test_a_leap_day_birthday_lands_on_the_28th_in_other_years(self):
-        [event] = birthday_events([employee("EMP-1", date_of_birth="1992-02-29")], TODAY)
-        self.assertEqual(event["starts_on"], "2026-02-28 00:00:00")
-        # the day they were born, so a leap year still draws it on the 29th
+    def test_a_leap_day_birthday_keeps_the_day_it_falls_on(self):
+        [event] = birthday_events([employee("EMP-1", date_of_birth="1992-02-29")])
+        self.assertEqual(event["starts_on"], "1992-02-29 00:00:00")
+        # what the store repeats it by, so a year without a 29th draws it on the 28th and a
+        # year with one draws it on the 29th
         self.assertEqual(event["month_day"], "02-29")
-        [leap] = birthday_events([employee("EMP-1", date_of_birth="1992-02-29")], date(2028, 1, 1))
-        self.assertEqual(leap["starts_on"], "2028-02-29 00:00:00")
 
     def test_an_employee_without_a_birth_date_has_no_birthday(self):
-        self.assertEqual(birthday_events([employee("EMP-1")], TODAY), [])
+        self.assertEqual(birthday_events([employee("EMP-1")]), [])
 
     def test_an_anniversary_starts_at_the_first_one(self):
-        [event] = anniversary_events([employee("EMP-1", date_of_joining="2026-03-01")], TODAY)
+        [event] = anniversary_events([employee("EMP-1", date_of_joining="2026-03-01")])
         self.assertEqual(event["starts_on"], "2027-03-01 00:00:00")
         self.assertEqual(event["description"], "Joined on 1 March 2026")
 
-    def test_a_longer_serving_employee_has_the_current_years(self):
-        [event] = anniversary_events([employee("EMP-1", date_of_joining="2020-03-01")], TODAY)
-        self.assertEqual(event["starts_on"], "2026-03-01 00:00:00")
+    def test_a_longer_serving_employee_is_anchored_on_their_first_anniversary_too(self):
+        [event] = anniversary_events([employee("EMP-1", date_of_joining="2020-03-01")])
+        self.assertEqual(event["starts_on"], "2021-03-01 00:00:00")
         self.assertEqual(event["title"], "Akash Tom's work anniversary")
 
 
@@ -202,8 +206,8 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
     def test_a_date_that_is_not_one_is_skipped(self):
         holidays = [{"holiday_date": "2026-13-45", "description": "Nope"}, {"holiday_date": None}]
         self.assertEqual(holiday_events("India 2026", holidays), [])
-        self.assertEqual(birthday_events([employee("EMP-1", date_of_birth="soon")], TODAY), [])
-        self.assertEqual(anniversary_events([employee("EMP-1", date_of_joining="x")], TODAY), [])
+        self.assertEqual(birthday_events([employee("EMP-1", date_of_birth="soon")]), [])
+        self.assertEqual(anniversary_events([employee("EMP-1", date_of_joining="x")]), [])
 
     def test_milestones_stay_within_a_company(self):
         staff = [employee("EMP-1", company="Acme"), employee("EMP-2", company="Globex")]

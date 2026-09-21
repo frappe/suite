@@ -283,7 +283,13 @@ def _events_in_window(
 
 @frappe.whitelist()
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
-    """Fetches calendar events between from_date and to_date for the specified account."""
+    """Fetches calendar events between from_date and to_date for the specified account.
+
+    One account's own events. What mail and meet draw as what is coming up, where a holiday or
+    somebody's birthday is not the question being asked — the calendar app asks the `_with_shared`
+    endpoints below, which add the calendars shared with the user and the ones this site keeps
+    for them.
+    """
 
     return _calendar_events(account, from_date, to_date, time_zone)
 
@@ -346,22 +352,26 @@ def _event_density(
     own_emails: set[str],
     calendar_ids: list[str] | None = None,
 ) -> list[dict]:
-    # A decline gives the time back, so a declined event is not density.
     events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
 
-    return [
-        {
-            "start": event.get("start"),
-            "duration": event.get("duration"),
-            "time_zone": event.get("time_zone"),
-            "show_without_time": event.get("show_without_time"),
-            "calendars": [
-                cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")
-            ],
-            "is_declined": _declined_by_viewer(event, own_emails),
-        }
-        for event in events
-    ]
+    return [_density_row(event, own_emails) for event in events]
+
+
+def _density_row(event: dict, own_emails: set[str]) -> dict:
+    """What a tick on the mini month is made of, wherever the event came from.
+
+    A decline gives the time back, so a declined event is not density; an event with nobody on
+    it — a holiday, a birthday — is nobody's to decline.
+    """
+
+    return {
+        "start": event.get("start"),
+        "duration": event.get("duration"),
+        "time_zone": event.get("time_zone"),
+        "show_without_time": event.get("show_without_time"),
+        "calendars": [cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")],
+        "is_declined": _declined_by_viewer(event, own_emails),
+    }
 
 
 @frappe.whitelist()
@@ -379,19 +389,9 @@ def get_calendar_event_density_with_shared(
             each, from_date, to_date, time_zone, own_emails, calendar_ids
         ),
     )
-    # A holiday marks a day as much as a meeting does: the mini month ticks it too. Nothing here
-    # is anyone's to decline.
-    return rows + [
-        {
-            "start": event["start"],
-            "duration": event["duration"],
-            "time_zone": event["time_zone"],
-            "show_without_time": event["show_without_time"],
-            "calendars": [row["calendar"] for row in event["calendars"]],
-            "is_declined": False,
-        }
-        for event in external_events(frappe.session.user, from_date, to_date)
-    ]
+    # A holiday marks a day as much as a meeting does: the mini month ticks it too.
+    external = external_events(frappe.session.user, from_date, to_date)
+    return rows + [_density_row(event, own_emails) for event in external]
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:

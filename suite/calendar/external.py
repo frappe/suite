@@ -14,27 +14,23 @@ for what is on it, `replace_audience` for who sees it. Each replaces rather than
 is repeatable and what the source no longer has goes.
 """
 
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
+from uuid import uuid7
 
 import frappe
 from frappe.database.database import savepoint
 from frappe.utils import get_datetime, now_datetime
+from isodate import duration_isoformat
+
+from suite.utils.dt import utcnow
 
 # What an external calendar's `account` is called where the app expects one. Calendars and events
 # are addressed as `account|id` throughout the app; these have no mail account, so they say so.
 NAMESPACE = "external"
 
 # The fields a source states an event in, and so what a difference is measured on.
-EVENT_FIELDS = (
-    "title",
-    "description",
-    "starts_on",
-    "ends_on",
-    "all_day",
-    "repeats",
-    "time_zone",
-    "month_day",
-)
+EVENT_FIELDS = ("title", "description", "starts_on", "ends_on", "all_day", "repeats", "month_day")
 
 # A window is widened by a day at each end before it is read: an all-day event carries no zone,
 # and the reader's day may start before the window the browser asked in UTC. Which day it lands
@@ -84,10 +80,11 @@ def events_in_window(user: str, from_date: str, to_date: str) -> list[dict]:
     start = get_datetime(from_date) - WINDOW_MARGIN
     end = get_datetime(to_date) + WINDOW_MARGIN
 
+    stamp = utcnow()
     events = []
     for row in _rows_in_window(list(calendars), start, end):
         for day in _occurrences(row, start, end):
-            events.append(_event_row(calendars[row.calendar], row, day))
+            events.append(_event_row(calendars[row.calendar], row, day, stamp))
     return events
 
 
@@ -110,7 +107,7 @@ def _rows_in_window(calendars: list[str], start: datetime, end: datetime) -> lis
     """The stored events that can reach the window: those that run through it, and the yearly
     ones whose day falls in it, whatever year they were anchored in."""
 
-    fields = ["name", "calendar", "uid", "title", "description", "starts_on", "ends_on", "all_day"]
+    fields = ["name", "calendar", "uid", *EVENT_FIELDS]
     dated = frappe.get_all(
         "External Calendar Event",
         {
@@ -126,7 +123,7 @@ def _rows_in_window(calendars: list[str], start: datetime, end: datetime) -> lis
     # Asked for by day where the window is one a view asks for, which every index can answer.
     if (days := _days_between(start, end)) is not None:
         yearly_filters["month_day"] = ("in", days)
-    yearly = frappe.get_all("External Calendar Event", yearly_filters, [*fields, "repeats", "month_day"])
+    yearly = frappe.get_all("External Calendar Event", yearly_filters, fields)
 
     return dated + yearly
 
@@ -150,13 +147,13 @@ def _occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date
     """The days this event lands on inside the window."""
 
     first = get_datetime(row.starts_on)
-    if not row.get("repeats"):
+    if not row.repeats:
         return [first.date()]
 
     # The day the source named, which is not always the day it was anchored on: a 29 February
     # is stored against the 28th in a year without one, and must come back on the 29th in a
     # year with one.
-    month_day = row.get("month_day") or first.strftime("%m-%d")
+    month_day = row.month_day or first.strftime("%m-%d")
 
     days = []
     for year in range(start.year, end.year + 1):
@@ -180,7 +177,7 @@ def yearly_occurrence(month_day: str, year: int) -> date:
         return date(year, 2, 28)
 
 
-def _event_row(calendar: frappe._dict, row: frappe._dict, day: date) -> dict:
+def _event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str) -> dict:
     """One occurrence, in the shape the app reads events in.
 
     The fields an event carries on the mail server that these never have — participants, alerts,
@@ -191,7 +188,6 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date) -> dict:
     starts_on = get_datetime(row.starts_on)
     ends_on = get_datetime(row.ends_on) if row.ends_on else starts_on
     start = datetime.combine(day, starts_on.time())
-    stamp = now_datetime().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return {
         "name": f"{NAMESPACE}|{row.name}-{day:%Y%m%d}",
@@ -214,7 +210,7 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date) -> dict:
         "title": row.title or "",
         "start": start.strftime("%Y-%m-%dT%H:%M:%S"),
         "duration": _duration(ends_on - starts_on),
-        "time_zone": row.get("time_zone") or "",
+        "time_zone": "",
         "recurrence_id_time_zone": "",
         "recurrence_rule": "{}",
         "show_without_time": 1 if row.all_day else 0,
@@ -240,21 +236,12 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date) -> dict:
 
 
 def _duration(span: timedelta) -> str:
-    """The span as JSCalendar states one: P1D for a day off, PT1H for an hour, P0D for a moment."""
+    """The span as JSCalendar states one: P1D for a day off, PT1H for an hour.
 
-    if span <= timedelta(0):
-        return "P0D"
+    Never negative: `isodate` would write -P1D, which is not a duration an event can have.
+    """
 
-    days, seconds = span.days, span.seconds
-    if not seconds:
-        return f"P{days}D"
-
-    hours, rest = divmod(seconds, 3600)
-    minutes, seconds = divmod(rest, 60)
-    clock = f"{hours}H" if hours else ""
-    clock += f"{minutes}M" if minutes else ""
-    clock += f"{seconds}S" if seconds else ""
-    return (f"P{days}D" if days else "P") + f"T{clock}"
+    return duration_isoformat(span) if span > timedelta(0) else "P0D"
 
 
 # --- writing ------------------------------------------------------------------------------------
@@ -338,7 +325,7 @@ def replace_events(calendar: str, events: list[dict]) -> dict:
     return {"created": len(created), "updated": len(changed), "removed": len(removed)}
 
 
-def replace_audience(calendar: str, users: list[str]) -> int:
+def replace_audience(calendar: str, users: Iterable[str]) -> int:
     """Who the calendar is drawn for, replacing whoever it was drawn for before: somebody the
     source no longer names stops seeing it on the next run."""
 
@@ -401,7 +388,7 @@ def _insert_events(calendar: str, events: list[dict]) -> None:
         values = _stored_values(event)
         rows.append(
             [
-                frappe.generate_hash(length=10),
+                str(uuid7()),
                 calendar,
                 event["uid"],
                 *[values[field] for field in EVENT_FIELDS],
@@ -426,7 +413,6 @@ def _stored_values(event: dict) -> dict:
         "ends_on": get_datetime(event["ends_on"]) if event.get("ends_on") else starts_on,
         "all_day": 1 if event.get("all_day") else 0,
         "repeats": repeats,
-        "time_zone": event.get("time_zone") or None,
         # The day a repeat falls on, which the source may state where it is not the day the
         # series is anchored on — a 29 February anchored on the 28th.
         "month_day": (event.get("month_day") or starts_on.strftime("%m-%d")) if repeats else None,
@@ -439,9 +425,8 @@ def _differs(stored: frappe._dict, event: dict) -> bool:
     values = _stored_values(event)
     for field in EVENT_FIELDS:
         has, wanted = stored.get(field), values[field]
-        if field in ("starts_on", "ends_on"):
-            has = get_datetime(has) if has else None
-            wanted = get_datetime(wanted) if wanted else None
+        if has and field in ("starts_on", "ends_on"):
+            has = get_datetime(has)
         if (has or None) != (wanted or None):
             return True
     return False

@@ -111,7 +111,7 @@ class HRCalendarSyncSettings(Document):
         which is more than a web worker should be held open for. What it did lands in Last Sync,
         or in Last Error."""
 
-        saved_settings()
+        self.check_permission("write")
         frappe.enqueue(
             "suite.calendar.hr.sync.sync_hr_calendars",
             queue="long",
@@ -134,14 +134,3 @@ def saved_settings() -> HRCalendarSyncSettings:
     settings = frappe.get_doc("HR Calendar Sync Settings")
     settings.check_permission("write")
     return settings
-
-
-def sync_hr_calendars_daily() -> None:
-    """The scheduled run. Nothing happens until an admin fills the settings in and enables it."""
-
-    from suite.calendar.hr.sync import sync_hr_calendars
-
-    if not frappe.db.get_single_value("HR Calendar Sync Settings", "enabled"):
-        return
-
-    sync_hr_calendars()

@@ -4,7 +4,6 @@
 from uuid import uuid7
 
 from frappe.model.document import Document
-from frappe.utils import get_datetime
 
 
 class ExternalCalendarEvent(Document):
@@ -23,7 +22,6 @@ class ExternalCalendarEvent(Document):
         month_day: DF.Data | None
         repeats: DF.Literal["", "Yearly"]
         starts_on: DF.Datetime
-        time_zone: DF.Data | None
         title: DF.Data
         uid: DF.Data
     # end: auto-generated types
@@ -37,20 +35,3 @@ class ExternalCalendarEvent(Document):
 
     def autoname(self) -> None:
         self.name = str(uuid7())
-
-    def before_save(self) -> None:
-        if self.repeats != "Yearly":
-            self.month_day = None
-        elif not self.month_day:
-            self.month_day = month_day(self.starts_on)
-
-
-def month_day(starts_on) -> str:
-    """The MM-DD a yearly repeat falls on. Stored beside the event so a window of days can be
-    asked for by day, rather than every yearly event being read to find the few in it.
-
-    A source states it where it is not the day the series is anchored on: a 29 February birthday
-    anchored on the 28th in a year without one still falls on the 29th in a year with one.
-    """
-
-    return get_datetime(starts_on).strftime("%m-%d")

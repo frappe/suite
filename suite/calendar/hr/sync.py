@@ -10,7 +10,9 @@ The events carry no organizer and no participants. They are facts about a day, n
 to answer, which is also how every other calendar draws a holiday.
 """
 
+from collections.abc import Iterable
 from datetime import date
+from typing import NamedTuple
 
 import frappe
 from frappe import _
@@ -39,6 +41,17 @@ SOURCE = "Frappe HR"
 # before the company it is for.
 HOLIDAYS_KEY = "holidays:"
 CELEBRATIONS_KEY = "celebrations:"
+
+
+class Plan(NamedTuple):
+    """One calendar this run keeps, and everything it takes to keep it."""
+
+    key: str  # what the calendar is remembered by, and so how a later run finds it again
+    name: str
+    color: str | None
+    hidden: bool  # starts out unticked, for the reader to switch on
+    events: list[dict]
+    audience: list[str | None]  # the addresses HR named, before this site is asked about them
 
 
 def sync_hr_calendars() -> dict:
@@ -85,41 +98,29 @@ def _run() -> dict:
 
     source = settings.hr_source()
     employees = source.employees()
-    today = date.today()
 
-    # Every calendar this run keeps: the key it is remembered by, its name, colour, whether it
-    # starts out unticked, what is on it, and who it is for.
     plans = []
     if settings.sync_holidays:
-        for holiday_list, audience in _holiday_lists(settings, source, employees, today).items():
+        for holiday_list, audience in _holiday_lists(settings, source, employees, date.today()).items():
             events = holiday_events(holiday_list, source.holidays(holiday_list))
-            plans.append(
-                (
-                    f"{HOLIDAYS_KEY}{holiday_list}",
-                    holiday_list,
-                    settings.holidays_color,
-                    False,
-                    events,
-                    audience,
-                )
-            )
+            key = f"{HOLIDAYS_KEY}{holiday_list}"
+            plans.append(Plan(key, holiday_list, settings.holidays_color, False, events, audience))
     if settings.sync_birthdays or settings.sync_anniversaries:
         # One calendar for both: the same people see them, and the titles tell them apart.
         for company, (name, staff) in _by_company(settings.milestones_calendar, employees).items():
-            audience = [person.get("user_id") for person in staff]
-            events = birthday_events(staff, today) if settings.sync_birthdays else []
+            events = birthday_events(staff) if settings.sync_birthdays else []
             if settings.sync_anniversaries:
-                events += anniversary_events(staff, today)
+                events += anniversary_events(staff)
             # A birthday or an anniversary most days, for everyone in the company, is more than
             # most people want drawn over their own week. It is theirs to switch on. Holidays are
             # few and change what a day is, so those stay shown.
-            plans.append(
-                (f"{CELEBRATIONS_KEY}{company}", name, settings.milestones_color, True, events, audience)
-            )
+            audience = [person.get("user_id") for person in staff]
+            key = f"{CELEBRATIONS_KEY}{company}"
+            plans.append(Plan(key, name, settings.milestones_color, True, events, audience))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
     # audience: a holiday list named "Birthdays" would hand the birthdays to the wrong people.
-    names = [plan[1] for plan in plans]
+    names = [plan.name for plan in plans]
     if len(names) != len(set(names)):
         frappe.throw(_("Two synced calendars share a name. Rename one in the settings."))
 
@@ -132,19 +133,25 @@ def _record_success() -> None:
     frappe.db.set_single_value("HR Calendar Sync Settings", {"last_sync": now_datetime(), "last_error": None})
 
 
-def _reconcile(plans: list[tuple]) -> dict:
+def _reconcile(plans: list[Plan]) -> dict:
     kept = calendars_of(SOURCE)
     summary = {}
+    # Asked once for the run: the same few thousand addresses are the audience of every calendar
+    # on a single-company site, and a query per calendar would ask about all of them each time.
+    users = _site_users(email for plan in plans for email in plan.audience)
 
-    for key, name, color, hidden, events, audience in plans:
-        calendar = upsert_calendar(SOURCE, key, name, color=color, hidden_by_default=hidden)
-        summary[name] = replace_events(calendar, events)
-        summary[name]["drawn_for"] = replace_audience(calendar, _site_users(audience))
+    for plan in plans:
+        calendar = upsert_calendar(
+            SOURCE, plan.key, plan.name, color=plan.color, hidden_by_default=plan.hidden
+        )
+        summary[plan.name] = replace_events(calendar, plan.events)
+        audience = [email.strip().lower() for email in plan.audience if email]
+        summary[plan.name]["drawn_for"] = replace_audience(calendar, users.intersection(audience))
 
     # What this sync used to keep and HR no longer has — a holiday list nobody follows any more,
     # or a kind switched off. The calendar goes with its events and its audience, so a former
     # follower stops seeing it; nothing of it is left on a server to come back.
-    planned = {plan[0] for plan in plans}
+    planned = {plan.key for plan in plans}
     for key, calendar in kept.items():
         if key not in planned:
             remove_calendar(calendar)
@@ -153,7 +160,7 @@ def _reconcile(plans: list[tuple]) -> dict:
     return summary
 
 
-def _site_users(emails: list[str | None]) -> list[str]:
+def _site_users(emails: Iterable[str | None]) -> set[str]:
     """The people HR named, as users of this site.
 
     HR knows an employee by the address they log in to HR with; the same address is their user
@@ -163,8 +170,8 @@ def _site_users(emails: list[str | None]) -> list[str]:
 
     wanted = {email.strip().lower() for email in emails if email}
     if not wanted:
-        return []
-    return frappe.get_all("User", {"name": ("in", sorted(wanted)), "enabled": 1}, pluck="name")
+        return set()
+    return set(frappe.get_all("User", {"name": ("in", sorted(wanted)), "enabled": 1}, pluck="name"))
 
 
 def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[dict]]]:
