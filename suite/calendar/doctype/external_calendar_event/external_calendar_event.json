@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "creation": "2026-09-21 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "calendar",
+  "uid",
+  "title",
+  "description",
+  "column_break_when",
+  "starts_on",
+  "ends_on",
+  "all_day",
+  "repeats",
+  "time_zone",
+  "month_day"
+ ],
+ "fields": [
+  {
+   "fieldname": "calendar",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Calendar",
+   "options": "External Calendar",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The source's own id for the record this event is about, so a run finds it again.",
+   "fieldname": "uid",
+   "fieldtype": "Data",
+   "label": "UID",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_when",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "starts_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Starts On",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "When it ends. Empty is a moment, and an all-day event ends at the start of the day after it.",
+   "fieldname": "ends_on",
+   "fieldtype": "Datetime",
+   "label": "Ends On"
+  },
+  {
+   "default": "0",
+   "description": "A day rather than an hour: drawn at the top of the day, without a time.",
+   "fieldname": "all_day",
+   "fieldtype": "Check",
+   "label": "All Day"
+  },
+  {
+   "default": "",
+   "description": "Yearly repeats the day every year, as a birthday does.",
+   "fieldname": "repeats",
+   "fieldtype": "Select",
+   "label": "Repeats",
+   "options": "\nYearly"
+  },
+  {
+   "description": "The zone a timed event is held in. All-day events have none.",
+   "fieldname": "time_zone",
+   "fieldtype": "Data",
+   "label": "Time Zone"
+  },
+  {
+   "description": "The month and day a yearly repeat falls on, as MM-DD, so a window can ask for it.",
+   "fieldname": "month_day",
+   "fieldtype": "Data",
+   "label": "Month Day",
+   "length": 5,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-21 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Calendar",
+ "name": "External Calendar Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "starts_on",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 0
+}

@@ -16,7 +16,24 @@ export type CalendarRow = {
 	 */
 	may_write_all: 0 | 1
 	may_delete: 0 | 1
+	/**
+	 * A shared calendar that starts out unticked, like the company's birthdays: the reader
+	 * switches it on, rather than everyone having to switch it off.
+	 */
+	default_hidden?: 0 | 1
 }
+
+/**
+ * Whether a calendar shared read-only is drawn in this browser. Most are until hidden; one
+ * that starts hidden is not until shown — so each has the list that records the choice made
+ * against its default.
+ */
+export const sharedCalendarVisible = (
+	calendar: CalendarRow,
+	hidden: string[],
+	shown: string[],
+): boolean =>
+	calendar.default_hidden ? shown.includes(calendar.name) : !hidden.includes(calendar.name)
 
 /**
  * The colours a calendar can be given here, as the hex saved on it.

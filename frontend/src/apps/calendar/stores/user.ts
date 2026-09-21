@@ -4,7 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
 
 import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
+import { calendarColor, sharedCalendarVisible } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
@@ -85,7 +85,12 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['calendars', accountId.value],
 		transform: (rows: CalendarRow[]) =>
 			rows.map((cal) =>
-				cal.may_write_all ? cal : { ...cal, visible: hiddenShared.value.includes(cal.name) ? 0 : 1 },
+				cal.may_write_all
+					? cal
+					: {
+							...cal,
+							visible: sharedCalendarVisible(cal, hiddenShared.value, shownShared.value) ? 1 : 0,
+						},
 			),
 	})
 
@@ -93,6 +98,8 @@ export const userStore = defineStore('calendar-user', () => {
 	// someone who can write to it change — so a calendar shared read-only is hidden in this
 	// browser instead.
 	const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
+	// And the other way for one that starts out hidden: shown in this browser once ticked.
+	const shownShared = useStorage<string[]>('calendar-shown-shared', [])
 
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.
@@ -138,6 +145,7 @@ export const userStore = defineStore('calendar-user', () => {
 		participantIdentities,
 		calendars,
 		hiddenShared,
+		shownShared,
 		calendarOptions,
 		accountCalendarOptions,
 		organizerIdentity,

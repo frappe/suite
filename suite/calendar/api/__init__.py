@@ -25,6 +25,8 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
+from suite.calendar.external import calendar_rows as external_calendar_rows
+from suite.calendar.external import events_in_window as external_events
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -129,12 +131,15 @@ def get_calendars_with_shared(account: str) -> list[dict]:
     # Reminders are seeded on the account's own calendars only: a shared one isn't the user's to
     # change, and its account's seeded mark is shared by everyone who can see it.
     ensure_default_alerts(account)
-    return _with_shared(
+    rows = _with_shared(
         account,
         lambda each, calendar_ids: [
             row for row in _calendar_rows(each) if calendar_ids is None or row["id"] in calendar_ids
         ],
     )
+    # And the calendars this site keeps for the user on another system's behalf — HR's holidays
+    # and celebrations — which are read-only and belong to no mail account.
+    return rows + external_calendar_rows(frappe.session.user)
 
 
 @frappe.whitelist()
@@ -297,12 +302,14 @@ def _calendar_events(
 
 @frappe.whitelist()
 def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
-    """`get_calendar_events` for the account and the calendars shared with the user."""
+    """`get_calendar_events` for the account, the calendars shared with the user, and the ones
+    this site keeps for them."""
 
-    return _with_shared(
+    events = _with_shared(
         account,
         lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
     )
+    return events + external_events(frappe.session.user, from_date, to_date)
 
 
 @frappe.whitelist()
@@ -361,16 +368,30 @@ def _event_density(
 def get_calendar_event_density_with_shared(
     account: str, from_date: str, to_date: str, time_zone: str
 ) -> list[dict]:
-    """`get_calendar_event_density` for the account and the calendars shared with the user."""
+    """`get_calendar_event_density` for the account, the calendars shared with the user, and the
+    ones this site keeps for them."""
 
     # Declines are the viewer's, so their own addresses are read once, from their account.
     own_emails = _own_emails(account)
-    return _with_shared(
+    rows = _with_shared(
         account,
         lambda each, calendar_ids: _event_density(
             each, from_date, to_date, time_zone, own_emails, calendar_ids
         ),
     )
+    # A holiday marks a day as much as a meeting does: the mini month ticks it too. Nothing here
+    # is anyone's to decline.
+    return rows + [
+        {
+            "start": event["start"],
+            "duration": event["duration"],
+            "time_zone": event["time_zone"],
+            "show_without_time": event["show_without_time"],
+            "calendars": [row["calendar"] for row in event["calendars"]],
+            "is_declined": False,
+        }
+        for event in external_events(frappe.session.user, from_date, to_date)
+    ]
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:
