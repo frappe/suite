@@ -8,6 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.calendar import external
+from suite.calendar.doctype.external_calendar.external_calendar import ExternalCalendar
 from suite.calendar.external import _differs, _occurrences, yearly_occurrence
 
 WANTED = {
@@ -258,3 +259,31 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         twin = frappe.new_doc("External Calendar")
         twin.update({"source": "Test HR", "source_key": "holidays:India 2026", "calendar_name": "Twin"})
         self.assertRaises(frappe.ValidationError, twin.insert)
+
+    def test_the_table_refuses_a_second_calendar_for_one_key(self):
+        """The check in validate is a message, not a guarantee: two runs in flight at once both
+        look, both find nothing and both insert. The unique index is what stops the second."""
+
+        twin = frappe.new_doc("External Calendar")
+        twin.update({"source": "Test HR", "source_key": "holidays:India 2026", "calendar_name": "Twin"})
+        twin.flags.ignore_validate = True  # as the loser of a race arrives: past the check
+        self.assertRaises(frappe.UniqueValidationError, twin.insert, ignore_permissions=True)
+
+    def test_the_loser_of_a_race_reads_back_the_calendar_it_lost_to(self):
+        """A run that loses the insert carries on with the calendar the other one made, rather
+        than failing over which of two identical calendars was written first."""
+
+        # as a race arrives: the lookup finds nothing, and so does the check in validate —
+        # the other writer's calendar lands between the two
+        with (
+            patch.object(external.frappe.db, "get_value", side_effect=[None, self.calendar]),
+            patch.object(ExternalCalendar, "validate_one_per_source_key"),
+        ):
+            again = external.upsert_calendar("Test HR", "holidays:India 2026", "India 2026")
+
+        self.assertEqual(again, self.calendar)
+        # and the one that lost was not stored
+        self.assertEqual(
+            frappe.db.count("External Calendar", {"source": "Test HR", "source_key": "holidays:India 2026"}),
+            1,
+        )

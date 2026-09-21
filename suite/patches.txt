@@ -98,7 +98,7 @@ execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participan
 suite.mail.patches.remove_held_queue_statuses
 suite.mail.patches.hand_over_deployment_to_suite_cloud
 # --- calendar ---
-# (no patches)
+suite.calendar.patches.external_calendar_source_key_index
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None

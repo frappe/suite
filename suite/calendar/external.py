@@ -17,6 +17,7 @@ is repeatable and what the source no longer has goes.
 from datetime import date, datetime, timedelta
 
 import frappe
+from frappe.database.database import savepoint
 from frappe.utils import get_datetime, now_datetime
 
 # What an external calendar's `account` is called where the app expects one. Calendars and events
@@ -285,10 +286,19 @@ def upsert_calendar(
     }
 
     if not existing:
-        calendar = frappe.new_doc("External Calendar")
-        calendar.update({"source": source, "source_key": source_key, **wanted})
-        calendar.insert(ignore_permissions=True)
-        return calendar.name
+        # The lookup above is not a guarantee — another writer can insert between it and this,
+        # and the table's unique index is what settles it. Theirs is as good as ours, so the
+        # loser reads it back rather than failing a run over which of two identical calendars
+        # was made first.
+        made = None
+        with savepoint(catch=frappe.UniqueValidationError):
+            calendar = frappe.new_doc("External Calendar")
+            calendar.update({"source": source, "source_key": source_key, **wanted})
+            calendar.insert(ignore_permissions=True)
+            made = calendar.name
+        return made or frappe.db.get_value(
+            "External Calendar", {"source": source, "source_key": source_key}, "name"
+        )
 
     if any(existing.get(field) != value for field, value in wanted.items()):
         frappe.db.set_value("External Calendar", existing.name, wanted, update_modified=False)
