@@ -18,6 +18,12 @@ import { FolderInput } from 'lucide-vue-next'
 /** Thread ids under the cursor for the length of one drag. */
 const threadIds = ref<string[]>([])
 
+/**
+ * The mailboxes those threads are already in (see commonMailboxIds), so the sidebar can grey out the
+ * folder they came from. The list works this out — it holds the rows — and hands it over with them.
+ */
+const filedIn = ref<string[]>([])
+
 /** The mailbox the cursor is over, so the sidebar can mark the row it would drop into. */
 const overMailbox = ref('')
 
@@ -83,6 +89,7 @@ let move: MoveHandler | null = null
 
 export const useThreadDrag = () => ({
 	threadIds,
+	filedIn,
 	overMailbox,
 
 	isDragging: computed(() => threadIds.value.length > 0),
@@ -92,8 +99,9 @@ export const useThreadDrag = () => ({
 		move = handler
 	},
 
-	start: (ids: string[], e?: DragEvent) => {
+	start: (ids: string[], mailboxIds: string[], e?: DragEvent) => {
 		threadIds.value = ids
+		filedIn.value = mailboxIds
 		if (e) setDragChip(e, ids.length)
 	},
 
@@ -104,12 +112,14 @@ export const useThreadDrag = () => ({
 	 */
 	end: () => {
 		threadIds.value = []
+		filedIn.value = []
 		overMailbox.value = ''
 	},
 
 	drop: (mailboxId: string) => {
 		const ids = threadIds.value
 		threadIds.value = []
+		filedIn.value = []
 		overMailbox.value = ''
 		if (ids.length && move) move({ [mailboxId]: ids })
 	},

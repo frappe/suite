@@ -195,10 +195,7 @@
 								</template>
 							</template>
 
-							<Dropdown
-								v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
-								:options="moveToOptions"
-							>
+							<Dropdown v-if="showMoveTo" :options="moveToOptions">
 								<Button variant="ghost" :tooltip="__('Move To')">
 									<template #icon>
 										<component :is="FolderInput" class="icon" />
@@ -493,6 +490,7 @@ import {
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import { stripShortcutHint } from '@/utils/actionLabel'
+import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import {
 	hasCursor,
@@ -687,7 +685,7 @@ const moreSelectionOptions = computed(() => [
 		icon: a.icon,
 		onClick: a.onClick,
 	})),
-	...(!['search', 'starred'].includes(mailbox)
+	...(showMoveTo.value
 		? [{ label: __('Move To'), icon: FolderInput, onClick: () => (showMoveToSheet.value = true) }]
 		: []),
 	...(showAddTo.value
@@ -1421,9 +1419,11 @@ const {
 	handleMailSpam,
 	handleMailDelete,
 	setFlagged,
+	selectedRows,
 	moveToOptions,
 	addToOptions,
 	removeFromOptions,
+	showMoveTo,
 	showAddTo,
 	showRemoveFrom,
 	showJunkOrDeleteThreads,
@@ -1467,8 +1467,14 @@ onUnmounted(() => threadDrag.setMoveHandler(null))
  * *this* account's, which another account has no counterpart for.
  */
 const startThreadDrag = (thread: Thread, e: DragEvent) => {
-	const id = thread.thread_id
-	threadDrag.start(selections.value.includes(id) ? [...selections.value] : [id], e)
+	const dragged = selections.value.includes(thread.thread_id) ? selectedRows.value : [thread]
+	// The folders these rows are already in ride along, so the sidebar can rule them out as targets
+	// without holding the list itself.
+	threadDrag.start(
+		dragged.map((t) => t.thread_id),
+		commonMailboxIds(dragged),
+		e,
+	)
 }
 
 // ── Cross-account search row actions ──────────────────────────────────────────────────────────────
