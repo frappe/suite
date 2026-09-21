@@ -141,9 +141,14 @@ class MailAccountRequest(Document):
         validate_email_address(self.backup_email, throw=True)
 
     def set_request_key(self) -> None:
-        """Sets a random key for the request."""
+        """Sets a random key for the request.
+
+        The field sits at permlevel 1 so the key stays out of ordinary reads; without the
+        exemption the framework resets this server-set value before it is stored.
+        """
 
         self.request_key = random_string(32)
+        self.flags.ignore_permlevel_for_fields = ["request_key"]
 
     def set_expires_at(self) -> None:
         """Sets the expiry date of the account request."""

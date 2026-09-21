@@ -594,3 +594,46 @@ class TestMembers(SuiteCloudTestCase):
             password="a-strong-password-9",
             aliases=["dave@elsewhere.test"],
         )
+
+    def test_an_invite_sent_by_a_suite_admin_carries_a_usable_request_key(self) -> None:
+        """The request key is a permlevel 1 field, which the framework resets for anyone but the
+        Administrator unless the write is exempted - leaving the invite link pointing at nothing."""
+
+        account = f"frank@{DOMAIN}"
+        # The invite stays pending, and the site-wide counts other tests assert on would see it.
+        frappe.db.delete("Mail Account Request", {"account": account})
+        self.addCleanup(frappe.db.delete, "Mail Account Request", {"account": account})
+        frappe.set_user(self._suite_admin())
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        with patch("frappe.sendmail") as sendmail:
+            admin.add_member(
+                "frank",
+                DOMAIN,
+                is_admin=False,
+                send_invite=True,
+                backup_email="frank@backup.test",
+            )
+
+        request_key = frappe.db.get_value("Mail Account Request", {"account": account}, "request_key")
+        self.assertTrue(request_key)
+        self.assertIn(f"/mail/signup/{request_key}", sendmail.call_args.kwargs["args"]["link"])
+
+    def _suite_admin(self) -> str:
+        """An enabled Suite Admin of this site who is not the Administrator."""
+
+        email = "suite-admin@backup.test"
+        self.addCleanup(
+            frappe.delete_doc, "User", email, force=True, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.delete_doc("User", email, force=True, ignore_permissions=True, ignore_missing=True)
+        user = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "Suite",
+                "send_welcome_email": 0,
+                "roles": [{"role": "Suite Admin"}],
+            }
+        ).insert(ignore_permissions=True)
+        return user.name
