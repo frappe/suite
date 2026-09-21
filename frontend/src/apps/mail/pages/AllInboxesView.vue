@@ -807,7 +807,20 @@ const handleMailMove = (mail: Mail, target: string) => {
 	const folder = folderName(target)
 	runMailRemoval(
 		mail,
-		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }, account),
+		() =>
+			paneCall(
+				'move_mails',
+				// A junked copy has to lose the keyword or it lands in the target and is hidden there
+				// — a junked message is only ever shown in Junk (see visible_in_mailbox server-side).
+				// Not when Junk *is* the target, which would file it there and then hide it. The id
+				// is the row's own account's, so the junk mailbox is read off the pane's scope.
+				{
+					ids: [mail.id],
+					mailbox: target,
+					clear_junk: mail.junk === 1 && target !== paneScope.mailboxIds.value.junk,
+				},
+				account,
+			),
 		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
 		undoMail(mail, account, __('Mail moved back.')),
 	)

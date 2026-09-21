@@ -671,9 +671,17 @@ export function useThreadActions(deps: {
 						moveMails.submit({ ids: nonSentIds, mailbox: target, clear_junk: true }),
 					)
 				// A sent mail keeps only Sent + the target: replace its mailboxes with the target
-				// (dropping the rest), then re-add Sent.
+				// (dropping the rest), then re-add Sent. Clearing junk is part of that, as it is for
+				// every other move: a copy that kept the keyword would land in the target and be
+				// hidden there, since a junked message is only ever shown in Junk (server-side, see
+				// visible_in_mailbox). Unconditional, unlike the per-message moves that test
+				// `mail.junk`, because a list row doesn't always carry it — a search result has no
+				// junk field at all. Membership is unaffected: clearing files the mail in the Inbox,
+				// and the two ops below settle where it ends up.
 				if (sentIds.length) {
-					forward.push(() => moveMails.submit({ ids: sentIds, mailbox: target }))
+					forward.push(() =>
+						moveMails.submit({ ids: sentIds, mailbox: target, clear_junk: true }),
+					)
 					forward.push(() =>
 						addMails.submit({ ids: sentIds, mailbox_id: mailboxIds.sent }),
 					)
