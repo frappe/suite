@@ -954,8 +954,8 @@ export function useThreadActions(deps: {
 				if (removed.length) restoreThreadsToList(removed)
 			}
 		},
-		outgoingMailbox: () =>
-			[mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value) ? mailbox.value : undefined,
+		viewMailbox: () => mailbox.value,
+		outgoing: () => [mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value),
 		afterForward: refillIfEmpty,
 	})
 

@@ -775,8 +775,9 @@ const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
 }
 
 // Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
-// The merged list is inbox-scoped, so its rows always summarise from the whole conversation — never
-// from a folder, as Sent and Drafts do. No undo yet: the undo requests would have to be scoped to the
+// The merged list is inbox-scoped, so its rows always describe the whole conversation — never a
+// folder's own latest message, as Sent and Drafts do — while taking their date from the account's
+// Inbox, which each row carries. No undo yet: the undo requests would have to be scoped to the
 // row's own account rather than the active one.
 const { setUndoAction } = useUndo()
 
@@ -785,6 +786,7 @@ const { runMailRemoval } = useMailRemoval({
 	mailThreadRef: mailThread,
 	onEmptied: () => closeThread(),
 	removeRow: (_mail, thread) => (thread ? removeFromList(thread) : () => {}),
+	viewMailbox: (thread) => thread.inbox,
 })
 
 // The pane's folder menus are scoped to the thread's own account, so its ids have to be resolved
