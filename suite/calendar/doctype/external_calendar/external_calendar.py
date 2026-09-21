@@ -60,3 +60,15 @@ class ExternalCalendar(Document):
 
         frappe.db.delete("External Calendar Event", {"calendar": self.name})
         frappe.db.delete("External Calendar Audience", {"calendar": self.name})
+
+
+def on_doctype_update():
+    """One calendar per thing a source has, enforced where it holds.
+
+    The check in `validate` is a message, not a guarantee: two writers in flight both look, both
+    find nothing, and both insert. Called by the framework whenever this doctype is synced — on a
+    fresh install as much as on a migrate, which a patch would miss, since a new site marks its
+    patches done without running them.
+    """
+
+    frappe.db.add_unique("External Calendar", ["source", "source_key"], constraint_name="unique_source_key")
