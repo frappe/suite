@@ -303,6 +303,7 @@ scheduler_events = {
         "suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
+        "suite.calendar.doctype.hr_calendar_sync_settings.hr_calendar_sync_settings.sync_hr_calendars_daily",
     ],
     "hourly": [
         # drive
