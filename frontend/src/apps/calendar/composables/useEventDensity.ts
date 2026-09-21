@@ -3,6 +3,7 @@ import { createResource } from 'frappe-ui'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
+import { isOnAShownCalendar } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore } from '@/apps/calendar/stores/user'
 
@@ -128,6 +129,14 @@ export const useEventDensity = (
 	)
 
 	return {
-		events: computed(() => (byMonth.value[key.value] ?? []).map((row) => toGridEvent(row, color))),
+		// A calendar the reader has switched off is not drawn in the grid, and its days are not
+		// ticked here either — a Celebrations calendar nobody turned on would otherwise mark most
+		// days of the month. The rows are kept as they came, so a calendar switched back on is
+		// ticked again without asking for the month a second time.
+		events: computed(() =>
+			(byMonth.value[key.value] ?? [])
+				.filter((row) => isOnAShownCalendar(row, store.calendars.data))
+				.map((row) => toGridEvent(row, color)),
+		),
 	}
 }

@@ -24,7 +24,16 @@ from frappe.utils import get_datetime, now_datetime
 NAMESPACE = "external"
 
 # The fields a source states an event in, and so what a difference is measured on.
-EVENT_FIELDS = ("title", "description", "starts_on", "ends_on", "all_day", "repeats", "time_zone")
+EVENT_FIELDS = (
+    "title",
+    "description",
+    "starts_on",
+    "ends_on",
+    "all_day",
+    "repeats",
+    "time_zone",
+    "month_day",
+)
 
 # A window is widened by a day at each end before it is read: an all-day event carries no zone,
 # and the reader's day may start before the window the browser asked in UTC. Which day it lands
@@ -116,7 +125,7 @@ def _rows_in_window(calendars: list[str], start: datetime, end: datetime) -> lis
     # Asked for by day where the window is one a view asks for, which every index can answer.
     if (days := _days_between(start, end)) is not None:
         yearly_filters["month_day"] = ("in", days)
-    yearly = frappe.get_all("External Calendar Event", yearly_filters, [*fields, "repeats"])
+    yearly = frappe.get_all("External Calendar Event", yearly_filters, [*fields, "repeats", "month_day"])
 
     return dated + yearly
 
@@ -128,7 +137,12 @@ def _days_between(start: datetime, end: datetime) -> list[str] | None:
     if span > MAX_DAYS_BY_DAY:
         return None
     day = start.date()
-    return sorted({(day + timedelta(days=offset)).strftime("%m-%d") for offset in range(span + 1)})
+    days = {(day + timedelta(days=offset)).strftime("%m-%d") for offset in range(span + 1)}
+    # A 29 February event is drawn on the 28th in a year without one, so a window holding that
+    # day has to ask for the 29th as well — a date the window itself never contains.
+    if "02-28" in days:
+        days.add("02-29")
+    return sorted(days)
 
 
 def _occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date]:
@@ -138,23 +152,29 @@ def _occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date
     if not row.get("repeats"):
         return [first.date()]
 
+    # The day the source named, which is not always the day it was anchored on: a 29 February
+    # is stored against the 28th in a year without one, and must come back on the 29th in a
+    # year with one.
+    month_day = row.get("month_day") or first.strftime("%m-%d")
+
     days = []
     for year in range(start.year, end.year + 1):
         # Before the series began is not an occurrence: a work anniversary has no year nought.
         if year < first.year:
             continue
-        day = yearly_occurrence(first.date(), year)
+        day = yearly_occurrence(month_day, year)
         if start.date() <= day <= end.date():
             days.append(day)
     return days
 
 
-def yearly_occurrence(day: date, year: int) -> date:
-    """The same day in another year. A 29 February falls on the 28th in a year without one,
+def yearly_occurrence(month_day: str, year: int) -> date:
+    """The MM-DD in the given year. A 29 February falls on the 28th in a year without one,
     which is where a yearly rule would otherwise skip three years in four."""
 
+    month, day = (int(part) for part in month_day.split("-"))
     try:
-        return day.replace(year=year)
+        return date(year, month, day)
     except ValueError:
         return date(year, 2, 28)
 
@@ -364,20 +384,8 @@ def _insert_events(calendar: str, events: list[dict]) -> None:
     if not events:
         return
 
-    from suite.calendar.doctype.external_calendar_event.external_calendar_event import month_day
-
     stamp = now_datetime()
-    fields = [
-        "name",
-        "calendar",
-        "uid",
-        *EVENT_FIELDS,
-        "month_day",
-        "creation",
-        "modified",
-        "owner",
-        "modified_by",
-    ]
+    fields = ["name", "calendar", "uid", *EVENT_FIELDS, "creation", "modified", "owner", "modified_by"]
     rows = []
     for event in events:
         values = _stored_values(event)
@@ -387,7 +395,6 @@ def _insert_events(calendar: str, events: list[dict]) -> None:
                 calendar,
                 event["uid"],
                 *[values[field] for field in EVENT_FIELDS],
-                month_day(values["starts_on"]) if values["repeats"] == "Yearly" else None,
                 stamp,
                 stamp,
                 "Administrator",
@@ -400,16 +407,19 @@ def _insert_events(calendar: str, events: list[dict]) -> None:
 def _stored_values(event: dict) -> dict:
     """An event as the table holds it: every field stated, so a rewrite clears what is gone."""
 
+    starts_on = get_datetime(event["starts_on"])
+    repeats = event.get("repeats") or ""
     return {
         "title": event.get("title") or "",
         "description": event.get("description") or None,
-        "starts_on": get_datetime(event["starts_on"]),
-        "ends_on": get_datetime(event["ends_on"])
-        if event.get("ends_on")
-        else get_datetime(event["starts_on"]),
+        "starts_on": starts_on,
+        "ends_on": get_datetime(event["ends_on"]) if event.get("ends_on") else starts_on,
         "all_day": 1 if event.get("all_day") else 0,
-        "repeats": event.get("repeats") or "",
+        "repeats": repeats,
         "time_zone": event.get("time_zone") or None,
+        # The day a repeat falls on, which the source may state where it is not the day the
+        # series is anchored on — a 29 February anchored on the 28th.
+        "month_day": (event.get("month_day") or starts_on.strftime("%m-%d")) if repeats else None,
     }
 
 

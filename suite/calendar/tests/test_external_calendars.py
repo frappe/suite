@@ -49,8 +49,8 @@ class UnitTestEventDiffing(UnitTestCase):
 class UnitTestOccurrences(UnitTestCase):
     """A yearly event is stored once and drawn in each year a window reaches."""
 
-    def event(self, starts_on: datetime, repeats: str = "Yearly") -> frappe._dict:
-        return frappe._dict(starts_on=starts_on, repeats=repeats)
+    def event(self, starts_on: datetime, repeats: str = "Yearly", month_day: str = "") -> frappe._dict:
+        return frappe._dict(starts_on=starts_on, repeats=repeats, month_day=month_day)
 
     def test_a_birthday_falls_in_every_year_of_the_window(self):
         days = _occurrences(self.event(datetime(2026, 7, 9)), datetime(2026, 1, 1), datetime(2028, 12, 31))
@@ -68,8 +68,22 @@ class UnitTestOccurrences(UnitTestCase):
         self.assertEqual(days, [date(2027, 3, 1)])
 
     def test_a_leap_day_lands_on_the_28th_in_a_year_without_one(self):
-        self.assertEqual(yearly_occurrence(date(1992, 2, 29), 2027), date(2027, 2, 28))
-        self.assertEqual(yearly_occurrence(date(1992, 2, 29), 2028), date(2028, 2, 29))
+        self.assertEqual(yearly_occurrence("02-29", 2027), date(2027, 2, 28))
+        self.assertEqual(yearly_occurrence("02-29", 2028), date(2028, 2, 29))
+
+    def test_a_leap_day_anchored_on_the_28th_comes_back_on_the_29th(self):
+        # anchored in 2027, which has no 29 February; 2028 has one, and it belongs there
+        leap_day = self.event(datetime(2027, 2, 28), month_day="02-29")
+        self.assertEqual(
+            _occurrences(leap_day, datetime(2027, 1, 1), datetime(2028, 12, 31)),
+            [date(2027, 2, 28), date(2028, 2, 29)],
+        )
+
+    def test_a_window_holding_the_28th_asks_for_the_29th_too(self):
+        # 2027 has no 29 February, so a window over it never names that day — but the events
+        # that fall back onto the 28th are stored against it
+        days = external._days_between(datetime(2027, 2, 27), datetime(2027, 3, 1))
+        self.assertEqual(days, ["02-27", "02-28", "02-29", "03-01"])
 
     def test_a_day_of_its_own_happens_once(self):
         days = _occurrences(

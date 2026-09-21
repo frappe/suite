@@ -67,6 +67,8 @@ class UnitTestMilestoneEvents(UnitTestCase):
     def test_a_leap_day_birthday_lands_on_the_28th_in_other_years(self):
         [event] = birthday_events([employee("EMP-1", date_of_birth="1992-02-29")], TODAY)
         self.assertEqual(event["starts_on"], "2026-02-28 00:00:00")
+        # the day they were born, so a leap year still draws it on the 29th
+        self.assertEqual(event["month_day"], "02-29")
         [leap] = birthday_events([employee("EMP-1", date_of_birth="1992-02-29")], date(2028, 1, 1))
         self.assertEqual(leap["starts_on"], "2028-02-29 00:00:00")
 

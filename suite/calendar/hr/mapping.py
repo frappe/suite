@@ -51,6 +51,9 @@ def birthday_events(employees: list[dict], today: date) -> list[dict]:
                 "uid": f"hr-birthday-{employee['name']}",
                 "title": f"{employee['employee_name']}'s birthday",
                 "repeats": "Yearly",
+                # The day they were born, not the day the series is anchored on: anchored in a
+                # year without a 29 February, a leap-day birthday is still a leap-day birthday.
+                "month_day": born[5:10],
                 **_all_day(_anniversary_of(born, today.year)),
             }
         )
@@ -77,6 +80,7 @@ def anniversary_events(employees: list[dict], today: date) -> list[dict]:
                 "title": f"{employee['employee_name']}'s work anniversary",
                 "description": f"Joined on {_written_out(joined)}",
                 "repeats": "Yearly",
+                "month_day": joined[5:10],
                 **_all_day(_anniversary_of(joined, year)),
             }
         )
