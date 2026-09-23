@@ -590,6 +590,7 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
+import { isCollapsed as isCollapsedIn, lastMessageOf } from '@/apps/mail/utils/threadFolding'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
@@ -1161,21 +1162,8 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 	}
 }
 
-// The message at the end of the conversation stays open — it is the one being read. Drafts do not
-// count towards which that is: a reply written at the bottom of the thread is not a newer message,
-// it is a thing being written about the last one, and the reader wants both on screen. Read as the
-// last row outright, the message being replied to folded itself away the moment the draft under it
-// was saved and the thread reloaded around it — every mail already seen comes back collapsed, and
-// the exemption had moved on to the draft.
-const lastMessage = computed(
-	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
-)
-
-// A draft is never collapsed: its card is the editor, whatever `collapsed` says. It still comes
-// back seen and so collapsed, and being left out of `lastMessage` it has no exemption — so taken at
-// its word it was styled as a folded row: the list's hover grey, a pointer, the slimmer padding.
-const isCollapsed = (mail: Mail) =>
-	!!(mail.collapsed && !mail.draft && mail !== lastMessage.value)
+const lastMessage = computed(() => lastMessageOf(thread.value))
+const isCollapsed = (mail: Mail) => isCollapsedIn(mail, lastMessage.value)
 
 const showReplyAll = (mail: Mail) =>
 	!mail.draft &&
