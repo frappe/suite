@@ -40,12 +40,18 @@
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
 			     end in a gap explaining nothing. -->
+			<!-- A draft with no conversation around it is given the pane: the column is pinned
+			     to the scroller's height and the card grows to fill it, so the editor reaches the
+			     bottom of the viewport rather than stopping at its own 24rem and leaving the rest
+			     blank. The body scrolls inside the card past that. A reply draft under other mail
+			     keeps its cap — there the thread is what scrolls. -->
 			<div
 				class="sm:space-y-3 sm:px-5 sm:pt-6"
 				:class="{
 					'pb-16': isMobile && !thread?.at(-1)?.draft,
 					'sm:pb-24': isComposeWindowOpen(),
 					'sm:pb-6': !isComposeWindowOpen(),
+					'sm:flex sm:h-full sm:flex-col': isDraftAlone,
 				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
@@ -106,6 +112,7 @@
 									(mail.draft && dataTheme === 'dark'),
 								'cursor-pointer': isCollapsed(mail),
 								'sm:shadow-md': mail.draft && dataTheme === 'light',
+								'sm:flex sm:min-h-0 sm:flex-1 sm:flex-col': isDraftAlone,
 							}"
 							@click="mail.collapsed = false"
 						>
@@ -115,6 +122,7 @@
 								:reload-mails="reload"
 								:mail-details="draftMails[mail.name]"
 								:is-in-thread="true"
+								:fills-host="isDraftAlone"
 								@discard-mail="discardLocalDraft(mail.name)"
 								@reply="reply(getSourceMail(mail.name))"
 								@reply-all="replyAll(getSourceMail(mail.name))"
@@ -784,6 +792,9 @@ const mailBeforeUnseenMarker = computed(() => {
 
 const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen))
 const unseenCount = computed(() => (thread.value || []).filter((m) => !m.seen && !m.draft).length)
+
+// A draft that is the whole thread — opened from Drafts, nothing above it to read.
+const isDraftAlone = computed(() => thread.value.length === 1 && !!thread.value[0]?.draft)
 const firstUnseenMail = computed(() => thread.value?.find((m) => !m.seen && !m.draft)?.id)
 
 const unseenMessage = computed(() =>
