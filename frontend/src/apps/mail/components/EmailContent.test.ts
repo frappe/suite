@@ -1,5 +1,6 @@
 import { createApp, nextTick } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { App } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 
@@ -32,10 +33,16 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 	useComposeMail: () => ({ requestCompose: () => {} }),
 }))
 
+// Torn down between tests: the component listens on `window` for the frame's messages, and a
+// mount left standing would still be listening while the next test runs.
+const mounted: App[] = []
+
 const mount = () => {
 	const root = document.createElement('div')
 	document.body.appendChild(root)
-	createApp(EmailContent, { content: '<p>A message with a body.</p>' }).mount(root)
+	const app = createApp(EmailContent, { content: '<p>A message with a body.</p>' })
+	app.mount(root)
+	mounted.push(app)
 	return root
 }
 
@@ -46,6 +53,10 @@ beforeEach(() => {
 	window.__ = (message: string) => message
 	resizer.reportReady = () => {}
 	document.body.innerHTML = ''
+})
+
+afterEach(() => {
+	mounted.splice(0).forEach((app) => app.unmount())
 })
 
 describe('EmailContent', () => {
