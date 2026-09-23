@@ -33,23 +33,34 @@
 			/>
 		</div>
 	</div>
-	<div v-if="!isIframeReady" class="animate-pulse space-y-2 py-4">
-		<div
-			v-for="i in 5"
-			:key="i"
-			class="bg-surface-gray-3 h-2"
-			:style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
+	<!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
+	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
+	     the frame has to have a box the whole time it is being measured. Under `display: none` the
+	     document answers with the child's starting 1px; the parent writes that back as the frame's
+	     height, and the child's own visibility observer then reads a 1px frame as off-screen and
+	     stops reporting size at all. The message is blank from then on however tall its content is,
+	     and nothing recovers it — not a resize, not content changing inside the frame, not even
+	     being handed a real height. Only reloading the frame does, which is why re-selecting the
+	     mail was the one thing that worked. -->
+	<div class="relative w-full">
+		<IframeResizer
+			ref="frame"
+			class="w-full"
+			:class="{ invisible: !isIframeReady }"
+			license="GPLv3"
+			:scrolling="true"
+			:srcdoc
+			@on-ready="isIframeReady = true"
 		/>
+		<div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
+			<div
+				v-for="i in 5"
+				:key="i"
+				class="bg-surface-gray-3 h-2"
+				:style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
+			/>
+		</div>
 	</div>
-	<IframeResizer
-		ref="frame"
-		v-show="isIframeReady"
-		class="w-full"
-		license="GPLv3"
-		:scrolling="true"
-		:srcdoc
-		@on-ready="isIframeReady = true"
-	/>
 </template>
 
 <script setup lang="ts">
