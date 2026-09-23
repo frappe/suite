@@ -1171,7 +1171,11 @@ const lastMessage = computed(
 	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
 )
 
-const isCollapsed = (mail: Mail) => !!(mail.collapsed && mail !== lastMessage.value)
+// A draft is never collapsed: its card is the editor, whatever `collapsed` says. It still comes
+// back seen and so collapsed, and being left out of `lastMessage` it has no exemption — so taken at
+// its word it was styled as a folded row: the list's hover grey, a pointer, the slimmer padding.
+const isCollapsed = (mail: Mail) =>
+	!!(mail.collapsed && !mail.draft && mail !== lastMessage.value)
 
 const showReplyAll = (mail: Mail) =>
 	!mail.draft &&
