@@ -210,6 +210,17 @@
 											<div class="flex items-center space-x-1.5">
 												<span
 													class="truncate text-[15px] !font-semibold sm:text-base"
+													:class="{
+														/* A collapsed row is centered against the taller avatar, so
+														   whatever sets the text block's height decides where the name
+														   sits. The preview beside it states a 20px line box, matching
+														   the 20px hover actions that replace the timestamp — but a mail
+														   with no body has an empty preview, so the name's own 16.1px box
+														   set the height and the row rose ~2px under the cursor.
+														   sm:, because the preset's font sizes carry a line-height of
+														   their own: a bare leading-5 loses to the sm:text-base above. */
+														'sm:leading-5': isCollapsed(mail) && !isMobile,
+													}"
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>
