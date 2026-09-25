@@ -26,7 +26,7 @@ WORKDIR /app/sfu-server
 ENV NODE_ENV=production \
   PORT=3000
 
-RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app /app

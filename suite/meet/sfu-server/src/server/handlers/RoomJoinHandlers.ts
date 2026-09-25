@@ -73,6 +73,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				await deps.mediasoup.createRoom(
 					scopedRoomId,
 					(roomIdInner, peerIds) => {
+						deps.sttManager?.setActiveSpeakers(roomIdInner, peerIds);
 						deps.registry.emitActiveSpeaker(
 							roomIdInner,
 							participantIdsForPeers(deps, roomIdInner, peerIds),
@@ -236,6 +237,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				roomId = getRoomId(socket);
 				peerId = socket.userId;
 				await deps.mediasoup.createRoom(roomId, (roomIdInner, peerIds) => {
+					deps.sttManager?.setActiveSpeakers(roomIdInner, peerIds);
 					deps.registry.emitActiveSpeaker(
 						roomIdInner,
 						participantIdsForPeers(deps, roomIdInner, peerIds),
@@ -378,11 +380,16 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (roomId && participantId) {
 				try {
 					if (socket.scope === 'full') {
-						await deps.participantConnections.leave(
-							socket,
+						const wasLastSubscriber = deps.sttManager?.removeSubscriber(
 							roomId,
-							participantId,
+							socket.id,
 						);
+						await Promise.all([
+							deps.participantConnections.leave(socket, roomId, participantId),
+							wasLastSubscriber
+								? deps.sttManager?.stopRoom(roomId, true)
+								: undefined,
+						]);
 						return;
 					}
 					if (socket.scope === 'recording') {
