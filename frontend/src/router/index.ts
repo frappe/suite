@@ -13,6 +13,7 @@ import { SUITE_APPS, SUITE_LOGO, isInstallableApp } from '@/apps/registry'
 import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import { routes as calendarRoutes } from '@/apps/calendar/routes'
 import { routes as driveRoutes } from '@/apps/drive/routes'
+import { routes as drawRoutes } from '@/apps/draw/routes'
 import { routes as mailRoutes } from '@/apps/mail/routes'
 import { routes as meetRoutes } from '@/apps/meet/routes'
 import { routes as sheetsRoutes } from '@/apps/sheets/routes'
@@ -50,6 +51,7 @@ const appRoutes: Record<string, RouteRecordRaw[]> = {
   meet: meetRoutes,
   mail: mailRoutes,
   calendar: calendarRoutes,
+  draw: drawRoutes,
 }
 
 /**

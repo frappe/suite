@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the 7 suite apps.
+ * Single source of truth for the suite apps.
  *
  * Both the router (one lazy route group per app, prefix preserved) and the
  * shell launcher (app switcher) read this list. A per-app port should NOT need
@@ -11,6 +11,7 @@
  */
 import calendarLogo from '@/assets/app-logos/calendar.svg'
 import driveLogo from '@/assets/app-logos/drive.svg'
+import drawLogo from '@/assets/app-logos/draw.svg'
 import mailLogo from '@/assets/app-logos/mail.svg'
 import meetLogo from '@/assets/app-logos/meet.png'
 import sheetsLogo from '@/assets/app-logos/sheets.svg'
@@ -53,6 +54,7 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: 'meet', name: 'Meet', prefix: '/meet', logo: meetLogo },
   { id: 'mail', name: 'Mail', prefix: '/mail', logo: mailLogo, pwa: true },
   { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo, pwa: true },
+  { id: 'draw', name: 'Draw', prefix: '/draw', logo: drawLogo },
 ]
 
 /** Whether the suite PWA's manifest and install offer belong on this app's routes. */

@@ -1,0 +1,131 @@
+@font-face {
+  font-family: 'Shantell';
+  src: url('./assets/ShantellSans-Normal-Regular.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.app-shell * {
+  box-sizing: border-box;
+}
+
+.app-shell {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  touch-action: none;
+}
+
+.drawing-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  flex: 0 0 48px;
+  height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--outline-gray-1);
+  background: var(--surface-base);
+}
+
+.header-side {
+  min-width: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.draw-logo {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.drawing-title {
+  display: flex;
+  max-width: min(50vw, 36rem);
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.title-button {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-gray-9);
+  font: inherit;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-button:hover,
+.title-button:focus-visible {
+  background: var(--surface-gray-2);
+}
+
+.title-field {
+  width: auto;
+  max-width: min(50vw, 36rem);
+  min-width: 0;
+}
+
+.title-field input {
+  width: auto;
+  field-sizing: content;
+  text-align: center;
+}
+
+.title-field input:focus {
+  border-color: var(--outline-gray-2);
+  box-shadow: none;
+  outline: none;
+}
+
+.infinite-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-shell button,
+.app-shell [tabindex] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.draw-home :focus:not(:focus-visible),
+.app-shell :focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Keep SVG text measurement and the editing control on the same native layout. */
+.canvas-text-input {
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  resize: none;
+  border: 0 !important;
+  line-height: 1.25;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  white-space: pre;
+  word-break: normal;
+  font-weight: 400;
+  font-style: normal;
+  font-variant: normal;
+  tab-size: 8;
+}

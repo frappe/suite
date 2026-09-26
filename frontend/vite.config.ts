@@ -91,7 +91,7 @@ export default defineConfig(({ mode }) => ({
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
-      frappeProxy: true,
+      frappeProxy: { port: 8085 },
       lucideIcons: true,
       jinjaBootData: true,
       buildConfig: {

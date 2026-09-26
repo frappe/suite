@@ -60,6 +60,8 @@ website_route_rules = [
     {"from_route": "/meet/<path:app_path>", "to_route": "suite"},
     {"from_route": "/calendar", "to_route": "suite"},
     {"from_route": "/calendar/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/draw", "to_route": "suite"},
+    {"from_route": "/draw/<path:app_path>", "to_route": "suite"},
 ]
 
 home_page = "suite"

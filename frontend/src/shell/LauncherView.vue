@@ -1,5 +1,5 @@
 <template>
-  <!-- '/suite' launcher: brand-logo app switcher for all 7 suite apps. -->
+  <!-- '/suite' launcher: brand-logo app switcher for Suite apps. -->
   <div class="flex h-full flex-col">
     <header class="flex h-12 shrink-0 items-center justify-between border-b p-2">
       <div v-if="workspaceName" class="flex items-center gap-2">

@@ -12,8 +12,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onScopeDispose } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onScopeDispose, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
 import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
@@ -25,13 +25,24 @@ import {
 import { useRootStore } from '@/stores/root'
 
 const route = useRoute()
+const router = useRouter()
 const session = useSessionStore()
-const appsUsingCommonSettings = ['slides', 'sheets', 'writer']
+const appsUsingCommonSettings = ['slides', 'sheets', 'writer', 'draw']
 const showCommonSettings = computed(
   () =>
     session.isLoggedIn &&
     (appsUsingCommonSettings.includes(String(route.meta.appId || '')) ||
       (route.meta.appId === 'meet' && route.name !== 'meet-meeting')),
+)
+
+watch(
+  () => [route.query.openSettings, showCommonSettings.value] as const,
+  ([tab, enabled]) => {
+    if (!tab || !enabled) return
+    openSettings(typeof tab === 'string' ? tab : 'profile')
+    void router.replace({ query: { ...route.query, openSettings: undefined } })
+  },
+  { immediate: true },
 )
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
