@@ -5,6 +5,8 @@ import {
 	canEditEvent,
 	defaultCalendar,
 	destinationOptions,
+	isOnAShownCalendar,
+	sharedCalendarVisible,
 } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
@@ -80,5 +82,42 @@ describe('canEditEvent', () => {
 	it('is true on a calendar the list does not know', () => {
 		expect(canEditEvent(on('elsewhere'), calendars)).toBe(true)
 		expect(canEditEvent(on('shared'), undefined)).toBe(true)
+	})
+})
+
+describe('sharedCalendarVisible', () => {
+	it('draws a shared calendar until it is hidden', () => {
+		const holidays = cal('holidays', { may_write_all: 0 })
+		expect(sharedCalendarVisible(holidays, [], [])).toBe(true)
+		expect(sharedCalendarVisible(holidays, ['acc|holidays'], [])).toBe(false)
+	})
+
+	it('leaves one that starts hidden undrawn until it is shown', () => {
+		const celebrations = cal('celebrations', { may_write_all: 0, default_hidden: 1 })
+		expect(sharedCalendarVisible(celebrations, [], [])).toBe(false)
+		expect(sharedCalendarVisible(celebrations, [], ['acc|celebrations'])).toBe(true)
+		// hidden is the other kind's list, and says nothing of this one
+		expect(sharedCalendarVisible(celebrations, ['acc|celebrations'], ['acc|celebrations'])).toBe(true)
+	})
+})
+
+describe('isOnAShownCalendar', () => {
+	const rows = [cal('mine'), cal('celebrations', { may_write_all: 0, visible: 0 })]
+
+	it('ticks a day whose event is on a calendar being drawn', () => {
+		expect(isOnAShownCalendar({ calendars: ['acc|mine'] }, rows)).toBe(true)
+	})
+
+	it('leaves a switched-off calendar out of the ticks', () => {
+		expect(isOnAShownCalendar({ calendars: ['acc|celebrations'] }, rows)).toBe(false)
+	})
+
+	it('ticks an event on a calendar the list does not know yet', () => {
+		expect(isOnAShownCalendar({ calendars: ['acc|elsewhere'] }, rows)).toBe(true)
+		expect(isOnAShownCalendar({ calendars: ['acc|celebrations'] }, undefined)).toBe(true)
+	})
+
+	it('ticks an event on two calendars where either is drawn', () => {
+		expect(isOnAShownCalendar({ calendars: ['acc|celebrations', 'acc|mine'] }, rows)).toBe(true)
 	})
 })

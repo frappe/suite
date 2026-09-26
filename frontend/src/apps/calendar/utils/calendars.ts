@@ -16,7 +16,40 @@ export type CalendarRow = {
 	 */
 	may_write_all: 0 | 1
 	may_delete: 0 | 1
+	/**
+	 * A shared calendar that starts out unticked, like the company's birthdays: the reader
+	 * switches it on, rather than everyone having to switch it off.
+	 */
+	default_hidden?: 0 | 1
 }
+
+/**
+ * Whether a calendar shared read-only is drawn in this browser. Most are until hidden; one
+ * that starts hidden is not until shown — so each has the list that records the choice made
+ * against its default.
+ */
+export const sharedCalendarVisible = (
+	calendar: CalendarRow,
+	hidden: string[],
+	shown: string[],
+): boolean =>
+	calendar.default_hidden ? shown.includes(calendar.name) : !hidden.includes(calendar.name)
+
+/**
+ * Whether an event is drawn at all: it sits on a calendar the reader has switched on. Used for
+ * the mini month's ticks, which come from their own call and so carry no calendar of their own.
+ * An event on a calendar the list does not know — before it loads — is drawn, as the grid draws
+ * it: a tick a moment early beats a month that looks empty.
+ */
+export const isOnAShownCalendar = (
+	event: { calendars: string[] },
+	calendars: CalendarRow[] | undefined,
+): boolean =>
+	!calendars?.length ||
+	event.calendars.some((name) => {
+		const row = calendars.find((cal) => cal.name === name)
+		return !row || !!row.visible
+	})
 
 /**
  * The colours a calendar can be given here, as the hex saved on it.
