@@ -71,6 +71,7 @@ import { appPageMeta } from '@/utils/documentTitle'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
+import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 
 import {
 	inSlideShowMode,
@@ -324,6 +325,7 @@ const updateWindowSize = () => {
 }
 
 usePageMeta(() => appPageMeta(pageTitle(), 'Slides'))
+useBrowserZoomGuard()
 
 onActivated(() => {
 	active = true

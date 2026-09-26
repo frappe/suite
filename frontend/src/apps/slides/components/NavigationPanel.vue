@@ -2,7 +2,6 @@
 	<!-- Slide Navigation Panel -->
 	<div
 		:class="[panelClasses, attrs.class]"
-		@wheel="handleScrollBarWheelEvent"
 		@click.stop
 	>
 		<div
@@ -70,7 +69,6 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { reorderSlidesCommand } from '@/apps/slides/stores/commands'
 import { resetFocus } from '@/apps/slides/stores/element'
 import { slidesLength, presentationDoc } from '@/apps/slides/stores/presentation'
-import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 import { labelClasses } from '@/apps/slides/utils/constants'
 import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
 

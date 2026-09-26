@@ -2,7 +2,6 @@
 	<div
 		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b border-outline-elevation-1 bg-surface-elevation-1 px-3"
 		:class="$slots.default ? 'grid-cols-3' : 'grid-cols-2'"
-		@wheel.prevent
 	>
 		<div class="flex w-fit items-center gap-2">
 			<router-link

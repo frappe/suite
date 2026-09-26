@@ -1,7 +1,6 @@
 <template>
 	<div
 		class="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center justify-center gap-1 rounded-4 bg-surface-elevation-1 p-0.5 shadow-md"
-		@wheel="handleScrollBarWheelEvent"
 	>
 		<Tooltip text="Text" :hover-delay="700">
 			<div class="cursor-pointer rounded-4 p-2 hover:bg-surface-gray-3" @click="addTextElement(null)">
@@ -44,7 +43,6 @@ import ToolDropdown from '@/apps/slides/components/ToolDropdown.vue'
 import Polyline from '@/apps/slides/icons/Polyline.vue'
 import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 
-import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 import { shapeTools, lineTools } from '@/apps/slides/utils/toolbarTools'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
