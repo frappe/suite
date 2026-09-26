@@ -1256,6 +1256,7 @@
 
 <script setup>
 import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount, onScopeDispose } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
@@ -2558,12 +2559,17 @@ const {
   getGrid: () => grid,
 })
 
-const moreToolbarOptions = buildMoreToolbarOptions({
+// Mirrors the `.sn-tool-extra` media query in this file's <style> block: below
+// this width the inline tool groups are hidden and the "…" menu carries them.
+const toolbarCollapsed = useMediaQuery('(max-width: 1280px)')
+
+const moreToolbarOptions = computed(() => buildMoreToolbarOptions({
   toggleFmt, toggleWrap, toggleFormatPainter, clearFormatting,
   adjustDecimals, openCfDialog, openHyperlinkDialog, toggleMerge,
   toggleSortFilter, applyBorder, zoomBy, resetZoom, openPivotDialog,
   openChartDialog, openNamedRangesDialog, runSmartFill,
-})
+  collapsed: toolbarCollapsed.value,
+}))
 
 // Collaboration — placed here because currentSheet comes from useSheetTabs above.
 const { presentUsers, remoteCursors, broadcastCellChange, broadcastBatchChange, broadcastCursor, drainLocalTouches } =
@@ -6246,15 +6252,20 @@ function toggleShowFormulas() {
   background: #D8F1F6 !important;
 }
 
-/* Toolbar overflow — `.sn-tool-extra` groups stay inline at wide widths;
+/* Toolbar overflow — `.sn-tool-extra` groups stay inline at wide widths and
    collapse below 1280px into the `.sn-tool-more` "…" dropdown. Using
    `display:contents` on the wrappers means the buttons participate in the
-   parent flex layout when shown, with zero visual nesting. */
+   parent flex layout when shown, with zero visual nesting.
+
+   The "…" button itself is shown at every width: it is the only mouse path to
+   the actions that have no toolbar button of their own (pivot table, named
+   ranges, zoom, Smart Fill). `buildMoreToolbarOptions` drops the options that
+   are already inline, so the menu never repeats a visible button — keep its
+   `collapsed` argument in sync with the breakpoint below. */
 .sn-tool-extra { display: contents; }
-.sn-tool-more  { display: none; margin-left: auto; }
+.sn-tool-more  { display: inline-flex; margin-left: auto; }
 @media (max-width: 1280px) {
   .sn-tool-extra { display: none; }
-  .sn-tool-more  { display: inline-flex; }
 }
 
 /* Color-picker trigger buttons (FeatherIcon glyph above a colored underline).
