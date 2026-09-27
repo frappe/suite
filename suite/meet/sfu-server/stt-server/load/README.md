@@ -25,7 +25,10 @@ not the model's responses, so a server that falls behind cannot hide it by
 slowing the test. If sender lag rises, the load generator is saturated and the
 run is invalid; move it off the GPU host or reduce competing activity. A
 completed nonempty final can lack an interim caption; those cases are excluded
-from first-text percentiles, so inspect that count as well.
+from first-text percentiles, so inspect that count as well. Only text observed
+before a round's commit counts as interim; final deltas after commit do not.
+The harness uses the model and language advertised by the isolated replica's
+Realtime session, so configure that replica as you would production.
 
 Agree on an SLO first (for example, p95 final within 2 seconds of the last
 audio frame, no failed utterances or increasing late-run lag). Capacity is the

@@ -22,6 +22,7 @@ FRAME_BYTES = SAMPLE_RATE * 2 * FRAME_MS // 1000
 
 
 def read_pcm(path: Path) -> bytes:
+    """Read a nonempty 24 kHz mono PCM16 speech clip for paced playback."""
     with wave.open(str(path), "rb") as audio:
         if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) != (1, 2, SAMPLE_RATE):
             raise ValueError("Input must be 24 kHz mono PCM16 WAV")
@@ -32,6 +33,7 @@ def read_pcm(path: Path) -> bytes:
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
+    """Return the nearest-rank percentile, or None for an empty sample."""
     if not values:
         return None
     ordered = sorted(values)
@@ -39,6 +41,7 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 
 def summarize(results: list[dict], elapsed: float) -> dict:
+    """Summarize completed rounds, interim-caption delay, failures, and sender lag."""
     # Results arrive grouped by connection, not by time.
     results = sorted(results, key=lambda row: row["round"])
     completed = [row for row in results if row["completed"]]
@@ -74,6 +77,7 @@ def summarize(results: list[dict], elapsed: float) -> dict:
 async def run_stream(
     url: str, key: str, pcm: bytes, stream_id: int, rounds: int, gap: float, timeout: float, start_at: float
 ) -> list[dict]:
+    """Pace utterances by audio time; return one success or failure row per round."""
     rows = [
         {
             "stream": stream_id,
@@ -94,7 +98,8 @@ async def run_stream(
                 created = json.loads(await ws.recv())
                 if created.get("type") != "session.created":
                     raise ValueError(f"Expected session.created, got {created.get('type')}")
-                model = created["session"]["audio"]["input"]["transcription"]["model"]
+                transcription = created["session"]["audio"]["input"]["transcription"]
+                model = transcription["model"]
                 await ws.send(
                     json.dumps(
                         {
@@ -104,7 +109,10 @@ async def run_stream(
                                 "audio": {
                                     "input": {
                                         "format": {"type": "audio/pcm", "rate": SAMPLE_RATE},
-                                        "transcription": {"model": model, "language": "en-US"},
+                                        "transcription": {
+                                            "model": model,
+                                            "language": transcription["language"],
+                                        },
                                         "turn_detection": None,
                                     }
                                 },
@@ -148,7 +156,11 @@ async def run_stream(
                             rows[index]["error"] = str(event.get("error"))
                             finished += 1
                         elif kind == "conversation.item.input_audio_transcription.delta":
-                            if event.get("delta") and rows[index]["first_text_seconds"] is None:
+                            if (
+                                event.get("delta")
+                                and index >= len(ends)
+                                and rows[index]["first_text_seconds"] is None
+                            ):
                                 rows[index]["first_text_seconds"] = round(time.monotonic() - starts[index], 3)
                         elif kind == "conversation.item.input_audio_transcription.completed":
                             if (event.get("transcript") or "").strip():
@@ -204,6 +216,7 @@ async def run_stream(
 
 
 async def run(args: argparse.Namespace) -> dict:
+    """Run synchronized streams against one isolated replica and build the report."""
     pcm = read_pcm(args.audio)
     duration = len(pcm) / (SAMPLE_RATE * 2)
     if duration > 15:
@@ -238,6 +251,7 @@ async def run(args: argparse.Namespace) -> dict:
 
 
 def main() -> None:
+    """Parse the load scenario, write its report, and fail on incomplete rounds."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", required=True, help="Isolated STT base URL (http(s) or ws(s))")
     parser.add_argument(

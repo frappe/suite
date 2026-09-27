@@ -83,11 +83,14 @@ class LoadTest(unittest.TestCase):
                     json.dumps(
                         {
                             "type": "session.created",
-                            "session": {"audio": {"input": {"transcription": {"model": "test"}}}},
+                            "session": {
+                                "audio": {"input": {"transcription": {"model": "test", "language": "auto"}}}
+                            },
                         }
                     )
                 )
-                await ws.recv()
+                update = json.loads(await ws.recv())
+                self.assertEqual(update["session"]["audio"]["input"]["transcription"]["language"], "auto")
                 await ws.send(json.dumps({"type": "session.updated"}))
                 pending = []
                 interim_for = 0
@@ -134,7 +137,9 @@ class LoadTest(unittest.TestCase):
                     json.dumps(
                         {
                             "type": "session.created",
-                            "session": {"audio": {"input": {"transcription": {"model": "test"}}}},
+                            "session": {
+                                "audio": {"input": {"transcription": {"model": "test", "language": "auto"}}}
+                            },
                         }
                     )
                 )
@@ -162,6 +167,54 @@ class LoadTest(unittest.TestCase):
         row = asyncio.run(scenario())[0]
         self.assertFalse(row["completed"])
         self.assertIn("Empty final", row["error"])
+
+    def test_final_delta_after_commit_is_not_interim(self):
+        async def scenario():
+            async def server(ws):
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.created",
+                            "session": {
+                                "audio": {"input": {"transcription": {"model": "test", "language": "auto"}}}
+                            },
+                        }
+                    )
+                )
+                await ws.recv()
+                await ws.send(json.dumps({"type": "session.updated"}))
+                async for raw in ws:
+                    if json.loads(raw)["type"] == "input_audio_buffer.commit":
+                        await ws.send(json.dumps({"type": "input_audio_buffer.committed", "item_id": "one"}))
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "conversation.item.input_audio_transcription.delta",
+                                    "item_id": "one",
+                                    "delta": "final text",
+                                }
+                            )
+                        )
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "conversation.item.input_audio_transcription.completed",
+                                    "item_id": "one",
+                                    "transcript": "final text",
+                                }
+                            )
+                        )
+
+            async with serve(server, "127.0.0.1", 0) as listener:
+                port = listener.sockets[0].getsockname()[1]
+                return await run_stream(
+                    f"ws://127.0.0.1:{port}/v1/realtime", "key", b"\0" * 960, 0, 1, 0, 3, time.monotonic()
+                )
+
+        rows = asyncio.run(scenario())
+        self.assertTrue(rows[0]["completed"], rows)
+        self.assertIsNone(rows[0]["first_text_seconds"])
+        self.assertEqual(summarize(rows, 1)["completed_without_interim"], 1)
 
 
 if __name__ == "__main__":
