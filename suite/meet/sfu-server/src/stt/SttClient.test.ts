@@ -1,7 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type WebSocket, WebSocketServer } from 'ws';
-import { SttClient, type SttTranscriptEvent } from './SttClient';
+import {
+	SttCapacityError,
+	SttClient,
+	type SttTranscriptEvent,
+} from './SttClient';
 
 interface ClientEvent {
 	type?: string;
@@ -302,6 +306,52 @@ describe('SttClient Realtime protocol', () => {
 	});
 
 	it('keeps a configured quiet stream alive without sending audio', async () => {
+		server = createServer((_request, response) => {
+			response.setHeader('X-STT-Session-Ping', '1');
+			response.end('{"status":"ok"}');
+		});
+		websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
+		await new Promise<void>((resolve) =>
+			server!.listen(0, '127.0.0.1', resolve),
+		);
+		const address = server.address();
+		if (!address || typeof address === 'string')
+			throw new Error('Missing test server address');
+		websocketServer.on('connection', (socket) => {
+			socket.send(JSON.stringify({ type: 'session.created' }));
+			socket.on('message', (raw) => {
+				if (
+					(JSON.parse(raw.toString()) as ClientEvent).type === 'session.update'
+				)
+					socket.send(JSON.stringify({ type: 'session.updated' }));
+			});
+		});
+
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		client = new SttClient(`http://127.0.0.1:${address.port}`);
+		await vi.waitFor(() => expect(client?.isAvailable()).toBe(true));
+		const stream = await client.createStream(
+			{ sessionId: 'quiet-participant', sampleRate: 24000 },
+			vi.fn(),
+		);
+		const socket = (stream as unknown as { socket: WebSocket }).socket;
+		const send = vi.spyOn(socket, 'send');
+		try {
+			await vi.advanceTimersByTimeAsync(15_000);
+			expect(send).toHaveBeenCalledWith(
+				JSON.stringify({ type: 'session.ping' }),
+			);
+			expect(send).toHaveBeenCalledTimes(1);
+			await stream.close();
+			await vi.advanceTimersByTimeAsync(15_000);
+			expect(send).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+			await stream.close();
+		}
+	});
+
+	it('does not send a custom heartbeat to a backend without support', async () => {
 		server = createServer((_request, response) =>
 			response.end('{"status":"ok"}'),
 		);
@@ -324,25 +374,46 @@ describe('SttClient Realtime protocol', () => {
 
 		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
 		client = new SttClient(`http://127.0.0.1:${address.port}`);
+		await vi.waitFor(() => expect(client?.isAvailable()).toBe(true));
 		const stream = await client.createStream(
-			{ sessionId: 'quiet-participant', sampleRate: 24000 },
+			{ sessionId: 'external-participant', sampleRate: 24000 },
 			vi.fn(),
 		);
 		const socket = (stream as unknown as { socket: WebSocket }).socket;
 		const send = vi.spyOn(socket, 'send');
 		try {
-			await vi.advanceTimersByTimeAsync(15_000);
-			expect(send).toHaveBeenCalledWith(
-				JSON.stringify({ type: 'session.ping' }),
-			);
-			expect(send).toHaveBeenCalledTimes(1);
-			await stream.close();
-			await vi.advanceTimersByTimeAsync(15_000);
-			expect(send).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(send).not.toHaveBeenCalled();
 		} finally {
 			vi.useRealTimers();
 			await stream.close();
 		}
+	});
+
+	it('keeps the backend available when a stream exceeds its capacity', async () => {
+		server = createServer((_request, response) =>
+			response.end('{"status":"ok"}'),
+		);
+		websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
+		await new Promise<void>((resolve) =>
+			server!.listen(0, '127.0.0.1', resolve),
+		);
+		const address = server.address();
+		if (!address || typeof address === 'string')
+			throw new Error('Missing test server address');
+		websocketServer.on('connection', (socket) =>
+			socket.close(1013, 'STT stream capacity reached'),
+		);
+
+		client = new SttClient(`http://127.0.0.1:${address.port}`);
+		await vi.waitFor(() => expect(client?.isAvailable()).toBe(true));
+		await expect(
+			client.createStream(
+				{ sessionId: 'extra-participant', sampleRate: 24000 },
+				vi.fn(),
+			),
+		).rejects.toBeInstanceOf(SttCapacityError);
+		expect(client.isAvailable()).toBe(true);
 	});
 
 	it('treats a missing health endpoint as unavailable', async () => {

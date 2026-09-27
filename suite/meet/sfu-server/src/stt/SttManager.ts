@@ -2,7 +2,12 @@ import type { Producer, Router } from 'mediasoup/types';
 import type { ServerToClientEvents, TranscriptSegment } from '../types';
 import { loggers } from '../utils/logger';
 import { AudioIngester } from './AudioIngester';
-import { type ISttClient, MockSttClient, SttClient } from './SttClient';
+import {
+	type ISttClient,
+	MockSttClient,
+	SttCapacityError,
+	SttClient,
+} from './SttClient';
 
 interface SttManagerOptions {
 	/** URL of the STT server (e.g. http://127.0.0.1:8080) */
@@ -119,6 +124,7 @@ export class SttManager {
 		participantName: string | undefined,
 		producer: Producer,
 		transcriptParticipantId = participantId,
+		retryOnCapacity = true,
 	): Promise<void> {
 		if ((this.stoppingRooms.get(roomId) ?? 0) > 0) return;
 		if (!this.hasSubscribers(roomId)) {
@@ -183,7 +189,25 @@ export class SttManager {
 			await ingester.start();
 		} catch (error) {
 			if (this.activeSessions.get(sessionKey) === ingester) {
-				this.activeSessions.delete(sessionKey);
+				if (error instanceof SttCapacityError && retryOnCapacity) {
+					void this.recoverIngester(
+						sessionKey,
+						ingester,
+						roomId,
+						participantId,
+						participantName,
+						producer,
+						transcriptParticipantId,
+					).catch((recoveryError) => {
+						loggers.stt.warn(
+							'STT capacity recovery failed for %s: %s',
+							sessionKey,
+							(recoveryError as Error).message,
+						);
+					});
+				} else {
+					this.activeSessions.delete(sessionKey);
+				}
 			}
 			throw error;
 		}
@@ -360,6 +384,7 @@ export class SttManager {
 						participantName,
 						producer,
 						transcriptParticipantId,
+						false,
 					);
 					if (this.activeSessions.has(sessionKey)) return;
 					throw new Error('STT replacement did not start');

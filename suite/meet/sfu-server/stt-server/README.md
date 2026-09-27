@@ -22,6 +22,7 @@ The model is downloaded at startup. Mount `/models` to persist the Hugging Face,
 | `NEMOTRON_ATT_CONTEXT_SIZE` | `56,3` |
 | `NEMOTRON_FINAL_SILENCE_MS` | `600` |
 | `STT_STREAM_QUEUE_FRAMES` | `400` |
+| `STT_MAX_STREAMS` | `8` (simultaneous Realtime connections per replica) |
 | `STT_API_KEY` | required |
 | `STT_ALLOW_CPU` | unset (CUDA required) |
 | `STT_REALTIME_MESSAGE_BYTES` | `1048576` (1 MiB) |
@@ -40,6 +41,10 @@ Configured SFU streams send a `session.ping` event every 15 seconds to keep quie
 participants connected without adding silence to the model. If changing
 `STT_REALTIME_IDLE_SECONDS`, keep it above 15 seconds. The one-hour session
 limit still applies; the SFU reconnects when a session expires.
+The server advertises `X-STT-Session-Ping: 1` on successful `/health` responses;
+the SFU sends the custom event only when the backend advertises support.
+When `STT_MAX_STREAMS` is reached, new streams are rejected without queuing GPU
+work. Provision more replicas for rooms exceeding the per-replica capacity.
 
 ## Run
 

@@ -1,7 +1,11 @@
 import type { Producer, Router } from 'mediasoup/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
-import type { ISttClient, ISttStream } from './SttClient';
+import {
+	type ISttClient,
+	type ISttStream,
+	SttCapacityError,
+} from './SttClient';
 import { SttManager } from './SttManager';
 
 function createSttClient(available = true) {
@@ -31,6 +35,27 @@ describe('SttManager', () => {
 
 		sttClient.recover();
 		await vi.waitFor(() => expect(restartRoom).toHaveBeenCalledWith('room-1'));
+	});
+
+	it('retries a rejected stream without replacing healthy participants', async () => {
+		const start = vi
+			.spyOn(AudioIngester.prototype, 'start')
+			.mockRejectedValueOnce(
+				new SttCapacityError('STT stream capacity reached'),
+			)
+			.mockResolvedValue();
+		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
+		const manager = new SttManager({ sttClient: createSttClient().client });
+		manager.setGetRouter(() => ({}) as Router);
+		manager.beginSession('room-1', 'socket-1');
+		const producer = { id: 'producer-1', closed: false } as Producer;
+
+		await expect(
+			manager.startTranscription('room-1', 'peer-1', 'Alice', producer),
+		).rejects.toBeInstanceOf(SttCapacityError);
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+		expect(manager.isAvailable()).toBe(true);
+		await manager.stopRoom('room-1');
 	});
 
 	it('reports real constructed configuration and availability', () => {

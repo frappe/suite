@@ -2,7 +2,17 @@ import asyncio
 import threading
 import unittest
 
-from runtime import run_in_thread_serialized
+from runtime import StreamCapacity, run_in_thread_serialized
+
+
+class StreamCapacityTest(unittest.TestCase):
+    def test_rejects_excess_streams_and_releases_capacity(self):
+        capacity = StreamCapacity(2)
+        self.assertTrue(capacity.acquire())
+        self.assertTrue(capacity.acquire())
+        self.assertFalse(capacity.acquire())
+        capacity.release()
+        self.assertTrue(capacity.acquire())
 
 
 class SerializedThreadTest(unittest.IsolatedAsyncioTestCase):

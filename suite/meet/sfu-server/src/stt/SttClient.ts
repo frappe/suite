@@ -32,6 +32,7 @@ export interface ISttClient {
 }
 
 export const MAX_STT_UTTERANCE_MS = 15_000;
+export class SttCapacityError extends Error {}
 const MAX_WEBSOCKET_BUFFERED_BYTES = 1024 * 1024;
 const MAX_PENDING_COMMITS = 8;
 const HEALTH_CHECK_TIMEOUT_MS = 5000;
@@ -49,6 +50,7 @@ export class SttClient implements ISttClient {
 	private serverUrl: string;
 	private apiKey?: string;
 	private available = false;
+	private supportsSessionPing = false;
 	private healthCheckInFlight = false;
 	private healthCheckTimer: NodeJS.Timeout | null = null;
 	private healthCheckController: AbortController | null = null;
@@ -85,6 +87,8 @@ export class SttClient implements ISttClient {
 			.then((res) => {
 				if (this.destroyed) return;
 				if (res.ok) {
+					this.supportsSessionPing =
+						res.headers?.get('X-STT-Session-Ping') === '1';
 					const recovered = !this.available;
 					this.available = true;
 					loggers.stt.info('STT server reachable at %s', this.serverUrl);
@@ -142,12 +146,17 @@ export class SttClient implements ISttClient {
 		const socket = new WebSocket(this.getStreamUrl(), {
 			headers: this.authHeaders(),
 		});
-		const stream = new SttStream(socket, metadata, onTranscript);
+		const stream = new SttStream(
+			socket,
+			metadata,
+			onTranscript,
+			this.supportsSessionPing,
+		);
 		try {
 			await stream.connect();
 			return stream;
 		} catch (error) {
-			this.available = false;
+			if (!(error instanceof SttCapacityError)) this.available = false;
 			await stream.close();
 			throw error;
 		}
@@ -186,6 +195,7 @@ class SttStream implements ISttStream {
 		private socket: WebSocket,
 		private metadata: SttStreamMetadata,
 		private onTranscript: (event: SttTranscriptEvent) => void,
+		private supportsSessionPing: boolean,
 	) {
 		this.socket.on('message', (data) => this.handleMessage(data.toString()));
 		this.socket.on('error', (error) => this.readyReject?.(error));
@@ -193,10 +203,11 @@ class SttStream implements ISttStream {
 			this.stopKeepalive();
 			const wasReady = this.ready;
 			this.ready = false;
+			const message = `STT stream closed before setup (${code}: ${reason.toString()})`;
 			this.readyReject?.(
-				new Error(
-					`STT stream closed before setup (${code}: ${reason.toString()})`,
-				),
+				code === 1013 && reason.toString() === 'STT stream capacity reached'
+					? new SttCapacityError(message)
+					: new Error(message),
 			);
 			this.resolvePendingWaiters();
 			if (wasReady && !this.closeRequested) {
@@ -321,7 +332,7 @@ class SttStream implements ISttStream {
 			this.readyResolve?.();
 			this.readyResolve = null;
 			this.readyReject = null;
-			if (!this.keepaliveTimer) {
+			if (this.supportsSessionPing && !this.keepaliveTimer) {
 				this.keepaliveTimer = setInterval(
 					() => this.sendEvent({ type: 'session.ping' }),
 					STT_KEEPALIVE_INTERVAL_MS,

@@ -34,13 +34,14 @@ from protocol import (
     validate_session_update,
 )
 from resampling import StreamingResampler
-from runtime import run_in_thread_serialized
+from runtime import StreamCapacity, run_in_thread_serialized
 
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/nemotron-3.5-asr-streaming-0.6b")
 NEMOTRON_LANGUAGE = normalize_language(os.getenv("NEMOTRON_LANGUAGE"), "en-US")
 NEMOTRON_ATT_CONTEXT_SIZE = os.getenv("NEMOTRON_ATT_CONTEXT_SIZE", "56,3")
 NEMOTRON_FINAL_SILENCE_MS = int(os.getenv("NEMOTRON_FINAL_SILENCE_MS", "600"))
 STT_STREAM_QUEUE_FRAMES = max(1, int(os.getenv("STT_STREAM_QUEUE_FRAMES", "400")))
+STT_MAX_STREAMS = max(1, int(os.getenv("STT_MAX_STREAMS", "8")))
 STT_API_KEY = os.getenv("STT_API_KEY")
 STT_ALLOW_CPU = os.getenv("STT_ALLOW_CPU", "").lower() in {"1", "true", "yes"}
 STT_REALTIME_MESSAGE_BYTES = int(os.getenv("STT_REALTIME_MESSAGE_BYTES", str(1024 * 1024)))
@@ -56,6 +57,7 @@ MEL_HOP_SAMPLES = 160
 model = None
 inference_semaphore: asyncio.Semaphore | None = None
 ready = False
+stream_capacity = StreamCapacity(STT_MAX_STREAMS)
 inference_started_at: float | None = None
 last_inference_failure_at: int | None = None
 
@@ -441,13 +443,16 @@ async def health():
     recent_failure = bool(
         last_inference_failure_at and time.time() - last_inference_failure_at <= STT_INFERENCE_FAILURE_SECONDS
     )
-    return {
-        "status": "busy" if busy_for is not None else "degraded" if recent_failure else "ok",
-        "backend": "nemo",
-        "model": NEMOTRON_MODEL,
-        "inference_active_seconds": round(busy_for, 1) if busy_for is not None else None,
-        "recent_inference_failure": recent_failure,
-    }
+    return JSONResponse(
+        {
+            "status": "busy" if busy_for is not None else "degraded" if recent_failure else "ok",
+            "backend": "nemo",
+            "model": NEMOTRON_MODEL,
+            "inference_active_seconds": round(busy_for, 1) if busy_for is not None else None,
+            "recent_inference_failure": recent_failure,
+        },
+        headers={"X-STT-Session-Ping": "1"},
+    )
 
 
 @app.websocket("/v1/realtime")
@@ -467,22 +472,27 @@ async def realtime_transcription(websocket: WebSocket):
         await websocket.close(code=1008, reason="Unsupported model")
         return
 
+    # One replica has a finite inference budget. Reject excess streams rather
+    # than making every connected participant fall behind the live audio.
+    if not stream_capacity.acquire():
+        await websocket.close(code=1013, reason="STT stream capacity reached")
+        return
+
     realtime_session_id = f"sess_{uuid.uuid4().hex}"
     effective_session = realtime_session(realtime_session_id, requested_model, NEMOTRON_LANGUAGE)
-    await websocket.send_json(
-        {
-            "event_id": event_id(),
-            "type": "session.created",
-            "session": effective_session,
-        }
-    )
-
     transcription: RealtimeTranscriptionSession | None = None
     reader_task: asyncio.Task | None = None
     worker_task: asyncio.Task | None = None
     current_item_id = item_id()
     previous_item_id: str | None = None
     try:
+        await websocket.send_json(
+            {
+                "event_id": event_id(),
+                "type": "session.created",
+                "session": effective_session,
+            }
+        )
         queue: asyncio.Queue[tuple[str, int] | None] = asyncio.Queue(maxsize=STT_STREAM_QUEUE_FRAMES)
         closed = asyncio.Event()
         queued_bytes = 0
@@ -752,6 +762,7 @@ async def realtime_transcription(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        stream_capacity.release()
         tasks = [task for task in (reader_task, worker_task) if task is not None]
         for task in tasks:
             if not task.done():
