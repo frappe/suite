@@ -12,7 +12,7 @@
 			class="pointer-events-none z-[40] flex shrink-0 justify-center px-3 pb-2 pt-1 sm:px-6"
 		>
 			<div
-				class="pointer-events-auto relative max-h-[min(20vh,12rem)] w-full max-w-[min(92vw,56rem)] overflow-hidden rounded-lg"
+				class="pointer-events-auto relative max-h-[min(20vh,12rem)] w-full max-w-[min(92vw,56rem)] overflow-hidden rounded-6"
 			>
 				<div
 					v-show="canScrollUp"
@@ -27,7 +27,7 @@
 						v-for="line in visibleLines"
 						:key="line.id"
 						:class="[
-							'flex max-w-full items-start gap-2 rounded-md px-3 py-1.5 text-left text-sm font-medium leading-snug text-white shadow-lg sm:text-base',
+							'flex max-w-full items-start gap-2 rounded-5 px-3 py-1.5 text-left text-sm font-medium leading-snug text-white shadow-lg sm:text-base',
 							{ 'opacity-60 italic': line.text === '...' },
 						]"
 						style="
