@@ -16,7 +16,7 @@
 			>
 				<div
 					v-show="canScrollUp"
-					class="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-black/90 via-black/55 to-transparent"
+					class="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-surface-base via-surface-base/55 to-transparent"
 				/>
 				<div
 					ref="scrollContainer"
@@ -52,7 +52,7 @@
 				</div>
 				<div
 					v-show="canScrollDown"
-					class="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-black/90 via-black/55 to-transparent"
+					class="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-surface-base via-surface-base/55 to-transparent"
 				/>
 			</div>
 		</div>
