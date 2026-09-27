@@ -1,7 +1,8 @@
 fastapi==0.115.14
 uvicorn[standard]==0.34.3
 setuptools<82
-torch>=2.4.0,<2.8.0
+# The 25.06 base image constrains Torch to 2.8.0a0+nv25.6; <2.8 rejects that prerelease.
+torch>=2.6.0,<2.9.0
 numpy==1.26.4
 soundfile==0.13.1
 soxr==0.5.0.post1
