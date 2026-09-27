@@ -156,9 +156,11 @@ async def run_stream(
                             rows[index]["error"] = str(event.get("error"))
                             finished += 1
                         elif kind == "conversation.item.input_audio_transcription.delta":
+                            # The server acknowledges commit before emitting final deltas.
+                            # Earlier deltas remain interim even if read after we send commit.
                             if (
                                 event.get("delta")
-                                and index >= len(ends)
+                                and index >= acknowledged
                                 and rows[index]["first_text_seconds"] is None
                             ):
                                 rows[index]["first_text_seconds"] = round(time.monotonic() - starts[index], 3)

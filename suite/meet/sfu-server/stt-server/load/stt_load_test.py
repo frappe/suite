@@ -58,27 +58,6 @@ class LoadTest(unittest.TestCase):
             commits = []
 
             async def server(ws):
-                async def finish(index):
-                    await asyncio.sleep(0.15 * index)
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "type": "conversation.item.input_audio_transcription.delta",
-                                "item_id": str(index),
-                                "delta": "hello",
-                            }
-                        )
-                    )
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "type": "conversation.item.input_audio_transcription.completed",
-                                "item_id": str(index),
-                                "transcript": "hello",
-                            }
-                        )
-                    )
-
                 await ws.send(
                     json.dumps(
                         {
@@ -92,33 +71,31 @@ class LoadTest(unittest.TestCase):
                 update = json.loads(await ws.recv())
                 self.assertEqual(update["session"]["audio"]["input"]["transcription"]["language"], "auto")
                 await ws.send(json.dumps({"type": "session.updated"}))
-                pending = []
-                interim_for = 0
                 async for raw in ws:
                     event_type = json.loads(raw)["type"]
-                    if event_type == "input_audio_buffer.append" and interim_for == len(commits):
-                        interim_for += 1
-                        await ws.send(
-                            json.dumps(
-                                {
-                                    "type": "conversation.item.input_audio_transcription.delta",
-                                    "item_id": str(interim_for),
-                                    "delta": "early",
-                                }
-                            )
-                        )
                     if event_type == "input_audio_buffer.commit":
-                        commits.append(time.monotonic())
+                        commits.append(event_type)
                         index = len(commits)
                         await ws.send(
                             json.dumps({"type": "input_audio_buffer.committed", "item_id": str(index)})
                         )
-                        pending.append(asyncio.create_task(finish(index)))
-                await asyncio.gather(*pending)
+                        if index == 3:
+                            # No final is sent until all commits arrive. A sender that
+                            # waits for transcription will time out instead of completing.
+                            for item in range(1, 4):
+                                await ws.send(
+                                    json.dumps(
+                                        {
+                                            "type": "conversation.item.input_audio_transcription.completed",
+                                            "item_id": str(item),
+                                            "transcript": "hello",
+                                        }
+                                    )
+                                )
 
             async with serve(server, "127.0.0.1", 0) as listener:
                 port = listener.sockets[0].getsockname()[1]
-                # A 20 ms clip repeated with a 20 ms gap; inference takes 150 ms.
+                # A 20 ms clip repeated with a 20 ms gap.
                 rows = await run_stream(
                     f"ws://127.0.0.1:{port}/v1/realtime", "key", b"\0" * 960, 0, 3, 0.02, 3, time.monotonic()
                 )
@@ -126,9 +103,7 @@ class LoadTest(unittest.TestCase):
 
         rows, commits = asyncio.run(scenario())
         self.assertTrue(all(row["completed"] for row in rows), rows)
-        self.assertLess(commits[-1] - commits[0], 0.2)
-        self.assertLess(rows[0]["first_text_seconds"], 0.1)
-        self.assertGreater(rows[-1]["final_after_audio_seconds"], rows[0]["final_after_audio_seconds"])
+        self.assertEqual(len(commits), 3)
 
     def test_empty_final_is_not_success(self):
         async def scenario():
@@ -215,6 +190,55 @@ class LoadTest(unittest.TestCase):
         self.assertTrue(rows[0]["completed"], rows)
         self.assertIsNone(rows[0]["first_text_seconds"])
         self.assertEqual(summarize(rows, 1)["completed_without_interim"], 1)
+
+    def test_queued_interim_before_commit_ack_is_counted(self):
+        async def scenario():
+            async def server(ws):
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.created",
+                            "session": {
+                                "audio": {"input": {"transcription": {"model": "test", "language": "auto"}}}
+                            },
+                        }
+                    )
+                )
+                await ws.recv()
+                await ws.send(json.dumps({"type": "session.updated"}))
+                async for raw in ws:
+                    if json.loads(raw)["type"] == "input_audio_buffer.commit":
+                        # An interim response can still be queued when the sender commits.
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "conversation.item.input_audio_transcription.delta",
+                                    "item_id": "one",
+                                    "delta": "interim",
+                                }
+                            )
+                        )
+                        await ws.send(json.dumps({"type": "input_audio_buffer.committed", "item_id": "one"}))
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "conversation.item.input_audio_transcription.completed",
+                                    "item_id": "one",
+                                    "transcript": "final text",
+                                }
+                            )
+                        )
+
+            async with serve(server, "127.0.0.1", 0) as listener:
+                port = listener.sockets[0].getsockname()[1]
+                return await run_stream(
+                    f"ws://127.0.0.1:{port}/v1/realtime", "key", b"\0" * 960, 0, 1, 0, 3, time.monotonic()
+                )
+
+        rows = asyncio.run(scenario())
+        self.assertTrue(rows[0]["completed"], rows)
+        self.assertIsNotNone(rows[0]["first_text_seconds"])
+        self.assertEqual(summarize(rows, 1)["completed_without_interim"], 0)
 
 
 if __name__ == "__main__":
