@@ -44,8 +44,9 @@ limit still applies; the SFU reconnects when a session expires.
 The server advertises `X-STT-Session-Ping: 1` on successful `/health` responses;
 the SFU sends the custom event only when the backend advertises support.
 When `STT_MAX_STREAMS` is reached, new speaking streams are rejected without
-queuing GPU work. Quiet streams do not occupy slots. Provision more replicas
-for rooms exceeding the per-replica capacity.
+queuing GPU work. Quiet streams neither occupy slots nor allocate decoder
+state; state is released after each utterance. Provision more replicas for
+rooms exceeding the per-replica capacity.
 
 ## Run
 

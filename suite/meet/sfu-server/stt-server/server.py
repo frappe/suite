@@ -475,6 +475,7 @@ async def realtime_transcription(websocket: WebSocket):
     realtime_session_id = f"sess_{uuid.uuid4().hex}"
     effective_session = realtime_session(realtime_session_id, requested_model, NEMOTRON_LANGUAGE)
     transcription: RealtimeTranscriptionSession | None = None
+    configured = False
     reader_task: asyncio.Task | None = None
     worker_task: asyncio.Task | None = None
     current_item_id = item_id()
@@ -538,7 +539,7 @@ async def realtime_transcription(websocket: WebSocket):
                     pass
 
         async def worker() -> None:
-            nonlocal transcription, effective_session, current_item_id
+            nonlocal transcription, configured, effective_session, current_item_id
             nonlocal previous_item_id, queued_bytes, has_inference_slot
             while not closed.is_set():
                 queued = await queue.get()
@@ -569,20 +570,17 @@ async def realtime_transcription(websocket: WebSocket):
                             await websocket.send_json(realtime_error(error, client_event_id))
                             continue
                         language = config.get("language") or NEMOTRON_LANGUAGE
-                        if transcription is None:
-                            transcription = await run_inference(
-                                language, RealtimeTranscriptionSession, language
-                            )
-                        elif transcription.has_audio:
+                        if transcription is not None and transcription.has_audio:
                             await websocket.send_json(
                                 realtime_error(
                                     "Cannot update the session while audio is buffered", client_event_id
                                 )
                             )
                             continue
-                        else:
+                        if transcription is not None:
                             transcription.language = language
                         effective_session = realtime_session(realtime_session_id, config["model"], language)
+                        configured = True
                         await websocket.send_json(
                             {
                                 "event_id": event_id(),
@@ -592,7 +590,7 @@ async def realtime_transcription(websocket: WebSocket):
                         )
                         continue
 
-                    if transcription is None:
+                    if not configured:
                         await websocket.send_json(
                             realtime_error("Send a valid session.update before audio events", client_event_id)
                         )
@@ -610,7 +608,7 @@ async def realtime_transcription(websocket: WebSocket):
                                 raise ValueError("audio must be a base64 string")
                             remaining_audio_bytes = (
                                 int(STT_REALTIME_UTTERANCE_SECONDS * REALTIME_SAMPLE_RATE) * 2
-                                - transcription.input_sample_count * 2
+                                - (transcription.input_sample_count if transcription is not None else 0) * 2
                             )
                             if len(encoded_audio) > 4 * ((max(0, remaining_audio_bytes) + 2) // 3):
                                 raise ValueError(
@@ -634,6 +632,11 @@ async def realtime_transcription(websocket: WebSocket):
                                 closed.set()
                                 return
                             has_inference_slot = True
+                        if transcription is None:
+                            language = effective_session["audio"]["input"]["transcription"]["language"]
+                            transcription = await run_inference(
+                                language, RealtimeTranscriptionSession, language
+                            )
                         text = await run_inference(
                             transcription.language,
                             transcription.append_and_decode,
@@ -656,7 +659,9 @@ async def realtime_transcription(websocket: WebSocket):
                         continue
 
                     if event_type == "input_audio_buffer.clear":
-                        await run_inference(transcription.language, transcription.clear)
+                        if transcription is not None:
+                            transcription.close()
+                            transcription = None
                         if has_inference_slot:
                             stream_capacity.release()
                             has_inference_slot = False
@@ -669,7 +674,7 @@ async def realtime_transcription(websocket: WebSocket):
                         continue
 
                     if event_type == "input_audio_buffer.commit":
-                        if not transcription.has_audio:
+                        if transcription is None or not transcription.has_audio:
                             await websocket.send_json(
                                 realtime_error("Cannot commit an empty audio buffer", client_event_id)
                             )
@@ -686,8 +691,10 @@ async def realtime_transcription(websocket: WebSocket):
                         )
                         previous_text = transcription.last_sent_text
                         t0 = time.time()
+                        fallback = False
                         try:
                             text = await run_inference(transcription.language, transcription.finalize)
+                            fallback = transcription.last_final_used_fallback
                         except Exception as inference_error:
                             if closed.is_set():
                                 return
@@ -707,6 +714,8 @@ async def realtime_transcription(websocket: WebSocket):
                             )
                             continue
                         finally:
+                            transcription.close()
+                            transcription = None
                             if has_inference_slot:
                                 stream_capacity.release()
                                 has_inference_slot = False
@@ -718,7 +727,7 @@ async def realtime_transcription(websocket: WebSocket):
                             audio_seconds=f"{audio_seconds:.1f}",
                             text_len=len(text),
                             elapsed=f"{time.time() - t0:.2f}s",
-                            fallback=transcription.last_final_used_fallback,
+                            fallback=fallback,
                         )
                         if delta := transcript_delta(previous_text, text):
                             await websocket.send_json(
