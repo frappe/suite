@@ -472,12 +472,6 @@ async def realtime_transcription(websocket: WebSocket):
         await websocket.close(code=1008, reason="Unsupported model")
         return
 
-    # One replica has a finite inference budget. Reject excess streams rather
-    # than making every connected participant fall behind the live audio.
-    if not stream_capacity.acquire():
-        await websocket.close(code=1013, reason="STT stream capacity reached")
-        return
-
     realtime_session_id = f"sess_{uuid.uuid4().hex}"
     effective_session = realtime_session(realtime_session_id, requested_model, NEMOTRON_LANGUAGE)
     transcription: RealtimeTranscriptionSession | None = None
@@ -485,6 +479,7 @@ async def realtime_transcription(websocket: WebSocket):
     worker_task: asyncio.Task | None = None
     current_item_id = item_id()
     previous_item_id: str | None = None
+    has_inference_slot = False
     try:
         await websocket.send_json(
             {
@@ -543,7 +538,8 @@ async def realtime_transcription(websocket: WebSocket):
                     pass
 
         async def worker() -> None:
-            nonlocal transcription, effective_session, current_item_id, previous_item_id, queued_bytes
+            nonlocal transcription, effective_session, current_item_id
+            nonlocal previous_item_id, queued_bytes, has_inference_slot
             while not closed.is_set():
                 queued = await queue.get()
                 try:
@@ -630,6 +626,14 @@ async def realtime_transcription(websocket: WebSocket):
                         except (binascii.Error, ValueError) as decode_error:
                             await websocket.send_json(realtime_error(str(decode_error), client_event_id))
                             continue
+                        if not has_inference_slot:
+                            # Quiet sockets use no inference slot. Admit at the first
+                            # audio append and hold it through the utterance final.
+                            if not stream_capacity.acquire():
+                                await websocket.close(code=1013, reason="STT stream capacity reached")
+                                closed.set()
+                                return
+                            has_inference_slot = True
                         text = await run_inference(
                             transcription.language,
                             transcription.append_and_decode,
@@ -653,6 +657,9 @@ async def realtime_transcription(websocket: WebSocket):
 
                     if event_type == "input_audio_buffer.clear":
                         await run_inference(transcription.language, transcription.clear)
+                        if has_inference_slot:
+                            stream_capacity.release()
+                            has_inference_slot = False
                         if closed.is_set():
                             return
                         current_item_id = item_id()
@@ -699,6 +706,10 @@ async def realtime_transcription(websocket: WebSocket):
                                 }
                             )
                             continue
+                        finally:
+                            if has_inference_slot:
+                                stream_capacity.release()
+                                has_inference_slot = False
                         if closed.is_set():
                             return
                         _label(
@@ -762,13 +773,14 @@ async def realtime_transcription(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        stream_capacity.release()
         tasks = [task for task in (reader_task, worker_task) if task is not None]
         for task in tasks:
             if not task.done():
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if has_inference_slot:
+            stream_capacity.release()
         if transcription is not None:
             transcription.close()
         _label(event="realtime_end", session=realtime_session_id)
