@@ -153,6 +153,7 @@ export class MediasoupManager {
 		);
 		this.sttManager.setGetRoomNames((roomId) =>
 			this.getRoomParticipants(roomId)
+				.filter((participant) => !participant.id.startsWith('recorder:'))
 				.map((participant) => participant.info.name?.normalize('NFKC').trim())
 				.filter(
 					(name): name is string =>
