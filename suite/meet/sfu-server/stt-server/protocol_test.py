@@ -31,7 +31,15 @@ class ProtocolTest(unittest.TestCase):
     def test_validates_realtime_transcription_session(self):
         config, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
         self.assertIsNone(error)
-        self.assertEqual(config, {"model": "nemotron", "language": "en-US"})
+        self.assertEqual(config, {"model": "nemotron", "language": "en-US", "names": []})
+
+        self.update["session"]["audio"]["input"]["transcription"]["names"] = ["Siobhan", "Aarav"]
+        config, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
+        self.assertIsNone(error)
+        self.assertEqual(config["names"], ["Siobhan", "Aarav"])
+        self.update["session"]["audio"]["input"]["transcription"]["names"] = ["\u0000invalid"]
+        _, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
+        self.assertIn("invalid name", error)
 
         invalid = self.update | {
             "session": self.update["session"]
@@ -52,7 +60,7 @@ class ProtocolTest(unittest.TestCase):
             "en-US",
         )
         self.assertIsNone(error)
-        self.assertEqual(config, {"model": "nemotron", "language": "en-US"})
+        self.assertEqual(config, {"model": "nemotron", "language": "en-US", "names": []})
 
     def test_rejects_malformed_nested_session_values(self):
         cases = (

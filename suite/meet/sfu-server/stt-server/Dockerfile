@@ -22,7 +22,7 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY server.py protocol.py resampling.py runtime.py ./
+COPY server.py protocol.py resampling.py runtime.py context_bias.py ./
 
 RUN useradd --create-home --uid 10001 stt \
     && mkdir -p /models/huggingface /models/nemo /models/torch \

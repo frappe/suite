@@ -3,6 +3,8 @@ import re
 import time
 import uuid
 
+from context_bias import validate_names
+
 MODEL_SAMPLE_RATE = 16000
 REALTIME_SAMPLE_RATE = 24000
 
@@ -114,7 +116,11 @@ def validate_session_update(
         language or next(iter(languages), None) or default_language,
         default_language,
     )
-    return {"model": model, "language": language}, None
+    try:
+        names = validate_names(transcription.get("names", []))
+    except ValueError as error:
+        return None, str(error)
+    return {"model": model, "language": language, "names": names}, None
 
 
 def realtime_error(

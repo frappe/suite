@@ -49,7 +49,7 @@ jobs:
 
       - name: Test protocol, runtime, and resampling
         working-directory: suite/meet/sfu-server/stt-server
-        run: python -m unittest protocol_test.py runtime_test.py resampling_test.py
+        run: python -m unittest context_bias_test.py protocol_test.py runtime_test.py resampling_test.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

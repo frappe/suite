@@ -35,6 +35,7 @@ export class SttManager {
 	private stoppingRooms = new Map<string, number>();
 	private emitToSubscribers: EmitSttToSubscribers | undefined;
 	private getRouter: ((roomId: string) => Router | undefined) | undefined;
+	private getRoomNames: ((roomId: string) => string[]) | undefined;
 	private restartRoomTranscription:
 		| ((roomId: string) => Promise<void>)
 		| undefined;
@@ -68,6 +69,10 @@ export class SttManager {
 
 	setGetRouter(fn: (roomId: string) => Router | undefined): void {
 		this.getRouter = fn;
+	}
+
+	setGetRoomNames(fn: (roomId: string) => string[]): void {
+		this.getRoomNames = fn;
 	}
 
 	setRestartRoomTranscription(fn: (roomId: string) => Promise<void>): void {
@@ -155,6 +160,7 @@ export class SttManager {
 			producer,
 			router,
 			sttClient: this.sttClient,
+			getNames: () => this.getRoomNames?.(roomId) ?? [],
 			onUnexpectedStreamClose: () => {
 				void this.recoverIngester(
 					sessionKey,

@@ -12,7 +12,12 @@ interface ClientEvent {
 	audio?: string;
 	session?: {
 		type?: string;
-		audio?: { input?: { format?: { type?: string; rate?: number } } };
+		audio?: {
+			input?: {
+				format?: { type?: string; rate?: number };
+				transcription?: { names?: string[] };
+			};
+		};
 	};
 }
 
@@ -101,11 +106,13 @@ describe('SttClient Realtime protocol', () => {
 
 		client = new SttClient(`http://127.0.0.1:${address.port}`);
 		const transcripts: SttTranscriptEvent[] = [];
+		let names = ['Siobhan'];
 		const stream = await client.createStream(
 			{
 				sessionId: 'meet-session-1',
 				sampleRate: 24000,
 				language: 'en-US',
+				getNames: () => names,
 			},
 			(event) => transcripts.push(event),
 		);
@@ -113,7 +120,10 @@ describe('SttClient Realtime protocol', () => {
 		stream.onUnexpectedClose(unexpectedClose);
 
 		stream.sendAudio(Buffer.from([0, 0, 1, 0]));
+		names = ['Zubair'];
+		stream.sendAudio(Buffer.from([0, 0]));
 		stream.markFinal(100);
+		stream.sendAudio(Buffer.from([0, 0]));
 		await stream.close();
 
 		const update = clientEvents.find(
@@ -128,6 +138,14 @@ describe('SttClient Realtime protocol', () => {
 				audio: { input: { format: { type: 'audio/pcm', rate: 24000 } } },
 			},
 		});
+		expect(update?.session?.audio?.input?.transcription?.names).toEqual([
+			'Siobhan',
+		]);
+		expect(
+			clientEvents
+				.filter((event) => event.type === 'session.update')
+				.map((event) => event.session?.audio?.input?.transcription?.names),
+		).toEqual([['Siobhan'], ['Zubair']]);
 		expect(append).toMatchObject({
 			audio: Buffer.from([0, 0, 1, 0]).toString('base64'),
 		});
@@ -260,7 +278,7 @@ describe('SttClient Realtime protocol', () => {
 
 		stream.onUnexpectedClose(unexpectedClose);
 
-		expect(unexpectedClose).toHaveBeenCalledTimes(1);
+		await vi.waitFor(() => expect(unexpectedClose).toHaveBeenCalledTimes(1));
 		await stream.close();
 	});
 

@@ -5,6 +5,7 @@ export interface SttStreamMetadata {
 	sessionId: string;
 	sampleRate: number;
 	language?: string;
+	getNames?: () => string[];
 }
 
 export interface SttTranscriptEvent {
@@ -175,6 +176,7 @@ export class SttClient implements ISttClient {
 }
 
 class SttStream implements ISttStream {
+	private lastNames = '';
 	private sequence = 0;
 	private bufferedBytes = 0;
 	private pendingCommits = 0;
@@ -243,6 +245,14 @@ class SttStream implements ISttStream {
 
 	sendAudio(frame: Buffer): void {
 		if (!this.ready || this.socket.readyState !== WebSocket.OPEN) return;
+		if (this.bufferedBytes === 0) {
+			const names = this.metadata.getNames?.() ?? [];
+			const key = JSON.stringify(names);
+			if (key !== this.lastNames) {
+				this.lastNames = key;
+				this.sendSessionUpdate(names);
+			}
+		}
 		const maxUtteranceBytes =
 			(this.metadata.sampleRate * 2 * MAX_STT_UTTERANCE_MS) / 1000;
 		if (this.bufferedBytes + frame.length > maxUtteranceBytes) {
@@ -308,24 +318,9 @@ class SttStream implements ISttStream {
 		}
 
 		if (message.type === 'session.created') {
-			this.sendEvent({
-				type: 'session.update',
-				session: {
-					type: 'transcription',
-					audio: {
-						input: {
-							format: { type: 'audio/pcm', rate: this.metadata.sampleRate },
-							transcription: {
-								model:
-									process.env.NEMOTRON_MODEL ||
-									'nemotron-3.5-asr-streaming-0.6b',
-								language: this.metadata.language || 'en-US',
-							},
-							turn_detection: null,
-						},
-					},
-				},
-			});
+			const names = this.metadata.getNames?.() ?? [];
+			this.lastNames = JSON.stringify(names);
+			this.sendSessionUpdate(names);
 			return;
 		}
 		if (message.type === 'session.updated') {
@@ -384,6 +379,27 @@ class SttStream implements ISttStream {
 			);
 			this.finishItem(itemId);
 		}
+	}
+
+	private sendSessionUpdate(names: string[]): void {
+		this.sendEvent({
+			type: 'session.update',
+			session: {
+				type: 'transcription',
+				audio: {
+					input: {
+						format: { type: 'audio/pcm', rate: this.metadata.sampleRate },
+						transcription: {
+							model:
+								process.env.NEMOTRON_MODEL || 'nemotron-3.5-asr-streaming-0.6b',
+							language: this.metadata.language || 'en-US',
+							names,
+						},
+						turn_detection: null,
+					},
+				},
+			},
+		});
 	}
 
 	private emitTranscript(

@@ -151,6 +151,18 @@ export class MediasoupManager {
 		this.sttManager.setGetRouter((roomId) =>
 			this.roomManager.getRouter(roomId),
 		);
+		this.sttManager.setGetRoomNames((roomId) =>
+			this.getRoomParticipants(roomId)
+				.map((participant) => participant.info.name?.normalize('NFKC').trim())
+				.filter(
+					(name): name is string =>
+						typeof name === 'string' &&
+						name.length > 0 &&
+						name.length <= 80 &&
+						!/[\p{C}]/u.test(name),
+				)
+				.slice(0, 20),
+		);
 		this.sttManager.setRestartRoomTranscription((roomId) =>
 			this.startSttForExistingProducers(roomId),
 		);

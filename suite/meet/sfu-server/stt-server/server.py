@@ -17,9 +17,11 @@ import nemo.collections.asr as nemo_asr
 import numpy as np
 import torch
 import uvicorn
+from context_bias import UtteranceBias
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer
+from omegaconf import OmegaConf
 from protocol import (
     MODEL_SAMPLE_RATE,
     REALTIME_SAMPLE_RATE,
@@ -53,6 +55,7 @@ STT_INFERENCE_FAILURE_SECONDS = float(os.getenv("STT_INFERENCE_FAILURE_SECONDS",
 
 MODEL_ID = NEMOTRON_MODEL.rsplit("/", 1)[-1]
 MEL_HOP_SAMPLES = 160
+DECODE_ERRORS = (binascii.Error, ValueError)
 
 model = None
 inference_semaphore: asyncio.Semaphore | None = None
@@ -81,8 +84,9 @@ def pcm16le_to_float32(audio_bytes: bytes) -> np.ndarray:
 
 def model_device():
     try:
-        return next(model.parameters()).device
-    except (AttributeError, StopIteration):
+        parameter = next(model.parameters(), None)
+        return parameter.device if parameter is not None else None
+    except AttributeError:
         return None
 
 
@@ -113,6 +117,11 @@ def load_model() -> None:
     if device == "cuda":
         model = model.to("cuda")
     apply_language(NEMOTRON_LANGUAGE)
+    # Enable per-stream hypothesis biasing once; never swap the shared decoder
+    # while other participants have active hypotheses.
+    decoding = model.cfg.decoding.copy()
+    OmegaConf.update(decoding, "greedy.enable_per_stream_biasing", True, force_add=True)
+    model.change_decoding_strategy(decoding)
     model.encoder.set_default_att_context_size(att_context_size)
     _label(event="model_loaded", backend="nemo", context=att_context_size, elapsed=f"{time.time() - t0:.2f}s")
 
@@ -251,7 +260,8 @@ class StreamingFeatureBuffer:
 class IncrementalDecoder:
     """Stateful decoder that owns one stream's encoder cache and hypothesis."""
 
-    def __init__(self):
+    def __init__(self, names=()):
+        self.names = list(names)
         streaming_cfg = model.encoder.streaming_cfg
         self.chunk_samples = int(_streaming_value(streaming_cfg.chunk_size)) * MEL_HOP_SAMPLES
         self.drop_extra_pre_encoded = streaming_cfg.drop_extra_pre_encoded
@@ -259,6 +269,9 @@ class IncrementalDecoder:
         self.reset()
 
     def reset(self) -> None:
+        if hasattr(self, "bias"):
+            self.bias.release()
+        self.bias = UtteranceBias(model, self.names)
         self.cache_last_channel, self.cache_last_time, self.cache_last_channel_len = (
             model.encoder.get_initial_cache_state(batch_size=1)
         )
@@ -288,6 +301,12 @@ class IncrementalDecoder:
             self.current_text = self._process_chunk(*chunk)
 
     def _process_chunk(self, processed, processed_len, is_final: bool) -> str:
+        if self.step == 0:
+            try:
+                self.previous_hypotheses = self.bias.initial_hypotheses()
+            except Exception as error:
+                self.bias.release()
+                _label(event="bias_fallback", error=type(error).__name__)
         with torch.inference_mode():
             (
                 _,
@@ -315,14 +334,14 @@ class IncrementalDecoder:
 
 
 class RealtimeTranscriptionSession:
-    def __init__(self, language: str):
+    def __init__(self, language: str, names=()):
         self.language = language or NEMOTRON_LANGUAGE
         self.last_sent_text = ""
         # Keep fallback audio without growing RAM with utterance duration.
         self.fallback_audio = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         self.input_sample_count = 0
         self.resampler = StreamingResampler(REALTIME_SAMPLE_RATE, MODEL_SAMPLE_RATE)
-        self.incremental_decoder = IncrementalDecoder()
+        self.incremental_decoder = IncrementalDecoder(names)
         self.incremental_failed = False
         self.last_final_used_fallback = False
 
@@ -385,6 +404,7 @@ class RealtimeTranscriptionSession:
         self.incremental_failed = False
 
     def close(self) -> None:
+        self.incremental_decoder.bias.release()
         self.fallback_audio.close()
 
 
@@ -410,6 +430,18 @@ async def run_inference(language: str, operation: Callable[..., Any], *args):
 def run_warmup() -> None:
     t0 = time.time()
     _run_with_language(NEMOTRON_LANGUAGE, final_transcribe, np.zeros(MODEL_SAMPLE_RATE, dtype=np.float32))
+
+    # Compile the per-stream decoder before admitting the first real speaker.
+    # Do not use a real roster in warmup or retain a GPU bias model afterward.
+    def warm_biased_stream():
+        session = RealtimeTranscriptionSession(NEMOTRON_LANGUAGE)
+        try:
+            session.append_and_decode(np.zeros(REALTIME_SAMPLE_RATE, dtype=np.int16).tobytes())
+            session.finalize()
+        finally:
+            session.close()
+
+    _run_with_language(NEMOTRON_LANGUAGE, warm_biased_stream)
     _label(event="warmup", elapsed=f"{time.time() - t0:.2f}s")
 
 
@@ -579,6 +611,9 @@ async def realtime_transcription(websocket: WebSocket):
                             continue
                         if transcription is not None:
                             transcription.language = language
+                            transcription.incremental_decoder.names = config["names"]
+                            transcription.incremental_decoder.reset()
+                        names = config["names"]
                         effective_session = realtime_session(realtime_session_id, config["model"], language)
                         configured = True
                         await websocket.send_json(
@@ -621,7 +656,7 @@ async def realtime_transcription(websocket: WebSocket):
                                 raise ValueError(
                                     f"Audio buffer exceeds the {STT_REALTIME_UTTERANCE_SECONDS:g} second limit"
                                 )
-                        except (binascii.Error, ValueError) as decode_error:
+                        except DECODE_ERRORS as decode_error:
                             await websocket.send_json(realtime_error(str(decode_error), client_event_id))
                             continue
                         if not has_inference_slot:
@@ -635,7 +670,7 @@ async def realtime_transcription(websocket: WebSocket):
                         if transcription is None:
                             language = effective_session["audio"]["input"]["transcription"]["language"]
                             transcription = await run_inference(
-                                language, RealtimeTranscriptionSession, language
+                                language, RealtimeTranscriptionSession, language, names
                             )
                         text = await run_inference(
                             transcription.language,

@@ -24,6 +24,7 @@ interface AudioIngesterOptions {
 	producer: Producer;
 	router: Router;
 	sttClient: ISttClient;
+	getNames?: () => string[];
 	onUnexpectedStreamClose: () => void;
 	onTranscript: (text: string, isFinal: boolean, durationMs: number) => void;
 }
@@ -81,6 +82,7 @@ export class AudioIngester {
 	private producer: Producer;
 	private router: Router;
 	private sttClient: ISttClient;
+	private getNames?: () => string[];
 	private sttStream: ISttStream | null = null;
 	private sessionId = randomUUID();
 	private onUnexpectedStreamClose: () => void;
@@ -114,6 +116,7 @@ export class AudioIngester {
 		this.producer = options.producer;
 		this.router = options.router;
 		this.sttClient = options.sttClient;
+		this.getNames = options.getNames;
 		this.onUnexpectedStreamClose = options.onUnexpectedStreamClose;
 		this.onTranscript = options.onTranscript;
 	}
@@ -152,6 +155,7 @@ export class AudioIngester {
 					sessionId: this.sessionId,
 					sampleRate: SAMPLE_RATE,
 					language: process.env.NEMOTRON_LANGUAGE || 'en-US',
+					getNames: this.getNames,
 				},
 				(event) => {
 					this.onTranscript(event.text, event.isFinal, event.durationMs);
