@@ -11,6 +11,8 @@ from websockets.asyncio.server import serve
 
 
 class LoadTest(unittest.TestCase):
+    """Check paced STT harness behavior with a local Realtime server."""
+
     def test_requires_representative_input_format(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "audio.wav"
