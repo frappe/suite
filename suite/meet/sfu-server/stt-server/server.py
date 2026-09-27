@@ -592,6 +592,11 @@ async def realtime_transcription(websocket: WebSocket):
                         )
                         continue
 
+                    if event_type == "session.ping":
+                        # Application heartbeat: quiet caption streams stay connected
+                        # without appending synthetic silence to the ASR utterance.
+                        continue
+
                     if event_type == "input_audio_buffer.append":
                         try:
                             encoded_audio = client_event.get("audio")

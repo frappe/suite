@@ -119,6 +119,79 @@ describe('AudioIngester', () => {
 		expect(stream.markFinal).not.toHaveBeenCalled();
 	});
 
+	it('sends the first speech frames without waiting for the 800 ms speaker update', async () => {
+		const stream = {
+			sendAudio: vi.fn(),
+			markFinal: vi.fn(),
+			onUnexpectedClose: vi.fn(),
+			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
+		} satisfies ISttStream;
+		const ingester = new AudioIngester({
+			roomId: 'room-1',
+			participantId: 'participant-1',
+			producer: { id: 'producer-1' } as Producer,
+			router: {} as Router,
+			sttClient: {} as ISttClient,
+			onUnexpectedStreamClose: vi.fn(),
+			onTranscript: vi.fn(),
+		});
+		const internals = ingester as unknown as {
+			vadQueue: Buffer[];
+			vadQueueBytes: number;
+			sttStream: ISttStream;
+			runVadCheck(): Promise<void>;
+		};
+		internals.sttStream = stream;
+		internals.vadQueue = Array.from({ length: 8 }, speechFrame);
+		internals.vadQueueBytes = FRAME_BYTES * 8;
+
+		await internals.runVadCheck();
+		expect(stream.sendAudio).toHaveBeenCalledTimes(8);
+		internals.vadQueue = [speechFrame()];
+		internals.vadQueueBytes = FRAME_BYTES;
+		await internals.runVadCheck();
+		expect(stream.sendAudio).toHaveBeenCalledTimes(9);
+		expect(stream.sendAudio.mock.calls.map(([frame]) => frame)).toEqual(
+			Array.from({ length: 9 }, speechFrame),
+		);
+	});
+
+	it('keeps a short utterance that ends before the first speaker update', async () => {
+		const stream = {
+			sendAudio: vi.fn(),
+			markFinal: vi.fn(),
+			onUnexpectedClose: vi.fn(),
+			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
+		} satisfies ISttStream;
+		const ingester = new AudioIngester({
+			roomId: 'room-1',
+			participantId: 'participant-1',
+			producer: { id: 'producer-1' } as Producer,
+			router: {} as Router,
+			sttClient: {} as ISttClient,
+			onUnexpectedStreamClose: vi.fn(),
+			onTranscript: vi.fn(),
+		});
+		const internals = ingester as unknown as {
+			vadQueue: Buffer[];
+			vadQueueBytes: number;
+			sttStream: ISttStream;
+			runVadCheck(): Promise<void>;
+		};
+		internals.sttStream = stream;
+		internals.vadQueue = [
+			speechFrame(),
+			speechFrame(),
+			...Array.from({ length: 7 }, () => silenceFrame()),
+		];
+		internals.vadQueueBytes = FRAME_BYTES * 9;
+
+		await internals.runVadCheck();
+
+		expect(stream.sendAudio).toHaveBeenCalledTimes(9);
+		expect(stream.markFinal).toHaveBeenCalledWith(900);
+	});
+
 	it('finalizes continuous speech at the maximum utterance duration', async () => {
 		const stream = {
 			sendAudio: vi.fn(),

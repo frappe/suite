@@ -35,6 +35,7 @@ export const MAX_STT_UTTERANCE_MS = 15_000;
 const MAX_WEBSOCKET_BUFFERED_BYTES = 1024 * 1024;
 const MAX_PENDING_COMMITS = 8;
 const HEALTH_CHECK_TIMEOUT_MS = 5000;
+const STT_KEEPALIVE_INTERVAL_MS = 15_000;
 
 interface RealtimeServerMessage {
 	type?: string;
@@ -176,6 +177,7 @@ class SttStream implements ISttStream {
 	private readyReject: ((error: Error) => void) | null = null;
 	private ready = false;
 	private closeRequested = false;
+	private keepaliveTimer: NodeJS.Timeout | null = null;
 	private unexpectedlyClosed = false;
 	private unexpectedCloseDelivered = false;
 	private unexpectedCloseListener: (() => void) | null = null;
@@ -188,6 +190,7 @@ class SttStream implements ISttStream {
 		this.socket.on('message', (data) => this.handleMessage(data.toString()));
 		this.socket.on('error', (error) => this.readyReject?.(error));
 		this.socket.on('close', (code, reason) => {
+			this.stopKeepalive();
 			const wasReady = this.ready;
 			this.ready = false;
 			this.readyReject?.(
@@ -274,6 +277,7 @@ class SttStream implements ISttStream {
 
 	async close(): Promise<void> {
 		this.closeRequested = true;
+		this.stopKeepalive();
 		if (this.isSocketClosed()) return;
 		await this.waitForPendingCommits();
 		if (this.isSocketClosed()) return;
@@ -317,6 +321,13 @@ class SttStream implements ISttStream {
 			this.readyResolve?.();
 			this.readyResolve = null;
 			this.readyReject = null;
+			if (!this.keepaliveTimer) {
+				this.keepaliveTimer = setInterval(
+					() => this.sendEvent({ type: 'session.ping' }),
+					STT_KEEPALIVE_INTERVAL_MS,
+				);
+				this.keepaliveTimer.unref();
+			}
 			return;
 		}
 		if (message.type === 'error') {
@@ -397,12 +408,18 @@ class SttStream implements ISttStream {
 
 	private fail(error: Error): void {
 		if (this.closeRequested || this.unexpectedlyClosed) return;
+		this.stopKeepalive();
 		loggers.stt.warn('%s', error.message);
 		this.ready = false;
 		this.unexpectedlyClosed = true;
 		this.resolvePendingWaiters();
 		this.deliverUnexpectedClose();
 		this.socket.terminate();
+	}
+
+	private stopKeepalive(): void {
+		if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+		this.keepaliveTimer = null;
 	}
 
 	private isSocketClosed(): boolean {

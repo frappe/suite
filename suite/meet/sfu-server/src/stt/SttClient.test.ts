@@ -301,6 +301,50 @@ describe('SttClient Realtime protocol', () => {
 		await stream.close();
 	});
 
+	it('keeps a configured quiet stream alive without sending audio', async () => {
+		server = createServer((_request, response) =>
+			response.end('{"status":"ok"}'),
+		);
+		websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
+		await new Promise<void>((resolve) =>
+			server!.listen(0, '127.0.0.1', resolve),
+		);
+		const address = server.address();
+		if (!address || typeof address === 'string')
+			throw new Error('Missing test server address');
+		websocketServer.on('connection', (socket) => {
+			socket.send(JSON.stringify({ type: 'session.created' }));
+			socket.on('message', (raw) => {
+				if (
+					(JSON.parse(raw.toString()) as ClientEvent).type === 'session.update'
+				)
+					socket.send(JSON.stringify({ type: 'session.updated' }));
+			});
+		});
+
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		client = new SttClient(`http://127.0.0.1:${address.port}`);
+		const stream = await client.createStream(
+			{ sessionId: 'quiet-participant', sampleRate: 24000 },
+			vi.fn(),
+		);
+		const socket = (stream as unknown as { socket: WebSocket }).socket;
+		const send = vi.spyOn(socket, 'send');
+		try {
+			await vi.advanceTimersByTimeAsync(15_000);
+			expect(send).toHaveBeenCalledWith(
+				JSON.stringify({ type: 'session.ping' }),
+			);
+			expect(send).toHaveBeenCalledTimes(1);
+			await stream.close();
+			await vi.advanceTimersByTimeAsync(15_000);
+			expect(send).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+			await stream.close();
+		}
+	});
+
 	it('treats a missing health endpoint as unavailable', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 			ok: false,

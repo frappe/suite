@@ -24,8 +24,6 @@ interface AudioIngesterOptions {
 	producer: Producer;
 	router: Router;
 	sttClient: ISttClient;
-	/** Called before each flush; if false, audio is discarded (active-speaker-only mode) */
-	isActiveSpeaker?: () => boolean;
 	onUnexpectedStreamClose: () => void;
 	onTranscript: (text: string, isFinal: boolean, durationMs: number) => void;
 }
@@ -85,7 +83,6 @@ export class AudioIngester {
 	private sttClient: ISttClient;
 	private sttStream: ISttStream | null = null;
 	private sessionId = randomUUID();
-	private isActiveSpeaker?: () => boolean;
 	private onUnexpectedStreamClose: () => void;
 	private onTranscript: (
 		text: string,
@@ -117,7 +114,6 @@ export class AudioIngester {
 		this.producer = options.producer;
 		this.router = options.router;
 		this.sttClient = options.sttClient;
-		this.isActiveSpeaker = options.isActiveSpeaker;
 		this.onUnexpectedStreamClose = options.onUnexpectedStreamClose;
 		this.onTranscript = options.onTranscript;
 	}
@@ -431,14 +427,11 @@ export class AudioIngester {
 	}
 
 	private sendFrame(frame: Buffer): void {
-		if (this.isActiveSpeaker && !this.isActiveSpeaker()) {
-			loggers.stt.debug(
-				'Speaker %s not active, discarding frame',
-				this.participantId,
-			);
-			return;
-		}
-		this.sttStream?.sendAudio(frame);
+		// Do not gate on the 800 ms speaker observer: short utterances can end
+		// before its first update. Each producer already has its own VAD stream.
+		const stream = this.sttStream;
+		if (!stream) return;
+		stream.sendAudio(frame);
 		this.streamedBytes += frame.length;
 	}
 

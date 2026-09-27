@@ -36,6 +36,11 @@ The model is downloaded at startup. Mount `/models` to persist the Hugging Face,
 
 Connect to `/v1/realtime` with the bearer token, send a transcription `session.update` configured for 24 kHz PCM16 mono, append base64 audio with `input_audio_buffer.append`, and finalize turns with `input_audio_buffer.commit`. The server emits Realtime transcription delta and completed events. Startup fails when `STT_API_KEY` is unset. CUDA is also required unless `STT_ALLOW_CPU=1` is explicitly set for development.
 
+Configured SFU streams send a `session.ping` event every 15 seconds to keep quiet
+participants connected without adding silence to the model. If changing
+`STT_REALTIME_IDLE_SECONDS`, keep it above 15 seconds. The one-hour session
+limit still applies; the SFU reconnects when a session expires.
+
 ## Run
 
 ```bash

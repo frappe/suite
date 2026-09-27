@@ -73,7 +73,6 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				await deps.mediasoup.createRoom(
 					scopedRoomId,
 					(roomIdInner, peerIds) => {
-						deps.sttManager?.setActiveSpeakers(roomIdInner, peerIds);
 						deps.registry.emitActiveSpeaker(
 							roomIdInner,
 							participantIdsForPeers(deps, roomIdInner, peerIds),
@@ -237,7 +236,6 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				roomId = getRoomId(socket);
 				peerId = socket.userId;
 				await deps.mediasoup.createRoom(roomId, (roomIdInner, peerIds) => {
-					deps.sttManager?.setActiveSpeakers(roomIdInner, peerIds);
 					deps.registry.emitActiveSpeaker(
 						roomIdInner,
 						participantIdsForPeers(deps, roomIdInner, peerIds),

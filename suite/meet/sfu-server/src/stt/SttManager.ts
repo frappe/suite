@@ -26,7 +26,6 @@ export class SttManager {
 	private sttClient: ISttClient;
 	private activeSessions = new Map<string, AudioIngester>();
 	private roomSubscribers = new Map<string, Set<string>>();
-	private roomActiveSpeakers = new Map<string, Set<string>>();
 	private sessionRecoveries = new Map<string, symbol>();
 	private stoppingRooms = new Map<string, number>();
 	private emitToSubscribers: EmitSttToSubscribers | undefined;
@@ -71,18 +70,8 @@ export class SttManager {
 		if (this.sttClient.isAvailable()) this.restartSubscribedRooms();
 	}
 
-	setActiveSpeakers(roomId: string, participantIds: string[]): void {
-		this.roomActiveSpeakers.set(roomId, new Set(participantIds));
-	}
-
 	isAvailable(): boolean {
 		return this.configured && this.sttClient.isAvailable();
-	}
-
-	isActiveSpeaker(roomId: string, participantId: string): boolean {
-		const speakers = this.roomActiveSpeakers.get(roomId);
-		if (!speakers) return true;
-		return speakers.has(participantId);
 	}
 
 	hasSubscribers(roomId: string): boolean {
@@ -160,7 +149,6 @@ export class SttManager {
 			producer,
 			router,
 			sttClient: this.sttClient,
-			isActiveSpeaker: () => this.isActiveSpeaker(roomId, participantId),
 			onUnexpectedStreamClose: () => {
 				void this.recoverIngester(
 					sessionKey,
@@ -234,7 +222,6 @@ export class SttManager {
 			this.stoppingRooms.set(roomId, (this.stoppingRooms.get(roomId) ?? 0) + 1);
 		}
 		this.roomSubscribers.delete(roomId);
-		this.roomActiveSpeakers.delete(roomId);
 		try {
 			await this.stopRoomTranscriptions(roomId);
 			if (restartIfSubscribed && subscribers?.size) {
@@ -244,7 +231,6 @@ export class SttManager {
 		} finally {
 			if (!restartIfSubscribed) {
 				this.roomSubscribers.delete(roomId);
-				this.roomActiveSpeakers.delete(roomId);
 				const remainingStops = (this.stoppingRooms.get(roomId) ?? 1) - 1;
 				if (remainingStops > 0) this.stoppingRooms.set(roomId, remainingStops);
 				else this.stoppingRooms.delete(roomId);
