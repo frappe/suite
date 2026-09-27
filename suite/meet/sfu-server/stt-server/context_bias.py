@@ -72,6 +72,8 @@ class UtteranceBias:
         self.request = None
 
     def initial_hypotheses(self):
+        if not self.names:
+            return None
         from nemo.collections.asr.parts.context_biasing import BoostingTreeModelConfig
         from nemo.collections.asr.parts.context_biasing.biasing_multi_model import BiasingRequestItemConfig
         from nemo.collections.asr.parts.utils.rnnt_utils import Hypothesis
@@ -79,7 +81,7 @@ class UtteranceBias:
         # Speakers often address a participant by given name rather than the
         # full display name shown in the Meet Room.
         spoken_names = [part for name in self.names for part in (name, name.split()[0])]
-        phrases = list(dict.fromkeys((*spoken_names, *FRAPPE_TERMS)))
+        phrases = list(dict.fromkeys(spoken_names))
         request = BiasingRequestItemConfig(
             boosting_model_cfg=BoostingTreeModelConfig(key_phrases_list=phrases),
             boosting_model_alpha=self.alpha,

@@ -1,6 +1,6 @@
 import unittest
 
-from context_bias import FRAPPE_TERMS, MAX_NAMES, validate_names
+from context_bias import FRAPPE_TERMS, MAX_NAMES, UtteranceBias, validate_names
 
 
 class ContextBiasTest(unittest.TestCase):
@@ -18,6 +18,11 @@ class ContextBiasTest(unittest.TestCase):
         self.assertIn("ERPNext", FRAPPE_TERMS)
         self.assertIn("DocType", FRAPPE_TERMS)
         self.assertNotIn("app", FRAPPE_TERMS)
+
+    def test_no_room_names_does_not_allocate_a_per_stream_bias_model(self):
+        bias = UtteranceBias(object(), [])
+        self.assertIsNone(bias.initial_hypotheses())
+        bias.release()
 
 
 if __name__ == "__main__":

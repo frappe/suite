@@ -17,9 +17,10 @@ import nemo.collections.asr as nemo_asr
 import numpy as np
 import torch
 import uvicorn
-from context_bias import UtteranceBias
+from context_bias import FRAPPE_TERMS, UtteranceBias
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from nemo.collections.asr.parts.context_biasing import BoostingTreeModelConfig
 from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer
 from omegaconf import OmegaConf
 from protocol import (
@@ -121,6 +122,13 @@ def load_model() -> None:
     # while other participants have active hypotheses.
     decoding = model.cfg.decoding.copy()
     OmegaConf.update(decoding, "greedy.enable_per_stream_biasing", True, force_add=True)
+    OmegaConf.update(
+        decoding,
+        "greedy.boosting_tree",
+        OmegaConf.structured(BoostingTreeModelConfig(key_phrases_list=list(FRAPPE_TERMS))),
+        force_add=True,
+    )
+    OmegaConf.update(decoding, "greedy.boosting_tree_alpha", 0.35, force_add=True)
     model.change_decoding_strategy(decoding)
     model.encoder.set_default_att_context_size(att_context_size)
     _label(event="model_loaded", backend="nemo", context=att_context_size, elapsed=f"{time.time() - t0:.2f}s")
@@ -434,9 +442,11 @@ def run_warmup() -> None:
     # Compile the per-stream decoder before admitting the first real speaker.
     # Do not use a real roster in warmup or retain a GPU bias model afterward.
     def warm_biased_stream():
-        session = RealtimeTranscriptionSession(NEMOTRON_LANGUAGE)
+        session = RealtimeTranscriptionSession(NEMOTRON_LANGUAGE, ["Nemotron"])
         try:
             session.append_and_decode(np.zeros(REALTIME_SAMPLE_RATE, dtype=np.int16).tobytes())
+            if session.incremental_failed:
+                raise RuntimeError("Per-stream decoder warmup failed")
             session.finalize()
         finally:
             session.close()
