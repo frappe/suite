@@ -1,5 +1,4 @@
 import hmac
-import json
 import re
 import time
 import uuid
@@ -132,10 +131,6 @@ def realtime_error(
             "event_id": client_event_id,
         },
     }
-
-
-def openai_sse_event(event: dict) -> str:
-    return f"data: {json.dumps(event)}\n\n"
 
 
 def transcript_delta(previous: str, current: str) -> str | None:

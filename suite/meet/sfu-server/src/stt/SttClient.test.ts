@@ -301,17 +301,21 @@ describe('SttClient Realtime protocol', () => {
 		await stream.close();
 	});
 
-	it('treats a missing health endpoint as reachable', async () => {
+	it('treats a missing health endpoint as unavailable', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 			ok: false,
 			status: 404,
 		} as Response);
 		client = new SttClient('http://stt.example');
-		const internals = client as unknown as { checkHealth: () => void };
+		const internals = client as unknown as {
+			checkHealth: () => void;
+			healthCheckInFlight: boolean;
+		};
 
 		internals.checkHealth();
 
-		await vi.waitFor(() => expect(client!.isAvailable()).toBe(true));
+		await vi.waitFor(() => expect(internals.healthCheckInFlight).toBe(false));
+		expect(client.isAvailable()).toBe(false);
 	});
 
 	it('notifies after each unhealthy-to-healthy recovery', async () => {

@@ -83,8 +83,7 @@ export class SttClient implements ISttClient {
 		})
 			.then((res) => {
 				if (this.destroyed) return;
-				if (res.ok || res.status === 404) {
-					// 404 means the backend has no health endpoint; treat as reachable.
+				if (res.ok) {
 					const recovered = !this.available;
 					this.available = true;
 					loggers.stt.info('STT server reachable at %s', this.serverUrl);

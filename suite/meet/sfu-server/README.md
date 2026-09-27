@@ -14,23 +14,24 @@ Set `STT_SERVER_URL` to a running STT service that implements `/health` and the 
 
 Set `STT_SERVER_URL` to an externally managed STT backend. The SFU deployment does not start an STT sidecar.
 
-### Environment Variables
+### SFU Environment Variables
+
+The SFU deployment forwards these settings to the SFU only. Set the model ID
+and language on the separately deployed STT server too; its attention context,
+final-silence padding, and Hugging Face token belong only there.
 
 | Variable | Description | Default |
 |---|---|---|
 | `STT_SERVER_URL` | SFU URL for the STT service | — |
 | `STT_API_KEY` | Bearer token sent to the STT service when it requires authentication | — |
-| `NEMOTRON_MODEL` | Hugging Face model ID | `nvidia/nemotron-3.5-asr-streaming-0.6b` |
+| `NEMOTRON_MODEL` | STT model ID sent in the Realtime session | `nvidia/nemotron-3.5-asr-streaming-0.6b` |
 | `NEMOTRON_LANGUAGE` | Locale prompt such as `en-US`, or `auto` for multilingual rooms | `en-US` |
-| `NEMOTRON_ATT_CONTEXT_SIZE` | NeMo streaming attention context, `left,right` | `56,3` |
-| `NEMOTRON_FINAL_SILENCE_MS` | Silence padding appended before final decode | `600` |
 | `STT_SILENCE_MS` | Silence duration before finalizing an utterance | `500` |
 | `STT_MIN_SPEECH_MS` | Minimum speech duration before normal silence final | `600` |
 | `STT_MIN_TAIL_MS` | Minimum speech duration for short utterance final | `200` |
 | `STT_SHORT_UTTERANCE_SILENCE_MS` | Silence duration before finalizing short utterances | `700` |
 | `STT_VAD_THRESHOLD` | Speech detection sensitivity (0.0–1.0) | `0.012` |
 | `STT_PRE_ROLL_MS` | Audio retained before speech detection to avoid clipped words | `300` |
-| `HF_TOKEN` | Hugging Face token (optional, avoids rate limits) | — |
 
 The SFU finalizes continuous speech every 15 seconds. If a Realtime stream exceeds
 that utterance limit, queues more than 1 MiB of outbound WebSocket data, or leaves

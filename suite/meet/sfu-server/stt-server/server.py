@@ -1,35 +1,24 @@
 #!/usr/bin/env python3
-"""Nemotron ASR service for OpenAI clients and session-scoped Meet streams."""
+"""Nemotron ASR service for session-scoped Meet streams."""
 
 import asyncio
 import base64
 import binascii
 import json
 import os
-import subprocess
 import tempfile
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
 import nemo.collections.asr as nemo_asr
 import numpy as np
-import soundfile as sf
 import torch
 import uvicorn
-from fastapi import (
-    FastAPI,
-    File,
-    Form,
-    Header,
-    HTTPException,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-)
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer
 from protocol import (
     MODEL_SAMPLE_RATE,
@@ -39,14 +28,13 @@ from protocol import (
     event_id,
     item_id,
     normalize_language,
-    openai_sse_event,
     realtime_error,
     realtime_session,
     transcript_delta,
     validate_session_update,
 )
 from resampling import StreamingResampler
-from runtime import AuthenticatedBodyLimitMiddleware, run_in_thread_serialized
+from runtime import run_in_thread_serialized
 
 NEMOTRON_MODEL = os.getenv("NEMOTRON_MODEL", "nvidia/nemotron-3.5-asr-streaming-0.6b")
 NEMOTRON_LANGUAGE = normalize_language(os.getenv("NEMOTRON_LANGUAGE"), "en-US")
@@ -55,11 +43,6 @@ NEMOTRON_FINAL_SILENCE_MS = int(os.getenv("NEMOTRON_FINAL_SILENCE_MS", "600"))
 STT_STREAM_QUEUE_FRAMES = max(1, int(os.getenv("STT_STREAM_QUEUE_FRAMES", "400")))
 STT_API_KEY = os.getenv("STT_API_KEY")
 STT_ALLOW_CPU = os.getenv("STT_ALLOW_CPU", "").lower() in {"1", "true", "yes"}
-STT_MAX_UPLOAD_BYTES = int(os.getenv("STT_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
-STT_MAX_HTTP_BODY_BYTES = STT_MAX_UPLOAD_BYTES + 1024 * 1024
-STT_MAX_AUDIO_SECONDS = float(os.getenv("STT_MAX_AUDIO_SECONDS", "300"))
-STT_MAX_DECODED_BYTES = int(os.getenv("STT_MAX_DECODED_BYTES", str(256 * 1024 * 1024)))
-STT_FFMPEG_TIMEOUT_SECONDS = float(os.getenv("STT_FFMPEG_TIMEOUT_SECONDS", "30"))
 STT_REALTIME_MESSAGE_BYTES = int(os.getenv("STT_REALTIME_MESSAGE_BYTES", str(1024 * 1024)))
 STT_REALTIME_QUEUE_BYTES = int(os.getenv("STT_REALTIME_QUEUE_BYTES", str(4 * 1024 * 1024)))
 STT_REALTIME_UTTERANCE_SECONDS = float(os.getenv("STT_REALTIME_UTTERANCE_SECONDS", "60"))
@@ -72,7 +55,6 @@ MEL_HOP_SAMPLES = 160
 
 model = None
 inference_semaphore: asyncio.Semaphore | None = None
-decode_semaphore: asyncio.Semaphore | None = None
 ready = False
 inference_started_at: float | None = None
 last_inference_failure_at: int | None = None
@@ -423,92 +405,6 @@ async def run_inference(language: str, operation: Callable[..., Any], *args):
     return await run_in_thread_serialized(inference_semaphore, _run_with_language, language, operation, *args)
 
 
-class AudioLimitError(ValueError):
-    pass
-
-
-def load_uploaded_audio(audio_bytes: bytes, filename: str) -> np.ndarray:
-    suffix = os.path.splitext(filename)[1] or ".wav"
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, f"audio{suffix}")
-        with open(path, "wb") as audio_file:
-            audio_file.write(audio_bytes)
-        try:
-            info = sf.info(path)
-            if info.samplerate <= 0 or info.channels <= 0:
-                raise AudioLimitError("Invalid audio stream metadata")
-            if info.duration > STT_MAX_AUDIO_SECONDS:
-                raise AudioLimitError(f"Audio exceeds the {STT_MAX_AUDIO_SECONDS:g} second limit")
-            if info.frames * info.channels * 4 > STT_MAX_DECODED_BYTES:
-                raise AudioLimitError("Decoded audio exceeds the size limit")
-            audio, sample_rate = sf.read(path, dtype="float32")
-        except AudioLimitError:
-            raise
-        except Exception:
-            decoded_path = os.path.join(directory, "decoded.f32")
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-v",
-                    "error",
-                    "-i",
-                    path,
-                    "-t",
-                    str(STT_MAX_AUDIO_SECONDS + 1),
-                    "-f",
-                    "f32le",
-                    "-ac",
-                    "1",
-                    "-ar",
-                    str(MODEL_SAMPLE_RATE),
-                    "-y",
-                    decoded_path,
-                ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=STT_FFMPEG_TIMEOUT_SECONDS,
-            )
-            decoded_size = os.path.getsize(decoded_path)
-            max_samples = int(STT_MAX_AUDIO_SECONDS * MODEL_SAMPLE_RATE)
-            if decoded_size > max_samples * 4:
-                raise ValueError(f"Audio exceeds the {STT_MAX_AUDIO_SECONDS:g} second limit")
-            if decoded_size > STT_MAX_DECODED_BYTES:
-                raise ValueError("Decoded audio exceeds the size limit")
-            with open(decoded_path, "rb") as decoded_file:
-                return np.frombuffer(decoded_file.read(), dtype=np.float32).copy()
-
-    if audio.ndim > 1:
-        audio = audio.mean(axis=-1) if audio.shape[-1] <= audio.shape[0] else audio.mean(axis=0)
-    if sample_rate != MODEL_SAMPLE_RATE:
-        import librosa
-
-        audio = librosa.resample(
-            np.asarray(audio, dtype=np.float32),
-            orig_sr=sample_rate,
-            target_sr=MODEL_SAMPLE_RATE,
-        )
-    audio = np.asarray(audio, dtype=np.float32)
-    if audio.size > int(STT_MAX_AUDIO_SECONDS * MODEL_SAMPLE_RATE):
-        raise ValueError(f"Audio exceeds the {STT_MAX_AUDIO_SECONDS:g} second limit")
-    if audio.nbytes > STT_MAX_DECODED_BYTES:
-        raise ValueError("Decoded audio exceeds the size limit")
-    return audio
-
-
-async def read_upload_limited(file: UploadFile) -> bytes:
-    if file.size is not None and file.size > STT_MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Audio upload is too large")
-    chunks = []
-    total = 0
-    while chunk := await file.read(1024 * 1024):
-        total += len(chunk)
-        if total > STT_MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="Audio upload is too large")
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
 def run_warmup() -> None:
     t0 = time.time()
     _run_with_language(NEMOTRON_LANGUAGE, final_transcribe, np.zeros(MODEL_SAMPLE_RATE, dtype=np.float32))
@@ -517,11 +413,10 @@ def run_warmup() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global decode_semaphore, inference_semaphore, ready
+    global inference_semaphore, ready
     if not STT_API_KEY:
         raise RuntimeError("STT_API_KEY is required")
     load_model()
-    decode_semaphore = asyncio.Semaphore(2)
     inference_semaphore = asyncio.Semaphore(1)
     await asyncio.to_thread(run_warmup)
     ready = True
@@ -533,12 +428,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Nemotron STT Server", lifespan=lifespan)
-app.add_middleware(
-    AuthenticatedBodyLimitMiddleware,
-    path="/v1/audio/transcriptions",
-    max_bytes=STT_MAX_HTTP_BODY_BYTES,
-    authorize=lambda value: bearer_token_matches(value, STT_API_KEY),
-)
 
 
 @app.get("/health")
@@ -559,91 +448,6 @@ async def health():
         "inference_active_seconds": round(busy_for, 1) if busy_for is not None else None,
         "recent_inference_failure": recent_failure,
     }
-
-
-@app.get("/v1/models")
-async def list_models():
-    return {
-        "object": "list",
-        "data": [
-            {
-                "id": MODEL_ID,
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "nvidia",
-            }
-        ],
-    }
-
-
-@app.post("/v1/audio/transcriptions")
-async def transcribe_audio_file(
-    file: Annotated[UploadFile, File()],
-    authorization: Annotated[str | None, Header()] = None,
-    model_name: Annotated[str, Form(alias="model")] = MODEL_ID,
-    response_format: Annotated[str, Form()] = "json",
-    stream: Annotated[bool, Form()] = False,
-    language: Annotated[str | None, Form()] = None,
-    temperature: Annotated[str | None, Form()] = None,
-    prompt: Annotated[str | None, Form()] = None,
-):
-    if not ready or model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    if model_name not in {MODEL_ID, NEMOTRON_MODEL}:
-        raise HTTPException(status_code=400, detail=f"Unsupported model: {model_name}")
-    if response_format not in {"json", "text", "verbose_json"}:
-        raise HTTPException(status_code=400, detail=f"Unsupported response_format: {response_format}")
-    audio_bytes = await read_upload_limited(file)
-    if not audio_bytes:
-        raise HTTPException(status_code=400, detail="Empty audio file")
-    try:
-        if decode_semaphore is None:
-            raise RuntimeError("Decode service is not initialized")
-        audio = await run_in_thread_serialized(
-            decode_semaphore, load_uploaded_audio, audio_bytes, file.filename or "audio.wav"
-        )
-    except Exception as error:
-        raise HTTPException(status_code=400, detail=f"Failed to process audio: {error}") from error
-
-    resolved_language = normalize_language(language, NEMOTRON_LANGUAGE)
-    duration = len(audio) / MODEL_SAMPLE_RATE
-    if stream:
-
-        async def event_stream() -> AsyncGenerator[str]:
-            decoder = await run_inference(resolved_language, IncrementalDecoder)
-            previous = ""
-            for offset in range(0, len(audio), decoder.chunk_samples):
-                current = await run_inference(
-                    resolved_language,
-                    decoder.feed,
-                    audio[offset : offset + decoder.chunk_samples],
-                )
-                if delta := transcript_delta(previous, current):
-                    yield openai_sse_event({"type": "transcript.text.delta", "delta": delta})
-                    previous = current
-            final = await run_inference(resolved_language, decoder.flush)
-            if delta := transcript_delta(previous, final):
-                yield openai_sse_event({"type": "transcript.text.delta", "delta": delta})
-            yield openai_sse_event({"type": "transcript.text.done", "text": final})
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    text = await run_inference(resolved_language, final_transcribe, audio)
-    if response_format == "text":
-        return PlainTextResponse(text)
-    if response_format == "verbose_json":
-        return {
-            "text": text,
-            "task": "transcribe",
-            "language": resolved_language,
-            "duration": duration,
-        }
-    return {"text": text}
 
 
 @app.websocket("/v1/realtime")

@@ -5,7 +5,6 @@ from protocol import (
     bearer_token_matches,
     clean_transcript,
     normalize_language,
-    openai_sse_event,
     realtime_error,
     realtime_session,
     transcript_delta,
@@ -87,12 +86,8 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(error["type"], "error")
         self.assertEqual(error["error"]["event_id"], "client_event_1")
 
-    def test_cleans_language_tags_and_frames_openai_events(self):
+    def test_cleans_language_tags(self):
         self.assertEqual(clean_transcript(" <EN-us>  Hello   world "), "Hello world")
-        self.assertEqual(
-            openai_sse_event({"type": "transcript.text.delta", "delta": "Hello"}),
-            'data: {"type": "transcript.text.delta", "delta": "Hello"}\n\n',
-        )
 
     def test_normalizes_unsupported_english_locales(self):
         self.assertEqual(normalize_language("en-gb", "en-US"), "en-GB")
