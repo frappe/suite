@@ -6,10 +6,12 @@ on:
       - develop
     paths:
       - "suite/meet/sfu-server/stt-server/**"
+      - "!suite/meet/sfu-server/stt-server/load/**"
       - ".github/workflows/meet-stt-build.yml"
   pull_request:
     paths:
       - "suite/meet/sfu-server/stt-server/**"
+      - "!suite/meet/sfu-server/stt-server/load/**"
       - ".github/workflows/meet-stt-build.yml"
   workflow_dispatch:
     inputs:

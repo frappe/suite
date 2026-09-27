@@ -47,7 +47,8 @@ SFU/transport/UI overhead. This second stage requires a staging Meet deployment
 and is not automated by this STT-only harness. These measurements are opt-in
 GPU/staging tests, not PR CI tests.
 
-The harness itself has a model-free local test:
+The harness itself has a model-free local test, also run in PR CI for load-only
+changes without building the production STT image:
 
 ```sh
 uv run --no-project --with websockets python -m unittest discover -s load -p '*_test.py'
