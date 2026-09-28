@@ -26,8 +26,9 @@ languages and final packet lengths. To measure the current biased decoder,
 `--names Siobhan,Zubair` sends one *synthetic* room-name hint per stream,
 cycling through the supplied names; compare with a run without hints.
 The report contains only the number of hints per stream, not the names or
-transcripts; final-text hashes can be compared across runs without retaining
-the text. Do not supply private participant names or speech.
+transcripts. Compare completion rates and latency across runs instead of
+retaining transcript text or hashes. Do not supply private participant names
+or speech.
 
 Repeat for 2, 4, 8, ... streams, then near the observed knee with smaller
 increments. Repeat each level several times with the same audio and GPU state;

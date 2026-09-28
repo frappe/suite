@@ -124,6 +124,7 @@ export class AudioIngester {
 		this.onTranscript = options.onTranscript;
 	}
 
+	/** Whether an ingester currently holds a stream; false between closure and recovery. */
 	hasRealtimeStream(): boolean {
 		return this.sttStream !== null;
 	}
@@ -442,9 +443,10 @@ export class AudioIngester {
 		// before its first update. Each producer already has its own VAD stream.
 		const stream = this.sttStream;
 		if (!stream) return;
-		stream.sendAudio(frame);
-		this.onAudioSent?.(frame.length / BYTES_PER_SAMPLE / SAMPLE_RATE);
-		this.streamedBytes += frame.length;
+		if (stream.sendAudio(frame)) {
+			this.onAudioSent?.(frame.length / BYTES_PER_SAMPLE / SAMPLE_RATE);
+			this.streamedBytes += frame.length;
+		}
 	}
 
 	private markFinal(): void {

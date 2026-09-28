@@ -91,6 +91,7 @@ export class SttManager {
 		return (this.roomSubscribers.get(roomId)?.size ?? 0) > 0;
 	}
 
+	/** Aggregate rooms, subscribers, ingesters, and held streams; recovering ingesters lack streams. */
 	getResourceCounts(): Record<string, number> {
 		return {
 			stt_subscribed_rooms: this.roomSubscribers.size,

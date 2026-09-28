@@ -7,7 +7,6 @@ production image): uv run --no-project --with websockets python load/stt_load.py
 import argparse
 import asyncio
 import base64
-import hashlib
 import json
 import math
 import os
@@ -99,7 +98,6 @@ async def run_stream(
             "final_after_audio_seconds": None,
             "max_sender_lag_seconds": 0.0,
             "error": None,
-            "transcript_sha256": None,
         }
         for index in range(rounds)
     ]
@@ -185,9 +183,6 @@ async def run_stream(
                         elif kind == "conversation.item.input_audio_transcription.completed":
                             if (event.get("transcript") or "").strip():
                                 rows[index]["completed"] = True
-                                rows[index]["transcript_sha256"] = hashlib.sha256(
-                                    event["transcript"].encode()
-                                ).hexdigest()
                                 rows[index]["final_after_audio_seconds"] = round(
                                     time.monotonic() - ends[index], 3
                                 )

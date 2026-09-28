@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import tempfile
@@ -104,10 +103,8 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(received[1][0]["language"], "es-ES")
         self.assertEqual(received[0][1], [4800, 4800, 960])
         self.assertEqual(received[1][1], [4800, 3840])
-        self.assertEqual(
-            [row["transcript_sha256"] for row in report["utterances"]],
-            [hashlib.sha256(b"recognized").hexdigest()] * 2,
-        )
+        self.assertNotIn("recognized", json.dumps(report))
+        self.assertNotIn("transcript_sha256", json.dumps(report))
 
     def test_requires_representative_input_format(self):
         with tempfile.TemporaryDirectory() as folder:

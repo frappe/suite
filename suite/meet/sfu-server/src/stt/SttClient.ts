@@ -16,7 +16,8 @@ export interface SttTranscriptEvent {
 }
 
 export interface ISttStream {
-	sendAudio(frame: Buffer): void;
+	/** True when the audio frame was queued on the STT connection, not acknowledged by STT. */
+	sendAudio(frame: Buffer): boolean;
 	markFinal(durationMs: number): void;
 	onUnexpectedClose(listener: () => void): void;
 	close(): Promise<void>;
@@ -243,8 +244,8 @@ class SttStream implements ISttStream {
 		});
 	}
 
-	sendAudio(frame: Buffer): void {
-		if (!this.ready || this.socket.readyState !== WebSocket.OPEN) return;
+	sendAudio(frame: Buffer): boolean {
+		if (!this.ready || this.socket.readyState !== WebSocket.OPEN) return false;
 		if (this.bufferedBytes === 0) {
 			const names = this.metadata.getNames?.() ?? [];
 			const key = JSON.stringify(names);
@@ -259,7 +260,7 @@ class SttStream implements ISttStream {
 			this.fail(
 				new Error(`STT utterance exceeded ${MAX_STT_UTTERANCE_MS} ms limit`),
 			);
-			return;
+			return false;
 		}
 		if (
 			!this.sendEvent({
@@ -267,8 +268,9 @@ class SttStream implements ISttStream {
 				audio: frame.toString('base64'),
 			})
 		)
-			return;
+			return false;
 		this.bufferedBytes += frame.length;
+		return true;
 	}
 
 	markFinal(durationMs: number): void {
@@ -506,8 +508,9 @@ class MockSttStream implements ISttStream {
 		private onTranscript: (event: SttTranscriptEvent) => void,
 	) {}
 
-	sendAudio(frame: Buffer): void {
+	sendAudio(frame: Buffer): boolean {
 		this.bytes += frame.length;
+		return true;
 	}
 
 	markFinal(durationMs: number): void {

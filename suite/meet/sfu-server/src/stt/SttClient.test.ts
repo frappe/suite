@@ -119,7 +119,7 @@ describe('SttClient Realtime protocol', () => {
 		const unexpectedClose = vi.fn();
 		stream.onUnexpectedClose(unexpectedClose);
 
-		stream.sendAudio(Buffer.from([0, 0, 1, 0]));
+		expect(stream.sendAudio(Buffer.from([0, 0, 1, 0]))).toBe(true);
 		names = ['Zubair'];
 		stream.sendAudio(Buffer.from([0, 0]));
 		stream.markFinal(100);
@@ -229,7 +229,7 @@ describe('SttClient Realtime protocol', () => {
 		const socket = (stream as unknown as { socket: WebSocket }).socket;
 		Object.defineProperty(socket, 'bufferedAmount', { value: 1024 * 1024 });
 
-		stream.sendAudio(Buffer.alloc(2));
+		expect(stream.sendAudio(Buffer.alloc(2))).toBe(false);
 
 		expect(unexpectedClose).toHaveBeenCalledOnce();
 		await vi.waitFor(() => expect(socket.readyState).toBe(socket.CLOSED));

@@ -67,7 +67,7 @@ describe('AudioIngester', () => {
 	it('drains queued VAD frames with capped pre-roll ordering', async () => {
 		const onAudioSent = vi.fn();
 		const stream = {
-			sendAudio: vi.fn(),
+			sendAudio: vi.fn(() => true),
 			markFinal: vi.fn(),
 			onUnexpectedClose: vi.fn(),
 			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
@@ -123,11 +123,16 @@ describe('AudioIngester', () => {
 		expect(
 			onAudioSent.mock.calls.reduce((sum, [seconds]) => sum + seconds, 0),
 		).toBeCloseTo(0.6);
+		stream.sendAudio.mockReturnValueOnce(false);
+		internals.vadQueue = [speechFrame()];
+		internals.vadQueueBytes = FRAME_BYTES;
+		await internals.runVadCheck();
+		expect(onAudioSent).toHaveBeenCalledTimes(6);
 	});
 
 	it('sends the first speech frames without waiting for the 800 ms speaker update', async () => {
 		const stream = {
-			sendAudio: vi.fn(),
+			sendAudio: vi.fn(() => true),
 			markFinal: vi.fn(),
 			onUnexpectedClose: vi.fn(),
 			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
@@ -164,7 +169,7 @@ describe('AudioIngester', () => {
 
 	it('keeps a short utterance that ends before the first speaker update', async () => {
 		const stream = {
-			sendAudio: vi.fn(),
+			sendAudio: vi.fn(() => true),
 			markFinal: vi.fn(),
 			onUnexpectedClose: vi.fn(),
 			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
@@ -200,7 +205,7 @@ describe('AudioIngester', () => {
 
 	it('finalizes continuous speech at the maximum utterance duration', async () => {
 		const stream = {
-			sendAudio: vi.fn(),
+			sendAudio: vi.fn(() => true),
 			markFinal: vi.fn(),
 			onUnexpectedClose: vi.fn(),
 			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
