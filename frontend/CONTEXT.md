@@ -19,7 +19,7 @@ Settings and the account.
 _Avoid_: Sidebar, Nav bar, App switcher
 
 **Area**:
-One rail destination with its own routes and content. Home, Files, Mail,
+One rail destination with its own routes and content. Home, Drive, Mail,
 Calendar and Meet are areas. An open document is not an area; it is
 where the shell puts a document.
 _Avoid_: App, Product, Module (those name code ownership, not navigation)
@@ -30,7 +30,7 @@ have one, none or its own. On mobile it is the bottom sheet.
 _Avoid_: Contextual panel, Drawer, Left nav
 
 **Content pane**:
-The main region an area or an open document renders into. Home and Files
+The main region an area or an open document renders into. Home and Drive
 scroll it as a page; Mail, Calendar, Meet and an open document manage their
 own scrolling.
 _Avoid_: Main, Page, Viewport
@@ -42,10 +42,11 @@ contributes Account and Workspace. The phone shows the same groups as a
 drill-in list.
 _Avoid_: Settings section, Settings category, Settings modal
 
-**Files**:
-The area that shows the Drive tree. Files is the area name; Drive is the
-product that owns it.
-_Avoid_: Drive (as an area name), My Drive, Home folder
+**Drive area**:
+The area that shows the Drive tree. Its rail label is Drive and its routes
+sit under `/drive`. Drive is also the product that owns it; say "Drive area"
+when the difference matters.
+_Avoid_: Files (the retired area name), My Drive, Home folder
 
 **Drive Root**:
 A top-level Drive namespace. A root is either Personal or Shared and is a
@@ -53,22 +54,23 @@ location, not a saved view.
 _Avoid_: Workspace, Drive space
 
 **Personal Root**:
-The Drive Root owned by one user, presented in Files as **My files**.
+The Drive Root owned by one user, presented in the Drive area as **My files**.
 _Avoid_: Home, Home folder, Personal workspace
 
 **Shared Root**:
-The business site's organization-owned Drive Root, presented in Files as
-**Organization files**. Personal sites do not have one.
+The business site's organization-owned Drive Root, presented in the Drive
+area as **Organization files**. Personal sites do not have one.
 _Avoid_: Everyone, Shared drive, Organization workspace
 
 **Saved view**:
-A computed Files listing such as Shared with me, Recent, Starred, or Trash. It
+A computed Drive area listing such as Shared with me, Recent, Starred, or
+Trash. It
 does not own nodes and is not a Drive Root or folder.
 _Avoid_: Smart folder, Root
 
 **Upload queue**:
 The Drive-owned list of browser uploads in one tab. It survives folder and
-area changes, and its progress shows on the Files rail item.
+area changes, and its progress shows on the Drive rail item.
 _Avoid_: Upload manager, Uploader, Upload store
 
 **Interrupted upload**:
@@ -114,9 +116,16 @@ _Avoid_: Shell endpoint, Shared app data
 **Flip**:
 The moment old URLs start to redirect to the new pages for a set of areas.
 There are two: the shell flip (Mail, Meet, Calendar) and the files flip
-(Home, Files, documents). Old pages stay until they are deleted after the
+(Home, Drive, documents). Old pages stay until they are deleted after the
 files flip.
 _Avoid_: Cutover, Launch, Migration
+
+**Standalone chrome**:
+The Apps, Settings and Log out entries (and Meet's Theme submenu) that Mail,
+Calendar or Meet draws in its own sidebar header while its routes are
+outside the shell. Inside the shell the rail and the account menu replace
+them. It is deleted with the old pages.
+_Avoid_: Legacy header, Old menu, Fallback chrome
 
 ## Flagged Ambiguities
 

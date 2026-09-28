@@ -208,7 +208,7 @@ Rules every package follows:
 - **`/files` collides with Frappe's public upload path.** `frappe serve` wraps
   the app in `StaticDataMiddleware` for `/files`, and frappe-ui's Vite proxy
   forwards `/files` to the bench, so the Files area 500ed on the dev site
-  (found 2026-09-15). Resolution, pending Faris's review: keep ticket 001's
+  (found 2026-09-15). Superseded 2026-09-29: ticket 020 renames the area prefix to `/drive`, so the clash and this workaround go (plan stage 6). The interim workaround kept ticket 001's
   grammar. In dev, `frontend/vite.config.ts` excludes `files` from the
   frappe-ui proxy source and adds a `/files` rule whose `bypass` serves the SPA
   for `Accept: text/html` navigations only; other requests still proxy to the

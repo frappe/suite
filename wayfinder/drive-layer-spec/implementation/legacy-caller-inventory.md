@@ -23,6 +23,17 @@ Every path is relative to the app root. The classification is executable:
 `suite.drive.http.shims.CLASSIFICATION`, checked against the legacy modules by
 `suite/drive/http/tests/test_shims.py`.
 
+**Amended 2026-09-29** by unified frontend ticket
+[017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md)
+(Faris): no `suite.drive.api.*` name outlives Cleanup. The class this
+document and `shims.py` call **permanent** now means "answered by its
+untouched legacy body until Cleanup; no Drive route replaces it", not "kept
+after Cleanup". Cleanup deletes all 69 names, `api/product.py`, `api/s3.py`
+and `overrides/file.py` included, and removes the `/api/method/suite.drive.api.`
+allowlist prefix. Only `/dav` stays. Drive issue 39 adds the routes that
+replace the product methods; Drive issue 40 amends Cleanup; Drive issue 45
+counts every name. The caller tables below are unchanged and still hold.
+
 ## Counts
 
 | | Count |
@@ -30,7 +41,7 @@ Every path is relative to the app root. The classification is executable:
 | Legacy whitelisted names | 69 |
 | Guest-callable | 26 |
 | Forwarder | 37 |
-| Permanent | 21 |
+| Permanent (untouched until Cleanup; see the amendment above) | 21 |
 | Retained | 8 |
 | Retired | 3 |
 
@@ -103,11 +114,14 @@ Playwright (`e2e/drive-backed-apps/`).
 | `scripts.sync_preview` | **retained** | no | `SyncBreakdown.vue:100` | Legacy body. §11.7 points at a route that uploads a thumbnail |
 | `scripts.sync_from_disk` | **retired** | no | `SyncBreakdown.vue:105` | `DriveRetired` 410. Build takes over the disk import |
 | `embed.get_file_content` | forwarder | yes | **none** | `content.list_media`, then 302 to the matching signed URL |
-| `s3.fetch` | **permanent** | yes | none. Reached only through stored `File.file_url` values | Signature and decorator unchanged. Its `except` names `DriveError`, so a locked or expired stored URL no longer confirms the object on a guest-callable path |
+| `s3.fetch` | **permanent** (until Cleanup) | yes | none. Reached only through stored `File.file_url` values | Signature and decorator unchanged. Its `except` names `DriveError`, so a locked or expired stored URL no longer confirms the object on a guest-callable path. Deleted in Cleanup: it resolves a `File` row Cleanup deletes, and Build gives every S3 row a node first (§11.7) |
 
 ## `suite.drive.api.product` (19)
 
-All 19 are **permanent** and untouched: `get_my_invites`,
+All 19 are classed **permanent**, which means untouched until Cleanup deletes
+`api/product.py` whole (§11.7; Drive issue 40). Each moves to a §11.2
+"Settings and WebDAV" route (Drive issue 39), to a Suite resource, or retires
+with its surface. The 19: `get_my_invites`,
 `get_pending_invites`, `signup`, `oauth_providers`, `send_otp`, `verify_otp`,
 `get_settings`, `set_settings`, `invite_users`, `get_users`,
 `get_user_groups`, `accept_invite`, `reject_invite`, `get_translations`,
@@ -128,7 +142,7 @@ built at `api/notifications.py:100` and
 | `File.share` | retained | no | `api/files.py` only, before this ticket | Legacy body, unreachable from the forwarder. Dies with the override |
 | `File.unshare` | retained | no | `api/files.py` only, before this ticket | Same |
 | `File.rename` | retained | no | `overrides/file.py:612` (`sync_content_file`) | Legacy body, still the content-title sync |
-| `get_file_for_doc` | **permanent** | no | `drive/sdk.js:25` ← `slides/components/SharePopover.vue:22` | Untouched. Its payload is `get_entity_with_permissions`'s |
+| `get_file_for_doc` | **permanent** (until Cleanup) | no | `drive/sdk.js:25` ← `slides/components/SharePopover.vue:22` | Untouched. Its payload is `get_entity_with_permissions`'s. Deleted in Cleanup with the `File` override: it resolves through `File.get_for_doc`, and the `sdk-*.js` bundle is gitignored build output, not a checked-in artifact (§11.7) |
 
 ## End-to-end callers
 
@@ -191,10 +205,13 @@ frontend ticket has to touch these by hand:
 - `writer/utils/index.js:447` has a doubled prefix,
   `/api/method//api/method/suite.drive.api.files.upload_file`.
 
-**Three Desk callers** are outside the SPA and will not move with it:
+**Three Desk callers** are outside the SPA and do not move with it:
 `suite/public/js/FileUploader.vue` calls `get_root_folder`, `list.files`, and
 `upload_file`, and is loaded into Desk by `app_include_js`
-(`suite/hooks.py:31`).
+(`suite/hooks.py:31`). The unified frontend plan (stage 11) ports it to
+`GET /roots`, `GET /nodes/<id>/children` and the upload routes before
+Cleanup; Cleanup gate 3 scans `suite/public/js` and refuses until it is gone
+(unified frontend ticket 017 decision 5; Drive issue 40).
 
 **Four dead search constants.** `api/files.py:537-563` still declares
 `SEARCH_PAGE_LENGTH`, `SEARCH_SCAN_WINDOW`, `MAX_SEARCH_SCAN_WINDOWS`, and

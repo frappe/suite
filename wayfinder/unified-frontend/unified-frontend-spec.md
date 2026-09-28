@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Drafted and audited 2026-09-29; open decisions in tickets 017 to 021 |
+| Status | Decisions folded 2026-09-29 (tickets 017 to 021) |
 | Date | 2026-09-29 |
 | Source map | [`MAP.md`](MAP.md) and [`tickets/`](tickets/) |
 | Companion plan | [`unified-frontend-plan.md`](unified-frontend-plan.md) (stages, file ownership, gates) |
@@ -41,7 +41,7 @@ ARCHITECTURE.md rule 8.3. Terms follow
 "Unified" means one shell, one design language (frappe-ui), one route
 model and one platform layer [MAP].
 
-- Drive is rebuilt from scratch: the Files area and the `DocumentSession`
+- Drive is rebuilt from scratch: the Drive area and the `DocumentSession`
   behind every open document. Composition owns the document host
   (section 8.1) [MAP, T009].
 - Writer, Sheets and Slides get new document pages on the node route. They
@@ -80,13 +80,13 @@ model and one platform layer [MAP].
 |---|---|---|---|---|
 | `/` | Replacement redirect. `/home` after flip 2; the last-app fallback (`/mail`) before it [T001, T014] | n/a | n/a | no |
 | `/home` | Home area [T001] | in shell | shell | no |
-| `/files` | **My files**, the caller's Personal Root [T001, T006] | in shell | shell | no |
-| `/files/organization` | **Organization files**, the site's active Shared Root. Personal sites omit it [T001, T006] | in shell | shell | no |
-| `/files/f/<node-id>/<slug>` | One open folder [T001] | in shell or Guest surface | shell | yes [T011] |
-| `/files/shared-with-me` | Saved view **Shared with me** [T001, T006] | in shell | shell | no |
-| `/files/recent` | Saved view **Recent** [T001, T006] | in shell | shell | no |
-| `/files/starred` | Saved view **Starred** [T001, T006] | in shell | shell | no |
-| `/files/trash` | Saved view **Trash**, My files tab. `?root=organization` selects the Organization files tab [T006] | in shell | shell | no |
+| `/drive` | **My files**, the caller's Personal Root [T001, T006] | in shell | shell | no |
+| `/drive/organization` | **Organization files**, the site's active Shared Root. Personal sites omit it [T001, T006] | in shell | shell | no |
+| `/drive/f/<node-id>/<slug>` | One open folder [T001] | in shell or Guest surface | shell | yes [T011] |
+| `/drive/shared-with-me` | Saved view **Shared with me** [T001, T006] | in shell | shell | no |
+| `/drive/recent` | Saved view **Recent** [T001, T006] | in shell | shell | no |
+| `/drive/starred` | Saved view **Starred** [T001, T006] | in shell | shell | no |
+| `/drive/trash` | Saved view **Trash**, My files tab. `?root=organization` selects the Organization files tab [T006] | in shell | shell | no |
 | `/d/<node-id>/<slug>` | One open document or previewable file [T001, T009] | in shell or Guest surface | content | yes [T011] |
 | `/mail/...` | Mail area, Mail's own child routes [T010] | in shell | content | no |
 | Mail sign-in, signup, forgot-password, reset-password, `mime-message` pages | Unchanged Mail pages [T010] | outside | n/a | as today |
@@ -97,12 +97,13 @@ model and one platform layer [MAP].
 | `/l/<token>` | Share-link entry. A Frappe website route, not an SPA route (section 10.1) [T011] | n/a | n/a | yes |
 | `/login` | Frappe's login page [T011] | n/a | n/a | yes |
 
-Home and Files scroll the content pane as a page. Mail, Calendar, Meet and
+Home and Drive scroll the content pane as a page. Mail, Calendar, Meet and
 an open document own their scrolling [CONTEXT].
 
 ### 2.2 Rules
 
-- Areas and rail order are Home, Files, Mail, Calendar, Meet [T001, T010].
+- Areas and rail order are Home, Drive, Mail, Calendar, Meet. The rail label
+  of the Drive area is "Drive" [T001, T010, T020].
 - The shell never infers presentation from a URL prefix. Every route
   declares its shell contract in typed metadata (section 3.3). A new route
   adds no independent layout boolean [T001].
@@ -111,17 +112,27 @@ an open document own their scrolling [CONTEXT].
   [T001, T010].
 - Folder routes carry only the open folder's node id. The API supplies the
   breadcrumb chain. A move or a rename does not break a folder URL [T001].
-- A root never appears as `/files/f/<root-id>`. Roots use `/files` and
-  `/files/organization` only [T001, T006]. The router replace-redirects
-  `/files/f/<root-id>` to `/files` or `/files/organization` [T001, T015].
+- A root never appears as `/drive/f/<root-id>`. Roots use `/drive` and
+  `/drive/organization` only [T001, T006]. The router replace-redirects
+  `/drive/f/<root-id>` to `/drive` or `/drive/organization` [T001, T015].
+- Until flip 2 the old Drive pages own `/drive`. `suite_flip_files` selects
+  which route table mounts under `/drive`: the old pages while it is off,
+  the Drive area while it is on. This is the one route flag that selects
+  between two implementations (section 13.1) [T013, T020].
+- `/drive/f/<id>` resolves by node kind. The old Drive pages used
+  `/drive/f/<id>` for a file. A non-folder id replace-redirects to
+  `/d/<id>` [T020].
+- Frappe's public upload path `/files/` stays Frappe's. The Drive area
+  shares no prefix with it, so no upload name is reserved and dev needs no
+  proxy bypass for the area [T020].
 - Saved views are paths. Query parameters carry only presentation and
   filter state: `view`, `sort`, `dir`, `group`, `q` and `root` (section 5)
   [T001, T006].
 - `/d/<node-id>/<slug>` is the single content route for Writer, Sheets and
   Slides documents and for uploaded files. The node response selects the
   renderer [T001, T009].
-- Historical prefixes such as `/suite` and `/drive/...` survive only as
-  redirects (section 14.3) [T001, T014].
+- `/suite`, `/writer`, `/sheets`, `/slides` and the old `/drive/...` pages
+  survive only as redirects (section 14.3) [T001, T014, T020].
 
 ### 2.3 Decorative slug
 
@@ -140,7 +151,7 @@ The node id is authoritative. The slug is decorative [T001].
 
 - A share link is `/l/<token>` everywhere [T008].
 - The server resolves `/l/<token>` and answers 302 to
-  `/files/f/<node>#link=<token>` or `/d/<node>#link=<token>` (section 10.1)
+  `/drive/f/<node>#link=<token>` or `/d/<node>#link=<token>` (section 10.1)
   [T011].
 - The token lives only in the URL fragment. The SPA removes the fragment
   before the first node request [T011].
@@ -163,7 +174,7 @@ interface AreaDefinition {
   id: string
   label: () => string                 // translated at render time
   icon: Component
-  to: string                          // canonical entry route, for example '/files'
+  to: string                          // canonical entry route, for example '/drive'
   loadRoutes: () => Promise<{ routes: RouteRecordRaw[] }>
   requires?: PlatformCapability[]
 }
@@ -190,7 +201,7 @@ interface AreaDefinition {
 - It evaluates each area's `requires` once against `@/platform/session`. It
   omits an unavailable area from the rail and every launch surface [T002].
 - It owns one badge source per area. Mail's badge comes from
-  `useInboxSummary()` in `apps/mail/index.ts` [T012]. Files' badge comes
+  `useInboxSummary()` in `apps/mail/index.ts` [T012]. Drive's badge comes
   from `driveUploadProgress()` in `apps/drive/index.ts` (section 6.3)
   [T007]. The product never learns that a rail exists [T012].
 - Meet has no capability gate [T010].
@@ -254,7 +265,7 @@ only.
   It never interprets product actions or branches on a product id [T002].
 - The shell has no product-specific branch [T002, T009].
 - **Mounting spike.** Freeze the exact CSS seam only after a spike proves,
-  on desktop and phone: one shell-scrolling Files page, one self-scrolling
+  on desktop and phone: one shell-scrolling Drive page, one self-scrolling
   adopted area, and one full-pane editor. The spike is an implementation
   gate, not a product decision [T002]. The map adds Writer, the Sheets
   canvas and the Slides stage to its proof [MAP].
@@ -264,12 +275,18 @@ only.
 - The rail holds the areas in composition order, the Notifications bell,
   the Settings gear and the account avatar. It has no Search button
   [T010, T012].
+- The rail lists an area only while its flip is on (section 14.1). Before
+  flip 1 it lists no area. The bottom nav reads the same list [T018].
+- Between the flips the rail shows a temporary Apps entry (grid icon, below
+  the areas). It lists the old Drive, Slides, Writer and Sheets pages. It
+  shows while `suite_flip_shell` is on and `suite_flip_files` is off, and
+  is deleted with the old pages (section 14.8) [T018].
 - The Settings gear opens the one Suite settings dialog (section 12)
   [T010].
 - The bell is shell chrome, not an area. It has no registry entry
   (section 11.5) [T012]. It lives in `composition/notifications/` and the
   shell mounts it through a slot [IMPL].
-- The Files rail item shows upload progress (section 6.3) [T007].
+- The Drive rail item shows upload progress (section 6.3) [T007].
 - The phone bottom nav shows the areas plus an account entry. The account
   entry is an avatar that opens a sheet (section 12.4) [T010].
 - The bottom nav reads the same registry as the rail [T002].
@@ -327,6 +344,9 @@ useSession(): {
 
 - Remove the parallel cookie refs, the reactive session object and the
   alternate read helpers as callers migrate [T002].
+- Boot seeds `systemManager` false. The account route
+  (`GET /api/suite/account`) is the only source. The `system_user` cookie
+  is not read: it means "not a Website User", not System Manager [T021].
 - Mail accounts, mailboxes, Calendar identities and other product profile
   data stay private to their products [T002].
 - Drive root discovery does not enter session boot (section 5.1) [T006].
@@ -377,7 +397,7 @@ One way per job [SSC]:
 
 The engine must support cached reads, stale-while-revalidate, focus and
 reconnect refetch, request deduplication, cancellation and mutation-driven
-invalidation. A narrow Files vertical slice proves these before the engine
+invalidation. A narrow Drive area vertical slice proves these before the engine
 becomes the platform contract for every product [T002].
 
 Errors [SSC]:
@@ -527,10 +547,12 @@ PWA [T010]:
   `<AreaSidebar>` owns sidebar geometry, the scroll area and fades
   (section 3.4) [T004, T010].
 - The upload ring uses frappe-ui's `ProgressRing` [T007].
-- Styling uses frappe-ui design tokens [MAP]. The icon source is open in
-  ticket
-  [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md)
-  (section 16).
+- Styling uses frappe-ui design tokens [MAP]. Icons are frappe-ui's lucide
+  set on every surface. This overrides the standing Figma rule for this
+  effort. No Figma swap is planned [T021].
+- Icon names live in two lookups: `apps/drive/files/internal/icons.ts` for
+  MIME families and content kinds, and each `DocumentTypeDefinition.icon`
+  for the product mark. Every other icon is a literal name [T021].
 
 ## 4. REST endpoint structure
 
@@ -630,12 +652,15 @@ HTTP_OWNERS = {"drive": "suite.drive.framework.HTTP", ...}
 - New frontend code makes no legacy `suite.drive.api.*` call and has no
   legacy RPC fallback. A missing route is implementation work
   [T014, IMPL].
-- The 19 `suite.drive.api.product` methods stay on `/api/method/` by
-  design. The legacy Drive UI calls 17 of them: invites, settings, signup,
-  OTP, users, translations and WebDAV config [Drive §11.7, T005]. Whether
-  they are exempt from the zero-legacy-call rule is open in ticket
-  [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md)
-  (section 16).
+- All 69 `suite.drive.api.*` names are legacy, the 19
+  `suite.drive.api.product` methods included. New code calls none of them.
+  The Drive routes of Drive §11.2 "Settings and WebDAV" (`GET` and
+  `PATCH /settings`, `GET` and `PATCH /site-settings`, `GET /webdav`) and
+  the Suite resources of section 4.3 replace the product methods. Drive
+  Cleanup deletes every name and the `/api/method/suite.drive.api.`
+  allowlist prefix. Only `/dav` stays [T017, Drive §11.7, Drive §14.10].
+- Mail, Calendar and Meet keep their dotted paths and move off them in
+  their own efforts. Drive sets the example [T017].
 
 ### 4.5 Contract and conformance
 
@@ -656,18 +681,19 @@ HTTP_OWNERS = {"drive": "suite.drive.framework.HTTP", ...}
 - Changing the Drive route table also updates its generated contract and
   the conformance tests [T006].
 
-## 5. Files area: listing, navigation and roots
+## 5. Drive area: listing, navigation and roots
 
 [T006, with T007, T010, T011]
 
-Drive owns the Files area. The base prototype fixes the layout. Drive
+Drive owns the Drive area: rail label "Drive", prefix `/drive` [T020]. The
+base prototype fixes the layout. Drive
 behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 5.1 Destinations and roots
 
-- The Files page draws an area sidebar with `<AreaSidebar>` [T006, T010].
-- **Locations** holds **My files** (`/files`) and, on business sites,
-  **Organization files** (`/files/organization`). They are direct entries,
+- The Drive page draws an area sidebar with `<AreaSidebar>` [T006, T010].
+- **Locations** holds **My files** (`/drive`) and, on business sites,
+  **Organization files** (`/drive/organization`). They are direct entries,
   not a header picker and not one merged listing [T006].
 - **Views** holds **Shared with me**, **Recent** and **Starred**, then a
   visually separated **Trash**. There is no **All** destination [T006].
@@ -676,14 +702,14 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   `views/favourites`, Trash calls `views/trash` with a root id. The first
   three keep the order the Drive spec freezes [T006, Drive §11.2].
 - Trash shows one root at a time with a `My files | Organization files`
-  tab switcher. `/files/trash` is My files.
-  `/files/trash?root=organization` is Organization files. The query names
+  tab switcher. `/drive/trash` is My files.
+  `/drive/trash?root=organization` is Organization files. The query names
   the semantic root, never its opaque id. Personal sites omit the tabs
   [T006].
-- The Files area loads and caches `GET /api/suite/drive/roots` when it
+- The Drive area loads and caches `GET /api/suite/drive/roots` when it
   mounts. The data is
   `{personal: {node, title}, organization: {node, title} | null}` and holds
-  active roots only. `/files` and `/files/organization` translate through
+  active roots only. `/drive` and `/drive/organization` translate through
   it [T006, Drive §11.2].
 - Root discovery is Drive data. It does not enter session boot [T006].
 - Quota stays on `GET /roots/<id>/usage` [T006].
@@ -721,7 +747,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   and **Size** are optional. Location and sharing-summary columns do not
   launch. The client never sends one request per row to imitate a column
   [T006].
-- Precedence: URL query, then the saved Files preference, then defaults.
+- Precedence: URL query, then the saved Drive preference, then defaults.
   `view`, `sort`, `dir` and `group` are presentation keys. A change
   replaces the current history entry and updates the saved preference
   [T006].
@@ -760,7 +786,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 | Kind | Icon | Open target |
 |---|---|---|
-| `folder` | Folder icon | `/files/f/<node-id>/<slug>` |
+| `folder` | Folder icon | `/drive/f/<node-id>/<slug>` |
 | `document` | The registered Writer, Sheets or Slides icon | `/d/<node-id>/<slug>`; the document registry selects the adapter |
 | `file` | MIME-family icon or preview | `/d/<node-id>/<slug>` |
 | `link` | External-link icon | Confirm the target origin, then open a new browser tab |
@@ -823,7 +849,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   It revalidates affected queries in the background [T006].
 - After commit, Drive emits one payload-free `drive:changed` event to each
   affected user [T006, Drive §9.5].
-- Observed Files queries debounce the event and refetch their visible
+- Observed Drive listing queries debounce the event and refetch their visible
   listing. The event carries no node or root id [T006].
 - Without the event, focus refetch, reconnect refetch, own-write
   normalization and manual refresh stay correct. Remote edits are then not
@@ -859,16 +885,27 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 5.12 New menu
 
-- **New** holds Folder, Upload files, one entry per document type
-  (Document, Spreadsheet, Presentation) and Link. Each label is the type's
-  `newLabel` [T006, T009, T012].
+- **New** holds Folder, Upload files, Upload folder, one entry per document
+  type (Document, Spreadsheet, Presentation), Link and From template. Each
+  document label is the type's `newLabel` [T006, T009, T012, T021].
+- Upload folder uses a hidden `<input type="file" webkitdirectory>`. It
+  hides on the phone layout, where the OS pickers offer no folders [T021].
+- From template opens the Drive-owned template picker under
+  `apps/drive/files/features/`. The picker has one tab per registered
+  document type (label from `newLabel()`, filter from `contentDoctype`,
+  both read through `DOCUMENT_TYPES_KEY`), tiles from
+  `GET /views/templates?content_doctype=` with the preview expansion, and a
+  Name field. Create calls `POST /nodes/<template>/copy` with the open
+  folder as `parent` and the name as `title`, then opens the returned
+  node's `/d/` route. Copy keeps the server's title on a conflict
+  [T021, T009, Drive §8.10].
 - New shows only in a concrete root or folder where the caller has UPLOAD.
   Saved views and search hide it [T006].
 - Document entries come from the document registry and call the generic
   Drive creation workflow (section 8.9) [T006, T009].
 - Upload progress follows section 6 [T006, T007].
-- Through a link below EDIT, New hides the three document entries
-  (section 10.14) [T011].
+- Through a link below EDIT, New hides the three document entries and From
+  template (section 10.14) [T011, T021].
 
 ### 5.13 States and accessibility
 
@@ -883,8 +920,8 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 5.14 Phone
 
-- From another area, the Files bottom-nav item opens `/files` [T006].
-- While Files is active, tapping the Files item opens the Files area
+- From another area, the Drive bottom-nav item opens `/drive` [T006].
+- While Drive is active, tapping the Drive item opens the Drive area
   sidebar as a bottom sheet. The tap reaches the page through the shell's
   window event (section 3.5) [T006, T010, T015].
 - A header destination button (`My files ▾`, `Starred ▾` and so on) opens
@@ -893,7 +930,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 5.15 Drive client and public interface
 
-- Drive owns all Files UI and client behavior under
+- Drive owns all Drive area UI and client behavior under
   `frontend/src/apps/drive/` [T006, T013].
 - Resource descriptor modules live under `apps/drive/client/`. URLs, cache
   keys, generated transport names, cursor parsing and normalization stay
@@ -969,10 +1006,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 6.3 Progress in the rail
 
-- The Files rail item shows one ring for the whole queue, weighted by
-  bytes, in every area while uploads run. In Files the tracker panel also
+- The Drive rail item shows one ring for the whole queue, weighted by
+  bytes, in every area while uploads run. In the Drive area the tracker panel also
   shows [T007].
-- Clicking the ring opens `/files` with the tracker open [T007].
+- Clicking the ring opens `/drive` with the tracker open [T007].
 
 | State | Indicator |
 |---|---|
@@ -983,7 +1020,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 [T007]
 
-- The phone Files bottom-nav item shows the same indicator [T007].
+- The phone Drive bottom-nav item shows the same indicator [T007].
 - In the guest frame the ring sits in a fixed header slot (section 10.6)
   [T011].
 - The tracker component does not cross the Drive seam [T007].
@@ -1015,6 +1052,8 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   the files into them [T007].
 - Only the top folder can collide. The choices are Keep both (the server's
   free title, ask D12) or Skip. There is no merge [T007].
+- Entry points: Upload folder in New (section 5.12), and a dropped
+  directory on any drop target (section 6.7) [T021].
 
 ### 6.7 Drop targets
 
@@ -1023,6 +1062,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - The pane drops into the open folder. A folder row or tile with UPLOAD
   retargets the drop into that folder [T007].
 - The overlay names the target and does not move the layout [T007].
+- A dropped directory (`DataTransferItem.webkitGetAsEntry().isDirectory`)
+  runs the folder flow (section 6.6) into the target: top folder collision
+  only, Keep both or Skip. Same UPLOAD rule and same overlay as a file drop.
+  There is no separate drop surface [T021].
 - Dragging existing rows to move them is not part of this spec [T007].
 
 ### 6.8 Replace
@@ -1118,7 +1161,7 @@ type Tags = Record<string, string>       // node -> code, at most 1000
 
 - Share shows only to users with MANAGE. Reading grants needs MANAGE
   [T008, Drive §11.2].
-- Drive owns and hosts the one share dialog. Files and every Document
+- Drive owns and hosts the one share dialog. The Drive area and every Document
   surface use it (section 8.8) [T009].
 
 ### 7.3 Dialog sections
@@ -1247,10 +1290,10 @@ interface DocumentTypeDefinition {
 - Composition owns the ordered registry. The host uses it to open
   documents. There is no second content-type mapping and no runtime
   self-registration [T009].
-- Files uses it for its New menu and template filter [T009]. Home uses it
+- The Drive area uses it for its New menu and template filter [T009]. Home uses it
   for its New menu [T012].
 - Composition provides the registry through the platform injection key
-  `DOCUMENT_TYPES_KEY` (`App.vue`). Files never imports composition
+  `DOCUMENT_TYPES_KEY` (`App.vue`). Drive never imports composition
   [T009, T013, T015].
 
 ### 8.3 Document surface
@@ -1382,7 +1425,8 @@ are an open item (section 16).
 - After creation, the client navigates to the returned node's `/d/` route
   [T009].
 - Templates are filtered by the definition's content doctype. New from
-  template is a Drive copy [T009].
+  template is a Drive copy [T009]. The Drive area hosts the template picker
+  (section 5.12) [T021].
 - New frontend code has no product-specific creation endpoint and no
   new-document route [T009].
 
@@ -1411,15 +1455,25 @@ adds the rail and takes the Suite-level menu items [T010].
 
 ### 9.1 What each app drops
 
-Mail, Calendar and Meet each delete from their sidebar header menu [T010]:
+Inside the shell, Mail, Calendar and Meet drop these from their sidebar
+header menu [T010]:
 
 - the app switcher (`useAppSwitcher`): the rail replaces it;
 - Log out and the Suite account row: the rail account menu replaces them;
 - the Theme submenu and the Cmd+Shift+L listener: the platform owns theme;
 - Settings and their `SettingsModal`: the rail gear opens the Suite
-  settings dialog (section 12). This removes the product-to-shell import;
+  settings dialog (section 12);
 - the Suite logo and branding row. The header row stays and shows the
   active mail account.
+
+While their routes are outside the shell (`suite_flip_shell` off, section
+14.2), each app keeps Apps, Settings and Log out as standalone chrome (Meet:
+its `MeetSidebar` with the Theme submenu), rendered on
+`route.meta.frame === 'none'`. Settings there opens the Suite settings
+dialog through `openSettings('<product>.<first tab>')`. That call is the one
+product-to-shell import per app; it replaces today's baselined
+`SettingsModal|SuiteSettingsDialog` entries. The entries and the import go
+in the deletion commit (section 14.8) [T018].
 
 ### 9.2 What each app keeps
 
@@ -1502,13 +1556,13 @@ Each app's later migration owns these. They are named and baselined
 ### 9.8 Switch
 
 - All three apps flip in one change, after all three are ready. There is
-  no mixed state. One revert undoes it [T010]. What the flag off shows
-  after the chrome in 9.1 is deleted is open in ticket
-  [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md)
-  (section 16).
+  no mixed state. The key undoes it: with `suite_flip_shell` off, the three
+  apps render outside the shell with their standalone chrome (section 9.1).
+  A revert of the adoption also undoes it [T010, T018].
 - "Switched" means: the routes leave `frame: 'none'`, the chrome in 9.1 is
-  deleted, and the fixes in 9.5 are done [T010].
-- Mail's and Calendar's `SettingsModal` are deleted at this flip [T016].
+  hidden, and the fixes in 9.5 are done [T010, T018].
+- Mail's and Calendar's `SettingsModal` and Mail's `PWASettings` are
+  deleted when the apps adopt the shell, before flip 1 [T016, T018].
 - Flip mechanics follow section 14 [T014].
 
 ## 10. Guest and link routes
@@ -1519,7 +1573,7 @@ Each app's later migration owns these. They are named and baselined
 
 - `/l/<token>` is a Frappe website route [T011, Drive §6.2, §11.2].
 - It resolves the grant and answers 302 [T011]:
-  - a folder goes to `/files/f/<node>#link=<token>`;
+  - a folder goes to `/drive/f/<node>#link=<token>`;
   - a file or document goes to `/d/<node>#link=<token>`.
 - The server sends no slug. The router adds it [T011].
 - The token rides the URL fragment. A fragment never reaches a server log
@@ -1617,7 +1671,7 @@ Each app's later migration owns these. They are named and baselined
   someone sent you a share link, open that link." [T011]
 - The URL stays. There is no automatic redirect. The screen never says
   whether the item exists [T011].
-- `/home`, `/files` and other area routes keep the `/login` redirect
+- `/home`, `/drive` and other area routes keep the `/login` redirect
   [T011].
 
 ### 10.9 Sign in from the guest header
@@ -1662,7 +1716,7 @@ A signed-in visitor also sees "Go to Home" [T011].
 - Folders use the existing mobile Back button, which stays inside the
   shared folder [T011].
 
-### 10.13 Files page in the guest frame
+### 10.13 Drive page in the guest frame
 
 - There is no area sidebar, no search and no Star. Views and roots are
   session-only [T011].
@@ -1670,9 +1724,9 @@ A signed-in visitor also sees "Go to Home" [T011].
 
 ### 10.14 New menu through a link
 
-- Below EDIT through a link, New hides Document, Spreadsheet and
-  Presentation. With no creator grant, the maker could not edit the new
-  document [T011].
+- Below EDIT through a link, New hides Document, Spreadsheet, Presentation
+  and From template. With no creator grant, the maker could not edit the
+  new document. Upload folder follows Upload files [T011, T021].
 
 ## 11. Home and notifications at launch
 
@@ -1691,7 +1745,7 @@ Home lives in `composition/home/` because it composes product seams
 - No expansion. The card shows a kind icon, not a thumbnail [T012].
 - A card shows the kind icon, the title and an "opened" relative time from
   `opened_at` [T012, Drive §9.5].
-- **View all** opens `/files/recent` [T012].
+- **View all** opens `/drive/recent` [T012].
 
 ### 11.2 Upcoming
 
@@ -1709,7 +1763,7 @@ Home lives in `composition/home/` because it composes product seams
 ### 11.3 New menu
 
 - Home's **New** menu has Document, Spreadsheet and Presentation. Upload
-  belongs to Files. Meeting belongs to the Upcoming controls [T012].
+  belongs to the Drive area. Meeting belongs to the Upcoming controls [T012].
 - All three use generic Drive creation: `POST /api/suite/drive/nodes` with
   the content kind. The client then opens `/d/<node-id>/<slug>`
   [T012, T009, Drive §8.3].
@@ -1782,7 +1836,7 @@ There is one Settings group per product, named after the product. Order
 | Group | Tabs | Condition |
 |---|---|---|
 | Account | Profile, Preferences | none |
-| Files | Statistics; External access; Storage | External access when WebDAV is on; Storage for admins |
+| Drive | Statistics; External access | `suite_flip_files` on; External access when WebDAV is on or the caller is a Drive admin (`GET /api/suite/drive/webdav`) |
 | Mail | Mail's tabs | mail users only |
 | Calendar | Calendar's tabs | mail users only |
 | Meet | Devices, Audio, Video, Notifications, Layout | none |
@@ -1794,6 +1848,18 @@ There is one Settings group per product, named after the product. Order
   only [T016].
 - Theme lives in Preferences [T016].
 - Profile editing stays in Settings [T016].
+- The legacy Storage tab does not ship. Every control on it dies with Drive
+  Build and Cleanup, and no route carries the `disk_settings` write path
+  [Drive §3.13, T017].
+- Statistics reads `GET /roots/<id>/usage`. External access reads
+  `GET /api/suite/drive/webdav` when the dialog opens, writes
+  `PATCH /settings` and `PATCH /site-settings`, and mints keys through
+  `suite.utils.user.generate_user_keys`, a Suite method on `/api/method/`
+  outside the ban. External access waits on Drive issue 39; Statistics does
+  not [T017, Drive §11.2].
+- The Drive group's condition reads the files flip. Before flip 2 the group
+  would configure an area the rail does not show, and the legacy Drive
+  `SettingsDialog` still serves it [T018].
 
 ### 12.3 Loading
 
@@ -1819,7 +1885,7 @@ There is one Settings group per product, named after the product. Order
 ### 12.5 Tab ids and opening
 
 - Tab ids are namespaced and typed, for example `'mail.screener'` or
-  `'files.storage'` [T016].
+  `'drive.statistics'` [T016].
 - `openSettings(tab)` takes the union built from the composition list. A
   typo fails at compile time [T016].
 - On phone, `openSettings(tab)` opens that tab's drill-in page [T016].
@@ -1830,7 +1896,7 @@ There is one Settings group per product, named after the product. Order
 
 | Surface | Items |
 |---|---|
-| Desktop rail avatar menu | Name and email header, Settings, Open Desk (system users only), Upgrade plan (as today), Log out |
+| Desktop rail avatar menu | Name and email header, Settings, Open Desk (system managers), Upgrade plan (system managers; disabled until ask S5), Log out |
 | Phone avatar sheet | Header, Settings, Theme, Log out |
 
 [T010, T016]
@@ -1838,18 +1904,25 @@ There is one Settings group per product, named after the product. Order
 - Theme is on the phone sheet to save a drill-in. It is not on the desktop
   menu [T016].
 - There is no Desk item on phone [T016].
-- The Desk item moves from `apps/registry.ts` into `shell/accountMenu.ts`
-  with its system-user condition. The registry's Desk item is deleted
-  [T016].
+- The Desk item moves from `apps/registry.ts` into `shell/accountMenu.ts`.
+  The registry's Desk item is deleted [T016].
+- Open Desk and Upgrade plan both key on the `systemManager` capability
+  (section 3.8). There is no `systemUser` capability: Suite creates every
+  invited user as a System User, so "system users" would be nearly everyone
+  [T016, T021].
+- Open Desk is a plain `<a href="/app">`: a full page load in the same tab,
+  placed after Settings and before Upgrade plan [T021].
+- Upgrade plan stays disabled with the tooltip "Not available yet" until
+  the site resource carries `upgrade_url` (ask S5) [T021].
 - Shortcuts stays in each app. Mail's mailbox switcher stays in Mail's
   sidebar [T010, T016].
-- Upgrade plan visibility and the Open Desk condition are open in ticket
-  [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md)
-  (section 16).
 
 ### 12.7 After the switch
 
-- Mail's and Calendar's `SettingsModal` go at flip 1 (section 9.8) [T016].
+- Mail's and Calendar's `SettingsModal` go when the apps adopt the shell
+  (plan stage 5), before flip 1. With the shell flip off, each app's
+  Settings entry opens the Suite settings dialog (section 9.1)
+  [T016, T018].
 - The legacy Drive `SettingsDialog`, its `showSettings` emitter and its
   numeric tab indexes go at deletion (section 14.8) [T016, T014].
 - Meet keeps its in-call dialog [T016].
@@ -1882,14 +1955,16 @@ frontend/src/
 
 [T013, T016; IMPL]
 
-- Drive owns the Files area. New code lives under
+- Drive owns the Drive area. New code lives under
   `frontend/src/apps/drive/files/{pages,features,internal}`. There is no
   `apps/files` product [T013].
 - The current `/drive` UI lives under `frontend/src/apps/drive/legacy`. It
   stays separately routed during grow-beside [T013].
-- `/files` routes load the new subtree directly. No route flag selects
-  between two implementations [T013].
-- New shell, composition and Files code use these paths directly [T013].
+- The Drive area routes load the new subtree directly. `suite_flip_files`
+  selects which route table mounts under `/drive` until flip 2: `legacy/`
+  or `files/`. That is the one route flag that selects between two
+  implementations. It goes with the old pages (section 14.8) [T013, T020].
+- New shell, composition and Drive area code use these paths directly [T013].
 - Legacy code may use temporary compatibility shims into the platform.
   Old `boot/`, composable and utility paths may forward to platform modules
   [T013].
@@ -1922,9 +1997,13 @@ files       -X-> legacy
   and document adapters. There are no public subpath imports [T013,
   ARCH 8.3].
 - `frontend/scripts/check-import-boundaries.mjs` enforces the full graph in
-  13.2, the Files-to-legacy ban, package-root-only cross-product imports,
-  and no legacy Drive call in new code. Ticket 017 settles which names the
-  ban covers (sections 14.7 and 16) [T013, T014].
+  13.2, the `files`-to-`legacy` ban, package-root-only cross-product imports,
+  and the legacy-name ban: any `suite.drive.api.` string outside
+  `apps/drive/legacy` fails, in `frontend/src` and in `suite/public/js`.
+  There is no allowlist, because no name is permanent. One shrinking
+  baseline lists today's callers outside `legacy/`, each with an owner and
+  the stage whose route replaces it (sections 14.7 and 14.8)
+  [T013, T014, T017].
 - Existing violations use exact allowlist entries. Each entry carries an
   owner, a reason, and a removal or review condition [T013, ARCH 9.5]. A
   new violation fails. A resolved entry left in the baseline also fails
@@ -1968,7 +2047,7 @@ files       -X-> legacy
 | Path | Owner |
 |---|---|
 | `frontend/src/composition`, `src/shell`, `src/platform`, architecture enforcement, shell browser journeys | `@netchampfaris` |
-| All Drive paths, including `apps/drive/index.ts`, `files`, `legacy`, and Files browser journeys | `@BreadGenie` and `@netchampfaris`, jointly |
+| All Drive paths, including `apps/drive/index.ts`, `files`, `legacy`, and Drive browser journeys | `@BreadGenie` and `@netchampfaris`, jointly |
 
 [T013]
 
@@ -1985,7 +2064,7 @@ files       -X-> legacy
 ```text
 today    old pages live; new pages grow beside them
 flip 1   suite_flip_shell: Mail, Meet, Calendar in the shell
-flip 2   suite_flip_files: Home, Files, documents; / -> /home
+flip 2   suite_flip_files: Home, Drive, documents; / -> /home
 hold     one full release, at least 14 days, legacy-call counter at zero
 delete   one commit; 302s become 301s; Drive Cleanup (issue 36) unblocks
 ```
@@ -1995,48 +2074,95 @@ delete   one commit; 302s become 301s; Drive Cleanup (issue 36) unblocks
 - **Flip 1** is the shell with Mail, Meet and Calendar (section 9.8). The
   rail shows Mail, Calendar and Meet only. `/` goes to `/mail` through the
   existing last-app fallback. There is no Home stub [T014].
-- **Flip 2** is Home, Files and documents together. They share the node
-  routes, and Home Recent opens `/d/<id>`. The rail gains Home and Files.
+- **Flip 2** is Home, Drive and documents together. They share the node
+  routes, and Home Recent opens `/d/<id>`. The rail gains Home and Drive.
   `/` goes to `/home` [T014].
-- Before flip 2, `/home`, `/files` and `/d/` answer a direct URL for every
-  signed-in user [T009, T013, T014]. What the rail shows on those pages
-  while `suite_flip_files` is off is an open item (section 16).
+- Before flip 2, `/home` and `/d/` answer a direct URL for every signed-in
+  user. `/drive` mounts the old Drive pages until the key is on (section
+  2.2) [T009, T013, T014, T020].
+- The rail lists the areas whose flip is on. On `/home` and `/d/` before
+  flip 2 no rail item is active. Before flip 1 the rail lists no area:
+  bell, gear and avatar only. Between the flips it carries the temporary
+  Apps entry (section 3.5) [T018].
+- Drive Build and the new frontend reach `develop` in one release, with
+  both keys off. Flip 1 and flip 2 happen later by key [T019].
 
 ### 14.2 Switch
 
 - Each flip is one `frappe.conf` key: `suite_flip_shell` and
-  `suite_flip_files`, set with `bench set-config` [T014].
+  `suite_flip_files`, set as a site config key (`bench set-config`
+  locally; `site_config.json` on Frappe Cloud) [T014, T019].
+- Faris sets and clears both keys on Frappe Cloud by hand and records the
+  time in the stage report. No allowlist ask is filed [T019].
 - The server reads the key for redirects. It sends the key to the client in
   the SPA boot. The client reads the flag from boot only [T014].
 - A key turns a flip off without a deploy [T014].
+- `suite_flip_shell` off after the code ships: Mail, Calendar and Meet
+  routes keep `frame: 'none'` and render their standalone chrome (section
+  9.1). The platform registers the service worker in both states. The key
+  does not undo the manifest `id` change (section 3.15); ticket 010
+  accepted that risk at deploy time [T018].
 - The keys are deleted with the old pages [T014].
 
 ### 14.3 Redirect table
 
 Composition owns one redirect table. It runs in `before_request`, so cold
-loads, emails and bookmarks reach it [T014].
+loads, emails and bookmarks reach it [T014]. Every legacy route has a row
+or a stated reason to have none [T020].
 
 | Old | New |
 |---|---|
-| `/drive/d/<id>` (folder) | `/files/f/<id>` |
-| `/drive/f/<id>` (file), `/drive/w/<id>`, `/writer/w/<id>` | `/d/<id>` |
-| `/drive/g/<id>` | by node kind (one read) |
-| `/sheets/<docname>`, `/slides/{presentation,slideshow}/<docname>` | `/d/<node>` (one read of the doc's `node` field) |
-| `/drive/l/<token>` | `/l/<token>` |
-| `/drive/recents` | `/files/recent` [T006] |
-| `/drive/favourites` | `/files/starred` [T006] |
-| `/drive/shared` | `/files/shared-with-me` [T006] |
-| `/drive/trash` | `/files/trash` [T006] |
-| `/drive` | `/files` |
-| `/suite` | `/home` |
-| `/drive/{folder,document,file}/<old>`, `/drive/t/<team>/` | by kind, through `Drive Legacy Route` [Drive §3.15] |
-| `/drive/t/<team>/<letter>/<id>` | as `/drive/g/<id>` |
+| `/drive` | none: the Drive area's own route. `suite_flip_files` selects the route table (section 2.2) [T014, T020] |
+| `/drive/trash` | none: the same path in the new table [T006, T020] |
+| `/drive/recents` | `/drive/recent` [T006] |
+| `/drive/favourites` | `/drive/starred` [T006] |
+| `/drive/shared` | `/drive/shared-with-me` [T006] |
+| `/drive/inbox`, `/drive/documents`, `/drive/presentations`, `/drive/attachments/<doctype>?/<docname>?` | `/drive` [T020] |
+| `/drive/signup` | none: deleted (section 14.6) [T014] |
+| `/drive/d/<id>` (folder) | `/drive/f/<id>` [T014] |
+| `/drive/f/<id>` (file) | none: the new folder route's kind check replace-redirects to `/d/<id>` (section 2.2) [T020] |
+| `/drive/w/<id>`, `/writer/w/<id>` | `/d/<id>` [T014] |
+| `/drive/g/<id>` | by node kind (one read): `/drive/f/<id>` or `/d/<id>` [T014] |
+| `/drive/{folder,document,file}/<old>`, `/drive/t/<team>/` | by kind, through `Drive Legacy Route` [Drive §3.15, T014, T015] |
+| `/drive/t/<team>/<letter>/<id>` | as `/drive/g/<id>` [T014] |
+| `/drive/l/<token>` | `/l/<token>` [T011, T014] |
+| `/writer`, `/sheets`, `/sheets/new`, `/slides`, `/slides/presentation/new`, `/slides/not-permitted` | `/home` [T020] |
+| `/sheets/trash` | `/drive/trash` [T020] |
+| `/sheets/<docname>` | `/d/<node>` (one read of `Sheet.node`) [T014] |
+| `/slides/presentation/view/<docname>` | `/d/<node>` [T020] |
+| `/slides/presentation/<docname>`, `/slides/slideshow/<docname>` | `/d/<node>` (one read of `Presentation.node`) [T014] |
+| `/suite` | `/home` [T014] |
+| `/suite/start` | `/home` at flip 2 (section 14.9) [T014] |
+| `/suite/setup`, `/suite/load-error` | none: they stay [T020] |
+| `/mail/...`, `/calendar/...`, `/meet/...` | none: the prefixes stay (section 14.11) [T010, T014] |
+| `/` | `/home` (section 2.1) [T001] |
 
-[T014, T008, T011]
+[T014, T008, T011, T020]
 
 - Every row targets a flip-2 surface. The server and the client guard
   apply the table only while `suite_flip_files` is on. With the key off,
   each old URL mounts its old page [T014, T009].
+- Old Drive listings go to `/drive`. Old product home and utility pages go
+  to `/home`, whose New menu and Recent cover them [T020].
+- Matching order: exact rows come before parameter rows, and a parameter
+  matches one path segment. So `/sheets/new`, `/sheets/trash`,
+  `/slides/presentation/new` and `/slides/presentation/view/<docname>`
+  match their own rows, not the parameter rows [T020].
+- Every row accepts an optional trailing `/<slug>` and an optional trailing
+  `/`, and drops both. The server sends no slug; the router adds the
+  current one without a history entry (section 2.3) [T020].
+- A row carries the query string through unchanged. The new page ignores
+  keys it does not know. `/slides/presentation/<docname>?slide=3` becomes
+  `/d/<node>?slide=3` [T020].
+- A lookup that finds no node does not redirect. The request falls through
+  to normal routing. While a flag can turn off, the old page mounts and
+  shows its own missing-document state. After deletion an unmatched
+  `/writer`, `/sheets` or `/slides` URL answers Frappe's 404 (section
+  14.8); an unmatched `/drive/...` URL answers the Drive area's not-found
+  view, because the `/drive` website rules serve the area [T020].
+- A redirect never creates a document. `/sheets/new` and
+  `/slides/presentation/new` go to a page. A GET that creates would spawn
+  one document per visit [T020].
 - The `/drive/t/<team>/<letter>/<id>` row matches today's legacy router
   (`frontend/src/apps/drive/legacy/routes.ts:172`).
 - The server answers 302 while a flag can turn off. It answers 301 after
@@ -2046,10 +2172,17 @@ loads, emails and bookmarks reach it [T014].
   notification [T014].
 - For Sheets and Slides the guard does a full page load, so the server does
   the lookup [T014].
-- Legacy routes that the table does not cover or resolves wrongly are open
-  in ticket
-  [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md)
-  (section 16).
+- Desk's File form (`suite/public/js/file.js:9`) opens `/drive/g/<name>`.
+  The `/drive/g/` row keeps it working. It is client code, so `node_url`
+  does not cover it; rewriting it at deletion is optional [T020].
+- Sheets' trash becomes Drive trash at Build (`Sheet.trashed` is a frozen
+  legacy field), so `/sheets/trash` maps to `/drive/trash` with no loss
+  [T020].
+- Mail's `website_redirects` in `suite/hooks.py` (`/auth/validate`,
+  `/outbound/...`, `/inbound/...`, `/spamd/...`) are Stalwart callbacks,
+  not user pages. They stay [T020].
+- The `/files/...` routes of ticket 001 never reached production, so they
+  have no rows [T020].
 
 ### 14.4 Redirect lifetime
 
@@ -2084,7 +2217,10 @@ loads, emails and bookmarks reach it [T014].
   flip 2 [T014].
 - The user sets a password through Frappe's `/update-password` [T014].
 - `/drive/signup` and its page are deleted. The Drive invitation URL
-  (`drive_user_invitation.py:91`) is retired with it [T011, T014].
+  (`drive_user_invitation.py:91`) is retired with it [T011, T014]. The
+  `Drive User Invitation` and `Account Request` tables are kept; Drive
+  Cleanup deletes only their callers and permission hooks
+  [Drive §3.16, T017].
 - If the Suite invitation resource slips past flip 2, `/drive/signup` stays
   as a legacy page until deletion [T014].
 
@@ -2095,17 +2231,25 @@ Flip 1 [T014]:
 - Browser journeys pass for Mail, Meet and Calendar in the shell.
 - The four fixes in section 9.5 have landed.
 - The Slides service worker serves no stale shell.
-- Rollback is rehearsed once on the dev site: flag on, flag off, a cold
-  load of each prefix.
+- Rollback is rehearsed once on the dev site, with a cold load of each
+  page [T014, T018]:
+  - Flag off: `/mail`, `/calendar` and `/meet` show no rail and their own
+    sidebar header with Apps, Settings and Log out; Settings opens the
+    Suite dialog on that product's first tab; Log out signs out; `/home`
+    shows the shell with an empty rail; `/drive` shows the old Drive page;
+    `/suite/start` lands on `/mail`.
+  - Flag on: the three prefixes show the rail with Mail, Calendar and Meet;
+    the sidebar headers have no Apps, Settings or Log out; the rail gear
+    opens Settings; the avatar menu logs out.
+  - A tab open across the flip keeps its state until reload, because the
+    client reads the flag from boot only.
 
 Flip 2 [T014]:
 
-- Browser journeys pass for Home, Files and documents.
+- Browser journeys pass for Home, Drive and documents.
 - The first five Drive asks from ticket 006 have shipped (D1 to D5).
-- New code makes zero legacy `suite.drive.api.*` calls, checked by the
-  boundary check. Which names count is open in ticket
-  [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md)
-  (section 16).
+- New code calls none of the 69 legacy `suite.drive.api.*` names, checked
+  by the boundary check (section 13.3) [T014, T017].
 - A test hits every old path in the redirect table and checks the new path.
 - Invitation accept lands on `/home`.
 - The `/l/<token>` server rule exists and opens a folder and a file
@@ -2116,11 +2260,38 @@ The legacy Vitest manifest is not a gate. It shrinks by deletion [T014].
 ### 14.8 Deletion
 
 - Deletion happens after flip 2 holds for one full release on production,
-  and at least 14 days, with the legacy-call counter at zero (ask D26)
-  [T014].
+  and at least 14 days, with the legacy-call counter (ask D26) at zero over
+  all 69 names [T014, T017].
+- "One full release" is one production deploy of Frappe Cloud release
+  group `bench-40775` that contains the files-flip code. The hold record
+  names the deploy id and date [T019].
+- The hold clock: 14 consecutive days at zero plus that one release.
+  "Zero" means no count on any of the 69 names rose between two reads.
+  Reads happen at the start, once a week, and at the end, by whoever sets
+  the flip key. A non-zero read ends the streak. After the client is fixed
+  or retired, the 14 days start again at the next zero read. The release
+  clock restarts only if the fix itself needs a release. A hit from a
+  browser user agent in the first days is a stale legacy tab; it retires
+  itself on reload, so wait for the next zero read [T017].
+- The Desk file picker (`suite/public/js/FileUploader.vue`, shipped as
+  `ff_integration.bundle.js`) calls `files.get_root_folder`, `list.files`
+  and `files.upload_file` today. It moves to `GET /roots`,
+  `GET /nodes/<id>/children` and the upload routes before Cleanup. The
+  boundary check and the deletion grep cover `suite/public/js` as well as
+  `frontend/src`; the Drive Cleanup gate refuses until it is gone (Drive
+  issue 40) [T017].
 - One commit deletes: `apps/drive/legacy`, the old Writer, Sheets and
   Slides pages (the editors stay), both flag keys, `SUITE_APPS` and
-  `lastApp`, and the legacy Drive `SettingsDialog` [T014, T016].
+  `lastApp`, the legacy Drive `SettingsDialog`, the standalone chrome of
+  Mail, Calendar and Meet with `useAppSwitcher` and `getAppSwitcherItems`,
+  and the temporary rail Apps entry [T014, T016, T018].
+- The same commit removes the `/slides`, `/slides/<path>`, `/sheets`,
+  `/sheets/<path>`, `/writer` and `/writer/<path>` rows from
+  `website_route_rules`, and `/drive/l/<token>` once ask D24 has shipped.
+  `/suite/<path>` stays for `/suite/setup`, `/suite/start` and
+  `/suite/load-error`; the `/drive` rows stay for the Drive area. An
+  unmatched `/writer`, `/sheets` or `/slides` URL then answers Frappe's
+  404 instead of the SPA's not-found view with HTTP 200 [T020].
 - Slides' `Slideshow.vue` is an old page, deleted in this commit. The
   Slides surface already has a slideshow mode. `ExportView.vue` moves into
   the Slides surface before deletion, so guests keep the product's export
@@ -2143,21 +2314,36 @@ The legacy Vitest manifest is not a gate. It shrinks by deletion [T014].
 
 - The `add_to_apps_screen` entry stays at `/suite`, which redirects to
   `/home` [T014].
-- The Desk workspace link `/drive` reaches `/files` through the redirect
-  table, so rollback holds [T014].
+- The Desk workspace link `/drive` opens the old Drive pages before flip 2
+  and the Drive area after it. It needs no redirect row, so rollback holds
+  [T014, T020].
 
 ### 14.11 Untouched by either flip
 
 Mail's own login, signup and reset pages, `/meet/<code>` and
 `/calendar/account/...` [T014].
 
+### 14.12 Release note
+
+One note per flip. The stage 7 or stage 13 report writes it and Faris
+sends it. Four lines [T019]:
+
+- what moved into the shell;
+- old links redirect and bookmarks keep working;
+- the key that turns it off and who holds it;
+- where to report a broken page.
+
+The Drive Build note (`links_minted`, changed anyone-with-link URLs)
+belongs to the Drive program [T019, Drive §14.9].
+
 ## 15. Backend asks
 
 Status values: **open** (not yet in the owning spec or code contract),
 **specified** (the Drive spec now defines it, so Drive behavior follows
 that section), **met** (the code already does it; no audit confirms it),
-**withdrawn**, **superseded**. "Specified" records that the Drive spec
-absorbed the ask; this spec does not claim the code passes.
+**filed** (an implementation issue exists), **withdrawn**, **superseded**.
+"Specified" records that the Drive spec absorbed the ask; this spec does
+not claim the code passes.
 
 A feature that depends on an open ask ships disabled, with the reason in
 its tooltip, until the ask ships. There is no interim behavior. The stage
@@ -2165,49 +2351,63 @@ that builds the feature waits on the ask. The one exception is the share
 link: while D17 and D24 are open, `/drive/l/<token>` works through
 `drive_link.py` (section 10.1) [T014, T015].
 
+Where the asks land [T019]:
+
+- There is one development branch, `forge/drive-layer`. Merge only, never
+  rebase. Pull requests target `develop`.
+- Drive asks D10 to D28 are Drive implementation issues under
+  `wayfinder/drive-layer-spec/implementation/issues/`, built and merged on
+  `forge/drive-layer`. The Issue column names each one. D1 to D9 shipped on
+  the same branch (`20befde95`).
+- Suite, Calendar, Meet, Mail and Writer asks land on `forge/drive-layer`
+  in the stage that waits. An ask with no waiting stage stays open here and
+  gets no branch until a stage needs it.
+
 ### 15.1 Drive program
 
-| Id | Ask | Raised by | Depends | Status |
-|---|---|---|---|---|
-| D1 | Root discovery: `GET /roots` returns `{personal: {node, title}, organization: {node, title} \| null}`, active roots only | T005, T006 | 5.1 | specified [Drive §11.2] |
-| D2 | Server ordering on children: folders first, `group_by=type\|owner\|modified`, `order_by` as stable secondary order, node id as final tie-breaker | T006 | 5.3 | specified [Drive §5.3, §11.2] |
-| D3 | `kind=folder` filter inside the SQL window on children | T006 | 5.7, 6.9 | specified [Drive §5.3, §11.2] |
-| D4 | Page-batched `expand=access` on every node-valued view | T006 | 5.4 | specified [Drive §11.2, §11.3] |
-| D5 | Batched `expand=breadcrumbs` on `views/search` | T006 | 5.4, 5.10 | specified [Drive §5.7, §11.3] |
-| D6 | Folder archive build, status and download routes | T005, T006 | 5.6 | specified [Drive §11.2] |
-| D7 | Payload-free, after-commit `drive:changed` realtime event | T006 | 5.9 | specified [Drive §9.5] |
-| D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | superseded by D7 [T006] |
-| D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | specified [Drive §9.5, §11.2] |
-| D9 | Notification unread-count route | T005, T012, SSC | 11.5 | specified [Drive §11.2] |
-| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | open |
-| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | open |
-| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | open |
-| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | open. Today [Drive §8.5] versions every replace path |
-| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | open |
-| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | open |
-| D16 | Empty trash route per root | T007 | 6.10 | open |
-| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | open. [Drive §11.2] still returns `/drive/l/<token>` |
-| D18 | `GET /links/<token>` returns `{node, kind, locked}` | T008 | none | withdrawn [T011] |
-| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | open |
-| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | open |
-| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | open |
-| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | open |
-| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | open. The `{ticket, expires}` half is already in [Drive §11.2] |
-| D24 | `/l/<token>` redirects by kind to `/files/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | open |
-| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | open |
-| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by method and user agent, read by a bench command | T014 | 14.8 | open. Which names it counts is open in ticket 017 (section 16) |
-| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | open |
-| D28 | `favourite` on the Drive node shape | T006, via [`ACCOUNTING.md`](ACCOUNTING.md) | 5.11 | open |
-| D29 | Type `shapes.py` outputs | SSC | 3.9, 4.5 | met. `suite/drive/http/shapes.py` already uses `TypedDict` |
+| Id | Ask | Raised by | Depends | Issue | Status |
+|---|---|---|---|---|---|
+| D1 | Root discovery: `GET /roots` returns `{personal: {node, title}, organization: {node, title} \| null}`, active roots only | T005, T006 | 5.1 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
+| D2 | Server ordering on children: folders first, `group_by=type\|owner\|modified`, `order_by` as stable secondary order, node id as final tie-breaker | T006 | 5.3 | shipped (`20befde95`) [T019] | specified [Drive §5.3, §11.2] |
+| D3 | `kind=folder` filter inside the SQL window on children | T006 | 5.7, 6.9 | shipped (`20befde95`) [T019] | specified [Drive §5.3, §11.2] |
+| D4 | Page-batched `expand=access` on every node-valued view | T006 | 5.4 | shipped (`20befde95`) [T019] | specified [Drive §11.2, §11.3] |
+| D5 | Batched `expand=breadcrumbs` on `views/search` | T006 | 5.4, 5.10 | shipped (`20befde95`) [T019] | specified [Drive §5.7, §11.3] |
+| D6 | Folder archive build, status and download routes | T005, T006 | 5.6 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
+| D7 | Payload-free, after-commit `drive:changed` realtime event | T006 | 5.9 | shipped (`20befde95`) [T019] | specified [Drive §9.5] |
+| D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | none | superseded by D7 [T006] |
+| D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | shipped (`20befde95`) [T019] | specified [Drive §9.5, §11.2] |
+| D9 | Notification unread-count route | T005, T012, SSC | 11.5 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
+| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | [Drive 41](../drive-layer-spec/implementation/issues/41-storage-breakdown-on-root-usage.md) | open |
+| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
+| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
+| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open. Today [Drive §8.5] versions every replace path |
+| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
+| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
+| D16 | Empty trash route per root | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
+| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open. [Drive §11.2] still returns `/drive/l/<token>` |
+| D18 | `GET /links/<token>` returns `{node, kind, locked}` | T008 | none | none | withdrawn [T011] |
+| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
+| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
+| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
+| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
+| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open. The `{ticket, expires}` half is already in [Drive §11.2] |
+| D24 | `/l/<token>` redirects by kind to `/drive/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open |
+| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open |
+| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by name and user agent, read by a bench command | T014 | 14.8 | [Drive 45](../drive-layer-spec/implementation/issues/45-legacy-call-counter.md) | open. Counts every name; the gate reads all 69 [T017] |
+| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | open |
+| D28 | `favourite` on the Drive node shape | T006, via [`ACCOUNTING.md`](ACCOUNTING.md) | 5.11 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | open |
+| D29 | Type `shapes.py` outputs | SSC | 3.9, 4.5 | none | met. `suite/drive/http/shapes.py` already uses `TypedDict` |
+| D30 | Settings, site settings and WebDAV routes (`GET`/`PATCH /settings`, `GET`/`PATCH /site-settings`, `GET /webdav`); Cleanup deletes all 69 names and the allowlist prefix | T017 | 4.4, 12.2, 14.8 | Drive issues [39](../drive-layer-spec/implementation/issues/39-settings-and-webdav-routes.md) and [40](../drive-layer-spec/implementation/issues/40-cleanup-deletes-every-legacy-name.md) | filed, ready-for-agent [T017] |
 
 ### 15.2 Suite
 
 | Id | Ask | Raised by | Depends | Status |
 |---|---|---|---|---|
-| S1 | `GET /api/suite/people?q=`: users and groups, paged, any Suite user | T008 | 7.8 | open |
+| S1 | `GET /api/suite/people?q=`: users and groups, paged, any Suite user. Also carries `get_user_groups`'s job [T017] | T008 | 7.8 | open |
 | S2 | `drive_link.html`: separate 404 and 410 copy, plus "Go to Home" for signed-in visitors | T011 | 10.11 | open |
 | S3 | The setup gate skips `allowGuest` routes (`router/index.ts:198`) | T011 | 10.10 | open |
 | S4 | Writer `ErrorPage.vue:61`: `/drive/login` becomes `/login?redirect-to=` | T011 | 10.10 | open |
+| S5 | `GET /api/suite/site` carries `upgrade_url`, null when the site has no plan page | T021 | 12.6 | open. Upgrade plan stays disabled until it ships |
 
 ### 15.3 Meet
 
@@ -2233,130 +2433,74 @@ them [SSC].
 | L1 | Mail: return `modified`, type outputs, fix `get_threads` returning a tuple | SSC | open |
 | L2 | Writer: add return annotations | SSC | open |
 
+### 15.6 Frappe framework
+
+| Id | Ask | Raised by | Depends | Status |
+|---|---|---|---|---|
+| F1 | `StaticDataMiddleware` (`frappe/middlewares.py`) falls through on a miss under `/files/` instead of raising `NotFound`, which is a 500 on `bench serve` | T020 | none | filed as [frappe/frappe#43523](https://github.com/frappe/frappe/issues/43523). After the `/drive` rename Suite does not depend on it |
+
 ## 16. Open items
 
 Each item names the affected section. "Meanwhile" appears only where a
-source says what to do. An item that a ticket owns stays undecided here.
-[Fold decisions into the spec and plan](tickets/022-fold-decisions-into-the-spec-and-plan.md)
-folds each answer into this spec.
+source says what to do. Tickets 017 to 021 are folded in
+([ticket 022](tickets/022-fold-decisions-into-the-spec-and-plan.md)).
+What remains is implementation-time work, environment approvals and
+post-launch fog.
 
-### 16.1 Owned by tickets 017 to 021
+### 16.1 From the map's "Not yet specified"
 
-1. **Drive product methods and the zero-call gate** (4.4, 12.2, 14.7,
-   14.8, ask D26). Owner:
-   [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md).
-   Drive §11.7 keeps the 19 `suite.drive.api.product` methods on
-   `/api/method/`. Ticket 014 bans every `suite.drive.api.*` call in new
-   code, and D26 counts every one. The Files settings tabs call product
-   methods and `storage.storage_breakdown` today. Drive §14.10 deletes "the
-   69 API forwarders except the three permanent names", and the 69 include
-   the product methods. Open: which names the boundary check bans and the
-   counter counts, what the Files settings tabs call at launch, the
-   §11.7 against §14.10 conflict, and whether a counted call restarts the
-   hold. Blocks the flip 2 gate and deletion.
-2. **Flip 1 rollback with deleted app chrome** (9.1, 9.8, 14.2). Owner:
-   [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md).
-   A key turns a flip off without a deploy. Flip 1 deletes Mail's and
-   Calendar's app switcher, Settings, Theme and Log out. With
-   `suite_flip_shell` off after that, those apps run outside the shell
-   with no Settings and no Log out. Blocks flip 1.
-3. **Flip operations on Frappe Cloud** (14.2). Owner:
-   [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md).
-   Who runs `bench set-config` per site, and what the release note says
-   [MAP]. Blocks each flip on Frappe Cloud sites.
-4. **Legacy routes the redirect table does not cover** (14.3). Owner:
-   [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md).
-   Blocks the flip 2 redirect test (section 14.7).
-   - No row: `/drive/inbox`, `/drive/attachments/:doctype?/:docname?`,
-     `/drive/documents`, `/drive/presentations`, `/writer`, `/sheets`,
-     `/slides`, `/slides/not-permitted`.
-   - These match a row but resolve wrongly. Each needs its own row first:
-     `/sheets/trash`, `/sheets/new`, `/slides/presentation/new`,
-     `/slides/presentation/view/<id>`.
-   - Also open: the trailing `/:slug?` on old routes, and what a lookup
-     row answers when no node exists.
-5. **`/files` and Frappe's public files path** (2.1). Owner:
-   [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md).
-   Frappe serves public uploads under `/files`. IMPLEMENTATION.md records a
-   dev proxy bypass and `website_route_rules`, pending Faris's review. A
-   public upload named `organization`, `recent`, `starred`,
-   `shared-with-me`, `trash` or `f` would shadow that route in production.
-   Meanwhile keep ticket 001's grammar; the fallback is one prefix constant
-   in `composition/routes.ts` [IMPL].
-6. **Upgrade plan visibility** (12.6). Owner:
-   [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md).
-   Whether it hides for non-admins is not decided [T016].
-7. **Open Desk condition** (3.8, 12.6). Owner:
-   [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md).
-   Ticket 016 keys Open Desk on "system users". The session exposes only
-   `systemManager`, and ticket 016 also gates Workspace on system
-   managers. Current code derives `systemManager` from the `system_user`
-   cookie. Open: a separate system-user capability, or Open Desk for
-   system managers only.
-8. **Entry points for folder upload and New from template** (5.12, 6.6,
-   8.9). Owner:
-   [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md).
-   Ticket 007 ships folder upload and ticket 009 keeps New from template.
-   No ticket places either entry in Files.
-9. **Icon source** (3.16, 5.6). Owner:
-   [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md).
-   The prototype and the current code use frappe-ui's lucide sprite.
-   Faris's standing rule says icons come from the Figma set unless he says
-   otherwise. Open: whether that set covers the MIME-family and product
-   icons. Blocks the first styled page [MAP].
-
-### 16.2 From the map's "Not yet specified"
-
-10. **Cross-product notification feed** (11.5). Meanwhile the bell is
-    Drive-only. A joined feed is the planned upgrade [T012].
-11. **Mounting spike** (3.4, 8.4). It must prove the full-pane box with
-    Writer, the Sheets canvas and the Slides stage on desktop and phone.
-    Meanwhile the CSS seam is not frozen [T002, MAP].
-12. **Phone behavior per area beyond the shell chrome** (9.3, 11). Ticket
-    006 answers Files (section 5.14). The other areas stay open
-    [MAP, T006].
-13. **Sentry ownership** (13.1). Meanwhile Sentry stays where it is
-    [T010, T013].
-14. **Meet recordings and past meetings** (9.4). Meanwhile they are not on
-    `/meet` (ask M1) [T010].
-15. **Keyboard shortcuts across areas** (Cmd+number, Escape) (3.5). Cmd+K
-    is out of scope. Meanwhile each app keeps its Shortcuts entry and
-    Mail's keys fire only on Mail routes [T010, T012, T016].
-16. **Quota and storage breakdown surface** (6.5, 12.2). Settings > Files >
-    Statistics is the launch surface [T016]. Until ask D10 lands it shows
-    `/roots/<id>/usage` totals [Drive §11.7]. Whether the Files panel also
-    shows it is open [MAP].
-17. **Named Meet rooms** (11.4). A Meet-program idea with no doctype and no
-    route [MAP, T012].
-18. **Finding link-only items again** (10.7). Meanwhile link-only items
-    stay out of Recent, Starred and Shared with me. A server record of
-    opened links would be a Drive ask [MAP, T011].
-19. **WebDAV clients and redirects** (14.3). Does a WebDAV client follow a
+1. **Cross-product notification feed** (11.5). Meanwhile the bell is
+   Drive-only. A joined feed is the planned upgrade [T012].
+2. **Mounting spike** (3.4, 8.4). It must prove the full-pane box with
+   Writer, the Sheets canvas and the Slides stage on desktop and phone.
+   Meanwhile the CSS seam is not frozen [T002, MAP].
+3. **Phone behavior per area beyond the shell chrome** (9.3, 11). Ticket
+   006 answers the Drive area (section 5.14). The other areas stay open
+   [MAP, T006].
+4. **Sentry ownership** (13.1). Meanwhile Sentry stays where it is
+   [T010, T013].
+5. **Meet recordings and past meetings** (9.4). Meanwhile they are not on
+   `/meet` (ask M1) [T010].
+6. **Keyboard shortcuts across areas** (Cmd+number, Escape) (3.5). Cmd+K
+   is out of scope. Meanwhile each app keeps its Shortcuts entry, Mail's
+   keys fire only on Mail routes, and the theme shortcut is not restored
+   for the flag-off state [T010, T012, T016, T018].
+7. **Quota and storage breakdown surface** (6.5, 12.2). Settings > Drive >
+   Statistics is the launch surface [T016, T017]. Until ask D10 lands it
+   shows `/roots/<id>/usage` totals [Drive §11.7]. Whether the Drive area
+   sidebar also shows it is open [MAP].
+8. **Named Meet rooms** (11.4). A Meet-program idea with no doctype and no
+   route [MAP, T012].
+9. **Finding link-only items again** (10.7). Meanwhile link-only items
+   stay out of Recent, Starred and Shared with me. A server record of
+   opened links would be a Drive ask [MAP, T011].
+10. **WebDAV clients and redirects** (14.3). Does a WebDAV client follow a
     302 on `/drive/d/<id>`? Not verified [MAP].
 
-### 16.3 Gaps found while drafting
+### 16.2 Gaps found while drafting
 
-20. **In-shell `frame` literal** (3.3). Ticket 010 collapses the frame set
+11. **In-shell `frame` literal** (3.3). Ticket 010 collapses the frame set
     to "in the shell or outside". No ticket names the in-shell value.
     IMPLEMENTATION.md and `platform/contracts` still show
     `'area' | 'document' | 'none'`. Code keeps `frame` optional with the
     default `'area'` (`composition/routes.ts:26`). The plan's shell frame
     stage names it.
-21. **DocumentSession signatures** (8.5). No ticket fixes the signatures of
+12. **DocumentSession signatures** (8.5). No ticket fixes the signatures of
     `share`, `comments` and `versions`. Current code types their results as
     `unknown` and `share()` returns an unavailable placeholder. The stage
     that builds them designs them with the codebase-design skill.
-22. **Server-state details** (3.9). GC timeout, default stale time, output
+13. **Server-state details** (3.9). GC timeout, default stale time, output
     validation in production builds, and prefetch on hover are undecided
     [SSC].
-23. **Share dialog container on phone** (7.3). Ticket 008 says "the shell's
+14. **Share dialog container on phone** (7.3). Ticket 008 says "the shell's
     bottom sheet". Ticket 010 moved the shell's sheet into `<AreaSidebar>`.
     frappe-ui `BottomSheet` exists at Suite's pin
     (`references/frappe-ui-shell-gap.md`). No source names it for the
     dialog.
-24. **The rail on Home and Files before flip 2** (14.1). Direct URLs
-    already answer for every signed-in user (section 14.1). What the rail
-    shows on `/home`, `/files` and `/d/` while `suite_flip_files` is off is
-    open. Ticket 018,
-    [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md),
-    decides it with the rest of the flag-off state.
+
+### 16.3 Post-launch
+
+15. **Making a document a template from the client** (5.12, 8.9).
+    `is_template` on a user's node has no entry point at launch: no "Use as
+    template" row action and no Templates saved view. Drive §8.10 ships
+    templates from Administrator's Templates folder [T021, T006].

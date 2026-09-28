@@ -18,7 +18,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [ ] Record the completed Build release and a distinct later release for Cleanup.
 - [ ] Validate runtime gates against the deployment dataset and actual clients. Do not substitute ticket status for evidence.
 - [ ] Confirm a current restorable backup and authorized deployment target before destructive execution.
-- [ ] Register Cleanup, remove obsolete schema/code and shims, and retain every permanent compatibility path.
+- [ ] Register Cleanup and remove obsolete schema, code and shims. No `suite.drive.api.*` name survives; only `/dav` stays (issue 40, unified-frontend ticket 017).
 - [ ] Run Cleanup in the specified order and verify GC liveness before deleting legacy S3 objects.
 - [ ] Run full Suite, storage, adapter, DAV, and migrated frontend smoke checks. Reconcile usage and bytes afterward.
 - [ ] Record recovery steps and deployment evidence. A failed gate leaves Cleanup inactive.

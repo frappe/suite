@@ -5,7 +5,7 @@ Created: 2026-09-05. Implementation has not started.
 Keep all Drive planning and tracking documents under `wayfinder/drive-layer-spec/`.
 This directory holds implementation tickets; `../tickets/` holds historical design decisions.
 
-40 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), one open defect (38), and two asks raised by unified frontend ticket 017 (39, 40).
+46 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), one open defect (38), two asks raised by unified frontend ticket 017 (39, 40), and six asks filed by unified frontend ticket 019 (41 to 46).
 `ready-for-agent` describes triage. Blocking edges and execution gates still apply.
 
 ## Sources
@@ -47,8 +47,12 @@ implementation program.
   that ticket's integration branch. This covers implementation, review, site
   gate, and closeout branches.
 - Merge every ticket branch back into `forge/drive-layer`.
-- Never merge this ticket work into `main`. `main` receives the program only
-  through a separate, authorized release step.
+- `forge/drive-layer` is also the one development branch of the unified
+  frontend effort (unified frontend ticket 019, 2026-09-29). Never rebase it.
+  Bring `upstream/develop` in by merge only.
+- Never merge this ticket work into `main` or `develop`. Production tracks
+  `develop`; the program reaches it only through a separate, authorized
+  release step (a pull request that targets `develop`).
 - The orchestrator runs `git branch --show-current` before every merge and
   confirms the output is the intended target branch. Do not merge on an
   unverified branch.
@@ -154,10 +158,24 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [38 — Make a fresh suite install succeed with the Presentation template fixtures](issues/38-fresh-install-fixture-node.md) | Suite Drive content | None | ready-for-agent |
 | [39 — Expose Drive settings, site settings, and WebDAV access through HTTP](issues/39-settings-and-webdav-routes.md) | Suite Drive HTTP | [22](issues/22-http-sharing-and-records.md) | ready-for-agent |
 | [40 — Make Cleanup delete every legacy Drive name and the allowlist prefix](issues/40-cleanup-deletes-every-legacy-name.md) | Suite migration | [35](issues/35-cleanup-implementation.md), [39](issues/39-settings-and-webdav-routes.md) | ready-for-agent |
+| [41 — Add the storage breakdown aggregates to root usage](issues/41-storage-breakdown-on-root-usage.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
+| [42 — Refuse collisions with the free title, and complete restore, purge, and empty-trash over HTTP](issues/42-upload-collisions-restore-and-purge-routes.md) | Suite Drive node workflows and HTTP | [11](issues/11-node-lifecycle.md), [21](issues/21-http-node-workflows.md) | ready-for-agent |
+| [43 — Serve share links at `/l/<token>`, redirect by node kind, and answer lockouts with `Retry-After`](issues/43-link-routes-and-unlock-lockout.md) | Suite Drive HTTP | [08](issues/08-grant-and-link-workflows.md), [22](issues/22-http-sharing-and-records.md) | ready-for-agent |
+| [44 — List inherited grants, keep a link's password on update, and send share email](issues/44-inherited-grants-passwords-and-share-email.md) | Suite Drive engine and HTTP | [22](issues/22-http-sharing-and-records.md) | ready-for-agent |
+| [45 — Count every legacy `suite.drive.api.*` call by name and user agent](issues/45-legacy-call-counter.md) | Suite Drive HTTP compatibility | [23](issues/23-legacy-compatibility.md) | ready-for-agent |
+| [46 — Carry `favourite` on the node shape and accept an expected `modified` on PATCH](issues/46-node-shape-favourite-and-expected-modified.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
 
 Tickets 39 and 40 are asks raised by unified frontend ticket
 [017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md):
 no `suite.drive.api.*` dotted path survives the launch of the unified frontend.
+
+Tickets 41 to 46 are the open Drive asks D10 to D28 of the unified frontend
+spec §15.1, filed by ticket
+[019 — Branches, backend asks and the release path](../../unified-frontend/tickets/019-branches-backend-asks-and-release-path.md).
+Each names its asks, the unified ticket that raised them, and the unified
+plan stage that waits on it: 41 (D10; stage 4), 42 (D11 to D16; stage 10),
+43 (D17, D24, D25; stages 8, 9, 12, 13), 44 (D19 to D23; stage 9), 45 (D26;
+stages 12, 14), 46 (D27, D28; no stage). D18 is withdrawn and has no ticket.
 
 ## Coverage
 
@@ -165,17 +183,17 @@ no `suite.drive.api.*` dotted path survives the launch of the unified frontend.
 |---|---|
 | Architecture, public facade, imports, lifecycle composition | 01, 07, 16, 30 |
 | Schema, root pairs, grants, ancestry, indexes | 07–09, 15, 27 |
-| Roles, links, passwords, removal versus deny, expiry retention | 07–08, 19–20, 22, 33–34 |
-| Quota, reservations, root administration, offboarding | 10–11, 15, 21, 29 |
-| Node lifecycle, upload, explicit restore, copy | 10–11, 16, 21, 25, 32 |
-| Versions, previews, comments, activity, personal lists | 08, 10, 12–14, 22, 28–29 |
+| Roles, links, passwords, removal versus deny, expiry retention | 07–08, 19–20, 22, 33–34, 43–44 |
+| Quota, reservations, root administration, offboarding | 10–11, 15, 21, 29, 41 |
+| Node lifecycle, upload, explicit restore, copy | 10–11, 16, 21, 25, 32, 42 |
+| Versions, previews, comments, activity, personal lists | 08, 10, 12–14, 22, 28–29, 46 |
 | Content contracts, Writer, Slides, Sheets, Satellites | 16–20, 28, 34 |
 | All five daily jobs | 11–16, 30 |
-| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34, 39 |
+| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34, 39, 41–46 |
 | WebDAV, hidden content files, ordinary office files | 24–25 |
 | Seven framework asks | 02–06; 03 covers asks 2 and 7, 04 covers asks 3 and 5 |
 | Additive Build, mappings, report, rollback evidence | 26–31 |
-| Later Cleanup, source deletion, runtime gates | 35–36, 40 |
+| Later Cleanup, source deletion, runtime gates | 35–36, 40, 45 |
 | Optional post-Build storage consolidation | 06, 37 |
 
 ## Handoff

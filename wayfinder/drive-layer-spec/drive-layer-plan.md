@@ -9,9 +9,9 @@ architecture charter disagree about placement or imports, the charter wins;
 if either disagrees with the spec about behavior, the spec wins.
 
 The [implementation ticket index](implementation/README.md)
-refines these stages into 37 dependency-linked tickets. It includes the
+refines these stages into 46 dependency-linked tickets. It includes the
 execution rules, verification evidence, and separate frontend/release gates.
-Ticket creation is complete; implementation has not started.
+Tickets 39 to 46 are asks from the unified frontend effort.
 
 ## Target
 
@@ -110,7 +110,7 @@ asks.
 | `http/translator.py` | http | **new.** `handle_before_request`, `ROUTES`, the cached-path fix (§11.1) |
 | `http/routes.py` | http | **new.** One whitelisted handler per row of §11.2 |
 | `http/shapes.py` | http | **new.** Node shape, three expansions, cursor encode and decode, error mapping (§11.3 to §11.6) |
-| `http/shims.py` | http | **new.** The 69 forwarders of §11.7, deleted in stage 7 |
+| `http/shims.py` | http | **new.** The 69 legacy names of §11.7, classified by how each answers until Cleanup. Deleted in stage 7 with every `api/*` body; no name outlives Cleanup, only `/dav` does (unified frontend ticket 017) |
 
 ### New doctypes, `suite/drive/doctype/<dir>/`
 
@@ -205,10 +205,10 @@ They go when the SPA moves, which is also the stage 7 gate.
 
 | Path | Owner | Note |
 |---|---|---|
-| `overrides/file.py` | http | Deleted whole with the `File` override, except `get_file_for_doc`, which is permanent (§11.7) |
+| `overrides/file.py` | http | Deleted whole with the `File` override, `get_file_for_doc` included: it resolves through `File` rows Cleanup deletes (§11.7; unified frontend ticket 017, Drive issue 40) |
 | `api/files.py`, `api/list.py`, `api/permissions.py`, `api/activity.py`, `api/notifications.py`, `api/storage.py`, `api/scripts.py`, `api/embed.py` | http | Bodies become forwarders in stage 4, deleted in stage 7 |
-| `api/s3.py` | http | Kept. `fetch` is permanent |
-| `api/product.py` | http | Kept. 19 methods, none touches a node |
+| `api/s3.py` | http | Untouched until stage 7, then deleted. `fetch` resolves a `File` by its stored `file_url`, so it cannot answer after Cleanup (§11.7) |
+| `api/product.py` | http | Untouched until stage 7, then deleted. Its 19 methods move to the §11.2 "Settings and WebDAV" routes (Drive issue 39), to Suite resources, or retire with their surface (§11.7). `after_request` moves to `framework.py` first (§14.10) |
 | `tests/test_sync_permissions.py` | http | **deleted** in stage 4. It covers `sync_from_disk`, which Build replaces, and `sync_preview`, which becomes a route (§11.7) |
 | `api/storage.py` | node | `acquire_owner_storage_lock` (:12) and `validate_quota` go in stage 2; the admission UPDATE is the lock (§7.2) |
 
@@ -421,8 +421,9 @@ holds.
 ### Stage 7. Cleanup patch, one release after Build
 
 - **Entry:** all three §14.10 gates hold: every reachable Drive `File` row has
-  a node; `blob_reference_columns()` exists; the SPA no longer calls the 69
-  old names.
+  a node; `blob_reference_columns()` exists; no Suite client (the SPA, the
+  Desk file picker in `suite/public/js`) and no Suite Python outside
+  `suite/drive/api` and `suite/drive/http` reaches any of the 69 old names.
 - **Files:** `patches/cleanup.py`, its `suite/patches.txt` entry,
   `test_cleanup_patch.py`, the six deleted doctype directories, the deleted
   `api/*` and `overrides/file.py` bodies, `http/shims.py`, the
