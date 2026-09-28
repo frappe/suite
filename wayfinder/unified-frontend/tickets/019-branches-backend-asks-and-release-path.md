@@ -2,7 +2,7 @@
 id: 019
 title: Branches, backend asks and the release path
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
@@ -30,10 +30,11 @@ The plan needs three facts only Faris can fix.
 Raised by the plan audit of
 [Draft the spec and plan](015-draft-the-spec-and-plan.md).
 
-## Proposed resolution
+## Resolution
 
-Proposed on 2026-09-29 by a Fable subagent. Pending Faris's answers to the
-irreversible decisions below.
+Resolved on 2026-09-29. A Fable subagent answered the reversible questions
+and prepared the rest. Faris answered them, and his answers replace the
+proposed options where they differ.
 
 In short: merge from here on, never rebase. Drive backend asks move to the
 Drive program: port `20befde95` onto `forge/drive-layer` and file D10 to
@@ -135,7 +136,27 @@ who flips the keys on Frappe Cloud.
     allowlisting and the frappe `forge/storage-v2` source are Drive issue 36
     and 37 gates, not this map's [Drive README Release gates].
 
-### For Faris (irreversible)
+### Faris's answers
+
+1. **One development branch: `forge/drive-layer`.** Faris: "we should
+   probably just keep one development branch: forge/drive-layer and merge
+   the frontend branch onto it". Done on 2026-09-29: the six Bread Genie
+   commits from the remote map branch were merged (`a8cb8ff6e`, no
+   conflicts, import-boundary check passed), `forge/drive-layer` was
+   fast-forwarded to it and pushed to `frappe/suite`. Map, Drive and
+   frontend work all land on `forge/drive-layer` from here on. There is no
+   `forge/unified-frontend` branch, and no port of `20befde95` is needed.
+   Merge only, never rebase: the branch is published and shared.
+2. **Release order.** Follows from 1: the Drive Build and the new frontend
+   reach `develop` in one release, with both flip keys off. Flip 1 and flip
+   2 happen later by key.
+3. **Flips on Frappe Cloud.** Faris: "i can flip the keys on FC manually".
+   Faris sets and clears both keys himself. No allowlist ask.
+4. **Drive asks D10 to D28** are filed as Drive implementation issues on
+   `forge/drive-layer` (ticket 022 does it, after ticket 017's issues, to
+   keep the numbering in order).
+
+### The questions as they were put
 
 1. **Drive branch carries the Drive asks.** The Drive README makes
    `forge/drive-layer` the sole merge target for Drive code, yet D1 to D9

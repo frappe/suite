@@ -2,7 +2,7 @@
 id: 020
 title: Unmapped legacy routes and the /files path
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
@@ -28,10 +28,11 @@ Also decide the `/files` clash: Frappe serves public uploads under
 Route list from the content audit of
 [Draft the spec and plan](015-draft-the-spec-and-plan.md).
 
-## Proposed resolution
+## Resolution
 
-Proposed on 2026-09-29 by a Fable subagent. Pending Faris's answers to the
-irreversible decisions below.
+Resolved on 2026-09-29. A Fable subagent answered the reversible questions
+and prepared the rest. Faris answered them. His rename of the area
+prefix changes several proposed decisions; ticket 022 applies the result.
 
 In short: every legacy route now has a row or a stated reason to have none.
 Rows match exact paths before parameter paths, drop the trailing slug, and
@@ -165,7 +166,34 @@ Other facts the table needs:
    [`frappe/app.py:671-678`, `bench/config/templates/supervisor.conf:7`,
    werkzeug 3.1.6 `SharedDataMiddleware.__call__`].
 
-### For Faris (irreversible)
+### Faris's answers
+
+1. **The area prefix is `/drive`, not `/files`.** Faris: "i think its
+   better to rename it to /drive from /files", and "yes, okay with
+   consequences". The consequences he accepted:
+   - Until flip 2 the old Drive app owns `/drive`. `suite_flip_files`
+     selects which route table mounts under `/drive`. This amends ticket
+     013's "no route flag selecting between two implementations" for this
+     prefix only.
+   - The old `/drive/f/<id>` meant a file; the new one means a folder. The
+     folder route resolves by node kind: a non-folder id replace-redirects
+     to `/d/<id>`.
+   - The rail label changes from "Files" to "Drive".
+   - Frappe's `/files/` public upload path no longer clashes, so the
+     reserved upload names (proposed decision 8) and the Vite `/files`
+     bypass go. The `/files` routes never reached production, so they need
+     no redirect rows.
+2. **Targets for the orphan old pages: rule (a).** Faris: "take both recs".
+   Old Drive listings (`/drive/inbox`, `/drive/documents`,
+   `/drive/presentations`, `/drive/attachments/...`) go to `/drive`. Old
+   product home and utility pages (`/writer`, `/sheets`, `/sheets/new`,
+   `/slides`, `/slides/presentation/new`, `/slides/not-permitted`) go to
+   `/home`. Old saved views map onto the new paths under `/drive`.
+3. **The Frappe ask.** Faris: "take both recs": file it. The orchestrator
+   reproduces the 500 with a traceback first; one bench port answered 500
+   and another 404 for a missing upload.
+
+### The questions as they were put
 
 1. **Keep `/files` as the Files area prefix.** The URL prefix ships in
    bookmarks, emails and 301s, so it cannot change later. Frappe serves

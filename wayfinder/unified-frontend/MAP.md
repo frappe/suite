@@ -75,8 +75,9 @@ Scope, decided 2026-09-11:
 - Delegation: use the codex CLI for research and inventories. Use Claude
   subagents only when the session's tooling is needed. Subagents must not
   post, push, or write outside this repo without confirmation.
-- Branches: `forge/wayfinder-unified-frontend` holds the map, based on
-  `forge/drive-layer` because the frontend consumes that branch's API.
+- Branches: one development branch, `forge/drive-layer`, holds the map,
+  the Drive layer and the frontend (ticket 019, 2026-09-29). Merge only,
+  never rebase. `forge/wayfinder-unified-frontend` is retired.
   Research branches: `forge/research-<name>`.
 - Vocabulary: [`frontend/CONTEXT.md`](../../frontend/CONTEXT.md).
 - Server-state client: [`references/server-state-client.md`](references/server-state-client.md)
@@ -94,6 +95,19 @@ Scope, decided 2026-09-11:
   add one line under Decisions so far here.
 
 ## Decisions so far
+
+- [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md) —
+  The area prefix is `/drive` and the rail label is "Drive" (Faris); the
+  flip key selects the old or new route table under `/drive` until flip 2,
+  and `/drive/f/<id>` resolves by kind. Orphan old listings go to
+  `/drive`, old product pages to `/home`. Exact rows before parameter
+  rows; a lookup with no node falls through. One Frappe ask to file.
+
+- [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md) —
+  One development branch, `forge/drive-layer`, merge only (Faris; merged
+  and pushed as `a8cb8ff6e`). Build and the new frontend reach `develop`
+  in one release with both keys off. Faris sets the keys on Frappe Cloud.
+  Drive asks D10 to D28 become Drive implementation issues.
 
 - [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md) —
   lucide on every surface (Faris). Upgrade plan and Open Desk show to
