@@ -125,7 +125,7 @@ Drive spec §11.2, block "Settings and WebDAV". "Drive admin" is write on
   (`frappe.translate.get_boot_translations`, spec §3.14); `signup`,
   `send_otp`, `verify_otp`, `oauth_providers`, `signup_disabled`
   (`/drive/signup`, spec §10.10, §14.6); `accept_invite`, `get_my_invites`,
-  `reject_invite` (`Drive User Invitation`, which Drive §3.16 now drops).
+  `reject_invite` (`Drive User Invitation`, whose rows Drive §3.16 keeps unread).
   `disk_settings` PUT wrote only fields Cleanup drops.
 
 ### Drive issues
