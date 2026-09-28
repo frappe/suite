@@ -274,7 +274,7 @@ order shown. A later stage rebases on the earlier stage's merge.
 
 - **Goal:** the shell gives a rail and one full box. Pages draw their own
   sidebar.
-- **Spec:** §3, §9.
+- **Spec:** §2.2, §3, §9.
 - **Files (owned):** `platform/contracts/index.ts`, a new `<AreaSidebar>`
   under `frontend/src/platform/`, `shell/ContextualPanel.vue` (deleted),
   `shell/ShellLayout.vue`, `shell/MobileNav.vue`, `shell/mobileNav.ts`,
@@ -298,6 +298,8 @@ order shown. A later stage rebases on the earlier stage's merge.
     (`shell/ShellLayout.vue:152`, `apps/drive/files/pages/FilesPage.vue:372`).
     `<AreaSidebar>` listens and opens its phone sheet [T015].
   - Home and Files render their panels inside `<AreaSidebar>`.
+  - `/files/f/<root-node>` replace-redirects to `/files` or
+    `/files/organization` (spec §2.2) [T001, T015].
   - The shell bottom nav gains the account entry: avatar, then a sheet with
     account, Settings, Theme and Log out.
 - **Depends on:** stage 0.
@@ -450,10 +452,10 @@ order shown. A later stage rebases on the earlier stage's merge.
     `/` goes to `/mail` through the last-app fallback. On: the rail gains
     Home and Files, and `/` goes to `/home`.
   - Before flip 2, `/home`, `/files` and `/d/` answer a direct URL for
-    every signed-in user [T009, T013, T014]. The rail with both flags off
-    is an open item.
+    every signed-in user [T009, T013, T014]. The rail with the flags off
+    is ticket 018's.
   - The Slides service worker stops caching the shell.
-- **Depends on:** stage 5. The rail with both flags off (Open items).
+- **Depends on:** stage 5. Ticket 018 (the rail and chrome with a flag off).
 - **Exit gate:** a journey runs each prefix with each flag on and off. The
   Slides service worker test shows no cached shell document.
 
@@ -877,8 +879,9 @@ ticket answers into the spec and this plan.
 - **Flip 1 rollback.** Owner:
   [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md).
   What Mail and Calendar show with `suite_flip_shell` off after stage 5
-  deletes their chrome. Blocks stage 5's chrome deletions and the stage 7
-  rollback rehearsal.
+  deletes their chrome, and what the rail shows on `/home`, `/files` and
+  `/d/` while `suite_flip_files` is off. Blocks stage 5's chrome
+  deletions, stage 6, and the stage 7 rollback rehearsal.
 - **Branches, backend asks and release path.** Owner:
   [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md).
   Where D10 to D28 land, and whether to port `20befde95` and `47311aa11`
@@ -904,9 +907,7 @@ ticket answers into the spec and this plan.
 - **`DocumentSession` signatures.** Owner: stage 9 (`share`) and stage 11
   (`comments`, `versions`). Each designs its signatures under the
   `codebase-design` skill. Blocks nothing outside those stages.
-- **Rail with both flags off.** Owner: spec §16 open item "Home and Files
-  between flip 1 and flip 2". No ticket holds it. Direct URLs are settled
-  (stage 6). Blocks stage 6.
+
 
 ### Environment approvals
 

@@ -95,6 +95,13 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
+  Both documents are drafted and audited against every resolution: the
+  spec in 16 sections with an ask table and 24 open items, the plan in 16
+  stages from the verified state at HEAD. Nine small orchestrator rulings
+  await Faris's veto. Five decisions only Faris can make became tickets
+  017 to 021; ticket 022 folds them in.
+
 - [Rollout, redirects and old-page deletion](tickets/014-rollout-redirects-and-old-page-deletion.md) —
   Two flips, each one `frappe.conf` key: the shell with Mail, Meet and
   Calendar, then Home, Files and documents. One server redirect table
@@ -229,8 +236,6 @@ Scope, decided 2026-09-11:
 
 ## Not yet specified
 
-- Icon source. The prototype uses frappe-ui's lucide sprite; CLAUDE.md
-  prefers the Figma set. Decide at the first styling ticket.
 - Notifications: the shape of a cross-product feed. Ticket 012 ships a
   Drive-only bell and names the joined feed as the planned upgrade.
 - The mounting spike must prove the shared full-pane box with Writer, the
@@ -257,8 +262,6 @@ Scope, decided 2026-09-11:
 
 - WebDAV clients and redirects: does a WebDAV client follow a 302 on
   `/drive/d/<id>`? Not verified. Surfaced by ticket 014.
-- Who runs `bench set-config` for each flip on Frappe Cloud sites, and what
-  the release note says. Surfaced by ticket 014.
 
 ## Out of scope
 
