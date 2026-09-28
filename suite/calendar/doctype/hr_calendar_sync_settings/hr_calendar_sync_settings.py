@@ -94,7 +94,7 @@ class HRCalendarSyncSettings(Document):
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
             "with_joining_date": sum(1 for employee in employees if employee.get("date_of_joining")),
             # Who HR named that this site knows: anyone else has nowhere to be shown a calendar.
-            "known_here": len(site_users([employee.get("user_id") for employee in employees])),
+            "known_here": len(set(site_users([employee.get("user_id") for employee in employees]).values())),
             "holiday_lists": holiday_lists,
             # Typed by hand, and a name HR doesn't have would quietly sync nothing.
             "unknown_holiday_lists": sorted(self.chosen_holiday_lists() - set(holiday_lists)),

@@ -16,6 +16,7 @@ from typing import NamedTuple
 
 import frappe
 from frappe import _
+from frappe.query_builder import Criterion
 from frappe.utils import now_datetime
 
 from suite.calendar.external import (
@@ -152,8 +153,12 @@ def _reconcile(plans: list[Plan]) -> dict:
     for plan in plans:
         calendar = upsert_calendar(SOURCE, plan.key, plan.name, color=plan.color)
         summary[plan.name] = replace_events(calendar, plan.events)
-        audience = [email.strip().lower() for email in plan.audience if email]
-        summary[plan.name]["drawn_for"] = replace_audience(calendar, users.intersection(audience))
+        audience = {
+            users[email.strip().lower()]
+            for email in plan.audience
+            if email and email.strip().lower() in users
+        }
+        summary[plan.name]["drawn_for"] = replace_audience(calendar, audience)
 
     # What this sync used to keep and HR no longer has — a holiday list nobody follows any more,
     # or a kind switched off. The calendar goes with its events and its audience, so a former
@@ -167,18 +172,44 @@ def _reconcile(plans: list[Plan]) -> dict:
     return summary
 
 
-def site_users(emails: Iterable[str | None]) -> set[str]:
-    """The people HR named, as users of this site.
+def site_users(emails: Iterable[str | None]) -> dict[str, str]:
+    """The people HR named, as users of this site: each address HR gave, lowercased, to the user
+    it belongs to.
 
-    HR knows an employee by the address they log in to HR with; the same address is their user
-    here. One HR names that this site has never heard of is left out — an employee with no
-    account here has nowhere to be shown a calendar.
+    An address belongs to a user if it is any address this site knows them by — their login,
+    the address on their user record, the login of their mail account, or their backup address —
+    not their login alone: HR may know someone by the address they use for mail, or by an older
+    one they gave as a fallback. One HR names that this site knows by none of these is left out:
+    an employee with no account here has nowhere to be shown a calendar. Where two users would
+    claim one address, the login wins, then the user record, the mail login, the backup.
+
+    Only what this site stores: a mail account's other identities live on the mail server and
+    would be a session per user to read, which a daily run over a company is not going to do.
     """
 
     wanted = {email.strip().lower() for email in emails if email}
     if not wanted:
-        return set()
-    return set(frappe.get_all("User", {"name": ("in", sorted(wanted)), "enabled": 1}, pluck="name"))
+        return {}
+
+    USER = frappe.qb.DocType("User")
+    SETTINGS = frappe.qb.DocType("User Settings")
+    known = (USER.name, USER.email, SETTINGS.username, SETTINGS.backup_email)
+    rows = (
+        frappe.qb.from_(USER)
+        .left_join(SETTINGS)
+        .on(SETTINGS.user == USER.name)
+        .select(*known)
+        .where(USER.enabled == 1)
+        .where(Criterion.any(field.isin(sorted(wanted)) for field in known))
+    ).run(as_dict=True)
+
+    users: dict[str, str] = {}
+    for row in rows:
+        for field in ("name", "email", "username", "backup_email"):
+            address = (row.get(field) or "").strip().lower()
+            if address in wanted:
+                users.setdefault(address, row["name"])
+    return users
 
 
 def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[dict]]]:

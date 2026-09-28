@@ -54,9 +54,12 @@ that have to show up there belong in a calendar of their own, subscribed to.
   before the year turns. The holiday list on an employee and the default on a company are fields
   Frappe HR no longer reads, and neither does the sync: it needs Frappe HR 16 or later.
   Celebrations go to every active employee of the company.
-- **An employee is a user of this site**, found by the address HR knows them by. One this site has
-  never heard of is left out: there is nobody here to draw a calendar for. A mailbox is not needed
-  — a site user is enough.
+- **An employee is a user of this site**, found by the address HR knows them by — matched against
+  any address this site knows a user by: their login, the address on their user record, their
+  mail login, or their backup address. One this site knows by none of these is left out: there is
+  nobody here to draw a calendar for. A mailbox is not needed — a site user is enough. A mail
+  account's other identities are not consulted: they live on the mail server, a session per user
+  away.
 - Each event carries a **uid built from its HR record** (`hr-holiday-<list>-<date>`,
   `hr-birthday-<employee>`, `hr-anniversary-<employee>`). A run therefore adds what is missing,
   rewrites what changed, and removes what HR no longer has — including for an employee who left.
