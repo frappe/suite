@@ -37,6 +37,11 @@ that have to show up there belong in a calendar of their own, subscribed to.
 - **Celebrations start out unticked**: a birthday or an anniversary most days is more than most
   people want drawn over their own week, so it is theirs to switch on, in the sidebar or from the
   calendar's menu, per browser. Holiday calendars start shown.
+- **Searchable.** The palette and the phone's search page find these beside the mail server's
+  events, by every word typed — in the title, or the notes too unless the title alone is asked.
+  A birthday answers as its occurrences nearest today, as a series does, and counts as one
+  answer; the calendar filter can name one of these calendars, and asks it alone. Nobody is on
+  them, so an attendee or an organizer finds none.
 - **Read-only.** Nobody can edit or delete these events in the calendar, and nothing is offered
   that would try: what they say is HR's to change.
 - Events carry **no organizer and no participants**. They are facts about a day, not invitations,

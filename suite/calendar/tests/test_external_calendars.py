@@ -157,6 +157,112 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
             "repeats": "Yearly",
         }
 
+    def yearly(self, anchored: date, title: str = "Someone's birthday") -> dict:
+        return {
+            "uid": "hr-birthday-EMP-2",
+            "title": title,
+            "starts_on": f"{anchored} 00:00:00",
+            "ends_on": f"{anchored + timedelta(days=1)} 00:00:00",
+            "all_day": True,
+            "repeats": "Yearly",
+        }
+
+    def dated(self, uid: str, title: str, day: date) -> dict:
+        return {
+            "uid": uid,
+            "title": title,
+            "starts_on": f"{day} 00:00:00",
+            "ends_on": f"{day + timedelta(days=1)} 00:00:00",
+            "all_day": True,
+        }
+
+    def search(self, user: str, words: list[str], limit: int = 10, **narrowed) -> list[dict]:
+        return external.search_events(user, words, limit, **narrowed)
+
+    def titles(self, words: list[str], **narrowed) -> list[str]:
+        return sorted({event["title"] for event in self.search(self.user, words, **narrowed)})
+
+    def test_a_search_finds_what_carries_every_word(self):
+        external.replace_events(self.calendar, [self.holiday, self.birthday])
+        external.replace_audience(self.calendar, [self.user])
+
+        self.assertEqual(self.titles(["gandhi"]), ["Gandhi Jayanti"])
+        self.assertEqual(self.titles(["jayanti", "GANDHI"]), ["Gandhi Jayanti"])
+        self.assertEqual(self.titles(["gandhi", "birthday"]), [])
+        # no words is every event on the calendar: the calendar itself was the question
+        self.assertEqual(self.titles([]), ["Akash Tom's birthday", "Gandhi Jayanti"])
+        # and nothing for somebody it is not drawn for, even naming the calendar
+        self.assertEqual(self.search(self.stranger, ["gandhi"]), [])
+        self.assertEqual(self.search(self.stranger, ["gandhi"], calendars=[self.calendar]), [])
+        self.assertEqual(self.titles(["gandhi"], calendars=[self.calendar]), ["Gandhi Jayanti"])
+
+    def test_the_notes_are_searched_unless_the_title_alone_is_asked(self):
+        external.replace_events(self.calendar, [{**self.holiday, "description": "The office is closed"}])
+        external.replace_audience(self.calendar, [self.user])
+
+        self.assertEqual(self.titles(["closed"]), ["Gandhi Jayanti"])
+        self.assertEqual(self.titles(["closed"], title_only=True), [])
+
+    def test_a_yearly_event_answers_as_its_occurrences_nearest_today(self):
+        today = date.today()
+        month_day = f"{today:%m-%d}"
+        external.replace_events(self.calendar, [self.yearly(yearly_occurrence(month_day, today.year - 30))])
+        external.replace_audience(self.calendar, [self.user])
+
+        found = self.search(self.user, ["birthday"])
+
+        # last year's, this year's and next year's: nearest first is how they are read
+        expected = sorted(yearly_occurrence(month_day, today.year + offset) for offset in (-1, 0, 1))
+        self.assertEqual(
+            sorted(event["start"][:10] for event in found), [day.isoformat() for day in expected]
+        )
+        # one event, three occurrences, named by the series and the occurrence within it — and
+        # named the same way on the grid, so a link from a search hit opens the grid's row
+        [series] = {event["master_id"] for event in found}
+        self.assertEqual(len({event["id"] for event in found}), 3)
+        self.assertEqual({event["recurrence_id"] for event in found}, {f"{day}T00:00:00" for day in expected})
+        [drawn] = external.events_in_window(self.user, today.isoformat(), today.isoformat())
+        self.assertEqual((drawn["master_id"], drawn["recurrence_id"]), (series, f"{today}T00:00:00"))
+
+    def test_a_range_narrows_to_what_falls_in_it(self):
+        today = date.today()
+        month_day = f"{today:%m-%d}"
+        external.replace_events(
+            self.calendar, [self.yearly(yearly_occurrence(month_day, today.year - 30)), self.holiday]
+        )
+        external.replace_audience(self.calendar, [self.user])
+        next_year = datetime(today.year + 1, 1, 1)
+
+        found = self.search(self.user, ["birthday"], start=next_year, end=datetime(today.year + 2, 1, 1))
+        self.assertEqual(
+            [event["start"][:10] for event in found],
+            [yearly_occurrence(month_day, today.year + 1).isoformat()],
+        )
+        # a dated event answers inside a range and not outside it, and either bound alone holds
+        self.assertEqual(
+            len(self.search(self.user, ["gandhi"], start=datetime(2026, 10, 1), end=datetime(2026, 10, 3))), 1
+        )
+        self.assertEqual(
+            self.search(self.user, ["gandhi"], start=datetime(2030, 1, 1), end=datetime(2031, 1, 1)), []
+        )
+        self.assertEqual(self.search(self.user, ["gandhi"], start=datetime(2030, 1, 1)), [])
+        self.assertEqual(self.search(self.user, ["gandhi"], end=datetime(2026, 10, 1)), [])
+
+    def test_only_the_nearest_few_events_are_expanded(self):
+        today = date.today()
+        external.replace_events(
+            self.calendar,
+            [
+                self.dated("far", "Republic Day 2029", today + timedelta(days=3 * 365)),
+                self.dated("near", "Republic Day", today + timedelta(days=3)),
+            ],
+        )
+        external.replace_audience(self.calendar, [self.user])
+
+        self.assertEqual(
+            [event["title"] for event in self.search(self.user, ["republic"], limit=1)], ["Republic Day"]
+        )
+
     def test_a_calendar_is_drawn_for_its_audience_and_for_nobody_else(self):
         external.replace_events(self.calendar, [self.holiday])
         external.replace_audience(self.calendar, [self.user])

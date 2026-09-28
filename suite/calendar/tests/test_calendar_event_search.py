@@ -3,10 +3,13 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import frappe
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite.calendar import api as calendar_api
+from suite.calendar import external
 from suite.calendar.api import (
     EVENT_SEARCH_LIMIT,
     MAX_EVENT_SEARCH_LIMIT,
@@ -20,7 +23,9 @@ from suite.calendar.api import (
     search_calendar_events_with_shared,
 )
 from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_event
+from suite.calendar.tests.fixtures import HOLIDAY
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
+from suite.tests.utils import ensure_user
 
 
 class TestCalendarEventSearch(StalwartIntegrationTestCase):
@@ -397,3 +402,49 @@ class TestSearchResultCut(UnitTestCase):
 
         self.assertEqual(len(_first_events(rows, 2)), 2)
         self.assertEqual([row["account"] for row in _first_events(rows, 1)], ["mine"])
+
+
+class IntegrationTestSearchOfTheSitesOwnCalendars(IntegrationTestCase):
+    """The calendars this site keeps — HR's holidays and celebrations — answer a search beside
+    the mail server's events, and one named in the filter answers alone.
+
+    The mail server's half is patched to answer nothing: none is running here, and what it
+    answers is the tests above's business. A named calendar is not patched at all — no mail
+    account exists for these users, so had the mail server been asked, the search would have
+    failed rather than answered.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.user = ensure_user("holiday-searcher@calendar.test")
+        self.stranger = ensure_user("stranger-searcher@calendar.test")
+        self.calendar = external.upsert_calendar("Test HR", "holidays:India 2026", "India 2026")
+        external.replace_events(self.calendar, [HOLIDAY])
+        external.replace_audience(self.calendar, [self.user])
+
+    def search(self, user: str, text: str | None = None, **filters) -> list[dict]:
+        with self.set_user(user):
+            return calendar_api.search_calendar_events_with_shared(
+                "nobody@calendar.test", text, time_zone="UTC", filters=filters or None
+            )
+
+    def test_a_holiday_answers_beside_the_mail_servers_events(self):
+        with patch.object(calendar_api, "_with_shared", return_value=[]):
+            [found] = self.search(self.user, "gandhi")
+            self.assertEqual((found["title"], found["account"]), ("Gandhi Jayanti", external.NAMESPACE))
+            self.assertEqual(self.search(self.stranger, "gandhi"), [])
+
+    def test_a_calendar_this_site_keeps_is_asked_alone(self):
+        named = f"{external.NAMESPACE}|{self.calendar}"
+
+        self.assertEqual(
+            [e["title"] for e in self.search(self.user, "gandhi", calendar=named)], ["Gandhi Jayanti"]
+        )
+        # with nothing typed, the calendar itself is the question, and every day on it the answer
+        self.assertEqual([e["title"] for e in self.search(self.user, calendar=named)], ["Gandhi Jayanti"])
+        self.assertEqual(self.search(self.stranger, "gandhi", calendar=named), [])
+
+    def test_nobody_is_on_a_holiday(self):
+        with patch.object(calendar_api, "_with_shared", return_value=[]):
+            self.assertEqual(self.search(self.user, "gandhi", attendee="someone@calendar.test"), [])
+            self.assertEqual(self.search(self.user, "gandhi", organizer="someone@calendar.test"), [])

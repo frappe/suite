@@ -195,7 +195,11 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str)
         "account": NAMESPACE,
         "id": f"{row.name}-{day:%Y%m%d}",
         "uid": row.uid,
-        "recurrence_id": None,
+        # A yearly event's occurrence is named the way a series' is on the mail server: by the
+        # series (`master_id`) and the occurrence within it, which is what a link to one is
+        # written with and how a search counts three years of one birthday as one answer.
+        "master_id": row.name if row.repeats else None,
+        "recurrence_id": f"{day:%Y-%m-%d}T00:00:00" if row.repeats else None,
         "created": None,
         "organizer": "",
         "calendars": [
@@ -243,6 +247,89 @@ def _duration(span: timedelta) -> str:
     """
 
     return duration_isoformat(span) if span > timedelta(0) else "P0D"
+
+
+# --- searching ----------------------------------------------------------------------------------
+
+# How many of a yearly event's occurrences a search answers with, nearest today first, and how
+# far ahead it looks for them: what the mail server's series get (the API's RECURRENCE_INSTANCES
+# and RECURRENCE_HORIZON_YEARS), so a birthday reads in a search the way a standup does.
+SEARCH_INSTANCES = 3
+SEARCH_HORIZON_YEARS = 3
+
+
+def search_events(
+    user: str,
+    words: list[str],
+    limit: int,
+    title_only: bool = False,
+    calendars: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[dict]:
+    """The events on the calendars drawn for `user` that carry every word — all of them, for no
+    words — as the rows a search answers with: the shape `events_in_window` hands over, so they
+    sort, cut and open alike.
+
+    A dated event answers as itself, wherever it falls. A yearly one answers as its occurrences
+    inside `start` and `end` where both are given, and otherwise as the few nearest today on
+    either side — last year's, this year's, next year's — since that is what a reader looking for
+    a birthday means. Either bound alone still holds.
+
+    `calendars` narrows to those, and never past what the user is drawn: a calendar named by
+    someone it is not for answers nothing. At most `limit` events are expanded, ranked nearest
+    today first with a yearly event counting as today, the way the API ranks a series before it
+    expands it.
+    """
+
+    drawn = {calendar.name: calendar for calendar in _calendars_for(user)}
+    if calendars is not None:
+        drawn = {name: drawn[name] for name in calendars if name in drawn}
+    if not drawn:
+        return []
+
+    now = now_datetime()
+    rows = _rows_carrying(list(drawn), words, title_only)
+    rows.sort(key=lambda row: timedelta(0) if row.repeats else abs(get_datetime(row.starts_on) - now))
+    del rows[limit:]
+
+    windowed = bool(start and end)
+    since = start or now - timedelta(days=367)
+    until = end or now + timedelta(days=366 * SEARCH_HORIZON_YEARS)
+    stamp = utcnow()
+    events = []
+    for row in rows:
+        if not row.repeats:
+            if (start and get_datetime(row.ends_on or row.starts_on) <= start) or (
+                end and get_datetime(row.starts_on) >= end
+            ):
+                continue
+            events.append(_event_row(drawn[row.calendar], row, get_datetime(row.starts_on).date(), stamp))
+            continue
+        days = _occurrences(row, since, until)
+        if not windowed:
+            days.sort(key=lambda day: abs(day - now.date()))
+            del days[SEARCH_INSTANCES:]
+        events.extend(_event_row(drawn[row.calendar], row, day, stamp) for day in days)
+    return events
+
+
+def _rows_carrying(calendars: list[str], words: list[str], title_only: bool) -> list[frappe._dict]:
+    """The stored events on `calendars` whose title — or notes, unless the title alone was
+    asked — carries every one of `words`; every event on them, for none."""
+
+    event = frappe.qb.DocType("External Calendar Event")
+    query = (
+        frappe.qb.from_(event)
+        .select(event.name, event.calendar, event.uid, *(getattr(event, field) for field in EVENT_FIELDS))
+        .where(event.calendar.isin(calendars))
+    )
+    for word in words:
+        carries = event.title.like(f"%{word}%")
+        if not title_only:
+            carries = carries | event.description.like(f"%{word}%")
+        query = query.where(carries)
+    return query.run(as_dict=True)
 
 
 # --- writing ------------------------------------------------------------------------------------
