@@ -190,8 +190,11 @@ Other facts the table needs:
    `/slides`, `/slides/presentation/new`, `/slides/not-permitted`) go to
    `/home`. Old saved views map onto the new paths under `/drive`.
 3. **The Frappe ask.** Faris: "take both recs": file it. The orchestrator
-   reproduces the 500 with a traceback first; one bench port answered 500
-   and another 404 for a missing upload.
+   reproduced the 500 with a traceback from the suite-bench dev service
+   (`frappe/middlewares.py:40` raises `NotFound`; werkzeug 3.1.6 does not
+   catch it) and filed it on 2026-09-29 as
+   [frappe/frappe#43523](https://github.com/frappe/frappe/issues/43523).
+   After the `/drive` rename, Suite no longer depends on the fix.
 
 ### The questions as they were put
 
