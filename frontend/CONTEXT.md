@@ -87,8 +87,10 @@ count on the Mail area.
 _Avoid_: Alert, Activity, Feed item
 
 **Guest surface**:
-The shell-less presentation of a document or folder to a visitor without a
-Suite session, whether access comes from a link credential or `$PUBLIC`.
+The shell's presentation of a document or folder to a visitor without a
+Suite session, whether access comes from a link credential or `$PUBLIC`. It
+has no rail and no sidebar. The same pages render, with only the actions the
+visitor's role allows.
 _Avoid_: Public view, Link view, Shared view
 
 **Platform**:

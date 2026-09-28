@@ -95,6 +95,15 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Guest and link routes](tickets/011-guest-and-link-routes.md) —
+  The server resolves `/l/<token>` and redirects to the node route with the
+  token in the URL fragment; unlock is a 401 state on that route, with a
+  `Retry-After` countdown on lockout. A guest gets the shell with no rail
+  or sidebar and the same pages, actions by role. Guests view, download,
+  comment under a typed name and upload through links. Frappe `/login`
+  stays; the setup gate skips guest routes. Withdraws ticket 008's
+  `GET /links/<token>` ask; two new Drive asks.
+
 - [Mail, Meet and Calendar adoption contract](tickets/010-mail-meet-calendar-adoption-contract.md) —
   The shell gives a rail and a full box; a page draws its own sidebar through
   the platform's `<AreaSidebar>`, and `AreaDefinition` loses `loadPanel`.
@@ -222,6 +231,13 @@ Scope, decided 2026-09-11:
 - Named Meet rooms: persistent rooms with a handle and a cadence, as the base
   prototype's Rooms dropdown imagined them. No doctype, no list route and no
   such concept in Meet today. A Meet-program idea this effort surfaced.
+
+- Finding link-only items again. A signed-in user who opens a link to an
+  item they hold no grant on cannot find it later in Recent, Starred or
+  Shared with me (ticket 011, decision 7). Likely upgrade: the server
+  remembers links a signed-in user opened and lists them, while access
+  still rides the live link. That is a Drive-program ask. Drive ticket 008
+  rejected server-side link state; its stated reason concerns guests.
 
 ## Out of scope
 

@@ -27,3 +27,8 @@ switch.
 Inputs: the resolutions of tickets 006, 009, 010 and 013; the Drive
 implementation README's release checkpoints;
 `wayfinder/drive-layer-spec/implementation/issues/36-cleanup-later-release.md`.
+
+Handed from [Guest and link routes](011-guest-and-link-routes.md)
+(2026-09-28): retire `/drive/signup` and the Drive User Invitation URL
+(`drive_user_invitation.py:91`, which points at `/drive/signup`). Redirect
+`/drive/l/<token>` to `/l/<token>`.

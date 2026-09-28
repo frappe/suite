@@ -161,3 +161,10 @@ Suite:
   calls ask 2; the store and its lifetime are decided here.
 - Ticket 009 already decided the content-page side: the document session
   selects scoped codes for REST, collaboration and composite loads.
+
+### Amended 2026-09-28 by ticket 011
+
+- Ask 2 (`GET /links/<token>`) is withdrawn. The server resolves
+  `/l/<token>` and redirects with the token in the URL fragment (Drive spec
+  §6.2). Unlock is a `401 DriveLocked` state on the node route. See
+  [Guest and link routes](011-guest-and-link-routes.md).

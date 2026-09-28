@@ -27,3 +27,9 @@ Cleanup activation.
 Inputs: every closed ticket on this map, the two research references, the
 base prototype, ARCHITECTURE.md, and the Drive spec. Agents may draft;
 the orchestrator audits against each ticket's resolution.
+
+Handed from [Guest and link routes](011-guest-and-link-routes.md)
+(2026-09-28): the plan starts from placeholders. `/l/:token` renders
+`UnavailableSurface` (`composition/routes.ts:107`), `GuestSurface.vue` is a
+static card, nothing reads `#link=`, and the default transport sends no
+`X-Drive-Links`.
