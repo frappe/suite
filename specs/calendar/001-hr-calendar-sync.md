@@ -106,8 +106,8 @@ that have to show up there belong in a calendar of their own, subscribed to.
 2. **HR Calendar Sync Settings** (Desk): the HR site URL and keys, and what to sync.
    **Test Connection** reports what the keys can see — employees, birth dates, joining dates, how
    many of them this site knows, holiday lists — before anything is written; **Sync Now** runs it
-   once.
-3. Switch **Enabled** on. From then it runs daily.
+   once, whether or not it is enabled.
+3. Switch **Enabled** on. From then it runs daily; Enabled is about the daily run and nothing else.
 
 Birth dates are personal: birthdays are off by default, and a site turns them on only where
 everyone expects the whole company to see them.

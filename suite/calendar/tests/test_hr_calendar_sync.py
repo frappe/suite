@@ -159,6 +159,46 @@ class UnitTestNothingPrivateIsLogged(UnitTestCase):
         run.assert_not_called()
 
 
+class UnitTestEnabledIsAboutTheDailyRun(UnitTestCase):
+    """Enabled is whether the sync runs on its own each day. Sync Now runs regardless: the setup
+    is to test the connection, run it once, and only then switch it on."""
+
+    def test_the_daily_run_stands_aside_until_enabled(self):
+        with (
+            patch.object(hr_sync.frappe.db, "get_single_value", return_value=0),
+            patch.object(hr_sync, "sync_hr_calendars") as run,
+        ):
+            self.assertEqual(hr_sync.sync_hr_calendars_daily(), {})
+        run.assert_not_called()
+
+        with (
+            patch.object(hr_sync.frappe.db, "get_single_value", return_value=1),
+            patch.object(hr_sync, "sync_hr_calendars", return_value={"India 2026": {}}),
+        ):
+            self.assertEqual(hr_sync.sync_hr_calendars_daily(), {"India 2026": {}})
+
+    def test_a_run_asked_for_goes_ahead_before_the_sync_is_enabled(self):
+        settings = MagicMock(
+            enabled=0,
+            sync_holidays=0,
+            sync_birthdays=1,
+            sync_anniversaries=0,
+            celebrations_calendar="Celebrations",
+        )
+        settings.hr_source.return_value.employees.return_value = [
+            employee("EMP-1", company="Acme", date_of_birth="1990-07-09", user_id="a@x.io")
+        ]
+        planned = []
+        with (
+            patch.object(hr_sync.frappe, "get_doc", return_value=settings),
+            patch.object(hr_sync, "_record_success"),
+            patch.object(hr_sync, "_reconcile", side_effect=lambda plans: planned.extend(plans) or {}),
+        ):
+            hr_sync._run()
+
+        self.assertEqual([plan.name for plan in planned], ["Celebrations"])
+
+
 class UnitTestSiteUrl(UnitTestCase):
     def test_a_plain_https_site_is_accepted(self):
         self.assertEqual(validate_site_url(" https://hr.example.com/ "), "https://hr.example.com")

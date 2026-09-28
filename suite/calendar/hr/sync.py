@@ -56,8 +56,19 @@ class Plan(NamedTuple):
     audience: list[str | None]  # the addresses HR named, before this site is asked about them
 
 
+def sync_hr_calendars_daily() -> dict:
+    """The scheduler's entry: the run, once the settings have been switched on. Sync Now does
+    not come through here — it runs whether or not the daily job is on, since the setup is to
+    test the connection, run it once, and only then enable it."""
+
+    if not frappe.db.get_single_value("HR Calendar Sync Settings", "enabled"):
+        return {}
+    return sync_hr_calendars()
+
+
 def sync_hr_calendars() -> dict:
-    """The daily job, and what the settings' Sync Now runs. Returns what it did, per calendar.
+    """One run, now: what the settings' Sync Now enqueues, and what the daily job comes to once
+    it has checked Enabled. Returns what it did, per calendar.
 
     Deliberately thin. Frappe writes a failing job's traceback to the Error Log with the contents
     of every frame in it, and the frames that do the work hold employees' names and birth dates.
@@ -95,9 +106,6 @@ def _record_failure() -> None:
 def _run() -> dict:
     # Read fresh rather than from the cache: the sync acts on what is saved now.
     settings = frappe.get_doc("HR Calendar Sync Settings")
-    if not settings.enabled:
-        return {}
-
     source = settings.hr_source()
     employees = source.employees()
 
