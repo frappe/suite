@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft, not audited. Agents wrote it for ticket 015. |
+| Status | Drafted and audited 2026-09-29; open decisions in tickets 017 to 021. Agents wrote it for ticket 015. |
 | Date | 2026-09-29 |
 | Spec | [`unified-frontend-spec.md`](unified-frontend-spec.md) |
 | Source map | [`MAP.md`](MAP.md) and the closed tickets in [`tickets/`](tickets/) |
@@ -29,13 +29,18 @@ Verified on 2026-09-29 against HEAD. The 2026-09-15 documents
 - `forge/drive-layer` is an ancestor of HEAD. HEAD is 38 commits ahead and
   0 behind.
 - HEAD is 341 commits behind `upstream/develop` (merge base `bf6eb9c82`,
-  2026-09-16). `upstream/develop` changes 202 files under
-  `frontend/src/apps/{mail,calendar,meet}` and `frontend/src/router`.
+  2026-09-16). `upstream/develop` changes 189 files under
+  `frontend/src/apps/{mail,calendar,meet}` and `frontend/src/router` since
+  the merge base.
 - The earlier wave's backend asks landed on this map branch, not on
   `forge/drive-layer`: `20befde95` (Drive asks for tickets 006 and 012) and
   `47311aa11` (ticket 003 dispatcher and routes).
 - The last code commit is `fb5213940` (2026-09-17, reconcile with develop).
-  Later commits change only `wayfinder/`.
+  Later commits change only `wayfinder/` and `frontend/CONTEXT.md`.
+- Both `forge/drive-layer` and this branch were reconciled with develop by
+  rebase on 2026-09-17. `fb5213940` has one parent. The branches
+  `backup/drive-layer-pre-rebase-20260917-a848d9c6d` and
+  `backup/unified-frontend-pre-rebase-20260917-0ba97fc5e` exist.
 
 ### Built and kept
 
@@ -46,7 +51,7 @@ Verified on 2026-09-29 against HEAD. The 2026-09-15 documents
 | Home | Recent, Upcoming, New, Meet control | `frontend/src/composition/home/` |
 | Bell | Drive notifications with unread count | `frontend/src/composition/notifications/` |
 | Files | Roots, saved views, cursors, server sort and group, search, selection, Move and Move to trash, `BatchOutcome`, folder picker, file preview | `frontend/src/apps/drive/files/`, `frontend/src/apps/drive/client/` |
-| Documents | `DocumentSession` with access refresh, `media()`, credential grouper; Writer, Sheets, Slides surfaces | `frontend/src/apps/drive/client/session.ts`, `frontend/src/apps/{writer,sheets,slides}/surface/` |
+| Documents | `DocumentSession` with access refresh, `media()`, credential grouper; Writer, Sheets, Slides surfaces. `DocumentHost` renders Drive's `filePreviewSurface` for a file node, and `openDocumentSession` serves both kinds [T011, T015] | `frontend/src/apps/drive/client/session.ts`, `frontend/src/apps/{writer,sheets,slides}/surface/`, `frontend/src/composition/DocumentHost.vue` |
 | Legacy Drive | Relocated whole | `frontend/src/apps/drive/legacy/` |
 | Backend | Owner dispatcher, conformance kit, Suite and product routes | `suite/composition/{http.py,registrations.py,contract.py}`, `suite/composition/tests/http_conformance.py`, `suite/api/routes.py` |
 | Gates | Boundary checker, bundle budget, unified and legacy Vitest projects, three Playwright projects, CODEOWNERS | `frontend/scripts/`, `frontend/vitest.config.ts`, `e2e/unified-frontend/{shell,files,home}`, `.github/CODEOWNERS` |
@@ -54,24 +59,27 @@ Verified on 2026-09-29 against HEAD. The 2026-09-15 documents
 ### Rework that later tickets force
 
 - **Ticket 010, shell.** `AreaDefinition` still has `loadPanel`
-  (`platform/contracts/index.ts:35`). `shell/ContextualPanel.vue` still
+  (`platform/contracts/index.ts:34`). `shell/ContextualPanel.vue` still
   calls it. `ShellLayout.vue` still has the panel branch. `<AreaSidebar>`
   does not exist. Mail and Calendar placeholder panels sit in
-  `apps/mail/index.ts:22-31` and `apps/calendar/index.ts:25-34`.
+  `apps/mail/index.ts:22-31` and `apps/calendar/index.ts:26-35`.
 - **Ticket 010, areas.** No Meet area. Mail and Calendar routes are
   `frame: 'none'` (`composition/routes.ts`). Mail, Calendar and Meet keep
   their own layouts: `MailLayout.vue`, `CalendarLayout.vue`,
   `MeetLayout.vue`.
 - **Ticket 010, four fixes.** All four are open:
-  - `body.mail-app` CSS at `apps/mail/pages/MailLayout.vue:134-135`.
+  - `body.mail-app`: class toggle at `apps/mail/pages/MailLayout.vue:134-135`;
+    `body.mail-app` rules at 246-348.
   - A second `FrappeUIProvider` in `MailLayout.vue` and `MeetLayout.vue`.
-  - `provide('$socket', initSocket())` per mount, never disposed, at
-    `MailLayout.vue:122` and `MeetLayout.vue:10`.
+  - A socket per mount, never disposed: `provide('$socket', initSocket())`
+    at `MailLayout.vue:122`; bare `initSocket()` at `MeetLayout.vue:10`.
   - Mail `window` listeners for `?`, `g`+letter and Cmd/Ctrl+Shift+L at
     `MailLayout.vue:88-149` and `211-218`; one more at `MailThread.vue:1268`.
 - **Beyond ticket 010's list.** `CalendarLayout.vue` also sets
   `body.calendar-app` (lines 34, 38, 73, 82) and mounts a third
-  `FrappeUIProvider`. Meet also creates a socket per mount. See Open items.
+  `FrappeUIProvider`. Meet also creates a socket per mount. Stage 3 removes
+  the Calendar provider and disposes the Meet socket. `body.calendar-app`
+  only sets icon stroke width, so it does not break the shell [T015].
 - **Ticket 008.** `platform/transport/index.ts` still has the `LinkStore`
   hook that ticket 008 removes. The default transport (line 160) has no
   link store, so it sends no `X-Drive-Links`. `SlidesSurface.vue:207` sets
@@ -201,11 +209,18 @@ No frontend typecheck script exists. See Open items.
 ```
 
 - Stages 1 and 3 run in parallel. Stage 2 runs in parallel with 1 and 3.
-- Stages 8, 9 and 10 run in parallel after 1 and 2. They share
-  `FilesPage.vue`; see Shared files.
+  Stage 2's `apps/drive/index.ts` edit waits for stage 1's `loadPanel`
+  line.
+- Stages 8, 9 and 10 start after 1 and 2. Their edits to a shared file
+  follow the Shared files order. So Stage 8's route and shell edits wait
+  for Stage 6, and 9 and 10 edit `FilesPage.vue` after 8.
 - Stage 11 runs in parallel with every stage before 13.
-- Stage 12's server half runs in parallel with every stage before 13.
+- Stage 12's server half starts after stage 0. Its `hooks.py` edit waits
+  for stage 8.
 - Stages 7, 13, 14 and 15 are serial.
+- Tickets 017 to 021 hold open decisions (see Open items). A stage that one
+  of them blocks cannot pass its exit gate until ticket 022 folds the
+  answers into the spec and this plan.
 
 ### Shared files
 
@@ -219,32 +234,41 @@ order shown. A later stage rebases on the earlier stage's merge.
 | `frontend/src/shell/MobileNav.vue`, `mobileNav.ts` | 1, 5, 10 |
 | `frontend/src/shell/Rail.vue`, `RailItem.vue` | 10 |
 | `frontend/src/composition/appRegistry.ts` | 1, 5, 6, 10 |
-| `frontend/src/composition/routes.ts` | 5, 6, 8, 12 |
+| `frontend/src/composition/routes.ts` | 1, 5, 6, 8, 12 |
 | `frontend/src/router/index.ts` | 5, 6, 8, 12 |
 | `frontend/src/apps/drive/files/pages/FilesPage.vue` | 1, 8, 9, 10 |
-| `frontend/src/apps/drive/index.ts` | 2, 9, 10, 11 |
+| `frontend/src/apps/drive/index.ts` | 1, 2, 9, 10, 11 |
 | `frontend/src/apps/drive/client/session.ts` | 2, 9, 11 |
 | `frontend/src/apps/slides/surface/SlidesSurface.vue` | 2, 11 |
-| `frontend/scripts/check-import-boundaries.mjs` | 0, then each stage removes only its own resolved baseline entries |
+| `frontend/src/apps/mail/pages/MailLayout.vue` | 3, 5 |
+| `frontend/src/apps/mail/components/MailThread.vue` | 3, 4 |
+| `frontend/src/apps/calendar/pages/CalendarLayout.vue` | 3, 5 |
+| `frontend/scripts/check-import-boundaries.mjs` | 0, 11 (legacy-call rule), then each stage removes only its own resolved baseline entries |
 | `suite/www/suite.py` | 6 |
+| `suite/www/drive_link.py` | 8, 12 |
 | `suite/hooks.py` | 8, 12 |
+| `e2e/unified-frontend/shell/specs/` | 1, 3, 4, 5, 12 (one new spec file per stage) |
+| `e2e/unified-frontend/files/specs/` | 8, 9, 10 (one new spec file per stage) |
 
 ### Stage 0. Branch and baseline
 
 - **Goal:** an integration branch with current upstream code and recorded
   green gates.
 - **Spec:** none.
-- **Files:** merge conflict resolutions only.
+- **Files:** conflict resolutions, and `.github/CODEOWNERS`
+  (`/e2e/unified-frontend/home/ @netchampfaris`).
 - **Work:**
   - Create `forge/unified-frontend` off `forge/wayfinder-unified-frontend`
     after the spec and plan commit.
-  - Merge `upstream/develop` into it. Resolve conflicts in favor of
-    develop's Mail, Calendar and Meet behavior and the unified shell's
-    structure.
+  - Bring `upstream/develop` into it by the method ticket 019 sets (merge
+    or rebase). Resolve conflicts in favor of develop's Mail, Calendar and
+    Meet behavior and the unified shell's structure.
   - Record the boundary baseline counts, the budget, and each test count.
-- **Depends on:** the spec and plan are approved.
-- **Exit gate:** every command in Test commands passes on the merged branch.
-  The report states the new baseline counts. Faris approves the merge.
+- **Depends on:** the spec and plan are approved. Ticket 019 (branch
+  shape).
+- **Exit gate:** every command in Test commands passes on the reconciled
+  branch. The report states the new baseline counts. Faris approves the
+  reconciled branch.
 
 ### Stage 1. Shell frame rework
 
@@ -255,16 +279,24 @@ order shown. A later stage rebases on the earlier stage's merge.
   under `frontend/src/platform/`, `shell/ContextualPanel.vue` (deleted),
   `shell/ShellLayout.vue`, `shell/MobileNav.vue`, `shell/mobileNav.ts`,
   `shell/MobileSheet.vue`, `shell/useMobileSheet.ts`,
-  `composition/appRegistry.ts`, `composition/home/{HomePage,HomePanel}.vue`,
+  `shell/DocumentFrame.vue`, `composition/appRegistry.ts`,
+  `composition/home/index.ts`, `composition/home/{HomePage,HomePanel}.vue`,
+  `composition/routes.ts` (frame literals only), `apps/drive/index.ts`
+  (`loadPanel` line only),
   `apps/drive/files/pages/{FilesPage,FilesPanel}.vue`, the placeholder
   panels in `apps/mail/index.ts` and `apps/calendar/index.ts`, colocated
   tests, `e2e/unified-frontend/shell/specs/`.
 - **Work:**
   - `AreaDefinition` loses `loadPanel`: `id`, `label`, `icon`, `to`,
     `loadRoutes`, `requires`.
-  - The frame set is in the shell or outside it (`frame: 'none'`).
+  - The frame set is in the shell or outside it (`frame: 'none'`). Stage 1
+    names the in-shell literal (spec §16, "In-shell `frame` literal").
   - `<AreaSidebar>`: fixed width, scroll area, aria label, fixed-size
     skeleton while the page chunk loads, phone sheet behavior.
+  - A bottom-nav tap on the active area dispatches the existing
+    `suite:open-active-area-panel` window event with `{ area }`
+    (`shell/ShellLayout.vue:152`, `apps/drive/files/pages/FilesPage.vue:372`).
+    `<AreaSidebar>` listens and opens its phone sheet [T015].
   - Home and Files render their panels inside `<AreaSidebar>`.
   - The shell bottom nav gains the account entry: avatar, then a sheet with
     account, Settings, Theme and Log out.
@@ -282,7 +314,7 @@ order shown. A later stage rebases on the earlier stage's merge.
 
 - **Goal:** the Drive client owns link codes. Platform transport only sends
   a header it is given.
-- **Spec:** §7 (link credentials), §10.
+- **Spec:** §7 (link credentials), §10, §3.10.
 - **Files (owned):** `platform/transport/index.ts` (remove `LinkStore`),
   `apps/drive/client/` (new link store module, tagging, header selection),
   `apps/drive/client/session.ts`, `apps/drive/index.ts`, the manual header
@@ -299,9 +331,9 @@ order shown. A later stage rebases on the earlier stage's merge.
     sign out. Ignore it while signed in.
 - **Depends on:** stage 0. No backend ask.
 - **Exit gate:** unit tests cover tagging, the 20-code split, the write
-  refusal, each eviction rule and sign-out clear. No code outside
-  `apps/drive/client` sets `X-Drive-Links`. `test:unified` and
-  `check:import-boundaries` pass.
+  refusal, each eviction rule and sign-out clear. Only `apps/drive/client`
+  selects link codes. `platform/transport` sets `X-Drive-Links` only from a
+  caller value. `test:unified` and `check:import-boundaries` pass.
 
 ### Stage 3. Four shell-breaking fixes
 
@@ -309,12 +341,15 @@ order shown. A later stage rebases on the earlier stage's merge.
 - **Spec:** §9.
 - **Files (owned):** `apps/mail/pages/MailLayout.vue`,
   `apps/mail/components/MailThread.vue` (listener only),
-  `apps/meet/pages/MeetLayout.vue`, the Mail socket module
-  (`apps/mail/socket.ts`), colocated tests.
+  `apps/meet/pages/MeetLayout.vue`, `apps/calendar/pages/CalendarLayout.vue`
+  (provider only), the socket modules (`apps/mail/socket.ts`,
+  `apps/meet/socket.ts`), colocated tests,
+  `e2e/unified-frontend/shell/specs/`.
 - **Work:**
   - Scope `body.mail-app` CSS to Mail's box.
-  - Remove the second `FrappeUIProvider` from Mail and Meet.
-  - Dispose the socket on unmount.
+  - Remove the extra `FrappeUIProvider` from Mail, Meet and Calendar
+    [T015].
+  - Dispose the Mail and Meet sockets on unmount [T015].
   - Mail `window` key listeners fire only on Mail routes. Delete the theme
     cycle listener.
 - **Depends on:** stage 0.
@@ -332,30 +367,38 @@ order shown. A later stage rebases on the earlier stage's merge.
   (Desk item only), one small settings module per product (Drive, Mail,
   Calendar, Meet), `components/settings/` (tab bodies),
   `apps/mail/components/PWASettings.vue` (becomes the shell drill-in),
-  `shell/LauncherView.vue` and `shell/useWorkspace.ts` (`@/boot/session`
-  reads), colocated tests, `e2e/unified-frontend/shell/specs/`.
+  `apps/mail/components/MailThread.vue` and `apps/mail/pages/ScreenerView.vue`
+  (settings calls only), `shell/LauncherView.vue` and `shell/useWorkspace.ts`
+  (`@/boot/session` reads), colocated tests,
+  `e2e/unified-frontend/shell/specs/`.
 - **Work:**
   - Headings in order: Account, Files, Mail, Calendar, Meet, Workspace.
   - Tab ids are namespaced and typed. `openSettings(tab)` takes the union.
     Replace Mail's label lookups (`MailThread.vue`, `ScreenerView.vue`) and
     Drive's numeric indexes.
+  - Each product exports a lazy settings loader from its package root, the
+    same shape as `loadSurface`. No subpath import [T013, T016, T015].
   - Modules load when the dialog opens. A body loads on first click behind
     a fixed-height loading state.
   - Desktop avatar menu: header, Settings, Open Desk (system users), Upgrade
     plan, Log out. Phone sheet: header, Settings, Theme, Log out.
   - Mail's Admin dashboard becomes an admin-only row in Mail's sidebar.
   - Meet's in-call dialog reuses the Meet tab bodies and adds Controls.
-- **Depends on:** stage 1 (phone account entry). Files Statistics waits on
-  Drive ask D25 (storage breakdown).
+- **Depends on:** stage 1 (phone account entry). Files Statistics shows
+  totals from `GET /roots/<id>/usage` until Drive ask D10 (storage
+  breakdown) ships [T015]. Upgrade plan, Open Desk and icons wait on
+  ticket 021. The Files tabs that call Drive product methods wait on
+  ticket 017.
 - **Exit gate:** journeys open each heading's first tab on desktop and phone;
-  the phone back gesture goes tab, list, closed. A misspelled tab id fails
-  the type check (see Open items). No bundle for a tab body loads before
-  its click. `check:bundle-budget` passes.
+  Files Statistics shows totals only until D10 ships. The phone back
+  gesture goes tab, list, closed. A misspelled tab id fails the type check
+  (see Open items). No bundle for a tab body loads before its click.
+  `check:bundle-budget` passes.
 
 ### Stage 5. Mail, Meet and Calendar adoption
 
 - **Goal:** the three apps mount in the shell as they are.
-- **Spec:** §9.
+- **Spec:** §9, §3.15, §2.1.
 - **Files (owned):**
   - Mail: `apps/mail/` sidebar header, `SettingsModal`, app switcher use,
     `MobileTabBar` visibility.
@@ -364,7 +407,9 @@ order shown. A later stage rebases on the earlier stage's merge.
   - Meet: `apps/meet/index.ts` (area definition), `apps/meet/` page
     sidebar and header menu.
   - PWA: a new platform PWA module under `frontend/src/platform/`, Mail's
-    `sw.js` registration (moved out of `MailLayout.vue`), `setPwaTags`.
+    `sw.js` registration (moved out of `MailLayout.vue`), `setPwaTags`,
+    `frontend/public/pwa/suite/manifest.webmanifest` (`id` only;
+    `start_url` stays `/suite/start`).
   - Shell: `ShellLayout.vue` and `MobileNav.vue` (hide the bottom nav in
     Mail and Calendar), `composition/appRegistry.ts` (Meet last),
     `composition/routes.ts`, `router/index.ts`.
@@ -379,8 +424,9 @@ order shown. A later stage rebases on the earlier stage's merge.
   - Mail's sign-in pages and `mime-message` stay outside the shell.
 - **Sub-lanes:** Mail, Calendar and Meet run in parallel. The PWA and shell
   part runs last. All three land in one merge.
-- **Depends on:** stages 1, 3 and 4. Open item O1 (what the rollback state
-  shows) must close before the chrome deletions.
+- **Depends on:** stages 1, 3 and 4. Ticket 018 (what the rollback state
+  shows) must close before the chrome deletions. The gate needs a Mail
+  account (Open items).
 - **Exit gate:** Mail, Meet and Calendar journeys pass in the shell on
   desktop and phone. The rail is Home, Files, Mail, Calendar, Meet (flag
   filtering comes in stage 6). `grep -rn useAppSwitcher frontend/src/apps`
@@ -403,8 +449,11 @@ order shown. A later stage rebases on the earlier stage's merge.
   - `suite_flip_files` off: the rail shows Mail, Calendar and Meet only, and
     `/` goes to `/mail` through the last-app fallback. On: the rail gains
     Home and Files, and `/` goes to `/home`.
+  - Before flip 2, `/home`, `/files` and `/d/` answer a direct URL for
+    every signed-in user [T009, T013, T014]. The rail with both flags off
+    is an open item.
   - The Slides service worker stops caching the shell.
-- **Depends on:** stage 5.
+- **Depends on:** stage 5. The rail with both flags off (Open items).
 - **Exit gate:** a journey runs each prefix with each flag on and off. The
   Slides service worker test shows no cached shell document.
 
@@ -418,11 +467,11 @@ order shown. A later stage rebases on the earlier stage's merge.
   - The four shell fixes from ticket 010 have landed.
   - The Slides service worker serves no stale shell.
   - Rollback is rehearsed once on the dev site: flag on, flag off, a cold
-    load of each prefix.
-- **Depends on:** stage 6, and the code released to production (Open item
-  O6).
+    load of each prefix. Ticket 018 sets what flag off shows.
+- **Depends on:** stage 6, and the code released to production (ticket
+  019).
 - **Exit:** the report records the release, the date and the rehearsal
-  output. Faris sets the key or names who does (map Not yet specified).
+  output. Faris sets the key or names who does (ticket 019).
 
 ### Stage 8. Guest and link routes
 
@@ -431,20 +480,22 @@ order shown. A later stage rebases on the earlier stage's merge.
 - **Spec:** §10.
 - **Files (owned):**
   - Server: the `/l/<token>` website rule and `suite/www/drive_link.py`
-    (Drive program, asks D22 and D23), `suite/www/drive_link.html` (Suite
-    ask S3), `suite/hooks.py` (`website_route_rules` entry).
+    (Drive program, asks D24 and D25), `suite/www/drive_link.html` (Suite
+    ask S2), `suite/hooks.py` (`website_route_rules` entry).
   - Client: `shell/ShellLayout.vue` (guest frame), `shell/GuestSurface.vue`
     (becomes the guest header and the Sign-in screen), `composition/routes.ts`
-    (`/l/:token` placeholder removed; a `#link=` reader seeds the Drive
-    store and strips the fragment before the first node request),
+    (the `/l/:token` SPA placeholder route is removed: the client guard
+    does a full page load, so the server rule answers [T014, T015]; a
+    `#link=` reader seeds the Drive store and strips the fragment before
+    the first node request),
     `router/index.ts` (setup gate skips `allowGuest` routes for everyone),
     `apps/drive/files/` (unlock state on `401 DriveLocked`, 429 countdown
     from `Retry-After`, Star hidden and no visit for link-only access, New
     hides document kinds below EDIT), `composition/DocumentHost.vue`
     (unlock state on `/d/`).
   - Journeys: `e2e/unified-frontend/files/specs/` (guest cases).
-- **Depends on:** stages 1 and 2. Drive asks D22 and D23. Suite asks S3
-  and S4.
+- **Depends on:** stages 1 and 2. Drive asks D24 and D25. Suite asks S2
+  and S3. Ticket 019 (where the asks land). Icons wait on ticket 021.
 - **Exit gate:**
   - `/l/<token>` opens a folder and a file, signed out and signed in. The
     URL keeps no token after load.
@@ -469,11 +520,11 @@ order shown. A later stage rebases on the earlier stage's merge.
   roles per principal table; + New link; row menu; outsiders by email;
   Notify by email; expired rows greyed; self-demotion confirm; re-read after
   every write; phone bottom sheet.
-- **Depends on:** stages 1 and 2. Drive asks D16 to D20. Suite ask S2.
+- **Depends on:** stages 1 and 2. Drive asks D17 and D19 to D22. Suite ask
+  S1. Ticket 019 (where the asks land). Icons wait on ticket 021.
 - **Exit gate:** journeys cover a local grant, an inherited grant with Deny,
   a password link whose expiry changes without losing the password, an
-  outsider link, and Public on the web. Product Share buttons (stage 11)
-  open this dialog.
+  outsider link, and Public on the web.
 
 ### Stage 10. Upload, restore and batch outcomes
 
@@ -493,7 +544,8 @@ order shown. A later stage rebases on the earlier stage's merge.
   restore with the same-root picker; batch purge; Empty trash; guest
   uploads through the ring slot from stage 8.
 - **Depends on:** stages 1 and 2; stage 8 for the guest ring slot. Drive
-  asks D10 to D15. Open item O7 (hasher package).
+  asks D11 to D16. Ticket 019 (where the asks land). The hasher package
+  (Open items). Folder upload entry points and icons wait on ticket 021.
 - **Exit gate:** journeys cover a batch upload with a collision, a reload
   mid-upload then Resume, a folder upload, a quota refusal, a restore that
   needs a destination, Delete forever on a mixed batch, and Empty trash.
@@ -510,11 +562,13 @@ order shown. A later stage rebases on the earlier stage's merge.
   - Sheets: `apps/sheets/surface/`, `apps/sheets/components/SheetEditor/`
     (legacy header and its Share control).
   - Slides: `apps/slides/surface/`, `components/SharePopover.vue`,
-    `pages/Slideshow.vue:332`, `pages/PresentationEditor.vue:166`.
+    `pages/Slideshow.vue:333`, `pages/PresentationEditor.vue:201`,
+    `pages/ExportView.vue` (moves into the surface).
   - Drive: `apps/drive/client/session.ts`, `apps/drive/client/nodes.ts`
     (`createDocument` without `upload()`), `apps/drive/index.ts` (legacy
     `MoveDialog`, `InfoDialog`, `InlineRenameInput` exports),
     `apps/drive/runtime.ts`.
+  - Boundary check: `frontend/scripts/check-import-boundaries.mjs`.
 - **Work:**
   - No file outside `apps/drive/legacy` imports it, except
     `router/index.ts` (stage 15).
@@ -523,13 +577,23 @@ order shown. A later stage rebases on the earlier stage's merge.
   - A collaboration verdict narrows access and cancels pending writes.
   - New from template with the doctype filter; Copy opens the new node.
   - Guests see an optional "Your name" field in comment composers.
-  - Writer's `/drive/login` link becomes `/login?redirect-to=`.
+  - Writer's `/drive/login` link becomes `/login?redirect-to=` (Suite ask
+    S4).
   - Product Share buttons call `session.share`.
-- **Depends on:** stage 0. Share wiring completes after stage 9.
+  - `ExportView.vue` moves into the Slides surface, so `/d/` keeps the
+    export. `Slideshow.vue` stays an old page for stage 15 [T015].
+  - Extend `check-import-boundaries.mjs` to fail on any `suite.drive.api.`
+    string outside `apps/drive/legacy`, with an exact shrinking baseline.
+    It bans the names ticket 017 settles.
+- **Depends on:** stage 0. Guest parts and the guest journeys wait for
+  stages 2 and 8. Share wiring and the Share-button journey wait for
+  stage 9. The boundary rule's name list waits on ticket 017. New from
+  template entry points wait on ticket 021.
 - **Exit gate:** `check:import-boundaries` shows no Writer or Slides edge
-  into `apps/drive/legacy`. Document journeys pass for all three kinds,
-  signed in and as a guest. No legacy `suite.drive.api.*` request appears
-  in a `/d/` journey's network log.
+  into `apps/drive/legacy`, and the legacy-call rule runs. Document
+  journeys pass for all three kinds, signed in and as a guest. Each
+  product's Share button opens the stage 9 dialog. No legacy
+  `suite.drive.api.*` request appears in a `/d/` journey's network log.
 
 ### Stage 12. Files flip plumbing
 
@@ -540,33 +604,44 @@ order shown. A later stage rebases on the earlier stage's merge.
   - Composition: a redirect table module in `suite/composition/`, its
     `before_request` entry in `suite/hooks.py`, the exported client copy,
     and one client router guard in `frontend/src/composition/`.
-  - `node_url(node)`: owner per Open item O3.
+  - `node_url(node)`: on the Drive Python interface (the `suite.drive`
+    package root), per `ARCHITECTURE.md` rules 2.1 and 2.2. It reads
+    `suite_flip_files` from `frappe.conf` [T015].
   - Callers replaced by `node_url`: `suite/drive/api/notifications.py:8`,
     the grant share URL (`suite/drive/_core/access.py:1161`, Drive ask
-    D16), `suite/www/drive_link.py:31`, `product.py` and OAuth `/drive`,
+    D17), `suite/www/drive_link.py:31`, `product.py` and OAuth `/drive`,
     `suite/drive/http/shims.py:1793` and `:2380`, the Writer wikilink, the
     Meet recording email, WebDAV HTML links, and the broken
     `/sheets?id=` link in `suite/sheets/api.py:228`.
   - Invitations: `suite/drive/doctype/drive_user_invitation/drive_user_invitation.py:91`
     and the legacy signup page.
-  - Legacy-call counter: Drive program (ask D24).
+  - Legacy-call counter: Drive program (ask D26).
   - Tests: a redirect test in `suite/composition/tests/`, journeys in
     `e2e/unified-frontend/shell/specs/`.
 - **Work:**
-  - Redirect rows per ticket 014 decision 3; 302 while a flag can turn off.
+  - Redirect rows per ticket 014 decisions 3 and 4, including
+    `/drive/{folder,document,file}/<old>` and `/drive/t/<team>/...` through
+    Drive's translate tables. Today these exist only as SPA routes in
+    `apps/drive/legacy/routes.ts:157-185`, which stage 15 deletes. 302
+    while a flag can turn off. For Sheets and Slides the client guard does
+    a full page load.
   - Sheets and Slides URLs look up the content `node` field; `/drive/g/<id>`
     looks up the node kind.
   - Invitation accept creates and logs in the user, then redirects through
     `node_url`'s flag to `/home` (or `/drive/` before flip 2).
     `/drive/signup` and its page go.
+  - If the Suite invitation resource is not ready by flip 2, `/drive/signup`
+    stays until stage 15.
   - PWA `/suite/start` goes to `/home` when `suite_flip_files` is on.
 - **Split:** the server half (table, `node_url`, callers, invitations,
   counter) runs after stage 0. The client guard runs after stage 6.
-- **Depends on:** Drive asks D16 and D24.
+- **Depends on:** Drive asks D17 and D26. Ticket 020 (missing and wrong
+  rows). Ticket 017 (which names the counter counts). Ticket 019 (where
+  the asks land).
 - **Exit gate:** the redirect test hits every old path in the table and
   checks the new path, with the flag on and off. No server code outside
   `node_url` builds a node path string (grep for `/drive/`, `/d/`,
-  `/files/f/`).
+  `/files/f/`). The redirect table module is excluded from the grep.
 
 ### Stage 13. Flip 2
 
@@ -577,14 +652,14 @@ order shown. A later stage rebases on the earlier stage's merge.
   - Browser journeys pass for Home, Files and documents.
   - The five Drive asks from ticket 006 have shipped.
   - New code makes zero legacy `suite.drive.api.*` calls (ticket 013's
-    boundary check).
+    boundary check, extended in stage 11 to the names ticket 017 settles).
   - A test hits every old path in the redirect table and checks the new
     path.
   - Invitation accept lands on `/home`.
   - The `/l/<token>` server rule exists and opens a folder and a file.
   - The legacy Vitest manifest is not a gate. It shrinks by deletion.
 - **Depends on:** stages 7 to 12, and the Drive Build release on production
-  (Open item O6).
+  (ticket 019). Ticket 017 (which names read zero).
 - **Exit:** the report records the release, the date, and the gate output.
 
 ### Stage 14. Hold
@@ -595,8 +670,10 @@ order shown. A later stage rebases on the earlier stage's merge.
   production, and at least 14 days, with the legacy-call counter at zero.
 - **Evidence:** the counter's bench command output at the start and end of
   the hold, by method name and user agent. A non-zero count names the
-  client; fix or retire it, then restart the 14 days.
-- **Depends on:** stage 13 and ask D24 on production.
+  client. Fix or retire it. The hold gate is not met until a full release
+  and 14 days pass at zero. Ticket 017 decides whether the clock restarts.
+- **Depends on:** stage 13 and ask D26 on production. Ticket 017 (which
+  names the counter counts).
 
 ### Stage 15. Deletion commit
 
@@ -607,8 +684,9 @@ order shown. A later stage rebases on the earlier stage's merge.
     `router/index.ts`.
   - The old Writer, Sheets and Slides pages. The editors stay. Candidate
     paths: `apps/writer/pages/`, `apps/sheets/pages/`,
-    `apps/slides/pages/{Home,PresentationEditor,Slideshow,ExportView}.vue`
-    and their routes (see Open item O8).
+    `apps/slides/pages/{Home,PresentationEditor,Slideshow}.vue` and their
+    routes. `ExportView.vue` moved into the Slides surface in stage 11
+    [T015].
   - Both flag keys and their boot and client reads.
   - `SUITE_APPS` and `utils/lastApp.ts`.
   - The legacy Drive `SettingsDialog`, its `showSettings` emitter and its
@@ -618,16 +696,23 @@ order shown. A later stage rebases on the earlier stage's merge.
     deletion resolves.
 - **Also in the commit:** the Slides service worker is unregistered.
   Redirects become 301.
-- **Depends on:** stage 14.
+- **Depends on:** stage 14. Ticket 017 (exempt names). Ticket 020 (legacy
+  routes with no redirect row).
 - **Exit gate:** `yarn build`, `test:unified`, `test:legacy`,
   `check:import-boundaries`, `check:bundle-budget` and the three journey
   projects pass. `grep -rn "suite.drive.api" frontend/src` returns only the
-  permanent names (Open item O4).
+  names ticket 017 exempts.
 
 ## Backend asks by stage
 
-Status is at HEAD `f0f6a5c13`. "Map branch" means the code landed on
-`forge/wayfinder-unified-frontend`, not on `forge/drive-layer`.
+Ids match spec §15. Status is at HEAD `f0f6a5c13`. "Map branch" means the
+code landed on `forge/wayfinder-unified-frontend`, not on
+`forge/drive-layer`.
+
+No interim behavior ships before an open ask. A feature that depends on an
+open ask stays disabled, with the reason in its tooltip, until the ask
+ships. The stage that builds it waits on the ask. D17 is the exception:
+`/drive/l/<token>` works today through `drive_link.py` [T015].
 
 ### Drive program
 
@@ -642,47 +727,52 @@ Status is at HEAD `f0f6a5c13`. "Map branch" means the code landed on
 | D7 | Payload-free `drive:changed` | 006 | done | shipped, map branch |
 | D8 | `opened_at` on recents | 012 | done | shipped, map branch |
 | D9 | Notification unread-count route | 012 | done | shipped, map branch |
-| D10 | `create_upload` 409 with free title | 007 | 10 | not shipped |
-| D11 | `POST /nodes` 409 with free title | 007 | 10 | partial: 409 without the title (`suite/drive/_core/nodes.py:2255-2268`) |
-| D12 | HTTP replace skips the §8.5 auto version | 007 | 10 | not shipped |
-| D13 | `DriveRestoreDestinationRequired` | 007 | 10 | not shipped |
-| D14 | Batch purge route | 007 | 10 | not shipped |
-| D15 | Empty trash per root | 007 | 10 | not shipped |
-| D16 | Grant `url` is `/l/<token>` | 008 | 9, 12 | not shipped (`access.py:1161` returns `/drive/l/`) |
-| D17 | Inherited grants with source node | 008 | 9 | not shipped |
-| D18 | Omitted password keeps the hash; `null` clears | 008 | 9 | not shipped |
-| D19 | `send_to` on `$LINK` PUT | 008 | 9 | not shipped |
-| D20 | `notify: true` sends email | 008 | 9 | not shipped |
-| D21 | Spec §11.2 fix: explain object, `{ticket, expires}` | 008 | none | not done: spec line 2934 still shows an array |
-| D22 | `/l/<token>` redirects by kind to `/files/f/` or `/d/` with `#link=` | 011 | 8, 13 | not shipped (`drive_link.py:31` goes to `/drive/g/`) |
-| D23 | Unlock 429 with `Retry-After`; the lockout failure answers 429 | 011 | 8 | not shipped |
-| D24 | Legacy-call counter by method and user agent, bench command | 014 | 12, 14 | not shipped |
-| D25 | Storage breakdown route | 005 | 4 (Files Statistics) | partial: `GET /roots/{root}/usage` has totals only |
-| D26 | `favourite` on the node shape | ACCOUNTING.md, no ticket | none assigned | not shipped (Open item O9) |
-
-Withdrawn: ticket 008 ask 2 (`GET /links/<token>`).
+| D10 | Storage breakdown route | 005 | 4 (Files Statistics breakdown) | partial: `GET /roots/{root}/usage` has totals only |
+| D11 | `create_upload` 409 with free title | 007 | 10 | not shipped |
+| D12 | `POST /nodes` 409 with free title | 007 | 10 | partial: 409 without the title (`suite/drive/_core/nodes.py:2255-2268`) |
+| D13 | HTTP replace skips the §8.5 auto version | 007 | 10 | not shipped |
+| D14 | `DriveRestoreDestinationRequired` | 007 | 10 | not shipped |
+| D15 | Batch purge route | 007 | 10 | not shipped |
+| D16 | Empty trash per root | 007 | 10 | not shipped |
+| D17 | Grant `url` is `/l/<token>` | 008 | 9, 12 | not shipped (`access.py:1161` returns `/drive/l/`, which works through `drive_link.py`) |
+| D18 | `GET /links/<token>` | 008 | none | withdrawn [T011] |
+| D19 | Inherited grants with source node | 008 | 9 | not shipped |
+| D20 | Omitted password keeps the hash; `null` clears | 008 | 9 | not shipped |
+| D21 | `send_to` on `$LINK` PUT | 008 | 9 | not shipped |
+| D22 | `notify: true` sends email | 008 | 9 | not shipped |
+| D23 | Spec §11.2 fix: explain object, `{ticket, expires}` | 008 | none | not done: spec line 2934 still shows an array |
+| D24 | `/l/<token>` redirects by kind to `/files/f/` or `/d/` with `#link=` | 011 | 8, 13 | not shipped (`drive_link.py:31` goes to `/drive/g/`) |
+| D25 | Unlock 429 with `Retry-After`; the lockout failure answers 429 | 011 | 8 | not shipped |
+| D26 | Legacy-call counter by method and user agent, bench command | 014 | 12, 14 | not shipped. Ticket 017 sets which names it counts |
+| D27 | Expected `modified` on PATCH answers `DriveConflict` | server-state reference | none at launch | open |
+| D28 | `favourite` on the node shape | 006, through ACCOUNTING.md | none assigned; not a flip gate | not shipped |
+| D29 | Type `shapes.py` outputs | server-state reference | none | met |
 
 ### Suite
 
 | Id | Ask | Source | Stage waiting | Status |
 |---|---|---|---|---|
-| S1 | Ticket 003 routes: `account`, `site`, `users`, `invitations`, Mail `inbox-summary`, Calendar `events`, Meet `rooms` and `scheduled-meetings`; dispatcher; conformance kit | 003 | done | shipped, map branch |
-| S2 | `GET /api/suite/people?q=` | 008 | 9 | not shipped |
-| S3 | `drive_link.html` 404 and 410 copy, Go to Home | 011 | 8 | not shipped |
-| S4 | Setup gate skips `allowGuest` routes | 011 | 8 | partial: guests pass, signed-in users do not |
-| S5 | Writer `ErrorPage.vue:61` to `/login?redirect-to=` | 011 | 11 | not shipped |
+| none | Ticket 003 routes: `account`, `site`, `users`, `invitations`, Mail `inbox-summary`, Calendar `events`, Meet `rooms` and `scheduled-meetings`; dispatcher; conformance kit | 003 | done | shipped, map branch; no spec id |
+| S1 | `GET /api/suite/people?q=` | 008 | 9 | not shipped |
+| S2 | `drive_link.html` 404 and 410 copy, Go to Home | 011 | 8 | not shipped |
+| S3 | Setup gate skips `allowGuest` routes | 011 | 8 | partial: guests pass, signed-in users do not |
+| S4 | Writer `ErrorPage.vue:61` to `/login?redirect-to=` | 011 | 11 | not shipped |
 
-### Calendar and Meet
+### Calendar, Meet, Mail and Writer
 
 | Id | Ask | Source | Stage waiting | Status |
 |---|---|---|---|---|
 | C1 | Typed `conferencing` on events | 012 | done | shipped |
 | C2 | Optional `account`, omitted means all | 012 | done | shipped |
+| C3 | Stop faking `modified` on calendars | server-state reference | none at launch | open |
+| M1 | Route and list endpoint for recordings and past meetings | MAP (010) | none at launch | open |
+| L1 | Mail: return `modified`, type outputs, fix `get_threads` returning a tuple | server-state reference | none at launch | open |
+| L2 | Writer: add return annotations | server-state reference | none at launch | open |
 
-Meet has no launch ask. Recordings and named rooms are map fog.
+Recordings and named Meet rooms are map fog.
 
-The Drive implementation README tracks no issue for D10 to D26. See Open
-item O2.
+The Drive implementation README tracks no issue for D10 to D28. Ticket 019
+decides where they land.
 
 ## Branch rules
 
@@ -703,8 +793,11 @@ item O2.
   `forge/drive-layer`, merge into `forge/drive-layer`. This effort then
   merges `forge/drive-layer` into `forge/unified-frontend`. Never merge
   `forge/unified-frontend` into `forge/drive-layer`.
-- Merge `upstream/develop` into `forge/unified-frontend` in stage 0, again
-  before stage 5, and again before stage 7.
+- Reconcile `forge/unified-frontend` with `upstream/develop` in stage 0,
+  again before stage 5, and again before stage 7. Ticket 019 decides merge
+  or rebase. Both branches were reconciled by rebase on 2026-09-17 (see
+  Starting state). A later rebase of `forge/drive-layer`, followed by a
+  merge into `forge/unified-frontend`, would duplicate commits.
 - Research branches are `forge/research-<name>`.
 - No push, no PR and no merge into `develop` or `main` without Faris.
 
@@ -722,7 +815,7 @@ After stage 15 lands, this effort hands issue 36:
   the counter output at both ends, by method name and user agent, at zero
   (stage 14).
 - The deletion commit hash, and `grep -rn "suite.drive.api" frontend/src`
-  output that shows only permanent names (stage 15).
+  output that shows only the names ticket 017 exempts (stage 15).
 - The `check:import-boundaries` output after deletion.
 - The list of old URLs that still redirect forever, and the two rows that
   go with Drive's translate tables when Cleanup drops them:
@@ -750,7 +843,12 @@ the Drive program.
 - Load the `frappe-ui` skill before styling. Use design tokens. Layout must
   not move on load, hover or state change.
 - New code makes no legacy `suite.drive.api.*` call. A missing route is a
-  backend ask, not a reason for a fallback.
+  backend ask, not a reason for a fallback. A feature that waits on an
+  open ask stays disabled, with the reason in its tooltip (Backend asks by
+  stage).
+- Every stage exit gate also includes `yarn test:unified`,
+  `yarn test:legacy`, `yarn check:import-boundaries` and
+  `yarn check:bundle-budget`, all passing.
 - A new boundary violation fails. Remove each baseline entry your stage
   resolves.
 - Treat the spec, the tickets, `MAP.md` and `ARCHITECTURE.md` as approved
@@ -761,45 +859,67 @@ the Drive program.
 
 ## Open items
 
-- **O1. Rollback state for flip 1.** Ticket 014 turns flip 1 off by a
-  config key. Tickets 010 and 016 delete Mail's and Calendar's app
-  switcher, Settings and `SettingsModal` when the three apps flip. With the
-  key off, what does Mail show: the old chrome (kept until stage 15), or
-  the old frame without it? Stage 5 waits on this.
-- **O2. Drive issues for new asks.** D10 to D26 have no Drive issue. The
-  earlier wave shipped D1 to D9 and S1 on the map branch, not on
-  `forge/drive-layer`. Decide whether to file D10 to D26 as Drive issues
-  and whether to port `20befde95` and `47311aa11` to `forge/drive-layer`.
-- **O3. Owner of `node_url`.** Ticket 014 names the helper and its
-  callers, not its module. Candidates: the Drive public interface
-  (`suite.drive`) or `suite/composition/`.
-- **O4. Counter scope.** Ticket 014 says "the legacy `suite.drive.api.*`
-  dispatch". Drive spec §14.10 names the 69 old names, three of which are
-  permanent. Ticket 005 keeps 17 product methods on `/api/method/` by
-  design. Decide which names must read zero.
-- **O5. Calendar and Meet beyond ticket 010's fix list.** `CalendarLayout`
-  sets `body.calendar-app` and mounts a `FrappeUIProvider`; Meet opens a
-  socket per mount. Confirm they fall under the same fixes in stage 3.
-- **O6. Release path and order.** No rule says how `forge/unified-frontend`
-  reaches production, or its order against the Drive Build release. Flip 2
-  needs Build on production, because the new pages read Drive Nodes only.
-  Issue 36 needs Cleanup in a later release than Build.
-- **O7. Streaming sha256 hasher.** Ticket 007 needs a wasm hasher for
-  resume. No package is chosen, and adding one needs approval.
-- **O8. Old Slides pages.** The redirect table maps
-  `/slides/slideshow/<docname>` to `/d/<node>`. Decide whether
-  `Slideshow.vue` and `ExportView.vue` are old pages or parts the `/d/`
-  surface keeps.
-- **O9. Star state.** The node shape has no `favourite`, so no row shows
-  its star (ACCOUNTING.md). No ticket records the ask. It needs an owner and
-  a stage.
-- **O10. Type gate.** Ticket 016 wants a misspelled tab id to fail at
-  compile time. No frontend typecheck script or CI step exists. Decide the
-  command.
-- **O11. Mail journeys need a mail account.** Administrator on
-  `slides.localhost` has no JMAP account (ACCOUNTING.md). Flip 1's gate
-  needs Mail and Calendar journeys in the shell.
-- **O12. From the map, still open.** Who runs `bench set-config` for each
-  flip on Frappe Cloud, and the release note. Whether WebDAV clients follow
-  a 302 on `/drive/d/<id>`. Icon source (Figma set or lucide) before the
-  first new styling in stages 4, 8, 9 and 10.
+Each item names its owner and the stages it blocks. Ticket 022 folds the
+ticket answers into the spec and this plan.
+
+### Owned by open tickets
+
+- **Product methods and the zero-call gate.** Owner:
+  [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md).
+  Which names the stage 11 boundary rule bans and the D26 counter counts.
+  Whether the Files settings tabs call product methods at launch
+  (`webdav_config`, `set_webdav_enabled`, `disk_settings`,
+  `is_site_admin`). The Drive §11.7 against §14.10 conflict. Whether the
+  hold clock restarts. Drive §11.7 keeps the 19
+  `suite.drive.api.product` methods on `/api/method/`; the legacy UI calls
+  17 of them (ticket 005). Blocks stages 4 (Files tabs), 11, 12, 13, 14
+  and 15.
+- **Flip 1 rollback.** Owner:
+  [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md).
+  What Mail and Calendar show with `suite_flip_shell` off after stage 5
+  deletes their chrome. Blocks stage 5's chrome deletions and the stage 7
+  rollback rehearsal.
+- **Branches, backend asks and release path.** Owner:
+  [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md).
+  Where D10 to D28 land, and whether to port `20befde95` and `47311aa11`
+  to `forge/drive-layer`. Merge or rebase from here on. How
+  `forge/unified-frontend` reaches production, its order against the
+  Drive Build release, who runs `bench set-config` per flip on Frappe
+  Cloud, and the release note. Blocks stage 0 (branch shape), stages 8,
+  9, 10 and 12 (asks), and stages 7 and 13 (release).
+- **Unmapped legacy routes and `/files`.** Owner:
+  [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md).
+  Routes with no redirect row or a wrong match, the trailing slug, a
+  lookup that finds no node, and the clash with Frappe's public `/files/`
+  path. Blocks stages 12 and 15.
+- **Account menu, Files entry points and icons.** Owner:
+  [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md).
+  Upgrade plan visibility and the Open Desk condition block stage 4.
+  Entry points for folder upload and New from template block stages 10
+  and 11. The icon source (Figma set or lucide) blocks the first styling
+  in stages 4, 8, 9 and 10.
+
+### Owned by a stage or the spec
+
+- **`DocumentSession` signatures.** Owner: stage 9 (`share`) and stage 11
+  (`comments`, `versions`). Each designs its signatures under the
+  `codebase-design` skill. Blocks nothing outside those stages.
+- **Rail with both flags off.** Owner: spec §16 open item "Home and Files
+  between flip 1 and flip 2". No ticket holds it. Direct URLs are settled
+  (stage 6). Blocks stage 6.
+
+### Environment approvals
+
+- **Streaming sha256 hasher.** Ticket 007 needs a wasm hasher for resume.
+  No package is chosen. Needs Faris's approval; blocks stage 10 only.
+- **Type gate.** Ticket 016 wants a misspelled tab id to fail at compile
+  time. The frontend has no `vue-tsc` and no typecheck script or CI step.
+  Needs Faris's approval; blocks stage 4 only.
+- **Mail account for journeys.** Administrator on `slides.localhost` has
+  no JMAP account (ACCOUNTING.md). The Mail and Calendar journeys need
+  one. Needs Faris's approval; blocks stages 5 and 7 only.
+
+### Post-launch fog
+
+- **WebDAV clients and redirects.** Whether WebDAV clients follow a 302 on
+  `/drive/d/<id>` (spec §16). Not verified. Blocks nothing.
