@@ -500,7 +500,7 @@ stage lands; no rebase [T019].
   - Mail's sign-in pages and `mime-message` stay outside the shell.
 - **Sub-lanes:** Mail, Calendar and Meet run in parallel. The PWA and shell
   part runs last. All three land in one merge.
-- **Depends on:** stages 1, 3 and 4. The gate needs the local Stalwart
+- **Depends on:** stages 1, 3 and 4. The gate uses the local Stalwart
   test accounts (Open items).
 - **Exit gate:** Mail, Meet and Calendar journeys pass in the shell on
   desktop and phone with `suite_flip_shell` set on the dev site. One
@@ -1139,8 +1139,11 @@ closed and folded (ticket 022); no stage waits on a ticket.
 
 - **Mail accounts for journeys.** Administrator on `slides.localhost` has
   no JMAP account (ACCOUNTING.md). Faris asked for a local Stalwart server
-  with test accounts [Faris, 2026-09-29]. Setup is in progress. Blocks
-  stages 5 and 7 only.
+  with test accounts [Faris, 2026-09-29]. Done on 2026-09-29: Docker
+  container `suite-stalwart`, domain `suite.test`, accounts for
+  Administrator, `alice@suite.test` and `bob@suite.test`, seeded mail and
+  events. Runbook: `/home/faris/stalwart-local/README.md`. Checked by API
+  only, not in a browser.
 
 Faris approved `vue-tsc` (stage 0) and `hash-wasm` (stage 10) on
 2026-09-29.
