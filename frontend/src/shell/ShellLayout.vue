@@ -79,7 +79,7 @@
 
   <slot v-else-if="resolvedFrame === 'none'" />
 
-  <SuiteSettingsDialog v-if="showSettings" />
+  <SuiteSettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" />
 </template>
 
 <script setup lang="ts">
@@ -106,7 +106,7 @@ import Rail from "@/shell/Rail.vue";
 import UnavailableSurface from "@/shell/UnavailableSurface.vue";
 import { isMobile } from "@/shell/useIsMobile";
 import { mobileSheetOpen } from "@/shell/useMobileSheet";
-import { showSettings } from "@/shell/settings/useSettingsDialog";
+import { settingsTab, showSettings } from "@/shell/settings/useSettingsDialog";
 
 const props = defineProps<{
   areas: readonly AreaDefinition[];
