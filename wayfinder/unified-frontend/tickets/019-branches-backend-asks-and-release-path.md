@@ -147,9 +147,11 @@ who flips the keys on Frappe Cloud.
    frontend work all land on `forge/drive-layer` from here on. There is no
    `forge/unified-frontend` branch, and no port of `20befde95` is needed.
    Merge only, never rebase: the branch is published and shared.
-2. **Release order.** Follows from 1: the Drive Build and the new frontend
-   reach `develop` in one release, with both flip keys off. Flip 1 and flip
-   2 happen later by key.
+2. **Release order.** Follows from 1: Drive Build and the code of stages
+   0 to 6 reach `develop` in one release, with both keys off. Stages 8 to
+   12 follow in later releases, with `suite_flip_files` still off. Each flip
+   happens later by key (orchestrator reading of Faris's one-branch answer,
+   2026-09-29).
 3. **Flips on Frappe Cloud.** Faris: "i can flip the keys on FC manually".
    Faris sets and clears both keys himself. No allowlist ask.
 4. **Drive asks D10 to D28** are filed as Drive implementation issues on

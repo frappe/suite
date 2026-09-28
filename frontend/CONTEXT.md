@@ -14,8 +14,8 @@ nav. The area sidebar belongs to the page, not the shell.
 _Avoid_: Layout, App container, Launcher
 
 **Rail**:
-The thin always-visible column of area icons plus Search, Notifications,
-Settings and the account.
+The thin always-visible column of area icons plus Notifications, Settings
+and the account.
 _Avoid_: Sidebar, Nav bar, App switcher
 
 **Area**:
@@ -115,6 +115,7 @@ _Avoid_: Shell endpoint, Shared app data
 
 **Flip**:
 The moment old URLs start to redirect to the new pages for a set of areas.
+Under `/drive` the flip key selects the route table instead.
 There are two: the shell flip (Mail, Meet, Calendar) and the files flip
 (Home, Drive, documents). Old pages stay until they are deleted after the
 files flip.
@@ -145,4 +146,5 @@ page a fixed `h-full min-h-0 min-w-0 overflow-hidden` box so it owns
 scrolling. A fixed-size canvas can mount inside it without growing any shell
 ancestor. A page adds its own Area sidebar inside the box with the platform's
 `<AreaSidebar>`. `frame: 'none'` puts the page outside the shell: the Meet
-call and Mail's sign-in pages.
+call and Mail's sign-in pages, and, while `suite_flip_shell` is off, Mail,
+Calendar and Meet (unified frontend spec §14.2).

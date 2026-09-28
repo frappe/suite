@@ -227,7 +227,9 @@ declare module 'vue-router' {
 
 - `frame` says whether the route renders in the shell or outside it.
   `'none'` is outside. Outside routes are the Meet call and Mail's sign-in
-  pages [T002, T010]. The in-shell literal is an open item (section 16).
+  pages [T002, T010], and, while `suite_flip_shell` is off, Mail, Calendar
+  and Meet (section 14.2). The in-shell literal is an open item (section
+  16).
 - `scroll: 'shell'` lets the shell viewport scroll the whole page.
   `scroll: 'content'` gives the page a fixed box that owns its scrolling
   [T001, CONTEXT].
@@ -2004,7 +2006,7 @@ files       -X-> legacy
   baseline lists today's callers outside `legacy/`, each with an owner and
   the stage whose route replaces it (sections 14.7 and 14.8)
   [T013, T014, T017].
-- Existing violations use exact allowlist entries. Each entry carries an
+- Existing violations use exact baseline entries. Each entry carries an
   owner, a reason, and a removal or review condition [T013, ARCH 9.5]. A
   new violation fails. A resolved entry left in the baseline also fails
   [T013].
@@ -2084,8 +2086,9 @@ delete   one commit; 302s become 301s; Drive Cleanup (issue 36) unblocks
   flip 2 no rail item is active. Before flip 1 the rail lists no area:
   bell, gear and avatar only. Between the flips it carries the temporary
   Apps entry (section 3.5) [T018].
-- Drive Build and the new frontend reach `develop` in one release, with
-  both keys off. Flip 1 and flip 2 happen later by key [T019].
+- Drive Build and the code of stages 0 to 6 reach `develop` in one
+  release, with both keys off. Stages 8 to 12 follow in later releases,
+  with `suite_flip_files` still off. Each flip happens later by key [T019].
 
 ### 14.2 Switch
 
@@ -2204,17 +2207,16 @@ or a stated reason to have none [T020].
   may not import `suite/composition`. It reads `suite_flip_files` from
   `frappe.conf` [ARCH 2.1, ARCH 2.2, T015].
 - It replaces: notifications `get_link`, the share link, `drive_link.py`'s
-  `NODE_ROUTE`, `product.py` and OAuth `/drive`, the shims' `/drive/w` and
-  `/drive/g`, the Writer wikilink, the Meet recording email, and WebDAV
-  HTML links [T014].
+  `NODE_ROUTE`, the shims' `/drive/w` and `/drive/g`, the Writer wikilink,
+  the Meet recording email, and WebDAV HTML links [T014].
 - The share notification's broken `/sheets?id=` link is fixed in the same
   pass [T014].
 
 ### 14.6 Invitations and signup
 
-- The server accepts the invitation, creates the user, logs them in, and
-  redirects through `node_url`'s flag: to `/home`, or to `/drive/` before
-  flip 2 [T014].
+- Invitations use the Suite invitation resource over the framework's
+  `User Invitation`. Its accept link lands on `/suite`, which the redirect
+  table sends to `/home` once `suite_flip_files` is on [T017].
 - The user sets a password through Frappe's `/update-password` [T014].
 - `/drive/signup` and its page are deleted. The Drive invitation URL
   (`drive_user_invitation.py:91`) is retired with it [T011, T014]. The
@@ -2236,11 +2238,12 @@ Flip 1 [T014]:
   - Flag off: `/mail`, `/calendar` and `/meet` show no rail and their own
     sidebar header with Apps, Settings and Log out; Settings opens the
     Suite dialog on that product's first tab; Log out signs out; `/home`
-    shows the shell with an empty rail; `/drive` shows the old Drive page;
-    `/suite/start` lands on `/mail`.
+    and a `/d/` route show the shell with an empty rail; `/drive` shows the
+    old Drive page; `/suite/start` lands on `/mail`.
   - Flag on: the three prefixes show the rail with Mail, Calendar and Meet;
     the sidebar headers have no Apps, Settings or Log out; the rail gear
-    opens Settings; the avatar menu logs out.
+    opens Settings; the avatar menu logs out; the rail shows the temporary
+    Apps entry; each row opens its old page.
   - A tab open across the flip keeps its state until reload, because the
     client reads the flag from boot only.
 
@@ -2377,25 +2380,25 @@ Where the asks land [T019]:
 | D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | none | superseded by D7 [T006] |
 | D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | shipped (`20befde95`) [T019] | specified [Drive §9.5, §11.2] |
 | D9 | Notification unread-count route | T005, T012, SSC | 11.5 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
-| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | [Drive 41](../drive-layer-spec/implementation/issues/41-storage-breakdown-on-root-usage.md) | open |
-| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
-| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
-| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open. Today [Drive §8.5] versions every replace path |
-| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
-| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
-| D16 | Empty trash route per root | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | open |
-| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open. [Drive §11.2] still returns `/drive/l/<token>` |
+| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | [Drive 41](../drive-layer-spec/implementation/issues/41-storage-breakdown-on-root-usage.md) | filed |
+| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
+| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
+| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed. Today [Drive §8.5] versions every replace path |
+| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
+| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
+| D16 | Empty trash route per root | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
+| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed. [Drive §11.2] still returns `/drive/l/<token>` |
 | D18 | `GET /links/<token>` returns `{node, kind, locked}` | T008 | none | none | withdrawn [T011] |
-| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
-| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
-| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
-| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open |
-| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | open. The `{ticket, expires}` half is already in [Drive §11.2] |
-| D24 | `/l/<token>` redirects by kind to `/drive/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open |
-| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | open |
-| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by name and user agent, read by a bench command | T014 | 14.8 | [Drive 45](../drive-layer-spec/implementation/issues/45-legacy-call-counter.md) | open. Counts every name; the gate reads all 69 [T017] |
-| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | open |
-| D28 | `favourite` on the Drive node shape | T006, via [`ACCOUNTING.md`](ACCOUNTING.md) | 5.11 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | open |
+| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
+| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
+| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
+| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
+| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed. The `{ticket, expires}` half is already in [Drive §11.2] |
+| D24 | `/l/<token>` redirects by kind to `/drive/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed |
+| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed |
+| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by name and user agent, read by a bench command | T014 | 14.8 | [Drive 45](../drive-layer-spec/implementation/issues/45-legacy-call-counter.md) | filed. Counts every name; the gate reads all 69 [T017] |
+| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | filed |
+| D28 | `favourite` on the Drive node shape | T006, via [`ACCOUNTING.md`](ACCOUNTING.md) | 5.11 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | filed |
 | D29 | Type `shapes.py` outputs | SSC | 3.9, 4.5 | none | met. `suite/drive/http/shapes.py` already uses `TypedDict` |
 | D30 | Settings, site settings and WebDAV routes (`GET`/`PATCH /settings`, `GET`/`PATCH /site-settings`, `GET /webdav`); Cleanup deletes all 69 names and the allowlist prefix | T017 | 4.4, 12.2, 14.8 | Drive issues [39](../drive-layer-spec/implementation/issues/39-settings-and-webdav-routes.md) and [40](../drive-layer-spec/implementation/issues/40-cleanup-deletes-every-legacy-name.md) | filed, ready-for-agent [T017] |
 
@@ -2419,8 +2422,8 @@ Where the asks land [T019]:
 
 | Id | Ask | Raised by | Depends | Status |
 |---|---|---|---|---|
-| C1 | Typed `conferencing: {meeting_id, url} \| null` on the event shape | T012 | 11.2 | open |
-| C2 | `account` is optional on events; omitted means every account the caller owns | T012 | 11.2 | open |
+| C1 | Typed `conferencing: {meeting_id, url} \| null` on the event shape | T012 | 11.2 | met. `suite/calendar/http/routes.py` returns it (`47311aa11`) |
+| C2 | `account` is optional on events; omitted means every account the caller owns | T012 | 11.2 | met. `suite/calendar/http/routes.py` reads every account when it is omitted (`47311aa11`) |
 | C3 | Stop faking `modified` on calendars | SSC | none at launch | open |
 
 ### 15.5 Mail and Writer

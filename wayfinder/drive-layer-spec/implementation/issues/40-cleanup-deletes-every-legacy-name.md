@@ -8,7 +8,7 @@
 
 **Owner:** Suite migration
 
-**Execution gate:** Preparation only, as ticket 35: fixture tests, patch stays unregistered and inactive. Activation stays with [36 — Activate Cleanup after the Build release and client migration](36-cleanup-later-release.md), whose "retain every permanent compatibility path" criterion now means `/dav` only.
+**Execution gate:** Preparation only, as ticket 35: fixture tests, patch stays unregistered and inactive. Activation stays with [36 — Activate Cleanup after the Build release and client migration](36-cleanup-later-release.md), whose criterion now keeps `/dav` only.
 
 **Raised by:** unified frontend ticket [017 — Product methods and the zero-call gate](../../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md). Faris: "i dont want to keep any dotted paths when suite is launched, update the spec and do whatever is necessary". The spec no longer has permanent `suite.drive.api.*` names: both earlier permanent names resolve through `File` rows Cleanup deletes (§11.7).
 
@@ -23,6 +23,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 - [ ] Phase 6 (`removal.py`, `phase_legacy_api`) removes every name in `CLASSIFICATION` and the wildcard prefix. `SiteForwarderRegistry.remove` names the files that go: `suite/drive/http/shims.py`, every module under `suite/drive/api/`, `suite/drive/overrides/file.py`, and the `override_doctype_class["File"]` entry. The existing "only forwarder names are removed" test is inverted, not deleted.
 - [ ] `after_request` (`suite/hooks.py:440`, the CSP `frame-ancestors` hook in `product.py`) has a home in `suite/drive/framework.py` before `product.py` can go. The hook string in `suite/hooks.py` is updated in the activation release.
 - [ ] Phase 3 keeps `Drive User Invitation` and `Account Request` and their rows (Faris, 2026-09-29). It removes the two permission hooks (`suite/hooks.py:207`, `:251`); the doctypes fall back to their standard role permissions, and their controllers import no deleted module. `suite/drive/e2e_api.py:113` stops naming the doctype. The Suite invitation resource over the framework's `User Invitation` is not touched.
+- [ ] Phase 6 drops the legacy-call counter storage (issue 45).
 - [ ] The dormancy and readiness probes cover the new targets: doctype JSON still present, hooks still naming a deleted module, and the source-schema readiness probe refuse before phase 1.
 - [ ] Tests: `test_gate_legacy_callers.py` proves a `permanent`-labelled name with a caller refuses, and that a `suite/public/js` hit refuses; `test_removal_phases.py` proves every class is removed and `/dav` survives; `test_full_run.py` ends with no `suite.drive.api` entry in the fake allowlist.
 - [ ] Documentation synced in the same change: [implementation plan](../../drive-layer-plan.md) lines that keep `api/product.py`, `api/s3.py`, and `get_file_for_doc` ("Deleted suite code" table, and the `http/shims.py` row); `wayfinder/drive-layer-spec/implementation/legacy-caller-inventory.md`; ticket 36's permanent-path criterion.

@@ -10,7 +10,7 @@
 
 **Execution gate:** None beyond completed blockers.
 
-**Raised by:** unified frontend ticket [017 — Product methods and the zero-call gate](../../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md). Faris: "i dont want to keep any dotted paths when suite is launched". The Files settings tabs (Statistics, External access) call these routes at launch.
+**Raised by:** unified frontend ticket [017 — Product methods and the zero-call gate](../../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md). Faris: "i dont want to keep any dotted paths when suite is launched". The Drive settings tabs (Statistics, External access) call these routes at launch.
 
 **Source:** [Drive spec](../../drive-layer-spec.md), §11.2 "Settings and WebDAV", §11.7 product table, §3.13, §3.14, §12.
 Read [execution rules and source precedence](../README.md#execution-rules) before claiming this ticket.

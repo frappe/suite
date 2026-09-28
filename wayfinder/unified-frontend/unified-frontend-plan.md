@@ -57,7 +57,8 @@ Verified on 2026-09-29. The 2026-09-15 documents
   and is published on `netchampfaris/frappe`. Drive issue 31 names it in the
   release candidate; Frappe Cloud must allowlist `storage_driver` and
   `storage_driver_config` before production migrates (Drive spec §14.1).
-  Both are Drive issue 36 and 37 gates, not this plan's [T019].
+  The Drive program owns both, and Drive issue 36 lists both. Stage 7's
+  deploy waits on both (Open items) [T019].
 
 ### Built and kept
 
@@ -260,8 +261,11 @@ stage lands; no rebase [T019].
 | `frontend/src/composition/appRegistry.ts` | 1, 5, 6, 10 |
 | `frontend/src/composition/routes.ts` | 1, 5, 6, 8, 12 |
 | `frontend/src/router/index.ts` | 5, 6, 8, 12 |
-| `frontend/src/apps/drive/files/pages/FilesPage.vue` | 1, 8, 9, 10, 11 |
-| `frontend/src/apps/drive/index.ts` | 1, 2, 9, 10, 11 |
+| `frontend/src/apps/drive/files/pages/FilesPage.vue` | 1, 6, 8, 9, 10, 11 |
+| `frontend/src/apps/drive/files/pages/FilesPanel.vue` | 1, 6 |
+| `frontend/src/composition/home/{HomePage,HomePanel}.vue` | 1, 6 |
+| `frontend/src/composition/settings.ts` | 4, 6 |
+| `frontend/src/apps/drive/index.ts` | 1, 2, 6, 9, 10, 11 |
 | `frontend/src/apps/drive/client/session.ts` | 2, 9, 11 |
 | `frontend/src/apps/slides/surface/SlidesSurface.vue` | 2, 11 |
 | `frontend/src/apps/mail/pages/MailLayout.vue` | 3, 5 |
@@ -424,8 +428,8 @@ stage lands; no rebase [T019].
     `GET /api/suite/drive/webdav` when the dialog opens, writes
     `PATCH /settings` and `PATCH /site-settings`, and mints keys through
     `suite.utils.user.generate_user_keys`, a Suite method on `/api/method/`
-    outside the ban [T017, Drive §11.2]. The group's `condition` reads the
-    `suite_flip_files` boot flag (stage 6) [T018].
+    outside the ban [T017, Drive §11.2]. Stage 6 adds the group's
+    `suite_flip_files` condition [T018].
   - Desktop avatar menu: header, Settings, Open Desk (system managers, an
     `<a href="/app">` full page load), Upgrade plan (system managers,
     disabled with the tooltip "Not available yet" until Suite ask S5),
@@ -507,7 +511,11 @@ stage lands; no rebase [T019].
 - **Files (owned):** `suite/www/suite.py` (the `suite_flip_files` boot
   value), the boot flag reader from stage 5, `composition/appRegistry.ts`,
   `composition/routes.ts`, `router/index.ts`, `shell/Rail.vue` (the
-  temporary Apps entry), `suite/hooks.py` (the `/files` website rule rows
+  temporary Apps entry), `composition/settings.ts` (the Drive group's
+  `condition`), `apps/drive/index.ts` (the area `to` and the folder path),
+  `apps/drive/files/pages/{FilesPage,FilesPanel}.vue` and
+  `composition/home/{HomePage,HomePanel}.vue` (the `/files` paths),
+  `suite/hooks.py` (the `/files` website rule rows
   become `/drive` rows), `frontend/vite.config.ts` (the `/files` bypass
   goes), `apps/slides/SlidesShell.vue`, `apps/slides/service-worker.js`,
   `suite/www/service-worker.js`, `suite/www/service_worker.py`,
@@ -549,15 +557,17 @@ stage lands; no rebase [T019].
 - **Exit gate:** a journey runs each prefix with each flag on and off,
   including `/drive` under both route tables and the folder route's kind
   check. The Slides service worker test shows no cached shell document.
-  `grep -rn "'/files" frontend/src suite/hooks.py` returns nothing.
+  ``grep -rnE "[\"'\`]/files(/(f|organization|recent|starred|shared-with-me|trash)\b|[\"'\`])" frontend/src/composition frontend/src/apps/drive frontend/src/shell``
+  returns nothing, and `suite/hooks.py` has no `/files`
+  `website_route_rules` row.
 
 ### Stage 7. Flip 1
 
 - **Goal:** Mail, Meet and Calendar in the shell on production.
 - **Spec:** §14.
 - **Files:** none. The site config key `suite_flip_shell` is set to `1`:
-  `bench set-config` locally, the Frappe Cloud dashboard in production
-  [T019].
+  `bench set-config` locally; Faris sets it in the site config on Frappe
+  Cloud by hand [T019].
 - **Gates (ticket 014, decision 7):**
   - Browser journeys pass for Mail, Meet and Calendar in the shell.
   - The four shell fixes from ticket 010 have landed.
@@ -566,11 +576,12 @@ stage lands; no rebase [T019].
     - Flag off: `/mail`, `/calendar` and `/meet` show no rail and their own
       sidebar header with Apps, Settings and Log out; Settings opens the
       Suite dialog on that product's first tab; Log out signs out; `/home`
-      and a `/d/` route show the shell with an empty rail; `/suite/start`
-      lands on `/mail`.
+      and a `/d/` route show the shell with an empty rail; `/drive` shows
+      the old Drive page; `/suite/start` lands on `/mail`.
     - Flag on: the three prefixes show the rail with Mail, Calendar and
       Meet; the sidebar headers have no Apps, Settings or Log out; the rail
-      gear opens Settings; the avatar menu logs out.
+      gear opens Settings; the avatar menu logs out; the rail shows the
+      temporary Apps entry; each row opens its old page.
     - A tab open across the flip keeps its state until reload, because the
       client reads the flag from boot only.
 - **Release order:** the Drive Build release and this branch reach
@@ -761,8 +772,8 @@ stage lands; no rebase [T019].
     the callers.
   - Callers replaced by `node_url`: `suite/drive/api/notifications.py:8`,
     the grant share URL (`suite/drive/_core/access.py:1161`, Drive issue
-    43), `suite/www/drive_link.py:31` (Drive issue 43), `product.py` and
-    OAuth `/drive`, `suite/drive/http/shims.py:1793` and `:2380`, the
+    43), `suite/www/drive_link.py:31` (Drive issue 43),
+    `suite/drive/http/shims.py:1793` and `:2380`, the
     Writer wikilink, the Meet recording email, WebDAV HTML links, and the
     broken `/sheets?id=` link in `suite/sheets/api.py:228`.
   - Invitations: `suite/drive/doctype/drive_user_invitation/drive_user_invitation.py:91`
@@ -785,7 +796,7 @@ stage lands; no rebase [T019].
       `/drive/attachments/<doctype>?/<docname>?` to `/drive`.
     - `/drive/recents` to `/drive/recent`; `/drive/favourites` to
       `/drive/starred`; `/drive/shared` to `/drive/shared-with-me`;
-      `/drive/trash` and `/sheets/trash` to `/drive/trash`.
+      `/sheets/trash` to `/drive/trash`.
     - `/drive/d/<id>` (old folder) to `/drive/f/<id>`. Old `/drive/f/<id>`
       (a file) needs no row: the new folder route's kind check sends a
       non-folder id to `/d/<id>` (stage 6).
@@ -804,12 +815,14 @@ stage lands; no rebase [T019].
     - `/writer`, `/sheets`, `/sheets/new`, `/slides`,
       `/slides/presentation/new`, `/slides/not-permitted`, `/suite` to
       `/home`.
-    - No row: `/drive/signup` (deleted), `/suite/setup`, `/suite/start`
-      (`/home` at flip 2 through the PWA rule below), `/suite/load-error`,
+    - `/suite/start` to `/home` at flip 2 (the PWA rule below).
+    - No row: `/drive/trash` (the same path in the new table),
+      `/drive/signup` (deleted), `/suite/setup`, `/suite/load-error`,
       `/mail/...`, `/calendar/...`, `/meet/...`, Mail's Stalwart callbacks
       in `website_redirects`.
-  - Invitation accept creates and logs in the user, then redirects through
-    `node_url`'s flag to `/home` (or `/drive/` before flip 2).
+  - Invitations use the Suite invitation resource over the framework's
+    `User Invitation`. Its accept link lands on `/suite`, which the
+    redirect table sends to `/home` once `suite_flip_files` is on [T017].
     `/drive/signup` and its page go.
   - If the Suite invitation resource is not ready by flip 2, `/drive/signup`
     stays until stage 15.
@@ -833,8 +846,8 @@ stage lands; no rebase [T019].
 - **Goal:** Home, Drive and documents are the default.
 - **Spec:** §14.
 - **Files:** none. The site config key `suite_flip_files` is set to `1`:
-  `bench set-config` locally, the Frappe Cloud dashboard in production
-  [T019].
+  `bench set-config` locally; Faris sets it in the site config on Frappe
+  Cloud by hand [T019].
 - **Gates (ticket 014, decision 7):**
   - Browser journeys pass for Home, Drive and documents.
   - The five Drive asks from ticket 006 have shipped.
@@ -1101,6 +1114,14 @@ closed and folded (ticket 022); no stage waits on a ticket.
   (`comments`, `versions`). Each designs its signatures under the
   `codebase-design` skill. Blocks nothing outside those stages.
 
+### Owned by the Drive program
+
+- **Frappe Cloud `storage_driver` allowlist.** Frappe Cloud must allowlist
+  `storage_driver` and `storage_driver_config` before production migrates
+  (Drive spec §14.1). Owner: Drive program. Blocks stage 7's deploy.
+- **Frappe `forge/storage-v2` on `bench-40775`.** Build needs frappe
+  `forge/storage-v2` on the production bench. It is not on frappe
+  `upstream/develop`. Owner: Drive program. Blocks stage 7's deploy.
 
 ### Environment approvals
 

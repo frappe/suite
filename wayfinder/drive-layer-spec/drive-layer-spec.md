@@ -3224,8 +3224,8 @@ deleted.
 | `get_entity_type` | `GET /nodes/<id>` |
 | `get_root_folder` | `GET /roots` |
 | `redirect_to_original` | `GET /nodes/<id>` |
-| `translate_old_name` | kept as a forwarder over `Drive Legacy Route` |
-| `resolve_legacy_route` | kept as a forwarder over `Drive Legacy Route` |
+| `translate_old_name` | a forwarder over `Drive Legacy Route` until Cleanup; after that the composition redirect table reads the table (unified frontend spec §14.4) |
+| `resolve_legacy_route` | a forwarder over `Drive Legacy Route` until Cleanup; after that the composition redirect table reads the table (unified frontend spec §14.4) |
 
 **`suite.drive.api.list` (6)**: `files` to `GET /nodes/<id>/children`;
 `shared`, `favourites`, `recents`, `trash` to `GET /views/<name>`;

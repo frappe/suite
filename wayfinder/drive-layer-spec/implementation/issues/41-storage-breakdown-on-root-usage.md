@@ -34,7 +34,7 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 ## Notes
 
 - Today `shims.storage_breakdown` reads `Drive Node` rows filtered by `owner = caller`, which misses files other people uploaded into the caller's root. The route reads by `root`, which is what quota charges (§7.1).
-- Unified spec §16 item 16 records that whether the Drive panel also shows the breakdown is open. This ticket serves the Settings tab only.
+- Unified spec §16.1 item 7 records that whether the Drive area sidebar also shows the breakdown is open. This ticket serves the Settings tab only.
 
 ## Completion evidence
 

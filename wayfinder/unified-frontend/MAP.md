@@ -96,6 +96,13 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Fold decisions into the spec and plan](tickets/022-fold-decisions-into-the-spec-and-plan.md) —
+  The destination is reached. [`unified-frontend-spec.md`](unified-frontend-spec.md)
+  and [`unified-frontend-plan.md`](unified-frontend-plan.md) carry every
+  decision, audited twice. No open item needs Faris before stage 0; three
+  environment approvals and two Drive-program prerequisites block later
+  stages only.
+
 - [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
   No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only
   `/dav` stays. Five new Drive routes replace the product methods (Drive
@@ -108,13 +115,15 @@ Scope, decided 2026-09-11:
   flip key selects the old or new route table under `/drive` until flip 2,
   and `/drive/f/<id>` resolves by kind. Orphan old listings go to
   `/drive`, old product pages to `/home`. Exact rows before parameter
-  rows; a lookup with no node falls through. One Frappe ask to file.
+  rows; a lookup with no node falls through. Frappe ask filed as
+  frappe/frappe#43523.
 
 - [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md) —
   One development branch, `forge/drive-layer`, merge only (Faris; merged
-  and pushed as `a8cb8ff6e`). Build and the new frontend reach `develop`
-  in one release with both keys off. Faris sets the keys on Frappe Cloud.
-  Drive asks D10 to D28 become Drive implementation issues.
+  and pushed as `a8cb8ff6e`). Build and stages 0 to 6 reach `develop` in
+  one release with both keys off; later stages follow in later releases.
+  Faris sets the keys on Frappe Cloud by hand. Drive asks D10 to D28 are
+  Drive issues 41 to 46.
 
 - [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md) —
   lucide on every surface (Faris). Upgrade plan and Open Desk show to
