@@ -5,8 +5,9 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite.calendar import external
 from suite.calendar.hr import source as hr_source
 from suite.calendar.hr import sync as hr_sync
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events
@@ -14,6 +15,13 @@ from suite.calendar.hr.source import HRSource, validate_site_url
 from suite.calendar.hr.sync import _by_company
 
 TODAY = date(2026, 9, 18)
+HOLIDAY = {
+    "uid": "hr-holiday-India 2026-2026-10-02",
+    "title": "Gandhi Jayanti",
+    "starts_on": "2026-10-02 00:00:00",
+    "ends_on": "2026-10-03 00:00:00",
+    "all_day": True,
+}
 
 
 def employee(name: str, **fields) -> dict:
@@ -340,3 +348,79 @@ class UnitTestANameFromHRIsOneSegment(UnitTestCase):
         self.assertEqual(
             url, "https://hr.example.com/api/resource/Holiday List/..%2F..%2Fmethod%2Fping%3Fx%3D1%23y"
         )
+
+
+class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
+    """Who HR names is not who this site can draw a calendar for.
+
+    A mail server may be shared between sites, so an address HR knows is not on its own a person
+    here. The audience is resolved against this site's users: someone HR names who has no account
+    here, or whose account is switched off, is left out — there is nobody here to draw for.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.employee = self.a_user("employee@calendar.test")
+        self.retired = self.a_user("retired@calendar.test", enabled=0)
+        self.addCleanup(self.forget)
+
+    def forget(self) -> None:
+        for name in frappe.get_all("External Calendar", {"source": hr_sync.SOURCE}, pluck="name"):
+            external.remove_calendar(name)
+
+    def a_user(self, email: str, enabled: int = 1) -> str:
+        frappe.delete_doc("User", email, force=True, ignore_permissions=True, ignore_missing=True)
+        self.addCleanup(
+            frappe.delete_doc, "User", email, force=True, ignore_permissions=True, ignore_missing=True
+        )
+        user = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": email.split("@")[0],
+                "send_welcome_email": 0,
+            }
+        ).insert(ignore_permissions=True)
+        if not enabled:
+            frappe.db.set_value("User", user.name, "enabled", 0)
+        return user.name
+
+    def reconcile(self, audience: list[str | None]) -> dict:
+        plan = hr_sync.Plan(
+            key="holidays:India 2026",
+            name="India 2026",
+            color="#123456",
+            hidden=False,
+            events=[HOLIDAY],
+            audience=audience,
+        )
+        return hr_sync._reconcile([plan])
+
+    def drawn(self, user: str) -> list[str]:
+        return [row["_name"] for row in external.calendar_rows(user)]
+
+    def test_somebody_hr_names_who_is_not_a_user_here_is_left_out(self):
+        summary = self.reconcile([self.employee, "nobody@elsewhere.test"])
+
+        self.assertEqual(summary["India 2026"]["drawn_for"], 1)
+        self.assertEqual(self.drawn(self.employee), ["India 2026"])
+        self.assertEqual(external.calendar_rows("nobody@elsewhere.test"), [])
+        self.assertEqual(external.events_in_window("nobody@elsewhere.test", "2026-10-01", "2026-10-31"), [])
+
+    def test_an_account_switched_off_is_left_out(self):
+        self.reconcile([self.employee, self.retired])
+
+        self.assertEqual(self.drawn(self.employee), ["India 2026"])
+        self.assertEqual(self.drawn(self.retired), [])
+
+    def test_the_address_hr_spells_differently_is_still_this_user(self):
+        # HR is asked for what it has, not for what this site would have written.
+        self.reconcile(["  Employee@Calendar.TEST  "])
+
+        self.assertEqual(self.drawn(self.employee), ["India 2026"])
+
+    def test_nobody_hr_names_is_nobody_drawn_for(self):
+        summary = self.reconcile([None, "", "nobody@elsewhere.test"])
+
+        self.assertEqual(summary["India 2026"]["drawn_for"], 0)
+        self.assertEqual(self.drawn(self.employee), [])

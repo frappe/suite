@@ -69,9 +69,10 @@ that have to show up there belong in a calendar of their own, subscribed to.
 - **The HR site URL** is fetched by this server, so it must be a plain https site (http only for
   localhost): no path, query, fragment or credentials, and redirects are not followed. An answer
   over 25 MB is refused.
-- **Nothing is read by permission.** The events hold employees' names and birth dates, so no role
-  is granted read on them: they reach a person through the calendar API, filtered by the audience
-  rows, and through nothing else.
+- **Nothing is read by permission.** The events hold employees' names and birth dates, so Suite
+  User is not granted read on them, as it is on the calendars people keep themselves: an employee
+  reaches these through the calendar API, filtered by the audience rows, and through nothing else.
+  System Manager, who configures the sync, keeps the read every doctype here grants it.
 - **Only the sync's own calendars.** A calendar is found by the source and the key that source
   knows it by, never by name — a name comes from HR and could be any calendar's. One source may
   not keep two calendars for the same key, and two synced calendars may not share a name.
