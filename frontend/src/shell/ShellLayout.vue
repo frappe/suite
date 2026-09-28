@@ -5,7 +5,7 @@
     <DesktopShell
       v-if="!isMobile"
       :scroll="scrollOwner === 'shell'"
-      class="h-full"
+      class="h-full suite-area-shell"
     >
       <template #rail>
         <Rail :areas="areas" :badges="badges">
@@ -192,3 +192,12 @@ function describeUnavailable(
   };
 }
 </script>
+
+<style scoped>
+/* ScrollArea's content wrapper must stretch for short pages to fill the viewport. */
+.suite-area-shell :deep([data-slot="desktop-shell-content"] > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"] > div) {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+</style>
