@@ -588,7 +588,8 @@ stage lands; no rebase [T019].
     [T020].
   - While `suite_flip_shell` is on and `suite_flip_files` is off, the
     desktop avatar menu shows a temporary Apps submenu that lists the old
-    Drive, Slides, Writer and Sheets pages. The rail gets no Apps entry. The
+    Drive, Slides, Writer and Sheets pages. The phone avatar sheet shows
+    the same rows as an Apps drill-in. The rail gets no Apps entry. The
     submenu hides when `suite_flip_files` is on and is deleted in stage 15
     [T018, Faris, 2026-09-29, option B].
   - The Drive settings group's `condition` reads `suite_flip_files` [T018].

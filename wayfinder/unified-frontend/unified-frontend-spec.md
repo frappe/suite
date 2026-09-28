@@ -286,7 +286,8 @@ only.
   flip 1 it lists no area. The bottom nav reads the same list [T018].
 - Between the flips the desktop avatar menu shows a temporary Apps
   submenu. It lists the old Drive, Slides, Writer and Sheets pages. The
-  rail gets no Apps entry. The submenu shows while `suite_flip_shell` is on
+  phone avatar sheet shows the same rows as an Apps drill-in, so phone
+  loses no path [T018, orchestrator]. The rail gets no Apps entry. The submenu shows while `suite_flip_shell` is on
   and `suite_flip_files` is off, and is deleted with the old pages (section
   14.8) [T018, Faris, 2026-09-29].
 - The Settings gear opens the one Suite settings dialog (section 12)
@@ -1937,7 +1938,7 @@ There is one Settings group per product, named after the product. Order
 | Surface | Items |
 |---|---|
 | Desktop rail avatar menu | Name and email header, Settings, Open Desk (system managers), Upgrade plan (system managers; disabled until ask S5), Log out. Between the flips it also holds the temporary Apps submenu (section 3.5) [Faris, 2026-09-29] |
-| Phone avatar sheet | Header, Settings, Theme, Log out |
+| Phone avatar sheet | Header, Settings, Theme, Log out. Between the flips it also holds the temporary Apps drill-in (section 3.5) |
 
 [T010, T016]
 
