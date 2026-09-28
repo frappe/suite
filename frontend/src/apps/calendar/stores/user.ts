@@ -99,6 +99,21 @@ export const userStore = defineStore('calendar-user', () => {
 	// browser instead.
 	// The reader's choice by calendar, kept only where they made one; the rest draw as they start.
 	const sharedVisibility = useStorage<Record<string, 0 | 1>>('calendar-shared-visibility', {})
+	// Carried over once from the two lists an earlier build kept — the hidden, and the shown
+	// among those that start hidden — so nobody's choices are lost to the change of key.
+	for (const [key, visible] of [
+		['calendar-hidden-shared', 0],
+		['calendar-shown-shared', 1],
+	] as const) {
+		try {
+			for (const name of JSON.parse(localStorage.getItem(key) ?? '[]') as string[]) {
+				sharedVisibility.value[name] ??= visible
+			}
+			localStorage.removeItem(key)
+		} catch {
+			// nothing readable under the old key, so nothing to carry
+		}
+	}
 
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.

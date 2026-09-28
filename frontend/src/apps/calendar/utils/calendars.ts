@@ -35,14 +35,14 @@ export const sharedCalendarVisible = (
 /**
  * Whether an event is drawn: it sits on a calendar the reader has switched on. One predicate
  * for the grid and for the mini month's ticks, which come from their own call and name their
- * calendars rather than carry them. An event on a calendar the list does not know — before it
- * loads — is drawn, as `canEditEvent` leaves one editable: a tick a moment early beats a month
- * that looks empty.
+ * calendars rather than carry them. Nothing is drawn until the calendar list is known — a
+ * hidden calendar's events showing for a moment and vanishing is worse than the moment's
+ * wait — and nothing on a calendar the list does not have.
  */
 export const onShownCalendar = (calendars: CalendarRow[] | undefined) => {
-	const hidden = new Set(calendars?.filter((cal) => !cal.visible).map((cal) => cal.name))
+	const shown = new Set(calendars?.filter((cal) => cal.visible).map((cal) => cal.name))
 	return (event: { calendars: ({ calendar: string } | string)[] }): boolean =>
-		event.calendars.some((c) => !hidden.has(typeof c === 'string' ? c : c.calendar))
+		event.calendars.some((c) => shown.has(typeof c === 'string' ? c : c.calendar))
 }
 
 /**

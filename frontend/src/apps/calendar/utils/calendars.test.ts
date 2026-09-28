@@ -123,9 +123,10 @@ describe('onShownCalendar', () => {
 		expect(drawn({ calendars: [{ calendar: 'acc|celebrations' }] })).toBe(false)
 	})
 
-	it('draws an event on a calendar the list does not know yet', () => {
-		expect(drawn({ calendars: ['acc|elsewhere'] })).toBe(true)
-		expect(onShownCalendar(undefined)({ calendars: ['acc|celebrations'] })).toBe(true)
+	it('draws nothing until the calendar list is known, and nothing the list does not have', () => {
+		expect(onShownCalendar(undefined)({ calendars: ['acc|mine'] })).toBe(false)
+		expect(onShownCalendar([])({ calendars: ['acc|mine'] })).toBe(false)
+		expect(drawn({ calendars: ['acc|elsewhere'] })).toBe(false)
 	})
 
 	it('draws an event on two calendars where either is shown', () => {
