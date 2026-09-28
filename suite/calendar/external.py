@@ -274,12 +274,15 @@ def search_events(
     A dated event answers as itself, wherever it falls. A yearly one answers as its occurrences
     inside `start` and `end` where both are given, and otherwise as the few nearest today on
     either side — last year's, this year's, next year's — since that is what a reader looking for
-    a birthday means. Either bound alone still holds.
+    a birthday means. Either bound alone still holds. The bounds are the reader's wall clock,
+    not instants: these events are calendar days with no time of day, and which day an instant
+    falls on is the reader's zone's to say, before it gets here.
 
     `calendars` narrows to those, and never past what the user is drawn: a calendar named by
-    someone it is not for answers nothing. At most `limit` events are expanded, ranked nearest
-    today first with a yearly event counting as today, the way the API ranks a series before it
-    expands it.
+    someone it is not for answers nothing. At most `limit` events answer, nearest today first
+    with a yearly event counting as today, the way the API ranks a series before it expands it
+    — chosen among the events in the range, where there is one, so a holiday inside it is not
+    crowded out by birthdays outside it that rank nearer.
     """
 
     drawn = {calendar.name: calendar for calendar in _calendars_for(user)}
@@ -289,34 +292,42 @@ def search_events(
         return []
 
     now = now_datetime()
-    rows = _rows_carrying(list(drawn), words, title_only)
-    rows.sort(key=lambda row: timedelta(0) if row.repeats else abs(get_datetime(row.starts_on) - now))
-    del rows[limit:]
-
     windowed = bool(start and end)
     since = start or now - timedelta(days=367)
     until = end or now + timedelta(days=366 * SEARCH_HORIZON_YEARS)
-    stamp = utcnow()
-    events = []
-    for row in rows:
+
+    found = []
+    for row in _rows_carrying(list(drawn), words, title_only, start, end):
         if not row.repeats:
-            if (start and get_datetime(row.ends_on or row.starts_on) <= start) or (
-                end and get_datetime(row.starts_on) >= end
-            ):
-                continue
-            events.append(_event_row(drawn[row.calendar], row, get_datetime(row.starts_on).date(), stamp))
-            continue
-        days = _occurrences(row, since, until)
-        if not windowed:
-            days.sort(key=lambda day: abs(day - now.date()))
-            del days[SEARCH_INSTANCES:]
-        events.extend(_event_row(drawn[row.calendar], row, day, stamp) for day in days)
-    return events
+            days = [get_datetime(row.starts_on).date()]
+        else:
+            days = _occurrences(row, since, until)
+            if not windowed:
+                days.sort(key=lambda day: abs(day - now.date()))
+                del days[SEARCH_INSTANCES:]
+        if days:
+            found.append((row, days))
+
+    found.sort(
+        key=lambda pair: timedelta(0) if pair[0].repeats else abs(get_datetime(pair[0].starts_on) - now)
+    )
+    del found[limit:]
+
+    stamp = utcnow()
+    return [_event_row(drawn[row.calendar], row, day, stamp) for row, days in found for day in days]
 
 
-def _rows_carrying(calendars: list[str], words: list[str], title_only: bool) -> list[frappe._dict]:
+def _rows_carrying(
+    calendars: list[str],
+    words: list[str],
+    title_only: bool,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[frappe._dict]:
     """The stored events on `calendars` whose title — or notes, unless the title alone was
-    asked — carries every one of `words`; every event on them, for none."""
+    asked — carries every one of `words`; every event on them, for none. Within the bounds
+    where given, the way `_rows_in_window` reads a window: a dated event that runs through
+    them, a yearly one whose day falls between them."""
 
     event = frappe.qb.DocType("External Calendar Event")
     query = (
@@ -329,6 +340,19 @@ def _rows_carrying(calendars: list[str], words: list[str], title_only: bool) -> 
         if not title_only:
             carries = carries | event.description.like(f"%{word}%")
         query = query.where(carries)
+
+    if start or end:
+        dated = event.repeats == ""
+        yearly = event.repeats == "Yearly"
+        if start:
+            dated &= event.ends_on > start
+        if end:
+            dated &= event.starts_on < end
+            yearly &= event.starts_on < end
+        if start and end:
+            yearly &= event.month_day.isin(_days_between(start, end))
+        query = query.where(dated | yearly)
+
     return query.run(as_dict=True)
 
 

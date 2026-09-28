@@ -157,9 +157,11 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
             "repeats": "Yearly",
         }
 
-    def yearly(self, anchored: date, title: str = "Someone's birthday") -> dict:
+    def yearly(
+        self, anchored: date, title: str = "Someone's birthday", uid: str = "hr-birthday-EMP-2"
+    ) -> dict:
         return {
-            "uid": "hr-birthday-EMP-2",
+            "uid": uid,
             "title": title,
             "starts_on": f"{anchored} 00:00:00",
             "ends_on": f"{anchored + timedelta(days=1)} 00:00:00",
@@ -247,6 +249,23 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         )
         self.assertEqual(self.search(self.user, ["gandhi"], start=datetime(2030, 1, 1)), [])
         self.assertEqual(self.search(self.user, ["gandhi"], end=datetime(2026, 10, 1)), [])
+
+    def test_a_range_is_narrowed_on_before_the_count_is(self):
+        # five birthdays rank as today and would fill any count; the one holiday inside the
+        # range is the answer to a search of that range all the same
+        today = date.today()
+        elsewhere = yearly_occurrence(f"{today:%m-%d}", today.year - 30)
+        crowd = [
+            self.yearly(elsewhere, f"Person {n}'s birthday", uid=f"hr-birthday-EMP-{n}") for n in range(5)
+        ]
+        external.replace_events(self.calendar, [*crowd, self.holiday])
+        external.replace_audience(self.calendar, [self.user])
+
+        found = self.search(
+            self.user, [], limit=1, start=datetime(2026, 10, 2), end=datetime(2026, 10, 2, 23, 59, 59)
+        )
+
+        self.assertEqual([event["title"] for event in found], ["Gandhi Jayanti"])
 
     def test_only_the_nearest_few_events_are_expanded(self):
         today = date.today()

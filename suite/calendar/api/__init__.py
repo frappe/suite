@@ -370,7 +370,7 @@ def search_calendar_events_with_shared(
     calendar_account, _sep, calendar_id = filters.calendar.partition("|")
     if calendar_account == EXTERNAL:
         events = []
-        external = _external_search(text, limit, filters, [calendar_id])
+        external = _external_search(text, limit, filters, time_zone, [calendar_id])
     else:
         if filters.calendar:
             events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
@@ -383,7 +383,7 @@ def search_calendar_events_with_shared(
             )
         # The calendars this site keeps for the reader are drawn beside the mail server's, and
         # a search of what the reader can see on the grid answers for those too.
-        external = [] if filters.calendar else _external_search(text, limit, filters)
+        external = [] if filters.calendar else _external_search(text, limit, filters, time_zone)
 
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
@@ -408,7 +408,11 @@ def search_calendar_events_with_shared(
 
 
 def _external_search(
-    text: str | None, limit: int, filters: EventSearchFilters, calendars: list[str] | None = None
+    text: str | None,
+    limit: int,
+    filters: EventSearchFilters,
+    time_zone: str | None,
+    calendars: list[str] | None = None,
 ) -> list[dict]:
     """The matches among the calendars this site keeps for the reader, in the rows the mail
     server's answers come in.
@@ -416,15 +420,27 @@ def _external_search(
     Nobody is on these events — a holiday has no organizer and a birthday no attendees — so a
     search for either has no answer here. The words, the scope and the range mean what they mean
     for the mail server's: every word, in the title or (unless the title alone is asked) the
-    notes, within the range where one is given. Sent as UTC instants, as the range is, and read
-    as the calendar dates they name: these events carry no time of day.
+    notes, within the range where one is given.
+
+    The range arrives as UTC instants — the reader's day, widened to its ends in their zone —
+    and these events are calendar days with no time of day. So each end is read back as the
+    reader's wall clock before the store compares it with a day: measured as an instant, a
+    reader east of UTC asking for one day would also be answered the day before it.
     """
 
     if filters.attendee.strip() or filters.organizer.strip():
         return []
 
-    def instant(value: str) -> datetime | None:
-        return datetime.fromisoformat(normalize_utc_z(value).rstrip("Z")) if value else None
+    try:
+        zone = ZoneInfo(time_zone or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = UTC
+
+    def wall_clock(value: str) -> datetime | None:
+        if not value:
+            return None
+        instant = datetime.fromisoformat(normalize_utc_z(value).replace("Z", "+00:00"))
+        return instant.astimezone(zone).replace(tzinfo=None)
 
     return external_search(
         frappe.session.user,
@@ -432,8 +448,8 @@ def _external_search(
         limit,
         title_only=filters.scope == "title",
         calendars=calendars,
-        start=instant(filters.after),
-        end=instant(filters.before),
+        start=wall_clock(filters.after),
+        end=wall_clock(filters.before),
     )
 
 

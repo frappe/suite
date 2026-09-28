@@ -422,10 +422,10 @@ class IntegrationTestSearchOfTheSitesOwnCalendars(IntegrationTestCase):
         external.replace_events(self.calendar, [HOLIDAY])
         external.replace_audience(self.calendar, [self.user])
 
-    def search(self, user: str, text: str | None = None, **filters) -> list[dict]:
+    def search(self, user: str, text: str | None = None, time_zone: str = "UTC", **filters) -> list[dict]:
         with self.set_user(user):
             return calendar_api.search_calendar_events_with_shared(
-                "nobody@calendar.test", text, time_zone="UTC", filters=filters or None
+                "nobody@calendar.test", text, time_zone=time_zone, filters=filters or None
             )
 
     def test_a_holiday_answers_beside_the_mail_servers_events(self):
@@ -443,6 +443,20 @@ class IntegrationTestSearchOfTheSitesOwnCalendars(IntegrationTestCase):
         # with nothing typed, the calendar itself is the question, and every day on it the answer
         self.assertEqual([e["title"] for e in self.search(self.user, calendar=named)], ["Gandhi Jayanti"])
         self.assertEqual(self.search(self.stranger, "gandhi", calendar=named), [])
+
+    def test_a_range_is_the_readers_days_not_the_instants_that_bound_them(self):
+        the_day_before = {**HOLIDAY, "uid": "hr-holiday-India 2026-2026-10-01", "title": "Eve"}
+        the_day_before.update(starts_on="2026-10-01 00:00:00", ends_on="2026-10-02 00:00:00")
+        external.replace_events(self.calendar, [HOLIDAY, the_day_before])
+        named = f"{external.NAMESPACE}|{self.calendar}"
+        # 2 October, whole, in Kolkata — which is these instants
+        one_day = {"after": "2026-10-01T18:30:00Z", "before": "2026-10-02T18:29:59Z"}
+
+        in_kolkata = self.search(self.user, calendar=named, time_zone="Asia/Kolkata", **one_day)
+        self.assertEqual([event["title"] for event in in_kolkata], ["Gandhi Jayanti"])
+        # the same instants are the evening of the 1st and most of the 2nd to a reader in UTC
+        in_utc = self.search(self.user, calendar=named, time_zone="UTC", **one_day)
+        self.assertEqual(sorted(event["title"] for event in in_utc), ["Eve", "Gandhi Jayanti"])
 
     def test_nobody_is_on_a_holiday(self):
         with patch.object(calendar_api, "_with_shared", return_value=[]):
