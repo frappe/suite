@@ -99,9 +99,9 @@ Scope, decided 2026-09-11:
 - [Fold decisions into the spec and plan](tickets/022-fold-decisions-into-the-spec-and-plan.md) —
   The destination is reached. [`unified-frontend-spec.md`](unified-frontend-spec.md)
   and [`unified-frontend-plan.md`](unified-frontend-plan.md) carry every
-  decision, audited twice. No open item needs Faris before stage 0; three
-  environment approvals and two Drive-program prerequisites block later
-  stages only.
+  decision, audited twice. Faris approved `vue-tsc` and `hash-wasm`. The
+  local Stalwart test accounts and two production prerequisites (Faris's)
+  block later stages only.
 
 - [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
   No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only

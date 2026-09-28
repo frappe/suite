@@ -208,7 +208,8 @@ bench --site slides.localhost execute suite.composition.contract.write_all
 The last command regenerates every `contract.json` after a route table
 changes. Run `yarn generate:contract` after it.
 
-No frontend typecheck script exists. See Open items.
+Stage 0 adds `yarn typecheck` (`vue-tsc`) to the frontend. Until then no
+frontend typecheck script exists [Faris, 2026-09-29].
 
 ## Stages
 
@@ -288,8 +289,10 @@ stage lands; no rebase [T019].
   green gates. No branch is cut: the development branch exists and is
   published [T019, Faris].
 - **Spec:** none.
-- **Files:** conflict resolutions, and `.github/CODEOWNERS`
-  (`/e2e/unified-frontend/home/ @netchampfaris`).
+- **Files:** conflict resolutions, `.github/CODEOWNERS`
+  (`/e2e/unified-frontend/home/ @netchampfaris`), `frontend/package.json`,
+  a `vue-tsc` config for the new tree, and
+  `.github/workflows/suite-ci.yml` (typecheck step).
 - **Work:**
   - Merge `upstream/develop` into `forge/drive-layer`. Merge only, never
     rebase [T019]. Do the merge on a stage branch
@@ -300,6 +303,13 @@ stage lands; no rebase [T019].
     `writer/api/general.py` and the two others the merge names) keep
     `forge/drive-layer`'s behavior, then re-apply upstream's intent by
     hand. The Drive spec wins for Drive behavior [T019].
+  - Add `vue-tsc` as a dev dependency, a `typecheck` script in
+    `frontend/package.json`, and a CI step in
+    `.github/workflows/suite-ci.yml`. The check covers the new tree only:
+    `platform/`, `shell/`, `composition/`, `apps/drive/files/`,
+    `apps/drive/client/` and the product `surface/` folders. Legacy trees
+    are excluded. If the new tree has type errors, report the count before
+    fixing any [Faris, 2026-09-29].
   - Record the boundary baseline counts, the budget, and each test count.
 - **Depends on:** the spec and plan are approved.
 - **Exit gate:** every command in Test commands passes on the merged
@@ -447,7 +457,7 @@ stage lands; no rebase [T019].
   Drive Statistics shows totals only until Drive issue 41 ships. A plain
   user's boot shows no Workspace group and no Open Desk. The phone back
   gesture goes tab, list, closed. A misspelled tab id fails the type check
-  (see Open items). No bundle for a tab body loads before its click.
+  (stage 0 adds it). No bundle for a tab body loads before its click.
   `check:bundle-budget` passes.
 
 ### Stage 5. Mail, Meet and Calendar adoption
@@ -490,8 +500,8 @@ stage lands; no rebase [T019].
   - Mail's sign-in pages and `mime-message` stay outside the shell.
 - **Sub-lanes:** Mail, Calendar and Meet run in parallel. The PWA and shell
   part runs last. All three land in one merge.
-- **Depends on:** stages 1, 3 and 4. The gate needs a Mail account (Open
-  items).
+- **Depends on:** stages 1, 3 and 4. The gate needs the local Stalwart
+  test accounts (Open items).
 - **Exit gate:** Mail, Meet and Calendar journeys pass in the shell on
   desktop and phone with `suite_flip_shell` set on the dev site. One
   journey per app checks the standalone chrome with it off: no rail, the
@@ -663,8 +673,8 @@ stage lands; no rebase [T019].
   `apps/drive/files/features/preview/` (Upload new version), journeys in
   `e2e/unified-frontend/files/specs/`.
 - **Work:** the queue and tracker; IndexedDB record for 24 hours; resume with
-  a stored handle or a re-pick check; sha256 on resume through a streaming
-  hasher; chunks up to 16 MB, sequential per file; collision dialog; quota
+  a stored handle or a re-pick check; sha256 on resume through `hash-wasm`,
+  loaded only when an upload resumes [Faris, 2026-09-29]; chunks up to 16 MB, sequential per file; collision dialog; quota
   preflight; 413 banner; folder upload; drop targets; browser replace;
   restore with the same-root picker; batch purge; Empty trash; guest
   uploads through the ring slot from stage 8. Upload folder in New,
@@ -673,7 +683,7 @@ stage lands; no rebase [T019].
   directory (`webkitGetAsEntry().isDirectory`) runs the folder flow into
   the drop target with the same overlay [T021].
 - **Depends on:** stages 1 and 2; stage 8 for the guest ring slot. Drive
-  issue 42 (D11 to D16). The hasher package (Open items).
+  issue 42 (D11 to D16).
 - **Exit gate:** journeys cover a batch upload with a collision, a reload
   mid-upload then Resume, a folder upload started from New and one started
   from a drop, a quota refusal, a restore that needs a destination, Delete
@@ -1114,25 +1124,26 @@ closed and folded (ticket 022); no stage waits on a ticket.
   (`comments`, `versions`). Each designs its signatures under the
   `codebase-design` skill. Blocks nothing outside those stages.
 
-### Owned by the Drive program
+### Owned by Faris
 
 - **Frappe Cloud `storage_driver` allowlist.** Frappe Cloud must allowlist
   `storage_driver` and `storage_driver_config` before production migrates
-  (Drive spec §14.1). Owner: Drive program. Blocks stage 7's deploy.
+  (Drive spec §14.1). Faris takes it to Frappe Cloud [Faris, 2026-09-29].
+  Blocks stage 7's deploy.
 - **Frappe `forge/storage-v2` on `bench-40775`.** Build needs frappe
   `forge/storage-v2` on the production bench. It is not on frappe
-  `upstream/develop`. Owner: Drive program. Blocks stage 7's deploy.
+  `upstream/develop`. Faris arranges it [Faris, 2026-09-29]. Blocks
+  stage 7's deploy.
 
-### Environment approvals
+### Environment
 
-- **Streaming sha256 hasher.** Ticket 007 needs a wasm hasher for resume.
-  No package is chosen. Needs Faris's approval; blocks stage 10 only.
-- **Type gate.** Ticket 016 wants a misspelled tab id to fail at compile
-  time. The frontend has no `vue-tsc` and no typecheck script or CI step.
-  Needs Faris's approval; blocks stage 4 only.
-- **Mail account for journeys.** Administrator on `slides.localhost` has
-  no JMAP account (ACCOUNTING.md). The Mail and Calendar journeys need
-  one. Needs Faris's approval; blocks stages 5 and 7 only.
+- **Mail accounts for journeys.** Administrator on `slides.localhost` has
+  no JMAP account (ACCOUNTING.md). Faris asked for a local Stalwart server
+  with test accounts [Faris, 2026-09-29]. Setup is in progress. Blocks
+  stages 5 and 7 only.
+
+Faris approved `vue-tsc` (stage 0) and `hash-wasm` (stage 10) on
+2026-09-29.
 
 ### Post-launch fog
 
