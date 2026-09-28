@@ -2,7 +2,7 @@
 id: 021
 title: Account menu, Files entry points and icons
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
@@ -27,10 +27,10 @@ Small surface decisions the spec cannot make from the tickets.
 Raised by the spec and plan audits of
 [Draft the spec and plan](015-draft-the-spec-and-plan.md).
 
-## Proposed resolution
+## Resolution
 
-Proposed on 2026-09-29 by a Fable subagent. Pending Faris's answers to the
-irreversible decisions below.
+Resolved on 2026-09-29. A Fable subagent answered the reversible
+questions. Faris answered the icon set.
 
 In short: Upgrade plan and Open Desk both key on the existing `systemManager`
 capability, so the session interface in spec §3.8 does not change. Folder
@@ -120,7 +120,14 @@ frappe-ui's icon-pack plugin makes a later swap to the Figma set a codemod.
     Whatever set Faris picks, a swap touches these lookups and the literal
     names, never markup shape [T006; T009; frappe-ui skill contract 4].
 
-### For Faris (irreversible)
+### Faris's answer
+
+1. **Icon set: lucide.** Faris, 2026-09-29: "lucide". The unified
+   frontend uses frappe-ui's lucide icons on every surface. This overrides
+   the standing Figma rule for this effort. No Figma swap is planned;
+   decision 11 (icon names in one place) stays because it costs nothing.
+
+The question as it was put:
 
 1. **Icon set for the unified frontend.** Every icon in the shell, Files,
    Home and the document title bars is a lucide glyph today, drawn through

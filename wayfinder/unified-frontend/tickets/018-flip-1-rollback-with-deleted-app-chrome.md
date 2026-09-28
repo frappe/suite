@@ -2,7 +2,7 @@
 id: 018
 title: Flip 1 rollback with deleted app chrome
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
@@ -35,10 +35,11 @@ Also decide what the rail shows on `/home`, `/files` and `/d/` while
 signed-in user before flip 2 (spec §14.1); ticket 014 fixes the rail only
 for flip 2 on. Spec open item 24.
 
-## Proposed resolution
+## Resolution
 
-Proposed on 2026-09-29 by a Fable subagent. Pending Faris's answers to the
-irreversible decisions below.
+Resolved on 2026-09-29. A Fable subagent answered every question. Faris
+asked to see only irreversible decisions; the orchestrator judged the one
+open question reversible and decided it (below).
 
 In short: the key is the rollback, so the old chrome stays in code. Mail,
 Calendar and Meet draw their Apps, Settings and Log out entries only while
@@ -146,7 +147,16 @@ Inside the shell the rail and the account menu replace them.
     keeps its state until reload, because the client reads the flag from
     boot only [T014 decision 2].
 
-### For Faris (irreversible)
+### Decided by the orchestrator (was put to Faris)
+
+1. **A temporary rail Apps entry between the flips: option A.** The rail
+   gets an Apps entry that lists Drive, Slides, Writer and Sheets while
+   `suite_flip_shell` is on and `suite_flip_files` is off. It hides at flip
+   2 and goes in the stage 15 deletion commit. Reason: it keeps today's
+   path from Mail to Drive, and one commit or the flag removes it, so it
+   is reversible. Faris may overrule it.
+
+The question as it was put:
 
 1. **A temporary rail Apps entry between the flips.** After flip 1 the
    rail replaces the Apps menu in Mail's, Calendar's and Meet's sidebar

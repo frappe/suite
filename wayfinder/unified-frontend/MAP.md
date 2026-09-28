@@ -95,6 +95,19 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md) —
+  lucide on every surface (Faris). Upgrade plan and Open Desk show to
+  system managers only; Upgrade plan waits on ask S5. The Files New menu
+  gains Upload folder and From template; a dropped OS folder runs the
+  folder upload flow.
+
+- [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md) —
+  The key is the rollback, so Mail, Calendar and Meet keep their
+  standalone chrome in code and draw it only outside the shell; it goes
+  with the keys at deletion. The rail lists an area only when its flip is
+  on, plus a temporary Apps entry for the old Drive, Writer, Sheets and
+  Slides pages between the flips.
+
 - [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
   Both documents are drafted and audited against every resolution: the
   spec in 16 sections with an ask table and 24 open items, the plan in 16
