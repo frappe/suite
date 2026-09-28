@@ -5,7 +5,7 @@ Created: 2026-09-05. Implementation has not started.
 Keep all Drive planning and tracking documents under `wayfinder/drive-layer-spec/`.
 This directory holds implementation tickets; `../tickets/` holds historical design decisions.
 
-46 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), one open defect (38), two asks raised by unified frontend ticket 017 (39, 40), and six asks filed by unified frontend ticket 019 (41 to 46).
+47 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), one open defect (38), two asks raised by unified frontend ticket 017 (39, 40), six asks filed by unified frontend ticket 019 (41 to 46), and one ask from the unified frontend critical decisions review (47).
 `ready-for-agent` describes triage. Blocking edges and execution gates still apply.
 
 ## Sources
@@ -164,6 +164,7 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [44 — List inherited grants, keep a link's password on update, and send share email](issues/44-inherited-grants-passwords-and-share-email.md) | Suite Drive engine and HTTP | [22](issues/22-http-sharing-and-records.md) | ready-for-agent |
 | [45 — Count every legacy `suite.drive.api.*` call by name and user agent](issues/45-legacy-call-counter.md) | Suite Drive HTTP compatibility | [23](issues/23-legacy-compatibility.md) | ready-for-agent |
 | [46 — Carry `favourite` on the node shape and accept an expected `modified` on PATCH](issues/46-node-shape-favourite-and-expected-modified.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
+| [47 — Filter the recents view by content doctype](issues/47-recents-content-doctype-filter.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
 
 Tickets 39 and 40 are asks raised by unified frontend ticket
 [017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md):
@@ -175,7 +176,12 @@ spec §15.1, filed by ticket
 Each names its asks, the unified ticket that raised them, and the unified
 plan stage that waits on it: 41 (D10; stage 4), 42 (D11 to D16; stage 10),
 43 (D17, D24, D25; stages 8, 9, 12, 13), 44 (D19 to D23; stage 9), 45 (D26;
-stages 12, 14), 46 (D27, D28; no stage). D18 is withdrawn and has no ticket.
+stages 7, 12, 14), 46 (D27, D28; no stage). D18 is withdrawn and has no ticket.
+
+Ticket 47 is ask D31, filed by the unified frontend critical decisions
+review of 2026-09-29 (ticket
+[022](../../unified-frontend/tickets/022-fold-decisions-into-the-spec-and-plan.md)).
+Unified plan stage 11 waits on it for the Recent type filter.
 
 ## Coverage
 
@@ -186,10 +192,10 @@ stages 12, 14), 46 (D27, D28; no stage). D18 is withdrawn and has no ticket.
 | Roles, links, passwords, removal versus deny, expiry retention | 07–08, 19–20, 22, 33–34, 43–44 |
 | Quota, reservations, root administration, offboarding | 10–11, 15, 21, 29, 41 |
 | Node lifecycle, upload, explicit restore, copy | 10–11, 16, 21, 25, 32, 42 |
-| Versions, previews, comments, activity, personal lists | 08, 10, 12–14, 22, 28–29, 46 |
+| Versions, previews, comments, activity, personal lists | 08, 10, 12–14, 22, 28–29, 46–47 |
 | Content contracts, Writer, Slides, Sheets, Satellites | 16–20, 28, 34 |
 | All five daily jobs | 11–16, 30 |
-| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34, 39, 41–46 |
+| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34, 39, 41–47 |
 | WebDAV, hidden content files, ordinary office files | 24–25 |
 | Seven framework asks | 02–06; 03 covers asks 2 and 7, 04 covers asks 3 and 5 |
 | Additive Build, mappings, report, rollback evidence | 26–31 |

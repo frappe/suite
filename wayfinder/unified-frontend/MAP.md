@@ -101,7 +101,9 @@ Scope, decided 2026-09-11:
   and [`unified-frontend-plan.md`](unified-frontend-plan.md) carry every
   decision, audited twice. Faris approved `vue-tsc` and `hash-wasm`. The
   local Stalwart test accounts and two production prerequisites (Faris's)
-  block later stages only.
+  block later stages only. The critical decisions review of 2026-09-29
+  made the release one `develop` release for Build and stages 0 to 12,
+  fixes forward, and makes error tracking block that release.
 
 - [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
   No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only
@@ -120,8 +122,9 @@ Scope, decided 2026-09-11:
 
 - [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md) —
   One development branch, `forge/drive-layer`, merge only (Faris; merged
-  and pushed as `a8cb8ff6e`). Build and stages 0 to 6 reach `develop` in
-  one release with both keys off; later stages follow in later releases.
+  and pushed as `a8cb8ff6e`). One `develop` release carries Build and
+  stages 0 to 12 with both keys off; flip 1 and then flip 2 follow on it
+  (Faris, 2026-09-29, replacing the orchestrator's earlier reading).
   Faris sets the keys on Frappe Cloud by hand. Drive asks D10 to D28 are
   Drive issues 41 to 46.
 
@@ -132,11 +135,13 @@ Scope, decided 2026-09-11:
   folder upload flow.
 
 - [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md) —
-  The key is the rollback, so Mail, Calendar and Meet keep their
-  standalone chrome in code and draw it only outside the shell; it goes
-  with the keys at deletion. The rail lists an area only when its flip is
-  on, plus a temporary Apps entry for the old Drive, Writer, Sheets and
-  Slides pages between the flips.
+  Mail, Calendar and Meet keep their standalone chrome in code and draw
+  it only outside the shell; it goes with the keys at deletion. On
+  2026-09-29 Faris ruled that the keys turn areas on in order and are not
+  the rollback plan: bugs are fixed forward. The rail lists an area only when its flip is
+  on. Between the flips a temporary Apps submenu in the avatar menu lists
+  the old Drive, Writer, Sheets and Slides pages (Faris moved it from the
+  rail on 2026-09-29).
 
 - [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
   Both documents are drafted and audited against every resolution: the
@@ -148,10 +153,11 @@ Scope, decided 2026-09-11:
 - [Rollout, redirects and old-page deletion](tickets/014-rollout-redirects-and-old-page-deletion.md) —
   Two flips, each one `frappe.conf` key: the shell with Mail, Meet and
   Calendar, then Home, Files and documents. One server redirect table
-  (302 until deletion, then 301) keeps old links working forever; one
-  `node_url` helper builds every server link. Old pages go in one commit
-  after flip 2 holds a release with a legacy-call counter at zero, which is
-  the evidence Drive Cleanup needs. One Drive ask: that counter.
+  keeps old links working forever with 302s (Faris dropped the 301 on
+  2026-09-29); one `node_url` helper builds every server link. Old pages
+  go in one commit after flip 2 holds a release with a legacy-call counter
+  at zero, which is the evidence Drive Cleanup needs. One Drive ask: that
+  counter.
 
 - [Settings dialog groups and account surfaces](tickets/016-settings-dialog-and-account-surfaces.md) —
   Products hand settings to one composition list; one heading per product
@@ -256,12 +262,13 @@ Scope, decided 2026-09-11:
   page-to-shell seam.
 
 - [Route grammar](tickets/001-route-grammar.md) — canonical areas are
-  `/home`, `/files`, `/mail`, and `/calendar`; `/` redirects to `/home`;
-  roots use memorable `/files` and `/files/organization` routes, folders use
-  `/files/f/<node-id>/<decorative-slug>`, and content uses
+  `/home`, `/drive`, `/mail`, and `/calendar`; `/` redirects to `/home`;
+  roots use memorable `/drive` and `/drive/organization` routes, folders use
+  `/drive/f/<node-id>/<decorative-slug>`, and content uses
   `/d/<node-id>/<decorative-slug>`; saved views are paths; `/l/<token>` is a
   temporary credential-entry route; typed route metadata controls the shell
-  and unauthenticated visitors use the Guest surface.
+  and unauthenticated visitors use the Guest surface. Ticket 020 renamed the
+  `/files` prefix to `/drive`.
 
 - [frappe-ui shell component gap](tickets/004-frappe-ui-shell-component-gap.md) —
   no gap: all 28 prototype components exist at suite's pin; no bump needed;
