@@ -26,7 +26,7 @@ vi.mock("frappe-ui", () => ({
 	useCall: (options: { url: string }) => ({
 		loading: false,
 		submit: vi.fn(async (params: { meeting_id: string; request_id?: string }) => {
-			if (options.url.endsWith(".start")) {
+			if (options.url.endsWith("/recordings/starts")) {
 				mocks.startParams.push(params as { meeting_id: string; request_id: string });
 				mocks.startCount += 1;
 				if (mocks.startResults.length) return mocks.startResults.shift();
@@ -36,12 +36,12 @@ vi.mock("frappe-ui", () => ({
 					state_revision: mocks.startCount,
 				};
 			}
-			if (options.url.endsWith(".stop")) {
+			if (options.url.endsWith("/recordings/stops")) {
 				mocks.stopped = true;
 				return { name: "recording", status: "Stopping", state_revision: 3 };
 			}
-			if (options.url.endsWith(".get_preflight")) return { eligible: true };
-			if (options.url.endsWith(".get_state")) {
+			if (options.url.endsWith("/recordings/preflight")) return { eligible: true };
+			if (options.url.endsWith("/recordings/state")) {
 				mocks.getStateCount += 1;
 				if (mocks.getStateResults.length) {
 					const result = await mocks.getStateResults.shift();

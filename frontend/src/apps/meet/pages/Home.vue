@@ -216,14 +216,14 @@ const firstName = computed(() => {
 	return name.split(" ")[0] || "there";
 });
 
-const createMeeting = useCall<string, { meeting_type: "open" | "restricted" }>({
-	url: "/api/v2/method/suite.meet.api.meeting.create",
+const createMeeting = useCall<{ code: string; url: string }, { type: "instant" | "restricted" }>({
+	url: "/api/suite/meet/rooms",
 	method: "POST",
 	immediate: false,
-	onSuccess: (meeting_code: string) => {
+	onSuccess: ({ code }: { code: string; url: string }) => {
 		router.push({
 			name: "meet-meeting",
-			params: { meetingId: meeting_code },
+			params: { meetingId: code },
 		});
 		connectionState.justCreated = true;
 	},
@@ -274,7 +274,7 @@ const scheduledParticipants = computed(() => {
 });
 
 const scheduleMeeting = useCall({
-	url: "/api/v2/method/suite.meet.api.schedule.create_scheduled_meeting",
+	url: "/api/suite/meet/calendar-meetings",
 	method: "POST",
 	params: () => ({
 		account: calendarStore.accountId,
@@ -298,8 +298,8 @@ const scheduleMeeting = useCall({
 
 const startMeeting = (meetingType: "open" | "restricted") => {
 	const toastId = toast.loading("Creating meeting...");
-	submit(createMeeting, { meeting_type: meetingType })
-		.then((meetingCode: string) => {
+	submit(createMeeting, { type: meetingType === "open" ? "instant" : "restricted" })
+		.then(({ code: meetingCode }) => {
 			toast.dismiss(toastId);
 			toast.success("Meeting created successfully!", {
 				duration: 8000,
