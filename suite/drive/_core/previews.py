@@ -13,7 +13,6 @@ from PIL import Image, ImageOps
 
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import _node
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT
 from suite.drive._core.roots import reject_illegal_root_operation
@@ -167,6 +166,8 @@ def render(node: str) -> None:
 
 def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: str) -> None:
     """Replace one document preview under EDIT without touching its node."""
+    from suite.drive._core.nodes import _node
+
     current = _node(node)
     require(current, EDIT, principals)
     reject_illegal_root_operation(current, "preview")
@@ -327,6 +328,8 @@ def _encode_image(image: Image.Image, longest_side: int) -> bytes:
 
 
 def _publish_rendered(node: str, source_blob: str, preview_blob: str) -> bool:
+    from suite.drive._core.nodes import _node
+
     try:
         current = _node(node, for_update=True)
     except DriveNotFound:
