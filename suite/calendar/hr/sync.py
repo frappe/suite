@@ -101,7 +101,7 @@ def _run() -> dict:
 
     plans = []
     if settings.sync_holidays:
-        for holiday_list, audience in _holiday_lists(settings, source, employees, date.today()).items():
+        for holiday_list, audience in holiday_audiences(settings, source, employees, date.today()).items():
             events = holiday_events(holiday_list, source.holidays(holiday_list))
             key = f"{HOLIDAYS_KEY}{holiday_list}"
             plans.append(Plan(key, holiday_list, settings.holidays_color, False, events, audience))
@@ -138,7 +138,7 @@ def _reconcile(plans: list[Plan]) -> dict:
     summary = {}
     # Asked once for the run: the same few thousand addresses are the audience of every calendar
     # on a single-company site, and a query per calendar would ask about all of them each time.
-    users = _site_users(email for plan in plans for email in plan.audience)
+    users = site_users(email for plan in plans for email in plan.audience)
 
     for plan in plans:
         calendar = upsert_calendar(
@@ -160,7 +160,7 @@ def _reconcile(plans: list[Plan]) -> dict:
     return summary
 
 
-def _site_users(emails: Iterable[str | None]) -> set[str]:
+def site_users(emails: Iterable[str | None]) -> set[str]:
     """The people HR named, as users of this site.
 
     HR knows an employee by the address they log in to HR with; the same address is their user
@@ -190,7 +190,7 @@ def _by_company(name: str, employees: list[dict]) -> dict[str, tuple[str, list[d
     }
 
 
-def _holiday_lists(settings, source: HRSource, employees: list[dict], today: date) -> dict[str, list[str]]:
+def holiday_audiences(settings, source: HRSource, employees: list[dict], today: date) -> dict[str, list[str]]:
     """Which holiday lists to draw, and whose calendar each belongs on.
 
     Asked the way HR itself resolves them, so a list is drawn for exactly the people it applies

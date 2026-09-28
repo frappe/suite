@@ -30,7 +30,7 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 					<p>${__('Employees')}: <b>${message.employees}</b>
 					(${__('with birth date')}: ${message.with_birth_date},
 					${__('with joining date')}: ${message.with_joining_date},
-					${__('with an address this site knows')}: ${message.with_mail_address})</p>
+					${__('with an address this site knows')}: ${message.known_here})</p>
 					<p>${__('Holiday lists')}: ${frappe.utils.escape_html(message.holiday_lists.join(', ') || '—')}</p>
 					${unknown && `<p class="text-danger">${__('Not among them, so never synced')}: ${unknown}</p>`}
 					<p>${__('Who follows which, by Holiday List Assignment')}: ${followers || '—'}</p>

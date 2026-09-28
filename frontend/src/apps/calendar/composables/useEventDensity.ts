@@ -3,7 +3,7 @@ import { createResource } from 'frappe-ui'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
-import { isOnAShownCalendar } from '@/apps/calendar/utils/calendars'
+import { onShownCalendar } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore } from '@/apps/calendar/stores/user'
 
@@ -135,7 +135,7 @@ export const useEventDensity = (
 		// ticked again without asking for the month a second time.
 		events: computed(() =>
 			(byMonth.value[key.value] ?? [])
-				.filter((row) => isOnAShownCalendar(row, store.calendars.data))
+				.filter(onShownCalendar(store.calendars.data))
 				.map((row) => toGridEvent(row, color)),
 		),
 	}

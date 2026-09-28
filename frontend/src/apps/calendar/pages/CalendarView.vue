@@ -9,7 +9,11 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
-import { calendarColor as colorOf, canEditEvent } from '@/apps/calendar/utils/calendars'
+import {
+	calendarColor as colorOf,
+	canEditEvent,
+	onShownCalendar,
+} from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -291,9 +295,7 @@ const getEventRole = (event) => {
 const { calendars } = store
 
 // Which calendars are drawn is the calendar's own `visible`, set from the sidebar.
-const visibleCalendars = computed(
-	() => new Set(calendars.data?.filter((cal) => cal.visible).map((cal) => cal.name)),
-)
+const onVisibleCalendar = computed(() => onShownCalendar(calendars.data))
 watch(
 	() => calendars.error,
 	(error) => error && raiseToast(error.message, 'error'),
@@ -416,15 +418,12 @@ const eventsPending = computed(
 	() => events.loading || (!events.data && !events.error),
 )
 
-const onVisibleCalendar = (event) =>
-	event.calendars.some((c) => visibleCalendars.value.has(c.calendar))
-
 const visibleEvents = computed(
-	() => events.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+	() => events.data?.filter(onVisibleCalendar.value).map(withCalendarColor) || [],
 )
 
 const visibleTodayEvents = computed(
-	() => todayEvents.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+	() => todayEvents.data?.filter(onVisibleCalendar.value).map(withCalendarColor) || [],
 )
 
 const showEditEvent = ref(false)

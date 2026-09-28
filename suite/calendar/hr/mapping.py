@@ -38,23 +38,10 @@ def birthday_events(employees: list[dict]) -> list[dict]:
     year the reader looks at, so an anchor that followed the calendar would rewrite every
     birthday each January for nothing."""
 
-    events = []
-    for employee in employees:
-        born = _day(employee.get("date_of_birth"))
-        if not born:
-            continue
-        events.append(
-            {
-                "uid": f"hr-birthday-{employee['name']}",
-                "title": f"{employee['employee_name']}'s birthday",
-                "repeats": "Yearly",
-                # The day they were born, not the day the series is anchored on: anchored in a
-                # year without a 29 February, a leap-day birthday is still a leap-day birthday.
-                "month_day": born[5:10],
-                **_all_day(born),
-            }
-        )
-    return events
+    return [
+        _yearly(employee, "birthday", "birthday", born, anchor=born)
+        for employee, born in _dated(employees, "date_of_birth")
+    ]
 
 
 def anniversary_events(employees: list[dict]) -> list[dict]:
@@ -65,23 +52,47 @@ def anniversary_events(employees: list[dict]) -> list[dict]:
     to mark, and after it the store draws one a year.
     """
 
-    events = []
-    for employee in employees:
-        joined = _day(employee.get("date_of_joining"))
-        if not joined:
-            continue
-        first = yearly_occurrence(joined[5:10], int(joined[:4]) + 1)
-        events.append(
-            {
-                "uid": f"hr-anniversary-{employee['name']}",
-                "title": f"{employee['employee_name']}'s work anniversary",
-                "description": f"Joined on {_written_out(joined)}",
-                "repeats": "Yearly",
-                "month_day": joined[5:10],
-                **_all_day(first.isoformat()),
-            }
+    return [
+        _yearly(
+            employee,
+            "anniversary",
+            "work anniversary",
+            joined,
+            anchor=yearly_occurrence(joined[5:10], int(joined[:4]) + 1).isoformat(),
+            description=f"Joined on {_written_out(joined)}",
         )
-    return events
+        for employee, joined in _dated(employees, "date_of_joining")
+    ]
+
+
+def _dated(employees: list[dict], field: str):
+    """Each employee with a date in `field`, as (employee, ISO day). One without is skipped."""
+
+    for employee in employees:
+        if day := _day(employee.get(field)):
+            yield employee, day
+
+
+def _yearly(
+    employee: dict, kind: str, what: str, day: str, anchor: str, description: str | None = None
+) -> dict:
+    """One yearly event of an employee's: `kind` names it in the uid, `what` in the title, `day`
+    is the date it falls on and `anchor` the first occurrence.
+
+    The day is stated apart from the anchor on purpose: anchored in a year without a 29
+    February, a leap-day birthday is still a leap-day birthday.
+    """
+
+    event = {
+        "uid": f"hr-{kind}-{employee['name']}",
+        "title": f"{employee['employee_name']}'s {what}",
+        "repeats": "Yearly",
+        "month_day": day[5:10],
+        **_all_day(anchor),
+    }
+    if description:
+        event["description"] = description
+    return event
 
 
 def _all_day(day: str) -> dict:

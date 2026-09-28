@@ -82,18 +82,18 @@ class HRCalendarSyncSettings(Document):
         return saved_settings()._test_connection()
 
     def _test_connection(self) -> dict:
-        from suite.calendar.hr.sync import SOURCE, _holiday_lists, _site_users
+        from suite.calendar.hr.sync import SOURCE, holiday_audiences, site_users
 
         source = self.hr_source()
         employees = source.employees()
-        followers = _holiday_lists(self, source, employees, date.today())
+        followers = holiday_audiences(self, source, employees, date.today())
         holiday_lists = source.holiday_lists()
         return {
             "employees": len(employees),
             "with_birth_date": sum(1 for employee in employees if employee.get("date_of_birth")),
             "with_joining_date": sum(1 for employee in employees if employee.get("date_of_joining")),
             # Who HR named that this site knows: anyone else has nowhere to be shown a calendar.
-            "with_mail_address": len(_site_users([employee.get("user_id") for employee in employees])),
+            "known_here": len(site_users([employee.get("user_id") for employee in employees])),
             "holiday_lists": holiday_lists,
             # Typed by hand, and a name HR doesn't have would quietly sync nothing.
             "unknown_holiday_lists": sorted(self.chosen_holiday_lists() - set(holiday_lists)),
@@ -109,7 +109,10 @@ class HRCalendarSyncSettings(Document):
     def sync_now(self) -> None:
         """Runs the sync in the background: it reads HR and writes a calendar per holiday list,
         which is more than a web worker should be held open for. What it did lands in Last Sync,
-        or in Last Error."""
+        or in Last Error.
+
+        Nothing sent with the request is used: the job reads the settings as saved, so unlike
+        Test Connection there is no document to fetch here, only the permission to check."""
 
         self.check_permission("write")
         frappe.enqueue(

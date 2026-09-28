@@ -24,32 +24,26 @@ export type CalendarRow = {
 }
 
 /**
- * Whether a calendar shared read-only is drawn in this browser. Most are until hidden; one
- * that starts hidden is not until shown — so each has the list that records the choice made
- * against its default.
+ * Whether a calendar shared read-only is drawn in this browser: as the reader last set it,
+ * else as it starts — shown, unless it is one that starts hidden.
  */
 export const sharedCalendarVisible = (
 	calendar: CalendarRow,
-	hidden: string[],
-	shown: string[],
-): boolean =>
-	calendar.default_hidden ? shown.includes(calendar.name) : !hidden.includes(calendar.name)
+	chosen: Record<string, 0 | 1>,
+): boolean => !!(chosen[calendar.name] ?? (calendar.default_hidden ? 0 : 1))
 
 /**
- * Whether an event is drawn at all: it sits on a calendar the reader has switched on. Used for
- * the mini month's ticks, which come from their own call and so carry no calendar of their own.
- * An event on a calendar the list does not know — before it loads — is drawn, as the grid draws
- * it: a tick a moment early beats a month that looks empty.
+ * Whether an event is drawn: it sits on a calendar the reader has switched on. One predicate
+ * for the grid and for the mini month's ticks, which come from their own call and name their
+ * calendars rather than carry them. An event on a calendar the list does not know — before it
+ * loads — is drawn, as `canEditEvent` leaves one editable: a tick a moment early beats a month
+ * that looks empty.
  */
-export const isOnAShownCalendar = (
-	event: { calendars: string[] },
-	calendars: CalendarRow[] | undefined,
-): boolean =>
-	!calendars?.length ||
-	event.calendars.some((name) => {
-		const row = calendars.find((cal) => cal.name === name)
-		return !row || !!row.visible
-	})
+export const onShownCalendar = (calendars: CalendarRow[] | undefined) => {
+	const hidden = new Set(calendars?.filter((cal) => !cal.visible).map((cal) => cal.name))
+	return (event: { calendars: ({ calendar: string } | string)[] }): boolean =>
+		event.calendars.some((c) => !hidden.has(typeof c === 'string' ? c : c.calendar))
+}
 
 /**
  * The colours a calendar can be given here, as the hex saved on it.

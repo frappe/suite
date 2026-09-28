@@ -40,12 +40,7 @@ export const useCalendarActions = () => {
 		const visible = calendar.visible ? 0 : 1
 		calendar.visible = visible
 		if (!calendar.may_write_all) {
-			// Each list holds the choices made against a default: hidden, for a calendar that
-			// starts shown; shown, for one that starts hidden.
-			const list = calendar.default_hidden ? 'shownShared' : 'hiddenShared'
-			const listed = calendar.default_hidden ? !!visible : !visible
-			const others = store[list].filter((name) => name !== calendar.name)
-			store[list] = listed ? [...others, calendar.name] : others
+			store.sharedVisibility = { ...store.sharedVisibility, [calendar.name]: visible }
 			return
 		}
 		createResource({

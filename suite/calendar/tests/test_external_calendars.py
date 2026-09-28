@@ -10,14 +10,9 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from suite.calendar import external
 from suite.calendar.doctype.external_calendar.external_calendar import ExternalCalendar
 from suite.calendar.external import _differs, _occurrences, yearly_occurrence
+from suite.calendar.tests.fixtures import HOLIDAY
+from suite.tests.utils import ensure_user
 
-HOLIDAY = {
-    "uid": "hr-holiday-India 2026-2026-10-02",
-    "title": "Gandhi Jayanti",
-    "starts_on": "2026-10-02 00:00:00",
-    "ends_on": "2026-10-03 00:00:00",
-    "all_day": True,
-}
 STORED = frappe._dict(
     uid=HOLIDAY["uid"],
     title="Gandhi Jayanti",
@@ -138,8 +133,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.user = self.a_user("holiday-reader@calendar.test")
-        self.stranger = self.a_user("stranger@calendar.test")
+        self.user = ensure_user("holiday-reader@calendar.test")
+        self.stranger = ensure_user("stranger@calendar.test")
         self.calendar = external.upsert_calendar(
             "Test HR", "holidays:India 2026", "India 2026", color="#123456"
         )
@@ -148,21 +143,6 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
     def forget(self, calendar: str) -> None:
         if frappe.db.exists("External Calendar", calendar):
             external.remove_calendar(calendar)
-
-    def a_user(self, email: str) -> str:
-        frappe.delete_doc("User", email, force=True, ignore_permissions=True, ignore_missing=True)
-        self.addCleanup(
-            frappe.delete_doc, "User", email, force=True, ignore_permissions=True, ignore_missing=True
-        )
-        user = frappe.get_doc(
-            {
-                "doctype": "User",
-                "email": email,
-                "first_name": email.split("@")[0],
-                "send_welcome_email": 0,
-            }
-        ).insert(ignore_permissions=True)
-        return user.name
 
     holiday = HOLIDAY
 

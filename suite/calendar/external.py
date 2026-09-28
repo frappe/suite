@@ -342,23 +342,7 @@ def replace_audience(calendar: str, users: Iterable[str]) -> int:
         frappe.db.delete("External Calendar Audience", {"name": ("in", gone)})
 
     if added := sorted(wanted - set(stored)):
-        stamp = now_datetime()
-        frappe.db.bulk_insert(
-            "External Calendar Audience",
-            ["name", "calendar", "user", "creation", "modified", "owner", "modified_by"],
-            [
-                [
-                    frappe.generate_hash(length=10),
-                    calendar,
-                    user,
-                    stamp,
-                    stamp,
-                    "Administrator",
-                    "Administrator",
-                ]
-                for user in added
-            ],
-        )
+        _bulk_insert("External Calendar Audience", ["calendar", "user"], [[calendar, user] for user in added])
     return len(wanted)
 
 
@@ -378,30 +362,26 @@ def remove_calendar(calendar: str) -> None:
 
 
 def _insert_events(calendar: str, events: list[dict]) -> None:
-    """Straight into the table: these rows are the source's, written by the hundred, and nothing
-    hangs off saving one."""
-
-    if not events:
-        return
-
-    stamp = now_datetime()
-    fields = ["name", "calendar", "uid", *EVENT_FIELDS, "creation", "modified", "owner", "modified_by"]
     rows = []
     for event in events:
         values = _stored_values(event)
-        rows.append(
-            [
-                str(uuid7()),
-                calendar,
-                event["uid"],
-                *[values[field] for field in EVENT_FIELDS],
-                stamp,
-                stamp,
-                "Administrator",
-                "Administrator",
-            ]
-        )
-    frappe.db.bulk_insert("External Calendar Event", fields, rows)
+        rows.append([calendar, event["uid"], *[values[field] for field in EVENT_FIELDS]])
+    _bulk_insert("External Calendar Event", ["calendar", "uid", *EVENT_FIELDS], rows)
+
+
+def _bulk_insert(doctype: str, fields: list[str], rows: list[list]) -> None:
+    """Straight into the table, named and stamped as a save would: these rows are the source's,
+    written by the hundred, and nothing hangs off saving one."""
+
+    if not rows:
+        return
+
+    stamp = now_datetime()
+    frappe.db.bulk_insert(
+        doctype,
+        ["name", *fields, "creation", "modified", "owner", "modified_by"],
+        [[str(uuid7()), *row, stamp, stamp, "Administrator", "Administrator"] for row in rows],
+    )
 
 
 def _stored_values(event: dict) -> dict:

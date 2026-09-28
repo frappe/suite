@@ -13,15 +13,10 @@ from suite.calendar.hr import sync as hr_sync
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events
 from suite.calendar.hr.source import HRSource, validate_site_url
 from suite.calendar.hr.sync import _by_company
+from suite.calendar.tests.fixtures import HOLIDAY
+from suite.tests.utils import ensure_user
 
 TODAY = date(2026, 9, 18)
-HOLIDAY = {
-    "uid": "hr-holiday-India 2026-2026-10-02",
-    "title": "Gandhi Jayanti",
-    "starts_on": "2026-10-02 00:00:00",
-    "ends_on": "2026-10-03 00:00:00",
-    "all_day": True,
-}
 # Not "Frappe HR": what this site's real sync keeps is not these tests' to reconcile away.
 TEST_SOURCE = "Test HR Sync"
 
@@ -275,7 +270,7 @@ class UnitTestWhoFollowsAHolidayList(UnitTestCase):
     def holiday_lists(self, source: MagicMock, staff: list[dict]) -> dict:
         settings = MagicMock()
         settings.chosen_holiday_lists.return_value = set()
-        return hr_sync._holiday_lists(settings, source, staff, TODAY)
+        return hr_sync.holiday_audiences(settings, source, staff, TODAY)
 
     def test_the_fields_hr_left_behind_are_not_read(self):
         source = MagicMock()
@@ -379,30 +374,8 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.employee = self.a_user("employee@calendar.test")
-        self.retired = self.a_user("retired@calendar.test", enabled=0)
-        self.addCleanup(self.forget)
-
-    def forget(self) -> None:
-        for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
-            external.remove_calendar(name)
-
-    def a_user(self, email: str, enabled: int = 1) -> str:
-        frappe.delete_doc("User", email, force=True, ignore_permissions=True, ignore_missing=True)
-        self.addCleanup(
-            frappe.delete_doc, "User", email, force=True, ignore_permissions=True, ignore_missing=True
-        )
-        user = frappe.get_doc(
-            {
-                "doctype": "User",
-                "email": email,
-                "first_name": email.split("@")[0],
-                "send_welcome_email": 0,
-            }
-        ).insert(ignore_permissions=True)
-        if not enabled:
-            frappe.db.set_value("User", user.name, "enabled", 0)
-        return user.name
+        self.employee = ensure_user("employee@calendar.test")
+        self.retired = ensure_user("retired@calendar.test", enabled=False)
 
     def reconcile(self, audience: list[str | None]) -> dict:
         plan = hr_sync.Plan(
@@ -414,7 +387,7 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
             audience=audience,
         )
         # Under a source of its own: a run reconciles away every calendar of its source that is
-        # not in the plan, and a site this runs on may have the real sync's calendars on it.
+        # not in the plan, and the test is one rollback away from the real sync's calendars.
         with patch.object(hr_sync, "SOURCE", TEST_SOURCE):
             return hr_sync._reconcile([plan])
 

@@ -5,7 +5,7 @@ import {
 	canEditEvent,
 	defaultCalendar,
 	destinationOptions,
-	isOnAShownCalendar,
+	onShownCalendar,
 	sharedCalendarVisible,
 } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
@@ -86,38 +86,49 @@ describe('canEditEvent', () => {
 })
 
 describe('sharedCalendarVisible', () => {
+	const holidays = cal('holidays', { may_write_all: 0 })
+	const celebrations = cal('celebrations', { may_write_all: 0, default_hidden: 1 })
+
 	it('draws a shared calendar until it is hidden', () => {
-		const holidays = cal('holidays', { may_write_all: 0 })
-		expect(sharedCalendarVisible(holidays, [], [])).toBe(true)
-		expect(sharedCalendarVisible(holidays, ['acc|holidays'], [])).toBe(false)
+		expect(sharedCalendarVisible(holidays, {})).toBe(true)
+		expect(sharedCalendarVisible(holidays, { 'acc|holidays': 0 })).toBe(false)
 	})
 
 	it('leaves one that starts hidden undrawn until it is shown', () => {
-		const celebrations = cal('celebrations', { may_write_all: 0, default_hidden: 1 })
-		expect(sharedCalendarVisible(celebrations, [], [])).toBe(false)
-		expect(sharedCalendarVisible(celebrations, [], ['acc|celebrations'])).toBe(true)
-		// hidden is the other kind's list, and says nothing of this one
-		expect(sharedCalendarVisible(celebrations, ['acc|celebrations'], ['acc|celebrations'])).toBe(true)
+		expect(sharedCalendarVisible(celebrations, {})).toBe(false)
+		expect(sharedCalendarVisible(celebrations, { 'acc|celebrations': 1 })).toBe(true)
+	})
+
+	it("is the reader's choice whichever way it started", () => {
+		expect(sharedCalendarVisible(holidays, { 'acc|holidays': 1 })).toBe(true)
+		expect(sharedCalendarVisible(celebrations, { 'acc|celebrations': 0 })).toBe(false)
+		// a choice about another calendar says nothing of this one
+		expect(sharedCalendarVisible(celebrations, { 'acc|holidays': 1 })).toBe(false)
 	})
 })
 
-describe('isOnAShownCalendar', () => {
-	const rows = [cal('mine'), cal('celebrations', { may_write_all: 0, visible: 0 })]
+describe('onShownCalendar', () => {
+	const drawn = onShownCalendar([
+		cal('mine'),
+		cal('celebrations', { may_write_all: 0, visible: 0 }),
+	])
 
-	it('ticks a day whose event is on a calendar being drawn', () => {
-		expect(isOnAShownCalendar({ calendars: ['acc|mine'] }, rows)).toBe(true)
+	it('draws an event on a calendar being shown, named or carried', () => {
+		expect(drawn({ calendars: ['acc|mine'] })).toBe(true)
+		expect(drawn({ calendars: [{ calendar: 'acc|mine' }] })).toBe(true)
 	})
 
-	it('leaves a switched-off calendar out of the ticks', () => {
-		expect(isOnAShownCalendar({ calendars: ['acc|celebrations'] }, rows)).toBe(false)
+	it('leaves a switched-off calendar out', () => {
+		expect(drawn({ calendars: ['acc|celebrations'] })).toBe(false)
+		expect(drawn({ calendars: [{ calendar: 'acc|celebrations' }] })).toBe(false)
 	})
 
-	it('ticks an event on a calendar the list does not know yet', () => {
-		expect(isOnAShownCalendar({ calendars: ['acc|elsewhere'] }, rows)).toBe(true)
-		expect(isOnAShownCalendar({ calendars: ['acc|celebrations'] }, undefined)).toBe(true)
+	it('draws an event on a calendar the list does not know yet', () => {
+		expect(drawn({ calendars: ['acc|elsewhere'] })).toBe(true)
+		expect(onShownCalendar(undefined)({ calendars: ['acc|celebrations'] })).toBe(true)
 	})
 
-	it('ticks an event on two calendars where either is drawn', () => {
-		expect(isOnAShownCalendar({ calendars: ['acc|celebrations', 'acc|mine'] }, rows)).toBe(true)
+	it('draws an event on two calendars where either is shown', () => {
+		expect(drawn({ calendars: ['acc|celebrations', 'acc|mine'] })).toBe(true)
 	})
 })

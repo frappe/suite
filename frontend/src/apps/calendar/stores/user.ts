@@ -89,7 +89,7 @@ export const userStore = defineStore('calendar-user', () => {
 					? cal
 					: {
 							...cal,
-							visible: sharedCalendarVisible(cal, hiddenShared.value, shownShared.value) ? 1 : 0,
+							visible: sharedCalendarVisible(cal, sharedVisibility.value) ? 1 : 0,
 						},
 			),
 	})
@@ -97,9 +97,8 @@ export const userStore = defineStore('calendar-user', () => {
 	// Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
 	// someone who can write to it change — so a calendar shared read-only is hidden in this
 	// browser instead.
-	const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
-	// And the other way for one that starts out hidden: shown in this browser once ticked.
-	const shownShared = useStorage<string[]>('calendar-shown-shared', [])
+	// The reader's choice by calendar, kept only where they made one; the rest draw as they start.
+	const sharedVisibility = useStorage<Record<string, 0 | 1>>('calendar-shared-visibility', {})
 
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.
@@ -144,8 +143,7 @@ export const userStore = defineStore('calendar-user', () => {
 		identities,
 		participantIdentities,
 		calendars,
-		hiddenShared,
-		shownShared,
+		sharedVisibility,
 		calendarOptions,
 		accountCalendarOptions,
 		organizerIdentity,
