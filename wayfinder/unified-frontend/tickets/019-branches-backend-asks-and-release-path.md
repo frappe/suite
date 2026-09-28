@@ -3,7 +3,7 @@ id: 019
 title: Branches, backend asks and the release path
 label: wayfinder:grilling
 status: open
-assignee:
+assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
 

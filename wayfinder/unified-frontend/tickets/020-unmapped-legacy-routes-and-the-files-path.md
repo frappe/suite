@@ -3,7 +3,7 @@ id: 020
 title: Unmapped legacy routes and the /files path
 label: wayfinder:grilling
 status: open
-assignee:
+assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
 

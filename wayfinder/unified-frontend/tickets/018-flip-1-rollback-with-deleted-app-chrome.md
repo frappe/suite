@@ -3,7 +3,7 @@ id: 018
 title: Flip 1 rollback with deleted app chrome
 label: wayfinder:grilling
 status: open
-assignee:
+assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
 

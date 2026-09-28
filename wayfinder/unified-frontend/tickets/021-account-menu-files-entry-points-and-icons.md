@@ -3,7 +3,7 @@ id: 021
 title: Account menu, Files entry points and icons
 label: wayfinder:grilling
 status: open
-assignee:
+assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
 
