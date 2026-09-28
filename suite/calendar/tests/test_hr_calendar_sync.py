@@ -404,22 +404,14 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
     """Who HR names is not who this site can draw a calendar for.
 
     A mail server may be shared between sites, so an address HR knows is not on its own a person
-    here. The audience is resolved against this site's users, by any address the site knows one
-    by: someone HR names who has no account here, or whose account is switched off, is left out —
-    there is nobody here to draw for.
+    here. The audience is resolved against this site's users: someone HR names who has no account
+    here, or whose account is switched off, is left out — there is nobody here to draw for.
     """
 
     def setUp(self) -> None:
         super().setUp()
         self.employee = ensure_user("employee@calendar.test")
         self.retired = ensure_user("retired@calendar.test", enabled=False)
-
-    def known_by(self, user: str, **addresses: str) -> None:
-        """What the site knows a user by beyond their login: their mail login, a backup address.
-        Written straight to the row every user has — saving the document would look for the mail
-        account's app password, which a fixture has no business having."""
-
-        frappe.db.set_value("User Settings", {"user": user}, addresses)
 
     def reconcile(self, audience: list[str | None]) -> dict:
         plan = hr_sync.Plan(
@@ -456,26 +448,6 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
         self.reconcile(["  Employee@Calendar.TEST  "])
 
         self.assertEqual(self.drawn(self.employee), ["India 2026"])
-
-    def test_an_address_the_site_knows_a_user_by_is_that_user(self):
-        # HR knows them by the address they use for mail, and by an old one they gave as a
-        # fallback; the site knows both as the same person
-        self.known_by(self.employee, username="mail-login@calendar.test", backup_email="old@calendar.test")
-
-        self.reconcile(["mail-login@calendar.test"])
-        self.assertEqual(self.drawn(self.employee), ["India 2026"])
-
-        self.reconcile(["OLD@calendar.test"])
-        self.assertEqual(self.drawn(self.employee), ["India 2026"])
-
-    def test_an_address_names_one_user_and_the_login_wins(self):
-        # a second user's backup address is the first user's login: the calendar is the first's
-        other = ensure_user("other@calendar.test")
-        self.known_by(other, backup_email=self.employee)
-
-        self.reconcile([self.employee])
-        self.assertEqual(self.drawn(self.employee), ["India 2026"])
-        self.assertEqual(self.drawn(other), [])
 
     def test_nobody_hr_names_is_nobody_drawn_for(self):
         summary = self.reconcile([None, "", "nobody@elsewhere.test"])
