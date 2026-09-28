@@ -64,6 +64,16 @@ describe('backspace on an empty line', () => {
 		expect(editor.getHTML()).toContain('text-align: center')
 	})
 
+	it('deletes the selected word on a line under an empty line', () => {
+		const editor = mountEditor(`<p>${ZWSP}</p><p>one two three</p>`)
+		const start = editor.state.selection.$from.start()
+		editor.commands.setTextSelection({ from: start + 4, to: start + 7 })
+
+		backspace(editor)
+
+		expect(editor.state.selection.$from.parent.textContent).toBe('one  three')
+	})
+
 	it('still swaps in a placeholder when the whole line is selected', () => {
 		const editor = mountEditor(`${bullets}<p>third</p>`)
 		const { $from } = editor.state.selection

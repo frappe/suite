@@ -152,14 +152,15 @@ const deleteSlide = (deleteActive, index) => {
 	if (totalLength == 1) {
 		// clearing the only slide's contents must go through history so it stays undoable
 		const slide = slides.value[0]
-		commandHistory.execute(
-			editSlideCommand({
-				slideId: slide.clientId,
-				property: 'elements',
-				oldValue: cloneObj(slide.elements),
-				newValue: [],
-			}),
-		)
+		if (slide.elements.length)
+			commandHistory.execute(
+				editSlideCommand({
+					slideId: slide.clientId,
+					property: 'elements',
+					oldValue: cloneObj(slide.elements),
+					newValue: [],
+				}),
+			)
 		focusedSlide.value = null
 		return
 	}

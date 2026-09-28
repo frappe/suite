@@ -155,6 +155,14 @@ export const useFolderSheet = () => {
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
 }
 
+// The search page's address — the one place that knows it is the mailbox route with the virtual
+// 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
+export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
+	name: 'mail-mailbox',
+	params: { accountId, mailbox: 'search' },
+	query,
+})
+
 export const useMobileSearch = () => {
 	const route = useRoute()
 	const router = useRouter()
@@ -168,15 +176,17 @@ export const useMobileSearch = () => {
 	// Keep the search route behind the palette so browser Back dismisses search and the
 	// route watcher in the tab bar closes the palette.
 	const openSearch = async () => {
-		if (!isSearchRoute.value)
-			await router.push({
-				name: 'mail-mailbox',
-				params: { accountId: store.accountId, mailbox: 'search' },
-			})
+		if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
 		root.paletteOpen = true
 	}
 
-	return { isSearchRoute, openSearch }
+	// `all_accounts` is the search's scope, not a condition: a route carrying only that has no
+	// search on it.
+	const hasSearchQuery = computed(() =>
+		Object.keys(route.query).some((key) => key !== 'all_accounts'),
+	)
+
+	return { hasSearchQuery, isSearchRoute, openSearch }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the tab bar and FAB

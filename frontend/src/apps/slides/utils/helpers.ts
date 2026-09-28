@@ -20,15 +20,6 @@ const setCursorPositionAtEnd = (e: Event) => {
 	selection.addRange(range)
 }
 
-const handleScrollBarWheelEvent = (e: WheelEvent) => {
-	// allow normal scroll behaviour
-	if (!isCmdOrCtrl(e)) return
-
-	// prevent zoom event from triggering
-	e.preventDefault()
-	e.stopPropagation()
-}
-
 const cloneObj = (obj: any) => JSON.parse(JSON.stringify(obj))
 
 const getThumbnailCardStyles = (
@@ -110,7 +101,6 @@ const throttleToFrame = (fn: (...args: any[]) => void) => {
 export {
 	generateUniqueId,
 	setCursorPositionAtEnd,
-	handleScrollBarWheelEvent,
 	cloneObj,
 	getThumbnailCardStyles,
 	getDocFromHTML,

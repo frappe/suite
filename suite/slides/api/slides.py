@@ -11,6 +11,7 @@ SLIDE_FIELDS = frozenset(
         "transition",
         "transition_duration",
         "fade_unmatched_elements",
+        "advance_after",
     }
 )
 

@@ -97,6 +97,7 @@ execute:frappe.db.set_single_value("Mail Settings", "expand_mailing_list_partici
 execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participants", 100)
 suite.mail.patches.remove_held_queue_statuses
 suite.mail.patches.hand_over_deployment_to_suite_cloud
+suite.mail.patches.rebuild_screening_gates
 # --- calendar ---
 # (no patches)
 # --- suite_core ---

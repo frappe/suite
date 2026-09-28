@@ -99,6 +99,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		)
 	}
 
+	// only keyboard focus: a clicked button keeps focus while the canvas is in use
+	const isControlFocused = () =>
+		!!document.querySelector(':is(button, a[href], [role="button"]):focus-visible')
+
 	const performHistory = (e, operation) => {
 		// an undo mid-composition destroys the IME node
 		if (e.isComposing || activeEditor.value?.view.composing) return
@@ -118,6 +122,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
 
 	const handleArrowUp = (e) => {
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performPreviousStep()
 		if (inReadonly()) return changeSlide(slideIndex.value - 1)
 		if (!inEditMode()) return
@@ -126,6 +131,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleArrowDown = (e) => {
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performNextStep()
 		if (inReadonly()) return changeSlide(slideIndex.value + 1)
 		if (!inEditMode()) return
@@ -134,11 +140,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleArrowLeft = (e) => {
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performPreviousStep()
 		if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
 	}
 
 	const handleArrowRight = (e) => {
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performNextStep()
 		if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
 	}
@@ -158,6 +166,15 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
+	// keys meant for an open list never reach the canvas behind it
+	const skipInOverlay = (handler) => (e) => {
+		if (!hasOpenOverlay()) handler(e)
+	}
+
+	// menus and radio groups like TabButtons move between options with the arrows
+	const isArrowNavActive = () =>
+		hasOpenOverlay() || !!document.activeElement?.closest('[role="radiogroup"]')
+
 	const hasTextCapableSelection = () => {
 		if (activeElements.value.length !== 1) return false
 		const [element] = activeElements.value
@@ -175,6 +192,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const handleTypeToEdit = (e) => {
 		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
 		if (e.key === '?') return
+		if (e.key === ' ' && isControlFocused()) return
 		if (isPlainInput(e) || e.target?.isContentEditable) return
 		if (!canStartTextEditing()) return
 		e.preventDefault()
@@ -242,14 +260,15 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			combo: 'Enter',
 			description: 'Edit text of selected element',
 			group: 'Edit',
-			enabled: canStartTextEditing,
+			enabled: () => canStartTextEditing() && !isControlFocused(),
 			handler: () => startTextEditing(),
 		},
 		{
 			combo: 'Enter',
 			description: 'Add slide below',
 			group: 'Insert',
-			enabled: () => inEditMode() && !canStartTextEditing(),
+			enabled: () =>
+				inEditMode() && !canStartTextEditing() && !hasOpenOverlay() && !isControlFocused(),
 			handler: (e) => addEmptySlide(e),
 		},
 		{
@@ -257,35 +276,35 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Add text box',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addTextElement(),
+			handler: skipInOverlay(() => addTextElement()),
 		},
 		{
 			combo: 'R',
 			description: 'Add rectangle',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('rectangle'),
+			handler: skipInOverlay(() => addShape('rectangle')),
 		},
 		{
 			combo: 'O',
 			description: 'Add oval',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('oval'),
+			handler: skipInOverlay(() => addShape('oval')),
 		},
 		{
 			combo: 'L',
 			description: 'Add line',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('line'),
+			handler: skipInOverlay(() => addShape('line')),
 		},
 		{
 			combo: 'C',
 			description: 'Add connector',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('connector'),
+			handler: skipInOverlay(() => addShape('connector')),
 		},
 		{
 			combo: 'Mod+A',
@@ -315,7 +334,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Apply crop',
 			group: 'Edit',
 			allowInInput: true,
-			enabled: () => inCropMode.value && !hasOpenOverlay(),
+			enabled: () => inCropMode.value && !hasOpenOverlay() && !isControlFocused(),
 			handler: () => commitCrop(),
 		},
 		{
@@ -333,14 +352,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Delete element / slide',
 			group: 'Edit',
 			enabled: inEditMode,
-			handler: deleteElementOrSlide,
+			handler: skipInOverlay(deleteElementOrSlide),
 		},
 		{
 			combo: 'Backspace',
 			description: 'Delete element / slide',
 			group: 'Edit',
 			enabled: inEditMode,
-			handler: deleteElementOrSlide,
+			handler: skipInOverlay(deleteElementOrSlide),
 		},
 		{
 			combo: 'Mod+Shift+L',
@@ -481,9 +500,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			combo: 'Space',
 			description: 'Next step',
 			group: 'Slideshow',
-			handler: () => {
-				if (inSlideShow()) performNextStep()
-			},
+			enabled: inSlideShow,
+			handler: () => performNextStep(),
 		},
 		{
 			combo: 'ArrowRight',

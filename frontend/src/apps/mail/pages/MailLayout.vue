@@ -67,6 +67,7 @@ const router = useRouter()
 // died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
 // its own layout and never sees these.
 const { showShortcuts } = useShortcuts()
+const { isMobile } = useScreenSize()
 const gPrefix = useGPrefix()
 
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners

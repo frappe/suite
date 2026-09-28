@@ -47,6 +47,7 @@ import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { canEditEvent } from '@/apps/calendar/utils/calendars'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
@@ -97,8 +98,7 @@ const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
 	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
 		account: calendarEvent.account,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: calendarEvent.master_id || calendarEvent.id,
+		id: serverEventId(calendarEvent),
 		response: response.toLowerCase(),
 		// One occurrence answered on its own is an override on the series, addressed by this
 		// occurrence's recurrence id. The whole series is the same call without one.

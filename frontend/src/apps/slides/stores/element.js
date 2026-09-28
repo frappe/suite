@@ -19,6 +19,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
+import { shareTableWidth } from '../utils/tableWidths'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
 import { commandHistory } from './historyMeta'
@@ -166,33 +167,60 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidth, cellStyles) => {
-	// marks need text to sit on, so an empty cell has nothing to style
-	const placeholder = {
-		type: 'text',
-		text: ZWSP,
-		marks: [{ type: 'textStyle', attrs: cellStyles }],
-	}
+const getEmptyTableCells = (rows, cols) =>
+	Array.from({ length: rows }, (_, row) =>
+		Array.from({ length: cols }, () => ({ lines: [], colspan: 1, rowspan: 1, header: row === 0 })),
+	)
 
-	const getCell = (type) => ({
-		type,
-		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+const getInitialTableContent = (cells, columnWidths, cellStyles) => {
+	const getTextColor = ({ color, fill }) =>
+		color || (fill ? guessTextColorFromBackground(fill) : cellStyles.color)
+
+	const getFontSize = ({ size = 1 }) =>
+		Math.min(800, Math.max(5, Math.round(cellStyles.fontSize * size)))
+
+	const getMarks = (style) => [
+		{
+			type: 'textStyle',
+			attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
+		},
+		...['bold', 'italic', 'underline', 'strike']
+			.filter((mark) => style[mark])
+			.map((type) => ({ type })),
+	]
+
+	const getParagraph = (line, style) => ({
+		type: 'paragraph',
+		attrs: { textAlign: style.align || 'left', lineHeight: 1.5 },
 		content: [
-			{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 }, content: [placeholder] },
+			{
+				type: 'text',
+				// marks need text to sit on, so an empty line has nothing to style
+				text: line || ZWSP,
+				marks: getMarks(style),
+			},
 		],
 	})
 
-	const getRow = (cellType) => ({
-		type: 'tableRow',
-		content: Array.from({ length: cols }, () => getCell(cellType)),
+	const getCell = (col, { lines, colspan, rowspan, style = {}, header }) => ({
+		type: header ? 'tableHeader' : 'tableCell',
+		attrs: {
+			colspan,
+			rowspan,
+			colwidth: columnWidths.slice(col, col + colspan),
+			backgroundColor: style.fill,
+		},
+		content: (lines.length ? lines : ['']).map((line) => getParagraph(line, style)),
 	})
 
-	const tableRows = [getRow('tableHeader')]
-	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
+	const getRow = (rowCells) => ({
+		type: 'tableRow',
+		content: rowCells.flatMap((cell, col) => (cell ? [getCell(col, cell)] : [])),
+	})
 
 	const contentJSON = {
 		type: 'doc',
-		content: [{ type: 'table', content: tableRows }],
+		content: [{ type: 'table', content: cells.map(getRow) }],
 	}
 
 	return generateHTML(contentJSON, extensions)
@@ -440,12 +468,18 @@ const addTextElement = async (text, position, contentHTML = null) => {
 	)
 }
 
-const addTableElement = async (rows = 3, cols = 3) => {
+const addTableElement = async (cells, columnRatios) => {
+	const rows = cells.length
+	const cols = cells[0].length
+
 	// a table states its own width, so one wider than the slide is placed hanging
 	// off both edges instead of being fitted to it
 	const slideWidth = slideBounds.width / slideBounds.scale
-	const columnWidth = Math.min(150, Math.floor(slideWidth / cols))
-	const width = cols * columnWidth
+	const columnWidths = shareTableWidth(
+		cols * Math.min(150, Math.floor(slideWidth / cols)),
+		columnRatios || Array(cols).fill(1),
+	)
+	const width = columnWidths.reduce((total, columnWidth) => total + columnWidth, 0)
 
 	// rows size themselves to their content, so this only places the new element
 	const position = getLeftTopForCenteredElement(width, rows * 40)
@@ -462,12 +496,12 @@ const addTableElement = async (rows = 3, cols = 3) => {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
 		left: position.left,
-		top: position.top,
+		top: Math.max(0, position.top),
 		width,
 		opacity: 100,
 		type: 'table',
 		color: cellStyles.color,
-		content: getInitialTableContent(rows, cols, columnWidth, cellStyles),
+		content: getInitialTableContent(cells, columnWidths, cellStyles),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -1504,6 +1538,7 @@ export {
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
+	getEmptyTableCells,
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,

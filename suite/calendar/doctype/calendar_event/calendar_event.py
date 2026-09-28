@@ -16,6 +16,7 @@ from frappe.push_notification import PushNotification
 from frappe.utils import cint, get_system_timezone
 
 from suite.calendar.doctype.calendar.calendar import validate_calendar_name_format
+from suite.calendar.doctype.calendar_event.fields import EventFields
 from suite.calendar.doctype.calendar_event.invitations import (
     acting_as_organizer,
     custom_event_invites_enabled,
@@ -31,6 +32,7 @@ from suite.mail.utils.logger import get_push_logger
 from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList, parse
 
 
 class CalendarEvent(Document):
@@ -330,11 +332,8 @@ def parse_calendar_event_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes calendar events for the given list of names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -375,29 +374,30 @@ def add_calendar_event(
 
     uid = uuid7().hex
     creation_id = str(uuid7())
-    participants = expand_mailing_list_participants(participants)
-    event = {
-        "creation_id": creation_id,
-        "uid": uid,
-        "organizer": organizer,
-        "calendar_ids": calendar_ids,
-        "status": status.lower(),
-        "is_draft": draft,
-        "title": title,
-        "start": start,
-        "duration": duration,
-        "time_zone": time_zone,
-        "recurrence_rule": recurrence_rule,
-        "show_without_time": show_without_time,
-        "privacy": privacy.lower() if privacy else None,
-        "free_busy_status": free_busy_status.lower() if free_busy_status else None,
-        "description": description,
-        "locations": locations,
-        "links": links,
-        "participants": participants,
-        "alerts": alerts,
-        "use_default_alerts": use_default_alerts,
-    }
+    fields = parse(
+        EventFields,
+        {
+            "organizer": organizer,
+            "calendar_ids": calendar_ids,
+            "status": status,
+            "draft": draft,
+            "title": title,
+            "start": start,
+            "duration": duration,
+            "time_zone": time_zone,
+            "recurrence_rule": recurrence_rule,
+            "show_without_time": show_without_time,
+            "privacy": privacy,
+            "free_busy_status": free_busy_status,
+            "description": description,
+            "locations": locations,
+            "links": links,
+            "participants": expand_mailing_list_participants(participants),
+            "alerts": alerts,
+            "use_default_alerts": use_default_alerts,
+        },
+    )
+    event = {"creation_id": creation_id, "uid": uid, **fields.for_service()}
 
     use_custom_invites = (
         send_scheduling_messages
@@ -489,29 +489,30 @@ def update_calendar_event(
 ) -> None:
     """Updates a calendar event for the given account and event ID."""
 
-    participants = expand_mailing_list_participants(participants)
-    event = {
-        "id": id,
-        "uid": uid,
-        "organizer": organizer,
-        "calendar_ids": calendar_ids,
-        "status": status.lower(),
-        "is_draft": draft,
-        "title": title,
-        "start": start,
-        "duration": duration,
-        "time_zone": time_zone,
-        "recurrence_rule": recurrence_rule,
-        "show_without_time": show_without_time,
-        "privacy": privacy.lower() if privacy else None,
-        "free_busy_status": free_busy_status.lower() if free_busy_status else None,
-        "description": description,
-        "locations": locations,
-        "links": links,
-        "participants": participants,
-        "alerts": alerts,
-        "use_default_alerts": use_default_alerts,
-    }
+    fields = parse(
+        EventFields,
+        {
+            "organizer": organizer,
+            "calendar_ids": calendar_ids,
+            "status": status,
+            "draft": draft,
+            "title": title,
+            "start": start,
+            "duration": duration,
+            "time_zone": time_zone,
+            "recurrence_rule": recurrence_rule,
+            "show_without_time": show_without_time,
+            "privacy": privacy,
+            "free_busy_status": free_busy_status,
+            "description": description,
+            "locations": locations,
+            "links": links,
+            "participants": expand_mailing_list_participants(participants),
+            "alerts": alerts,
+            "use_default_alerts": use_default_alerts,
+        },
+    )
+    event = {"id": id, "uid": uid, **fields.for_service()}
 
     use_custom_invites = (
         send_scheduling_messages
@@ -537,7 +538,7 @@ def update_calendar_event(
         else:
             frappe.throw(_(response["description"]), title=title)
 
-    _reanchor_overrides(service, id, stored, start, recurrence_rule)
+    _reanchor_overrides(service, id, stored, fields.start, fields.recurrence_rule)
 
     if use_custom_invites:
         _enqueue_event_notification(account, "update", event_id=id, previous_attendees=previous_attendees)

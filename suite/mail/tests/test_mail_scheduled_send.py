@@ -622,8 +622,13 @@ class TestOutboxRequestBoundary(IntegrationTestCase):
                 with self.assertRaisesRegex(frappe.ValidationError, "must be a UTC timestamp"):
                     get_submissions("acc", **{bound: bad})
 
-        with self.assertRaisesRegex(frappe.ValidationError, "undoStatus must be one of"):
+        with self.assertRaisesRegex(frappe.ValidationError, "undo_status: Input should be 'pending'"):
             get_submissions("acc", undo_status="bogus")
+
+        # An empty filter is no filter: it must not be read as a malformed id or timestamp.
+        with self.assertRaises(frappe.ValidationError) as caught:
+            get_submissions("acc", identity_id="", before="")
+        self.assertNotRegex(str(caught.exception), "identity_id|before")
 
     def test_malformed_identifiers_are_rejected(self):
         # RFC 8620 §1.2 confines a JMAP Id to 1 to 255 characters of [A-Za-z0-9_-]: any other

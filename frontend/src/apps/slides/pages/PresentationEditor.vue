@@ -159,6 +159,7 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
+import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 
 const route = useRoute()
 const router = useRouter()
@@ -226,6 +227,7 @@ const commandHistoryInstance = useCommandHistory(slides, historyMetaForCommandHi
 setCommandHistory(commandHistoryInstance)
 
 useShortcuts(inReadonlyMode, inSlideShowMode)
+useBrowserZoomGuard()
 
 usePageMeta(() => {
 	return appPageMeta(pageTitle(), 'Slides')

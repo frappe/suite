@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { activeElementIds, getInitialTableContent } = await import('./element')
+const { activeElementIds, getEmptyTableCells, getInitialTableContent } = await import('./element')
 const { slides, slideIndex, selectionBounds, updateSelectionBounds } = await import('./slide')
 const { interactionOffset, commitInteraction, resetInteractionOffset } = await import('./interaction')
 const { setCommandHistory } = await import('./historyMeta')
@@ -27,7 +27,11 @@ describe('committing a table frame resize', () => {
 						width: table.cols * table.columnWidth,
 						// rows are auto height on screen, so the fixture stands in for the DOM
 						height: 80,
-						content: getInitialTableContent(table.rows, table.cols, table.columnWidth, {}),
+						content: getInitialTableContent(
+							getEmptyTableCells(table.rows, table.cols),
+							Array(table.cols).fill(table.columnWidth),
+							{},
+						),
 					},
 				],
 			},

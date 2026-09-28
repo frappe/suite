@@ -10,10 +10,10 @@
 		@drop.prevent="handleDrop"
 		@click="handleClick"
 	>
-		<!-- Not selectable on mobile: keyboard selection and drag-to-another-field are both
-		     desktop gestures, and leaving them on meant a tap that was aimed at the field
-		     picked out a chip instead. Tapping one there falls through to the container and
-		     opens the field, like a tap anywhere else on the row. -->
+		<!-- Not selectable on mobile: keyboard selection is a desktop gesture, and leaving it on
+		     meant a tap that was aimed at the field picked out a chip instead. A tap on a chip
+		     there opens the menu below — the phone's answer to the drag between fields, which
+		     touch never fires the events for. -->
 		<button
 			v-for="(v, i) in displayedRecipients"
 			ref="tags"
@@ -29,7 +29,7 @@
 			@blur="focusedTagIndex = -1"
 			@keydown.delete.stop="removeValueAt(i)"
 			@dragstart="handleDragStart($event, v)"
-			@dragend="handleDragEnd($event, v)"
+			@dragend="handleDragEnd"
 		>
 			<Avatar :image="v.image" :label="v.display_name || v.email" size="xs" />
 			<!-- Capped on mobile whether or not the field is focused: a name too long for the
@@ -37,7 +37,9 @@
 			<span :class="{ 'max-w-40 truncate': isMobile }">
 				{{ v.display_name || v.email }}
 			</span>
-			<X v-if="!isMobile || isFocused" class="icon" @click.stop="removeValue(v.email)" />
+			<!-- Desktop only: on a phone the chip itself is the trigger, and Remove is in the
+			     sheet that opens — a second, smaller target for the same act beside it. -->
+			<X v-if="!isMobile" class="icon" @click.stop="removeValue(v.email)" />
 		</button>
 		<span v-if="hiddenCount" class="text-ink-gray-6 text-sm">+{{ hiddenCount }}</span>
 		<!-- Taken out of flow while the collapsed row is showing on mobile: the chips fill the
@@ -108,33 +110,78 @@
 				</li>
 			</ul>
 		</Teleport>
+
+		<!-- Trigger-less: the chips are the trigger, and the one that was tapped is both what the
+		     menu is about and what it hangs off, so it needs no title to say whose it is. Mobile
+		     only — a desktop chip is dragged from field to field instead.
+
+		     It takes no focus on open: the caret stays where it was, which keeps the row from
+		     reflowing (an unfocused row collapses to one line) out from under the chip the menu
+		     is anchored to. -->
+		<Popover
+			v-if="isMobile"
+			v-model:open="isMenuOpen"
+			trigger="manual"
+			:reference="menuAnchor"
+			:auto-focus="false"
+			align="start"
+		>
+			<div class="min-w-52 max-w-72 p-1">
+				<!-- Who this is about, the way a contact reads in every picker: the address is what
+				     the chip cannot say — it shows the display name when there is one, truncated at
+				     160px — and it is the disambiguator between two people of the same name. -->
+				<div v-if="menuRecipient" class="flex items-center gap-2.5 px-2.5 py-2.5">
+					<Avatar
+						:image="menuRecipient.image"
+						:label="menuRecipient.display_name || menuRecipient.email"
+						size="xl"
+					/>
+					<ContactOption :contact="menuRecipient" size="md" />
+				</div>
+				<div class="mx-2.5 mb-1 border-t" />
+				<button
+					v-for="item in menuOptions"
+					:key="item.label"
+					class="active:bg-surface-gray-2 flex w-full items-center rounded-6 px-2.5 py-2 text-base"
+					:class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
+					@click="runMenuOption(item)"
+				>
+					{{ item.label }}
+				</button>
+			</div>
+		</Popover>
 	</div>
 </template>
-
-<script lang="ts">
-let droppedOnTarget = false
-</script>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { onClickOutside, useDebounceFn, useResizeObserver } from '@vueuse/core'
 import { X } from 'lucide-vue-next'
-import { Avatar, Combobox, createResource } from 'frappe-ui'
+import { Avatar, Combobox, Popover, createResource } from 'frappe-ui'
 
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import { type DraftRecipient } from '@/apps/mail/types'
 import { isEmail } from '@/apps/mail/utils'
+import { RECIPIENT_FIELDS, type RecipientField } from '@/apps/mail/utils/recipientFields'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
-const emit = defineEmits(['showCcBcc'])
+const emit = defineEmits<{
+	showCcBcc: []
+	/** Re-address someone. The draft owns all three lists, so the move itself belongs to it. */
+	move: [recipient: DraftRecipient, from: RecipientField, to: RecipientField]
+}>()
 
 /**
  * Where to render the suggestion list, when it should be in flow rather than in the Combobox's
  * floating panel. Set by the mobile composer, which wants the full-width Gmail-style list; left
  * unset on desktop, where the panel is the right shape and the popover behaviour is kept.
  */
-const { suggestionsTo = null } = defineProps<{ suggestionsTo?: HTMLElement | null }>()
+const { field, suggestionsTo = null } = defineProps<{
+	/** Which of the draft's recipient lists this is, so a move can name where it came from. */
+	field: RecipientField
+	suggestionsTo?: HTMLElement | null
+}>()
 
 const selectedRecipients = defineModel<DraftRecipient[]>({ default: () => [] })
 
@@ -369,11 +416,64 @@ const handleContainerKeydown = (e: KeyboardEvent) => {
 }
 
 const handleTagClick = (e: MouseEvent, i: number) => {
-	// Left to bubble on mobile, where the container turns it into "open this field".
-	if (isMobile.value) return
 	e.stopPropagation()
+	// Kept off the container on mobile too: a tap meant for a chip's menu must not also focus the
+	// field, which would expand the row and move the chip the menu is about to hang off.
+	if (isMobile.value) return openMenu(displayedRecipients.value[i], e.currentTarget as Element)
 	focusedTagIndex.value = i
 }
+
+/**
+ * The chip's menu: where else this person could be addressed, and the way to take them off the
+ * mail. It stands in for the drag between fields, which a phone cannot perform — touch fires no
+ * drag events at all — and reaches chips the drag never could: a collapsed row shows only the
+ * names that fit on its line, and tapping the row to see the rest is what focuses it.
+ */
+const menuRecipient = ref<DraftRecipient | null>(null)
+const isMenuOpen = ref(false)
+/** The chip the open menu hangs off — the one that was tapped. */
+const menuAnchor = ref<Element | undefined>()
+
+const openMenu = (recipient?: DraftRecipient, anchor?: Element) => {
+	if (!recipient) return
+
+	menuRecipient.value = recipient
+	menuAnchor.value = anchor
+	isMenuOpen.value = true
+}
+
+const runMenuOption = (item: { onClick?: () => void }) => {
+	isMenuOpen.value = false
+	item.onClick?.()
+}
+
+const FIELD_LABELS: Record<RecipientField, string> = {
+	to: __('To'),
+	cc: __('Cc'),
+	bcc: __('Bcc'),
+}
+
+const menuOptions = computed(() => {
+	const recipient = menuRecipient.value
+	if (!recipient) return []
+
+	return [
+		...RECIPIENT_FIELDS.filter((target) => target !== field).map((target) => ({
+			label: __('Move to {0}', [FIELD_LABELS[target]]),
+			onClick: () => {
+				// Cc and Bcc are behind a toggle on both composers: moving someone into a field that
+				// isn't on screen would read as losing them.
+				if (target !== 'to') emit('showCcBcc')
+				emit('move', recipient, field, target)
+			},
+		})),
+		{
+			label: __('Remove'),
+			theme: 'red',
+			onClick: () => removeValue(recipient.email),
+		},
+	]
+})
 
 const removeValueAt = (i: number) => {
 	selectedRecipients.value.splice(i, 1)
@@ -410,15 +510,16 @@ const removeValue = (value: string) =>
 const isDragging = ref(false)
 const isDragOver = ref(false)
 
+// The drag carries the field it started in as well as the person, so the drop is one move the
+// draft performs rather than an add here and a remove over there — the two halves used to be
+// kept in step by a flag shared between every instance of this component.
 const handleDragStart = (e: DragEvent, recipient: DraftRecipient) => {
 	emit('showCcBcc')
-	droppedOnTarget = false
 	isDragging.value = true
-	e.dataTransfer?.setData('recipient', JSON.stringify(recipient))
+	e.dataTransfer?.setData('recipient', JSON.stringify({ recipient, from: field }))
 }
 
-const handleDragEnd = (_: DragEvent, recipient: DraftRecipient) => {
-	if (droppedOnTarget) removeValue(recipient.email)
+const handleDragEnd = () => {
 	isDragging.value = false
 	isDragOver.value = false
 }
@@ -427,11 +528,12 @@ const handleDrop = (e: DragEvent) => {
 	isDragOver.value = false
 	const data = e.dataTransfer?.getData('recipient')
 	if (!data) return
-	const recipient: DraftRecipient = JSON.parse(data)
-	if (selectedEmails.value.includes(recipient.email)) return
 
-	selectedRecipients.value.push(recipient)
-	droppedOnTarget = true
+	const { recipient, from } = JSON.parse(data) as {
+		recipient: DraftRecipient
+		from: RecipientField
+	}
+	emit('move', recipient, from, field)
 }
 
 const mailContacts = createResource({

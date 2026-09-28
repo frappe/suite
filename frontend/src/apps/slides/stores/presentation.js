@@ -229,10 +229,12 @@ const normalizeSlideDoc = (doc) => {
 		slide.clientId = slide.client_id || uuid4()
 		slide.transitionDuration = slide.transition_duration
 		slide.fadeUnmatchedElements = slide.fade_unmatched_elements
+		slide.advanceAfter = slide.advance_after
 		delete slide.thumbnail
 		// remove the transition_duration field to avoid confusion
 		delete slide.transition_duration
 		delete slide.fade_unmatched_elements
+		delete slide.advance_after
 		delete slide.client_id
 	}
 	return ensureUniqueClientIds(doc.slides || [])
@@ -328,6 +330,7 @@ const toSlideRow = (slide) => ({
 	transition: slide.transition,
 	transition_duration: slide.transitionDuration,
 	fade_unmatched_elements: slide.fadeUnmatchedElements,
+	advance_after: slide.advanceAfter,
 })
 
 // what a push sends, as the server stores and returns it: Data comes back as strings, Check as 0/1
@@ -339,6 +342,7 @@ const rowKey = (row) =>
 		row.transition || null,
 		String(row.transition_duration ?? ''),
 		Number(row.fade_unmatched_elements ?? 0),
+		String(row.advance_after ?? ''),
 	])
 
 const rowKeys = (rows) => rows.map(rowKey).join('\n')

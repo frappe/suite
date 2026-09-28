@@ -28,16 +28,22 @@ import { userStore } from '@/apps/mail/stores/user'
 
 // Self-contained contact-autocomplete combobox: searches contacts as you type (Avatar + name over email)
 // and offers a "use what you typed" create row for a value that isn't a contact.
-defineProps<{ label: string }>()
+//
+// `account` is whose address book to look in. It defaults to the mail account in view, which is
+// what every caller inside mail wants; a caller from another app — the calendar's search filters,
+// say — passes its own, since the two apps number their accounts separately. The mail store is
+// only reached for when the default is the one in use: outside mail there may be none to reach.
+const props = defineProps<{ label: string; account?: string }>()
 const model = defineModel<string>()
 
-const store = userStore()
+let mailUser: ReturnType<typeof userStore> | undefined
+const searchAccount = () => props.account ?? (mailUser ??= userStore()).accountId
 
 const contactSearch = createResource({
 	url: 'suite.mail.api.mail.get_email_suggestions',
 	auto: false,
 	makeParams: (text: string) => ({
-		account: store.accountId,
+		account: searchAccount(),
 		text,
 	}),
 	transform: (data: { email: string; name?: string; user_image?: string }[]) =>

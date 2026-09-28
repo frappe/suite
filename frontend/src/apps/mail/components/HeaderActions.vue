@@ -1,14 +1,8 @@
 <template>
-	<!-- On mobile the tab bar owns these actions (Search tab, Compose FAB, Profile
-	     tab); the header is CSS-hidden there but stays mounted so these modals
-	     remain reachable via v-model from views. -->
+	<!-- On mobile the tab bar owns these actions (Compose FAB, Profile tab); the header is
+	     CSS-hidden there. Search is not among them on either: the palette answers ⌘K and has a
+	     row of its own in the sidebar, and a third button for it here said the same thing twice. -->
 	<div v-if="!isMobile" class="flex space-x-2">
-		<Button
-			icon="lucide-search"
-			:tooltip="__('Search ({0}+K)', [modifier])"
-			variant="ghost"
-			@click="openSearch"
-		/>
 		<Button
 			icon-left="lucide-pencil"
 			:label="__('Compose')"
@@ -16,37 +10,15 @@
 			@click="compose()"
 		/>
 	</div>
-
-	<SearchModal
-		v-model="showSearchModal"
-		v-model:initial-text="searchInitialText"
-		v-model:initial-filters="searchInitialFilters"
-	/>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { Button } from 'frappe-ui'
 
-import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
-import SearchModal from '@/apps/mail/components/Modals/AdvancedSearchModal.vue'
-import { useRootStore } from '@/stores/root'
 
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
-const root = useRootStore()
-
-// Exposed as a model so other views (e.g. the search results header's query chip) can reopen the modal.
-const showSearchModal = defineModel<boolean>('showSearch', { default: false })
-const searchInitialText = ref('')
-const searchInitialFilters = ref<Record<string, string>>({})
-
-const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
-const openSearch = () => {
-	searchInitialText.value = ''
-	searchInitialFilters.value = {}
-	showSearchModal.value = true
-}
 
 // Asked of the layout rather than answered here, because a composer mounted in this header would be
 // a composer belonging to this view: leave the mailbox for the screener and the draft goes with the
@@ -59,30 +31,6 @@ const openSearch = () => {
 // the way out, and the draft is waiting in Drafts. Reaching back for it instead made the button
 // answer a request nobody had made, and left no way at all to start a second mail.
 const compose = () => requestCompose({})
-
-const unregisterPaletteGroups = root.registerPaletteGroups(
-	'mail-header-actions',
-	[
-		{
-			commands: [
-				{
-					id: 'mail-advanced-search',
-					label: 'Advanced search in Mail',
-					enterHint: 'open advanced search',
-					icon: 'lucide-search',
-					keywords: ['email', 'from', 'to', 'subject'],
-					run: (context) => {
-						searchInitialText.value = context?.query ?? ''
-						searchInitialFilters.value = context?.filters ?? {}
-						setTimeout(() => {
-							showSearchModal.value = true
-						})
-					},
-				},
-			],
-		},
-	],
-)
 
 const handleKeydown = (e: KeyboardEvent) => {
 	const target = e.target as HTMLElement
@@ -104,8 +52,5 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
-onUnmounted(() => {
-	document.removeEventListener('keydown', handleKeydown)
-	unregisterPaletteGroups()
-})
+onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 </script>

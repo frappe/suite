@@ -5,7 +5,7 @@
 	     edge then. Geometry, tint and label treatment are mail's tab bar's, shared: on a
 	     phone the two apps are one product. -->
 	<Button
-		v-if="calendarActive && !sheetOpen && !showAppsSheet"
+		v-if="calendarActive && !searchActive && !sheetOpen && !showAppsSheet"
 		variant="solid"
 		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
 		:aria-label="__('New event')"
@@ -28,6 +28,15 @@
 				<span class="max-w-full truncate px-1" :class="labelClass(calendarActive)">
 					{{ viewLabel(currentView) }}
 				</span>
+			</button>
+			<!-- Search is a page of its own, not the palette raised over the calendar: a
+			     result opens where it was found, and Back returns to the search rather
+			     than to whichever view it was searched from. A tab rather than a button
+			     in the header row, which mail can afford because its header is bare — the
+			     calendar's already carries the date picker and three paging controls. -->
+			<button :class="tabClass(searchActive)" @click="openSearch">
+				<Search :class="iconClass(searchActive)" />
+				<span :class="labelClass(searchActive)">{{ __('Search') }}</span>
 			</button>
 			<!-- Settings live behind the person, as the design has it: one tab for
 			     everything about you and your calendars. The photo has no stroke to
@@ -54,7 +63,7 @@
 import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
-import { CalendarPlus } from 'lucide-vue-next'
+import { CalendarPlus, Search } from 'lucide-vue-next'
 
 import { userStore } from '@/apps/calendar/stores/user'
 import { useViewSheet } from '@/apps/calendar/composables/useViewSheet'
@@ -78,6 +87,7 @@ const sheetOpen = computed(
 )
 
 const profileActive = computed(() => route.name === 'calendar-profile')
+const searchActive = computed(() => route.name === 'calendar-search')
 
 const showAppsSheet = ref(false)
 
@@ -85,12 +95,19 @@ const showAppsSheet = ref(false)
 // is no view in the URL to read, so the tab names the one a tap would land in,
 // which is the one `calendarRoute` goes to. It said "Agenda" there whatever the
 // calendar had been left in, and then opened the Day view.
+const offCalendar = computed(() => profileActive.value || searchActive.value)
 const currentView = computed(() =>
-	profileActive.value
+	offCalendar.value
 		? viewForRoute(lastCalendarView() ?? routeForView('agenda'))
 		: viewForRoute(route.name),
 )
-const calendarActive = computed(() => !profileActive.value)
+const calendarActive = computed(() => !offCalendar.value)
+
+// Re-tapping Search while on it is nothing to do: the field is already there to type in.
+const openSearch = () => {
+	if (searchActive.value) return
+	router.push({ name: 'calendar-search', params: { accountId: store.accountId } })
+}
 
 /**
  * Back to the calendar, in the view it was left in — Profile is a trip away from

@@ -79,6 +79,17 @@ export const useSlideProperty = (property) =>
 			}),
 	)
 
+export const pushSlideCommands = (commands) => {
+	if (!commands.length) return
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [],
+			commands,
+		}),
+	)
+}
+
 export const setElementProperty = (property, value) => {
 	pushToHistory(
 		editableElements()

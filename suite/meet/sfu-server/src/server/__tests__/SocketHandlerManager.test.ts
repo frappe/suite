@@ -557,7 +557,9 @@ describe('SocketHandlerManager characterization', () => {
 	});
 
 	it('join_room with scope:full adds the socket to fullAccessSockets, calls mediasoup.createRoom + addPeer, and emits existing_raised_hands to the joiner', async () => {
-		const harness = createManager();
+		const harness = createManager(undefined, undefined, undefined, {
+			setEmitToSubscribers: vi.fn(),
+		} as never);
 		const socket = connectFullSocket(harness, { id: 'sock-A' });
 
 		emitJoin(socket);
@@ -569,6 +571,16 @@ describe('SocketHandlerManager characterization', () => {
 			'room-1',
 			expect.any(Function),
 		);
+		const onActiveSpeaker = vi.mocked(harness.mediasoup.createRoom).mock
+			.calls[0][1]!;
+		harness.mediasoup.getRoomPeers = vi
+			.fn()
+			.mockReturnValue(new Map([['sock-A', { info: { userId: 'user-1' } }]]));
+		onActiveSpeaker('room-1', ['sock-A']);
+		expect(socket.emitCalls).toContainEqual({
+			event: 'active_speaker',
+			data: { participantIds: ['user-1'] },
+		});
 		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
 			'room-1',
 			'sock-A',

@@ -11,6 +11,7 @@ const defaultShadowColor = '#7C7C7CFF'
 
 const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
+const selectValueClasses = 'block text-right font-text text-base text-ink-gray-7'
 
 const getHandleBaseStyles = (scale) => ({
 	position: 'absolute',
@@ -77,6 +78,7 @@ export {
 	defaultShadowColor,
 	labelClasses,
 	chevronClasses,
+	selectValueClasses,
 	getHandleBaseStyles,
 	getStemHandleStyles,
 }

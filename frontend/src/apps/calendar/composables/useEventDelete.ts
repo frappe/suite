@@ -5,12 +5,17 @@ import { createResource, toast } from 'frappe-ui'
 import { userStore } from '@/apps/calendar/stores/user'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 /** The part of a calendar event that deleting one reads. */
 interface DeletableEvent {
-	/** The event's own id. A recurring instance carries the series id in `master_id`. */
-	id?: string
+	/**
+	 * The server's own id for the event, which `serverEventId` reads — not the `id` the
+	 * grid draws the row with. See utils/eventIdentity.
+	 */
+	event_id?: string
+	/** The series an instance came from; absent on a one-off. */
 	master_id?: string
 	/** Set on an instance of a recurring series; absent on a one-off. */
 	recurrence_id?: string
@@ -49,7 +54,7 @@ export function useEventDelete(
 	const { participantIdentities } = store
 
 	const calendarEvent = computed<DeletableEvent>(() => getEvent() ?? {})
-	const eventId = computed(() => calendarEvent.value.master_id || calendarEvent.value.id)
+	const eventId = computed(() => serverEventId(calendarEvent.value))
 
 	const deleteEventInstance = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',

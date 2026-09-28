@@ -5,7 +5,6 @@ import json
 from email import message_from_string
 from email.utils import make_msgid, parseaddr
 from mimetypes import guess_type
-from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid7
 
@@ -24,11 +23,17 @@ from frappe.utils import (
     get_datetime_str,
     now,
     now_datetime,
-    random_string,
     time_diff_in_seconds,
-    validate_email_address,
 )
 
+from suite.mail.doctype.mail_queue.payload import (
+    Address,
+    Attachments,
+    Headers,
+    Recipient,
+    Recipients,
+    to_json,
+)
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import (
     get_email_service,
@@ -36,13 +41,7 @@ from suite.mail.jmap import (
     get_identities,
     get_jmap_connection,
 )
-from suite.mail.jmap.models import (
-    EmailAddress,
-    EmailAttachment,
-    EmailCreateModel,
-    EmailHeader,
-    EmailRecipient,
-)
+from suite.mail.jmap.models import EmailCreateModel, EmailHeader
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.utils import get_config, log_mail_error
@@ -51,6 +50,7 @@ from suite.mail.utils.html_to_text import html_to_text, to_flowed
 from suite.mail.utils.user import is_jmap_configured
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
+from suite.utils.validation import JSONList, parse
 
 
 class MailQueue(OwnerFromUser, Document):
@@ -245,6 +245,12 @@ class MailQueue(OwnerFromUser, Document):
         return identity
 
     @property
+    def _recipients(self) -> list[Recipient]:
+        """The recipients as parsed from the JSON field."""
+
+        return parse(Recipients, json_loads(self.recipients, default=[]), "recipients")
+
+    @property
     def to(self) -> list[dict[str, str | None]]:
         """Returns the recipients in the To field."""
 
@@ -417,13 +423,12 @@ class MailQueue(OwnerFromUser, Document):
             for rcpt_type in ["To", "Cc", "Bcc"]:
                 if _rcpt := message.get(rcpt_type):
                     for rcpt in _rcpt.split(","):
-                        recipients.append(
-                            {
-                                "type": rcpt_type,
-                                "display_name": parseaddr(rcpt)[0],
-                                "email": parseaddr(rcpt)[1],
-                            }
-                        )
+                        display_name, email = parseaddr(rcpt)
+                        # A trailing or doubled comma leaves a piece with no address in it.
+                        if email:
+                            recipients.append(
+                                {"type": rcpt_type, "display_name": display_name, "email": email}
+                            )
 
             self.recipients = json.dumps(recipients)
 
@@ -502,131 +507,39 @@ class MailQueue(OwnerFromUser, Document):
             self.delivery_mode = "Immediate"
 
     def validate_reply_to(self) -> None:
-        """Validates the reply to."""
+        """Validates the reply to, falling back to the identity's."""
 
         if self.raw_message:
             return
 
-        if not json_loads(self.reply_to):
-            if reply_to := self.identity["reply_to"]:
-                self.reply_to = json.dumps(reply_to)
+        reply_to = json_loads(self.reply_to) or self.identity["reply_to"] or []
+        self.reply_to = to_json(parse(list[Address], reply_to, "reply_to"))
 
     def validate_headers(self) -> None:
-        """Validates the headers."""
+        """Validates the headers: only custom ones may be added."""
 
-        standard_headers = {
-            "from",
-            "to",
-            "cc",
-            "bcc",
-            "subject",
-            "date",
-            "message-id",
-            "in-reply-to",
-            "references",
-            "reply-to",
-            "user-agent",
-            "sender",
-            "return-path",
-            "mime-version",
-            "content-type",
-            "content-transfer-encoding",
-            "content-language",
-            "x-mailer",
-            "x-priority",
-            "x-mail-queue",
-        }
-
-        headers = {}
-        for key, value in json_loads(self.headers, default={}).items():
-            if key.lower() in standard_headers:
-                frappe.throw(
-                    _(
-                        "The header <b>{0}</b> is a standard email header and cannot be overridden. Please use custom headers prefixed with <code>X-</code>."
-                    ).format(key)
-                )
-
-            headers[key] = value
-
-        self.headers = json.dumps(headers)
+        self.headers = json.dumps(parse(Headers, json_loads(self.headers, default={}), "headers"))
 
     def validate_recipients(self) -> None:
         """Validates the recipients."""
 
-        recipients = []
-        for rcpt in json_loads(self.recipients, default=[]):
-            if not rcpt["type"] or not rcpt["email"]:
-                continue
-
-            validate_email_address(rcpt["email"], throw=True)
-
-            recipients.append(
-                {
-                    "type": rcpt["type"],
-                    "display_name": rcpt.get("display_name"),
-                    "email": rcpt["email"],
-                }
-            )
-
+        recipients = self._recipients
         if not recipients and not self.save_as_draft:
             frappe.throw(_("Please add at least one recipient."))
 
-        self.recipients = json.dumps(recipients)
+        self.recipients = to_json(recipients)
 
     def validate_attachments(self) -> None:
-        """Validates the attachments."""
+        """Validates the attachments, and that the sender may read every private file among them."""
 
         user = self.user if is_administrator(frappe.session.user) else frappe.session.user
 
-        normalized = []
-        seen_blob_ids = set()
+        attachments = parse(Attachments, json_loads(self.attachments, default=[]), "attachments")
+        for attachment in attachments:
+            if attachment.is_private_file:
+                MailQueue._get_file(file_url=attachment.file_url, user=user, check_permission=True)
 
-        for a in json_loads(self.attachments, default=[]):
-            disposition = a["disposition"]
-            cid = a.get("cid", random_string(length=10))
-
-            if blob_id := a.get("blob_id"):
-                if blob_id in seen_blob_ids:
-                    continue
-
-                if not a.get("type"):
-                    frappe.throw(_("type is required for blob attachments."))
-
-                normalized.append(
-                    {
-                        "blob_id": blob_id,
-                        "type": a["type"],
-                        "size": a["size"],
-                        "filename": a["filename"],
-                        "disposition": disposition,
-                        "cid": cid,
-                    }
-                )
-                seen_blob_ids.add(blob_id)
-
-            elif file_url := a.get("file_url"):
-                if file_url.startswith("/private/files"):
-                    MailQueue._get_file(file_url=file_url, user=user, check_permission=True)
-                elif not file_url.startswith("/files"):
-                    frappe.throw(
-                        _(
-                            "Invalid file URL: {0}. File URLs must start with '/files/' or '/private/files/'."
-                        ).format(file_url)
-                    )
-
-                normalized.append(
-                    {
-                        "file_url": file_url,
-                        "filename": a.get("filename") or Path(file_url).name,
-                        "disposition": disposition,
-                        "cid": cid,
-                    }
-                )
-
-            else:
-                frappe.throw(_("Either blob_id or file_url is required for attachments."))
-
-        self.attachments = json.dumps(normalized)
+        self.attachments = to_json(attachments)
 
     def validate_message_id(self) -> None:
         """Validates the message ID."""
@@ -742,47 +655,29 @@ class MailQueue(OwnerFromUser, Document):
                 "sent", create_if_not_exists=True, raise_exception=True
             )
 
-            headers: list[EmailHeader] = []
-            reply_to: list[EmailAddress] = []
-            attachments: list[EmailAttachment] = []
+            headers, reply_to, attachments = [], [], []
 
             if not self.raw_message:
                 headers = [
                     EmailHeader(name=key, value=value)
-                    for key, value in json_loads(self.headers, default={}).items()
+                    for key, value in parse(Headers, json_loads(self.headers, default={}), "headers").items()
                 ]
                 reply_to = [
-                    EmailAddress(name=r["display_name"], email=r["email"].lower())
-                    for r in json_loads(self.reply_to, default=[])
+                    address.to_jmap()
+                    for address in parse(list[Address], json_loads(self.reply_to, default=[]), "reply_to")
                 ]
 
-                _attachments = []
-                for a in json_loads(self.attachments, default=[]):
-                    blob_id = a.get("blob_id")
-                    if not blob_id:
-                        file = MailQueue._get_file(file_url=a["file_url"], check_permission=False)
-                        content = file.get_content()
-                        content_type = guess_type(file.file_name)[0]
-                        blob = email_service.upload_blob(content, content_type)
-                        a.update({"type": blob["type"], "size": blob["size"], "blob_id": blob["blobId"]})
-                    _attachments.append(a)
+                _attachments = parse(Attachments, json_loads(self.attachments, default=[]), "attachments")
+                for a in _attachments:
+                    if not a.blob_id:
+                        file = MailQueue._get_file(file_url=a.file_url, check_permission=False)
+                        blob = email_service.upload_blob(file.get_content(), guess_type(file.file_name)[0])
+                        a.type, a.size, a.blob_id = blob["type"], blob["size"], blob["blobId"]
 
-                kwargs["attachments"] = json.dumps(_attachments)
-                attachments = [
-                    EmailAttachment(
-                        name=a["filename"],
-                        type=a["type"],
-                        cid=a["cid"],
-                        blob_id=a["blob_id"],
-                        disposition=a["disposition"],
-                    )
-                    for a in _attachments
-                ]
+                kwargs["attachments"] = to_json(_attachments)
+                attachments = [a.to_jmap() for a in _attachments]
 
-            recipients = [
-                EmailRecipient(type=r["type"].lower(), name=r["display_name"], email=r["email"].lower())
-                for r in json_loads(self.recipients)
-            ]
+            recipients = [r.to_jmap() for r in self._recipients]
 
             email = EmailCreateModel(
                 creation_id=self.name,
@@ -876,14 +771,9 @@ class MailQueue(OwnerFromUser, Document):
     def _get_recipients(self, type: Literal["To", "Cc", "Bcc"] | None = None) -> list[dict[str, str | None]]:
         """Returns the recipients."""
 
-        recipients = []
-        for rcpt in json_loads(self.recipients, default=[]):
-            if type and rcpt["type"] != type:
-                continue
-
-            recipients.append({"name": rcpt["display_name"], "email": rcpt["email"]})
-
-        return recipients
+        return [
+            {"name": r.display_name, "email": r.email} for r in self._recipients if not type or r.type == type
+        ]
 
     def _db_set(
         self,
@@ -898,13 +788,10 @@ class MailQueue(OwnerFromUser, Document):
 
 
 @frappe.whitelist()
-def bulk_retry(names: str | list[str]) -> None:
+def bulk_retry(names: JSONList[str]) -> None:
     """Retries the emails with the given names."""
 
     frappe.only_for("System Manager")
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     for name in names:
         doc = frappe.get_doc("Mail Queue", name)

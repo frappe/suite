@@ -147,6 +147,7 @@ export interface SFUEventHandlers {
 		detail?: string,
 	) => void;
 	onRecoveryExhausted?: (trigger?: ParticipantRecoveryTrigger) => void;
+	onRoomRejoined?: () => void;
 	onLifecycleStateChange?: (state: ParticipantConnectionState) => void;
 	onInitialPublicationError?: (error: unknown) => void;
 }
@@ -872,6 +873,7 @@ export class ParticipantConnection {
 			{ connectionId: this.connectionId },
 		);
 		signal.throwIfAborted();
+		this.eventHandlers.onRoomRejoined?.();
 		if (!(await this.waitForE2EEContextIfRequired(signal))) {
 			throw new Error("E2EE context is not ready after fresh reconnect");
 		}

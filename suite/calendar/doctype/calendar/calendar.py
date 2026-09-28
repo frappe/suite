@@ -1,7 +1,6 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from typing import Literal
 from uuid import uuid7
 
@@ -15,6 +14,7 @@ from suite.mail.jmap import get_calendar_service
 from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList
 
 
 class Calendar(Document):
@@ -146,11 +146,8 @@ def validate_calendar_name_format(name: str) -> None:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple calendars given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

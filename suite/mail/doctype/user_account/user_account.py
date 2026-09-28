@@ -165,6 +165,64 @@ def _account_owner(account: str, users: list[str]) -> str:
     return users[0]
 
 
+def get_enabled_account_user(account: str) -> str | None:
+    """A user a background job can act as on the account, or None when there is none.
+
+    Acting as Administrator resolves the account to its owner, or for a team account to its first
+    member, who may be disabled or have no login although another member could connect.
+    """
+
+    users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
+    if not users:
+        return None
+
+    USER_SETTINGS = frappe.qb.DocType("User Settings")
+    USER = frappe.qb.DocType("User")
+    logins = dict(
+        (
+            frappe.qb.from_(USER_SETTINGS)
+            .inner_join(USER)
+            .on(USER_SETTINGS.user == USER.name)
+            .where(USER_SETTINGS.user.isin(users))
+            .where(USER_SETTINGS.username.isnotnull() & (USER_SETTINGS.username != ""))
+            .where(USER.enabled == 1)
+            .select(USER_SETTINGS.user, USER_SETTINGS.username)
+        ).run()
+    )
+    name, is_personal = frappe.db.get_value("JMAP Account", account, ["_name", "is_personal"]) or (None, 0)
+
+    # A personal account's owner is the user whose personal account it is, decided the way the app
+    # decides it everywhere else — the account need not be named after their login.
+    personal_owners = (
+        {user for user in logins if get_user_personal_jmap_account(user) == account} if is_personal else set()
+    )
+
+    return pick_account_user(users, logins, name, bool(is_personal), personal_owners)
+
+
+def pick_account_user(
+    users: list[str],
+    logins: dict[str, str],
+    name: str | None,
+    is_personal: bool,
+    personal_owners: set[str],
+) -> str | None:
+    """Which of an account's users to act as, given the enabled ones that can connect (user → login).
+
+    A personal account only as its owner, one of `personal_owners`: anyone else linked to it has only
+    a share, and acting as them would reach just that. A team account as the member whose login it is
+    named after, or else its first member that can connect.
+    """
+
+    if is_personal:
+        return next((user for user in users if user in logins and user in personal_owners), None)
+
+    name = (name or "").casefold()
+    if owner := next((user for user, login in logins.items() if name and login.casefold() == name), None):
+        return owner
+    return next((user for user in users if user in logins), None)
+
+
 ACCOUNT_APPS_CACHE_SECONDS = 600
 
 

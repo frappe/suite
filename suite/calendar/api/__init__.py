@@ -1,11 +1,15 @@
 import json
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import frappe
 from dateutil.rrule import rrulestr
 from frappe import _
 from frappe.utils import cint
 from icalendar.prop import vRecur
+from pydantic import BaseModel
 
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import (
@@ -24,12 +28,14 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
+from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields, Lower
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
 from suite.calendar.external import calendar_rows as external_calendar_rows
 from suite.calendar.external import events_in_window as external_events
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import parse, without_blanks
 
 # `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
 MAX_CALENDARS = 1000
@@ -230,6 +236,16 @@ EVENT_PAGE_SIZE = 999
 # it stops, and says so in the error log rather than silently.
 MAX_EVENTS_IN_WINDOW = 5000
 
+# What a search answers with when the caller names no count of its own.
+EVENT_SEARCH_LIMIT = 20
+
+# And the most it will answer with however large a count is asked for. The service walks the
+# server batch by batch until it has the number it was given, so an unbounded count is an
+# unbounded walk of the account's whole event store — from a whitelisted endpoint, for a
+# palette that shows ten. Bounded here for the same reason `MAX_EVENTS_IN_WINDOW` bounds the
+# grid's paging.
+MAX_EVENT_SEARCH_LIMIT = 200
+
 
 def _events_in_window(
     account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
@@ -316,6 +332,383 @@ def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, 
         lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
     )
     return events + external_events(frappe.session.user, from_date, to_date)
+
+
+@frappe.whitelist()
+def search_calendar_events_with_shared(
+    account: str,
+    text: str | None = None,
+    limit: int = EVENT_SEARCH_LIMIT,
+    time_zone: str | None = None,
+    filters: dict | None = None,
+) -> list[dict]:
+    """Events matching `text` and `filters`, from the account and the calendars shared with it.
+
+    The grid reads through `_with_shared`, so it draws calendars that live in their owner's
+    account rather than the viewer's — a holidays calendar shared read-only, say. A search
+    that asked the viewer's account alone would answer "no results" for an event the reader
+    can see on the grid in front of them.
+
+    `limit` is what the caller would like and `MAX_EVENT_SEARCH_LIMIT` what it may have.
+    """
+
+    limit = _search_limit(limit)
+    filters = parse(EventSearchFilters, without_blanks(frappe.parse_json(filters) or {}), _("Filters"))
+
+    # With nothing asked there is nothing to answer. Guarded here rather than per account,
+    # because the `inCalendar` scoping a shared account is read with is a condition too — and
+    # on its own it would hand back every event in every calendar shared with the reader.
+    if not (_search_conditions(text, filters) or filters.calendar):
+        return []
+
+    # A named calendar answers for itself: it says which account to ask and which calendar in
+    # it, so the fan-out has nothing left to widen. Named as `account|id`, the way every other
+    # calendar-shaped argument in this app is.
+    if filters.calendar:
+        calendar_account, _sep, calendar_id = filters.calendar.partition("|")
+        events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
+    else:
+        events = _with_shared(
+            account,
+            lambda each, calendar_ids: _search_calendar_events(
+                each, text, limit, time_zone, calendar_ids, filters
+            ),
+        )
+
+    # Without a range the server answered with masters, and a master's date is the least useful
+    # date a series has: the standup shows once, dated the week it was first entered. Each is
+    # replaced by its next few occurrences — before the cut, since that date is no better to
+    # rank on than it is to show, and cutting on it keeps the series that *began* earliest.
+    if not (filters.after and filters.before):
+        events = _expanded_upcoming(events, limit, time_zone)
+
+    # Each account answers in its own order, so the concatenation is in none: the merged list
+    # has to be put back in order before it is cut down to the asked-for count, or which
+    # results survive depends on which account happened to be read first. Nearest today first:
+    # a reader searching a calendar is looking for something they are about to go to or have
+    # just been to, and a match ten years off is the one they meant least often, whichever
+    # side of today it falls.
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    events.sort(key=lambda event: _distance(event, now))
+
+    return _first_events(events, limit)
+
+
+def _utc_start(event: dict) -> str:
+    """The event's start as UTC, for measuring against a UTC `now`.
+
+    A start is stored as the wall-clock time in the event's own zone; measured as it stands, an
+    event in Auckland and one in Los Angeles at the same instant would rank a day apart. An
+    all-day event has no zone and no instant — its date is the same everywhere — and a zone
+    the platform does not know is read as it stands.
+    """
+
+    start = event.get("start") or ""
+    if not start or len(start) < 16:
+        return start
+    try:
+        zone = ZoneInfo(event.get("time_zone") or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        return start
+    local = datetime.fromisoformat(start[:19]).replace(tzinfo=zone)
+    return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _distance(event: dict, now: str) -> timedelta:
+    """How far the event's start falls from `now`, on either side, measured in UTC."""
+
+    start = _utc_start(event)
+    if not start:
+        return timedelta.max
+    return abs(datetime.fromisoformat(start[:19]) - datetime.fromisoformat(now[:19]))
+
+
+def _rank_distance(event: dict, now: str) -> timedelta:
+    """How far a candidate ranks from today while it is still a master, before anything is
+    expanded.
+
+    A series' own start is the week it was first entered, which says nothing about when it next
+    runs; a series still going next runs today-ish, whenever it began. So a recurring candidate
+    that has begun ranks as today.
+
+    An estimate, and only ever used as one: a yearly series ranks as though it ran today, and a
+    series that ended years ago ranks as though it still runs. It decides which candidates are
+    worth the cost of expanding, never the order of the answer — that is settled afterwards, on
+    the rows expansion actually returned.
+    """
+
+    if _recurs(event) and _utc_start(event) <= now:
+        return timedelta(0)
+    return _distance(event, now)
+
+
+def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) -> list[dict]:
+    """`events`, with each recurring master among the ranking candidates replaced by its next
+    few occurrences.
+
+    Only the `limit` nearest-ranked candidates are expanded, because expansion is a query per series
+    (see `occurrences_from`) rather than one for the batch. The fan-out asks every account
+    holding a calendar shared into this one, so expanding everything they returned would put a
+    query per series per account behind a single palette keystroke — and the answer is only
+    `limit` events long, so the rest could not have appeared in it anyway.
+    """
+
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    candidates = sorted(events, key=lambda event: _rank_distance(event, now))[:limit]
+
+    by_account: dict[str, list[dict]] = defaultdict(list)
+    for event in candidates:
+        by_account[event["account"]].append(event)
+
+    return [
+        row
+        for account_events in by_account.values()
+        for row in _with_nearest_occurrences(account_events, time_zone)
+    ]
+
+
+def _first_events(rows: list[dict], limit: int) -> list[dict]:
+    """The rows belonging to the first `limit` events in `rows`, which is more rows than that
+    wherever a recurring event contributed several.
+
+    `limit` counts events rather than rows because a recurring event is one answer to the
+    search however many times it is about to run — ten events is the promise, and three rows
+    each is how a recurring one keeps it. Rows arrive nearest today first, so the events are
+    taken in the order their nearest row falls, and the further rows of one already taken come
+    along with it rather than counting again."""
+
+    taken: set[tuple[str, str]] = set()
+    kept = []
+    for row in rows:
+        event = (row.get("account") or "", row.get("master_id") or row.get("id") or "")
+        if event not in taken:
+            if len(taken) == limit:
+                continue
+            taken.add(event)
+        kept.append(row)
+
+    return kept
+
+
+# How many of a recurring event's coming occurrences a search shows in the master's place, and
+# how far ahead it looks for them — three years, so a yearly one has three to show.
+RECURRENCE_INSTANCES = 3
+RECURRENCE_HORIZON_YEARS = 3
+
+
+def _rule(event: dict) -> dict:
+    """The event's recurrence rule. The formatter serialises it as JSON and writes `{}` for
+    none, so the string being non-empty proves nothing; anything unreadable is no rule."""
+
+    try:
+        rule = json.loads(event.get("recurrence_rule") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return rule if isinstance(rule, dict) else {}
+
+
+def _recurs(event: dict) -> bool:
+    return bool(_rule(event))
+
+
+def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list[dict]:
+    """`events`, all from one account, with each recurring master replaced by the few
+    occurrences nearest today, on either side of it: a standup answers as last week's, today's
+    and next week's, since the answer is read nearest first and the next three would have put
+    the one that just ran out of it. A series with nothing from its last period on — one that
+    has ended — stays as its master: a row dated when it last ran is still the answer to the
+    search that found it.
+
+    One query per series, from one period before today: that is where the previous occurrences
+    fall, and asking for as many as a period holds over the count from there — the previous
+    period's, then today's and the next few — leaves the nearest few to be chosen here. Asking
+    each side of today separately would have doubled the queries, and this is already the
+    search's one cost that grows with the answer; and every occurrence asked for is fetched
+    whole before the choice is made, so the ask stays as small as the choice allows.
+
+    Each occurrence is handed the master's id and rule, which the expansion does not carry. The
+    id is what a link to it is written with (see the calendar's `handleEventClick`), and the rule
+    is what tells the row to draw the repeat mark."""
+
+    recurring = [event for event in events if _recurs(event)]
+    if not recurring:
+        return events
+
+    account = events[0]["account"]
+    now = datetime.now(UTC)
+    by_uid = get_calendar_event_service(account).occurrences_from(
+        {event["uid"]: normalize_utc_z(now - _period(event)) for event in recurring},
+        before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
+        # A period back reaches every occurrence of the last period and, over the extra day,
+        # possibly one more; the count on top of those is what is left for today and after.
+        per_series=max(_per_period(event) for event in recurring) + 1 + RECURRENCE_INSTANCES,
+        time_zone=time_zone,
+    )
+
+    ids = [id for event in recurring for id in by_uid.get(event["uid"], [])]
+    occurrences: dict[str, list[dict]] = defaultdict(list)
+    for occurrence in get_calendar_events_by_ids(account, ids):
+        occurrences[occurrence["uid"]].append(occurrence)
+    today = now.strftime("%Y-%m-%dT%H:%M:%S")
+    for found in occurrences.values():
+        found.sort(key=lambda occurrence: _distance(occurrence, today))
+        del found[RECURRENCE_INSTANCES:]
+
+    rows: list[dict] = []
+    for event in events:
+        nearest = occurrences.get(event["uid"]) if _recurs(event) else None
+        if not nearest:
+            rows.append(event)
+            continue
+        for occurrence in nearest:
+            occurrence["master_id"] = event["id"]
+            occurrence["recurrence_rule"] = event["recurrence_rule"]
+            rows.append(occurrence)
+
+    return rows
+
+
+# How long one step of a rule's frequency is, at the longest a step of it can be.
+_FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 31, "yearly": 366}
+
+
+def _period(event: dict) -> timedelta:
+    """How far back a series' previous occurrences can be: one step of its rule, and a day
+    over, since "a week ago" measured from now falls after last week's occurrence whenever that
+    ran earlier in its day than now is in this one. A rule the frequency cannot be read from is
+    taken as weekly."""
+
+    rule = _rule(event)
+    days = _FREQUENCY_DAYS.get(str(rule.get("frequency", "")).lower(), 7)
+    return timedelta(days=days * max(cint(rule.get("interval")) or 1, 1) + 1)
+
+
+def _per_period(event: dict) -> int:
+    """How many times a series can run in one step of its rule: once, unless the rule names
+    several days of the week, days of the month or months of the year, in which case each. A
+    weekly standup on Monday, Wednesday and Friday runs three times a week, and a window a week
+    back holds all three before it reaches today."""
+
+    rule = _rule(event)
+    return max(
+        1,
+        *(
+            len(rule[key]) if isinstance(rule.get(key), list) else 1
+            for key in ("byDay", "byMonthDay", "byMonth", "byYearDay", "byWeekNo")
+        ),
+    )
+
+
+# The filters that are a JMAP condition each, under the name the server knows them by. Left out
+# deliberately: `participants`, `status`, `privacy`, `isDraft` and `showWithoutTime` are not
+# indexed by Stalwart, and an unindexed condition is *ignored* rather than refused — a filter
+# built on one would quietly widen the search instead of narrowing it.
+EVENT_SEARCH_CONDITIONS = {
+    "attendee": "attendee",
+    "organizer": "owner",
+}
+
+
+def _search_limit(limit: int | str | None) -> int:
+    """How many results a search will actually answer with, whatever it was asked for."""
+
+    return max(1, min(cint(limit) or EVENT_SEARCH_LIMIT, MAX_EVENT_SEARCH_LIMIT))
+
+
+class EventSearchFilters(BaseModel):
+    """What a search may narrow on, as the palette's panel sends it.
+
+    Parsed rather than read off the request as it arrives. This is a whitelisted endpoint, so
+    `filters` is whatever JSON a caller cared to send: a list, a number, or an `attendee` that
+    is itself a list. Read straight, those reach `.strip()` and `partition()` as a server error
+    saying nothing; parsed, each says which field is wrong and why.
+
+    `scope` is what a word typed on the query line is matched against. `text` is the server's
+    own union of everything an event is written in — its title, its description, where it is,
+    and the addresses of whoever called it and whoever is coming — so a name finds the meeting
+    somebody called as well as the one named after them. `title` narrows to the title alone.
+    """
+
+    scope: Annotated[Literal["text", "title"], Lower] = "text"
+    # `account|id`, the way every other calendar-shaped argument in this app is named.
+    calendar: str = ""
+    attendee: str = ""
+    organizer: str = ""
+    after: str = ""
+    before: str = ""
+
+
+def _search_conditions(text: str | None, filters: EventSearchFilters) -> list[dict]:
+    """The filters as JMAP conditions, dropping the ones left blank."""
+
+    conditions = [{filters.scope: text}] if text else []
+
+    conditions.extend(
+        {condition: value}
+        for key, condition in EVENT_SEARCH_CONDITIONS.items()
+        if (value := getattr(filters, key).strip())
+    )
+
+    # Sent as instants, not dates: which instants a reader's "3 July" begins and ends at is a
+    # question about their time zone, and the client is the one holding that. It widens each
+    # to the whole day there before asking (see the calendar's `utcDayStart`/`utcDayEnd`), the
+    # way the grid's own range query does.
+    if filters.after:
+        conditions.append({"after": normalize_utc_z(filters.after)})
+    if filters.before:
+        conditions.append({"before": normalize_utc_z(filters.before)})
+
+    return conditions
+
+
+def _search_calendar_events(
+    account: str,
+    text: str | None,
+    limit: int,
+    time_zone: str | None,
+    calendar_ids: list[str] | None = None,
+    filters: EventSearchFilters | None = None,
+) -> list[dict]:
+    """The account's matching events, on `calendar_ids` alone when given. A series answers
+    as its master unless a date range was asked (see below)."""
+
+    filters = filters or EventSearchFilters()
+    conditions = _search_conditions(text, filters)
+    if calendar_ids:
+        conditions.append({"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]})
+
+    # A date range is the one thing that lets a series answer as the occurrence the reader is
+    # looking for. Without a window the server matches a series on any occurrence in it and
+    # still hands back the master, so a search of one July came back full of birthdays dated
+    # the January they were first entered. Expansion needs a start and an end, which is
+    # precisely what a range is, so it is on exactly when the reader has given one. A half-open
+    # range would put us back to mis-dated masters, which is why the panel keeps both ends of
+    # its range filled: JMAP will not expand without both, so there is no half-open case to
+    # answer better than this.
+    expand = bool(filters.after and filters.before)
+
+    # The answer is ordered by distance from today, and the server can only order by date. So
+    # it is asked for both halves — what is still to come, soonest first, and what has passed,
+    # most recent first — each cut at `limit` on its own, which is the most of either the
+    # answer could hold (see `query_around`).
+    ids = get_calendar_event_service(account).query_around(
+        conditions,
+        normalize_utc_z(datetime.now(UTC)),
+        limit,
+        time_zone=time_zone,
+        expand_recurrences=expand,
+    )
+    events = get_calendar_events_by_ids(account, ids)
+
+    # An expanded occurrence's id is synthetic — derived from its position in the expansion —
+    # and the server renumbers it the moment that occurrence gains an override. The grid pays
+    # for this enrichment for the same reason (`_calendar_events`): without the master's id
+    # beside it, a link to a hit is a link to an id that stops resolving as soon as anyone
+    # edits or answers that occurrence. Unexpanded results are masters already, and pay nothing.
+    if expand:
+        enrich_events_with_master_data(account, events)
+
+    return events
 
 
 @frappe.whitelist()
@@ -652,35 +1045,45 @@ def rsvp_calendar_event(account: str, id: str, response: str, recurrence_id: str
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def edit_calendar_event(account: str, id: str, **kwargs) -> None:
+def edit_calendar_event(account: str, id: str, send_scheduling_messages: bool = False, **kwargs) -> None:
+    """Sets the given `EventFields` on an event and keeps every other field as stored.
+
+    The JMAP update replaces the whole event, so what the caller leaves out is read back first.
+    Frappe does not check `**kwargs`, hence the explicit parse.
+    """
+
+    patch = parse(EventFields, kwargs).model_dump(exclude_unset=True)
+
     events = get_calendar_events_by_ids(account, [id])
     if not events:
         frappe.throw(_("Calendar Event {0} not found.").format(frappe.bold(id)), frappe.DoesNotExistError)
 
     event = events[0]
+    stored = {
+        **event,
+        "calendar_ids": [calendar["calendar_id"] for calendar in event["calendars"]],
+        "recurrence_rule": json.loads(event["recurrence_rule"]),
+        # An alert with a trigger this app cannot express would fail the update; the service has
+        # always dropped such alerts on write, so they are left out here instead.
+        "alerts": [alert for alert in event["alerts"] if alert["type"] in KNOWN_TRIGGERS],
+    }
 
     def resolve(key):
-        return kwargs[key] if key in kwargs else event[key]
-
-    calendar_ids = (
-        kwargs["calendar_ids"]
-        if "calendar_ids" in kwargs
-        else [calendar["calendar_id"] for calendar in event["calendars"]]
-    )
+        return patch[key] if key in patch else stored[key]
 
     update_calendar_event(
         account,
         id,
         event["uid"],
         event["organizer"],
-        calendar_ids,
+        resolve("calendar_ids"),
         resolve("status"),
         resolve("draft"),
         resolve("title"),
         resolve("start"),
         resolve("duration"),
         resolve("time_zone"),
-        json.loads(resolve("recurrence_rule")),
+        resolve("recurrence_rule"),
         resolve("show_without_time"),
         resolve("privacy"),
         resolve("free_busy_status"),
@@ -690,30 +1093,8 @@ def edit_calendar_event(account: str, id: str, **kwargs) -> None:
         _with_name(resolve("participants")),
         resolve("alerts"),
         resolve("use_default_alerts"),
-        kwargs.get("send_scheduling_messages", False),
+        send_scheduling_messages,
     )
-
-
-SERIES_FIELDS = (
-    "organizer",
-    "calendar_ids",
-    "status",
-    "draft",
-    "title",
-    "start",
-    "duration",
-    "time_zone",
-    "recurrence_rule",
-    "show_without_time",
-    "privacy",
-    "free_busy_status",
-    "description",
-    "locations",
-    "links",
-    "participants",
-    "alerts",
-    "use_default_alerts",
-)
 
 
 @frappe.whitelist()
@@ -751,7 +1132,7 @@ def split_calendar_event_series(
     if not rule:
         frappe.throw(_("This event does not repeat, so there is nothing following it."))
 
-    fields = {key: value for key, value in kwargs.items() if key in SERIES_FIELDS}
+    fields = parse(EventFields, kwargs).model_dump(exclude_unset=True)
     # A series edited from one of its occurrences keeps the calendars the series is in; the form
     # never names them, and without this the new half would land in the default calendar.
     if not fields.get("calendar_ids"):
@@ -770,12 +1151,7 @@ def split_calendar_event_series(
         # Through edit_calendar_event, never update_calendar_event: the latter writes every
         # property it is given and NULLs every one it is not, so a caller that sent a title and
         # no start would erase the start, the duration, the rule and the organizer with it.
-        edit_calendar_event(
-            account,
-            master_id,
-            send_scheduling_messages=send_scheduling_messages,
-            **_as_edit_kwargs(fields),
-        )
+        edit_calendar_event(account, master_id, send_scheduling_messages=send_scheduling_messages, **fields)
         return master_id
 
     tail_overrides = _end_series_before(
@@ -874,10 +1250,7 @@ def _end_series_before(
         head_rule["until"] = _moment_before(recurrence_id)
 
     edit_calendar_event(
-        account,
-        master_id,
-        recurrence_rule=json.dumps(head_rule),
-        send_scheduling_messages=send_scheduling_messages,
+        account, master_id, send_scheduling_messages=send_scheduling_messages, recurrence_rule=head_rule
     )
 
     service = get_calendar_event_service(account)
@@ -900,20 +1273,6 @@ def spoken_rule(value: dict | None) -> str:
     """
 
     return json.dumps({k: v for k, v in (value or {}).items() if k != "@type" and v}, sort_keys=True)
-
-
-def _as_edit_kwargs(fields: dict) -> dict:
-    """`fields` in the shape edit_calendar_event resolves against the stored event.
-
-    It reads the stored `recurrence_rule` as the JSON string the formatter emits, so an
-    override has to arrive the same way; everything else passes through untouched.
-    """
-
-    kwargs = dict(fields)
-    if isinstance(kwargs.get("recurrence_rule"), dict):
-        kwargs["recurrence_rule"] = json.dumps(kwargs["recurrence_rule"])
-
-    return kwargs
 
 
 def _occurrences_before(rule: dict, start: str, recurrence_id: str) -> int | None:

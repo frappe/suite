@@ -3,7 +3,7 @@
 		<span class="flex min-w-0 items-center gap-3">
 			<span class="flex min-w-0 flex-1 items-center gap-1.5">
 				<span class="truncate text-base-semibold text-ink-gray-8">
-					{{ result.subject || '[No subject]' }}
+					<HighlightedText :text="result.subject || '[No subject]'" :term="term" />
 				</span>
 				<span
 					v-if="attachmentCount"
@@ -18,9 +18,9 @@
 			</span>
 		</span>
 		<span class="flex min-w-0 items-center gap-3">
-			<span class="min-w-0 flex-1 truncate text-sm text-ink-gray-6">{{
-				interlocutors
-			}}</span>
+			<span class="min-w-0 flex-1 truncate text-sm text-ink-gray-6">
+				<HighlightedText :text="interlocutors" :term="term" />
+			</span>
 			<span class="flex shrink-0 items-center gap-1.5">
 				<span
 					v-for="mailbox in result.mailboxes"
@@ -38,10 +38,15 @@
 import { computed } from 'vue'
 
 import { getFormattedDate } from '@/apps/mail/utils'
+import HighlightedText from '@/components/HighlightedText.vue'
 
 import type { MailSearchResult } from './types'
 
-const props = defineProps<{ result: MailSearchResult }>()
+const props = defineProps<{
+	result: MailSearchResult
+	/** The words it was found by, to mark where they fall. */
+	term?: string
+}>()
 
 const interlocutors = computed(() => {
 	const sender = props.result.from_name || props.result.from_email

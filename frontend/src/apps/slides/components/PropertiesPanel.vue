@@ -62,6 +62,8 @@
 				<BackgroundSection />
 				<hr class="border-t" />
 				<TransitionSection />
+				<hr class="border-t" />
+				<SlidePlaybackSection />
 			</div>
 		</div>
 	</div>
@@ -98,6 +100,7 @@ import BorderSection from './BorderSection.vue'
 import ShadowSection from './ShadowSection.vue'
 import BackgroundSection from './BackgroundSection.vue'
 import TransitionSection from './TransitionSection.vue'
+import SlidePlaybackSection from './SlidePlaybackSection.vue'
 
 provide('sectionInert', isSelectionLocked)
 

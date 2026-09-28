@@ -4,7 +4,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 // element.js reaches back into this composable, so it has to pull it in
-const { getInitialTableContent } = await import('@/apps/slides/stores/element')
+const { getEmptyTableCells, getInitialTableContent } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('./useTextEditor')
 
 const { activeEditor, initTextEditor, toggleMark, updateProperty, editorStyles } = useTextEditor()
@@ -53,7 +53,10 @@ describe('what an empty selection styles', () => {
 
 	// a mark needs text to sit on, so empty cells read as unstyled
 	it('styles a table that has not been typed in yet', () => {
-		initTextEditor('t1', getInitialTableContent(2, 2, 150, { fontFamily: 'Inter', fontSize: 18 }))
+		initTextEditor(
+			't1',
+			getInitialTableContent(getEmptyTableCells(2, 2), [150, 150], { fontFamily: 'Inter', fontSize: 18 }),
+		)
 
 		expect(editorStyles.fontFamily).toBe('Inter')
 

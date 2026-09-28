@@ -19,6 +19,7 @@ import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
+import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useRootStore } from '@/stores/root'
@@ -31,7 +32,10 @@ import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import EventDetailSheet from '@/apps/calendar/components/mobile/EventDetailSheet.vue'
 import MobileCalendar from '@/apps/calendar/components/mobile/MobileCalendar.vue'
+import MobileSearch from '@/apps/calendar/components/mobile/MobileSearch.vue'
+import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
 import {
+	isViewRoute,
 	modeForRoute,
 	routeDate,
 	routeForMode,
@@ -90,7 +94,9 @@ usePageMeta(() => appPageMeta(pageTitle.value, 'Calendar'))
 // a deep link opens on it and Back walks the days visited. The view rides along,
 // each on the route it is named after.
 watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
-	if (!isMobile.value) return
+	// Only a view route is somewhere the date and view belong. On the search page — or
+	// Profile — writing them would carry the reader off the page they just opened.
+	if (!isMobile.value || !isViewRoute(route.name)) return
 
 	const day = dayjs(date)
 	const name = routeForView(view)
@@ -114,7 +120,10 @@ watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
 watch(
 	() => `${String(route.name)}|${route.params.year}|${route.params.month}|${route.params.day}`,
 	() => {
-		if (!isMobile.value) return
+		// A page that is not a view says nothing about the date or the view: the last real
+		// ones are kept, so the Calendar tab still names where a tap would land and going
+		// back lands there.
+		if (!isMobile.value || !isViewRoute(route.name)) return
 		const date = routeDate(route.params).format('YYYY-MM-DD')
 		if (date !== mobileDate.value) mobileDate.value = date
 		mobileView.value = viewForRoute(route.name)
@@ -248,6 +257,13 @@ const transformEvent = (event) => {
 
 	return {
 		...event,
+		// frappe-ui identifies a pill by `id` alone — its `:key`, and the active mark it
+		// draws from `CalendarActiveEvent` — so it is given the one that is unique across
+		// every account on the grid. The server's own id stays under `event_id`, which is
+		// what `serverEventId` reads and every call that writes an event back names it by.
+		// See utils/eventIdentity.
+		id: eventRowId(event),
+		event_id: event.id,
 		// The calendar pills render `title` verbatim (frappe-ui hardcodes an italic
 		// '[No title]' fallback), so untitled events get their placeholder here.
 		// actualTitle keeps the raw value; every path that writes back to the
@@ -418,6 +434,78 @@ const eventsPending = computed(
 	() => events.loading || (!events.data && !events.error),
 )
 
+// --- The phone's search page ---
+
+// A page of its own (`calendar-search`), not the palette raised over the calendar. The
+// words live in the URL so Back restores them; the filters live with the page. The view
+// runs the search because the view owns the sheet: a result is resolved through the same
+// `findLinkedEvent` a grid row is, and opens over the results rather than by leaving for
+// a view.
+const isSearchRoute = computed(() => route.name === 'calendar-search')
+const searchText = computed(() => String(route.query.q ?? '').trim())
+const searchFilters = useCalendarSearchFilters()
+
+// Events, not rows: a recurring event answers as its next few occurrences, and the server
+// counts this before expanding them. Fifty where the palette shows ten: the palette is a
+// dialog under a query line, a page is a list to scroll. Expansion is a query per recurring
+// event, batched sixteen to a request, so fifty events is at most four requests behind a
+// keystroke — bounded, and the server's own cap stands above it at two hundred.
+const SEARCH_RESULT_LIMIT = 50
+
+const eventSearch = createResource({
+	url: 'suite.calendar.api.search_calendar_events_with_shared',
+	debounce: 180,
+	// The same transform the grid's rows go through, so a result resolves on the same fields.
+	transform: (data) => (Array.isArray(data) ? data.map(transformEvent) : []),
+	onSuccess: () => (searchSettled.value = true),
+	onError: (error) => {
+		searchSettled.value = true
+		raiseToast(error.message, 'error')
+	},
+})
+
+// The words as the search reads them; the field keeps them as typed, trailing space and all —
+// a space written to the URL trimmed came straight back into the field without it.
+const searchWords = computed(() => searchText.value.trim())
+const searchAsked = computed(() => !!searchWords.value || searchFilters.isNarrowed.value)
+// Whether what is asked has been answered. Not the resource's `loading`: that is false for the
+// 180ms a keystroke waits before its request goes out, and a page with nothing on it yet read
+// that as "no results" before it read "searching". Asked is unsettled from the keystroke on.
+const searchSettled = ref(true)
+
+watch(
+	// One string, for the reason the route watchers give: a rebuilt array is new every run.
+	() => JSON.stringify([isSearchRoute.value, searchWords.value, searchFilters.params.value, store.accountId]),
+	() => {
+		if (!isSearchRoute.value) return
+		eventSearch.submit.cancel?.()
+		if (!searchAsked.value) {
+			eventSearch.reset()
+			searchSettled.value = true
+			return
+		}
+		searchSettled.value = false
+		eventSearch.submit({
+			account: store.accountId,
+			text: searchWords.value,
+			limit: SEARCH_RESULT_LIMIT,
+			time_zone: dayjs.tz.guess(),
+			filters: searchFilters.params.value,
+		})
+	},
+	{ immediate: true },
+)
+
+const searchRows = computed(() =>
+	isSearchRoute.value && Array.isArray(eventSearch.data) ? eventSearch.data : [],
+)
+
+const setSearchText = (q: string) =>
+	router.replace({ query: { ...route.query, q: q || undefined } })
+
+const searchCalendarLabel = (value: string) =>
+	store.calendarOptions.find((option) => option.value === value)?.label || value
+
 const visibleEvents = computed(
 	() => events.data?.filter(onVisibleCalendar.value).map(withCalendarColor) || [],
 )
@@ -457,7 +545,7 @@ const handleOpenEvent = async (e) => {
 	// from the detail card's ?event=: the card is derived from that one,
 	// so sharing it would open the sidebar under every double-clicked pill.
 	const opened = e.calendarEvent
-	const editing = opened?.master_id || opened?.id
+	const editing = opened && serverEventId(opened)
 	if (editing && route.query.edit !== editing)
 		router.replace({
 			query: {
@@ -490,7 +578,7 @@ const handleEventClick = ({ calendarEvent }) =>
 			// built from it stops resolving as soon as it is acted on, and the card loses the
 			// event it is showing. The master's id does not move, and the recurrence id beside
 			// it names the occurrence.
-			event: calendarEvent.master_id || calendarEvent.id,
+			event: serverEventId(calendarEvent),
 			recurrence: calendarEvent.recurrence_id || undefined,
 			// Ids are only unique within an account, and shared calendars bring in another's.
 			account: calendarEvent.account,
@@ -510,9 +598,7 @@ const railOpen = ref<{ id: string; recurrence?: string; account: string } | null
 const railEvent = computed(() => {
 	if (!railOpen.value) return null
 	const { id, recurrence, account } = railOpen.value
-	const linked =
-		findLinkedEvent(todayEvents.data, id, recurrence, account) ??
-		findLinkedEvent(events.data, id, recurrence, account)
+	const linked = findLinkedEvent([todayEvents.data, events.data], id, recurrence, account)
 	return linked && withCalendarColor(linked)
 })
 
@@ -650,22 +736,15 @@ useKeyboardShortcut([
 // element clicked is kept, since on desktop the event opens as a card hung on it
 // — see `cardAnchor` below. A pill's event goes in the URL; a row's stays here.
 const toggleEventDetail = (calendarEvent, anchor: Element | null = null, viaRail = false) => {
-	const open = openEvent.value
 	clickedAnchor.value = anchor
-	if (
-		open &&
-		open.id === calendarEvent.id &&
-		open.account === calendarEvent.account &&
-		(open.recurrence_id ?? '') === (calendarEvent.recurrence_id ?? '')
-	)
-		return closeEventDetail()
+	if (sameEvent(openEvent.value, calendarEvent)) return closeEventDetail()
 	if (!viaRail) return handleEventClick({ calendarEvent })
 	// Whatever the URL had open goes first — closeEventDetail clears the rail's
 	// too, which is why the row's is set after.
 	closeEventDetail()
 	railOpen.value = {
 		// The master's id, as the URL carries it — see handleEventClick.
-		id: calendarEvent.master_id || calendarEvent.id,
+		id: serverEventId(calendarEvent),
 		recurrence: calendarEvent.recurrence_id || undefined,
 		account: calendarEvent.account,
 	}
@@ -702,7 +781,39 @@ const rowOf = (e: Event) => (e.currentTarget instanceof Element ? e.currentTarge
 const activePill = () =>
 	gridRef.value?.querySelector('.event.active, .calendar-row.active') ?? null
 
+/**
+ * How long the card waits for its pill.
+ *
+ * The grid draws a view's pills a beat after the route moves — opening a search result in
+ * Week found two pills of the nine the week holds — so a single look finds nothing and the
+ * event is dropped as soon as it is opened. `ANCHOR_FRAMES` is the ordinary wait; the
+ * ceiling is what a result in another month needs, where the window it belongs to is still
+ * being fetched and no pill can exist for it until that lands.
+ */
+const ANCHOR_FRAMES = 20
+const ANCHOR_FRAME_CEILING = 180
+
+/** Every frame up to the budget, so the search ends as soon as the pill lands. */
+const settledPill = async () => {
+	for (let frame = 0; frame < ANCHOR_FRAME_CEILING; frame += 1) {
+		const pill = activePill()
+		if (pill) return pill
+		// Past the ordinary budget the wait goes on only while the window the grid draws
+		// from is still arriving: there is no pill to find for events not yet fetched, and
+		// nothing else worth waiting on once they are.
+		if (frame >= ANCHOR_FRAMES && !events.loading) break
+		await new Promise(requestAnimationFrame)
+		if (!openEvent.value) return null
+	}
+	return activePill()
+}
+
+// Which run of the watcher is current: the wait above is asynchronous, so a run that
+// started before a newer one must not write the anchor the newer one is finding.
+let anchorRun = 0
+
 watch([openEvent, visibleRange], async ([open]) => {
+	const run = (anchorRun += 1)
 	// The phone has no card: its open event is the sheet's, which hangs on
 	// nothing, and a search for a pill there would find none and close it.
 	if (!open || isMobile.value) {
@@ -715,7 +826,12 @@ watch([openEvent, visibleRange], async ([open]) => {
 	// blink the card.
 	await nextTick()
 	if (!openEvent.value) return
-	cardAnchor.value = clickedAnchor.value?.isConnected ? clickedAnchor.value : activePill()
+	const settled = clickedAnchor.value?.isConnected
+		? clickedAnchor.value
+		: await settledPill()
+	// A newer run of this watcher has taken over, or the event went while we waited.
+	if (run !== anchorRun || !openEvent.value) return
+	cardAnchor.value = settled
 	if (!cardAnchor.value) closeEventDetail()
 })
 
@@ -742,6 +858,16 @@ watch(openEvent, (open) => {
 // tapped — the day goes with it. Cleared when the sheet closes, so a later deep link
 // does not inherit a stale row.
 const openRow = ref('')
+
+/**
+ * A result opens over the results. The URL still names it the way every other link does —
+ * the series' id, the occurrence beside it, the account it belongs to — so the sheet resolves
+ * it as it resolves anything; only the page stays put. A second tap on the open one closes it.
+ */
+const openSearchResult = (row: any) => {
+	if (sameEvent(openEvent.value, row)) return closeEventDetail()
+	handleEventClick({ calendarEvent: row })
+}
 
 const openEventRow = (event: any, date: string) => {
 	const key = `${event.id + (event.recurrence_id ?? '')}@${date}`
@@ -775,26 +901,36 @@ const emailParticipants = (emails: string[]) => {
 // Ids are only unique within an account, and shared calendars bring another account's events
 // in, so a link looks among its own account's events first: the one it names, else the account
 // the calendar is switched to, which is where mail's links come from. Only then anywhere.
+// The account asked for is looked for in every list before any list is read without it: ids
+// are unique per account and no further, so a grid holding another account's event under the
+// same id would otherwise answer for a search hit that sits, unlooked-at, in the list after it.
 const findLinkedEvent = (
-	data,
+	sources: any[][],
 	id,
 	recurrence,
 	account = (route.query.account || route.params.accountId) as string,
 ) => {
-	if (!data || !id) return null
-	return (
-		matchLinkedEvent(
+	if (!id) return null
+	const lists = sources.filter((data) => Array.isArray(data) && data.length)
+	for (const data of lists) {
+		const own = matchLinkedEvent(
 			data.filter((e) => e.account === account),
 			id,
 			recurrence,
-		) ?? matchLinkedEvent(data, id, recurrence)
-	)
+		)
+		if (own) return own
+	}
+	for (const data of lists) {
+		const any = matchLinkedEvent(data, id, recurrence)
+		if (any) return any
+	}
+	return null
 }
 
 const matchLinkedEvent = (data, id, recurrence) => {
 
 	const rec = (recurrence as string) ?? ''
-	const exact = data.find((e) => e.id === id && (e.recurrence_id ?? '') === rec)
+	const exact = data.find((e) => e.event_id === id && (e.recurrence_id ?? '') === rec)
 	if (exact) return exact
 
 	const instances = data.filter((e) => e.master_id === id)
@@ -810,14 +946,21 @@ const matchLinkedEvent = (data, id, recurrence) => {
 }
 
 watch(
-	[() => events.data, () => todayEvents.data, () => route.query.event, () => route.query.recurrence],
-	([data, today, id, recurrence]) => {
+	[
+		() => events.data,
+		() => todayEvents.data,
+		() => searchRows.value,
+		() => route.query.event,
+		() => route.query.recurrence,
+	],
+	([data, today, search, id, recurrence]) => {
 		// Resolved against every event, not just the visible ones: a link to an
 		// event in a calendar the reader has unticked still opens it. The colour
 		// goes on here, since this list has not been through `visibleEvents`.
 		// Today's list as well as the grid's: a row of the rail opens its event
-		// wherever the grid has been paged to, and today may be outside its window.
-		const linked = findLinkedEvent(data, id, recurrence) ?? findLinkedEvent(today, id, recurrence)
+		// wherever the grid has been paged to, and today may be outside its window. And the
+		// search's own rows: a result can be years outside the window the grid fetched.
+		const linked = findLinkedEvent([data, today, search], id, recurrence)
 		selectedCalendarEvent.value = linked && withCalendarColor(linked)
 	},
 	{ immediate: true },
@@ -849,7 +992,7 @@ watch(
 			return
 		}
 		if (showEditEvent.value) return
-		const match = findLinkedEvent(data, id, recurrence)
+		const match = findLinkedEvent([data], id, recurrence)
 		if (match) handleOpenEvent({ calendarEvent: match })
 	},
 	{ immediate: true },
@@ -1050,8 +1193,7 @@ const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		...eventToBeUpdated,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
+		id: serverEventId(eventToBeUpdated),
 		send_scheduling_messages: sendEmail,
 	}),
 	...onEventSaved,
@@ -1199,6 +1341,22 @@ const NOTIFY_MODAL_OPTIONS = {
 		<!-- The phone. Agenda is home — a week strip for orientation and the list of
 		     what is coming — with the month a tap away and the same events under it.
 		     The tab bar and its FAB are the app's own chrome here, as mail's are. -->
+		<MobileSearch
+			v-else-if="isSearchRoute"
+			:query="searchText"
+			:rows="searchRows"
+			:searching="!searchSettled"
+			:asked="searchAsked"
+			:filter="searchFilters.filter"
+			:badges="searchFilters.badges(searchCalendarLabel)"
+			:account="store.accountId"
+			:calendar-options="store.calendarOptions"
+			:open-event="openEvent"
+			@update:query="setSearchText"
+			@remove-filter="searchFilters.removeFilter"
+			@clear-filters="searchFilters.reset"
+			@select="openSearchResult"
+		/>
 		<MobileCalendar
 			v-else
 			:view="mobileView"

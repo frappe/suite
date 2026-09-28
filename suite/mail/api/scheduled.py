@@ -29,8 +29,8 @@ landed — until they are retried or dismissed, or the server expunges the submi
 every other concluded row.
 """
 
-import re
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid7
 
 import frappe
@@ -43,6 +43,7 @@ from frappe.utils import (
     now_datetime,
     time_diff_in_seconds,
 )
+from pydantic import BaseModel, model_validator
 
 from suite.mail.jmap import (
     get_email_service,
@@ -52,17 +53,40 @@ from suite.mail.jmap import (
 )
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.utils import log_mail_error
-from suite.mail.utils.dt import UTC_DATETIME_FORMAT, from_utc_z, normalize_utc_z, to_utc_z
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
+from suite.mail.utils.validation import JMAPId, UtcZ
+from suite.utils.validation import parse, without_blanks
 
 SUBMISSION_PROPERTIES = ["id", "emailId", "threadId", "undoStatus", "sendAt", "envelope"]
 DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "dsnBlobIds", "mdnBlobIds"]
 EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bcc"]
 
 
-UNDO_STATUSES = ("pending", "final", "canceled")
+class SubmissionFilter(BaseModel):
+    """The listing's RFC 8621 §7.3 FilterCondition, from its query parameters. Empty ones are dropped."""
 
-# RFC 8620 §1.2: a JMAP Id is 1 to 255 characters of [A-Za-z0-9_-].
-JMAP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,255}\Z")
+    undo_status: Literal["pending", "final", "canceled"] | None = None
+    identity_id: JMAPId | None = None
+    email_id: JMAPId | None = None
+    thread_id: JMAPId | None = None
+    before: UtcZ | None = None
+    after: UtcZ | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_means_absent(cls, data):
+        return without_blanks(data)
+
+    def to_jmap(self) -> dict:
+        filter = {
+            "undoStatus": self.undo_status,
+            "identityIds": [self.identity_id] if self.identity_id else None,
+            "emailIds": [self.email_id] if self.email_id else None,
+            "threadIds": [self.thread_id] if self.thread_id else None,
+            "before": self.before,
+            "after": self.after,
+        }
+        return {key: value for key, value in filter.items() if value}
 
 
 @frappe.whitelist()
@@ -84,29 +108,21 @@ def get_submissions(
     The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
     pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(identity_id, "identity_id")
-    _validate_jmap_id(email_id, "email_id")
-    _validate_jmap_id(thread_id, "thread_id")
-
-    if undo_status and undo_status not in UNDO_STATUSES:
-        frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
-
-    before = _validate_utc_z(before, "before")
-    after = _validate_utc_z(after, "after")
+    _validate_ids(account=account)
+    filter = parse(
+        SubmissionFilter,
+        {
+            "undo_status": undo_status,
+            "identity_id": identity_id,
+            "email_id": email_id,
+            "thread_id": thread_id,
+            "before": before,
+            "after": after,
+        },
+    ).to_jmap()
 
     page = max(cint(page), 1)
     page_length = min(max(cint(page_length), 1), 100)
-
-    filter = {
-        "undoStatus": undo_status,
-        "identityIds": [identity_id] if identity_id else None,
-        "emailIds": [email_id] if email_id else None,
-        "threadIds": [thread_id] if thread_id else None,
-        "before": before,
-        "after": after,
-    }
-    filter = {key: value for key, value in filter.items() if value}
 
     service = get_email_submission_service(account)
     ids, total = service.query(
@@ -149,8 +165,7 @@ def get_scheduled_mail(account: str, id: str) -> dict:
     """Returns one submission with everything EmailSubmission/get knows about it, enriched with
     the referenced Email's summary and the MTA queue's live delivery state."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     submissions = service.get([id], properties=DETAIL_PROPERTIES)
@@ -187,8 +202,7 @@ def get_scheduled_mail(account: str, id: str) -> dict:
 def reschedule_mail(account: str, id: str, send_at: str) -> dict:
     """Moves a held submission's delivery time. `send_at` is UTC `...Z`."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     submission = _get_pending_submission(service, id)
@@ -203,8 +217,7 @@ def reschedule_mail(account: str, id: str, send_at: str) -> dict:
 def send_scheduled_mail_now(account: str, id: str) -> dict:
     """Delivers a held submission immediately."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     submission = _get_pending_submission(service, id)
@@ -218,8 +231,7 @@ def send_scheduled_mail_now(account: str, id: str) -> dict:
 def cancel_scheduled_mail(account: str, id: str) -> dict:
     """Cancels a held submission's delivery and moves the message back to Drafts."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     submission = _get_submission(service, id)
@@ -241,8 +253,7 @@ def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
     record so the listing shows only the live attempt."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     submission = _get_final_submission(service, id)
@@ -259,8 +270,7 @@ def retry_failed_mail(account: str, id: str) -> dict:
 def dismiss_failed_mail(account: str, id: str) -> None:
     """Drops a finalized submission's record from the Outbox listing."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     service = get_email_submission_service(account)
     _get_final_submission(service, id)
@@ -481,37 +491,10 @@ def _get_final_submission(service: EmailSubmissionService, id: str) -> dict:
     return submission
 
 
-def _validate_jmap_id(value: str | None, label: str) -> str | None:
-    """A client-supplied JMAP identifier: RFC 8620 §1.2 confines an Id to 1 to 255 characters of
-    [A-Za-z0-9_-], so anything else is refused before it reaches a JMAP operation. Empty
-    optional filters pass through (they are dropped, not forwarded)."""
+def _validate_ids(**ids: str) -> None:
+    """Refuses client-supplied JMAP identifiers, keyed by the parameter that carried them."""
 
-    if not value:
-        return None
-
-    if not JMAP_ID_PATTERN.fullmatch(value):
-        frappe.throw(_("{0} is not a valid JMAP identifier.").format(label))
-
-    return value
-
-
-def _validate_utc_z(value: str | None, label: str) -> str | None:
-    """A client-supplied sendAt bound: anything but an ISO timestamp is refused, and a valid
-    one is re-serialized to the canonical UTC ``...Z`` form — the only shape that ever reaches
-    the JMAP filter."""
-
-    if not value:
-        return None
-
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        frappe.throw(_("{0} must be a UTC timestamp like 2026-01-31T09:30:00Z.").format(label))
-
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-
-    return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
+    parse(dict[str, JMAPId], ids)
 
 
 def _validate_send_at(service: EmailSubmissionService, send_at: str) -> str:

@@ -70,6 +70,7 @@ from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, t
 from suite.mail.utils.user import get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
@@ -277,8 +278,9 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
     ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes}
     trash_mailbox = ids_by_role.get("trash")
     junk_mailbox = ids_by_role.get("junk")
-    # Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
-    # folder itself; every other view follows the conversation's most recent activity.
+    # Sent and Drafts are about the message you wrote, so their rows describe the latest message in
+    # the folder itself; every other view describes the conversation's most recent activity. What the
+    # row is dated by is a separate question, answered per mailbox in serialize_thread.
     outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 
     threads = []
@@ -294,10 +296,10 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
             m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
         ] or visible
 
-        # The preview/date reflect the latest message in the conversation (the most recent activity)
-        # everywhere except Sent and Drafts, which show the latest message in the folder itself: a
-        # draft reply must keep its own recipients and its "Draft" badge when the thread it answers
-        # receives a newer mail.
+        # The preview and sender reflect the latest message in the conversation (the most recent
+        # activity) everywhere except Sent and Drafts, which show the latest message in the folder
+        # itself: a draft reply must keep its own recipients and its "Draft" badge when the thread it
+        # answers receives a newer mail. The row's date is not read off this message.
         latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
         threads.append(
             serialize_thread(
@@ -534,31 +536,36 @@ def serialize_thread(
     Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the
     conversation this view can show — see `visible_in_mailbox`) are expected ordered oldest to newest.
     The list-view summary fields are derived from `latest` (defaulting to the latest of `messages`),
-    except `subject` which comes from `first`, the conversation's opening message (the thread's
+    except `subject`, which comes from `first`, the conversation's opening message (the thread's
     original subject, without the "Re:" its replies carry — it defaults to the earliest message given,
-    which is only the true first when nothing has been filtered out). The conversation is serialized
-    under `messages` so the whole thread can be rendered without a separate fetch. The row's cast is
-    read off that same list in the frontend (see utils/participants), which is why nothing here names
-    the thread's senders.
+    which is only the true first when nothing has been filtered out), and the row's date, which comes
+    from the latest of `messages` so that a mailbox dates a thread by its own newest message. The
+    conversation is serialized under `messages` so the whole thread can be rendered without a separate
+    fetch. The row's cast is read off that same list in the frontend (see utils/participants), which
+    is why nothing here names the thread's senders.
     """
 
     first = first or thread_messages[0]
     latest = latest or messages[-1]
-    # The row's identity + state come from the thread's representative message in the CURRENT mailbox
-    # (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
-    # sibling message that was moved to Junk/Trash/Sent. The activity fields (preview/date/sender) still
-    # come from `latest` (most recent activity across the whole conversation). For single-mailbox threads
-    # `current` and `latest` are the same message, so nothing changes.
+    # The row's identity, state and date come from the thread's representative message in the CURRENT
+    # mailbox (`messages` is scoped to it), so its folder tags, junk/flag/seen and its place in the list
+    # reflect THIS view — not a sibling message that was moved to Junk/Trash/Sent. The remaining display
+    # fields (preview/sender) come from `latest` (most recent activity across the whole conversation).
+    # For single-mailbox threads `current` and `latest` are the same message, so nothing changes.
     current = messages[-1]
 
-    # From the current-mailbox message: identity + state (so star/junk actions target the right mail).
-    current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged"]
-    # From the most recent activity: what the row displays.
+    # From the current-mailbox message: identity + state (so star/junk actions target the right mail),
+    # and the date. Dating a row by the whole conversation moved a thread the moment you answered it:
+    # the reply lands in Sent, never in the Inbox, yet it redated the Inbox row to now and carried it
+    # out of the day the mail it answers arrived on. A mailbox orders its rows by this date — the server
+    # pages them mailbox-scoped and the client re-sorts by the same field — so it has to be the newest
+    # message the mailbox itself holds.
+    current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged", "received_at"]
+    # From the most recent activity: what the row says the conversation is about.
     activity_fields = [
         "thread_id",
         "from_name",
         "from_email",
-        "received_at",
         "recipients",
         "draft",
         "preview",
@@ -651,13 +658,10 @@ def fetch_attachment(account: str, blob_id: str) -> bytes:
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account: str, attachments: list[dict] | str) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes:
     """Returns the provided attachments bundled into a ZIP archive."""
 
-    if isinstance(attachments, str):
-        attachments = frappe.parse_json(attachments)
-
-    attachments = [a for a in (attachments or []) if a.get("blob_id")]
+    attachments = [a for a in attachments if a.get("blob_id")]
     if not attachments:
         frappe.throw(_("No attachments to download."))
 

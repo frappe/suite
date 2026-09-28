@@ -5,6 +5,7 @@ import { CHIP, chipFont, chipColor, chipMetrics } from '../chip-geometry.js'
 import { checkboxRect, CHECKBOX } from '../checkbox-geometry.js'
 import { checkRule } from '../../engine/validation.js'
 import { sparkGeometry } from '../../engine/sparkline.js'
+import { prefersLightInk } from '../../utils/contrast.js'
 
 export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
@@ -214,6 +215,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     return false
   }
 
+  // Grid lines are already on the canvas when a cell paints, so a fill that
+  // covered the cell's own top/left edge would rub them out — and only those
+  // two, since the bottom/right lines belong to the neighbours. Both fills
+  // start 1px in, which lands the fill flush against the lines on every side.
   function _drawCellBackground(x, y, w, h, merge, fmt, condFmt) {
     if (merge) {
       ctx.fillStyle = COLORS.white
@@ -222,7 +227,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const bg = condFmt?.backgroundColor || fmt.backgroundColor
     if (bg) {
       ctx.fillStyle = bg
-      ctx.fillRect(x, y, w, h)
+      ctx.fillRect(x + 1, y + 1, w - 1, h - 1)
     }
   }
 
@@ -481,9 +486,22 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
   }
 
+  // Ink for a cell's text. A fill — from a conditional-formatting rule or from
+  // the fill picker — is a literal colour that ignores the theme, so the
+  // themed ink can vanish on it: in dark mode `--ink-gray-9` is near-white and
+  // a pale colour-scale fill leaves white on white. Over a fill, read the ink
+  // off the fill instead. An unfilled cell keeps the themed ink.
+  function _inkFor(fmt) {
+    if (fmt.color) return fmt.color
+    if (fmt.hyperlink) return '#007BE0'
+    const light = prefersLightInk(fmt.backgroundColor)
+    if (light == null) return COLORS.cellText
+    return light ? COLORS.inkOnDark : COLORS.inkOnLight
+  }
+
   function _setCellFont(fmt) {
     ctx.font      = chipFont(fmt)
-    ctx.fillStyle = fmt.color || (fmt.hyperlink ? '#007BE0' : COLORS.cellText)
+    ctx.fillStyle = _inkFor(fmt)
     ctx.textAlign = fmt.align || 'left'
   }
 
@@ -525,7 +543,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const lx0 = fmt.align === 'center' ? textX - tw / 2
               : fmt.align === 'right'  ? textX - tw
               : textX
-    ctx.strokeStyle = fmt.color || (fmt.hyperlink ? '#007BE0' : COLORS.cellText)
+    ctx.strokeStyle = _inkFor(fmt)
     ctx.lineWidth = 1
     if (fmt.underline || fmt.hyperlink) {
       ctx.beginPath()

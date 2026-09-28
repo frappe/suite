@@ -144,7 +144,7 @@ export function useShortcuts(actions) {
     { combo: 'F2',                         description: 'Edit cell',            group: 'Editing', preventDefault: false },
     { combo: 'Delete',                     description: 'Clear cell',           group: 'Editing', preventDefault: false },
     { combo: 'Backspace',                  description: 'Clear cell',           group: 'Editing', preventDefault: false },
-    { combo: 'Enter',                      description: 'Commit + move down',   group: 'Editing', preventDefault: false },
+    { combo: 'Enter',                      description: 'Edit cell / commit + move down', group: 'Editing', preventDefault: false },
     { combo: 'Tab',                        description: 'Commit + move right',  group: 'Editing', preventDefault: false },
     { combo: 'Alt+Enter', description: 'New line in cell',     group: 'Editing', enabled: notReadOnly, preventDefault: false },
     { combo: 'Mod+C', description: 'Copy',                 group: 'Editing', preventDefault: false },

@@ -34,6 +34,10 @@ describe('loadConfig', () => {
 			allowPlainTransport: false,
 			bypassRateLimits: false,
 		});
+		expect(config.stt).toEqual({
+			serverUrl: undefined,
+			allowMockFallback: false,
+		});
 		expect(Object.isFrozen(config)).toBe(true);
 		expect(Object.isFrozen(config.mediasoup.worker)).toBe(true);
 	});
@@ -59,6 +63,19 @@ describe('loadConfig', () => {
 	it('derives CI rate-limit policy from validated booleans', () => {
 		const config = loadConfig(validEnv({ CI: 'true' }), system);
 		expect(config.runtime.bypassRateLimits).toBe(true);
+	});
+
+	it('loads optional STT configuration', () => {
+		const config = loadConfig(
+			validEnv({
+				STT_SERVER_URL: 'https://stt.example.test',
+			}),
+			system,
+		);
+		expect(config.stt).toEqual({
+			serverUrl: 'https://stt.example.test',
+			allowMockFallback: false,
+		});
 	});
 
 	it('rejects partial numbers and invalid enum values', () => {

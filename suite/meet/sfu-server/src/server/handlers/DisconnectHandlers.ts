@@ -47,6 +47,13 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 							participantId,
 							peerId,
 						);
+						const wasLastSubscriber = deps.sttManager?.removeSubscriber(
+							roomId,
+							socket.id,
+						);
+						if (wasLastSubscriber) {
+							await deps.sttManager?.stopRoom(roomId, true);
+						}
 					} else {
 						deps.registry.leaveScope(socket, roomId, 'full');
 						deps.registry.leaveScope(socket, roomId, 'presence-preview');

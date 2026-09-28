@@ -102,6 +102,24 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
         self.assertGreaterEqual(len(messages), 2)
         self.assertEqual({m["thread_id"] for m in messages}, {sender_thread["thread_id"]})
 
+        # The receiver's own Inbox row keeps the date of the mail that arrived. Their reply is in Sent
+        # and never in the Inbox, so answering a thread must not move it off the day it was received —
+        # though the row still describes the conversation's latest message, which is now the reply.
+        answered = self.wait_until(
+            lambda: next(
+                (
+                    t
+                    for t in self.get_inbox_threads(self.receiver)
+                    if t["subject"] == subject and len(t["messages"]) > 1
+                ),
+                None,
+            ),
+            timeout=60,
+            message="The reply did not join the receiver's copy of the thread.",
+        )
+        self.assertEqual(answered["received_at"], original["received_at"])
+        self.assertIn("Replying", answered["preview"])
+
     def test_draft_lifecycle(self):
         subject = f"Draft {unique_name('subject')}"
         with self.set_user(self.sender.email):

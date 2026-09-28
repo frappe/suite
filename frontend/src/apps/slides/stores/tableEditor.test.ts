@@ -6,7 +6,7 @@ import { AllSelection } from 'prosemirror-state'
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
-const { getInitialTableContent, activeElementIds, focusElementId, setEditableState } =
+const { getEmptyTableCells, getInitialTableContent, activeElementIds, focusElementId, setEditableState } =
 	await import('./element')
 const { slides, slideIndex } = await import('./slide')
 const { hasTableNode, ZWSP } = await import('./tiptapSetup')
@@ -22,7 +22,10 @@ const filled =
 	'<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr><tr><td><p>three</p></td><td><p>four</p></td></tr></tbody></table>'
 
 const seeded = (rows = 2, columns = 2) =>
-	getInitialTableContent(rows, columns, 150, { fontFamily: 'Inter', fontSize: 18 })
+	getInitialTableContent(getEmptyTableCells(rows, columns), Array(columns).fill(150), {
+		fontFamily: 'Inter',
+		fontSize: 18,
+	})
 
 const bareTable = (rows: number, columns: number) =>
 	`<table><tbody>${`<tr>${'<td><p>x</p></td>'.repeat(columns)}</tr>`.repeat(rows)}</tbody></table>`

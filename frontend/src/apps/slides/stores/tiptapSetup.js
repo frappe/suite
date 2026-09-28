@@ -158,9 +158,34 @@ const PastePlainText = Extension.create({
 			if (!plainText) return false
 
 			const { state, dispatch } = view
-			const { tr } = state
+			const { selection, schema } = state
+			// select all starts at the doc, not in a line
+			const $line = selection.$from.parent.isTextblock
+				? selection.$from
+				: TextSelection.findFrom(selection.$from, 1, true).$from
+			const marks =
+				state.storedMarks ||
+				(selection.empty ? $line.marks() : $line.marksAcross(selection.$to) || $line.marks())
+			// inside a list a pasted line is a new item, not a second paragraph in this one
+			const inList = isInList($line)
+			const line = $line.parent
+			const item = $line.node(-1)
 
-			dispatch(tr.insertText(plainText, state.selection.from, state.selection.to))
+			const blocks = plainText.split(/\r\n?|\n/).map((text) => {
+				const paragraph = line.type.create(line.attrs, text ? schema.text(text, marks) : null)
+				return inList ? item.type.create(item.attrs, paragraph) : paragraph
+			})
+			const depth = inList ? 2 : 1
+
+			const tr = state.tr.replaceSelection(new Slice(Fragment.from(blocks), depth, depth))
+			const emptyLines = []
+			tr.doc.nodesBetween(tr.mapping.map(selection.from, -1), tr.selection.to, (node, pos) => {
+				if (node.isTextblock && !node.content.size) emptyLines.push(pos)
+			})
+			// same placeholder Enter leaves on a new line
+			emptyLines.reverse().forEach((pos) => tr.insert(pos + 1, schema.text(ZWSP, marks)))
+
+			dispatch(tr)
 			return true
 		}
 
@@ -634,7 +659,8 @@ const handleKeyDown = (view, event) => {
 		return true
 	}
 
-	if (prevNode && prevNode.isTextblock && prevNode.textContent === ZWSP) {
+	const caretAtLineStart = selection.empty && $from.parentOffset === 0
+	if (caretAtLineStart && prevNode && prevNode.isTextblock && prevNode.textContent === ZWSP) {
 		return joinBackwardAfterPlaceholder(view)
 	}
 

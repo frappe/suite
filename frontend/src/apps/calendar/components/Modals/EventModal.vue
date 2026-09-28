@@ -43,6 +43,7 @@ import { defaultCalendar, destinationOptions } from '@/apps/calendar/utils/calen
 import { eventColor } from '@/apps/calendar/utils/color'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -628,8 +629,7 @@ const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: event.account,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id,
+		id: serverEventId(selectedEvent.calendarEvent),
 		uid: selectedEvent.calendarEvent.uid,
 		...eventParams.value,
 		draft: savingDraft.value,
@@ -763,7 +763,7 @@ const saveDraftAndLeave = async () => {
 		const result = await (isNew.value ? createEvent : editEvent).submit({ sendEmail: false })
 		const id = isNew.value
 			? result
-			: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id
+			: serverEventId(selectedEvent.calendarEvent)
 		toast.success(__('Draft saved.'), {
 			action: { label: __('Discard'), onClick: () => discardDraft.submit({ id, account }) },
 		})

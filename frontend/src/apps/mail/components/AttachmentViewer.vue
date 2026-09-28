@@ -8,10 +8,15 @@
 			leave-from-class="opacity-100"
 			leave-to-class="opacity-0"
 		>
+			<!-- Teleported to <body>, so it sits outside DefaultLayout's
+			     pt-[env(safe-area-inset-top)] and has to state the insets itself: in iOS
+			     standalone the header would otherwise sit under the status bar and the
+			     dynamic island, the pager under the home indicator, and — in landscape,
+			     where the cutout moves to a side — the edge buttons under the cutout. -->
 			<div
 				v-if="show"
 				data-attachment-viewer
-				class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-2 text-gray-300 sm:p-4"
+				class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.5rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))] text-gray-300 sm:pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pl-[calc(1rem+env(safe-area-inset-left))] sm:pr-[calc(1rem+env(safe-area-inset-right))] sm:pt-[calc(1rem+env(safe-area-inset-top))]"
 				@click.self="closeViewer"
 			>
 				<div class="flex w-full justify-between">
