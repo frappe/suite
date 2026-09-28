@@ -136,7 +136,7 @@ Drive spec §11.2, block "Settings and WebDAV". "Drive admin" is write on
 - [40 — Make Cleanup delete every legacy Drive name and the allowlist prefix](../../drive-layer-spec/implementation/issues/40-cleanup-deletes-every-legacy-name.md).
   Gate 3 and phase 6 over all 69 names; the evidence scan covers
   `suite/public/js`; `product.py`, `s3.py` and `overrides/file.py` go;
-  `Drive User Invitation` and `Account Request` are dropped; only `/dav`
+  `Drive User Invitation` and `Account Request` stay, their hooks go; only `/dav`
   stays. Blocked by Drive 35 (done) and 39.
 
 Drive spec sections changed: §3.16, §11.2, §11.7, §14.10.
@@ -183,6 +183,10 @@ Drive spec sections changed: §3.16, §11.2, §11.7, §14.10.
 
 One choice in the Drive spec deletes data and is yours to veto. The rest
 is routes and wording.
+
+Faris's answer, 2026-09-29: "keep" (option B). Cleanup keeps both tables
+and their rows and removes their permission hooks. The Drive spec §3.16,
+§11.7, §14.10 and Drive issue 40 say so.
 
 - **Dropping `Drive User Invitation` and `Account Request` in Cleanup**
   (Drive §3.16, §14.10). After `product.py` goes, nothing reads or writes

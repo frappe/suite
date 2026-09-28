@@ -569,10 +569,13 @@ Dropped in Cleanup: `quota` (its value moves to the user's Personal root
 table behind `Writer Document.versions`; it goes with that field. `Drive Entity Log` is renamed to `Drive Recent` in Build,
 pre-model-sync [011 §13].
 
-Also `Drive User Invitation` and `Account Request`: their only callers are
-the `suite.drive.api.product` methods, which Cleanup deletes (§11.7). The
-Suite invitation resource over the framework's `User Invitation` replaces
-them [unified frontend ticket 017].
+`Drive User Invitation` and `Account Request` are kept. Their only callers
+are the `suite.drive.api.product` methods, which Cleanup deletes (§11.7),
+and the Suite invitation resource over the framework's `User Invitation`
+replaces them. Cleanup keeps both tables and their rows, removes their
+permission hooks, and leaves each doctype with its standard role
+permissions. Their controllers must not import a deleted module. Faris
+chose to keep the data on 2026-09-29 [unified frontend ticket 017].
 
 ### 3.17 Blob references, for the framework GC
 
@@ -3269,13 +3272,14 @@ bodies stay untouched until Cleanup deletes `api/product.py` whole.
 | `get_pending_invites` | `GET /api/suite/invitations` (Suite, over the framework's `User Invitation`) |
 | `invite_users` | `POST /api/suite/invitations` (Suite) |
 | `accept_invite` | the framework's emailed accept link (`frappe.core.api.user_invitation.accept_invitation`), sent by the Suite invitation resource |
-| `get_my_invites`, `reject_invite` | dropped with `Drive User Invitation`; the framework flow has no invitee inbox and no reject, an unaccepted invitation expires |
+| `get_my_invites`, `reject_invite` | dropped; `Drive User Invitation` rows stay, unread; the framework flow has no invitee inbox and no reject, an unaccepted invitation expires |
 | `get_translations` | `frappe.translate.get_boot_translations`, called by the platform translation module (unified frontend spec §3.14) |
 | `signup`, `send_otp`, `verify_otp`, `oauth_providers`, `signup_disabled` | dropped with `/drive/signup`; Frappe's `/login` owns sign-in, OAuth buttons, and the signup switch (unified frontend spec §10.10, §14.6) |
 
 `Drive User Invitation` and `Account Request` have no reader once
 `api/product.py` goes: `after_insert` sends the invitation email, and the
-methods above are the only callers. Cleanup drops both (§3.16, §14.10).
+methods above are the only callers. Cleanup keeps both tables and their
+rows and removes their permission hooks (§3.16, §14.10).
 
 **`suite.drive.api.s3` (1)**: `fetch` to `GET /nodes/<id>/content`. The
 name resolves a `File` row by its stored `file_url`, so it cannot answer
@@ -4035,9 +4039,10 @@ Then, in order:
   `content_docname`) and the three property setters
   (`suite/fixtures/property_setter.json`).
 - Drop `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`,
-  `Drive User Invitation`, `Account Request`, and the old notification
-  columns. Remove the two `Drive User Invitation` permission hooks
-  (`suite/hooks.py:207`, `:251`) with the doctype.
+  and the old notification columns. Keep `Drive User Invitation` and
+  `Account Request` with their rows (§3.16). Remove the two
+  `Drive User Invitation` permission hooks (`suite/hooks.py:207`, `:251`);
+  the doctype falls back to its standard role permissions.
 - Check that no `DocShare` row remains on a governed doctype (Build deleted
   them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
   `Sheet Snapshot`; clear `ycomments`; strip cell
