@@ -96,6 +96,13 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
+  No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only
+  `/dav` stays. Five new Drive routes replace the product methods (Drive
+  issue 39), Cleanup deletes every legacy name (Drive issue 40), and the
+  zero-call gate and counter cover all 69 names. Drive leads; the other
+  apps move off dotted paths in their own efforts.
+
 - [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md) —
   The area prefix is `/drive` and the rail label is "Drive" (Faris); the
   flip key selects the old or new route table under `/drive` until flip 2,

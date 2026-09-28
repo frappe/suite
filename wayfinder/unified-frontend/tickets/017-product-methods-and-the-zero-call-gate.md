@@ -2,7 +2,7 @@
 id: 017
 title: Product methods and the zero-call gate
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris (fable, 2026-09-29)
 blocked-by: []
 ---
