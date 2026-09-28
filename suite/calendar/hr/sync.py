@@ -42,6 +42,9 @@ SOURCE = "Frappe HR"
 HOLIDAYS_KEY = "holidays:"
 CELEBRATIONS_KEY = "celebrations:"
 
+# What the birthdays-and-anniversaries calendar is called unless the settings say otherwise.
+CELEBRATIONS = "Celebrations"
+
 
 class Plan(NamedTuple):
     """One calendar this run keeps, and everything it takes to keep it."""
@@ -106,13 +109,15 @@ def _run() -> dict:
             plans.append(Plan(key, holiday_list, settings.holidays_color, events, audience))
     if settings.sync_birthdays or settings.sync_anniversaries:
         # One calendar for both: the same people see them, and the titles tell them apart.
-        for company, (name, staff) in _by_company(settings.milestones_calendar, employees).items():
+        for company, (name, staff) in _by_company(
+            settings.celebrations_calendar or CELEBRATIONS, employees
+        ).items():
             events = birthday_events(staff) if settings.sync_birthdays else []
             if settings.sync_anniversaries:
                 events += anniversary_events(staff)
             audience = [person.get("user_id") for person in staff]
             key = f"{CELEBRATIONS_KEY}{company}"
-            plans.append(Plan(key, name, settings.milestones_color, events, audience))
+            plans.append(Plan(key, name, settings.celebrations_color, events, audience))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
     # audience: a holiday list named "Birthdays" would hand the birthdays to the wrong people.

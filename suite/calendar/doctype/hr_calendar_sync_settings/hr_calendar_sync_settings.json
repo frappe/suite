@@ -16,12 +16,12 @@
   "holiday_lists",
   "column_break_holidays",
   "holidays_color",
-  "milestones_section",
+  "celebrations_section",
   "sync_birthdays",
   "sync_anniversaries",
-  "column_break_milestones",
-  "milestones_calendar",
-  "milestones_color",
+  "column_break_celebrations",
+  "celebrations_calendar",
+  "celebrations_color",
   "status_section",
   "last_sync",
   "last_error"
@@ -94,7 +94,7 @@
   },
   {
    "description": "Birthdays and work anniversaries share one calendar, for everyone in the company.",
-   "fieldname": "milestones_section",
+   "fieldname": "celebrations_section",
    "fieldtype": "Section Break",
    "label": "Celebrations"
   },
@@ -110,14 +110,14 @@
    "label": "Sync Work Anniversaries"
   },
   {
-   "fieldname": "column_break_milestones",
+   "fieldname": "column_break_celebrations",
    "fieldtype": "Column Break"
   },
   {
    "default": "Celebrations",
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
    "description": "What the sync calls the calendar it makes. With more than one company each gets its own, named after it.",
-   "fieldname": "milestones_calendar",
+   "fieldname": "celebrations_calendar",
    "fieldtype": "Data",
    "label": "Calendar Name",
    "mandatory_depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries"
@@ -125,7 +125,7 @@
   {
    "default": "#e34aa6",
    "depends_on": "eval:doc.sync_birthdays || doc.sync_anniversaries",
-   "fieldname": "milestones_color",
+   "fieldname": "celebrations_color",
    "fieldtype": "Color",
    "label": "Celebrations Color"
   },

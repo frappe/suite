@@ -8,6 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.calendar.hr.source import HRSource, validate_site_url
+from suite.calendar.hr.sync import CELEBRATIONS
 
 
 class HRCalendarSyncSettings(Document):
@@ -21,14 +22,14 @@ class HRCalendarSyncSettings(Document):
 
         api_key: DF.Password | None
         api_secret: DF.Password | None
+        celebrations_calendar: DF.Data | None
+        celebrations_color: DF.Color | None
         enabled: DF.Check
         holiday_lists: DF.SmallText | None
         holidays_color: DF.Color | None
         hr_site_url: DF.Data | None
         last_error: DF.SmallText | None
         last_sync: DF.Datetime | None
-        milestones_calendar: DF.Data | None
-        milestones_color: DF.Color | None
         sync_anniversaries: DF.Check
         sync_birthdays: DF.Check
         sync_holidays: DF.Check
@@ -38,7 +39,7 @@ class HRCalendarSyncSettings(Document):
         self.hr_site_url = validate_site_url(self.hr_site_url)
         self.validate_key_goes_where_it_was_made_for()
         # A calendar needs a name, and a settings document saved before the field existed has none.
-        self.milestones_calendar = (self.milestones_calendar or "").strip() or "Celebrations"
+        self.celebrations_calendar = (self.celebrations_calendar or "").strip() or CELEBRATIONS
 
     def validate_key_goes_where_it_was_made_for(self) -> None:
         """A saved key is not sent anywhere but where it was saved for: point the settings at

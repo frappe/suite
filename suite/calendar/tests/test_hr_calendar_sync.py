@@ -65,7 +65,7 @@ class UnitTestHolidayEvents(UnitTestCase):
         self.assertEqual(event["title"], "Holiday")
 
 
-class UnitTestMilestoneEvents(UnitTestCase):
+class UnitTestCelebrationEvents(UnitTestCase):
     def test_a_birthday_repeats_yearly_without_its_year(self):
         [event] = birthday_events([employee("EMP-1", date_of_birth="1990-07-09")])
         self.assertEqual(event["uid"], "hr-birthday-EMP-1")
@@ -131,7 +131,7 @@ class UnitTestNothingPrivateIsLogged(UnitTestCase):
 
     def test_a_failed_sync_does_not_log_the_employees(self):
         settings = MagicMock(enabled=1, sync_holidays=0, sync_birthdays=1, sync_anniversaries=0)
-        settings.milestones_calendar = "Celebrations"
+        settings.celebrations_calendar = "Celebrations"
         settings.hr_source.return_value.employees.return_value = [
             {
                 "name": "EMP-1",
@@ -214,7 +214,7 @@ class UnitTestWhatHRSendsIsNotTrusted(UnitTestCase):
         self.assertEqual(birthday_events([employee("EMP-1", date_of_birth="soon")]), [])
         self.assertEqual(anniversary_events([employee("EMP-1", date_of_joining="x")]), [])
 
-    def test_milestones_stay_within_a_company(self):
+    def test_celebrations_stay_within_a_company(self):
         staff = [employee("EMP-1", company="Acme"), employee("EMP-2", company="Globex")]
         names = {company: name for company, (name, _staff) in _by_company("Celebrations", staff).items()}
         self.assertEqual(names, {"Acme": "Celebrations — Acme", "Globex": "Celebrations — Globex"})
@@ -310,9 +310,9 @@ class UnitTestWhoFollowsAHolidayList(UnitTestCase):
             self.assertEqual(len(source.employees()), hr_source.PAGE_LENGTH + 1)
 
 
-class UnitTestMilestonesShareACalendar(UnitTestCase):
+class UnitTestCelebrationsShareACalendar(UnitTestCase):
     def plans(self, **switches) -> list:
-        settings = MagicMock(enabled=1, sync_holidays=0, milestones_calendar="Celebrations", **switches)
+        settings = MagicMock(enabled=1, sync_holidays=0, celebrations_calendar="Celebrations", **switches)
         settings.hr_source.return_value.employees.return_value = [
             employee(
                 "EMP-1",
@@ -343,7 +343,7 @@ class UnitTestMilestonesShareACalendar(UnitTestCase):
         # the calendar is still planned, and what is not in the plan is removed from it
         self.assertEqual([event["uid"] for event in events], ["hr-anniversary-EMP-1"])
 
-    def test_neither_kind_means_no_milestones_calendar(self):
+    def test_neither_kind_means_no_celebrations_calendar(self):
         self.assertEqual(self.plans(sync_birthdays=0, sync_anniversaries=0), [])
 
 
