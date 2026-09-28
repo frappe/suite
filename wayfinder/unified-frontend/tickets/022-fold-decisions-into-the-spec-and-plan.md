@@ -3,7 +3,7 @@ id: 022
 title: Fold decisions into the spec and plan
 label: wayfinder:task
 status: open
-assignee:
+assignee: faris (fable, 2026-09-29)
 blocked-by: [017, 018, 019, 020, 021]
 ---
 
