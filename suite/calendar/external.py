@@ -37,10 +37,6 @@ EVENT_FIELDS = ("title", "description", "starts_on", "ends_on", "all_day", "repe
 # on is the client's arithmetic either way.
 WINDOW_MARGIN = timedelta(days=1)
 
-# Past this many days a window is read without narrowing yearly repeats to the days in it. No
-# view asks for a year; a source that does gets every birthday rather than a query per day.
-MAX_DAYS_BY_DAY = 90
-
 
 # --- reading ------------------------------------------------------------------------------------
 
@@ -119,22 +115,27 @@ def _rows_in_window(calendars: list[str], start: datetime, end: datetime) -> lis
         fields,
     )
 
-    yearly_filters = {"calendar": ("in", calendars), "repeats": "Yearly", "starts_on": ("<", end)}
-    # Asked for by day where the window is one a view asks for, which every index can answer.
-    if (days := _days_between(start, end)) is not None:
-        yearly_filters["month_day"] = ("in", days)
-    yearly = frappe.get_all("External Calendar Event", yearly_filters, fields)
+    # Asked for by the days the window holds, which the index answers. There are at most 366 of
+    # them however long the window, so this never comes to every birthday on the calendar.
+    yearly = frappe.get_all(
+        "External Calendar Event",
+        {
+            "calendar": ("in", calendars),
+            "repeats": "Yearly",
+            "starts_on": ("<", end),
+            "month_day": ("in", _days_between(start, end)),
+        },
+        fields,
+    )
 
     return dated + yearly
 
 
-def _days_between(start: datetime, end: datetime) -> list[str] | None:
-    """Every MM-DD the window covers, or nothing where it covers too many to be worth listing."""
+def _days_between(start: datetime, end: datetime) -> list[str]:
+    """Every MM-DD the window covers. Past a year that is every day there is, so it stops there."""
 
-    span = (end.date() - start.date()).days
-    if span > MAX_DAYS_BY_DAY:
-        return None
     day = start.date()
+    span = min((end.date() - day).days, 366)
     days = {(day + timedelta(days=offset)).strftime("%m-%d") for offset in range(span + 1)}
     # A 29 February event is drawn on the 28th in a year without one, so a window holding that
     # day has to ask for the 29th as well — a date the window itself never contains.
@@ -315,10 +316,12 @@ def replace_events(calendar: str, events: list[dict]) -> dict:
     removed = [row.name for uid, row in stored.items() if uid not in wanted]
 
     _insert_events(calendar, created)
-    for name, event in changed:
-        row = frappe.get_doc("External Calendar Event", name)
-        row.update(_stored_values(event))
-        row.save(ignore_permissions=True)
+    if changed:
+        frappe.db.bulk_update(
+            "External Calendar Event",
+            {name: _stored_values(event) for name, event in changed},
+            update_modified=False,
+        )
     if removed:
         frappe.db.delete("External Calendar Event", {"name": ("in", removed)})
 

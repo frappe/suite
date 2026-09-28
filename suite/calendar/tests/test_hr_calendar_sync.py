@@ -284,17 +284,34 @@ class UnitTestWhoFollowsAHolidayList(UnitTestCase):
         self.assertEqual(self.holiday_lists(source, staff), {"India 2026": ["a@x.io"]})
         self.assertNotIn("holiday_list", hr_source.EMPLOYEE_FIELDS)
 
-    def test_a_long_answer_is_read_to_the_end(self):
-        source = HRSource("https://hr.example.com", lambda: "token a:b")
-        pages = [[{"name": f"EMP-{n}"} for n in range(hr_source.PAGE_LENGTH)], [{"name": "EMP-last"}]]
+    def paged(self, everyone: list[dict], page_length: int):
+        """An HR site that answers in pages of `page_length`, whatever was asked for."""
 
         def get(url, params, **kwargs):
             response = MagicMock(status_code=200)
-            page = pages[params["limit_start"] // hr_source.PAGE_LENGTH]
+            start = params["limit_start"]
+            page = everyone[start : start + page_length]
             response.raw.read.return_value = frappe.as_json({"data": page}).encode()
             return response
 
-        with patch("suite.calendar.hr.source.requests.get", side_effect=get):
+        return get
+
+    def test_a_long_answer_is_read_to_the_end(self):
+        source = HRSource("https://hr.example.com", lambda: "token a:b")
+        everyone = [{"name": f"EMP-{n}"} for n in range(hr_source.PAGE_LENGTH + 1)]
+
+        with patch(
+            "suite.calendar.hr.source.requests.get", side_effect=self.paged(everyone, hr_source.PAGE_LENGTH)
+        ):
+            self.assertEqual(len(source.employees()), hr_source.PAGE_LENGTH + 1)
+
+    def test_a_site_that_caps_the_page_is_still_read_to_the_end(self):
+        # a proxy or a hardened site hands back fewer than asked for; a reader that took a short
+        # page as the last would stop at the cap, and the sync would remove everyone past it
+        source = HRSource("https://hr.example.com", lambda: "token a:b")
+        everyone = [{"name": f"EMP-{n}"} for n in range(hr_source.PAGE_LENGTH + 1)]
+
+        with patch("suite.calendar.hr.source.requests.get", side_effect=self.paged(everyone, 500)):
             self.assertEqual(len(source.employees()), hr_source.PAGE_LENGTH + 1)
 
 

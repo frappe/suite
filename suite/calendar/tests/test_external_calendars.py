@@ -91,11 +91,18 @@ class UnitTestOccurrences(UnitTestCase):
         )
         self.assertEqual(days, [date(2026, 10, 2)])
 
-    def test_a_window_a_view_asks_for_is_read_by_day(self):
+    def test_a_window_is_read_by_the_days_it_holds(self):
         days = external._days_between(datetime(2026, 12, 30), datetime(2027, 1, 2))
         self.assertEqual(days, ["01-01", "01-02", "12-30", "12-31"])
-        # a year is more days than are worth listing, and is read whole instead
-        self.assertIsNone(external._days_between(datetime(2026, 1, 1), datetime(2026, 12, 31)))
+
+    def test_a_window_of_any_length_is_every_day_there_is_at_most(self):
+        # the calendar app asks for five months at a time; a year, or ten, is still one query
+        # for the days the window holds, and there are only so many of those
+        self.assertEqual(len(external._days_between(datetime(2026, 3, 1), datetime(2026, 7, 31))), 153)
+        a_year = external._days_between(datetime(2025, 3, 1), datetime(2026, 3, 1))
+        ten_years = external._days_between(datetime(2020, 1, 1), datetime(2029, 12, 31))
+        self.assertEqual(len(a_year), 366)
+        self.assertEqual(a_year, ten_years)
 
     def test_a_day_off_lasts_a_day(self):
         self.assertEqual(external._duration(timedelta(days=1)), "P1D")

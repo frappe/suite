@@ -85,7 +85,10 @@ class HRSource:
         while True:
             page = self._page(doctype, fields, filters, len(rows))
             rows += page
-            if len(page) < PAGE_LENGTH:
+            # Read until a page comes back empty, not merely short: a site that caps a page below
+            # what was asked would otherwise end the answer early, and everything past the cut
+            # would be removed here as gone from HR.
+            if not page:
                 return rows
 
     def _page(self, doctype: str, fields: list[str], filters: dict, start: int) -> list[dict]:
