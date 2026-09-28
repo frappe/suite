@@ -95,6 +95,14 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Settings dialog groups and account surfaces](tickets/016-settings-dialog-and-account-surfaces.md) —
+  Products hand settings to one composition list; one heading per product
+  (Account, Files, Mail, Calendar, Meet, then Workspace); tab bodies load on
+  click; phone gets a shell drill-in list. The desktop avatar menu holds
+  Settings, Open Desk, Upgrade plan and Log out. Mail and Calendar dialogs
+  go when their apps flip; Meet keeps its in-call dialog. Tab ids are typed
+  and namespaced.
+
 - [Guest and link routes](tickets/011-guest-and-link-routes.md) —
   The server resolves `/l/<token>` and redirects to the node route with the
   token in the URL fragment; unlock is a 401 state on that route, with a

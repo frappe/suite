@@ -35,6 +35,13 @@ scroll it as a page; Mail, Calendar, Meet and an open document manage their
 own scrolling.
 _Avoid_: Main, Page, Viewport
 
+**Settings group**:
+One product's heading in the Settings dialog, with the tabs under it. Each
+product contributes exactly one group, named after the product; the shell
+contributes Account and Workspace. The phone shows the same groups as a
+drill-in list.
+_Avoid_: Settings section, Settings category, Settings modal
+
 **Files**:
 The area that shows the Drive tree. Files is the area name; Drive is the
 product that owns it.
