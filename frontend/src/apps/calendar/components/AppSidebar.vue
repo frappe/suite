@@ -56,9 +56,6 @@ const emit = defineEmits<{
 
 const dotStyle = (color: string) => ({ background: eventColor(color) })
 
-// The groups the store lists the calendars in, which the phone's view sheet shows too.
-const { calendarGroups } = storeToRefs(store)
-
 // Which sections are folded, remembered in this browser.
 const collapsedSections = useStorage<string[]>('calendar-collapsed-sections', [])
 const setSectionCollapsed = (key: string, collapsed: boolean) =>
@@ -106,6 +103,8 @@ const router = useRouter()
 const { branding } = brandingStore()
 const { logout } = useSessionStore()
 const store = userStore()
+// The groups the store lists the calendars in, which the phone's view sheet shows too.
+const { calendarGroups } = storeToRefs(store)
 
 const user = inject('$user')
 

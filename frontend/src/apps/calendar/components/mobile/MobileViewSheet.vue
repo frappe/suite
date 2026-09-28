@@ -1,27 +1,34 @@
 <template>
 	<!-- The view switcher, reached from the header's hamburger or a re-tap of the
 	     Calendar tab — where mail's folder sheet is reached from its hamburger or a
-	     re-tap of the Mail tab. Same sheet, same rows, same metrics: which list you
-	     are looking at is the same question in both apps. -->
-	<!-- Titled, as mail's folder sheet is: the two are the same sheet answering
-	     the same question in the two apps, so one of them naming itself and the
-	     other not is a difference with nothing behind it. -->
-	<BottomSheet v-model:open="isViewSheetOpen" :title="__('View')">
+	     re-tap of the Mail tab. Untitled: four tiles read as the views without a heading
+	     saying so, and the calendars beneath carry group headings of their own. -->
+	<BottomSheet v-model:open="isViewSheetOpen">
 		<!-- BottomSheet provides the scroll container; this div only pads the content,
 		     including the home-indicator safe area. -->
 		<div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-			<button
-				v-for="view in MOBILE_VIEWS"
-				:key="view"
-				:class="sheetRowClass(view === currentView)"
-				@click="select(view)"
-			>
-				<component
-					:is="viewIcon(view)"
-					class="text-ink-gray-6 h-[18px] w-[18px] shrink-0"
-				/>
-				<span class="flex-1 truncate text-left">{{ viewLabel(view) }}</span>
-			</button>
+			<!-- The views as a row of tiles, the launcher's shape: a glyph in a square and the
+			     name beneath, the square tinted for the one you are on. -->
+			<div class="grid grid-cols-4 gap-2 pt-1">
+				<button
+					v-for="view in MOBILE_VIEWS"
+					:key="view"
+					:class="sheetTileClass(view === currentView)"
+					:aria-current="view === currentView ? 'true' : undefined"
+					@click="select(view)"
+				>
+					<span :class="sheetTileBoxClass(view === currentView)">
+						<component :is="viewIcon(view)" :class="iconClass(view === currentView)" />
+					</span>
+					<span :class="sheetTileLabelClass(view === currentView)">
+						{{ viewLabel(view) }}
+					</span>
+				</button>
+			</div>
+
+			<!-- A rule across the sheet between the two: the tiles are one question and the list
+			     another, and the group heading beneath it starts the list. -->
+			<div class="-mx-3 mt-3 border-t" />
 
 			<!-- The calendars, beneath the views, grouped as the sidebar groups them: a phone has
 			     no sidebar, and this sheet is where it asks what it is looking at. A tap switches
@@ -75,7 +82,13 @@ import {
 	viewLabel,
 } from '@/apps/calendar/utils/mobileView'
 import { userStore } from '@/apps/calendar/stores/user'
-import { sheetRowClass } from '@/components/mobile/mobileClasses'
+import {
+	iconClass,
+	sheetRowClass,
+	sheetTileBoxClass,
+	sheetTileClass,
+	sheetTileLabelClass,
+} from '@/components/mobile/mobileClasses'
 
 import type { MobileView } from '@/apps/calendar/utils/mobileView'
 
