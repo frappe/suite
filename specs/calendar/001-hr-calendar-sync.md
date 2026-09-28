@@ -85,8 +85,10 @@ that have to show up there belong in a calendar of their own, subscribed to.
   Celebrations calendar, as HR's own reminders do.
 - **One run at a time**, held by a lock, whoever starts it.
 - What remains by design: anyone who can edit HR's employee records can put an address in an
-  audience; and what HR sends is taken as HR's word, short of dates that are not dates, which are
-  skipped.
+  audience; what HR sends is taken as HR's word, short of dates that are not dates, which are
+  skipped; and the HR site is any host an administrator names, so Test Connection tells an
+  administrator whether this server reaches an address on its own network and what status it
+  answers with — never what it answers.
 
 ## Setup
 

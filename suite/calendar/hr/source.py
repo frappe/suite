@@ -126,14 +126,20 @@ class HRSource:
             response = requests.get(
                 f"{self.site_url}{path}",
                 params=params,
-                headers={"Authorization": self._authorization},
+                headers={
+                    "Authorization": self._authorization,
+                    # Plain, so the cap below is on what arrives: a compressed answer of 25 MB
+                    # can unpack to gigabytes. One that comes compressed anyway is read as it
+                    # is, and so is not JSON.
+                    "Accept-Encoding": "identity",
+                },
                 timeout=TIMEOUT,
                 # A redirect is the HR site sending this server somewhere else — an address on the
                 # inside network, say. The API answers in place, so none is followed.
                 allow_redirects=False,
                 stream=True,
             )
-            body = response.raw.read(MAX_RESPONSE_BYTES + 1, decode_content=True)
+            body = response.raw.read(MAX_RESPONSE_BYTES + 1, decode_content=False)
         except Exception as e:
             # `from None`, and everything: reported without the request library's own frames,
             # which hold the header the key is in.
