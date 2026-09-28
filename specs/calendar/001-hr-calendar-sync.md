@@ -34,9 +34,11 @@ that have to show up there belong in a calendar of their own, subscribed to.
   a view reaches. A 29 February birthday falls on the 28th in years without one. An anniversary
   starts at the first one; the years served are not in the title, because every occurrence of a
   repeating event shares one title.
-- **Celebrations start out unticked**: a birthday or an anniversary most days is more than most
-  people want drawn over their own week, so it is theirs to switch on, in the sidebar or from the
-  calendar's menu, per browser. Holiday calendars start shown.
+- **Shared calendars start out unticked**, these among them: a calendar someone else keeps is
+  drawn over a reader's own week only once they ask, whether it is the company's birthdays —
+  one most days — or a holiday list. Switched on in the sidebar, in the calendar's menu, or on a
+  phone in the view sheet, which lists the calendars beneath the views; the choice is the
+  browser's, since the mail server lets only a writer set a calendar's visibility.
 - **Searchable.** The palette and the phone's search page find these beside the mail server's
   events, by every word typed — in the title, or the notes too unless the title alone is asked.
   A birthday answers as its occurrences nearest today, as a series does, and counts as one

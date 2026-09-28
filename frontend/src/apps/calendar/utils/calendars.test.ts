@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
 	calendarColor,
+	calendarLabel,
 	canEditEvent,
 	defaultCalendar,
 	destinationOptions,
@@ -87,23 +88,34 @@ describe('canEditEvent', () => {
 
 describe('sharedCalendarVisible', () => {
 	const holidays = cal('holidays', { may_write_all: 0 })
-	const celebrations = cal('celebrations', { may_write_all: 0, default_hidden: 1 })
 
-	it('draws a shared calendar until it is hidden', () => {
-		expect(sharedCalendarVisible(holidays, {})).toBe(true)
-		expect(sharedCalendarVisible(holidays, { 'acc|holidays': 0 })).toBe(false)
-	})
-
-	it('leaves one that starts hidden undrawn until it is shown', () => {
-		expect(sharedCalendarVisible(celebrations, {})).toBe(false)
-		expect(sharedCalendarVisible(celebrations, { 'acc|celebrations': 1 })).toBe(true)
-	})
-
-	it("is the reader's choice whichever way it started", () => {
+	it('leaves a shared calendar undrawn until the reader switches it on', () => {
+		expect(sharedCalendarVisible(holidays, {})).toBe(false)
 		expect(sharedCalendarVisible(holidays, { 'acc|holidays': 1 })).toBe(true)
-		expect(sharedCalendarVisible(celebrations, { 'acc|celebrations': 0 })).toBe(false)
+	})
+
+	it("is the reader's last word", () => {
+		expect(sharedCalendarVisible(holidays, { 'acc|holidays': 0 })).toBe(false)
 		// a choice about another calendar says nothing of this one
-		expect(sharedCalendarVisible(celebrations, { 'acc|holidays': 1 })).toBe(false)
+		expect(sharedCalendarVisible(holidays, { 'acc|other': 1 })).toBe(false)
+	})
+})
+
+describe('calendarLabel', () => {
+	it('takes the account off a calendar named after it', () => {
+		expect(calendarLabel('Frappe Calendar (akash@frappe.io)')).toEqual({
+			label: 'Frappe Calendar',
+			email: 'akash@frappe.io',
+		})
+	})
+
+	it('leaves any other name as it is', () => {
+		expect(calendarLabel('Holiday List 2026')).toEqual({
+			label: 'Holiday List 2026',
+			email: '',
+		})
+		expect(calendarLabel('Team (Sales)')).toEqual({ label: 'Team (Sales)', email: '' })
+		expect(calendarLabel(undefined)).toEqual({ label: '', email: '' })
 	})
 })
 

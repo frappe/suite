@@ -105,20 +105,21 @@ class UnitTestOccurrences(UnitTestCase):
         self.assertEqual(external._duration(timedelta(0)), "P0D")
 
 
-class UnitTestCelebrationsStartHidden(UnitTestCase):
-    """A holiday calendar starts shown; a celebrations one starts unticked, for the reader to
-    switch on. Which it is, is the calendar's own, and the reader's choice is kept in the app."""
+class UnitTestCalendarRows(UnitTestCase):
+    """What the app is handed for an external calendar: a row shaped like the mail server's,
+    on which nothing can be written. Whether it is drawn is the reader's choice, kept in the
+    app — every shared calendar starts unticked, these among them."""
 
-    def test_the_calendar_says_whether_it_starts_hidden(self):
+    def test_a_calendar_is_a_read_only_row_of_the_apps_shape(self):
         calendars = [
-            frappe._dict(name="c1", calendar_name="Celebrations", color=None, hidden_by_default=1),
-            frappe._dict(name="c2", calendar_name="India 2026", color="#123456", hidden_by_default=0),
+            frappe._dict(name="c1", calendar_name="Celebrations", color=None),
+            frappe._dict(name="c2", calendar_name="India 2026", color="#123456"),
         ]
         with patch.object(external, "_calendars_for", return_value=calendars):
             rows = external.calendar_rows("akash@x.io")
 
-        self.assertEqual([row["default_hidden"] for row in rows], [1, 0])
         self.assertEqual([row["name"] for row in rows], ["external|c1", "external|c2"])
+        self.assertEqual([row["color"] for row in rows], [None, "#123456"])
         # nobody writes to these here: what they say is HR's to change
         self.assertTrue(all(not row["may_write_all"] and not row["may_delete"] for row in rows))
 

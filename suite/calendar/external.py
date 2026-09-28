@@ -56,7 +56,6 @@ def calendar_rows(user: str) -> list[dict]:
             # Nobody writes to these here. What they say is the source's to change.
             "may_write_all": 0,
             "may_delete": 0,
-            "default_hidden": 1 if calendar.hidden_by_default else 0,
         }
         for calendar in _calendars_for(user)
     ]
@@ -94,7 +93,7 @@ def _calendars_for(user: str) -> list[frappe._dict]:
     return frappe.get_all(
         "External Calendar",
         {"name": ("in", ids)},
-        ["name", "calendar_name", "color", "hidden_by_default"],
+        ["name", "calendar_name", "color"],
         order_by="calendar_name asc",
     )
 
@@ -359,13 +358,7 @@ def _rows_carrying(
 # --- writing ------------------------------------------------------------------------------------
 
 
-def upsert_calendar(
-    source: str,
-    source_key: str,
-    calendar_name: str,
-    color: str | None = None,
-    hidden_by_default: bool = False,
-) -> str:
+def upsert_calendar(source: str, source_key: str, calendar_name: str, color: str | None = None) -> str:
     """The calendar this source keeps for `source_key`, made if it isn't there yet.
 
     Its name and colour are written on every run, not only the day it was made: changed where
@@ -375,14 +368,10 @@ def upsert_calendar(
     existing = frappe.db.get_value(
         "External Calendar",
         {"source": source, "source_key": source_key},
-        ["name", "calendar_name", "color", "hidden_by_default"],
+        ["name", "calendar_name", "color"],
         as_dict=True,
     )
-    wanted = {
-        "calendar_name": calendar_name,
-        "color": color,
-        "hidden_by_default": 1 if hidden_by_default else 0,
-    }
+    wanted = {"calendar_name": calendar_name, "color": color}
 
     if not existing:
         # The lookup above is not a guarantee — another writer can insert between it and this,

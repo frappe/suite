@@ -97,10 +97,10 @@ export const userStore = defineStore('calendar-user', () => {
 	// Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
 	// someone who can write to it change — so a calendar shared read-only is hidden in this
 	// browser instead.
-	// The reader's choice by calendar, kept only where they made one; the rest draw as they start.
+	// The reader's choice by calendar, kept only where they made one; the rest stay unticked.
 	const sharedVisibility = useStorage<Record<string, 0 | 1>>('calendar-shared-visibility', {})
-	// Carried over once from the two lists an earlier build kept — the hidden, and the shown
-	// among those that start hidden — so nobody's choices are lost to the change of key.
+	// Carried over once from the two lists an earlier build kept — the hidden, and the shown —
+	// so nobody's choices are lost to the change of key.
 	for (const [key, visible] of [
 		['calendar-hidden-shared', 0],
 		['calendar-shown-shared', 1],
@@ -114,6 +114,20 @@ export const userStore = defineStore('calendar-user', () => {
 			// nothing readable under the old key, so nothing to carry
 		}
 	}
+
+	// The account's own calendars, then those shared with the reader from other accounts, as the
+	// sidebar and the phone's view sheet list them. The shared group is there only when something
+	// is shared.
+	const calendarGroups = computed(() => {
+		const rows = calendars.data ?? []
+		const mine = rows.filter((cal) => cal.account === accountId.value)
+		const shared = rows.filter((cal) => cal.account !== accountId.value)
+		const groups = [{ key: 'mine', label: __('My Calendars'), calendars: mine }]
+		if (shared.length) {
+			groups.push({ key: 'shared', label: __('Shared Calendars'), calendars: shared })
+		}
+		return groups
+	})
 
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.
@@ -159,6 +173,7 @@ export const userStore = defineStore('calendar-user', () => {
 		participantIdentities,
 		calendars,
 		sharedVisibility,
+		calendarGroups,
 		calendarOptions,
 		accountCalendarOptions,
 		organizerIdentity,

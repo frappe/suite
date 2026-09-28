@@ -332,18 +332,14 @@ class UnitTestMilestonesShareACalendar(UnitTestCase):
         return planned
 
     def test_birthdays_and_anniversaries_land_on_one_calendar(self):
-        [(key, name, _color, hidden, events, audience)] = self.plans(sync_birthdays=1, sync_anniversaries=1)
+        [(key, name, _color, events, audience)] = self.plans(sync_birthdays=1, sync_anniversaries=1)
         self.assertEqual({event["uid"] for event in events}, {"hr-birthday-EMP-1", "hr-anniversary-EMP-1"})
         self.assertEqual(audience, ["a@x.io"])
         self.assertEqual(name, "Celebrations")
         self.assertEqual(key, f"{hr_sync.CELEBRATIONS_KEY}Acme")
-        # more than most people want drawn over their own week: theirs to switch on
-        self.assertTrue(hidden)
 
     def test_a_kind_switched_off_is_left_out_and_so_removed(self):
-        [(_key, _name, _color, _hidden, events, _audience)] = self.plans(
-            sync_birthdays=0, sync_anniversaries=1
-        )
+        [(_key, _name, _color, events, _audience)] = self.plans(sync_birthdays=0, sync_anniversaries=1)
         # the calendar is still planned, and what is not in the plan is removed from it
         self.assertEqual([event["uid"] for event in events], ["hr-anniversary-EMP-1"])
 
@@ -382,7 +378,6 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
             key="holidays:India 2026",
             name="India 2026",
             color="#123456",
-            hidden=False,
             events=[HOLIDAY],
             audience=audience,
         )

@@ -19,7 +19,6 @@ class ExternalCalendar(Document):
 
         calendar_name: DF.Data
         color: DF.Color | None
-        hidden_by_default: DF.Check
         source: DF.Data
         source_key: DF.Data
     # end: auto-generated types

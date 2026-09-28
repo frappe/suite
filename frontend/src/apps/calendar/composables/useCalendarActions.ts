@@ -66,8 +66,8 @@ export const useCalendarActions = () => {
 	const canEdit = (calendar: CalendarRow) => !!calendar.may_write_all
 
 	const menuOptions = (calendar: CalendarRow) => [
-		// The sidebar's row does this on a click, and the phone has no sidebar: there, this is
-		// the only way to show a calendar that starts out hidden, or to hide one.
+		// The sidebar's row and the phone's view sheet do this on a tap; the settings page, which
+		// has neither, offers it here.
 		{
 			label: calendar.visible ? __('Hide') : __('Show'),
 			icon: calendar.visible ? EyeOff : Eye,

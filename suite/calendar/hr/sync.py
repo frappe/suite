@@ -49,7 +49,6 @@ class Plan(NamedTuple):
     key: str  # what the calendar is remembered by, and so how a later run finds it again
     name: str
     color: str | None
-    hidden: bool  # starts out unticked, for the reader to switch on
     events: list[dict]
     audience: list[str | None]  # the addresses HR named, before this site is asked about them
 
@@ -104,19 +103,16 @@ def _run() -> dict:
         for holiday_list, audience in holiday_audiences(settings, source, employees, date.today()).items():
             events = holiday_events(holiday_list, source.holidays(holiday_list))
             key = f"{HOLIDAYS_KEY}{holiday_list}"
-            plans.append(Plan(key, holiday_list, settings.holidays_color, False, events, audience))
+            plans.append(Plan(key, holiday_list, settings.holidays_color, events, audience))
     if settings.sync_birthdays or settings.sync_anniversaries:
         # One calendar for both: the same people see them, and the titles tell them apart.
         for company, (name, staff) in _by_company(settings.milestones_calendar, employees).items():
             events = birthday_events(staff) if settings.sync_birthdays else []
             if settings.sync_anniversaries:
                 events += anniversary_events(staff)
-            # A birthday or an anniversary most days, for everyone in the company, is more than
-            # most people want drawn over their own week. It is theirs to switch on. Holidays are
-            # few and change what a day is, so those stay shown.
             audience = [person.get("user_id") for person in staff]
             key = f"{CELEBRATIONS_KEY}{company}"
-            plans.append(Plan(key, name, settings.milestones_color, True, events, audience))
+            plans.append(Plan(key, name, settings.milestones_color, events, audience))
 
     # Two plans for one calendar would each remove the other's events and replace the other's
     # audience: a holiday list named "Birthdays" would hand the birthdays to the wrong people.
@@ -141,9 +137,7 @@ def _reconcile(plans: list[Plan]) -> dict:
     users = site_users(email for plan in plans for email in plan.audience)
 
     for plan in plans:
-        calendar = upsert_calendar(
-            SOURCE, plan.key, plan.name, color=plan.color, hidden_by_default=plan.hidden
-        )
+        calendar = upsert_calendar(SOURCE, plan.key, plan.name, color=plan.color)
         summary[plan.name] = replace_events(calendar, plan.events)
         audience = [email.strip().lower() for email in plan.audience if email]
         summary[plan.name]["drawn_for"] = replace_audience(calendar, users.intersection(audience))

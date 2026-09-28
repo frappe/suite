@@ -16,21 +16,29 @@ export type CalendarRow = {
 	 */
 	may_write_all: 0 | 1
 	may_delete: 0 | 1
-	/**
-	 * A shared calendar that starts out unticked, like the company's birthdays: the reader
-	 * switches it on, rather than everyone having to switch it off.
-	 */
-	default_hidden?: 0 | 1
 }
 
 /**
  * Whether a calendar shared read-only is drawn in this browser: as the reader last set it,
- * else as it starts — shown, unless it is one that starts hidden.
+ * and until they have, not at all. A calendar somebody else keeps — a holiday list, the
+ * company's birthdays — is drawn over the reader's own week only once they ask.
  */
 export const sharedCalendarVisible = (
 	calendar: CalendarRow,
 	chosen: Record<string, 0 | 1>,
-): boolean => !!(chosen[calendar.name] ?? (calendar.default_hidden ? 0 : 1))
+): boolean => !!chosen[calendar.name]
+
+/**
+ * A calendar's name as a row can show it. A JMAP calendar is often named after its account —
+ * "Frappe Calendar (akash@frappe.io)" — which never fits a row; the address comes off, for a
+ * tooltip or nothing, and once there are several accounts the colour dot tells them apart.
+ */
+export const calendarLabel = (
+	name: string | null | undefined,
+): { label: string; email: string } => {
+	const match = /^(.*?)\s*\(([^()]*@[^()]*)\)$/.exec(name || '')
+	return match ? { label: match[1], email: match[2] } : { label: name || '', email: '' }
+}
 
 /**
  * Whether an event is drawn: it sits on a calendar the reader has switched on. One predicate

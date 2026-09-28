@@ -6,7 +6,6 @@
  "field_order": [
   "calendar_name",
   "color",
-  "hidden_by_default",
   "column_break_source",
   "source",
   "source_key"
@@ -25,13 +24,6 @@
    "fieldname": "color",
    "fieldtype": "Color",
    "label": "Colour"
-  },
-  {
-   "default": "0",
-   "description": "Starts out unticked, for the reader to switch on.",
-   "fieldname": "hidden_by_default",
-   "fieldtype": "Check",
-   "label": "Hidden By Default"
   },
   {
    "fieldname": "column_break_source",
