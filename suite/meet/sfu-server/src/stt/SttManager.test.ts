@@ -37,6 +37,25 @@ describe('SttManager', () => {
 		await vi.waitFor(() => expect(restartRoom).toHaveBeenCalledWith('room-1'));
 	});
 
+	it('counts subscribed rooms, subscribers, and active ingesters without identifiers', async () => {
+		vi.spyOn(AudioIngester.prototype, 'start').mockResolvedValue();
+		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
+		const manager = new SttManager({ sttClient: createSttClient().client });
+		manager.setGetRouter(() => ({}) as Router);
+		manager.beginSession('room-1', 'socket-1');
+		manager.beginSession('room-1', 'socket-2');
+		await manager.startTranscription('room-1', 'peer-1', 'Alice', {
+			id: 'producer-1',
+		} as Producer);
+		expect(manager.getResourceCounts()).toEqual({
+			stt_subscribed_rooms: 1,
+			stt_subscribers: 2,
+			stt_producer_ingesters: 1,
+			stt_realtime_streams: 0,
+		});
+		await manager.stopRoom('room-1');
+	});
+
 	it('retries a rejected stream without replacing healthy participants', async () => {
 		const start = vi
 			.spyOn(AudioIngester.prototype, 'start')

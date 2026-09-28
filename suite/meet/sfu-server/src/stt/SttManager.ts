@@ -17,6 +17,7 @@ interface SttManagerOptions {
 	/** Use mock client in development when no STT server is configured */
 	allowMockFallback?: boolean;
 	sttClient?: ISttClient;
+	onAudioSent?: (seconds: number) => void;
 }
 
 type EmitSttToSubscribers = (
@@ -40,8 +41,10 @@ export class SttManager {
 		| ((roomId: string) => Promise<void>)
 		| undefined;
 	private configured: boolean;
+	private onAudioSent?: (seconds: number) => void;
 
 	constructor(options: SttManagerOptions) {
+		this.onAudioSent = options.onAudioSent;
 		this.configured = Boolean(
 			options.sttClient ||
 				options.sttServerUrl?.trim() ||
@@ -86,6 +89,20 @@ export class SttManager {
 
 	hasSubscribers(roomId: string): boolean {
 		return (this.roomSubscribers.get(roomId)?.size ?? 0) > 0;
+	}
+
+	getResourceCounts(): Record<string, number> {
+		return {
+			stt_subscribed_rooms: this.roomSubscribers.size,
+			stt_subscribers: [...this.roomSubscribers.values()].reduce(
+				(total, subscribers) => total + subscribers.size,
+				0,
+			),
+			stt_producer_ingesters: this.activeSessions.size,
+			stt_realtime_streams: [...this.activeSessions.values()].filter(
+				(ingester) => ingester.hasRealtimeStream(),
+			).length,
+		};
 	}
 
 	beginSession(roomId: string, socketId: string): boolean {
@@ -161,6 +178,7 @@ export class SttManager {
 			router,
 			sttClient: this.sttClient,
 			getNames: () => this.getRoomNames?.(roomId) ?? [],
+			onAudioSent: this.onAudioSent,
 			onUnexpectedStreamClose: () => {
 				void this.recoverIngester(
 					sessionKey,

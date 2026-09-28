@@ -1214,6 +1214,7 @@ export class MediasoupManager {
 
 	getResourceCounts(): Record<string, number> {
 		return {
+			...this.sttManager?.getResourceCounts(),
 			rooms: this.roomManager.getRoomCount(),
 			participants: this.roomManager.getParticipantCount(),
 			peers: this.roomManager.getPeerCount(),

@@ -38,6 +38,12 @@ that utterance limit, queues more than 1 MiB of outbound WebSocket data, or leav
 eight committed utterances unacknowledged, the SFU closes that stream and
 recreates its ingester while captions remain subscribed.
 
+When `METRICS_TOKEN` is configured, `/metrics` exports aggregate
+`meet_sfu_stt_audio_sent_seconds_total` and `meet_sfu_resources` counts for
+captioned rooms, subscribers, producer ingesters, and Realtime streams. These
+metrics have no room or participant labels and help compare browser-visible
+caption delay with SFU audio delivery and isolated STT load measurements.
+
 ## Development Setup
 
 From the Suite app directory, install the SFU dependencies and create a local environment file:

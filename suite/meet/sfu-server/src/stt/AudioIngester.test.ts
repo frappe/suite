@@ -65,6 +65,7 @@ describe('AudioIngester', () => {
 	});
 
 	it('drains queued VAD frames with capped pre-roll ordering', async () => {
+		const onAudioSent = vi.fn();
 		const stream = {
 			sendAudio: vi.fn(),
 			markFinal: vi.fn(),
@@ -82,6 +83,7 @@ describe('AudioIngester', () => {
 			producer: { id: 'producer-1' } as Producer,
 			router: {} as Router,
 			sttClient,
+			onAudioSent,
 			onUnexpectedStreamClose: vi.fn(),
 			onTranscript: vi.fn(),
 		});
@@ -117,6 +119,10 @@ describe('AudioIngester', () => {
 			speech2,
 		]);
 		expect(stream.markFinal).not.toHaveBeenCalled();
+		expect(onAudioSent).toHaveBeenCalledTimes(6);
+		expect(
+			onAudioSent.mock.calls.reduce((sum, [seconds]) => sum + seconds, 0),
+		).toBeCloseTo(0.6);
 	});
 
 	it('sends the first speech frames without waiting for the 800 ms speaker update', async () => {

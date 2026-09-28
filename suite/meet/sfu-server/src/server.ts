@@ -71,6 +71,7 @@ export class SFUServer {
 			sttServerUrl: config.stt.serverUrl,
 			sttApiKey: config.stt.apiKey,
 			allowMockFallback: config.stt.allowMockFallback,
+			onAudioSent: (seconds) => this.telemetry.sttAudioSeconds.inc(seconds),
 		});
 		this.mediasoup.setSttManager(this.sttManager);
 		const recordingPersistencePath = config.persistence.recordingGrantFile;
