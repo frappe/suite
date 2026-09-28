@@ -5,7 +5,7 @@ Created: 2026-09-05. Implementation has not started.
 Keep all Drive planning and tracking documents under `wayfinder/drive-layer-spec/`.
 This directory holds implementation tickets; `../tickets/` holds historical design decisions.
 
-38 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), and one open defect (38).
+40 local tickets: 32 done, three superseded, two gated follow-ups (36, 37), one open defect (38), and two asks raised by unified frontend ticket 017 (39, 40).
 `ready-for-agent` describes triage. Blocking edges and execution gates still apply.
 
 ## Sources
@@ -152,6 +152,12 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [36 — Activate Cleanup after the Build release and client migration](issues/36-cleanup-later-release.md) | Suite release operations | [31](issues/31-migration-rehearsal.md), [35](issues/35-cleanup-implementation.md), [unified frontend map](../../unified-frontend/MAP.md) | blocked |
 | [37 — Consolidate storage after a successful Build](issues/37-relocation-execution.md) | Frappe storage operations | [06](issues/06-relocation-implementation.md), [31](issues/31-migration-rehearsal.md) | blocked |
 | [38 — Make a fresh suite install succeed with the Presentation template fixtures](issues/38-fresh-install-fixture-node.md) | Suite Drive content | None | ready-for-agent |
+| [39 — Expose Drive settings, site settings, and WebDAV access through HTTP](issues/39-settings-and-webdav-routes.md) | Suite Drive HTTP | [22](issues/22-http-sharing-and-records.md) | ready-for-agent |
+| [40 — Make Cleanup delete every legacy Drive name and the allowlist prefix](issues/40-cleanup-deletes-every-legacy-name.md) | Suite migration | [35](issues/35-cleanup-implementation.md), [39](issues/39-settings-and-webdav-routes.md) | ready-for-agent |
+
+Tickets 39 and 40 are asks raised by unified frontend ticket
+[017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md):
+no `suite.drive.api.*` dotted path survives the launch of the unified frontend.
 
 ## Coverage
 
@@ -165,11 +171,11 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | Versions, previews, comments, activity, personal lists | 08, 10, 12–14, 22, 28–29 |
 | Content contracts, Writer, Slides, Sheets, Satellites | 16–20, 28, 34 |
 | All five daily jobs | 11–16, 30 |
-| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34 |
+| HTTP routes, shapes, errors, batch, legacy compatibility | 21–23, 32–34, 39 |
 | WebDAV, hidden content files, ordinary office files | 24–25 |
 | Seven framework asks | 02–06; 03 covers asks 2 and 7, 04 covers asks 3 and 5 |
 | Additive Build, mappings, report, rollback evidence | 26–31 |
-| Later Cleanup, source deletion, runtime gates | 35–36 |
+| Later Cleanup, source deletion, runtime gates | 35–36, 40 |
 | Optional post-Build storage consolidation | 06, 37 |
 
 ## Handoff

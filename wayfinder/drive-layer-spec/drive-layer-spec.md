@@ -569,6 +569,11 @@ Dropped in Cleanup: `quota` (its value moves to the user's Personal root
 table behind `Writer Document.versions`; it goes with that field. `Drive Entity Log` is renamed to `Drive Recent` in Build,
 pre-model-sync [011 §13].
 
+Also `Drive User Invitation` and `Account Request`: their only callers are
+the `suite.drive.api.product` methods, which Cleanup deletes (§11.7). The
+Suite invitation resource over the framework's `User Invitation` replaces
+them [unified frontend ticket 017].
+
 ### 3.17 Blob references, for the framework GC
 
 Ticket [003] fixes the rule: a blob is live while some Link field with
@@ -3039,6 +3044,42 @@ HTTP endpoint [010 §3, 014].
 caller's Personal Root. `organization` is the active Shared Root when the
 site has one, otherwise it is explicitly null.
 
+**Settings and WebDAV**
+
+These routes replace the `suite.drive.api.product` methods that touch Drive
+data (§11.7). "Drive admin" is write permission on `Drive Disk Settings`,
+today's `is_drive_site_admin` rule. None of these routes admits a guest.
+
+| Method | Path | R | Body | `data` | Extra errors |
+|---|---|---|---|---|---|
+| GET | `/settings` | signed-in caller | none | `{webdav_enabled, auto_detect_links, writer_settings}`, the caller's §3.14 row; field defaults when the row does not exist | none |
+| PATCH | `/settings` | signed-in caller | `{webdav_enabled}` | the same shape; creates the row on first write | none |
+| GET | `/site-settings` | signed-in caller | none | `{is_admin, preview_size}`; a Drive admin also gets `webdav_enabled`, `webdav_allowed_methods`, `default_personal_quota`, `shared_quota` | none |
+| PATCH | `/site-settings` | Drive admin | `{webdav_enabled}` | the admin shape | 403 |
+| GET | `/webdav` | signed-in caller | none | `{}` when the site switch is off and the caller is no admin; otherwise `{globally_enabled, is_admin}`, plus `{server_url, username, enabled_for_user, two_factor_blocked, api_key}` when the switch is on | none |
+
+- `PATCH /settings` writes the caller's own row only. `webdav_enabled` is
+  the one field the legacy method wrote that survives Cleanup (§3.14);
+  `writer_settings` and `auto_detect_links` are written through the
+  document API today and stay there.
+- `PATCH /site-settings` writes `webdav_enabled` only, as
+  `set_webdav_enabled` does today. The other §3.13 fields are set in Desk,
+  as today. The legacy `disk_settings` write path (root folder and the S3
+  fields) is not carried: every field it wrote is dropped in Cleanup and
+  storage configuration lives in `site_config` after Build (§3.13).
+- `GET /webdav` is `webdav_config` unchanged: `api_key` doubles as the DAV
+  username, and the secret is minted once by
+  `suite.utils.user.generate_user_keys`, a Suite method outside this
+  namespace. `is_admin` appears here and on `/site-settings` because the
+  legacy client read it from both `webdav_config` and `is_site_admin`.
+- Storage usage has no new route: `GET /roots/<id>/usage` above already
+  replaces `storage_breakdown` and `storage_bar_data`.
+
+Three product methods are served by Suite-owned resources, defined in
+`suite/api/routes.py` and the unified frontend spec §4.3, not here:
+`GET /api/suite/users`, `GET` and `POST /api/suite/invitations`, and
+`GET /api/suite/people?q=`. §11.7 maps the legacy names to them.
+
 ### 11.3 The node shape
 
 Base fields, identical in a list row and in a detail fetch [014 §7]:
@@ -3140,9 +3181,17 @@ locked link is never a 403, and an expired link is never a locked one
 ### 11.7 The shim plan
 
 Build adds the routes and keeps every one of the 69 old whitelisted method
-names as thin forwarders into the new Drive implementation. Cleanup deletes the forwarders
-one release later, gated on the SPA having moved [014 §9]. Counted from the
-code on this bench: 69 methods in 11 files, 26 of them guest-callable.
+names answering on `/api/method/` during the Build release. Cleanup deletes
+all 69 one release later, gated on every Suite client having moved [014 §9;
+unified frontend ticket 017]. Counted from the code on this bench: 69
+methods in 11 files, 26 of them guest-callable.
+
+No `suite.drive.api.*` name outlives Cleanup. `suite/drive/http/shims.py`
+classifies each name (`CLASSIFICATION`) by how it answers until then: a
+forwarder into the new workflow, a retained legacy body, a retirement
+refusal (410), or an untouched legacy body with no Drive route. The class
+decides the answer during the Build release, not whether the name is
+deleted.
 
 **`suite.drive.api.files` (26)**
 
@@ -3202,34 +3251,77 @@ takes over the disk import.
 **`suite.drive.api.embed` (1)**: `get_file_content` to
 `GET /nodes/<id>/media`.
 
-**`suite.drive.api.product` (19)**: `get_my_invites`, `get_pending_invites`,
-`signup`, `oauth_providers`, `send_otp`, `verify_otp`, `get_settings`,
-`set_settings`, `invite_users`, `get_users`, `get_user_groups`,
-`accept_invite`, `reject_invite`, `get_translations`, `is_site_admin`,
-`disk_settings`, `webdav_config`, `set_webdav_enabled`, `signup_disabled`.
-None of these touch a node. They stay on `/api/method/` and are outside the
-Drive route namespace.
+**`suite.drive.api.product` (19)**. None of these touch a node. Each moves
+to a resource route, or is retired with the surface that called it. The
+bodies stay untouched until Cleanup deletes `api/product.py` whole.
 
-**`suite.drive.api.s3` (1)**: `fetch`. Permanent.
-
-**`suite.drive.overrides.file` (4)**: `get_file_for_doc` permanent; the
-whitelisted `File` document methods `share`, `unshare`, and `rename` are
-dropped in Cleanup with the `File` override itself.
-
-Three names are permanent whatever else happens [014 §9]:
-
-| Name | Why |
+| Old name | New route |
 |---|---|
-| `suite.drive.api.s3.fetch` | it sits inside stored `File.file_url` values |
-| `suite.drive.overrides.file.get_file_for_doc` | it sits inside the checked-in bundle `suite/public/frontend/assets/sdk-o7hlQ1xj.js` |
-| `/dav` | it sits inside third-party file managers |
+| `get_settings` | `GET /settings` |
+| `set_settings` | `PATCH /settings` `{webdav_enabled}`; `single_click` names no field and is dropped |
+| `is_site_admin` | `GET /site-settings` (`is_admin`) |
+| `disk_settings` GET | `GET /site-settings` |
+| `disk_settings` PUT | dropped; every field it wrote goes in Cleanup (§3.13) |
+| `webdav_config` | `GET /webdav` |
+| `set_webdav_enabled` | `PATCH /site-settings` `{webdav_enabled}` |
+| `get_users` | `GET /api/suite/users` (Suite) |
+| `get_user_groups` | `GET /api/suite/people?q=` (Suite; users and groups, paged) |
+| `get_pending_invites` | `GET /api/suite/invitations` (Suite, over the framework's `User Invitation`) |
+| `invite_users` | `POST /api/suite/invitations` (Suite) |
+| `accept_invite` | the framework's emailed accept link (`frappe.core.api.user_invitation.accept_invitation`), sent by the Suite invitation resource |
+| `get_my_invites`, `reject_invite` | dropped with `Drive User Invitation`; the framework flow has no invitee inbox and no reject, an unaccepted invitation expires |
+| `get_translations` | `frappe.translate.get_boot_translations`, called by the platform translation module (unified frontend spec §3.14) |
+| `signup`, `send_otp`, `verify_otp`, `oauth_providers`, `signup_disabled` | dropped with `/drive/signup`; Frappe's `/login` owns sign-in, OAuth buttons, and the signup switch (unified frontend spec §10.10, §14.6) |
+
+`Drive User Invitation` and `Account Request` have no reader once
+`api/product.py` goes: `after_insert` sends the invitation email, and the
+methods above are the only callers. Cleanup drops both (§3.16, §14.10).
+
+**`suite.drive.api.s3` (1)**: `fetch` to `GET /nodes/<id>/content`. The
+name resolves a `File` row by its stored `file_url`, so it cannot answer
+after Cleanup deletes those rows whatever the spec says. Build makes the
+route sufficient before that: step 3 (§14.2) gives every S3 row a blob and
+a node, Slides Build rewrites every element `src` from the stored URL to a
+node id (§14.7), `Presentation.thumbnail` is dropped in Cleanup and decks
+get previews, and Meet recording rows are Drive-owned `File` rows that
+become nodes. Invitation emails are the other carrier of a dotted path;
+they expire after one day (`EXPIRY_DAYS = 1`).
+
+**`suite.drive.overrides.file` (4)**: `get_file_for_doc` to
+`GET /nodes/<id>?expand=access`; the caller holds the node id from the
+`/d/<node-id>` route, and a legacy document URL is redirected by the
+composition table from the document's `node` field. The name resolves
+through `File.get_for_doc`, so it too dies with the `File` rows. Its only
+caller is `frontend/src/apps/drive/legacy/sdk.js`; the
+`suite/public/frontend/assets/sdk-*.js` bundle is gitignored build output
+of that file, not a checked-in artifact. The whitelisted `File` document
+methods `share`, `unshare`, and `rename` are dropped in Cleanup with the
+`File` override itself.
+
+One address is permanent whatever else happens: `/dav`, because it sits
+inside third-party file managers and is not a dotted path [014 §9]. The
+two names earlier drafts called permanent are not: both resolve through
+`File` rows Cleanup deletes, so keeping them would keep nothing.
+
+Callers outside `frontend/src` count as Suite clients and must move before
+Cleanup: `suite/public/js/FileUploader.vue`, the Desk file picker built into
+`ff_integration.bundle.js`, calls `files.get_root_folder`, `list.files`, and
+`files.upload_file` and moves to `GET /roots`, `GET /nodes/<id>/children`,
+and the upload routes. Suite Python that imports a body Cleanup deletes
+(`suite/writer/api/embed.py`, `suite/writer/api/docs.py`,
+`suite/writer/api/general.py`, `suite/writer/overrides/__init__.py`,
+`suite/writer/doctype/writer_document/writer_document.py`,
+`suite/sheets/doctype/sheet/sheet.py`,
+`suite/slides/doctype/presentation/presentation.py`,
+`suite/drive/utils/api.py`) is retargeted in the same release (§14.10).
 
 Hardening: Build adds `/api/suite/drive/` to `ALLOWED_WILDCARD_PATHS` and
 Cleanup removes `/api/method/suite.drive.api.`
-(`suite/hooks.py:429-446`). Site-wide enforcement is out of scope;
-`DENIED_WILDCARD_PATHS = ["/api/"]` is declared at `suite/hooks.py:450`
-and nothing in suite or frappe reads it, so the gate is external
-[014 §10].
+(`suite/hooks.py:564-592`). After that no Suite client or Suite server code
+depends on a `suite.drive.api.*` dotted path. Site-wide enforcement is out
+of scope; `DENIED_WILDCARD_PATHS = ["/api/"]` is declared at
+`suite/hooks.py:596` and nothing in suite or frappe reads it, so the gate is
+external [014 §10].
 
 ---
 
@@ -3928,7 +4020,10 @@ Ships one release after Build. It refuses to run unless all three hold
 1. Every reachable Drive `File` row has a node.
 2. `frappe.storage.gc.blob_reference_columns()` exists, so deleting File
    rows does not orphan every blob under the framework GC [003].
-3. The SPA has moved off the 69 old method names, so the forwarders can go.
+3. Every Suite client has moved off all 69 old method names: the SPA
+   (`frontend/src`), the Desk file picker (`suite/public/js`), and Suite
+   Python outside `suite/drive/api` and `suite/drive/http` imports none of
+   the bodies below (§11.7). No name is exempt.
 
 Then, in order:
 
@@ -3939,8 +4034,10 @@ Then, in order:
   `status`, `file_modified`, `column_break_tapww`, `content_doctype`,
   `content_docname`) and the three property setters
   (`suite/fixtures/property_setter.json`).
-- Drop `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`, and
-  the old notification columns.
+- Drop `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`,
+  `Drive User Invitation`, `Account Request`, and the old notification
+  columns. Remove the two `Drive User Invitation` permission hooks
+  (`suite/hooks.py:207`, `:251`) with the doctype.
 - Check that no `DocShare` row remains on a governed doctype (Build deleted
   them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
   `Sheet Snapshot`; clear `ycomments`; strip cell
@@ -3949,8 +4046,12 @@ Then, in order:
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota` and the S3 fields on
   `Drive Disk Settings`; `storage_owner` on `Drive Storage Reservation`.
-- Delete the 69 API forwarders except the three permanent names (§11.7),
-  and remove `/api/method/suite.drive.api.` from `ALLOWED_WILDCARD_PATHS`.
+- Delete all 69 legacy names (§11.7): `suite/drive/http/shims.py`, every
+  module under `suite/drive/api/` including `product.py` and `s3.py`, and
+  `suite/drive/overrides/file.py` with the `File` override. `after_request`
+  (the CSP hook at `suite/hooks.py:440`) moves to `suite/drive/framework.py`
+  first. Remove `/api/method/suite.drive.api.` from
+  `ALLOWED_WILDCARD_PATHS`. Only `/dav` stays.
 - Delete the `.thumbnail` sidecars.
 - On S3 sites, enqueue a long job that deletes Drive's legacy prefix in the
   bucket.
