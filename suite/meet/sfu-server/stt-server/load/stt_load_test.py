@@ -1,17 +1,113 @@
+import argparse
 import asyncio
+import hashlib
 import json
+import os
 import tempfile
 import time
 import unittest
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
-from stt_load import percentile, read_pcm, run_stream, summarize
+from stt_load import percentile, read_pcm, run, run_stream, summarize
 from websockets.asyncio.server import serve
 
 
 class LoadTest(unittest.TestCase):
     """Check paced STT harness behavior with a local Realtime server."""
+
+    def test_replicas_receive_distinct_names_and_sfu_sized_frames(self):
+        async def scenario(path):
+            received = [[], []]
+
+            def handler(replica):
+                async def server(ws):
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "session.created",
+                                "session": {
+                                    "audio": {
+                                        "input": {"transcription": {"model": "test", "language": "auto"}}
+                                    }
+                                },
+                            }
+                        )
+                    )
+                    update = json.loads(await ws.recv())
+                    received[replica].append(update["session"]["audio"]["input"]["transcription"])
+                    await ws.send(json.dumps({"type": "session.updated"}))
+                    frames = []
+                    async for raw in ws:
+                        event = json.loads(raw)
+                        if event["type"] == "input_audio_buffer.append":
+                            import base64
+
+                            frames.append(base64.b64decode(event["audio"]))
+                        elif event["type"] == "input_audio_buffer.commit":
+                            received[replica].append([len(frame) for frame in frames])
+                            await ws.send(
+                                json.dumps({"type": "input_audio_buffer.committed", "item_id": "one"})
+                            )
+                            await ws.send(
+                                json.dumps(
+                                    {
+                                        "type": "conversation.item.input_audio_transcription.completed",
+                                        "item_id": "one",
+                                        "transcript": "recognized",
+                                    }
+                                )
+                            )
+
+                return server
+
+            async with (
+                serve(handler(0), "127.0.0.1", 0) as first,
+                serve(handler(1), "127.0.0.1", 0) as second,
+            ):
+                urls = ",".join(f"ws://127.0.0.1:{s.sockets[0].getsockname()[1]}" for s in (first, second))
+                with patch.dict(os.environ, {"STT_API_KEY": "test-key"}):
+                    report = await run(
+                        argparse.Namespace(
+                            audio=path,
+                            streams=2,
+                            rounds=1,
+                            gap=0,
+                            timeout=5,
+                            url=None,
+                            urls=urls,
+                            frame_ms=100,
+                            stagger_ms=20,
+                            languages="en-US,es-ES",
+                            names="Siobhan,Zubair",
+                            trim_ms_step=40,
+                        )
+                    )
+            return report, received
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "audio.wav"
+            with wave.open(str(path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(24000)
+                audio.writeframes(b"\0" * (24000 * 2 * 220 // 1000))
+            report, received = asyncio.run(scenario(path))
+
+        self.assertEqual(report["summary"]["completed"], 2)
+        self.assertNotIn("Siobhan", json.dumps(report))
+        self.assertNotIn("Zubair", json.dumps(report))
+        self.assertEqual(received[0][0]["names"], ["Siobhan"])
+        self.assertEqual(received[1][0]["names"], ["Zubair"])
+        self.assertEqual(received[0][0]["language"], "en-US")
+        self.assertEqual(received[1][0]["language"], "es-ES")
+        self.assertEqual(received[0][1], [4800, 4800, 960])
+        self.assertEqual(received[1][1], [4800, 3840])
+        self.assertEqual(
+            [row["transcript_sha256"] for row in report["utterances"]],
+            [hashlib.sha256(b"recognized").hexdigest()] * 2,
+        )
 
     def test_requires_representative_input_format(self):
         with tempfile.TemporaryDirectory() as folder:

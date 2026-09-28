@@ -8,6 +8,8 @@ with three overlapping speakers can use three streams. Reuse a representative
 clip containing speech and natural pauses (up to 15 seconds) that produces a
 nonempty final transcript at baseline. Empty finals count as failures. Do not
 include customer audio or credentials in the resulting report.
+Packets default to 100 ms, matching the SFU's VAD output; use `--frame-ms 20`
+only to compare a higher-frequency client.
 
 ```sh
 export STT_API_KEY='key-for-the-isolated-replica'
@@ -15,6 +17,17 @@ uv run --no-project --with websockets python load/stt_load.py \
   --url http://isolated-stt:8000 --audio /path/to/speech-24k-mono-pcm16.wav \
   --streams 1 --rounds 24 --gap 1 --output /path/to/report-1.json
 ```
+
+Use `--urls http://replica-1:8000,http://replica-2:8000` to assign streams
+round-robin across isolated replicas. Streams wait until every connection is
+ready before starting; `--stagger-ms 150` offsets their audio clocks. Use
+`--languages en-US,es-ES` and `--trim-ms-step 40` to exercise differing
+languages and final packet lengths. To measure the current biased decoder,
+`--names Siobhan,Zubair` sends one *synthetic* room-name hint per stream,
+cycling through the supplied names; compare with a run without hints.
+The report contains only the number of hints per stream, not the names or
+transcripts; final-text hashes can be compared across runs without retaining
+the text. Do not supply private participant names or speech.
 
 Repeat for 2, 4, 8, ... streams, then near the observed knee with smaller
 increments. Repeat each level several times with the same audio and GPU state;
@@ -28,8 +41,9 @@ completed nonempty final can lack an interim caption; those cases are excluded
 from first-text percentiles, so inspect that count as well. Only text observed
 before the server acknowledges a round's commit counts as interim; final deltas
 after the acknowledgement do not.
-The harness uses the model and language advertised by the isolated replica's
-Realtime session, so configure that replica as you would production.
+Without `--languages`, the harness uses the model and language advertised by
+each isolated replica's Realtime session; configure replicas as you would
+production.
 
 Agree on an SLO first (for example, p95 final within 2 seconds of the last
 audio frame, no failed utterances or increasing late-run lag). Capacity is the
