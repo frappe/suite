@@ -22,6 +22,8 @@ HOLIDAY = {
     "ends_on": "2026-10-03 00:00:00",
     "all_day": True,
 }
+# Not "Frappe HR": what this site's real sync keeps is not these tests' to reconcile away.
+TEST_SOURCE = "Test HR Sync"
 
 
 def employee(name: str, **fields) -> dict:
@@ -365,7 +367,7 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
         self.addCleanup(self.forget)
 
     def forget(self) -> None:
-        for name in frappe.get_all("External Calendar", {"source": hr_sync.SOURCE}, pluck="name"):
+        for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
             external.remove_calendar(name)
 
     def a_user(self, email: str, enabled: int = 1) -> str:
@@ -394,7 +396,10 @@ class IntegrationTestTheAudienceIsThisSitesUsers(IntegrationTestCase):
             events=[HOLIDAY],
             audience=audience,
         )
-        return hr_sync._reconcile([plan])
+        # Under a source of its own: a run reconciles away every calendar of its source that is
+        # not in the plan, and a site this runs on may have the real sync's calendars on it.
+        with patch.object(hr_sync, "SOURCE", TEST_SOURCE):
+            return hr_sync._reconcile([plan])
 
     def drawn(self, user: str) -> list[str]:
         return [row["_name"] for row in external.calendar_rows(user)]
