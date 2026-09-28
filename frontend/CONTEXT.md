@@ -111,6 +111,13 @@ Product-neutral account, site, user or invitation data owned by Suite and
 consumed by the shell or products.
 _Avoid_: Shell endpoint, Shared app data
 
+**Flip**:
+The moment old URLs start to redirect to the new pages for a set of areas.
+There are two: the shell flip (Mail, Meet, Calendar) and the files flip
+(Home, Files, documents). Old pages stay until they are deleted after the
+files flip.
+_Avoid_: Cutover, Launch, Migration
+
 ## Flagged Ambiguities
 
 - **Workspace**: today's shell uses it for the site's organisation settings

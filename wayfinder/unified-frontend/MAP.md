@@ -95,6 +95,14 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
+- [Rollout, redirects and old-page deletion](tickets/014-rollout-redirects-and-old-page-deletion.md) —
+  Two flips, each one `frappe.conf` key: the shell with Mail, Meet and
+  Calendar, then Home, Files and documents. One server redirect table
+  (302 until deletion, then 301) keeps old links working forever; one
+  `node_url` helper builds every server link. Old pages go in one commit
+  after flip 2 holds a release with a legacy-call counter at zero, which is
+  the evidence Drive Cleanup needs. One Drive ask: that counter.
+
 - [Settings dialog groups and account surfaces](tickets/016-settings-dialog-and-account-surfaces.md) —
   Products hand settings to one composition list; one heading per product
   (Account, Files, Mail, Calendar, Meet, then Workspace); tab bodies load on
@@ -246,6 +254,11 @@ Scope, decided 2026-09-11:
   remembers links a signed-in user opened and lists them, while access
   still rides the live link. That is a Drive-program ask. Drive ticket 008
   rejected server-side link state; its stated reason concerns guests.
+
+- WebDAV clients and redirects: does a WebDAV client follow a 302 on
+  `/drive/d/<id>`? Not verified. Surfaced by ticket 014.
+- Who runs `bench set-config` for each flip on Frappe Cloud sites, and what
+  the release note says. Surfaced by ticket 014.
 
 ## Out of scope
 
