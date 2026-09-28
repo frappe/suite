@@ -8,7 +8,7 @@
       :key="item.to"
       :icon="item.icon"
       :label="item.label"
-      :to="item.to"
+      :route="item.to"
     />
   </nav>
 </template>

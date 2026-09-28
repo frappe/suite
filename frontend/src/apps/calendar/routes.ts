@@ -1,5 +1,7 @@
 import type { RouteRecordRaw } from 'vue-router'
 
+import { calendarGuard } from '@/apps/calendar/router'
+
 /**
  * Calendar route module — mounted by the suite router under the '/calendar'
  * prefix. Paths are RELATIVE to '/calendar' (no leading slash; the empty-path
@@ -86,6 +88,6 @@ export const routes: RouteRecordRaw[] = [
 				component: ShortcutRedirect,
 				meta: { shortcut: true },
 			},
-		],
+		].map((route) => ({ ...route, beforeEnter: calendarGuard })),
 	},
 ]

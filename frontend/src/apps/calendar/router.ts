@@ -1,6 +1,5 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
-import '@/router'
 import { useScreenSize } from '@/composables/useScreenSize'
 
 import { userStore } from '@/apps/calendar/stores/user'

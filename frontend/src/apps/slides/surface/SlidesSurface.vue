@@ -243,7 +243,7 @@ onBeforeUnmount(() => {
     <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
       <span class="lucide-presentation size-5 text-ink-gray-6" aria-hidden="true" />
       <TextInput v-model="titleDraft" class="min-w-0 max-w-md flex-1" variant="ghost" :disabled="!editable" aria-label="Presentation title" @blur="rename" />
-      <span class="text-sm text-ink-gray-5">{{ isSaving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}</span>
+      <span class="ml-auto text-sm text-ink-gray-5">{{ isSaving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}</span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
       <Badge v-if="!editable" :label="session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
       <Button icon="lucide-message-square" tooltip="Comments" variant="ghost" @click="openPanel('comments')" />

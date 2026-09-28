@@ -5,7 +5,7 @@
     <DesktopShell
       v-if="!isMobile"
       :scroll="scrollOwner === 'shell'"
-      class="h-full"
+      class="h-full suite-area-shell"
     >
       <template #rail>
         <Rail :areas="areas" :badges="badges">
@@ -79,7 +79,7 @@
 
   <slot v-else-if="resolvedFrame === 'none'" />
 
-  <SuiteSettingsDialog v-if="showSettings" />
+  <SuiteSettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" />
 </template>
 
 <script setup lang="ts">
@@ -106,7 +106,7 @@ import Rail from "@/shell/Rail.vue";
 import UnavailableSurface from "@/shell/UnavailableSurface.vue";
 import { isMobile } from "@/shell/useIsMobile";
 import { mobileSheetOpen } from "@/shell/useMobileSheet";
-import { showSettings } from "@/shell/settings/useSettingsDialog";
+import { settingsTab, showSettings } from "@/shell/settings/useSettingsDialog";
 
 const props = defineProps<{
   areas: readonly AreaDefinition[];
@@ -192,3 +192,12 @@ function describeUnavailable(
   };
 }
 </script>
+
+<style scoped>
+/* ScrollArea's content wrapper must stretch for short pages to fill the viewport. */
+.suite-area-shell :deep([data-slot="desktop-shell-content"] > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"] > div) {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+</style>

@@ -115,7 +115,6 @@ const moduleGraphDebtGroups = [
       "calendar/pages/ProfileView.vue|@/boot/session",
       "calendar/pages/ProfileView.vue|@/components/MobileProfilePage.vue",
       "calendar/router.ts|@/composables/useScreenSize",
-      "calendar/router.ts|@/router",
       "calendar/socket.ts|@/realtime",
       "calendar/utils/composables.ts|@/composables/useTheme",
       "calendar/utils/eventTime.test.ts|@/boot/translation"
