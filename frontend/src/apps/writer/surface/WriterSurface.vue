@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
         @blur="rename"
         @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
       />
-      <span class="text-sm text-ink-gray-5">
+      <span class="ml-auto text-sm text-ink-gray-5">
         {{ saving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
