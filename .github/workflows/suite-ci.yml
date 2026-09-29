@@ -119,8 +119,7 @@ jobs:
       - name: Install MariaDB Client
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
+          sudo apt-get install -y --no-install-recommends mariadb-client
 
       - name: Setup Bench
         if: steps.backend-changes.outputs.run == '1'
@@ -417,8 +416,7 @@ jobs:
       - name: Install MariaDB Client
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
+          sudo apt-get install -y --no-install-recommends mariadb-client
 
       - name: Setup Bench
         if: steps.mail-calendar-changes.outputs.run == '1'
