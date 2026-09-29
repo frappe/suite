@@ -29,6 +29,7 @@ from suite.drive._core.roles import READ
 from suite.drive._core.roots import personal_root_for, provision_personal_root
 from suite.drive.api.notifications import (
     create_notification,
+    get_link,
     get_notifications,
     get_unread_count,
     mark_as_read,
@@ -51,6 +52,17 @@ class TestShareEmail(UnitTestCase):
 
         sendmail.assert_called_once()
         self.assertNotIn("now", sendmail.call_args.kwargs)
+
+
+class TestNotificationLink(UnitTestCase):
+    def test_a_link_opens_its_own_url_and_anything_else_the_node_address(self):
+        link = frappe._dict(name="n-link", file_type="Link", is_folder=0, file_url="https://example.com")
+        self.assertEqual(get_link(link), "https://example.com")
+        with patch.dict(frappe.conf, {"suite_flip_files": 0}):
+            for kind in ("Document", "Folder", "File"):
+                entity = frappe._dict(name="n1", file_type=kind, is_folder=int(kind == "Folder"))
+                with self.subTest(kind=kind):
+                    self.assertEqual(get_link(entity), "/drive/g/n1")
 
 
 class NotificationCase(IntegrationTestCase):

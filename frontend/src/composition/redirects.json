@@ -1,0 +1,175 @@
+{
+  "flag": "suite_flip_files",
+  "rows": [
+    {
+      "old": "/drive/inbox",
+      "new": "/drive",
+      "lookup": null
+    },
+    {
+      "old": "/drive/attachments",
+      "new": "/drive",
+      "lookup": null
+    },
+    {
+      "old": "/drive/attachments/:doctype",
+      "new": "/drive",
+      "lookup": null
+    },
+    {
+      "old": "/drive/attachments/:doctype/:docname",
+      "new": "/drive",
+      "lookup": null
+    },
+    {
+      "old": "/drive/documents",
+      "new": "/drive/recent?type=writer",
+      "lookup": null
+    },
+    {
+      "old": "/drive/presentations",
+      "new": "/drive/recent?type=slides",
+      "lookup": null
+    },
+    {
+      "old": "/writer",
+      "new": "/drive/recent?type=writer",
+      "lookup": null
+    },
+    {
+      "old": "/sheets",
+      "new": "/drive/recent?type=sheets",
+      "lookup": null
+    },
+    {
+      "old": "/slides",
+      "new": "/drive/recent?type=slides",
+      "lookup": null
+    },
+    {
+      "old": "/drive/recents",
+      "new": "/drive/recent",
+      "lookup": null
+    },
+    {
+      "old": "/drive/favourites",
+      "new": "/drive/starred",
+      "lookup": null
+    },
+    {
+      "old": "/drive/shared",
+      "new": "/drive/shared-with-me",
+      "lookup": null
+    },
+    {
+      "old": "/sheets/trash",
+      "new": "/drive/trash",
+      "lookup": null
+    },
+    {
+      "old": "/drive/d/:id",
+      "new": "/drive/f/:id",
+      "lookup": null
+    },
+    {
+      "old": "/drive/w/:id",
+      "new": "/d/:id",
+      "lookup": null
+    },
+    {
+      "old": "/writer/w/:id",
+      "new": "/d/:id",
+      "lookup": null
+    },
+    {
+      "old": "/drive/g/:id",
+      "new": null,
+      "lookup": "node"
+    },
+    {
+      "old": "/drive/t/:team/:letter/:id",
+      "new": null,
+      "lookup": "node"
+    },
+    {
+      "old": "/drive/folder/:id",
+      "new": null,
+      "lookup": "legacy"
+    },
+    {
+      "old": "/drive/document/:id",
+      "new": null,
+      "lookup": "legacy"
+    },
+    {
+      "old": "/drive/file/:id",
+      "new": null,
+      "lookup": "legacy"
+    },
+    {
+      "old": "/drive/t/:team",
+      "new": null,
+      "lookup": "legacy"
+    },
+    {
+      "old": "/drive/l/:token",
+      "new": "/l/:token",
+      "lookup": null
+    },
+    {
+      "old": "/sheets/:docname",
+      "new": null,
+      "lookup": "sheet"
+    },
+    {
+      "old": "/slides/presentation/:docname",
+      "new": null,
+      "lookup": "presentation"
+    },
+    {
+      "old": "/slides/presentation/view/:docname",
+      "new": null,
+      "lookup": "presentation"
+    },
+    {
+      "old": "/slides/slideshow/:docname",
+      "new": null,
+      "lookup": "presentation"
+    },
+    {
+      "old": "/sheets/new",
+      "new": "/home",
+      "lookup": null
+    },
+    {
+      "old": "/slides/presentation/new",
+      "new": "/home",
+      "lookup": null
+    },
+    {
+      "old": "/slides/not-permitted",
+      "new": "/home",
+      "lookup": null
+    },
+    {
+      "old": "/suite",
+      "new": "/home",
+      "lookup": null
+    },
+    {
+      "old": "/suite/start",
+      "new": "/home",
+      "lookup": null
+    },
+    {
+      "old": "/suite/setup",
+      "new": null,
+      "lookup": null
+    },
+    {
+      "old": "/suite/load-error",
+      "new": null,
+      "lookup": null
+    }
+  ]
+}

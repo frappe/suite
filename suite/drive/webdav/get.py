@@ -42,7 +42,7 @@ def handle(ctx: DavContext) -> Response:
     require(row, READ, ctx.principals)
 
     if resolved.is_collection:
-        return _collection_response(ctx, "/drive" if resolved.is_mount else f"/drive/d/{row.name}")
+        return _collection_response(ctx, "/drive" if resolved.is_mount else node_core.node_url(row.name))
 
     response = node_core.stream_content(row, environ=ctx.request.environ)
     if response.status_code in (200, 206):

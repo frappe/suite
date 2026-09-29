@@ -7,6 +7,8 @@ from suite.www import suite as www
 class SuiteBoot(unittest.TestCase):
     def setUp(self):
         self.frappe = self.enterContext(mock.patch("suite.www.suite.frappe"))
+        # the flip keys are read through `suite_core.flips`, from the same site config
+        self.enterContext(mock.patch("suite.suite_core.flips.frappe", self.frappe))
         self.frappe.session.user = "alice@example.com"
         self.frappe.local.site = "test.localhost"
         self.frappe.get_system_settings.return_value = 0
