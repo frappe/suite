@@ -24,8 +24,16 @@ export interface Session {
   user: Readonly<Ref<SessionUser | null>>
   capabilities: Readonly<Ref<SessionCapabilities>>
   login(email: string, password: string): Promise<void>
+  /** Ends the server session, then runs every logout cleanup before it resolves. */
   logout(): Promise<void>
   refresh(): Promise<void>
+  /**
+   * Runs `cleanup` on every later logout, after the server ends the session.
+   * Use it for data a browser keeps per user, so the next user never sees it.
+   * A cleanup that fails does not stop the logout. Returns a function that
+   * removes the cleanup.
+   */
+  onLogout(cleanup: () => Promise<void> | void): () => void
 }
 
 type AccountResponse = Record<string, unknown> & {
@@ -76,6 +84,7 @@ export function createSession(client: Transport = defaultTransport): Session {
     systemManager: cookies.system_user === 'yes',
   })
   let refreshPromise: Promise<void> | null = null
+  const logoutCleanups = new Set<() => Promise<void> | void>()
 
   async function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
@@ -131,9 +140,17 @@ export function createSession(client: Transport = defaultTransport): Session {
 
   async function logout(): Promise<void> {
     await client.request(logoutOperation, {})
+    await Promise.allSettled([...logoutCleanups].map(async (cleanup) => cleanup()))
     user.value = null
     capabilities.value = { jmap: false, systemManager: false }
     status.value = 'guest'
+  }
+
+  function onLogout(cleanup: () => Promise<void> | void): () => void {
+    logoutCleanups.add(cleanup)
+    return () => {
+      logoutCleanups.delete(cleanup)
+    }
   }
 
   if (cookieId) void refresh()
@@ -145,6 +162,7 @@ export function createSession(client: Transport = defaultTransport): Session {
     login,
     logout,
     refresh,
+    onLogout,
   }
 }
 

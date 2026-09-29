@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createSession } from '@/platform/session'
+import type { Transport } from '@/platform/transport'
 import { claimSlidesCachesFor, clearSlidesUserData, postToServiceWorker } from './serviceWorker'
 
 const deleted: string[] = []
@@ -28,6 +30,18 @@ describe('slides caches per user', () => {
 		expect(deleted).toEqual(['slides-shell', 'slides-api', 'slides-media', 'slides-pinned'])
 		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
 		expect(localStorage.getItem('unrelated')).toBe('1')
+	})
+
+	it('clears the user data when the session logs out', async () => {
+		localStorage.setItem('slides-offline-copy:p1', '{}')
+		const request = vi.fn(async () => ({}))
+		const session = createSession({ request } as Transport)
+		session.onLogout(clearSlidesUserData)
+
+		await session.logout()
+
+		expect(deleted).toEqual(['slides-shell', 'slides-api', 'slides-media', 'slides-pinned'])
+		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
 	})
 
 	it('clears when another user last owned the caches, then keeps them for the new one', async () => {
