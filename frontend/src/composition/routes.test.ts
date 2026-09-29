@@ -39,19 +39,25 @@ describe("the shell flip", () => {
     vi.resetModules();
   });
 
-  async function meetFrame() {
+  async function frameOf(area: string) {
     vi.resetModules();
     const { canonicalRoutes } = await import("@/composition/routes");
-    return canonicalRoutes.find((route) => route.meta?.area === "meet")?.meta
+    return canonicalRoutes.find((route) => route.meta?.area === area)?.meta
       ?.frame;
   }
 
-  it("keeps Meet outside the shell while the boot leaves the flip off", async () => {
-    expect(await meetFrame()).toBe("none");
-  });
+  it.each(["meet", "calendar", "mail"])(
+    "keeps %s outside the shell while the boot leaves the flip off",
+    async (area) => {
+      expect(await frameOf(area)).toBe("none");
+    },
+  );
 
-  it("puts Meet in the shell once the boot turns the flip on", async () => {
-    window.suite_flip_shell = true;
-    expect(await meetFrame()).toBe("shell");
-  });
+  it.each(["meet", "calendar", "mail"])(
+    "puts %s in the shell once the boot turns the flip on",
+    async (area) => {
+      window.suite_flip_shell = true;
+      expect(await frameOf(area)).toBe("shell");
+    },
+  );
 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import NotRequired, TypedDict
 from urllib.parse import urlparse
 
@@ -43,7 +44,8 @@ class CalendarEvent(TypedDict, total=False):
     description: str
     show_without_time: int
     recurrence_id: str | None
-    recurrence_rule: str
+    # The JMAP recurrence rule of the event's series, or null for a one-off event.
+    recurrence_rule: dict | None
     master_id: str
     master_start: str
     master_duration: str
@@ -87,6 +89,7 @@ def events_get(to: Given = None, account: Given = None, **kwargs: Given) -> list
         rows = get_calendar_events(account_id, from_value, to_value, get_system_timezone())
         for row in rows:
             row["conferencing"] = _conferencing(row.get("links") or [])
+            row["recurrence_rule"] = _recurrence_rule(row.get("recurrence_rule"))
             events.append(row)
     events.sort(
         key=lambda event: (
@@ -111,6 +114,19 @@ def _conferencing(links: list[dict]) -> Conferencing | None:
         if len(parts) == 2 and parts[0] == "meet" and parts[1]:
             return {"meeting_id": parts[1], "url": href}
     return None
+
+
+def _recurrence_rule(value: object) -> dict | None:
+    """The rule as an object, or None for no rule. The events read hands over the stored
+    JSON text for an event whose series it did not resolve, and the parsed object for one
+    it did; an empty object means no rule."""
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value or "null")
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) and value else None
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])

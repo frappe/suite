@@ -28,15 +28,15 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
-| Stage 5 adoption | `forge/uf-5-adoption` | Meet and boot flag merged into the stage branch (`aadc501fb`), in review; Mail in progress; Calendar next; PWA and shell last | | Flag on slides.localhost: `bench --site slides.localhost set-config -p suite_flip_shell 1`. The Vite dev server does not render the boot script, so journeys set `window.suite_flip_shell` |
+| Stage 5 adoption | `forge/uf-5-adoption` | Meet, Mail, Calendar merged into the stage branch (`4e69793ff`), each codex-reviewed; PWA and shell sub-lane in progress | | Stage branch gates: 141 unified, boundaries 349/71, typecheck 0, bundle 152.85 KiB. `/mail` blank bug and Calendar socket and `recurrence_rule` bugs fixed. The shell router had stopped loading app `runtime.ts`; Mail and Meet guards restored |
 | Stage 6 flip plumbing | | waiting on 5 | | |
-| Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
-| Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
+| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | in progress: parts outside the shared-files table; `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` and `hooks.py` wait for stage 6 | | Based on `a15886a7a` |
+| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | in progress; the `FilesPage.vue` row Share waits for stage 8 | | Based on `a15886a7a`. Share opens through a function (`session.share()`), like stage 11's `useDriveDialogs()` |
 | Stage 10 upload, restore, batch | | waiting on 8 | | |
-| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer and Sheets merged into the stage branch; Slides in progress; Drive sub-lane waiting on Drive 47 | | Stage branch gates: 157 unified tests, boundaries 335/71, bundle 142.49 KiB, typecheck 0. Sheets: relay events now go to a per-sheet room (the site-wide room leak was already on the base) |
-| Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | done | `a15886a7a` | Four sub-lanes, each codex-reviewed. Gates after merging drive-layer: 177 unified, legacy manifest, boundaries 333/71 plus 2 legacy Drive calls (SuiteCommandPalette, stage 15), typecheck 0, bundle 116.25 KiB, architecture OK. Files journeys 81 passed, 2 skipped. Legacy-call rule is a substring scan over `frontend/src` and `suite/public/js`, comments included. Drive dialogs cross the seam as `useDriveDialogs()`. Desk picker attach checked by hand (a repo journey needs `bench build`) |
+| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half committed `b81a4a634`, merge waits for stage 5 (the branch carries the Meet sub-lane); client half waits on 6 | | codex review: redirect only when the caller can READ the target, encoded separators fall through. Only while `suite_flip_files` is on (spec §14.3 over the brief). `flip_is_on` moved to `suite/suite_core/flips.py`. Edits `hooks.py` ahead of 6 and 8 in the shared-files order |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
-| Drive 41 storage breakdown | | waiting on 0 | | |
+| Drive 41 storage breakdown | `forge/drive-41-storage-breakdown` | done | `817900a18` | codex review: breakdown only for the root owner or a Suite Admin; legacy rows carry `mime_type`; fixed-height lists. `test_quota` 12 errors from Administrator's old Personal root `4b15fe1948`, same on base |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
 | Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
 | Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
@@ -107,6 +107,40 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
     sub-page). The failed-group row does not name the product. Interim:
     accepted.
 
+14. **Slides decks reached through a parent-folder link.** A composite
+    reference whose deck is readable only through a link on a parent
+    folder shows as unreadable: the client matches codes to a link's own
+    target. Fix needs a Drive function naming which presented code opens
+    a node. Interim: not handled.
+15. **Slides on a phone.** The stage stays 900 px wide (as on the base);
+    spec §16.1 items 2 and 3 leave phone Slides open.
+16. **Largest files rows.** They do not open the file (the spec does not
+    say they should); the cap is 10.
+17. **Legacy Drive invitations after flip 2.** The new route table has no
+    `/drive/signup`, and `File.share` to an unknown email still creates
+    legacy invitations. Interim: with `suite_flip_files` on, accepting one
+    does what `POST /api/suite/invitations` does (same user type, roles and
+    `/update-password` landing). With the key off, nothing changes.
+18. **Meet recording emails after flip 2.** New recordings are legacy
+    `File` rows, not Drive nodes, so `node_url` has no address for them.
+    Interim: the email goes without the file link. Meet does not adopt
+    nodes in this run.
+19. **Search is dead with both keys off.** Sidebar Search and Ctrl+K open
+    nothing, the phone install offer is gone, and Cmd+Shift+K and
+    Cmd+Shift+Comma have no binding: `App.vue` stopped mounting
+    `SuiteLayout.vue` in `61b6401e4` (before this run). The ledger assigns
+    it to stage 15. Recommendation: fix it before stage 7.
+20. **Mail on a phone lost its Push Notifications switch** in stage 4. No
+    Settings row replaces it; existing subscriptions still deliver.
+21. **Manifest `id`.** Stage 5 changed it from `/mail` to `/suite`. Mail
+    installs become a second installed app. Please confirm; another change
+    makes a third.
+22. **Invitation redirect target.** With the key on, a legacy invitation
+    lands on `/suite` and drops the old share email's `redirect`.
+23. **Drive seam naming.** Spec §5.15 lists `createDriveDocument()` as a
+    descriptor; the seam exports `useDriveDocumentCreation()` because
+    creation first finds the Personal root.
+
 ## Needs a manual check (cannot run on this devbox)
 
 - iOS standalone keyboard in Mail after stage 3 removed body
@@ -131,6 +165,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Legacy share shim maps `read, write, comment` without `upload` to COMMENT, so the old-page journey "editor can edit" fails now that Writer shows the real Drive role. Not checked on the base commit | stage 11 Writer | Drive program (check `shims._legacy_role`) |
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
 | `views/favourites` has no tie-breaker, reads one window, and lists trashed nodes (Drive 47 fixed the same in recents); `_view_eligible` can still return short pages | Drive 47 review | Drive program |
+| `meet.api.test.test_recording`: `test_reprovision_during_recording_keeps_reservation_bound_to_archived_root` errors with "Unsupported recording callback protocol version". Same error on `forge/drive-layer` | stage 12 server | Meet (not in this run) |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Backend asks raised during the run
@@ -139,6 +174,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 |---|---|---|
 | Socket room join that checks Drive link credentials, so link-only readers get live Sheets updates | stage 11 Sheets | nothing at launch (they can open and save) |
 | Link codes in the collaboration v2 (Hocuspocus) token, e.g. a `driveLinkCodes(node)` root export | stage 11 Sheets | nothing while `collab_v2` is off |
+| Server-side "attach a Drive node to a document" route, so the Desk picker does not move bytes through the browser (now capped at the framework's `max_file_size`) | stage 11 Drive | nothing (cap in place) |
 | `recordDriveVisit(node)` root export in `apps/drive/index.ts` | stage 11 Sheets | nothing (a local operation works) |
 
 ## Baselines

@@ -56,13 +56,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { Button, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/calendar/utils'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
+import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
 
@@ -70,7 +71,7 @@ const store = userStore()
 const { accountId } = store
 
 const user = inject('$user')
-const socket = inject('$socket')
+const socket = useCalendarSocket()
 
 const calendarImport = reactive({
 	format: 'ics',
@@ -141,11 +142,11 @@ const ongoingImport = createResource({
 	}),
 })
 
-onMounted(() =>
-	socket.on('calendar_exchange_completed', (payload: { action: 'Import' | 'Export' }) => {
-		if (payload.action === 'Import') ongoingImport.reload()
-	}),
-)
+const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
+	if (payload.action === 'Import') ongoingImport.reload()
+}
+socket.on('calendar_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
 
 const importSubtitle = computed(() => {
 	if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")

@@ -29,13 +29,13 @@ const source = computed(() => previewUrl.value || contentUrl.value);
     <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
       <span class="lucide-file size-5 text-ink-gray-6" aria-hidden="true" />
       <h1 class="min-w-0 flex-1 truncate text-lg-semibold">{{ session.title.value }}</h1>
-      <Button label="Download" icon-left="lucide-download" :link="contentUrl" />
+      <Button label="Download" icon-left="lucide-download" :href="contentUrl" />
     </header>
     <div v-if="!canPreview" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-file-question mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <h2 class="mt-3 text-lg-semibold">No preview</h2>
       <p class="mt-1 text-p-sm text-ink-gray-6">Download this file to open it.</p>
-      <Button class="mt-4" label="Download" icon-left="lucide-download" :link="contentUrl" />
+      <Button class="mt-4" label="Download" icon-left="lucide-download" :href="contentUrl" />
     </div>
     <img v-else-if="mime.startsWith('image/')" :src="source" :alt="session.title.value" class="m-auto max-h-full max-w-full object-contain p-4" />
     <audio v-else-if="mime.startsWith('audio/')" :src="contentUrl" controls class="m-auto w-full max-w-xl" />

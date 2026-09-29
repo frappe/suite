@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
-import { call, useFileUpload, toast as nToast } from 'frappe-ui'
+import { useFileUpload, toast as nToast } from 'frappe-ui'
+import { purgeNodes } from '@/apps/writer/drive'
 import { tabsIn, findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
@@ -35,7 +36,7 @@ async function _uploadImage(element, fileId, uploaded) {
 async function _discardUploads(uploaded) {
   if (!uploaded.length) return
   try {
-    await call('suite.drive.api.files.delete_entities', { entity_names: uploaded })
+    await purgeNodes(uploaded)
   } catch (e) {
     console.error('Could not remove images from the failed import:', e)
   }

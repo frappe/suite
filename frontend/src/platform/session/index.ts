@@ -30,10 +30,15 @@ export interface Session {
   /**
    * Runs `cleanup` on every later logout, after the server ends the session.
    * Use it for data a browser keeps per user, so the next user never sees it.
+   * With `whileSignedIn`, it runs before the server ends the session, for a
+   * cleanup that needs the user's session (a server-side unsubscribe).
    * A cleanup that fails does not stop the logout. Returns a function that
    * removes the cleanup.
    */
-  onLogout(cleanup: () => Promise<void> | void): () => void
+  onLogout(
+    cleanup: () => Promise<void> | void,
+    options?: { whileSignedIn?: boolean },
+  ): () => void
 }
 
 type AccountResponse = Record<string, unknown> & {
@@ -84,6 +89,7 @@ export function createSession(client: Transport = defaultTransport): Session {
   const capabilities = ref<SessionCapabilities>({ jmap: false, systemManager: false })
   let refreshPromise: Promise<void> | null = null
   const logoutCleanups = new Set<() => Promise<void> | void>()
+  const signedInLogoutCleanups = new Set<() => Promise<void> | void>()
 
   async function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
@@ -138,6 +144,7 @@ export function createSession(client: Transport = defaultTransport): Session {
   }
 
   async function logout(): Promise<void> {
+    await Promise.allSettled([...signedInLogoutCleanups].map(async (cleanup) => cleanup()))
     await client.request(logoutOperation, {})
     await Promise.allSettled([...logoutCleanups].map(async (cleanup) => cleanup()))
     user.value = null
@@ -145,10 +152,14 @@ export function createSession(client: Transport = defaultTransport): Session {
     status.value = 'guest'
   }
 
-  function onLogout(cleanup: () => Promise<void> | void): () => void {
-    logoutCleanups.add(cleanup)
+  function onLogout(
+    cleanup: () => Promise<void> | void,
+    options: { whileSignedIn?: boolean } = {},
+  ): () => void {
+    const cleanups = options.whileSignedIn ? signedInLogoutCleanups : logoutCleanups
+    cleanups.add(cleanup)
     return () => {
-      logoutCleanups.delete(cleanup)
+      cleanups.delete(cleanup)
     }
   }
 

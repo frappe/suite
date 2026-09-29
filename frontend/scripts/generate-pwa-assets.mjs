@@ -9,7 +9,7 @@
  * iOS draws nothing of its own for an installed PWA's launch — it only blits
  * an apple-touch-startup-image whose media query matches the device exactly
  * (see setPwaTags in src/router/index.ts), so every device in
- * src/router/pwa-splash-devices.json needs one file per orientation.
+ * src/platform/pwa/splash-devices.json needs one file per orientation.
  *
  * Renders with headless Chrome, which is what pwa-asset-generator does via
  * puppeteer — done here directly so regenerating does not pull a ~200MB
@@ -46,7 +46,7 @@ const ICONS = [
   { name: 'icon-192.maskable.png', size: 192 },
   { name: 'apple-icon-180.png', size: 180 },
 ]
-const DEVICES = JSON.parse(fs.readFileSync(path.join(root, 'src/router/pwa-splash-devices.json')))
+const DEVICES = JSON.parse(fs.readFileSync(path.join(root, 'src/platform/pwa/splash-devices.json')))
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 function argValue(flag) {

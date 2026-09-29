@@ -59,8 +59,8 @@ def get_boot():
             "sentry_dsn": sentry_dsn,
             "sentry_environment": "development" if frappe.conf.developer_mode else "production",
             "sentry_release": f"suite@{__version__}",
-            # Surfaced on window.push_relay_server_url for mail's FCM push setup
-            # (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
+            # Surfaced on window.push_relay_server_url for the platform's FCM push
+            # setup (frontend/src/platform/pwa). Mirrors the old
             # standalone www/mail.py boot, which the suite shell replaced.
             "push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
             # Onboarding gate, read synchronously by the router (extend_bootinfo

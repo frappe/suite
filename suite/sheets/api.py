@@ -7,6 +7,7 @@ from frappe import _
 from suite import drive
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
+from suite.sheets import drive as sheets_drive
 from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node, refuse_drive_native
 from suite.sheets.versioning import save as save_mod
 
@@ -28,11 +29,20 @@ def ping_presence(name: str) -> None:
     frappe.publish_realtime(
         "sheet_presence",
         {"sheet": name, "user": user, **identity},
+        doctype=DOCTYPE,
+        docname=name,
         after_commit=False,
     )
 
 
 # ── Real-time collaboration ───────────────────────────────────────────────────
+#
+# Every event here goes to the sheet's own room, `doc:Sheet/<name>`, never to
+# the site room every signed-in user joins. The socket server lets a client
+# into that room only after `frappe.realtime.has_permission("Sheet", name)`,
+# which answers a linked sheet through Drive. That check sees the caller's
+# session, not the link credentials of the page, so a reader who holds only a
+# link does not receive these events.
 #
 # Broadcasts split by whether the event represents a mutation or pure presence:
 #
@@ -56,6 +66,8 @@ def broadcast_op(name: str, op: str) -> None:
     frappe.publish_realtime(
         "sheet_op",
         {"sheet": name, "user": frappe.session.user, "op": op},
+        doctype=DOCTYPE,
+        docname=name,
         after_commit=False,
     )
 
@@ -69,6 +81,8 @@ def broadcast_cursor(name: str, r: int, c: int, sub_sheet: str) -> None:
     frappe.publish_realtime(
         "sheet_cursor",
         {"sheet": name, "user": user, **identity, "r": int(r), "c": int(c), "sub_sheet": sub_sheet},
+        doctype=DOCTYPE,
+        docname=name,
         after_commit=False,
     )
 
@@ -90,7 +104,7 @@ def broadcast_cursor(name: str, r: int, c: int, sub_sheet: str) -> None:
 #   yjs_awareness_bye   — peer is leaving, drop them from presence
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def yjs_relay(name: str, event: str, payload: str) -> None:
     """Relay a single Yjs realtime event to peers watching this sheet.
 
@@ -103,14 +117,17 @@ def yjs_relay(name: str, event: str, payload: str) -> None:
     permission so a read-only viewer can't push CRDT updates that other
     clients will apply locally. Presence and state-request events are
     read-side affordances.
+
+    A linked sheet answers through Drive, so a Guest holding a link may relay.
     """
     if event not in _YJS_EVENTS:
         frappe.throw(f"Unknown yjs event: {event}")
-    ptype = "write" if event in _YJS_WRITE_EVENTS else "read"
-    frappe.has_permission("Sheet", doc=name, ptype=ptype, throw=True)
+    sheets_drive.require_sheet(name, write=event in _YJS_WRITE_EVENTS)
     frappe.publish_realtime(
         event,
         {"sheet": name, "user": frappe.session.user, "payload": payload},
+        doctype=DOCTYPE,
+        docname=name,
         after_commit=False,
     )
 
@@ -382,17 +399,15 @@ def list_sheets(
     return {"sheets": rows, "total": total, "now": str(frappe.utils.now())}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_sheet(name: str, compressed: int = 0) -> dict:
     # `frappe.get_doc` does NOT check read permission by itself — without
     # this guard, any logged-in user who knows a sheet id could exfiltrate
-    # its contents.
-    frappe.has_permission("Sheet", doc=name, throw=True)
+    # its contents. A linked sheet answers through Drive with this request's
+    # link credentials, so a Guest holding a link opens it too. A trashed
+    # sheet opens read-only: `can_write` below is false for it.
+    sheets_drive.require_sheet(name)
     doc = frappe.get_doc("Sheet", name)
-    # A trashed sheet must not open from a bookmarked/shared link — it's
-    # "deleted" as far as the app is concerned until restored.
-    if doc.trashed:
-        frappe.throw("This sheet is in the trash.", frappe.DoesNotExistError)
     # When the client can gunzip (DecompressionStream), ship the stored envelope
     # as-is — ~1.5MB instead of the ~20MB decoded JSON for a big sheet — and let
     # it decompress. Clients without it (older Safari) get the decoded payload.
@@ -407,16 +422,19 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
         # legacy column (§10.2), so the editor would have opened every sheet
         # written since activation with a blank name.
         "title": _title_of(doc),
-        "can_write": bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False)),
+        "can_write": sheets_drive.may_write_sheet(name),
         "sheets_data": raw if frappe.utils.cint(compressed) else decode_sheets_data(raw),
         # The sheet's true creator, so the Share dialog can label the owner row
         # with the real person (and "Owner (you)" only for them) instead of
         # falling back to whoever happens to have the dialog open.
         "owner": doc.owner,
+        # The Drive node, so the old `/sheets/<id>` page can record a visit
+        # through `POST /api/suite/drive/nodes/<id>/visit`. None for a legacy sheet.
+        "node": doc.get(NODE_FIELD),
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def save_sheet(
     title: str,
     sheets_data: str,

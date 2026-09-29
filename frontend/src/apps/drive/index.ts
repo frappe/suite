@@ -1,13 +1,16 @@
-import { defineAsyncComponent, defineComponent, h } from 'vue'
+import { defineAsyncComponent, defineComponent, getCurrentInstance, h, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import { driveLinks } from '@/apps/drive/client/links'
-import { createDocument } from '@/apps/drive/client/nodes'
+import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
+import { roots } from '@/apps/drive/client/roots'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { recents } from '@/apps/drive/client/views'
+import { presentDialog } from '@/apps/drive/files/features/dialogHost'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
+import { useMutation, useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 
 export type {
@@ -61,8 +64,43 @@ export function driveRecents(limit = 12) {
   return recents(limit)
 }
 
-export function createDriveDocument() {
-  return createDocument()
+export interface DriveDocumentCreation {
+  readonly isPending: boolean
+  /** Creates a document of this content doctype in My files. `undefined` when it failed. */
+  run(input: { content_doctype: string }): Promise<DriveNodeSummary | undefined>
+}
+
+/** Generic document creation into the caller's Personal Root. Call it in a component's setup. */
+export function useDriveDocumentCreation(): DriveDocumentCreation {
+  const discovered = useQuery(roots())
+  const create = useMutation(createDocument())
+  const resolving = ref(false)
+  return {
+    get isPending() {
+      return resolving.value || create.isPending
+    },
+    async run({ content_doctype }) {
+      resolving.value = true
+      let parent: string | undefined
+      try {
+        parent = (discovered.data ?? (await discovered.settled()).data)?.personal.node
+      } finally {
+        resolving.value = false
+      }
+      if (!parent) {
+        const message = discovered.error?.message ?? __('My files is unavailable.')
+        // Loaded on demand: `@/platform/feedback` pulls frappe-ui into the initial graph.
+        void import('@/platform/feedback').then(({ toast }) => toast.error(message))
+        return undefined
+      }
+      return create.run({ parent, content_doctype })
+    },
+  }
+}
+
+/** Records that the caller opened a node, so it shows in Recent. */
+export function recordDriveVisit(node: string): Promise<void> {
+  return recordVisit(node)
 }
 
 export function driveNodeRoute(
@@ -90,14 +128,27 @@ export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
 )
 
-// Migration debt. Keep these lazy legacy dialog exports until Writer and Slides migrate.
+export interface DriveDialogs {
+  /** Opens the folder picker to move `node`. Resolves with the moved node, or `undefined` when cancelled. */
+  move(node: string): Promise<DriveNodeSummary | undefined>
+  /** Shows read-only details of `node`. Resolves when the dialog closes. */
+  showDetails(node: string): Promise<void>
+}
+
+/** Drive dialogs, opened by function call. Call it in a component's setup. */
+export function useDriveDialogs(): DriveDialogs {
+  const context = getCurrentInstance()?.appContext
+  if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
+  return {
+    move: (node) =>
+      presentDialog<DriveNodeSummary>(context, () => import('@/apps/drive/files/features/MoveNodeDialog.vue'), { node }, 'moved'),
+    showDetails: async (node) => {
+      await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), { node })
+    },
+  }
+}
+
+// Migration debt. Stage 9 replaces this legacy share dialog export.
 export const ShareDialog = defineAsyncComponent(
   () => import('@/apps/drive/legacy/ui/drive/components/ShareDialog.vue'),
 )
-export const MoveDialog = defineAsyncComponent(
-  () => import('@/apps/drive/legacy/ui/drive/components/MoveDialog.vue'),
-)
-export const InfoDialog = defineAsyncComponent(
-  () => import('@/apps/drive/legacy/ui/drive/components/InfoDialog.vue'),
-)
-export { default as InlineRenameInput } from '@/apps/drive/legacy/components/InlineRenameInput.vue'

@@ -55,7 +55,7 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo, pwa: true },
 ]
 
-/** Whether the suite PWA's manifest and install offer belong on this app's routes. */
+/** Whether the suite PWA's install offer belongs on this app's routes. */
 export function isInstallableApp(appId: unknown): boolean {
   return !!SUITE_APPS.find((app) => app.id === appId)?.pwa
 }

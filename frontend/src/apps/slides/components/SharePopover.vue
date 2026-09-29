@@ -1,25 +1,13 @@
 <template>
-	<Button variant="ghost" tooltip="Share" @click="openShareDialog">
-		<template #icon>
-			<LucideShare2 class="size-4 stroke-[1.5]" />
-		</template>
-	</Button>
-	<ShareDialog v-if="showShareDialog && file" v-model="showShareDialog" :file allowed-access="reader" />
+	<!-- Stage 9 opens Drive's share dialog here. A disabled button fires no
+	     hover event, so the tooltip sits on a wrapper. -->
+	<Tooltip text="Sharing arrives with the new share dialog">
+		<span class="inline-flex" tabindex="0">
+			<Button variant="ghost" icon="lucide-share-2" aria-label="Share" disabled />
+		</span>
+	</Tooltip>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { Button } from 'frappe-ui'
-import { ShareDialog, getFileForDoc } from '@/apps/drive/legacy/sdk'
-import { presentationId } from '@/apps/slides/stores/presentation'
-import { resetFocus } from '@/apps/slides/stores/element'
-
-const showShareDialog = ref(false)
-const file = ref(null)
-
-const openShareDialog = async () => {
-	await resetFocus()
-	file.value = await getFileForDoc('Presentation', presentationId.value)
-	showShareDialog.value = true
-}
+import { Button, Tooltip } from 'frappe-ui'
 </script>

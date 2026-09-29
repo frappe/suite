@@ -117,7 +117,6 @@ import LucideLeftClose from '~icons/lucide/panel-left-close'
 import LucideEllipsisVertical from '~icons/lucide/ellipsis-vertical'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, Tooltip, vOnOutsideClick } from 'frappe-ui'
-import { copyToClipboard } from '@/apps/drive/legacy/sdk'
 import { orderedTabs, findTab } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
@@ -360,7 +359,7 @@ const tabActions = [
     label: 'Copy Link',
     icon: LucideLink,
     onClick: () =>
-      copyToClipboard(
+      navigator.clipboard.writeText(
         window.location.href.split('#')[0] + '#' + activeTabId.value,
       ),
   },

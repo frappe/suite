@@ -22,9 +22,10 @@ let home: DriveNode;
 let recent: DriveNode;
 
 /**
- * Calendar reads go to JMAP. Administrator has no mail account on this site, so
- * `GET /api/suite/calendar/events` answers 200 with an empty list. The rows
- * below are a stub of that same answer, used only to check the rendering.
+ * Calendar reads go to JMAP. Administrator has a mail account on this site
+ * (`administrator@suite.test` on the local Stalwart server), and its calendar
+ * holds real events. The rows below stub `GET /api/suite/calendar/events`, so
+ * each journey checks the rendering against a known answer.
  */
 const EVENT_FIXTURE = [
 	{
@@ -92,6 +93,7 @@ test("Upcoming groups the events and offers Join for a conferencing one", async 
 });
 
 test("Upcoming reports an empty calendar when the account has no events", async ({ page }) => {
+	await stubEvents(page, []);
 	await page.goto("/home");
 	await expect(page.getByText("Nothing scheduled")).toBeVisible();
 	await expect(page.getByTestId("recent-rows")).toBeVisible();
