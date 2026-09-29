@@ -1,19 +1,25 @@
 /**
  * Product-neutral contracts shared by composition, shell and product seams.
  * Types and injection keys only. Behavior lives in the owning module.
- * Sources: tickets 001 (route metadata), 002 (area definition), 009 (document type).
+ * Sources: tickets 001 (route metadata), 002 (area definition), 009 (document type),
+ * 010 (the frame set: in the shell or outside it).
  */
 import type { Component, InjectionKey } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 
 export type PlatformCapability = 'jmap' | 'systemManager'
 
-export type ShellFrame = 'area' | 'document' | 'none'
+/**
+ * `shell`: the route renders inside the shell, with the rail and one
+ * full-height box. The page draws its own sidebar with `<AreaSidebar>`.
+ * `none`: the route renders outside the shell.
+ */
+export type ShellFrame = 'shell' | 'none'
 export type ScrollOwner = 'shell' | 'content'
 
 declare module 'vue-router' {
   interface RouteMeta {
-    /** Rail and contextual-panel context. Absent on frame `none`. */
+    /** Rail context. Absent on frame `none`. */
     area?: string
     frame?: ShellFrame
     scroll?: ScrollOwner
@@ -31,7 +37,6 @@ export interface AreaDefinition {
   /** Canonical entry route, for example `/files`. */
   to: string
   loadRoutes: () => Promise<{ routes: RouteRecordRaw[] }>
-  loadPanel: () => Promise<Component>
   requires?: PlatformCapability[]
 }
 

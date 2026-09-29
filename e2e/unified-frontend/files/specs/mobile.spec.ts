@@ -35,7 +35,7 @@ async function longPress(locator: import("@playwright/test").Locator) {
 
 test("the bottom-nav item and the header button open the same sheet", async ({ page }) => {
 	await page.goto("/files");
-	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "More" }).click();
+	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Files" }).click();
 	const sheet = page.getByRole("dialog", { name: "Files" });
 	await expect(sheet).toBeVisible();
 	await sheet.getByRole("link", { name: "Recent" }).click();
@@ -50,7 +50,7 @@ test("the bottom-nav item and the header button open the same sheet", async ({ p
 // ShellLayout closes the sheet on every route change (fixed here).
 test("the sheet closes after a destination is chosen", async ({ page }) => {
 	await page.goto("/files");
-	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "More" }).click();
+	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Files" }).click();
 	const sheet = page.getByRole("dialog", { name: "Files" });
 	await sheet.getByRole("link", { name: "Recent" }).click();
 	await expect(page).toHaveURL(/\/files\/recent$/);

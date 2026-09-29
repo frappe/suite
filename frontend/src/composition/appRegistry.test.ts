@@ -12,7 +12,6 @@ vi.mock("@/apps/drive", () => ({
     icon: {},
     to: "/files",
     loadRoutes: vi.fn(),
-    loadPanel: vi.fn(),
   },
 }));
 
@@ -24,7 +23,6 @@ vi.mock("@/apps/mail", () => ({
     to: "/mail",
     requires: ["jmap"],
     loadRoutes: vi.fn(),
-    loadPanel: vi.fn(),
   },
   useInboxSummary: () => registryState.inbox,
 }));
@@ -37,7 +35,6 @@ vi.mock("@/apps/calendar", () => ({
     to: "/calendar",
     requires: ["jmap"],
     loadRoutes: vi.fn(),
-    loadPanel: vi.fn(),
   },
 }));
 
