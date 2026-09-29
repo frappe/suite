@@ -216,7 +216,7 @@ const firstName = computed(() => {
 	return name.split(" ")[0] || "there";
 });
 
-const createMeeting = useCall<{ code: string; url: string }, { type: "instant" | "restricted" }>({
+const createMeeting = useCall<{ code: string; url: string }, { type: "open" | "restricted" }>({
 	url: "/api/suite/meet/rooms",
 	method: "POST",
 	immediate: false,
@@ -298,7 +298,7 @@ const scheduleMeeting = useCall({
 
 const startMeeting = (meetingType: "open" | "restricted") => {
 	const toastId = toast.loading("Creating meeting...");
-	submit(createMeeting, { type: meetingType === "open" ? "instant" : "restricted" })
+	submit(createMeeting, { type: meetingType })
 		.then(({ code: meetingCode }) => {
 			toast.dismiss(toastId);
 			toast.success("Meeting created successfully!", {

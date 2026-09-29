@@ -1,10 +1,11 @@
-import frappe
-from frappe.tests import UnitTestCase
 from unittest.mock import patch
 
+import frappe
+from frappe.tests import UnitTestCase
+
 from suite.composition.tests.http_conformance import HttpConformanceMixin
-from suite.meet.http.framework import HTTP
 from suite.meet.http import routes
+from suite.meet.http.framework import HTTP
 
 
 def setUpModule():
@@ -22,9 +23,9 @@ class TestHandlers(UnitTestCase):
 
     @patch("suite.meet.api.meeting.create", return_value="abcd-efgh-ijkl")
     @patch.object(routes, "get_url", return_value="https://slides.localhost/meet/abcd-efgh-ijkl")
-    def test_room_type_maps_instant_to_the_existing_open_workflow(self, _url, create):
+    def test_room_type_uses_the_open_workflow(self, _url, create):
         self.assertEqual(
-            routes.rooms_post("instant"),
+            routes.rooms_post("open"),
             {"code": "abcd-efgh-ijkl", "url": "https://slides.localhost/meet/abcd-efgh-ijkl"},
         )
         create.assert_called_once_with(meeting_type="open")

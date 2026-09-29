@@ -17,7 +17,7 @@ Given = str | int | float | bool | list | dict | None
 
 
 class CreateRoom(TypedDict):
-    type: Literal["instant", "restricted"]
+    type: Literal["open", "restricted"]
 
 
 class Room(TypedDict):
@@ -171,9 +171,9 @@ def rooms_post(type: Given = None) -> Room:
     from suite.meet.api.meeting import create as create_meeting
 
     kind = _required_text(type, "type")
-    if kind not in ("instant", "restricted"):
+    if kind not in ("open", "restricted"):
         frappe.throw(_("Meet room type is invalid"), BadRequest)
-    meeting_id = create_meeting(meeting_type="open" if kind == "instant" else "restricted")
+    meeting_id = create_meeting(meeting_type=kind)
     return {"code": meeting_id, "url": get_url(f"/meet/{meeting_id}")}
 
 

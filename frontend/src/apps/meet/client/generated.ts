@@ -1,7 +1,7 @@
 // Generated from src/apps/meet/client/contract.json. Do not edit.
 import type { Operation } from '@/platform/transport'
 
-export type RoomsPostInput = { "type": "instant" | "restricted" }
+export type RoomsPostInput = { "type": "open" | "restricted" }
 
 export type RoomsPostOutput = { "code": string; "url": string }
 
@@ -17,7 +17,7 @@ const operationRoomsPost: Operation<RoomsPostInput, RoomsPostOutput, RoomsPostEr
   nodeParams: [],
   entity: null,
   errors: ["BadRequest"],
-  validateInput(value): asserts value is RoomsPostInput { assertSchema(value, {"type":"object","properties":{"type":{"enum":["instant","restricted"],"title":"Type","type":"string"}},"required":["type"],"additionalProperties":false,"$defs":{}}, 'rooms_post input') },
+  validateInput(value): asserts value is RoomsPostInput { assertSchema(value, {"type":"object","properties":{"type":{"enum":["open","restricted"],"title":"Type","type":"string"}},"required":["type"],"additionalProperties":false,"$defs":{}}, 'rooms_post input') },
   validateOutput(value): asserts value is RoomsPostOutput { assertSchema(value, {"properties":{"code":{"title":"Code","type":"string"},"url":{"title":"Url","type":"string"}},"required":["code","url"],"title":"Room","type":"object"}, 'rooms_post output') },
 }
 

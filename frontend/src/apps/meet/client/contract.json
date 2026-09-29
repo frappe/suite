@@ -12,7 +12,7 @@
         "properties": {
           "type": {
             "enum": [
-              "instant",
+              "open",
               "restricted"
             ],
             "title": "Type",
