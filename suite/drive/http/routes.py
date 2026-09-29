@@ -623,9 +623,13 @@ def roots_discover() -> shapes.RootLocations:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def root_usage(root: Given = None) -> shapes.RootUsage:
-    """Report one root's counters to its own user, its managers, or an admin."""
-    return dict(roots.usage_for(shapes.required_text(root, "root"), _principals()))
+def root_usage(root: Given = None, expand: Given = None) -> shapes.RootUsage:
+    """Report one root's counters to its own user, its managers, or an admin.
+
+    `?expand=breakdown` adds bytes by type and the largest nodes.
+    """
+    breakdown = "breakdown" in shapes.expansions(expand, allowed=shapes.USAGE_EXPANSIONS)
+    return dict(roots.usage_for(shapes.required_text(root, "root"), _principals(), breakdown=breakdown))
 
 
 @frappe.whitelist(methods=["PATCH"])

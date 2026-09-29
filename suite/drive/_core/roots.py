@@ -13,6 +13,9 @@ PERSONAL = "Personal"
 SHARED = "Shared"
 ACTIVE = "Active"
 ILLEGAL_ROOT_OPERATIONS = frozenset({"move", "copy", "trash", "restore", "purge", "version", "preview"})
+# The breakdown lists this many of a root's largest nodes. Every node still
+# counts towards its type's total.
+LARGEST_FILES = 10
 
 
 def create_root(
@@ -151,13 +154,19 @@ def update_root(
     return _root_shape(pair)
 
 
-def usage_for(root: str, principals: Principals) -> frappe._dict:
+def usage_for(root: str, principals: Principals, *, breakdown: bool = False) -> frappe._dict:
     """Answer one root's counters to its own user, its managers, or an admin.
 
     §11.2 gives this route to "own root, or Suite Admin for any". A Shared Root
     names no user, so its manager is the closest thing it has to an owner and
     is admitted the same way. Everyone else meets `require`, which hides a root
     they cannot read behind 404 rather than confirming it exists.
+
+    `breakdown` adds `by_type` and `largest`, read from the root's Active
+    nodes. It lists titles, so it keeps §11.2's rule to the letter: the
+    root's own user or a Suite Admin. A manager who is neither reads the
+    totals and is refused the breakdown with 403, the answer `require` gives
+    a caller who can see the root but holds too low a role.
     """
     # `quota` imports this module for `validate_root_pair`, so both stay
     # function-local here, the same one-way break the purge path uses.
@@ -165,10 +174,79 @@ def usage_for(root: str, principals: Principals) -> frappe._dict:
     from suite.drive._core.quota import get_storage_usage
 
     pair = validate_root_pair(root)
-    if principals.is_admin or (pair.root.user and pair.root.user == principals.user):
-        return get_storage_usage(root)
-    require(pair.node, MANAGE, principals)
-    return get_storage_usage(root)
+    owner_or_admin = principals.is_admin or bool(pair.root.user and pair.root.user == principals.user)
+    if not owner_or_admin:
+        require(pair.node, MANAGE, principals)
+        if breakdown:
+            raise DriveForbidden(_("Only the root's own user or a Suite Admin can list its files"))
+    usage = get_storage_usage(root)
+    if breakdown:
+        usage.update(_breakdown(root))
+    return usage
+
+
+def _breakdown(root: str) -> dict:
+    """Bytes by type, and the largest nodes, among one root's Active nodes.
+
+    Only nodes that hold bytes are read: folders, links, and empty nodes are
+    free (§7.1), so they never appear. Trash and versions are charged too, but
+    this answers what the root holds now. The totals group in SQL by the three
+    columns the type rule reads, so the fold below sees one row per distinct
+    mime, not one per node.
+    """
+    groups = frappe.db.sql(
+        """SELECT kind, content_doctype, mime, SUM(size) AS bytes
+           FROM `tabDrive Node`
+           WHERE root = %(root)s AND state = 'Active' AND kind IN ('file', 'document') AND size > 0
+           GROUP BY kind, content_doctype, mime""",
+        {"root": root},
+        as_dict=True,
+    )
+    by_type: dict[str, int] = {}
+    for group in groups:
+        name = _storage_type(group)
+        by_type[name] = by_type.get(name, 0) + int(group.bytes)
+    largest = frappe.db.sql(
+        """SELECT name, title, size, mime, kind, content_doctype
+           FROM `tabDrive Node`
+           WHERE root = %(root)s AND state = 'Active' AND kind IN ('file', 'document') AND size > 0
+           ORDER BY size DESC, name
+           LIMIT %(limit)s""",
+        {"root": root, "limit": LARGEST_FILES},
+        as_dict=True,
+    )
+    return {
+        "by_type": [
+            {"type": name, "bytes": size}
+            for name, size in sorted(by_type.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "largest": [
+            {
+                "node": row.name,
+                "title": row.title,
+                "size": int(row.size),
+                "mime": row.mime,
+                "kind": row.kind,
+                "type": _storage_type(row),
+            }
+            for row in largest
+        ],
+    }
+
+
+def _storage_type(row) -> str:
+    """Name the storage type a node's bytes count under.
+
+    A content document is its content doctype. A file is its mime family from
+    the legacy mime table, which is still the clients' vocabulary; a mime the
+    table does not hold is "Unknown". The import is function-local because
+    `suite.drive.utils` builds a query-builder DocType at import time.
+    """
+    from suite.drive.utils import get_file_type
+
+    if row.get("kind") == "document":
+        return row.get("content_doctype") or "Unknown"
+    return get_file_type(row.get("mime") or "")
 
 
 def purge_root(root: str, principals: Principals) -> frappe._dict:

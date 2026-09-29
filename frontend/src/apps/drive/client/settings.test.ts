@@ -29,3 +29,28 @@ describe('GET /webdav output contract', () => {
     }
   })
 })
+
+describe('GET /roots/<id>/usage output contract', () => {
+  const totals = { used_bytes: 1200, reserved_bytes: 0, quota_bytes: null, effective_quota: 0 }
+
+  it('accepts the totals alone and the totals with the breakdown', () => {
+    const breakdown = {
+      ...totals,
+      by_type: [{ type: 'PDF', bytes: 900 }],
+      largest: [{ node: 'n1', title: 'a.pdf', size: 900, mime: 'application/pdf', kind: 'file', type: 'PDF' }],
+    }
+    for (const answer of [totals, breakdown]) {
+      expect(() => api.root_usage.validateOutput?.(answer)).not.toThrow()
+    }
+  })
+
+  it('refuses a largest entry that is a folder', () => {
+    const folder = { node: 'n1', title: 'F', size: 0, mime: null, kind: 'folder', type: 'Folder' }
+    expect(() => api.root_usage.validateOutput?.({ ...totals, by_type: [], largest: [folder] })).toThrow()
+  })
+
+  it('sends only the breakdown expansion', () => {
+    expect(() => api.root_usage.validateInput?.({ root: 'r1', expand: 'breakdown' })).not.toThrow()
+    expect(() => api.root_usage.validateInput?.({ root: 'r1', expand: 'access' })).toThrow()
+  })
+})
