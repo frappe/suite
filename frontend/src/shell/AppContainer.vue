@@ -11,6 +11,7 @@ import { computed, onScopeDispose } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
+import type { SettingsTabId } from '@/shell/settings/settings'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
 
@@ -21,7 +22,12 @@ const showCommonSettings = computed(
   () =>
     session.isLoggedIn &&
     (appsUsingCommonSettings.includes(String(route.meta.appId || '')) ||
+      route.meta.appId === 'calendar' ||
       (route.meta.appId === 'meet' && route.name !== 'meet-meeting')),
+)
+// Calendar opens Settings on its own first tab, as its sidebar menu does.
+const settingsTab = computed<SettingsTabId | undefined>(() =>
+  route.meta.appId === 'calendar' ? 'calendar.calendars' : undefined,
 )
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
@@ -38,7 +44,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
                 enterHint: 'open settings',
                 icon: 'lucide-settings',
                 keywords: ['profile', 'preferences', 'workspace'],
-                run: () => openSettings(),
+                run: () => openSettings(settingsTab.value),
               },
             ],
           },

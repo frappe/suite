@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Ellipsis, Keyboard, LogOut, Plus, Settings, User } from 'lucide-vue-next'
+import { CalendarDays, Ellipsis, Keyboard, LogOut, Plus, Settings, User } from 'lucide-vue-next'
 import {
 	Button,
 	Dropdown,
@@ -20,15 +20,14 @@ import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { toTitleCase } from '@/apps/calendar/utils/format'
-import { brandingStore } from '@/apps/calendar/stores/branding'
 import { userStore } from '@/apps/calendar/stores/user'
-import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
+import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
@@ -118,17 +117,14 @@ const eventDotColor = (event: any) => eventColor(event.color)
 
 const route = useRoute()
 const router = useRouter()
-const { branding } = brandingStore()
 const { logout } = useSessionStore()
 const store = userStore()
 
 const user = inject('$user')
 
-const title = computed(() =>
-	branding.data?.brand_name && branding.data?.brand_name != 'Frappe'
-		? branding.data.brand_name
-		: 'Calendar',
-)
+// Standalone chrome: Apps, Settings and Log out show only outside the shell
+// (`suite_flip_shell` off). Inside, the rail and its account menu replace them [T010, T018].
+const standalone = computed(() => route.meta.frame === 'none')
 
 const subtitle = computed(() => {
 	// A user with no personal account and no stored id leaves `accountId` empty,
@@ -145,13 +141,12 @@ const calendarActions = useCalendarActions()
 const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
 	calendarActions
 
-const openSettings = inject<() => void>('openCalendarSettings')!
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 const menuItems = computed(() => [
 	{
 		group: '',
-		options: [appsMenuOption.value],
+		options: [{ ...appsMenuOption.value, condition: () => standalone.value }],
 	},
 	{
 		group: '',
@@ -159,7 +154,8 @@ const menuItems = computed(() => [
 			{
 				icon: Settings,
 				label: __('Settings'),
-				onClick: openSettings,
+				onClick: () => openSettings('calendar.calendars'),
+				condition: () => standalone.value,
 			},
 			{
 				icon: Keyboard,
@@ -183,6 +179,7 @@ const menuItems = computed(() => [
 				icon: LogOut,
 				label: __('Log Out'),
 				onClick: logout.submit,
+				condition: () => standalone.value,
 			},
 		],
 	},
@@ -195,10 +192,22 @@ const menuItems = computed(() => [
 		v-model:collapsed="isSidebarCollapsed"
 		class="hidden border-r border-outline-gray-1 sm:flex"
 	>
-		<!-- No padding around the header: its own inset centres the logo in the
-		     collapsed rail, in line with the icons of the px-2 body below. -->
+		<!-- No padding around the header: it owns its own inset, in line with
+		     the px-2 body below. The header row shows the active mail account.
+		     Collapsed, the title hides, so a Calendar icon stays as the menu's trigger. -->
 		<div class="flex h-full flex-col">
-			<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
+			<SidebarHeader
+				title="Calendar"
+				:subtitle="subtitle"
+				:menu-items="menuItems"
+				:show-logo="isSidebarCollapsed"
+			>
+				<template #prefix>
+					<span class="grid size-full place-items-center">
+						<CalendarDays class="size-4 text-ink-gray-7" :aria-label="__('Calendar menu')" />
+					</span>
+				</template>
+			</SidebarHeader>
 			<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
 				<SidebarSection>
 					<CommandPaletteSidebarItem />

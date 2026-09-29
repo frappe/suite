@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
+import { onMounted, onUnmounted, provide } from 'vue'
 import { useKeyboardShortcut } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
 import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
-import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore } from '@/apps/calendar/stores/user'
-import { initSocket } from '@/apps/calendar/socket'
-import { useRootStore } from '@/stores/root'
+import { useCalendarSocket } from '@/apps/calendar/socket'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 /**
@@ -18,36 +16,20 @@ import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
  *
  * The suite shell already provides the top-level chrome, and the platform provides the one
  * FrappeUIProvider, so this layout only:
- *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
- *     and `$socket` injections that calendar components depend on,
+ *   - provides the calendar-local `$user` (mail/calendar userResource) and `$dayjs`
+ *     injections that calendar components depend on,
+ *   - holds Calendar's site socket while mounted, which also starts the event
+ *     reminders (`@/realtime`),
  *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - renders the nested <router-view>.
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
-const showSettings = ref(false)
 const { showShortcuts } = useShortcuts()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
-provide('$socket', initSocket())
-provide('openCalendarSettings', () => (showSettings.value = true))
-
-const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-layout', [
-	{
-		commands: [
-			{
-				id: 'calendar-settings',
-				label: 'Settings',
-				shortcut: 'Mod+Shift+Comma',
-				enterHint: 'open settings',
-				icon: 'lucide-settings',
-				run: () => (showSettings.value = true),
-			},
-		],
-	},
-])
-onScopeDispose(unregisterPaletteGroups)
+useCalendarSocket()
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
@@ -74,7 +56,6 @@ useKeyboardShortcut({
 		<CalendarTabBar />
 	</div>
 	<router-view v-else />
-	<SettingsModal v-model:open="showSettings" />
 	<ShortcutsModal v-model:open="showShortcuts" />
 </template>
 
