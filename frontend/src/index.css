@@ -29,6 +29,9 @@ html.theme-switching * {
   scrollbar-width: thin;
 }
 
+/* The page behind every area follows the theme. It shows in the phone's safe-area
+   strips, in iOS rubber-band overscroll, and through translucent bars. */
 body {
   margin: 0;
+  background-color: var(--surface-base);
 }

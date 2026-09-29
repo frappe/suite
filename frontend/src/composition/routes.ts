@@ -1,6 +1,8 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
+import type { ShellFrame } from "@/platform/contracts";
+
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
 const driveLogo = "/assets/suite/drive/images/logo.svg";
 const mailLogo = "/assets/suite/mail/images/logo.svg";
@@ -16,14 +18,14 @@ function areaMeta(
   title: string,
   favicon: string,
   options: {
-    frame?: "area" | "none";
+    frame?: ShellFrame;
     scroll?: "shell" | "content";
     allowGuest?: boolean;
   } = {},
 ): RouteMeta {
   return {
     area,
-    frame: options.frame ?? "area",
+    frame: options.frame ?? "shell",
     scroll: options.scroll ?? "shell",
     allowGuest: options.allowGuest,
     title,
@@ -97,11 +99,10 @@ export const canonicalRoutes: RouteRecordRaw[] = [
   placeholder(
     "/d/:node/:slug?",
     "document-host",
-    {
-      ...areaMeta("files", "Document", driveLogo, { allowGuest: true }),
-      frame: "document",
+    areaMeta("files", "Document", driveLogo, {
       scroll: "content",
-    },
+      allowGuest: true,
+    }),
     defineAsyncRoute(() => import("@/composition/DocumentHost.vue")),
   ),
   placeholder(

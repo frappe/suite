@@ -55,9 +55,12 @@ website_route_rules = [
     {"from_route": "/files/<path:app_path>", "to_route": "suite"},
     {"from_route": "/d/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
-    # drive — the share-link landing page (§11.2). It must be declared before
-    # the catch-all below is read, although werkzeug would rank it first
-    # anyway: a `<path:>` converter is the least specific rule in a Map.
+    # drive — the share-link landing page (§11.2, unified frontend §10.1).
+    {"from_route": "/l/<token>", "to_route": "drive_link"},
+    # Its old address, kept until the composition redirect table sends it to
+    # `/l/<token>` (unified frontend §14.3). It must be declared before the
+    # catch-all below is read, although werkzeug would rank it first anyway:
+    # a `<path:>` converter is the least specific rule in a Map.
     {"from_route": "/drive/l/<token>", "to_route": "drive_link"},
     {"from_route": "/drive/<path:app_path>", "to_route": "suite"},
     {"from_route": "/slides", "to_route": "suite"},

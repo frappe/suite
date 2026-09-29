@@ -1,10 +1,11 @@
-"""One whitelisted handler per row of §11.2's node, upload, and root tables.
+"""One whitelisted handler per row of §11.2's route tables.
 
 A handler does four things and nothing else: it declares its verb and whether a
 guest may reach it, it builds the caller's principals once from the session and
 this request's `X-Drive-Links` header, it calls one private Drive workflow, and
 it shapes what came back. Every refusal, every role check, and every byte
-charge belongs to the workflow.
+charge belongs to the workflow. The settings and WebDAV routes address no node,
+so they build no principals: they read and write the session user's settings.
 
 `@frappe.whitelist(methods=[...])` is the second gate, not the first. The
 translator will only route a verb its table names, so this decorator is what
@@ -63,6 +64,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive.http import shapes
+from suite.drive.webdav import settings as webdav_settings
 
 # Every handler argument is annotated with this one permissive alias, and none
 # of them means it. `require_type_annotated_api_methods` is on for this app, so
@@ -95,11 +97,15 @@ def _route(handler):
             return handler(*args, **kwargs)
         except DriveError as refusal:
             _refuse(type(refusal), str(refusal))
-        except frappe.RateLimitExceededError:
+        except frappe.RateLimitExceededError as limited:
             # 429, and already carrying its message: §6.3 locks a link out for
             # fifteen minutes after five wrong passwords, and the caller has to
             # be able to tell that apart from a wrong password. The clause
             # below would flatten it to 400 with every other bad argument.
+            # `Retry-After` carries the seconds left, so the unlock screen can
+            # count down to the next attempt.
+            if retry_after := getattr(limited, "retry_after", None):
+                frappe.local.response_headers["Retry-After"] = str(retry_after)
             raise
         except frappe.DoesNotExistError as missing:
             # A row a workflow reached for is gone. The framework already
@@ -729,8 +735,10 @@ def link_unlock(token: Given = None, password: Given = None) -> dict:
     so a password change or a rotation kills every ticket at once.
 
     Guest-reachable, because unlocking is what a caller does before they have
-    any access at all. Five failures in fifteen minutes lock the token out and
-    answer 429, which the boundary keeps distinct from a wrong password (§6.3).
+    any access at all. A wrong password answers 401. The fifth failure in
+    fifteen minutes locks the token out, and it and every attempt during the
+    lockout answer 429 with `Retry-After`, which the boundary keeps distinct
+    from a wrong password (§6.3).
     """
     return access.unlock_link(
         shapes.required_text(token, "token"),
@@ -1126,6 +1134,66 @@ def notifications_read(notifications: Given = None, all: Given = None) -> shapes
             frappe.ValidationError,
         )
     return {"read": activity_core.mark_read(_principals(), named)}
+
+
+# --------------------------------------------------------------------------
+# Settings and WebDAV
+# --------------------------------------------------------------------------
+#
+# None of these touches a node, so none of them builds principals. Each one is
+# the caller's own settings row or the site's, read and written through
+# `webdav.settings`, which the DAV dispatcher reads too.
+
+
+@frappe.whitelist(methods=["GET"])
+@_route
+def settings_get() -> shapes.UserSettings:
+    """Answer the caller's own `Drive Settings` row, or its field defaults."""
+    return webdav_settings.user_settings(frappe.session.user)
+
+
+@frappe.whitelist(methods=["PATCH"])
+@_route
+def settings_patch(webdav_enabled: Given = None) -> shapes.UserSettings:
+    """Write the caller's DAV opt-in, the one field this row takes over HTTP.
+
+    The row is created on the first write. `writer_settings` stays with the
+    document API, which writes it today (§11.2).
+    """
+    if webdav_enabled is None:
+        frappe.throw(_("Drive argument webdav_enabled is required"), frappe.ValidationError)
+    user = frappe.session.user
+    webdav_settings.set_user_webdav_enabled(user, shapes.flag(webdav_enabled, "webdav_enabled", False))
+    return webdav_settings.user_settings(user)
+
+
+@frappe.whitelist(methods=["GET"])
+@_route
+def site_settings_get() -> shapes.SiteSettings | shapes.AdminSiteSettings:
+    """Answer the site's Drive settings, with the admin fields for an admin."""
+    return webdav_settings.site_settings()
+
+
+@frappe.whitelist(methods=["PATCH"])
+@_route
+def site_settings_patch(webdav_enabled: Given = None) -> shapes.AdminSiteSettings:
+    """Turn the site's DAV mount on or off. A Drive admin only.
+
+    The other §3.13 fields are set in Desk. The legacy `disk_settings` write
+    (root folder and the S3 fields) is not carried: Cleanup drops every field
+    it wrote.
+    """
+    if webdav_enabled is None:
+        frappe.throw(_("Drive argument webdav_enabled is required"), frappe.ValidationError)
+    webdav_settings.set_global_webdav_enabled(shapes.flag(webdav_enabled, "webdav_enabled", False))
+    return webdav_settings.site_settings()
+
+
+@frappe.whitelist(methods=["GET"])
+@_route
+def webdav_get() -> shapes.WebdavHidden | shapes.WebdavOff | shapes.WebdavConnection:
+    """Answer what the WebDAV panel shows the caller: `webdav_config` unchanged."""
+    return webdav_settings.webdav_access()
 
 
 # --------------------------------------------------------------------------

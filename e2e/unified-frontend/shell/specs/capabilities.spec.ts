@@ -2,9 +2,16 @@ import { expect, test } from "@playwright/test";
 
 import { patchAccount } from "../../helpers/shell";
 
-/** Ticket 002: areas are filtered by platform capability. */
+/**
+ * Ticket 002: areas are filtered by platform capability.
+ *
+ * The test site may hold a real mail account for Administrator. The journeys
+ * that need an account without jmap patch the real account answer, so they do
+ * not depend on site data.
+ */
 
 test("an account without jmap sees no Mail or Calendar rail item", async ({ page }) => {
+	await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });
 	await page.goto("/home");
 	const rail = page.getByRole("navigation", { name: "Areas" });
 	await expect(rail.getByRole("link", { name: "Home" })).toBeVisible();
@@ -19,6 +26,7 @@ test("a direct /mail URL answers with the unavailable surface and keeps the URL"
 		if (/\/api\/suite\/mail\//.test(request.url())) productRequests.push(request.url());
 	});
 
+	await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });
 	await page.goto("/mail");
 	await expect(page.getByRole("heading", { name: /Mail is unavailable/i })).toBeVisible();
 	await expect(page.getByText("This area needs a configured mail account.")).toBeVisible();
@@ -27,6 +35,7 @@ test("a direct /mail URL answers with the unavailable surface and keeps the URL"
 });
 
 test("a direct /calendar URL answers with the unavailable surface", async ({ page }) => {
+	await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });
 	await page.goto("/calendar");
 	await expect(page.getByRole("heading", { name: /Calendar is unavailable/i })).toBeVisible();
 	await expect(page).toHaveURL(/\/calendar$/);

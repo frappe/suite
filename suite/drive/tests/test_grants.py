@@ -4,6 +4,7 @@ from threading import Event
 from unittest.mock import patch
 
 import frappe
+import redis.lock
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import passlibctx
@@ -473,7 +474,7 @@ class TestShareLinks(_GrantFixture):
         self.assertNotEqual(stored.password_hash, "correct horse")
         self.assertTrue(passlibctx.verify("correct horse", stored.password_hash))
         self.assertNotIn("password_hash", result)
-        self.assertEqual(result["url"], f"/drive/l/{token}")
+        self.assertEqual(result["url"], f"/l/{token}")
         self.assertEqual(len(self._activity(self.folder.name)), 1)
 
     def test_bare_password_link_is_locked_and_a_current_ticket_authorizes(self):
@@ -602,7 +603,7 @@ class TestShareLinks(_GrantFixture):
         self.assertEqual(rows[-1].detail["old_principal"], old_principal)
         self.assertEqual(rows[-1].detail["new_principal"], new_principal)
 
-    def test_unlock_fifth_failure_exhausts_bucket_and_sixth_skips_verification(self):
+    def test_unlock_fifth_failure_sets_the_lockout_and_sixth_skips_verification(self):
         created = self._create_password_link()
         token = created["principal"].removeprefix("$LINK:")
         cache_key = f"drive:link_unlock:{token}"
@@ -610,9 +611,12 @@ class TestShareLinks(_GrantFixture):
         self.addCleanup(frappe.cache.delete_value, cache_key)
 
         with patch("suite.drive._core.access.passlibctx.verify", return_value=False) as verify:
-            for _ in range(5):
+            for _ in range(4):
                 with self.assertRaises(DriveLocked):
                     unlock_link(token, "wrong")
+            # The failure that sets the lockout answers as a lockout (D25).
+            with self.assertRaises(frappe.RateLimitExceededError):
+                unlock_link(token, "wrong")
             self.assertEqual(verify.call_count, 5)
             with self.assertRaises(frappe.RateLimitExceededError):
                 unlock_link(token, "correct horse")
@@ -621,6 +625,27 @@ class TestShareLinks(_GrantFixture):
         self.assertEqual(frappe.cache.get(raw_key), b"locked")
         self.assertGreater(frappe.cache.ttl(raw_key), 0)
         self.assertLessEqual(frappe.cache.ttl(raw_key), UNLOCK_WINDOW_SECONDS)
+
+    def test_the_lockout_seconds_describe_the_bucket_that_refused(self):
+        # The lockout can expire the moment the per-token lock is released,
+        # and another failure then opens a fresh 15-minute counter. The 429
+        # must still name the seconds left in the lockout that refused it.
+        created = self._create_password_link()
+        token = created["principal"].removeprefix("$LINK:")
+        cache_key = f"drive:link_unlock:{token}"
+        raw_key = frappe.cache.make_key(cache_key)
+        frappe.cache.set(raw_key, b"locked", ex=300)
+        self.addCleanup(frappe.cache.delete_value, cache_key)
+        release = redis.lock.Lock.release
+
+        def release_then_replace(lock):
+            release(lock)
+            frappe.cache.set(raw_key, b"1", ex=UNLOCK_WINDOW_SECONDS)
+
+        with patch.object(redis.lock.Lock, "release", release_then_replace):
+            with self.assertRaises(frappe.RateLimitExceededError) as caught:
+                unlock_link(token, "correct horse")
+        self.assertIn(caught.exception.retry_after, range(299, 301))
 
     def test_parallel_failures_atomically_exhaust_one_shared_bucket(self):
         token = "AtomicFailureBucket123"
@@ -646,8 +671,9 @@ class TestShareLinks(_GrantFixture):
                     )
                 )
 
-        self.assertEqual(results.count("failed"), 5)
-        self.assertEqual(results.count("locked"), 7)
+        kinds = [result.kind for result in results]
+        self.assertEqual(kinds.count("failed"), 4)
+        self.assertEqual(kinds.count("locked"), 8)
         self.assertEqual(verify.call_count, 5)
         self.assertEqual(frappe.cache.get(raw_key), b"locked")
 
@@ -684,8 +710,8 @@ class TestShareLinks(_GrantFixture):
                 self.assertTrue(failure_verifying.wait(timeout=10))
                 success = pool.submit(attempt, "correct")
                 allow_failure.set()
-                self.assertEqual(failure.result(timeout=10), "failed")
-                self.assertEqual(success.result(timeout=10), "locked")
+                self.assertEqual(failure.result(timeout=10).kind, "locked")
+                self.assertEqual(success.result(timeout=10).kind, "locked")
 
         self.assertEqual(mocked.call_count, 1)
         self.assertEqual(cache.get(raw_key), b"locked")
@@ -744,7 +770,7 @@ class TestShareLinks(_GrantFixture):
 
     def test_a_token_already_addressing_a_node_cannot_be_borrowed_by_another(self):
         # The link holder is every recipient of the URL, and each of them holds
-        # MANAGE somewhere. A second capability row would make `/drive/l/<t>`
+        # MANAGE somewhere. A second capability row would make `/l/<t>`
         # resolve to whichever grant sorts first and would leave the owner's
         # password link permanently ambiguous to unlock.
         created = grant(self.folder.name, "$LINK", READ, self.admin)

@@ -1,4 +1,4 @@
-import { defineComponent, h, type Component } from "vue";
+import { defineComponent, h } from "vue";
 
 import { inboxSummary } from "@/apps/mail/client/inboxSummary";
 import type { AreaDefinition } from "@/platform/contracts";
@@ -19,16 +19,6 @@ export const mailArea: AreaDefinition = {
   requires: ["jmap"],
   // Ticket 010 owns shell adoption. The existing MailLayout keeps its full frame for now.
   loadRoutes: () => import("@/apps/mail/routes"),
-  loadPanel: async (): Promise<Component> =>
-    defineComponent({
-      name: "MailPanelPlaceholder",
-      setup: () => () =>
-        h(
-          "p",
-          { class: "px-2 py-1 text-p-sm text-ink-gray-5" },
-          __("Mail navigation stays in Mail until ticket 010."),
-        ),
-    }),
 };
 
 export function useInboxSummary(enabled: () => boolean = () => true) {

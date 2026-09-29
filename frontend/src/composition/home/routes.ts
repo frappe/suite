@@ -7,7 +7,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import("@/composition/home/HomeArea.vue"),
     meta: {
       area: "home",
-      frame: "area",
+      frame: "shell",
       scroll: "content",
       title: "Home",
       favicon: "/assets/suite/frontend/logo.svg",

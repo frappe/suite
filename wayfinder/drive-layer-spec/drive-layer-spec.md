@@ -361,7 +361,7 @@ never a grant target. Drive still owns explicit removal and purge ordering.
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `UNIQUE grant_node_principal (node, principal)` | `add_unique` in `on_doctype_update()` | The engine's two hot queries: grants on the parent chain and grants on the page's child ids, both `node IN (...) AND principal IN (...)`. Also the share dialog's list for one node, and the one-row-per-pair rule. |
-| `grant_principal (principal, node)` | `add_index` | Shared-with-me and archived-roots, both `principal IN (...)` (§5.4, §5.5). Also link lookup by token, `principal = '$LINK:<token>'`, on `/drive/l/<token>` and on unlock. |
+| `grant_principal (principal, node)` | `add_index` | Shared-with-me and archived-roots, both `principal IN (...)` (§5.4, §5.5). Also link lookup by token, `principal = '$LINK:<token>'`, on `/l/<token>` and on unlock. |
 
 ### 3.4 `Drive Node Version`
 
@@ -1259,7 +1259,7 @@ What it does when nothing refuses:
    `expires_on`, and `password_hash`.
 4. Write one activity row (§5.12).
 5. Return the row. For a link, the response carries the URL
-   `/drive/l/<token>` [014].
+   `/l/<token>` [014; unified frontend ask D17].
 
 There is no grant ceiling. A MANAGE holder may set any role up to
 MANAGE. Self-removal is allowed, self-lockout included [002].
@@ -1418,10 +1418,15 @@ node [008 §1].
 
 ### 6.2 Transport is stateless
 
-The URL `/drive/l/<token>` seeds the client. The server resolves the grant,
-redirects to the node route, and seeds the token, so the node id never appears
-in a shared URL and a rotation changes the URL [008 §9]. The SPA keeps tokens
-in `localStorage`, associated with the file or folder resolved by each link.
+The URL `/l/<token>` seeds the client. The server resolves the grant,
+redirects to the node's address, and seeds the token in the URL fragment
+(`#link=<token>`), so the node id never appears in a shared URL and a rotation
+changes the URL [008 §9]. The address comes from `node_url`, on the Drive
+Python interface. It reads `suite_flip_files` from the site config: with the
+key on, a folder or a root opens at `/drive/f/<id>` and every other kind at
+`/d/<id>`; with it off, every kind opens at `/drive/g/<id>` [unified frontend
+ask D24]. The SPA keeps tokens in `localStorage`, associated with the file or
+folder resolved by each link.
 
 Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): the browser
 sends only link codes relevant to the current operation in `X-Drive-Links`.
@@ -1452,7 +1457,8 @@ requests, and Guest has no CSRF token); a server-side link-session doctype
 
 Rate limit, per token, in the site cache: **5 failures in 15 minutes**, then a
 **15-minute lockout**. The counter key is `drive:link_unlock:<token>`, and a
-success clears it. The shape follows the framework's login-attempt tracker
+success clears it. The failure that sets the lockout answers 429, as does every
+attempt during it, with `Retry-After` set to the seconds left (§11.2). The shape follows the framework's login-attempt tracker
 [008 §3].
 
 A node reached through a password link with no ticket answers `DriveLocked`
@@ -2954,7 +2960,9 @@ and get the same error [012].
   principal's grants on the node and on every node under it, and returns the
   count [002].
 - A link is created with principal `$LINK`; the server mints the 22-char
-  base62 token and returns `url = "/drive/l/<token>"` [008 §1, 014].
+  base62 token and returns `url = "/l/<token>"`. Rotate and the grant list
+  return the same `url` for every link grant [008 §1, 014; unified frontend
+  ask D17].
 - Refusals on the grant route: `$PUBLIC` above READ; `$PUBLIC` or `$LINK`
   naming a root node; `password` on a principal that is not `$LINK:*`; a
   link role above EDIT; a deny naming a Personal Root's own user inside
@@ -2963,8 +2971,11 @@ and get the same error [012].
   and writes one `share_edit` activity row carrying `old_principal`
   [008 §8].
 - `unlock` verifies the passlib hash, counts failures per token in the site
-  cache and refuses after 5 in 15 minutes with a 15-minute lockout, then
-  returns `ticket = exp + "." + HMAC-SHA256(site_secret, token + "|" +
+  cache and refuses after 5 in 15 minutes with a 15-minute lockout. A wrong
+  password before the limit answers 401 `DriveLocked`. The fifth failure, and
+  every attempt during the lockout, answers 429 `RateLimitExceededError` with
+  `Retry-After: <seconds left in the lockout>` [unified frontend ask D25].
+  Success returns `ticket = exp + "." + HMAC-SHA256(site_secret, token + "|" +
   password_hash + "|" + exp)` with a 30-day `exp`. No row is written
   [008 §3].
 
@@ -2972,10 +2983,14 @@ Accepted in [accepted decisions](#accepted-decisions): expose `explain` as
 `?principal=<p>` on `GET /nodes/<id>/grants`. The response includes the
 explanation alongside grants. Test authorization and response shape.
 
-`GET /drive/l/<token>` is a website route, not an API route. It resolves
-the grant, seeds the token into the SPA, and redirects to the node route.
-The node id never appears in a shared URL, and rotation changes the URL
-[008 §9].
+`GET /l/<token>` is a website route, not an API route, served by
+`suite/www/drive_link.py`. It resolves the grant and answers 302 to
+`node_url(node)` with `#link=<token>` appended (§6.2). It sends no slug. An
+unknown token answers 404 and an expired one 410, on the same page. The node
+id never appears in a shared URL, and rotation changes the URL [008 §9;
+unified frontend ask D24]. The old address `/drive/l/<token>` answers through
+the same page until the composition redirect table sends it to `/l/<token>`
+(unified frontend spec §14.3).
 
 A composite deck's render is a Slides route, outside the Drive namespace.
 It runs one READ check per referenced deck and returns a reference the

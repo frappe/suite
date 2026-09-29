@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="overlayLayer ?? 'body'">
 		<Transition
 			enter-active-class="transition-opacity duration-200"
 			enter-from-class="opacity-0"
@@ -8,7 +8,7 @@
 			leave-from-class="opacity-100"
 			leave-to-class="opacity-0"
 		>
-			<!-- Teleported to <body>, so it sits outside DefaultLayout's
+			<!-- Teleported to Mail's overlay layer, so it sits outside DefaultLayout's
 			     pt-[env(safe-area-inset-top)] and has to state the insets itself: in iOS
 			     standalone the header would otherwise sit under the status bar and the
 			     dynamic island, the pager under the home indicator, and — in landscape,
@@ -198,7 +198,7 @@ import {
 	Printer,
 	X,
 } from 'lucide-vue-next'
-import { Button } from 'frappe-ui'
+import { Button, usePortalTarget } from 'frappe-ui'
 
 import { fetchAttachment, getAttachmentUrl } from '@/apps/mail/resources'
 import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
@@ -212,6 +212,9 @@ const { attachments, initialIndex, account } = defineProps<{
 	// The blobs' owning account (merged lists / cross-account panes); active when unset.
 	account?: string
 }>()
+
+// MailLayout's overlay layer; see the Teleport above.
+const overlayLayer = usePortalTarget()
 
 const { isMobile } = useScreenSize()
 

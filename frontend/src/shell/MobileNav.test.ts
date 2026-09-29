@@ -1,38 +1,120 @@
-import { defineComponent } from "vue";
-import { describe, expect, it, vi } from "vitest";
+import { createApp, defineComponent, h, nextTick } from "vue";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("frappe-ui", () => ({
-  MobileNav: defineComponent({ template: "<nav><slot /></nav>" }),
-  MobileNavItem: defineComponent({ template: "<a><slot /></a>" }),
-}));
+// A phone-width media query, before the platform reads it.
+vi.hoisted(() => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (query: string) => ({
+      matches: query.includes("max-width"),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    }),
+  });
+});
 
-import { deriveMobileNav } from "@/shell/mobileNav";
+// Unit tests alias frappe-ui to a stub. The bar, its items and the sheet are
+// the real components here, so a wrong prop name fails the test.
+vi.mock("frappe-ui", async () => {
+  const { defineComponent, h } = await import("vue");
+  const passthrough = defineComponent({
+    inheritAttrs: false,
+    setup: (_props, { attrs, slots }) => () => h("div", attrs, slots.default?.()),
+  });
+  return {
+    MobileNav: (await import("../../../node_modules/frappe-ui/src/components/MobileNav/MobileNav.vue")).default,
+    MobileNavItem: (await import("../../../node_modules/frappe-ui/src/components/MobileNav/MobileNavItem.vue")).default,
+    BottomSheet: (await import("../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue")).default,
+    Avatar: passthrough,
+    ScrollArea: passthrough,
+    Sidebar: passthrough,
+    Skeleton: passthrough,
+  };
+});
 
-describe("mobile navigation", () => {
-  it("derives labels, icons and targets from the area registry", () => {
-    const icon = defineComponent({ template: "<span />" });
-    expect(
-      deriveMobileNav([
-        {
-          id: "home",
-          label: () => "Home",
-          icon,
-          to: "/home",
-          loadRoutes: vi.fn(),
-          loadPanel: vi.fn(),
-        },
-        {
-          id: "files",
-          label: () => "Files",
-          icon,
-          to: "/files",
-          loadRoutes: vi.fn(),
-          loadPanel: vi.fn(),
-        },
-      ]),
-    ).toEqual([
-      { id: "home", label: "Home", icon, to: "/home" },
-      { id: "files", label: "Files", icon, to: "/files" },
-    ]);
+import { AreaSidebar } from "@/platform/area-sidebar";
+import type { AreaDefinition } from "@/platform/contracts";
+import MobileNav from "@/shell/MobileNav.vue";
+
+const icon = defineComponent({ setup: () => () => h("span") });
+const area = (id: string, label: string): AreaDefinition => ({
+  id,
+  label: () => label,
+  icon,
+  to: `/${id}`,
+  loadRoutes: vi.fn(),
+});
+const areas = [area("home", "Home"), area("files", "Files")];
+
+const FilesPage = defineComponent({
+  setup: () => () =>
+    h(AreaSidebar, { area: "files", title: "Files" }, () =>
+      h("a", { "data-files-panel": "" }, "Starred"),
+    ),
+});
+const DocumentPage = defineComponent({ setup: () => () => h("div", "Document") });
+
+let cleanup: (() => void) | undefined;
+afterEach(() => cleanup?.());
+
+async function mountAt(path: string) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/home", component: { render: () => h("div", "Home") }, meta: { area: "home" } },
+      { path: "/files/:view?", component: FilesPage, meta: { area: "files" } },
+      { path: "/d/:node", component: DocumentPage, meta: { area: "files" } },
+    ],
+  });
+  await router.push(path);
+  const root = document.createElement("div");
+  document.body.appendChild(root);
+  const app = createApp({
+    setup: () => () => [
+      h(RouterView),
+      h(MobileNav, {
+        areas,
+        activeArea: router.currentRoute.value.meta.area as string | undefined,
+      }),
+    ],
+  });
+  app.use(router);
+  app.mount(root);
+  await router.isReady();
+  await nextTick();
+  cleanup = () => {
+    app.unmount();
+    root.remove();
+  };
+  const item = (label: string) =>
+    root.querySelector<HTMLElement>(`[data-slot="mobile-nav-item"][aria-label="${label}"]`)!;
+  return { router, root, item };
+}
+
+describe("phone bottom nav", () => {
+  it("moves to another area, and opens the active area's sidebar sheet", async () => {
+    const { router, item } = await mountAt("/files/starred");
+
+    expect(item("Home").getAttribute("href")).toBe("/home");
+    expect(item("Account")).not.toBeNull();
+
+    item("Files").click();
+    await vi.waitFor(() =>
+      expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).not.toBeNull(),
+    );
+    expect(router.currentRoute.value.fullPath).toBe("/files/starred");
+
+    item("Home").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/home"));
+  });
+
+  it("navigates to the area when the active page draws no sidebar", async () => {
+    const { router, item } = await mountAt("/d/node-1");
+    item("Files").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/files"));
   });
 });

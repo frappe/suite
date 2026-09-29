@@ -1,7 +1,7 @@
 <template>
   <GuestSurface v-if="showGuestSurface" />
 
-  <template v-else-if="resolvedFrame === 'area'">
+  <template v-else-if="resolvedFrame === 'shell'">
     <DesktopShell
       v-if="!isMobile"
       :scroll="scrollOwner === 'shell'"
@@ -12,8 +12,8 @@
           <template #bell><slot name="bell" /></template>
         </Rail>
       </template>
-      <template v-if="activeArea && !unavailable" #sidebar>
-        <ContextualPanel :area="activeArea" />
+      <template #sidebar>
+        <AreaSidebarTarget />
       </template>
       <ContentPane :scroll="scrollOwner">
         <UnavailableSurface
@@ -36,42 +36,12 @@
         />
         <slot v-else />
       </ContentPane>
-      <MobileSheet
-        v-if="activeArea && !unavailable"
-        v-model:open="mobileSheetOpen"
-        :title="activeArea.label()"
-      >
-        <ContextualPanel :area="activeArea" embedded />
-        <div class="shrink-0 border-t border-outline-gray-1 p-2">
-          <AccountMenu />
-        </div>
-      </MobileSheet>
+      <AccountSheet v-model:open="accountSheetOpen" />
       <template #nav>
         <MobileNav
           :areas="areas"
           :active-area="activeArea?.id"
-          @open-sheet="mobileSheetOpen = true"
-        />
-      </template>
-    </MobileShell>
-  </template>
-
-  <template v-else-if="resolvedFrame === 'document'">
-    <DesktopShell v-if="!isMobile" :scroll="false" class="h-full">
-      <template #rail>
-        <Rail :areas="areas" :badges="badges">
-          <template #bell><slot name="bell" /></template>
-        </Rail>
-      </template>
-      <DocumentFrame><slot /></DocumentFrame>
-    </DesktopShell>
-    <MobileShell v-else class="h-full">
-      <DocumentFrame><slot /></DocumentFrame>
-      <template #nav>
-        <MobileNav
-          :areas="areas"
-          :active-area="activeArea?.id"
-          @open-sheet="mobileSheetOpen = true"
+          @open-account="accountSheetOpen = true"
         />
       </template>
     </MobileShell>
@@ -83,10 +53,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { DesktopShell, MobileShell } from "frappe-ui";
 import { useRoute } from "vue-router";
 
+import { AreaSidebarTarget } from "@/platform/area-sidebar";
 import type {
   AreaDefinition,
   PlatformCapability,
@@ -95,17 +66,13 @@ import type {
 } from "@/platform/contracts";
 import { missingCapabilities, useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
-import AccountMenu from "@/shell/AccountMenu.vue";
+import AccountSheet from "@/shell/AccountSheet.vue";
 import ContentPane from "@/shell/ContentPane.vue";
-import ContextualPanel from "@/shell/ContextualPanel.vue";
-import DocumentFrame from "@/shell/DocumentFrame.vue";
 import GuestSurface from "@/shell/GuestSurface.vue";
 import MobileNav from "@/shell/MobileNav.vue";
-import MobileSheet from "@/shell/MobileSheet.vue";
 import Rail from "@/shell/Rail.vue";
 import UnavailableSurface from "@/shell/UnavailableSurface.vue";
 import { isMobile } from "@/shell/useIsMobile";
-import { mobileSheetOpen } from "@/shell/useMobileSheet";
 import { settingsTab, showSettings } from "@/shell/settings/useSettingsDialog";
 
 const props = defineProps<{
@@ -139,36 +106,21 @@ const showGuestSurface = computed(
 );
 const resolvedFrame = computed<ShellFrame | null>(() => {
   if (showGuestSurface.value) return null;
-  if (unavailable.value) return "area";
+  if (unavailable.value) return "shell";
   if (session.status.value === "guest" && route.meta.allowGuest !== true)
     return null;
-  return (route.meta.frame as ShellFrame | undefined) ?? "none";
+  return route.meta.frame ?? "none";
 });
 const scrollOwner = computed<ScrollOwner>(() =>
   route.meta.scroll === "content" ? "content" : "shell",
 );
 
-// Products ask for their contextual panel on mobile with a window event.
-// This keeps the products -> platform import direction (no shell import).
-const OPEN_PANEL_EVENT = "suite:open-active-area-panel";
-function onOpenActiveAreaPanel(event: Event) {
-  const area = (event as CustomEvent<{ area?: string }>).detail?.area;
-  if (!isMobile.value) return;
-  if (area && area !== route.meta.area) return;
-  mobileSheetOpen.value = true;
-}
-onMounted(() => window.addEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel));
-// A destination chosen inside the sheet navigates. Close the sheet with it, or
-// it covers the listing the person just asked for.
-watch(
-  () => route.fullPath,
-  () => {
-    mobileSheetOpen.value = false;
-  },
-);
-onBeforeUnmount(() =>
-  window.removeEventListener(OPEN_PANEL_EVENT, onOpenActiveAreaPanel),
-);
+const accountSheetOpen = ref(false);
+// Close on navigation, and when the phone layout unmounts. Left open, the
+// sheet reopens without input when the layout comes back to phone width.
+watch([() => route.fullPath, isMobile], () => {
+  accountSheetOpen.value = false;
+});
 
 function describeUnavailable(
   area: AreaDefinition,

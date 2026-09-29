@@ -7,7 +7,7 @@
 	     (#407), and a Dialog is `fixed inset-0` with a backdrop over exactly that. Nothing here
 	     traps focus, locks scrolling or answers to Esc — the page behind is simply live.
 
-	     Teleported to body for the reason the thread pane is: the layout's `isolate` paints its
+	     Teleported to Mail's overlay layer for the reason the thread pane is: the layout's `isolate` paints its
 	     subtree as one unit, so a composer opened from inside a thread would lose to the pane,
 	     which teleports out itself.
 
@@ -27,7 +27,7 @@
 	     Folded away there is nothing in it but a title and a Close, so it gives most of that back —
 	     enough for a subject to be read, and no more. A bar the width of the composer it is standing
 	     in for reads as a window that failed to close rather than one set aside. -->
-	<Teleport to="body">
+	<Teleport :to="overlayLayer ?? 'body'">
 		<div
 			v-if="show"
 			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-6 border border-b-0 shadow-2xl"
@@ -103,13 +103,15 @@
 
 <script setup lang="ts">
 import { ChevronDown, Maximize2, X } from 'lucide-vue-next'
-import { Button } from 'frappe-ui'
+import { Button, usePortalTarget } from 'frappe-ui'
 
 const { title, minimised = false } = defineProps<{ title?: string; minimised?: boolean }>()
 
 const emit = defineEmits<{ expand: []; toggleMinimised: [] }>()
 
 const show = defineModel<boolean>()
+// MailLayout's overlay layer; see the Teleport above.
+const overlayLayer = usePortalTarget()
 
 // Folded, the bar carries the button role, and Enter and Space are what a button answers to.
 //

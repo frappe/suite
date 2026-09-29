@@ -390,9 +390,9 @@
 	<!-- Selection action bar (design: 5·Selection) — replaces the tab bar while
 	     selecting: thumb reach, Delete last and red. -->
 	<!-- Same 52px row + safe-area padding as the tab bar it overlays, so entering/
-	     leaving selection mode never shifts the layout. Teleported to body: inside
+	     leaving selection mode never shifts the layout. Teleported to Mail's overlay layer: inside
 	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
-	<Teleport to="body">
+	<Teleport :to="overlayLayer ?? 'body'">
 	<div
 		v-if="mobileSelectionMode"
 		class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
@@ -476,6 +476,7 @@ import {
 	call,
 	createResource,
 	usePageMeta,
+	usePortalTarget,
 } from 'frappe-ui'
 
 import {
@@ -544,6 +545,8 @@ const { setMobileSelectionActive } = useMobileSelection()
 const { dropViewUndo } = useUndo()
 
 const socket = inject('$socket')
+// MailLayout's overlay layer; see the selection bar's Teleport.
+const overlayLayer = usePortalTarget()
 const user = inject('$user') as UserResource
 
 const store = userStore()

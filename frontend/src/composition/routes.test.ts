@@ -6,7 +6,7 @@ describe("canonical route metadata", () => {
   it("declares a frame and scroll owner on every canonical route", () => {
     for (const route of canonicalRoutes) {
       expect(route.meta?.frame, String(route.path)).toMatch(
-        /^(area|document|none)$/,
+        /^(shell|none)$/,
       );
       expect(route.meta?.scroll, String(route.path)).toMatch(
         /^(shell|content)$/,
