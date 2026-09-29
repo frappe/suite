@@ -17,6 +17,7 @@ from suite.drive._core.errors import (
     DriveForbidden,
     DriveNotFound,
     DriveOverQuota,
+    DriveRestoreDestinationRequired,
 )
 from suite.drive._core.nodes import (
     _content_purge_callbacks,
@@ -27,6 +28,7 @@ from suite.drive._core.nodes import (
     create_file,
     create_folder,
     create_link,
+    empty_trash,
     purge,
     update,
 )
@@ -129,6 +131,37 @@ class TestNodeLifecycle(IntegrationTestCase):
         renamed = update(self.admin, second, title="One")
         self.assertEqual(renamed.title, "One")
         self.assertEqual(frappe.db.count("Drive Activity", {"node": second, "action": "rename"}), 1)
+
+    def test_every_create_kind_refuses_a_taken_title_and_names_the_free_one(self):
+        # §8.6: an Active sibling blocks the title and a Trashed one does not.
+        # The refusal carries the title the dedupe rule would give, so a client
+        # can offer Keep both without predicting a suffix.
+        create_folder(self.admin, self.root.name, "Plan.txt")
+        taken = create_folder(self.admin, self.root.name, "Plan (2).txt")
+        update(self.admin, taken, state="Trashed")
+        blob = self._blob(b"plan")
+        creates = {
+            "folder": lambda: create_folder(self.admin, self.root.name, "Plan.txt"),
+            "link": lambda: create_link(self.admin, self.root.name, "Plan.txt", url="https://example.test"),
+            "file": lambda: create_file(
+                self.admin,
+                self.root.name,
+                "Plan.txt",
+                blob=blob.name,
+                size=blob.file_size,
+                mime=blob.mime_type,
+            ),
+        }
+        for kind, attempt in creates.items():
+            with self.subTest(kind=kind), self.assertRaises(DriveConflict) as refused:
+                attempt()
+            self.assertEqual(refused.exception.free_title, "Plan (2).txt")
+        self.assertEqual(frappe.db.count("Drive Node", {"parent": self.root.name, "title": "Plan.txt"}), 1)
+
+        create_folder(self.admin, self.root.name, "Plan (2).txt")
+        with self.assertRaises(DriveConflict) as refused:
+            create_folder(self.admin, self.root.name, "Plan.txt")
+        self.assertEqual(refused.exception.free_title, "Plan (3).txt")
 
     def test_move_rewrites_active_and_independently_trashed_descendants(self):
         source = create_folder(self.admin, self.root.name, "Source")
@@ -470,8 +503,10 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         activity_count = frappe.db.count("Drive Activity", {"node": child})
 
-        with self.assertRaises(DriveConflict):
+        with self.assertRaises(DriveRestoreDestinationRequired):
             update(self.admin, child, state="Active")
+        self.assertTrue(issubclass(DriveRestoreDestinationRequired, DriveConflict))
+        self.assertEqual(DriveRestoreDestinationRequired.http_status_code, 409)
         self.assertEqual(
             frappe.db.get_value(
                 "Drive Node",
@@ -608,6 +643,48 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), 0)
         self.assertTrue(frappe.db.exists("File Blob", blob))
         self.assertEqual(size, len(b"charged"))
+
+    def test_empty_trash_purges_every_trashed_tree_in_one_root_only(self):
+        # Two trashings at two different times, one nested inside the other,
+        # and a loose file: every trashed row in the root goes, and nothing
+        # Active and nothing in another root moves.
+        outer = create_folder(self.admin, self.root.name, "Outer")
+        inner = create_folder(self.admin, outer, "Inner")
+        inner_file = self._file(inner, "inner.bin", b"inner bytes")
+        loose = self._file(self.root.name, "loose.bin", b"loose")
+        kept = self._file(self.root.name, "kept.bin", b"kept bytes")
+        elsewhere = create_folder(self.admin, self.other_root.name, "Elsewhere")
+        update(self.admin, inner, state="Trashed")
+        frappe.db.set_value("Drive Node", inner, "trashed_at", "2026-01-01 00:00:00", update_modified=False)
+        frappe.db.set_value(
+            "Drive Node", inner_file, "trashed_at", "2026-01-01 00:00:00", update_modified=False
+        )
+        update(self.admin, outer, state="Trashed")
+        update(self.admin, loose, state="Trashed")
+        update(self.admin, elsewhere, state="Trashed")
+        owner = Principals(USER, (USER,), ("$PUBLIC",))
+
+        self.assertEqual(empty_trash(owner, self.root.name), 4)
+
+        for gone in (outer, inner, inner_file, loose):
+            self.assertFalse(frappe.db.exists("Drive Node", gone))
+        self.assertEqual(frappe.db.get_value("Drive Node", kept, "state"), "Active")
+        self.assertEqual(frappe.db.get_value("Drive Node", elsewhere, "state"), "Trashed")
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), len(b"kept bytes"))
+        self.assertEqual(empty_trash(owner, self.root.name), 0)
+
+    def test_empty_trash_needs_manage_on_the_root(self):
+        doomed = create_folder(self.admin, self.root.name, "Doomed")
+        update(self.admin, doomed, state="Trashed")
+        stranger = Principals(OTHER, (OTHER,), ("$PUBLIC",))
+        with self.assertRaises(DriveNotFound):
+            empty_trash(stranger, self.root.name)
+        grant(self.root.name, OTHER, EDIT, self.admin)
+        with self.assertRaises(DriveForbidden):
+            empty_trash(stranger, self.root.name)
+        with self.assertRaises(DriveConflict):
+            empty_trash(self.admin, doomed)
+        self.assertEqual(frappe.db.get_value("Drive Node", doomed, "state"), "Trashed")
 
     def test_malformed_subtree_and_callback_failure_roll_back_without_drift(self):
         folder = create_folder(self.admin, self.root.name, "Malformed")

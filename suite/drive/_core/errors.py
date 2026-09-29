@@ -28,7 +28,22 @@ class DriveOverQuota(DriveError):
 
 
 class DriveConflict(DriveError):
+    """A title is taken, or the tree refuses the write (§11.6).
+
+    `free_title` is set on a title collision only. It is the title §8.6's
+    dedupe rule would give, so a client offers Keep both without predicting a
+    suffix. The HTTP boundary copies it into the error envelope.
+    """
+
     http_status_code = 409
+
+    def __init__(self, *args, free_title: str | None = None):
+        super().__init__(*args)
+        self.free_title = free_title
+
+
+class DriveRestoreDestinationRequired(DriveConflict):
+    """Restore needs a destination: the original parent chain is not Active (§8.8)."""
 
 
 def rollback_savepoint(savepoint: str, error: Exception) -> None:

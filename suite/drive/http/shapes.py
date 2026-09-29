@@ -156,6 +156,22 @@ class BatchNodes(TypedDict):
     patch: BatchPatch
 
 
+class OpenUpload(TypedDict):
+    parent: str
+    filename: str
+    size: int
+    mime: NotRequired[str]
+    replaces: NotRequired[str]
+
+
+class BatchPurge(TypedDict):
+    nodes: list[str]
+
+
+class Purged(TypedDict):
+    purged: int
+
+
 class BatchFailure(TypedDict):
     node: str
     type: str

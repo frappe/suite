@@ -1814,7 +1814,8 @@ def children(p: Principals, parent: str, *, cursor: str | None = None, limit: in
 def views(p: Principals, name: str, *, cursor: str | None = None, limit: int = 60, **filters) -> dict: ...
 
 # suite/drive/_core/upload.py
-def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None) -> dict: ...
+def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None,
+	replaces: str | None = None) -> dict: ...
 def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, title: str | None = None,
 	checksum: str | None = None, content_modified: datetime | None = None,
 	replaces: str | None = None) -> str: ...
@@ -1822,7 +1823,21 @@ def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, t
 
 `finish_upload` takes either `parent` and `title` (a create) or `replaces`
 (a replace), never both and never neither. Any other combination raises
-`frappe.ValidationError`. `PUT /nodes/<id>/content` is the replace form and
+`frappe.ValidationError`.
+
+`create_upload(replaces=<node>)` opens a replace session. It needs EDIT on
+that node, which must be an Active file below `parent`. The node's own title
+does not block `filename`; another sibling's title still does. The session
+finishes only with the same `replaces`: a finish with `parent` and `title`, or
+with a different `replaces`, raises `DriveForbidden` before any byte is
+claimed. This is how a client replaces after a collision (unified frontend
+ask D11). Its quota preflight asks only for the growth over the replaced
+head (§8.4 step 3).
+
+A create finish checks `title` under the parent-chain lock before storage
+claims the session (§8.4 step 6). A finish that loses its title to a
+concurrent one gets `DriveConflict` with `free_title` and keeps its session,
+so the client retries that session under the free title. `PUT /nodes/<id>/content` is the replace form and
 `POST /uploads/<upload_id>/finish` is either (§11.2).
 
 ### 8.2 Role, activity, quota, refusals
@@ -1843,7 +1858,7 @@ def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, t
 | `copy` | READ on `node`, UPLOAD on `parent` [009 §8] | `create`: `kind`, `title`, `copied_from` | `+size` of the new nodes on the destination root; no version is copied | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 | `children` | READ on `parent` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
 | `views` | per view, see §11 | none | none | `DriveForbidden` |
-| `create_upload` | UPLOAD on `parent` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveOverQuota` |
+| `create_upload` | UPLOAD on `parent`; EDIT on `replaces` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (with `free_title`) |
 | `finish_upload` | UPLOAD on `parent`; EDIT on `replaces` | `create` or `edit` | `+actual size` through the admission `UPDATE` | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 
 Rules that hold for every row above.
@@ -1893,9 +1908,15 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
 1. `POST /api/suite/drive/uploads` with `parent`, `filename`, `size`.
    The handler calls `sdk.upload.create_upload`.
 2. `access.require(parent, UPLOAD)`.
-3. Preflight, a plain read and no write: `Drive Root.used_bytes` and
-   `quota.effective_quota(root)` (§7.4). Refuse with `DriveOverQuota` when
-   the quota is not 0 and `size > quota - used` [010 §5]. `quota.admit`
+3. Preflight, a plain read and no write. First `filename` against the
+   Active siblings of `parent`: a collision answers `DriveConflict` with
+   `free_title` (§8.6), and no session is created. Finish checks the title
+   again, because it can be taken during the upload. Then
+   `Drive Root.used_bytes` and `quota.effective_quota(root)` (§7.4). Refuse with `DriveOverQuota` when
+   the quota is not 0 and `size > quota - used` [010 §5]. A replace
+   session asks for `size - <replaced head size>` instead, never below 0,
+   because the finish releases the old head before it admits the new one
+   (§8.5). `quota.admit`
    does not run here; no byte has landed and no counter moves.
 4. Call the internal `frappe.storage.upload.create_blob_upload(filename,
    size, is_private=True)` (§13.7), after Drive authorization. Bind the
@@ -1912,6 +1933,12 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
 6. `POST /api/suite/drive/uploads/<upload_id>/finish` with `parent`,
    `title`, optional `checksum`, optional `content_modified` (epoch ms),
    optional `replaces`. The handler calls `sdk.upload.finish_upload`.
+   A create locks the parent chain (the order `create_file` uses) and checks
+   `title` against the Active siblings before step 7. A collision answers
+   `DriveConflict` with `free_title`, and the session is not claimed: the
+   client finishes the same session again under a new title. The lock holds
+   until the transaction ends, so of two finishes racing for one title, one
+   creates and the other gets that refusal.
 7. `frappe.storage.upload.finish_upload_to_blob(upload_id, checksum=...)`
    runs only after Drive revalidates the session binding and current
    destination/replacement permissions. It returns a `File Blob` and creates
@@ -1951,12 +1978,21 @@ after its own UPLOAD check. Public waiver keywords are not introduced.
 2. When the current head blob is set and its size is greater than 0, write
    one `Drive Node Version` row of kind `auto` holding the old blob, and
    charge its size to the root. A head of size 0 is not kept
-   [009 §5]. This rule holds for every replace path: the HTTP route, the
-   WebDAV PUT, and internal Drive workflows.
+   [009 §5]. This rule holds for the WebDAV PUT and for internal Drive
+   workflows.
 3. `quota.admit(root, new_size)`.
 4. Write `blob`, `size`, `mime`, and `content_modified` on the node.
 5. Delete the `Drive Node Preview` row and enqueue a render [006 §5].
 6. Activity `edit` with `detail = {"blob", "size", "version": <seq>}`.
+
+The browser replace is the exception (unified frontend ask D13). A replace
+through `POST /uploads/<id>/finish` with `replaces`, or through
+`PUT /nodes/<id>/content`, skips step 2: it writes no version and releases
+the old head's size from the root before step 3. `used_bytes` moves by
+`new - old`, and the recompute (§7.7) agrees. The activity `detail` carries
+`"version": null`. The confirm tells the person the current file is not
+kept. The WebDAV PUT keeps the version, because it is the only undo for an
+editor's save over WebDAV.
 
 ### 8.6 Rename, and the sibling dedupe rule
 
@@ -1966,6 +2002,9 @@ after its own UPLOAD check. Public waiver keywords are not introduced.
   never blocks a title [011 §8].
 - On collision the caller is refused with `DriveConflict`. The UI asks for
   a new title. Drive does not silently suffix a user's rename.
+- The refusal carries `free_title`: the title the dedupe rule below would
+  give. A client offers it as Keep both and never predicts a suffix
+  (unified frontend asks D11, D12).
 - Every path that creates a node without a user in the loop deduplicates
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
@@ -2097,8 +2136,11 @@ Drive must not select the nearest Active ancestor or root automatically.
 - Otherwise, require an explicit eligible Active destination in the same root.
   The client submits the selected destination through `update(parent=...,
   state="Active")`. The HTTP request carries both `parent` and `state`.
-- Without that destination, raise `DriveConflict` before changing any state,
-  paths, titles, or activity. The client must ask the user where to restore.
+- Without that destination, raise `DriveRestoreDestinationRequired`, a
+  `DriveConflict` subclass with status 409, before changing any state,
+  paths, titles, or activity. The envelope `type` is the subclass name, on
+  `PATCH /nodes/<id>` and in a `POST /nodes/batch` failure. The client must
+  ask the user where to restore (unified frontend ask D14).
 - Validate destination access, root, and ancestry before applying the restore.
   Reparenting and subtree path changes occur in the same transaction as the
   state change. Deduplicate the title against the selected destination.
@@ -2137,6 +2179,11 @@ Link field stops naming them [003].
 
 The daily trash sweep purges every node whose `trashed_at` is older than
 30 days, one `trash_root` at a time.
+
+Empty trash is per root, because trash is listed per root (§5.6). It needs
+MANAGE on the root node, and it purges every trash root in that root,
+shallowest first, in one transaction. A tree trashed earlier inside one
+trashed later goes with the outer tree (unified frontend ask D16).
 
 ### 8.9 Copy
 
@@ -2231,7 +2278,7 @@ Who writes a version.
 
 | Trigger | Kind | Role |
 |---|---|---|
-| A file node's bytes are replaced (HTTP, WebDAV, or a Drive workflow) | `auto` | EDIT |
+| A file node's bytes are replaced over WebDAV or by a Drive workflow; a browser replace writes none (§8.5) | `auto` | EDIT |
 | An app calls `take_version` on its save path | `auto` | EDIT |
 | A person names a version | `named` | EDIT |
 | A person marks a milestone or pins one | `milestone`, `pinned = 1` | EDIT |
@@ -2907,6 +2954,7 @@ are listed.
 | GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
 | GET | `/nodes/<id>/archive/download` | READ on folder | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
+| POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
@@ -2915,6 +2963,16 @@ are listed.
 | POST | `/nodes/<id>/visit` | READ on node | none | `{}` | none |
 | PUT | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
+
+A title collision on `POST /nodes`, for every kind, answers `DriveConflict`
+with `free_title` in the error envelope (§8.6, §11.6).
+
+`POST /nodes/batch/purge` is `DELETE /nodes/<id>` per node, each in its own
+savepoint, with one activity row per purged node (unified frontend ask D15).
+It purges the shallowest selected nodes first. A selected node below a
+selected folder that was purged is gone with it, and is reported in `ok`.
+It is a separate route rather than a `purge` flag on `POST /nodes/batch`, so
+each route takes one body shape.
 
 `GET /nodes/<id>/media` is the deck-media call. It runs one READ check on
 the document, then mints a signed `/f/` URL per child node with a 15-minute
@@ -2933,12 +2991,16 @@ the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| POST | `/uploads` | UPLOAD on `parent` | `{parent, filename, size, mime?}` | `{mode, upload_id, ...}` |
+| POST | `/uploads` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, filename, size, mime?, replaces?}` | `{mode, upload_id, ...}`; 409 with `free_title` when `filename` is taken by a node other than `replaces` |
 | PUT | `/uploads/<upload_id>/chunk` | UPLOAD on `parent` | raw bytes, `?offset=` | `{upload_id, received}` |
 | POST | `/uploads/<upload_id>/finish` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, title, checksum?, content_modified?, replaces?}` | node shape |
 
 `POST /uploads` returns `DriveOverQuota` (413) from the declared size, never
-a permission error [010 §5, 014]. Slide media uploads use this same call
+a permission error [010 §5, 014]. It returns `DriveConflict` (409) with
+`free_title` when an Active sibling of `parent` holds `filename`, before any
+session exists (§8.4, unified frontend ask D11). With `replaces`, the session
+is a replace session (§8.1): that file's own title does not collide, and the
+session finishes only through that replace. Slide media uploads use this same call
 and get the same error [012].
 
 **Grants, links, publishing**
@@ -3050,6 +3112,7 @@ There is no per-row access or breadcrumb query.
 | GET | `/roots/<id>/usage` | own root, or Suite Admin for any | none | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}` |
 | PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
+| POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{purged: <n>}` |
 
 `DELETE /roots/<id>` purges every node in an Archived Root. Only a Suite
 Admin may call it, and only on an Archived Root. It removes the root pair
@@ -3057,6 +3120,10 @@ after descendant and reference cleanup (§3.2). The route id is the shared
 root-node/metadata id. There is no reclaim clock
 [010 §7]. The reservation functions stay Python-only for Meet and get no
 HTTP endpoint [010 §3, 014].
+
+`POST /roots/<id>/trash/empty` purges every trashed tree in the root (§8.8)
+and counts the nodes removed. A caller below READ on the root gets 404, and
+one below MANAGE gets 403 (§5.2).
 
 `GET /roots` returns active root entry points only. `personal` is the
 caller's Personal Root. `organization` is the active Shared Root when the
@@ -3161,6 +3228,12 @@ Partial success is a result, not an error, and the response is 200. `patch`
 takes the same fields as `PATCH /nodes/<id>`. One gesture is one request
 and produces one activity row per node that moved [014 §8].
 
+`POST /nodes/batch/purge` takes `{nodes}` and answers the same shape, in
+purge order: shallowest first, then request order. A node removed by a
+selected ancestor's purge is in `ok`. A
+failure's `type` is the refusal's class name, so a restore that needs a
+destination reads `DriveRestoreDestinationRequired`.
+
 ### 11.6 Errors
 
 ```python
@@ -3174,6 +3247,8 @@ class DriveLocked(DriveError):      http_status_code = 401
 class DriveLinkExpired(DriveError): http_status_code = 410
 class DriveOverQuota(DriveError):   http_status_code = 413
 class DriveConflict(DriveError):    http_status_code = 409
+
+class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
 ```
 
 | Condition | Class | Status |
@@ -3184,6 +3259,7 @@ class DriveConflict(DriveError):    http_status_code = 409
 | Link past `expires_on` | `DriveLinkExpired` | 410 |
 | Admission `UPDATE` hit zero rows | `DriveOverQuota` | 413 |
 | Title taken, or node moved under itself | `DriveConflict` | 409 |
+| Restore with the original parent chain gone and no `parent` | `DriveRestoreDestinationRequired` | 409 |
 
 The body is the v2 envelope, produced by the framework:
 
@@ -3195,6 +3271,15 @@ The body is the v2 envelope, produced by the framework:
 The class name is the code. Over quota is never a permission error, a
 locked link is never a 403, and an expired link is never a locked one
 [014 §5].
+
+A title collision adds one field to its error entry, `free_title`, the
+title §8.6's dedupe rule would give:
+
+```json
+{ "errors": [ { "type": "DriveConflict",
+                "message": "An active Drive node with this title already exists",
+                "free_title": "report (2).pdf" } ] }
+```
 
 ### 11.7 The shim plan
 

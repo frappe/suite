@@ -10,7 +10,15 @@ from frappe.storage.upload import (
 
 from suite.drive._core.access import require, require_link
 from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
-from suite.drive._core.nodes import _content_time, _node, _validate_parent, create_file, update
+from suite.drive._core.nodes import (
+    _content_time,
+    _lock_create_parent,
+    _node,
+    _refuse_sibling_collision,
+    _validate_parent,
+    create_file,
+    update,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import preflight, root_for_node
 from suite.drive._core.roles import EDIT, UPLOAD
@@ -34,8 +42,20 @@ def create_upload(
     size: int,
     *,
     mime: str | None = None,
+    replaces: str | None = None,
 ) -> dict:
-    """Authorize and preflight a private, blob-only storage session."""
+    """Authorize and preflight a private, blob-only storage session.
+
+    A `filename` an Active sibling holds is refused here with the free title
+    (§8.6), before a byte moves. `finish_upload` checks again, because the
+    title can be taken while the bytes travel.
+
+    `replaces` opens a replace session for one Active file below `parent`,
+    under EDIT on that file. Its own title does not block `filename`; any
+    other sibling's does. The session can only finish as that replace. Its
+    preflight asks only for the growth over that file's head, because the
+    finish releases the old head before it admits the new one (§8.5).
+    """
     if not isinstance(filename, str) or not filename.strip():
         frappe.throw(_("An upload filename is required"), frappe.ValidationError)
     parent_row = _node(parent)
@@ -45,8 +65,12 @@ def create_upload(
     # about how full the root is.
     if principals.user == "Guest" and via_link is None:
         raise DriveForbidden(_("Guest uploads require a bound Drive link"))
+    replaced_bytes = 0
+    if replaces is not None:
+        replaced_bytes = int(_require_replaceable(principals, replaces, parent_row.name).size or 0)
+    _refuse_sibling_collision(parent_row.name, filename, exclude=replaces, for_update=False)
     root = root_for_node(parent_row)
-    preflight(root, size)
+    preflight(root, max(size - replaced_bytes, 0))
     _refuse_over_site_limit(size)
 
     result = create_blob_upload(filename, size, is_private=True)
@@ -58,6 +82,7 @@ def create_upload(
         "filename": filename,
         "declared_size": size,
         "mime": mime,
+        "replaces": replaces,
     }
     _store_binding(result["upload_id"], binding)
     return result
@@ -132,19 +157,21 @@ def finish_upload(
     binding = _authorized_binding(principals, upload_id)
     _reauthorize_original_destination(principals, binding)
 
+    if binding.get("replaces") and replaces != binding["replaces"]:
+        raise DriveForbidden(_("This upload can only replace the file it was opened for"))
     if replaces:
-        target = _node(replaces)
-        require(target, EDIT, principals)
-        if target.kind != "file" or target.state != "Active":
-            raise DriveForbidden(_("Only an active Drive file can be replaced"))
-        if target.parent != binding["parent"]:
-            raise DriveForbidden(_("The replacement is outside this upload's destination"))
+        _require_replaceable(principals, replaces, binding["parent"])
     else:
         if parent != binding["parent"]:
             raise DriveForbidden(_("The finish destination does not match this upload"))
-        target = _node(parent)
+        # The collision check runs under the parent-chain lock that
+        # `create_file` takes again below, and before storage claims the
+        # session. A finish that lost its title to a concurrent one is refused
+        # with the free title and keeps its session, so the client can retry.
+        target = _lock_create_parent(parent)
         require(target, UPLOAD, principals)
         _validate_parent(target)
+        _refuse_sibling_collision(target.name, title)
 
     # Delete the binding only after storage successfully claims and finalizes
     # the session. In particular, an empty/no-data session remains retryable.
@@ -166,6 +193,8 @@ def finish_upload(
             content_modified=normalized_content_time,
             _via_link=binding.get("via_link"),
             _bound_parent=binding["parent"],
+            # §8.5: a browser replace keeps no version of the old head.
+            _keep_old_head=False,
         )
         return replaces
     return create_file(
@@ -178,6 +207,16 @@ def finish_upload(
         content_modified=normalized_content_time,
         _via_link=binding.get("via_link"),
     )
+
+
+def _require_replaceable(principals: Principals, replaces: str, parent: str) -> frappe._dict:
+    target = _node(replaces)
+    require(target, EDIT, principals)
+    if target.kind != "file" or target.state != "Active":
+        raise DriveForbidden(_("Only an active Drive file can be replaced"))
+    if target.parent != parent:
+        raise DriveForbidden(_("The replacement is outside this upload's destination"))
+    return target
 
 
 def _validate_finish_arguments(*, parent: str | None, title: str | None, replaces: str | None) -> None:
@@ -222,6 +261,10 @@ def _authorized_binding(principals: Principals, upload_id: str) -> dict:
         and isinstance(binding.get("declared_size"), int)
         and not isinstance(binding.get("declared_size"), bool)
         and binding.get("declared_size") >= 0
+        and (
+            binding.get("replaces") is None
+            or (isinstance(binding["replaces"], str) and bool(binding["replaces"]))
+        )
     )
     if not valid_shape:
         raise DriveNotFound(_("Drive upload session was not found or has expired"))

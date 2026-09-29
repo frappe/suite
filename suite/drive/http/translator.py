@@ -33,6 +33,7 @@ from suite.drive._core.errors import (
     DriveLocked,
     DriveNotFound,
     DriveOverQuota,
+    DriveRestoreDestinationRequired,
 )
 from suite.drive.http import shapes
 
@@ -46,13 +47,27 @@ UNKNOWN = "unknown"
 # reachable, and the decorator refuses the same call made directly at the v2
 # method URL.
 ROUTES = (
-    Route("POST", "nodes", "node_create", allow_guest=True, output=shapes.NodeShape),
+    Route(
+        "POST",
+        "nodes",
+        "node_create",
+        errors=(DriveForbidden, DriveConflict, DriveOverQuota),
+        allow_guest=True,
+        output=shapes.NodeShape,
+    ),
     Route(
         "POST",
         "nodes/batch",
         "node_batch",
         body=shapes.BatchNodes,
         allow_guest=True,
+        output=shapes.BatchResult,
+    ),
+    Route(
+        "POST",
+        "nodes/batch/purge",
+        "node_batch_purge",
+        body=shapes.BatchPurge,
         output=shapes.BatchResult,
     ),
     Route(
@@ -70,7 +85,7 @@ ROUTES = (
         "nodes/{node}",
         "node_patch",
         body=shapes.Rename | shapes.Move | shapes.Trash | shapes.Restore | shapes.Stamp,
-        errors=(DriveForbidden, DriveConflict, DriveOverQuota),
+        errors=(DriveForbidden, DriveConflict, DriveRestoreDestinationRequired, DriveOverQuota),
         allow_guest=True,
         output=shapes.NodeShape,
         entity={"tag": "DriveNode", "id": "name", "version": "modified"},
@@ -115,7 +130,14 @@ ROUTES = (
     Route("GET", "nodes/{node}/content", "node_get_content", allow_guest=True),
     Route("GET", "nodes/{node}/media", "node_media", allow_guest=True),
     Route("POST", "nodes/{node}/preview", "node_preview", allow_guest=True),
-    Route("POST", "uploads", "upload_create", allow_guest=True),
+    Route(
+        "POST",
+        "uploads",
+        "upload_create",
+        body=shapes.OpenUpload,
+        errors=(DriveNotFound, DriveForbidden, DriveConflict, DriveOverQuota),
+        allow_guest=True,
+    ),
     Route("PUT", "uploads/{upload_id}/chunk", "upload_chunk", allow_guest=True),
     Route("POST", "uploads/{upload_id}/finish", "upload_finish", allow_guest=True),
     Route("GET", "nodes/{node}/activity", "node_activity", allow_guest=True),
@@ -178,6 +200,13 @@ ROUTES = (
     Route("GET", "roots/{root}/usage", "root_usage", output=shapes.RootUsage),
     Route("PATCH", "roots/{root}", "root_patch"),
     Route("DELETE", "roots/{root}", "root_purge"),
+    Route(
+        "POST",
+        "roots/{root}/trash/empty",
+        "root_empty_trash",
+        errors=(DriveForbidden, DriveConflict),
+        output=shapes.Purged,
+    ),
     Route("GET", "settings", "settings_get", output=shapes.UserSettings),
     Route(
         "PATCH",
