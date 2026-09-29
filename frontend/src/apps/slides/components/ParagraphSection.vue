@@ -46,7 +46,7 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
-import { activeElement, focusElementId } from '@/apps/slides/stores/element'
+import { activeElement, activeElements, focusElementId } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty } = useTextEditor()
 
@@ -69,6 +69,8 @@ const listStyle = computed(() =>
 
 // a list wraps the block the caret is in, and a table selected as a whole has no caret
 const showListStyle = computed(
-	() => activeElement.value?.type !== 'table' || focusElementId.value === activeElement.value.id,
+	() =>
+		activeElements.value.every((el) => el.type !== 'table') ||
+		focusElementId.value === activeElement.value?.id,
 )
 </script>

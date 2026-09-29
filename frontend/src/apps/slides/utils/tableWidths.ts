@@ -131,6 +131,11 @@ const setColgroup = (table: HTMLTableElement, widths: number[]) => {
 	)
 }
 
+export const shareTableWidth = (total: number, ratios: number[], cellMinWidth = 25) => {
+	const sum = ratios.reduce((a, b) => a + b, 0)
+	return ratios.map((ratio) => Math.max(cellMinWidth, Math.round((total * ratio) / sum)))
+}
+
 // null when the table has no widths of its own to scale: those lay themselves out
 // evenly at whatever width the frame gives them, in the editor and the static render
 // alike, so the frame resize alone is the whole change.

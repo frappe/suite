@@ -378,11 +378,16 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (roomId && participantId) {
 				try {
 					if (socket.scope === 'full') {
-						await deps.participantConnections.leave(
-							socket,
+						const wasLastSubscriber = deps.sttManager?.removeSubscriber(
 							roomId,
-							participantId,
+							socket.id,
 						);
+						await Promise.all([
+							deps.participantConnections.leave(socket, roomId, participantId),
+							wasLastSubscriber
+								? deps.sttManager?.stopRoom(roomId, true)
+								: undefined,
+						]);
 						return;
 					}
 					if (socket.scope === 'recording') {

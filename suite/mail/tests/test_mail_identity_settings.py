@@ -12,7 +12,7 @@ from suite.mail.api.account import (
     get_user_info,
     set_signature,
 )
-from suite.mail.doctype.identity.identity import add_identity, delete_identities, update_identity
+from suite.mail.doctype.identity.identity import add_identity, bulk_delete, update_identity
 from suite.mail.doctype.participant_identity.participant_identity import (
     add_participant_identity,
     update_participant_identity,
@@ -59,7 +59,9 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
                 "Kind regards\nAlex\nour team page <https://example.com/team>",
             )
 
-            delete_identities(self.account, [identity_id])
+            # The settings UI keys its Delete button on this flag and deletes by document name.
+            self.assertTrue(rows[identity_id]["may_delete"])
+            bulk_delete([rows[identity_id]["name"]])
             self.assertNotIn(identity_id, [i["id"] for i in get_identities(self.account)])
 
     def test_participant_identities(self):

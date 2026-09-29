@@ -26,14 +26,12 @@ import {
   onBeforeUnmount,
   shallowRef,
   watch,
-  type Component,
 } from "vue";
 import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 
 import {
   driveNodeRoute,
   openDocumentSession,
-  type DocumentSession,
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
 import { usePageTitle } from "@/platform/page-meta";

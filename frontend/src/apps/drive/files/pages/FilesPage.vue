@@ -101,7 +101,19 @@
 
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Breadcrumbs, Button, ContextMenu, Dropdown, PageHeader, PageHeaderBackButton, PageHeaderMobile, TabButtons, TextInput } from 'frappe-ui'
+import {
+  Breadcrumbs,
+  Button,
+  ContextMenu,
+  Dropdown,
+  PageHeader,
+  PageHeaderBackButton,
+  PageHeaderMobile,
+  TabButtons,
+  TextInput,
+  type ContextMenuOption,
+  type DropdownItem,
+} from 'frappe-ui'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import {
@@ -295,7 +307,7 @@ watch(() => detail.data, (folder) => {
   }
 })
 
-const viewSettings = computed(() => [
+const viewSettings = computed<DropdownItem[]>(() => [
   { group: 'View', options: [
     { label: 'List', icon: 'lucide-list', selected: presentation.value.view === 'list', onClick: () => setPresentation({ view: 'list' }) },
     { label: 'Grid', icon: 'lucide-layout-grid', selected: presentation.value.view === 'grid', onClick: () => setPresentation({ view: 'grid' }) },
@@ -308,7 +320,7 @@ const viewSettings = computed(() => [
   ] }] : []),
   ...(presentation.value.view === 'list' ? [{ group: 'Columns', options: ['owner', 'modified', 'kind', 'size'].map((column) => ({
     label: column === 'kind' ? 'Type' : column[0]!.toUpperCase() + column.slice(1),
-    switch: true,
+    switch: true as const,
     switchValue: presentation.value.columns.includes(column),
     onClick: (visible: boolean) => setColumn(column, visible),
   })) }] : []),
@@ -377,7 +389,11 @@ function switchTrashRoot(value: string | number) {
 }
 function startPreviewObservation() {
   if (stopPreviews) return
-  stopPreviews = observePreviewRefresh({ refresh: () => listing.refetch() })
+  stopPreviews = observePreviewRefresh({
+    refresh: async () => {
+      await listing.refetch()
+    },
+  })
 }
 function refreshPreviews() { void listing.refetch() }
 
@@ -399,7 +415,7 @@ async function openNode(row: DriveNode, newTab = false) {
   else await router.push(href)
 }
 
-function rowMenuOptions(row: DriveNode) {
+function rowMenuOptions(row: DriveNode): ContextMenuOption[] {
   const editable = hasRole(row, DRIVE_ROLES.edit)
   return [
     { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
@@ -412,7 +428,7 @@ function rowMenuOptions(row: DriveNode) {
     { label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') },
     { label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) },
     ...(hasRole(row, DRIVE_ROLES.manage) ? [{ label: 'Share', icon: 'lucide-user-plus', onClick: unavailableShare }] : []),
-    ...(editable ? [{ label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red', onClick: () => trashMutation.run({ node: row.name, state: 'Trashed' }) }] : []),
+    ...(editable ? [{ label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashMutation.run({ node: row.name, state: 'Trashed' }) }] : []),
     { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
   ]
 }

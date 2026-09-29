@@ -1,19 +1,52 @@
 import os
 import re
+from datetime import UTC, datetime
+from typing import Annotated
 
 import frappe
 from croniter import CroniterBadCronError, croniter
 from frappe import _
 from frappe.utils import cint, validate_email_address
 from frappe.utils.caching import request_cache
+from pydantic import AfterValidator
+from pydantic_core import PydanticCustomError
 
 from suite.mail.utils import get_config
+from suite.mail.utils.dt import UTC_DATETIME_FORMAT
 
 # A domain label is 1-63 chars of letters/digits/hyphens (no leading/trailing hyphen); a domain name is
 # two or more such labels joined by dots, at most 253 chars overall (e.g. "example.com").
 DOMAIN_NAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$"
 )
+
+
+# RFC 8620 §1.2: a JMAP Id is 1 to 255 characters of [A-Za-z0-9_-].
+JMAP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,255}\Z")
+
+
+def _jmap_id(value: str) -> str:
+    if not JMAP_ID_PATTERN.fullmatch(value):
+        raise PydanticCustomError("jmap_id", _("not a valid JMAP identifier"))
+    return value
+
+
+def _utc_z(value: str) -> str:
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise PydanticCustomError("utc_z", _("must be a UTC timestamp like 2026-01-31T09:30:00Z")) from None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
+
+
+# A client-supplied id, refused before it can reach a JMAP operation.
+JMAPId = Annotated[str, AfterValidator(_jmap_id)]
+# Any ISO timestamp, re-serialized to the canonical UTC ``...Z`` form; a naive one reads as UTC.
+UtcZ = Annotated[str, AfterValidator(_utc_z)]
 
 
 def is_domain_entry(value: str) -> bool:

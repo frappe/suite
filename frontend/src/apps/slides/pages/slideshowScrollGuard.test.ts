@@ -10,3 +10,9 @@ describe('slideshow root overflow', () => {
 		expect(rootClass).toContain('overflow-clip')
 	})
 })
+
+describe('slideshow browser zoom', () => {
+	it('installs the browser zoom guard', () => {
+		expect(source).toContain('useBrowserZoomGuard()')
+	})
+})

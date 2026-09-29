@@ -82,9 +82,6 @@ describe('a held-key run of undos', () => {
 	})
 
 	it('drops the deferred crop of an element it went on to remove', async () => {
-		const frames: Array<() => void> = []
-		vi.stubGlobal('requestAnimationFrame', (cb: () => void) => frames.push(cb))
-
 		const history = useCommandHistory(slides, { actionOrder, actions })
 
 		history.execute(addElementCommand({ slideId, element: image(1) }))
@@ -105,16 +102,13 @@ describe('a held-key run of undos', () => {
 
 		history.undo()
 		history.undo()
-		await nextTick()
+		for (let i = 0; i < 5; i++) await nextTick()
 
-		expect(frames.length).toBeGreaterThan(0)
-		expect(() => frames.forEach((f) => f())).not.toThrow()
+		expect(slides.value[0].elements).toEqual([])
+		expect(activeElementIds.value).toEqual([])
 	})
 
 	it('drops the stale deferred crop once a later undo has retaken the selection', async () => {
-		const frames: Array<() => void> = []
-		vi.stubGlobal('requestAnimationFrame', (cb: () => void) => frames.push(cb))
-
 		const history = useCommandHistory(slides, { actionOrder, actions })
 
 		history.execute(addElementCommand({ slideId, element: image(1) }))
@@ -141,10 +135,36 @@ describe('a held-key run of undos', () => {
 		history.undo()
 
 		for (let i = 0; i < 5; i++) await nextTick()
-		frames.forEach((f) => f())
 
 		expect(activeElementIds.value).toEqual([])
 		expect(selectionBounds.left).toBe(400)
+	})
+})
+
+describe('a write to the selected element', () => {
+	it('fits the box in the tick after the write, without waiting for a frame', async () => {
+		slides.value = [{ clientId: slideId, elements: [] }] as any
+		slideIndex.value = 0
+		activeElementIds.value = []
+		const history = useCommandHistory(slides, { actionOrder, actions })
+
+		history.execute(addElementCommand({ slideId, element: image(1) }))
+		await nextTick()
+		activeElementIds.value = [1]
+		updateSelectionBounds({ left: 10, top: 10, width: 100, height: 100 })
+
+		history.execute(
+			editElementCommand({
+				slideId,
+				elementIds: [1],
+				property: 'left',
+				oldValue: 10,
+				newValue: 50,
+			}),
+		)
+		for (let i = 0; i < 5; i++) await nextTick()
+
+		expect(selectionBounds.left).toBe(50)
 	})
 })
 

@@ -20,15 +20,6 @@ const setCursorPositionAtEnd = (e: Event) => {
 	selection.addRange(range)
 }
 
-const handleScrollBarWheelEvent = (e: WheelEvent) => {
-	// allow normal scroll behaviour
-	if (!isCmdOrCtrl(e)) return
-
-	// prevent zoom event from triggering
-	e.preventDefault()
-	e.stopPropagation()
-}
-
 const cloneObj = (obj: any) => JSON.parse(JSON.stringify(obj))
 
 const getThumbnailCardStyles = (
@@ -84,10 +75,32 @@ const isCmdOrCtrl = (e: KeyboardEvent | MouseEvent) => {
 
 const normalizeRotation = (deg: number) => ((deg % 360) + 360) % 360
 
+// runs the first call now and the latest of any that follow at the next frame
+const throttleToFrame = (fn: (...args: any[]) => void) => {
+	let frame: number | null = null
+	let latest: any[] | null = null
+
+	const flush = () => {
+		frame = null
+		if (latest) run(...latest)
+	}
+
+	const run = (...args: any[]) => {
+		if (frame) {
+			latest = args
+			return
+		}
+		latest = null
+		frame = requestAnimationFrame(flush)
+		fn(...args)
+	}
+
+	return run
+}
+
 export {
 	generateUniqueId,
 	setCursorPositionAtEnd,
-	handleScrollBarWheelEvent,
 	cloneObj,
 	getThumbnailCardStyles,
 	getDocFromHTML,
@@ -95,4 +108,5 @@ export {
 	sanitizeSlideHTML,
 	isCmdOrCtrl,
 	normalizeRotation,
+	throttleToFrame,
 }

@@ -262,7 +262,7 @@ const saveCurrentState = async () => {
 	} catch (err) {
 		// kept, the older queued edit would ride out on a later push over the newer ones
 		queuedSnapshots.delete(idAtSnapshot)
-		// keep dirty so autosave retries and beforeunload warns; log once per outage
+		// keep dirty so autosave retries; log once per outage
 		if (!saveFailed.value) console.error('Save failed: ', err)
 		saveFailed.value = true
 		if (err?.exc_type === 'TimestampMismatchError') {

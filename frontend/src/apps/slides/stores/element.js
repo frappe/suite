@@ -19,6 +19,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
+import { shareTableWidth } from '../utils/tableWidths'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
 import { commandHistory } from './historyMeta'
@@ -74,6 +75,20 @@ const activeElement = computed(() => {
 		return activeElements.value[0]
 	}
 })
+
+const isMultiSelection = computed(() => activeElementIds.value.length > 1)
+
+const hasTextContent = (element) => ['text', 'table'].includes(element?.type)
+
+const firstEditableElement = computed(() => {
+	if (activeElement.value) return activeElement.value
+	const selected = activeElementIds.value.map(findSlideElement)
+	return selected.find((el) => el && !el.locked) ?? selected[0]
+})
+
+const isTextSelection = computed(
+	() => isMultiSelection.value && activeElements.value.every(hasTextContent),
+)
 
 const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
@@ -152,33 +167,60 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidth, cellStyles) => {
-	// marks need text to sit on, so an empty cell has nothing to style
-	const placeholder = {
-		type: 'text',
-		text: ZWSP,
-		marks: [{ type: 'textStyle', attrs: cellStyles }],
-	}
+const getEmptyTableCells = (rows, cols) =>
+	Array.from({ length: rows }, (_, row) =>
+		Array.from({ length: cols }, () => ({ lines: [], colspan: 1, rowspan: 1, header: row === 0 })),
+	)
 
-	const getCell = (type) => ({
-		type,
-		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+const getInitialTableContent = (cells, columnWidths, cellStyles) => {
+	const getTextColor = ({ color, fill }) =>
+		color || (fill ? guessTextColorFromBackground(fill) : cellStyles.color)
+
+	const getFontSize = ({ size = 1 }) =>
+		Math.min(800, Math.max(5, Math.round(cellStyles.fontSize * size)))
+
+	const getMarks = (style) => [
+		{
+			type: 'textStyle',
+			attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
+		},
+		...['bold', 'italic', 'underline', 'strike']
+			.filter((mark) => style[mark])
+			.map((type) => ({ type })),
+	]
+
+	const getParagraph = (line, style) => ({
+		type: 'paragraph',
+		attrs: { textAlign: style.align || 'left', lineHeight: 1.5 },
 		content: [
-			{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 }, content: [placeholder] },
+			{
+				type: 'text',
+				// marks need text to sit on, so an empty line has nothing to style
+				text: line || ZWSP,
+				marks: getMarks(style),
+			},
 		],
 	})
 
-	const getRow = (cellType) => ({
-		type: 'tableRow',
-		content: Array.from({ length: cols }, () => getCell(cellType)),
+	const getCell = (col, { lines, colspan, rowspan, style = {}, header }) => ({
+		type: header ? 'tableHeader' : 'tableCell',
+		attrs: {
+			colspan,
+			rowspan,
+			colwidth: columnWidths.slice(col, col + colspan),
+			backgroundColor: style.fill,
+		},
+		content: (lines.length ? lines : ['']).map((line) => getParagraph(line, style)),
 	})
 
-	const tableRows = [getRow('tableHeader')]
-	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
+	const getRow = (rowCells) => ({
+		type: 'tableRow',
+		content: rowCells.flatMap((cell, col) => (cell ? [getCell(col, cell)] : [])),
+	})
 
 	const contentJSON = {
 		type: 'doc',
-		content: [{ type: 'table', content: tableRows }],
+		content: [{ type: 'table', content: cells.map(getRow) }],
 	}
 
 	return generateHTML(contentJSON, extensions)
@@ -342,7 +384,7 @@ const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	)
 }
 
-const measureHTML = (html) => {
+const createMeasuringDiv = (html) => {
 	const tempTextElement = document.createElement('div')
 
 	// the element's own markup and CSS, or the measurement drifts by sub-pixels
@@ -353,15 +395,26 @@ const measureHTML = (html) => {
 	})
 	tempTextElement.innerHTML = html
 
-	document.body.appendChild(tempTextElement)
+	return tempTextElement
+}
+
+// every rect read after every append, so the lot costs one layout
+const measureHTMLList = (htmls) => {
+	const divs = htmls.map(createMeasuringDiv)
+	divs.forEach((div) => document.body.appendChild(div))
 
 	// fractional, to agree with the selection bounds the resize observer writes
-	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
+	const sizes = divs.map((div) => {
+		const { width: elementWidth, height: elementHeight } = div.getBoundingClientRect()
+		return { elementWidth, elementHeight }
+	})
 
-	document.body.removeChild(tempTextElement)
+	divs.forEach((div) => document.body.removeChild(div))
 
-	return { elementWidth, elementHeight }
+	return sizes
 }
+
+const measureHTML = (html) => measureHTMLList([html])[0]
 
 const getTextElementDimensions = (presets) => measureHTML(getElementContent(presets))
 
@@ -415,12 +468,18 @@ const addTextElement = async (text, position, contentHTML = null) => {
 	)
 }
 
-const addTableElement = async (rows = 3, cols = 3) => {
+const addTableElement = async (cells, columnRatios) => {
+	const rows = cells.length
+	const cols = cells[0].length
+
 	// a table states its own width, so one wider than the slide is placed hanging
 	// off both edges instead of being fitted to it
 	const slideWidth = slideBounds.width / slideBounds.scale
-	const columnWidth = Math.min(150, Math.floor(slideWidth / cols))
-	const width = cols * columnWidth
+	const columnWidths = shareTableWidth(
+		cols * Math.min(150, Math.floor(slideWidth / cols)),
+		columnRatios || Array(cols).fill(1),
+	)
+	const width = columnWidths.reduce((total, columnWidth) => total + columnWidth, 0)
 
 	// rows size themselves to their content, so this only places the new element
 	const position = getLeftTopForCenteredElement(width, rows * 40)
@@ -437,12 +496,12 @@ const addTableElement = async (rows = 3, cols = 3) => {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
 		left: position.left,
-		top: position.top,
+		top: Math.max(0, position.top),
 		width,
 		opacity: 100,
 		type: 'table',
 		color: cellStyles.color,
-		content: getInitialTableContent(rows, cols, columnWidth, cellStyles),
+		content: getInitialTableContent(cells, columnWidths, cellStyles),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -1142,7 +1201,7 @@ const ensureExplicitHeight = (element) => {
 	element.height = elementDiv.offsetHeight
 }
 
-const { initTextEditor, activeEditor } = useTextEditor()
+const { initTextEditor, activeEditor, showFirstEditableStyles } = useTextEditor()
 let editorOldText = ''
 
 const getEditorHTML = () => {
@@ -1281,6 +1340,14 @@ watch(
 			blurAndSaveContent(oldElement)
 		}
 		replaceEditor(() => initEditorForElement(element))
+	},
+)
+
+// several boxes have no editor to refresh the panel from, so the first editable one is read instead
+watch(
+	[activeElementIds, () => firstEditableElement.value?.content, activeEditor],
+	() => {
+		if (!activeEditor.value && isMultiSelection.value) showFirstEditableStyles()
 	},
 )
 
@@ -1433,6 +1500,10 @@ export {
 	dragOccurred,
 	activeElements,
 	activeElement,
+	firstEditableElement,
+	isMultiSelection,
+	hasTextContent,
+	isTextSelection,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,
@@ -1467,9 +1538,11 @@ export {
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
+	getEmptyTableCells,
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
 	getShapeDefaults,
 	rememberMarkers,
+	measureHTMLList,
 }

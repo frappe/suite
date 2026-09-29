@@ -288,7 +288,6 @@ BASELINE_DEBT = {
             "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.mail_queue.mail_queue",
             "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.jmap",
-            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.stalwart",
             "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.utils",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.push_subscription.push_subscription",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.user_account.user_account",
@@ -310,7 +309,6 @@ BASELINE_DEBT = {
             "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.api.mail",
             "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.tests.base",
             "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.api.admin",
-            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.stalwart",
             "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.tests.base",
             "suite/mail/api/jmap.py|import|suite.calendar.doctype.calendar_event.calendar_event",
             "suite/mail/tests/test_jmap_calendar_event_notification.py|import|suite.calendar.doctype.event_notification.event_notification",
@@ -332,6 +330,68 @@ BASELINE_DEBT = {
             "suite/api/account.py|import|suite.mail.utils.user",
             "suite/tests/ci_smoke.py|dotted-string|suite.meet.api.recording.reconcile_pending_recordings",
             "suite/www/event_rsvp.py|import|suite.calendar.api.rsvp",
+        ),
+    ),
+    **_debt(
+        "Mail, Calendar, and Suite core owners",
+        "Remove when Mail declares a package-root interface and Suite settings reach Mail through composition.",
+        # Source: upstream `develop`, merged at a3dba155c. Mail has no
+        # package-root interface to import through, and `suite_core` reaching
+        # Mail needs a composition seam, so neither is a one-line fix.
+        (
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.directory",
+            "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_calendar_event_search.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.directory",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py"
+            "|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/mail/tests/test_suite_cloud_gating.py"
+            "|dotted-string|suite.calendar.doctype.calendar_event.mailing_lists.get_domains",
+            "suite/mail/tests/test_suite_cloud_gating.py"
+            "|dotted-string|suite.calendar.doctype.calendar_event.mailing_lists.log_mail_error",
+            "suite/mail/tests/test_suite_cloud_gating.py|import|suite.calendar.doctype.calendar_event.mailing_lists",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|dotted-string|suite.mail.directory.push_site_profile",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail.utils",
+            "suite/suite_core/test_utils.py|import|suite.mail.utils",
+        ),
+    ),
+    **_debt(
+        "Meet and Drive owners",
+        "Remove when Meet recording reaches Drive through `suite.drive` (tickets 15-23).",
+        # Source: upstream `develop`, merged at a3dba155c. Recording ingest
+        # and its tests still use legacy Drive file helpers that `suite.drive`
+        # does not export.
+        (
+            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.files.FileManager.upload_file",
+            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.files.FileManager.upload_file#2",
+            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.update_file_size",
+            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.update_file_size#2",
+            "suite/meet/api/test/test_recording.py|import|suite.drive.utils",
+            "suite/meet/api/test/test_recording_reliability.py"
+            "|dotted-string|suite.drive.utils.files.FileManager.upload_file",
+            "suite/meet/api/test/test_recording_reliability.py|dotted-string|suite.drive.utils.update_file_size",
+            "suite/meet/recording/ingest.py|import|suite.drive.utils#2",
+            "suite/meet/recording/ingest.py|import|suite.drive.utils.files#2",
+            "suite/meet/recording/ingest.py|import|suite.drive.utils.files#3",
+        ),
+    ),
+    **_debt(
+        "Suite Writer and Drive owners",
+        "Remove when Drive exposes search through `suite.drive` or Writer stops merging legacy Drive results.",
+        # Source: upstream `develop`, merged at a3dba155c. Legacy Drive search
+        # is not part of the `suite.drive` interface.
+        ("suite/writer/api/general.py|import|suite.drive.api.files",),
+    ),
+    **_debt(
+        "Suite composition",
+        "Remove when Mail declares the account lookup the route registry needs.",
+        # Source: this branch (47311aa11, the `/api/suite/<owner>` route
+        # registry), not upstream. Mail has no package-root interface yet.
+        (
+            "suite/calendar/http/routes.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/meet/http/routes.py|import|suite.mail.doctype.user_account.user_account",
         ),
     ),
 }

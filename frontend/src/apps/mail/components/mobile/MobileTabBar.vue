@@ -10,7 +10,7 @@
 			!keyboardOpen &&
 			!isMobileSelectionActive &&
 			!isSearchRoute &&
-			!showSearchModal &&
+			!root.paletteOpen &&
 			!screenerActive &&
 			!profileActive
 		"
@@ -74,36 +74,26 @@
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
-			<!-- Opening the apps sheet dismisses the query editor overlay, as every other tab does. -->
-			<MobileAppTab app-id="mail" @update:open="(open) => open && (showSearchModal = false)" />
+			<MobileAppTab app-id="mail" />
 		</div>
 	</nav>
 
-	<!-- The search overlay is mounted here, outside the views, so it outlives the
-	     navigation to the search page that opening it begins with; the title
-	     header's search button raises it through the shared state. -->
-	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Icon } from 'frappe-ui/experimental'
 
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
-import {
-	useFolderSheet,
-	useKeyboardOpen,
-	useMobileSearch,
-	useMobileSelection,
-} from '@/apps/mail/utils/composables'
+import { useFolderSheet, useKeyboardOpen, useMobileSearch, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
+import { useRootStore } from '@/stores/root'
 import MobileAppTab from '@/components/mobile/MobileAppTab.vue'
 import { iconClass, labelClass, tabClass } from '@/components/mobile/mobileClasses'
 
@@ -112,10 +102,11 @@ import type { MailboxData } from '@/apps/mail/types'
 const route = useRoute()
 const router = useRouter()
 const store = userStore()
+const root = useRootStore()
 const user = inject('$user') as { data: Record<string, any> }
 const { mailboxes, allInboxesUnread } = store
 const { openFolderSheet } = useFolderSheet()
-const { isSearchModalOpen: showSearchModal, isSearchRoute } = useMobileSearch()
+const { isSearchRoute } = useMobileSearch()
 const { isMobileSelectionActive } = useMobileSelection()
 const keyboardOpen = useKeyboardOpen()
 
@@ -151,14 +142,11 @@ const screenerActive = computed(() =>
 )
 const profileActive = computed(() => route.name === 'mail-profile')
 
+watch(isSearchRoute, (active) => {
+	if (!active) root.paletteOpen = false
+})
+
 const openMail = () => {
-	// The query editor overlay leaves the bar visible; a tab tap first dismisses it. It
-	// only ever covers the search page, so the tap always navigates on to the inbox.
-	if (showSearchModal.value) {
-		showSearchModal.value = false
-		router.push('/mail')
-		return
-	}
 	// Re-tapping the active Mail tab opens the folder switcher.
 	if (mailActive.value) {
 		openFolderSheet()
@@ -171,7 +159,6 @@ const openMail = () => {
 }
 
 const openScreener = () => {
-	showSearchModal.value = false
 	if (screenerActive.value) return
 	router.push({ name: 'mail-screener', params: { accountId: store.accountId } })
 }
@@ -181,7 +168,6 @@ const openScreener = () => {
 // to the root of its own stack: the open settings sub-page is a query on this route,
 // so dropping the query closes it.
 const openProfile = () => {
-	showSearchModal.value = false
 	if (profileActive.value) {
 		if (route.query.tab) router.replace({ query: {} })
 		return

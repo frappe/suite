@@ -11,7 +11,7 @@
         :placeholder="__('Acme Inc.')"
         @keydown.enter="save"
       />
-      <ErrorMessage :message="saveWorkspace.error" />
+      <ErrorMessage :message="saveWorkspace.error instanceof Error ? saveWorkspace.error : undefined" />
     </div>
   </div>
 </template>

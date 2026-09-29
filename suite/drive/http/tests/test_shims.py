@@ -2706,7 +2706,7 @@ class TestFileForwarders(ShimCase):
         nodes = self.stub("node_core")
         nodes.views.return_value = {"rows": [node_row()], "next_cursor": None}
         row = shims.search("report")[0]
-        for key in ("name", "file_name", "file_type", "is_folder", "owner", "user_name", "full_name"):
+        for key in ("name", "file_name", "file_type", "is_folder", "modified", "owner", "user_name", "full_name"):
             self.assertIn(key, row)
         self.assertEqual(row["file_name"], "Report.pdf")
 

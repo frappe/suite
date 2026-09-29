@@ -260,6 +260,7 @@ const {
 	threadIDs,
 	threadByOffset,
 	takeResetWindow,
+	resetLimit,
 	beginReset,
 	beginRefresh,
 	onResetSuccess,
@@ -289,12 +290,13 @@ const { filter, FILTER_OPTIONS, filterTitle: title } = useStoredFilter({
 	onChange: () => resetThreads(),
 })
 
-// Reset resource: always the first window, over-fetching one row (PAGE_LENGTH + 1) to detect whether
-// more exist without a total.
+// Reset resource: the window starts at the top and runs as deep as the composable asks (see
+// resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which loaded
+// rows are gone. Over-fetches one row to detect whether more exist without a total.
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_all_inbox_threads',
 	makeParams: () => ({
-		limit: PAGE_LENGTH + 1,
+		limit: resetLimit(),
 		start: 0,
 		filter_by: filter.value,
 	}),
@@ -775,8 +777,9 @@ const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
 }
 
 // Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
-// The merged list is inbox-scoped, so its rows always summarise from the whole conversation — never
-// from a folder, as Sent and Drafts do. No undo yet: the undo requests would have to be scoped to the
+// The merged list is inbox-scoped, so its rows always describe the whole conversation — never a
+// folder's own latest message, as Sent and Drafts do — while taking their date from the account's
+// Inbox, which each row carries. No undo yet: the undo requests would have to be scoped to the
 // row's own account rather than the active one.
 const { setUndoAction } = useUndo()
 
@@ -785,6 +788,7 @@ const { runMailRemoval } = useMailRemoval({
 	mailThreadRef: mailThread,
 	onEmptied: () => closeThread(),
 	removeRow: (_mail, thread) => (thread ? removeFromList(thread) : () => {}),
+	viewMailbox: (thread) => thread.inbox,
 })
 
 // The pane's folder menus are scoped to the thread's own account, so its ids have to be resolved
@@ -805,7 +809,20 @@ const handleMailMove = (mail: Mail, target: string) => {
 	const folder = folderName(target)
 	runMailRemoval(
 		mail,
-		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }, account),
+		() =>
+			paneCall(
+				'move_mails',
+				// A junked copy has to lose the keyword or it lands in the target and is hidden there
+				// — a junked message is only ever shown in Junk (see visible_in_mailbox server-side).
+				// Not when Junk *is* the target, which would file it there and then hide it. The id
+				// is the row's own account's, so the junk mailbox is read off the pane's scope.
+				{
+					ids: [mail.id],
+					mailbox: target,
+					clear_junk: mail.junk === 1 && target !== paneScope.mailboxIds.value.junk,
+				},
+				account,
+			),
 		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
 		undoMail(mail, account, __('Mail moved back.')),
 	)
@@ -1022,20 +1039,23 @@ const unreadPrefix = computed(() =>
 
 usePageMeta(() => appPageMeta(`${unreadPrefix.value} ${__('All Inboxes')}`, 'Mail'))
 
-// Keep the merged list fresh: poll periodically and react to new-mail push events (which can arrive
-// for any account). Both merge the newest window at the top, preserving scroll.
+// Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
+// on another device — which can arrive for any account. Either way the newest window is merged into
+// the list, preserving scroll.
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const onNewMail = () => refreshThreads()
 
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
 	socket.on('new_mail_created', onNewMail)
+	socket.on('mail_changed', onNewMail)
 	window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	socket.off('new_mail_created', onNewMail)
+	socket.off('mail_changed', onNewMail)
 	window.removeEventListener('keydown', handleKeyDown)
 })
 </script>

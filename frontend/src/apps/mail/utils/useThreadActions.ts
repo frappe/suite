@@ -4,12 +4,12 @@ import { createResource } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import {
-	canMoveToMailbox,
 	getIcon,
 	raiseOptimisticToast,
 	raisePromiseToast,
 	raiseToast,
 } from '@/apps/mail/utils'
+import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds } from '@/apps/mail/utils/mailCopies'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
@@ -77,6 +77,15 @@ export function useThreadActions(deps: {
 	const { mailboxes, mailboxIds } = store
 	const { setUndoAction, undo } = useUndo()
 	const { promptBlockSenders, willJunkSenders } = useBlockSender()
+
+	// The loaded rows behind the current selection. In Search each row is itself a mail rather than
+	// a thread summary, but it carries its mailboxes all the same (that's the folder tag on the
+	// row), so the folder menus can ask where a selection sits without caring which of the two it is.
+	const selectedRows = computed<Thread[]>(() =>
+		(threadsResource.value.data ?? []).filter((t: Thread) =>
+			selections.value.includes(t.thread_id),
+		),
+	)
 
 	// Every mail the given threads hold — the copies included. A thread's messages are what the pane
 	// *shows*, and a message the account holds twice (mail to yourself) shows once; an action has to
@@ -167,15 +176,21 @@ export function useThreadActions(deps: {
 		}) => ({ account: store.accountId, ids, mailbox: target, clear_junk }),
 	})
 
-	const moveToOptions = computed(() =>
-		mailboxes.data
-			?.filter((m) => canMoveToMailbox(m.id, mailbox.value, mailboxIds))
+	// Where the selection can go, read off the selection itself rather than off the open mailbox —
+	// so the menu is just as answerable in Search and Starred, which are queries and not mailboxes.
+	// In a plain mailbox the two agree: every row there is in it, so it subtracts itself.
+	const moveToOptions = computed(() => {
+		const filedIn = commonMailboxIds(selectedRows.value)
+		return mailboxes.data
+			?.filter((m) => canMoveToMailbox(m.id, filedIn, mailboxIds))
 			.map((m) => ({
 				label: m._name,
 				icon: h(Icon, { name: getIcon(m), class: FOLDER_ICON_COLOR_MAP[m.color] }),
 				onClick: () => handleMoveThreads({ [m.id]: selections.value }),
-			})),
-	)
+			}))
+	})
+
+	const showMoveTo = computed(() => !!selections.value.length && !!moveToOptions.value?.length)
 
 	const addMails = createResource({
 		url: 'suite.mail.api.mail.add_mails_to_mailbox',
@@ -229,14 +244,12 @@ export function useThreadActions(deps: {
 					(!m.role || ['inbox', 'archive'].includes(m.role)) &&
 					m.id !== mailboxIds.screener,
 			)
-			.filter((m) => {
-				const selected = threadsResource.value.data?.filter((t: Thread) =>
-					selections.value.includes(t.thread_id),
-				)
-				return !selected?.every((t: Thread) =>
-					t.mailboxes.some((mb) => mb.mailbox_id === m.id),
-				)
-			})
+			.filter(
+				(m) =>
+					!selectedRows.value.every((t: Thread) =>
+						t.mailboxes.some((mb) => mb.mailbox_id === m.id),
+					),
+			)
 			.map((m) => ({
 				label: m._name,
 				icon: h(Icon, { name: getIcon(m), class: FOLDER_ICON_COLOR_MAP[m.color] }),
@@ -658,9 +671,17 @@ export function useThreadActions(deps: {
 						moveMails.submit({ ids: nonSentIds, mailbox: target, clear_junk: true }),
 					)
 				// A sent mail keeps only Sent + the target: replace its mailboxes with the target
-				// (dropping the rest), then re-add Sent.
+				// (dropping the rest), then re-add Sent. Clearing junk is part of that, as it is for
+				// every other move: a copy that kept the keyword would land in the target and be
+				// hidden there, since a junked message is only ever shown in Junk (server-side, see
+				// visible_in_mailbox). Unconditional, unlike the per-message moves that test
+				// `mail.junk`, because a list row doesn't always carry it — a search result has no
+				// junk field at all. Membership is unaffected: clearing files the mail in the Inbox,
+				// and the two ops below settle where it ends up.
 				if (sentIds.length) {
-					forward.push(() => moveMails.submit({ ids: sentIds, mailbox: target }))
+					forward.push(() =>
+						moveMails.submit({ ids: sentIds, mailbox: target, clear_junk: true }),
+					)
 					forward.push(() =>
 						addMails.submit({ ids: sentIds, mailbox_id: mailboxIds.sent }),
 					)
@@ -954,8 +975,8 @@ export function useThreadActions(deps: {
 				if (removed.length) restoreThreadsToList(removed)
 			}
 		},
-		outgoingMailbox: () =>
-			[mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value) ? mailbox.value : undefined,
+		viewMailbox: () => mailbox.value,
+		outgoing: () => [mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value),
 		afterForward: refillIfEmpty,
 	})
 
@@ -1060,9 +1081,11 @@ export function useThreadActions(deps: {
 		// Resource exposed to the template (MailThread @set-flagged)
 		setFlagged,
 		// Toolbar option lists
+		selectedRows,
 		moveToOptions,
 		addToOptions,
 		removeFromOptions,
+		showMoveTo,
 		showAddTo,
 		showRemoveFrom,
 		// Junk/Delete confirmation dialog

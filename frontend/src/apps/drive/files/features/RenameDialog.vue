@@ -22,21 +22,21 @@ const props = defineProps<{ node: DriveNode | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ renamed: [node: DriveNode] }>()
 const title = ref('')
-const error = ref<string | null>(null)
+const error = ref<string>()
 const mutation = useMutation(renameNode(), { silent: ['DriveConflict'] })
 
 watch(
   () => props.node,
   (node) => {
     title.value = node?.title ?? ''
-    error.value = null
+    error.value = undefined
   },
   { immediate: true },
 )
 
 async function submit() {
   if (!props.node || !title.value.trim()) return
-  error.value = null
+  error.value = undefined
   const renamed = await mutation.run({ node: props.node.name, title: title.value.trim() })
   if (!renamed) {
     error.value = mutation.error?.message ?? 'Could not rename this item.'

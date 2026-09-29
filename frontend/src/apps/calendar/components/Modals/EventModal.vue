@@ -4,6 +4,7 @@ import {
 	AlignLeft,
 	Bell,
 	Briefcase,
+	CalendarDays,
 	ChevronDown,
 	Clock,
 	Copy,
@@ -24,6 +25,7 @@ import {
 	toast,
 	useCall,
 } from 'frappe-ui'
+import { DialogDescription } from 'reka-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import { submit as submitCall } from '@/apps/meet/utils/request'
@@ -37,8 +39,11 @@ import {
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
+import { defaultCalendar, destinationOptions } from '@/apps/calendar/utils/calendars'
+import { eventColor } from '@/apps/calendar/utils/color'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -56,7 +61,7 @@ const emit = defineEmits(['reloadEvents'])
 const user = inject('$user')
 const dayjs = inject('$dayjs')
 const store = userStore()
-const { participantIdentities } = store
+const { participantIdentities, calendars } = store
 const { isMobile } = useScreenSize()
 
 const isNew = computed(() => !selectedEvent?.calendarEvent)
@@ -96,6 +101,9 @@ const getEventData = () => {
 	return {
 		title: ev.title || '',
 		organizer: ev.organizer,
+		account: ev.account,
+		// Every calendar it is on: an event on two stays on both unless the picker moves it.
+		calendar_ids: ev.calendars?.map((c) => c.calendar_id) ?? [],
 		isAllDay: ev.isAllDay,
 		repeat: !!ev.recurrence_rule?.frequency,
 		startDate: start.format('YYYY-MM-DD'),
@@ -158,11 +166,16 @@ const getDefaultEventData = () => {
 	// all day. Off by default, and a switch away when it isn't.
 	const isAllDay = selectedEvent?.isFullDay === true
 
+	// Shared calendars are never writable, so the default is always the account's own.
+	const calendar = defaultCalendar(calendars.data)
 	const identity = store.organizerIdentity
 
 	return {
 		title: '',
 		organizer: identity?.email,
+		account: store.accountId,
+		// Empty until the list has loaded, and then the server puts it in the default.
+		calendar_ids: [calendar?.id].filter(Boolean),
 		isAllDay,
 		repeat: false,
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
@@ -247,6 +260,8 @@ const eventParams = computed(() => {
 	}
 
 	if (event.title) params.title = event.title
+	// Updates are a full replace: an event saved without its calendars lands in the default one.
+	if (event.calendar_ids?.length) params.calendar_ids = event.calendar_ids
 	if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
 
 	// Saving the whole series from one of its occurrences. The start on screen belongs to that
@@ -506,6 +521,19 @@ const toggleRepeat = () => {
 // their frame corner to corner and read a size above the round ones beside them.
 const FIELD_ICON_SIZE = 16
 
+// The picker names a calendar as `account|id`; the event holds the two apart.
+const eventCalendar = computed({
+	get: () => event.calendar_ids?.[0] && `${event.account}|${event.calendar_ids[0]}`,
+	set: (name: string) => (event.calendar_ids = [name.split('|')[1]]),
+})
+
+// Only the calendars it can go on — its own account's writable ones — and the one it is on.
+const eventCalendarOptions = computed(() =>
+	destinationOptions(store.calendarOptions, eventCalendar.value).filter(
+		(option) => option.account === event.account,
+	),
+)
+
 const repeatLabel = computed(() => {
 	if (!event.recurrence_rule?.frequency) return __('Repeat')
 	const message = getRepeatMessage(event.recurrence_rule)
@@ -522,7 +550,7 @@ const handleSuccess = () => {
 const createEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
+		account: event.account,
 		...eventParams.value,
 		draft: savingDraft.value,
 		send_scheduling_messages: sendEmail,
@@ -542,7 +570,7 @@ const createMeetEvent = {
 	},
 	submit: ({ sendEmail }: { sendEmail: boolean }) =>
 		submitCall(createMeetEventCall, {
-			account: store.accountId,
+			account: event.account,
 			...eventParams.value,
 			send_scheduling_messages: sendEmail,
 		}),
@@ -554,7 +582,8 @@ const createMeetEvent = {
 // nothing the series says about it. So the edited wall clock is converted into the event's own
 // zone and the zone itself is not sent.
 const instancePatch = computed(() => {
-	const { time_zone: zone, ...rest } = patch.value
+	// Nor its calendars: an override can't move one occurrence to another calendar.
+	const { time_zone: zone, calendar_ids: _, ...rest } = patch.value
 	const eventZone = selectedEvent.calendarEvent?.time_zone
 	// An all-day start is a date, held and shown in the event's own terms — there is no viewer
 	// clock to translate, and translating anyway moves the occurrence off its day.
@@ -572,7 +601,7 @@ const instancePatch = computed(() => {
 const editEventInstance = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
+		account: event.account,
 		master_id: selectedEvent.calendarEvent.master_id,
 		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
 		patch: instancePatch.value,
@@ -587,7 +616,7 @@ const editEventInstance = createResource({
 const splitSeries = createResource({
 	url: 'suite.calendar.api.split_calendar_event_series',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
+		account: event.account,
 		master_id: selectedEvent.calendarEvent.master_id,
 		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
 		...eventParams.value,
@@ -599,9 +628,8 @@ const splitSeries = createResource({
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id,
+		account: event.account,
+		id: serverEventId(selectedEvent.calendarEvent),
 		uid: selectedEvent.calendarEvent.uid,
 		...eventParams.value,
 		draft: savingDraft.value,
@@ -646,7 +674,7 @@ const submitEvent = (sendEmail: boolean) => {
 		const alreadyMinted = (event.links || []).some((l: any) => l?.href?.includes('/meet/'))
 		if (attachMeetLink && !alreadyMinted) {
 			const { meeting_url } = await submitCall(createMeetLink, {
-				account: store.accountId,
+				account: event.account,
 				title: event.title,
 			})
 			event.links = [...(event.links || []), { href: meeting_url, content_type: 'text/html' }]
@@ -710,8 +738,8 @@ const leave = () => {
 
 const discardDraft = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
-	makeParams: ({ id }: { id: string }) => ({
-		account: store.accountId,
+	makeParams: ({ id, account }: { id: string; account: string }) => ({
+		account,
 		ids: [id],
 		send_scheduling_messages: false,
 	}),
@@ -728,14 +756,16 @@ const saveDraftAndLeave = async () => {
 		return
 	}
 	savingDraft.value = true
+	// Read before the save closes the form: the undo outlives it.
+	const account = event.account
 	try {
 		// The plain create/update: a draft has no Meet room and no per-instance edit.
 		const result = await (isNew.value ? createEvent : editEvent).submit({ sendEmail: false })
 		const id = isNew.value
 			? result
-			: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id
+			: serverEventId(selectedEvent.calendarEvent)
 		toast.success(__('Draft saved.'), {
-			action: { label: __('Discard'), onClick: () => discardDraft.submit({ id }) },
+			action: { label: __('Discard'), onClick: () => discardDraft.submit({ id, account }) },
 		})
 	} catch {
 		toast.error(__('Could not save the draft. Please try again.'))
@@ -899,7 +929,7 @@ const handleSaveClick = () => {
 }
 
 const dialogTitle = computed(() =>
-	isNew.value ? __('Add Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
+	isNew.value ? __('New Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
 )
 
 const AVAILABILITY_OPTIONS = [
@@ -928,7 +958,11 @@ const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
 	// At the head of a series "this and following" reaches exactly what "all events"
 	// reaches, so the list does not ask the same question twice.
-	options: scopeOptions({ isFirst: isFirstOccurrence(selectedEvent?.calendarEvent) }),
+	options: scopeOptions({
+		isFirst: isFirstOccurrence(selectedEvent?.calendarEvent),
+		// An occurrence can't sit on a calendar its series is not on, so a move takes more than one.
+		unavailable: 'calendar_ids' in patch.value ? ['instance'] : [],
+	}),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))
@@ -947,6 +981,9 @@ const recurringScopeModalProps = computed(() => ({
 		@update:open="(open) => (open ? (show = true) : leave())"
 	>
 		<template #default>
+			<DialogDescription class="sr-only">
+				{{ isNew ? __('Create a calendar event.') : __('Edit this calendar event.') }}
+			</DialogDescription>
 			<!-- On a phone the dialog is the screen: 85vh of a 4xl box left the form in
 			     a letterbox with its own scrollbar inside the page's. -->
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
@@ -1178,6 +1215,26 @@ const recurringScopeModalProps = computed(() => ({
 								</div>
 							</div>
 
+							<!-- calendar -->
+							<!-- Only where there is a choice: with one calendar the row would name it and do nothing. -->
+							<div v-if="eventCalendarOptions.length > 1" class="flex gap-3">
+								<CalendarDays :size="FIELD_ICON_SIZE" class="icon mt-7 shrink-0 text-ink-gray-5" />
+								<FormControl
+									v-model="eventCalendar"
+									type="select"
+									:label="__('Calendar')"
+									:options="eventCalendarOptions"
+									class="min-w-0 flex-1"
+								>
+									<template #item-prefix="{ item }">
+										<span
+											class="size-2.5 shrink-0 rounded-full"
+											:style="{ background: eventColor(item.color) }"
+										/>
+									</template>
+								</FormControl>
+							</div>
+
 							<!-- availability & visibility -->
 							<div class="flex gap-3">
 								<Briefcase :size="FIELD_ICON_SIZE" class="icon mt-7 shrink-0 text-ink-gray-5" />
@@ -1224,7 +1281,7 @@ const recurringScopeModalProps = computed(() => ({
 						</div>
 						<ParticipantSelector
 							v-model="event.participants"
-							:account="store.accountId"
+							:account="event.account"
 							:display-participants="participants"
 							label=""
 						/>
@@ -1277,6 +1334,8 @@ const recurringScopeModalProps = computed(() => ({
 		:is-new="isNew"
 		:disable-save="disableSave"
 		:participants="participants"
+		v-model:calendar="eventCalendar"
+		:calendar-choices="eventCalendarOptions"
 		:meet-url="meetUrl"
 		:meet-link-display="meetLinkDisplay"
 		@cancel="cancel"

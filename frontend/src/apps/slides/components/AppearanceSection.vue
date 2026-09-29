@@ -1,8 +1,8 @@
 <template>
 	<Section label="Appearance">
 		<NumberControl
-			v-if="activeElement.type == 'text'"
-			:modelValue="textOpacity"
+			v-if="isMultiSelection || firstEditableElement.type == 'text'"
+			:modelValue="selectionOpacity"
 			label="Opacity"
 			suffix="%"
 			:min="0"
@@ -13,7 +13,7 @@
 		/>
 		<NumberControl
 			v-else
-			:modelValue="activeElement.opacity"
+			:modelValue="firstEditableElement.opacity"
 			label="Opacity"
 			suffix="%"
 			:min="0"
@@ -36,7 +36,7 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { firstEditableElement, isMultiSelection } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty } = useTextEditor()
 
@@ -46,4 +46,8 @@ const textOpacity = computed(() => {
 	const value = parseFloat(editorStyles.opacity)
 	return Number.isNaN(value) ? 100 : value
 })
+
+const selectionOpacity = computed(() =>
+	firstEditableElement.value.type == 'text' ? textOpacity.value : firstEditableElement.value.opacity,
+)
 </script>

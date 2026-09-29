@@ -8,10 +8,12 @@ import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
+import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
-import type { ComposeMailData, Identity, UserResource } from '@/apps/mail/types'
+import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
+import type { RecipientField } from '@/apps/mail/utils/recipientFields'
 import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
@@ -139,6 +141,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// ── What's in the mail ──────────────────────────────────────────────────────────────────────
 
 	const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
+
+	/**
+	 * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
+	 * all three lists and a recipient field owns only its own — a field asked to give someone up has
+	 * nowhere to put them.
+	 */
+	const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
+		moveRecipientBetweenFields(mail, recipient.email, from, to)
 
 	const isBodyEmpty = computed(() => {
 		if (!mail.html_body) return true
@@ -592,6 +602,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		updateOriginalMail,
 		isDraftUpdated,
 		isRecipientsEmpty,
+		moveRecipient,
 		isBodyEmpty,
 		isMailEmpty,
 		isLoading,

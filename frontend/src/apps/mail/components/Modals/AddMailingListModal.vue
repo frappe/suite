@@ -32,7 +32,7 @@
 					:placeholder="__('One email address per line')"
 				/>
 				<ErrorMessage
-					:message="addList.error && (addList.error?.messages?.[0] || addList.error?.message || __('Request failed.'))"
+					:message="domainsError || (addList.error && (addList.error?.messages?.[0] || addList.error?.message || __('Request failed.')))"
 				/>
 			</div>
 		</template>
@@ -44,6 +44,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
+import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
@@ -55,7 +56,7 @@ const domain = ref('')
 const description = ref('')
 const recipients = ref('')
 
-const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
+const { domains, domainsError } = useEnabledDomains(show)
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
 
 const toLines = (text: string) =>

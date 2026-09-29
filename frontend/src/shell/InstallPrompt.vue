@@ -80,7 +80,7 @@ const route = useRoute()
 const installable = computed(() => isInstallableApp(route.meta.appId))
 
 // Initialize deferredPrompt for use later to show browser install prompt.
-const deferredPrompt = ref(null)
+const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
 const showDialog = ref(false)
 const iosInstallMessage = ref(false)
 
@@ -111,8 +111,7 @@ window.addEventListener('appinstalled', () => {
 })
 
 const install = () => {
-	deferredPrompt.value.prompt()
+	void deferredPrompt.value?.prompt()
 	showDialog.value = false
 }
 </script>
-

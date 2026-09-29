@@ -64,6 +64,14 @@ export const modeForRoute = (name: unknown) => {
 /** Every route that is a view, on either device. */
 export const VIEW_ROUTES = MOBILE_VIEWS.map((view) => VIEWS[view].route)
 
+/**
+ * Whether a route name is one of the views, as opposed to the calendar's other pages —
+ * profile, search, the shortcut records the guard expands. The phone writes its date and
+ * view into the URL as it moves, and only a view route is somewhere that belongs.
+ */
+export const isViewRoute = (name: unknown): name is string =>
+	typeof name === 'string' && VIEW_ROUTES.includes(name)
+
 /** The day a route names, or today when it names none — the way the views write it. */
 export const routeDate = (params: { year?: unknown; month?: unknown; day?: unknown }) => {
 	const { year, month, day } = params

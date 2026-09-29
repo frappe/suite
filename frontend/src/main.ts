@@ -6,6 +6,8 @@ import { createPinia } from "pinia";
 import App from "@/App.vue";
 import router from "@/router";
 import { initSentry } from "@/boot/sentry";
+import { clearSlidesUserData } from "@/apps/slides/utils/serviceWorker";
+import { useSession } from "@/platform/session";
 import { initializeTheme } from "@/platform/theme";
 import {
   ready as translationsReady,
@@ -13,6 +15,10 @@ import {
 } from "@/platform/translation";
 
 const app = createApp(App);
+
+// The Slides service worker keeps this user's responses. Every logout path ends
+// in the platform session, so the next user never receives them.
+useSession().onLogout(clearSlidesUserData);
 
 await Promise.all([
   initSentry(app, router),

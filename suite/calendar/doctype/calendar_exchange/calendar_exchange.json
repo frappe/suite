@@ -236,7 +236,7 @@
   },
   {
    "depends_on": "eval: doc.operation == \"Import\"",
-   "description": "Optional. Target calendar to import events into. Example: <code>{\"calendarIds\": {\"a\": True}}</code>",
+   "description": "Optional. Target calendar to import events into. Example: <code>{\"calendarIds\": {\"a\": true}}</code>",
    "fieldname": "import_metadata",
    "fieldtype": "JSON",
    "label": "Metadata"
@@ -276,7 +276,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2026-08-31 09:39:50.807837",
+ "modified": "2026-09-23 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "Calendar Exchange",

@@ -23,9 +23,9 @@
 		</div>
 	</div>
 	<ListView
-		v-if="members.data"
+		v-if="list.loaded"
 		ref="listView"
-		class="flex-1"
+		class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
 		:columns="LIST_COLUMNS"
 		:rows="normalizedMembers"
 		:options="listOptions"
@@ -64,27 +64,8 @@
 								:theme="row.enabled ? 'green' : 'gray'"
 							/>
 						</template>
-						<template v-else-if="column.key === 'storage'">
-							<span v-if="!row.quota" class="text-ink-gray-5 text-sm">—</span>
-							<Tooltip v-else :text="storageTooltip(row.quota)">
-								<span v-if="row.quota.unlimited" class="text-ink-gray-5 text-sm">∞</span>
-								<div v-else class="flex items-center gap-2">
-									<div class="bg-surface-gray-4 h-1.5 w-16 shrink-0 rounded-full">
-										<div
-											class="h-full rounded-full"
-											:class="
-												row.quota.used_percentage > 80
-													? 'bg-surface-red-8'
-													: 'bg-surface-gray-10'
-											"
-											:style="{ width: storageBarWidth(row.quota) }"
-										/>
-									</div>
-									<span class="text-ink-gray-5 text-xs">
-										{{ Math.round(row.quota.used_percentage) }}%
-									</span>
-								</div>
-							</Tooltip>
+						<template v-else-if="column.key === 'quota'">
+							<StorageBar :used-bytes="row.used_bytes" :quota-gb="row.quota_gb" />
 						</template>
 						<template v-else-if="column.key === 'last_active'">
 							<span class="text-ink-gray-5 text-sm">
@@ -121,7 +102,17 @@
 			</template>
 		</ListSelectBanner>
 	</ListView>
-	<DashboardListSkeleton v-else :columns="5" />
+	<DashboardListSkeleton v-else :columns="6" />
+	<DashboardPager
+		v-if="list.loaded && list.total"
+		:count="list.rows.length"
+		:total="list.total"
+		:page-length="list.pageLength"
+		:has-more="list.hasMore"
+		:loading="list.loading"
+		@update:page-length="list.setPageLength"
+		@load-more="list.loadMore"
+	/>
 	<Dialog v-model:open="showEnableMembers" v-bind="ENABLE_MEMBERS_OPTIONS" />
 	<Dialog v-model:open="showDisableMembers" v-bind="DISABLE_MEMBERS_OPTIONS" />
 	<Dialog v-model:open="showDeleteMembers" v-bind="DELETE_MEMBERS_OPTIONS" />
@@ -129,6 +120,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Avatar,
@@ -136,7 +128,6 @@ import {
 	Button,
 	Dialog,
 	FormControl,
-	Tooltip,
 	createResource,
 } from 'frappe-ui'
 import {
@@ -150,12 +141,14 @@ import {
 	ListView,
 } from 'frappe-ui/experimental'
 
-import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
+import { usePagedList } from '@/apps/mail/utils/pagedList'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
+import StorageBar from '@/apps/mail/components/StorageBar.vue'
 
-import type { QuotaUsage } from '@/apps/mail/types'
 
 type MemberRow = {
 	name: string
@@ -164,23 +157,19 @@ type MemberRow = {
 	last_active?: string | null
 	is_admin: boolean
 	enabled: boolean
-	quota?: QuotaUsage | null
+	quota_gb?: number | null
+	used_bytes?: number | null
 }
-
-// Members without a personal mail account (or when the mail server is unreachable) have no quota.
-const storageTooltip = (quota: QuotaUsage) =>
-	quota.unlimited
-		? __('{0} used · Unlimited', [formatBytes(quota.used)])
-		: __('{0} of {1} used', [formatBytes(quota.used), formatBytes(quota.total)])
-
-// Hide sub-1% usage entirely: a rounded fill that narrow renders as a misleading dot.
-const storageBarWidth = (quota: QuotaUsage) =>
-	quota.used_percentage < 1 ? '0' : `${quota.used_percentage}%`
-
 
 const search = ref('')
 const roleFilter = ref<'all' | 'admin' | 'user'>('all')
-const statusFilter = ref<'all' | 'enabled' | 'disabled'>('all')
+// The overview links here with ?status=disabled; the filter follows the query on arrival.
+type StatusFilter = 'all' | 'enabled' | 'disabled'
+const route = useRoute()
+const statusFromQuery = (): StatusFilter =>
+	route.query.status === 'disabled' || route.query.status === 'enabled' ? route.query.status : 'all'
+const statusFilter = ref<StatusFilter>(statusFromQuery())
+watch(() => route.query.status, () => (statusFilter.value = statusFromQuery()))
 const showEnableMembers = ref(false)
 const showDisableMembers = ref(false)
 const showDeleteMembers = ref(false)
@@ -189,49 +178,59 @@ const listView = useTemplateRef<{
 	toggleAllRows?: () => void
 }>('listView')
 
-const members = createResource({
-	url: 'suite.mail.api.admin.get_members',
-	makeParams: () => {
-		const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
-			search: search.value,
-		}
+const list = usePagedList<MemberRow>('suite.mail.api.admin.get_members', () => {
+	const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
+		search: search.value,
+	}
 
-		if (roleFilter.value !== 'all') {
-			params.is_admin = roleFilter.value === 'admin'
-		}
+	if (roleFilter.value !== 'all') {
+		params.is_admin = roleFilter.value === 'admin'
+	}
 
-		if (statusFilter.value !== 'all') {
-			params.is_enabled = statusFilter.value === 'enabled'
-		}
+	if (statusFilter.value !== 'all') {
+		params.is_enabled = statusFilter.value === 'enabled'
+	}
 
-		return params
-	},
-	auto: true,
-	cache: ['mailMembers', search.value, roleFilter.value, statusFilter.value],
+	return params
 })
 
 const normalizedMembers = computed<MemberRow[]>(() => {
 	const map = new Map<string, MemberRow>()
 
-	for (const row of (members.data || []) as MemberRow[]) {
+	for (const row of list.rows) {
 		if (!map.has(row.name)) map.set(row.name, row)
 	}
 
 	return Array.from(map.values())
 })
 
-watchDebounced(() => search.value, members.reload, { debounce: 300 })
-watch(() => roleFilter.value, members.reload)
-watch(() => statusFilter.value, members.reload)
+watchDebounced(() => search.value, list.reload, { debounce: 300 })
+watch(() => roleFilter.value, list.reload)
+watch(() => statusFilter.value, list.reload)
 
-const reloadMembers = () => members.reload()
+// The ListView keeps its selection across reloads, so after "select all" on 100 rows and a
+// switch to 20 the banner still claimed 100. Names that are no longer listed leave the set;
+// Load More only adds rows, so it keeps the selection intact.
+watch(
+	() => list.rows,
+	(rows) => {
+		const selections = listView.value?.selections
+		if (!selections?.size) return
+		const shown = new Set(rows.map((row) => row.name))
+		for (const name of Array.from(selections)) {
+			if (!shown.has(name)) selections.delete(name)
+		}
+	},
+)
+
+const reloadMembers = () => list.reload()
 defineExpose({ reloadMembers })
 
 const LIST_COLUMNS = [
 	{ label: __('User'), key: 'user' },
 	{ label: __('Role'), key: 'role' },
 	{ label: __('Status'), key: 'status' },
-	{ label: __('Storage'), key: 'storage' },
+	{ label: __('Storage'), key: 'quota' },
 	{ label: __('Last Active'), key: 'last_active' },
 ]
 
@@ -256,16 +255,16 @@ const listOptions = computed(() => ({
 	rowHeight: 50,
 	emptyState: hasActiveFilters.value
 		? {
-				title: __('No matching members'),
+				title: __('No matching accounts'),
 				description: __('Try adjusting your search or filters.'),
 			}
 		: {
-				title: __('No members found'),
+				title: __('No accounts found'),
 				description: __('Invite people to give them a mailbox on your domains.'),
 			},
 	getRowRoute: (row: MemberRow) => ({
-		name: 'mail-member',
-		params: { memberId: row.name },
+		name: 'mail-account',
+		params: { accountId: row.name },
 	}),
 }))
 
@@ -273,21 +272,21 @@ const enableMembers = createResource({
 	url: 'suite.mail.api.admin.enable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showEnableMembers.value = false
-		raiseToast(__('Members enabled.'))
+		raiseToast(__('Accounts enabled.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showEnableMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to enable members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to enable accounts.'), 'error')
 	},
 })
 
 const ENABLE_MEMBERS_OPTIONS = {
-	title: __('Enable Members'),
+	title: __('Enable Accounts'),
 	message: __(
-		'Are you sure you want to enable the selected members? They will be able to log in again.',
+		'Are you sure you want to enable the selected accounts? They will be able to log in again.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: enableMembers.submit }],
 }
@@ -296,21 +295,21 @@ const disableMembers = createResource({
 	url: 'suite.mail.api.admin.disable_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showDisableMembers.value = false
-		raiseToast(__('Members disabled.'))
+		raiseToast(__('Accounts disabled.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showDisableMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to disable members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to disable accounts.'), 'error')
 	},
 })
 
 const DISABLE_MEMBERS_OPTIONS = {
-	title: __('Disable Members'),
+	title: __('Disable Accounts'),
 	message: __(
-		'Are you sure you want to disable the selected members? They will no longer be able to log in.',
+		'Are you sure you want to disable the selected accounts? They will no longer be able to log in.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: disableMembers.submit }],
 }
@@ -319,21 +318,21 @@ const deleteMembers = createResource({
 	url: 'suite.mail.api.admin.delete_members',
 	makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
 	onSuccess: () => {
-		members.reload()
+		list.reload()
 		showDeleteMembers.value = false
-		raiseToast(__('Members deleted.'))
+		raiseToast(__('Accounts deleted.'))
 		listView.value?.toggleAllRows?.()
 	},
 	onError: (error: { messages?: string[] }) => {
 		showDeleteMembers.value = false
-		raiseToast(error.messages?.[0] || __('Failed to delete members.'), 'error')
+		raiseToast(error.messages?.[0] || __('Failed to delete accounts.'), 'error')
 	},
 })
 
 const DELETE_MEMBERS_OPTIONS = {
-	title: __('Delete Members'),
+	title: __('Delete Accounts'),
 	message: __(
-		'Are you sure you want to delete the selected members? This action cannot be undone.',
+		'Are you sure you want to delete the selected accounts? This action cannot be undone.',
 	),
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteMembers.submit }],
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Thread } from '@/apps/mail/types'
 
-import { mergeByReceivedAt, refreshLoadedThreads } from './usePaginatedThreads'
+import { PAGE_LENGTH, mergeByReceivedAt, refreshLoadedThreads, refreshWindowSize } from './usePaginatedThreads'
 
 // Only received_at and thread_id matter to the merge.
 const thread = (thread_id: string, received_at: string) =>
@@ -104,5 +104,97 @@ describe('refreshLoadedThreads', () => {
 
 		expect(result[0]).toBe(updatedA)
 		expect(result[1]).toBe(rowB)
+	})
+
+	// Deleted (or moved out) on another device: the window covers the row's date and doesn't hold it.
+	it('drops a row the window should have held', () => {
+		const loaded = [
+			thread('a', '2026-07-30 10:00:00'),
+			thread('b', '2026-07-29 10:00:00'),
+			thread('c', '2026-07-28 10:00:00'),
+		]
+		const freshWindow = [thread('a', '2026-07-30 10:00:00'), thread('c', '2026-07-28 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, freshWindow, key))).toEqual(['a', 'c'])
+	})
+
+	// Same timestamp as the window's last row: the page boundary may have cut it off, so it can't be
+	// called gone.
+	it('keeps a missing row tied with the end of the window', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('b', '2026-07-30 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [loaded[0]], key))).toEqual(['a', 'b'])
+	})
+
+	it('drops every missing row when the window is the whole list', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('old', '2026-06-01 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [loaded[0]], key, true))).toEqual(['a'])
+		expect(refreshLoadedThreads(loaded, [], key, true)).toEqual([])
+	})
+
+	// An empty window that isn't known to be complete says nothing about the loaded rows.
+	it('keeps everything on an empty window', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00')]
+
+		expect(ids(refreshLoadedThreads(loaded, [], key))).toEqual(['a'])
+	})
+
+	// An undo puts the row back before the server has it, so the window legitimately lacks it.
+	it('spares a missing row the caller vouches for', () => {
+		const loaded = [thread('a', '2026-07-30 10:00:00'), thread('b', '2026-07-29 10:00:00')]
+
+		const result = refreshLoadedThreads(loaded, [loaded[1]], key, true, (k) => k === 'a')
+
+		expect(ids(result)).toEqual(['a', 'b'])
+	})
+})
+
+describe('refreshWindowSize', () => {
+	it('covers the loaded list, so a refresh reaches rows below the first page', () => {
+		expect(refreshWindowSize(PAGE_LENGTH * 2 + 7)).toBe(PAGE_LENGTH * 2 + 7)
+	})
+
+	it('never asks for less than a page', () => {
+		expect(refreshWindowSize(0)).toBe(PAGE_LENGTH)
+		expect(refreshWindowSize(PAGE_LENGTH - 1)).toBe(PAGE_LENGTH)
+	})
+
+	// The 30s poll uses this window too, so a reader who has scrolled a long way must not turn every
+	// poll into a walk of the whole mailbox.
+	it('stops growing at a bounded depth', () => {
+		const deep = refreshWindowSize(100_000)
+		expect(deep).toBeLessThan(100_000)
+		expect(refreshWindowSize(100_000)).toBe(refreshWindowSize(200_000))
+	})
+})
+
+// The pairing the fix rests on: sizing the window to the loaded list is what lets the merge see a
+// deletion the reader had already scrolled past. Sized to one page, that row is beyond the window's
+// reach and survives — which is the bug.
+describe('a deletion below the first page', () => {
+	// 60 rows, newest first, one minute apart.
+	const loaded = Array.from({ length: 60 }, (_, i) =>
+		thread(`t${i}`, `2026-07-30 12:${String(59 - i).padStart(2, '0')}:00`),
+	)
+	const deleted = 't40'
+	const server = loaded.filter((t) => t.thread_id !== deleted)
+
+	it('leaves the list when the window spans the loaded rows', () => {
+		const window = server.slice(0, refreshWindowSize(loaded.length))
+
+		expect(ids(refreshLoadedThreads(loaded, window, key))).not.toContain(deleted)
+	})
+
+	it('survives a window of only the first page', () => {
+		const window = server.slice(0, PAGE_LENGTH)
+
+		expect(ids(refreshLoadedThreads(loaded, window, key))).toContain(deleted)
+	})
+
+	it('keeps every row that is still there', () => {
+		const window = server.slice(0, refreshWindowSize(loaded.length))
+
+		expect(ids(refreshLoadedThreads(loaded, window, key))).toEqual(ids(server))
 	})
 })

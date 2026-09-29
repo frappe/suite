@@ -41,7 +41,7 @@ import { Table, ChevronDown } from 'lucide-vue-next'
 
 import { Popover, Tooltip } from 'frappe-ui'
 
-import { addTableElement } from '@/apps/slides/stores/element'
+import { addTableElement, getEmptyTableCells } from '@/apps/slides/stores/element'
 
 const maxRows = 6
 const maxColumns = 8
@@ -64,6 +64,6 @@ const resetHovered = () => {
 const insertTable = (rows, columns, close) => {
 	close()
 	resetHovered()
-	addTableElement(rows, columns)
+	addTableElement(getEmptyTableCells(rows, columns))
 }
 </script>

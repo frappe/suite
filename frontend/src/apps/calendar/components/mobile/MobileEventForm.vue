@@ -242,8 +242,18 @@
 								</button>
 							</div>
 
-							<!-- how it reads to everyone else -->
+							<!-- where it is kept, and how it reads to everyone else -->
 							<div :class="GROUP">
+								<button
+									v-if="calendarOptions.length > 1"
+									:class="ROW"
+									@click="showCalendarSheet = true"
+								>
+									<CalendarDays :class="ICON" />
+									<span class="shrink-0">{{ __('Calendar') }}</span>
+									<span :class="VALUE_LONG">{{ calendarOptions.find((option) => option.selected)?.label }}</span>
+									<ChevronRight :class="CHEVRON" />
+								</button>
 								<button :class="ROW" @click="showAvailabilitySheet = true">
 									<Briefcase :class="ICON" />
 									<span class="flex-1">{{ __('Availability') }}</span>
@@ -281,7 +291,7 @@
 						<div class="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-1">
 							<ParticipantSelector
 								v-model="event.participants"
-								:account="store.accountId"
+								:account="event.account"
 								:display-participants="participants"
 								label=""
 								variant="inline"
@@ -392,6 +402,11 @@
 	     sheet on a phone, the same options as a dropdown on a desktop. It closes itself when
 	     one is picked, so the row's own flag only has to open it. -->
 	<AdaptiveDropdown
+		v-model:open="showCalendarSheet"
+		:title="__('Calendar')"
+		:options="calendarOptions"
+	/>
+	<AdaptiveDropdown
 		v-model:open="showAvailabilitySheet"
 		:title="__('Availability')"
 		:options="availabilityOptions"
@@ -424,6 +439,7 @@ import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { eventColor } from '@/apps/calendar/utils/color'
 import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'
 import {
 	ALERT_ACTION_OPTIONS,
@@ -432,22 +448,26 @@ import {
 	UNIT_OPTIONS,
 	VISIBILITY_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
-import { userStore } from '@/apps/calendar/stores/user'
 import { requestAlertPermission } from '@/utils/calendarAlert'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 
-const { event, participants } = defineProps<{
+const { event, participants, calendarChoices } = defineProps<{
 	/** The form state EventModal owns; the rows edit it in place. */
 	event: any
 	title: string
 	isNew: boolean
 	disableSave: boolean
 	participants: any[]
+	/** The calendars the event can go on, as `account|id` options; see EventModal. */
+	calendarChoices: { label: string; value: string; color: string }[]
 	meetUrl?: string
 	meetLinkDisplay?: string
 }>()
+
+/** The calendar it is on, as `account|id`. */
+const calendar = defineModel<string>('calendar')
 
 const emit = defineEmits<{
 	cancel: []
@@ -458,7 +478,6 @@ const emit = defineEmits<{
 	joinMeet: []
 }>()
 
-const store = userStore()
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
 
 const SCREENS = ['form', 'participants'] as const
@@ -542,6 +561,17 @@ const asDropdownOptions = (
 		selected: current() === option.value,
 		onClick: () => choose(option.value),
 	}))
+
+const calendarOptions = computed(() =>
+	calendarChoices.map(({ label, value, color }) => ({
+		label,
+		icon: h('span', { class: 'grid place-items-center' }, [
+			h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
+		]),
+		selected: calendar.value === value,
+		onClick: () => (calendar.value = value),
+	})),
+)
 
 const availabilityOptions = computed(() =>
 	asDropdownOptions(
@@ -726,6 +756,7 @@ watch(
 	(count: number, previous: number) => count > previous && requestAlertPermission(),
 )
 
+const showCalendarSheet = ref(false)
 const showAvailabilitySheet = ref(false)
 const showVisibilitySheet = ref(false)
 </script>

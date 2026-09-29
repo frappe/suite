@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
 	Bell,
 	Briefcase,
+	CalendarDays,
 	ChevronLeft,
 	ChevronRight,
 	Copy,
@@ -45,6 +46,8 @@ import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
+import { canEditEvent } from '@/apps/calendar/utils/calendars'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
@@ -73,8 +76,7 @@ const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 
 const dayjs = inject('$dayjs')
 
-const store = userStore()
-const { participantIdentities } = store
+const { participantIdentities, calendars } = userStore()
 
 // --- User / RSVP ---
 
@@ -95,9 +97,8 @@ const RSVP_OPTIONS = [
 const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
 	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
-		account: store.accountId,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: calendarEvent.master_id || calendarEvent.id,
+		account: calendarEvent.account,
+		id: serverEventId(calendarEvent),
 		response: response.toLowerCase(),
 		// One occurrence answered on its own is an override on the series, addressed by this
 		// occurrence's recurrence id. The whole series is the same call without one.
@@ -190,16 +191,9 @@ const dotColor = computed(() =>
 	eventColor((calendarEvent.color as string) || eventCalendar.value?.color),
 )
 
-// The organizer beats the viewer's own address (redundant in their own card);
-// for self-organized events they coincide. Fall back to the account's address
-// (from participantIdentities — the calendar id only carries an opaque JMAP account id),
-// then the calendar's display name.
-const calendarOwnerLabel = computed(
-	() =>
-		calendarEvent.organizer?.replace('mailto:', '') ||
-		participantIdentities.data?.[0]?.email ||
-		eventCalendar.value?.calendar_name,
-)
+// Whose event it is: its organizer. An event nobody organizes — a holiday on a shared calendar,
+// say — has no one to name and no one invited, so it names the calendar it is on instead.
+const organizerEmail = computed(() => calendarEvent.organizer?.replace('mailto:', ''))
 
 // --- Date / time label ---
 
@@ -480,12 +474,16 @@ const {
 	},
 )
 
+// An event on a calendar shared read-only is only read: not changed, answered, or passed on
+// as an invitation to something the reader doesn't run. With nothing left, the menu goes.
+const canEdit = computed(() => canEditEvent(calendarEvent, calendars.data))
+
 const dropdownOptions = computed(() => [
-	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
+	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit'), condition: () => canEdit.value },
 	// Beside Edit rather than beside the Meet row's copy: that button copies the link,
 	// which is a property of the call, where this copies the event.
-	{ label: __('Copy Invite'), icon: Copy, onClick: copyInvite },
-	deleteOption.value,
+	{ label: __('Copy Invite'), icon: Copy, onClick: copyInvite, condition: () => canEdit.value },
+	{ ...deleteOption.value, condition: () => canEdit.value },
 ])
 
 const openUrl = (location: string) => {
@@ -565,7 +563,7 @@ const openUrl = (location: string) => {
 					     a Tooltip, and the growing is the wrapper's to do or not — pushing from
 					     this side puts the actions on the edge whatever it decides. -->
 					<div class="ml-auto flex shrink-0 items-center gap-1">
-						<Dropdown :options="dropdownOptions">
+						<Dropdown v-if="canEdit" :options="dropdownOptions">
 							<Button
 								variant="ghost"
 								:disabled="isDeleting"
@@ -708,8 +706,12 @@ const openUrl = (location: string) => {
 							</div>
 						</div>
 
-						<!-- Availability -->
-						<div v-if="calendarEvent.free_busy_status" class="flex items-center gap-2.5 px-4.5 py-2">
+						<!-- Availability: whether the event blocks its calendar's time. Not on a calendar
+						     shared read-only, where it is the owner's setting and not the reader's time. -->
+						<div
+							v-if="canEdit && calendarEvent.free_busy_status"
+							class="flex items-center gap-2.5 px-4.5 py-2"
+						>
 							<Briefcase class="icon text-ink-gray-5 size-4 shrink-0" />
 							<span class="text-ink-gray-7 text-sm">{{ __(calendarEvent.free_busy_status) }}</span>
 						</div>
@@ -721,21 +723,25 @@ const openUrl = (location: string) => {
 						</div>
 
 						<!-- Whose event it is, last: the row that is always here, and the one a
-						     reader is least often after — what it is and when comes first. A person,
-						     not a calendar: the label is the organizer's address, falling back to
-						     the account's own, and only names a calendar when an event carries no
-						     organizer at all. The colour it draws in is up beside the name, where
-						     matching it against the grid starts. -->
+						     reader is least often after — what it is and when comes first. The
+						     organizer where there is one, and otherwise the calendar. The colour it
+						     draws in is up beside the name, where matching it against the grid
+						     starts. -->
 						<div class="flex items-center gap-2.5 px-4.5 py-2">
-							<User class="icon text-ink-gray-5 size-4 shrink-0" />
-							<span class="text-ink-gray-7 min-w-0 truncate text-sm">{{ calendarOwnerLabel }}</span>
+							<component
+								:is="organizerEmail ? User : CalendarDays"
+								class="icon text-ink-gray-5 size-4 shrink-0"
+							/>
+							<span class="text-ink-gray-7 min-w-0 truncate text-sm">
+								{{ organizerEmail || eventCalendar?.calendar_name }}
+							</span>
 						</div>
 					</div>
 
 					<!-- No rule above the participants in the sheet: there the section is one
 					     row, and a row ruled off from the rows above it read as a section of
 					     its own with nothing in it. The card keeps the rule over its list. -->
-					<div v-if="variant !== 'sheet'" class="border-t" />
+					<div v-if="variant !== 'sheet' && orderedParticipants.length" class="border-t" />
 
 					<!-- Participants: the section's own y padding matches the header row's
 					     py-2, so it reads as evenly spaced. Counting the row's padding
@@ -744,7 +750,11 @@ const openUrl = (location: string) => {
 					<!-- pb only in the sheet: with no rule above it, the section's top
 					     padding would hold its row off the owner row by more than the rows
 					     above it are held off each other. -->
-					<div class="flex flex-col" :class="variant === 'sheet' ? 'pb-2' : 'py-2'">
+					<div
+						v-if="orderedParticipants.length"
+						class="flex flex-col"
+						:class="variant === 'sheet' ? 'pb-2' : 'py-2'"
+					>
 						<!-- In the sheet, the row is the whole of it: one line that says how
 						     many and how they answered, and opens the list as a page of the
 						     sheet — see `sheetPage`. The chevron says there is more behind
@@ -848,12 +858,12 @@ const openUrl = (location: string) => {
 				<!-- RSVP. Ruled off the way the title above is: both sit outside the scroll,
 				     and a pinned block with nothing between it and moving content reads as
 				     the end of that content rather than as a shelf of its own. -->
-				<div v-if="userParticipant?.expect_reply" class="shrink-0 border-t" />
+				<div v-if="canEdit && userParticipant?.expect_reply" class="shrink-0 border-t" />
 				<!-- The page's own bottom padding clears the home indicator, so the block
 				     inside it carries none of its own; the column, which ends at the window
 				     edge, still does. -->
 				<div
-					v-if="userParticipant?.expect_reply"
+					v-if="canEdit && userParticipant?.expect_reply"
 					class="flex shrink-0 flex-col gap-2 px-4.5 pt-3"
 					:class="variant === 'sheet' ? 'pb-1' : 'pb-3'"
 				>

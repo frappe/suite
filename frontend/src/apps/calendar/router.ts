@@ -37,6 +37,8 @@ const resolveShortcut = (
 			return { name: 'calendar-day', params: { accountId, ...params } }
 		case 'calendar-agenda-shortcut':
 			return { name: 'calendar-agenda', params: { accountId, ...params } }
+		case 'calendar-search-shortcut':
+			return { name: 'calendar-search', params: { accountId } }
 		default:
 			return defaultRoute
 	}

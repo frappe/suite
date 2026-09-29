@@ -5,12 +5,17 @@ import { createResource, toast } from 'frappe-ui'
 import { userStore } from '@/apps/calendar/stores/user'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 /** The part of a calendar event that deleting one reads. */
 interface DeletableEvent {
-	/** The event's own id. A recurring instance carries the series id in `master_id`. */
-	id?: string
+	/**
+	 * The server's own id for the event, which `serverEventId` reads — not the `id` the
+	 * grid draws the row with. See utils/eventIdentity.
+	 */
+	event_id?: string
+	/** The series an instance came from; absent on a one-off. */
 	master_id?: string
 	/** Set on an instance of a recurring series; absent on a one-off. */
 	recurrence_id?: string
@@ -19,6 +24,8 @@ interface DeletableEvent {
 	recurrence_rule?: Record<string, unknown>
 	organizer?: string
 	participants?: { email: string }[]
+	/** The account it belongs to: ids are only unique within one. */
+	account?: string
 	/** A draft sent no invitations, so it never asks about a cancellation email. */
 	isDraft?: boolean
 }
@@ -47,12 +54,12 @@ export function useEventDelete(
 	const { participantIdentities } = store
 
 	const calendarEvent = computed<DeletableEvent>(() => getEvent() ?? {})
-	const eventId = computed(() => calendarEvent.value.master_id || calendarEvent.value.id)
+	const eventId = computed(() => serverEventId(calendarEvent.value))
 
 	const deleteEventInstance = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: calendarEvent.value.master_id,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,
@@ -63,7 +70,7 @@ export function useEventDelete(
 	const deleteEvent = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			ids: [eventId.value],
 			send_scheduling_messages: sendEmail,
 		}),
@@ -77,7 +84,7 @@ export function useEventDelete(
 	const deleteFollowing = createResource({
 		url: 'suite.calendar.api.delete_calendar_event_series_from',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: eventId.value,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,

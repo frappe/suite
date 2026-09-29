@@ -475,7 +475,9 @@ class EmailService(MailService):
         )
 
         if email.reply_to:
-            draft["header:Reply-To"] = ", ".join(f'"{r.name}" <{r.email}>' for r in email.reply_to)
+            # The parsed property, like From and To: the server writes the header, so an address
+            # without a name, or a name with quotes or commas in it, comes out well formed.
+            draft["replyTo"] = [{"name": r.name, "email": r.email} for r in email.reply_to]
 
         if email.in_reply_to:
             draft["header:In-Reply-To"] = f"<{email.in_reply_to}>"

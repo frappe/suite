@@ -1,5 +1,5 @@
 import { computed, h } from 'vue'
-import { themeMode, switchTheme } from '@/utils/setupTheme'
+import { useTheme } from '@/composables/useTheme'
 
 const themeModes = [
 	{ mode: 'light', icon: 'lucide-sun', label: 'Light' },
@@ -7,21 +7,19 @@ const themeModes = [
 	{ mode: 'automatic', icon: 'lucide-monitor', label: 'Auto' },
 ]
 
-const activeTheme = computed(
-	() => themeModes.find(({ mode }) => mode === themeMode.value) || themeModes[0],
-)
-
-function cycleTheme(event) {
-	event.preventDefault()
-	const next = themeModes[(themeModes.indexOf(activeTheme.value) + 1) % themeModes.length]
-	switchTheme(next.mode)
-}
-
 export function useThemeMenuOption() {
+	const { cycleTheme, themeMode } = useTheme()
+	const activeTheme = computed(
+		() => themeModes.find(({ mode }) => mode === themeMode.value) || themeModes[0],
+	)
+
 	return {
 		label: 'Theme',
 		icon: 'lucide-sun-moon',
-		onClick: cycleTheme,
+		onClick: (event) => {
+			event.preventDefault()
+			cycleTheme()
+		},
 		slots: {
 			label: () => h('div', { class: 'min-w-20 truncate' }, 'Theme'),
 			suffix: () =>

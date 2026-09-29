@@ -29,13 +29,13 @@
 					<hr class="border-t" />
 					<TableCellSection />
 				</template>
-				<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
+				<template v-if="showFont">
 					<hr class="border-t" />
 					<FontSection />
 					<hr class="border-t" />
 					<ParagraphSection />
 				</template>
-				<template v-if="activeElement?.type === 'shape' && !isEditingShapeText">
+				<template v-if="isShapeSelection && !isEditingShapeText">
 					<hr class="border-t" />
 					<ShapeStyleSection />
 				</template>
@@ -47,23 +47,23 @@
 					<hr class="border-t" />
 					<PlaybackSection />
 				</template>
-				<template v-if="['image', 'video'].includes(activeElement?.type)">
+				<template v-if="isMediaSelection">
 					<hr class="border-t" />
-					<BorderSection :key="activeElement?.id" />
+					<BorderSection :key="activeElementIds.join()" />
 				</template>
-				<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
+				<template v-if="showShadow">
 					<hr class="border-t" />
-					<ShadowSection :key="activeElement?.id" />
+					<ShadowSection :key="activeElementIds.join()" />
 				</template>
-				<template v-if="activeElement">
-					<hr class="border-t" />
-					<AppearanceSection />
-				</template>
+				<hr class="border-t" />
+				<AppearanceSection />
 			</div>
 			<div v-else-if="currentSlide">
 				<BackgroundSection />
 				<hr class="border-t" />
 				<TransitionSection />
+				<hr class="border-t" />
+				<SlidePlaybackSection />
 			</div>
 		</div>
 	</div>
@@ -75,8 +75,10 @@ import { computed, provide } from 'vue'
 import {
 	activeElement,
 	activeElementIds,
+	activeElements,
 	focusElementId,
 	isSelectionLocked,
+	firstEditableElement,
 	toggleLock,
 } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
@@ -98,12 +100,21 @@ import BorderSection from './BorderSection.vue'
 import ShadowSection from './ShadowSection.vue'
 import BackgroundSection from './BackgroundSection.vue'
 import TransitionSection from './TransitionSection.vue'
+import SlidePlaybackSection from './SlidePlaybackSection.vue'
 
 provide('sectionInert', isSelectionLocked)
 
 const isEditingShapeText = computed(
 	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,
 )
+
+const isSelectionOf = (...types) =>
+	Boolean(firstEditableElement.value) && activeElements.value.every((el) => types.includes(el.type))
+
+const showFont = computed(() => isSelectionOf('text', 'table') || isEditingShapeText.value)
+const isShapeSelection = computed(() => isSelectionOf('shape'))
+const isMediaSelection = computed(() => isSelectionOf('image', 'video'))
+const showShadow = computed(() => isSelectionOf('image', 'video', 'shape'))
 
 const selectionLabel = computed(() => {
 	const count = activeElementIds.value.length

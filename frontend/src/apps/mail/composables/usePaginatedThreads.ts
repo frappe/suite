@@ -37,6 +37,26 @@ const MAX_FILL_WINDOWS = 20
 // until the mutation lands, so a refresh or append in that window would put it back.
 const REMOVAL_SUPPRESSION_MS = 15000
 
+// Windows a refresh may span (see refreshWindowSize). It re-fetches every loaded row so that rows
+// below the first window can be found missing, but that fetch runs on every poll and every change
+// event, so its depth is bounded.
+const MAX_REFRESH_WINDOWS = 8
+
+/**
+ * Rows a refresh must ask the server for, given how many are loaded.
+ *
+ * The window is what a refresh reconciles the loaded list against (see refreshLoadedThreads): a row
+ * the window doesn't reach can never be found missing, so sizing it to one page left a thread the
+ * reader had scrolled past sitting in the list forever once it was deleted on another device. It
+ * spans the loaded list instead.
+ *
+ * Bounded, because this runs on the 30s poll and on every change event: past `MAX_REFRESH_WINDOWS`
+ * a row deleted elsewhere waits for the next reset rather than turning each poll into a walk of the
+ * whole mailbox. Deeper than any reader scrolls between two polls.
+ */
+export const refreshWindowSize = (loadedCount: number) =>
+	Math.min(Math.max(loadedCount, PAGE_LENGTH), PAGE_LENGTH * MAX_REFRESH_WINDOWS)
+
 /**
  * Merges two newest-first runs of threads into one, keeping newest-first order. Both inputs are
  * already sorted (the server returns them that way), so this is a plain two-pointer merge; ties keep
@@ -57,6 +77,14 @@ export const mergeByReceivedAt = (fresh: Thread[], loaded: Thread[]): Thread[] =
  * again) without ever arriving as a new one. Rows past the window keep their loaded copy — the window
  * says nothing about them.
  *
+ * A row the window should have held but doesn't is gone — deleted or moved from another device — and
+ * is dropped: one newer than the window's last row, or any missing row when the window is the whole
+ * list (`windowComplete`). A row tied with the last one may simply have been cut off, so it stays.
+ * `keep` spares rows the server doesn't know about yet (an undo still in flight).
+ *
+ * How far this reaches is the caller's choice of window: only rows the window covers can be found
+ * missing, which is why a refresh asks for the whole loaded list (see refreshWindowSize).
+ *
  * The result is re-sorted: a thread that just got a reply carries a newer received_at than the loaded
  * list was ordered by, and belongs further up. The sort is stable, so untouched rows keep their order.
  */
@@ -64,9 +92,17 @@ export const refreshLoadedThreads = (
 	loaded: Thread[],
 	freshWindow: Thread[],
 	threadKey: (thread: Thread) => string,
+	windowComplete = false,
+	keep: (key: string) => boolean = () => false,
 ): Thread[] => {
 	const updated = new Map(freshWindow.map((thread) => [threadKey(thread), thread]))
+	const windowEnd = freshWindow.at(-1)?.received_at
+	const isGone = (thread: Thread) =>
+		!updated.has(threadKey(thread)) &&
+		!keep(threadKey(thread)) &&
+		(windowComplete || (windowEnd !== undefined && thread.received_at > windowEnd))
 	return loaded
+		.filter((thread) => !isGone(thread))
 		.map((thread) => updated.get(threadKey(thread)) ?? thread)
 		.sort((a, b) => (a.received_at === b.received_at ? 0 : a.received_at > b.received_at ? -1 : 1))
 }
@@ -131,6 +167,13 @@ export const usePaginatedThreads = ({
 	// Rows optimistically removed by an action whose request is still in flight (see
 	// REMOVAL_SUPPRESSION_MS). The merges below skip them.
 	const recentlyRemoved = new Set<string>()
+	// The mirror image: rows put back by an undo whose request is still in flight. The server doesn't
+	// return them yet, so a refresh in that window would take them for deleted elsewhere.
+	const recentlyRestored = new Set<string>()
+	// Rows the in-flight reset/refresh asked for: one page for a reset, the loaded list for a refresh
+	// (see refreshWindowSize). Captured when the fetch is triggered rather than read off the list when
+	// it lands, so an optimistic removal in between can't leave the window and its reader disagreeing.
+	let windowSize = PAGE_LENGTH
 
 	const list = () => resource().data ?? []
 
@@ -168,9 +211,16 @@ export const usePaginatedThreads = ({
 	 */
 	const takeResetWindow = (rows: Thread[]): Thread[] => {
 		if (refreshMode.value) refreshSnapshot = list()
-		hasMore.value = rows.length > PAGE_LENGTH
-		return rows.slice(0, PAGE_LENGTH)
+		hasMore.value = rows.length > windowSize
+		return rows.slice(0, windowSize)
 	}
+
+	/**
+	 * Rows a reset or refresh fetch must ask for: the window it will take, plus the lookahead row that
+	 * says whether more exist beyond it. The views' `makeParams` read this — a refresh asks for more
+	 * than a reset, so it can no longer be the constant it was.
+	 */
+	const resetLimit = () => windowSize + 1
 
 	/**
 	 * Reset-to-top: the caller is about to refetch the first window, replacing the loaded list.
@@ -178,12 +228,14 @@ export const usePaginatedThreads = ({
 	 */
 	const beginReset = () => {
 		refreshMode.value = false
+		windowSize = PAGE_LENGTH
 		epoch.value++
 	}
 
 	/**
-	 * Check for new mail without losing the reader's place: the caller is about to refetch the newest
-	 * window, which onResetSuccess will merge into the loaded list instead of replacing it.
+	 * Check for new mail without losing the reader's place: the caller is about to refetch the window,
+	 * which onResetSuccess will merge into the loaded list instead of replacing it. The window spans
+	 * every loaded row rather than just the first page, so the merge can reconcile all of them.
 	 *
 	 * Returns false when a fetch is already in flight, which is the caller's cue to do nothing.
 	 * Bumping the epoch discards an append still in flight (appendThreads checks it) instead of
@@ -193,6 +245,9 @@ export const usePaginatedThreads = ({
 	const beginRefresh = () => {
 		if (isFetching.value) return false
 		refreshMode.value = true
+		// Span the loaded list, not just its first page: the window is what the merge reconciles
+		// against, and it can only drop rows it reaches.
+		windowSize = refreshWindowSize(list().length)
 		epoch.value++
 		refreshEpoch = epoch.value
 		return true
@@ -236,7 +291,14 @@ export const usePaginatedThreads = ({
 			// Threads already loaded are filtered out of `fresh` above, so a reply into one of them
 			// would be dropped on the floor — re-derive those rows from the window instead. Keeping
 			// the snapshot's copy is what left replies invisible until a hard reload.
-			const loaded = refreshLoadedThreads(refreshSnapshot, freshWindow, threadKey)
+			// The same pass drops rows the window shows to be gone (deleted or moved on another device).
+			const loaded = refreshLoadedThreads(
+				refreshSnapshot,
+				freshWindow,
+				threadKey,
+				!hasMore.value,
+				(key) => recentlyRestored.has(key),
+			)
 			// Date-merge rather than blind prepend. A prepend assumes everything in the newest window
 			// that isn't loaded yet is newer than everything that is — true for one account, false for
 			// the merged list, where a second account's newest mail can be older than the first's oldest
@@ -398,8 +460,16 @@ export const usePaginatedThreads = ({
 			setTimeout(() => recentlyRemoved.delete(key), REMOVAL_SUPPRESSION_MS)
 		})
 
-	/** Lift the suppression: the rows are back (a removal failed, or was undone), so they must show. */
-	const unsuppressRemoved = (keys: string[]) => keys.forEach((key) => recentlyRemoved.delete(key))
+	/**
+	 * Lift the suppression: the rows are back (a removal failed, or was undone), so they must show —
+	 * and must survive a refresh until the server has them back too.
+	 */
+	const unsuppressRemoved = (keys: string[]) =>
+		keys.forEach((key) => {
+			recentlyRemoved.delete(key)
+			recentlyRestored.add(key)
+			setTimeout(() => recentlyRestored.delete(key), REMOVAL_SUPPRESSION_MS)
+		})
 
 	return {
 		container,
@@ -411,6 +481,7 @@ export const usePaginatedThreads = ({
 		threadByOffset,
 		scrollListToTop,
 		takeResetWindow,
+		resetLimit,
 		beginReset,
 		beginRefresh,
 		onResetSuccess,

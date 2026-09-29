@@ -17,6 +17,7 @@ from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
 from suite.utils.dt import utcnow
+from suite.utils.validation import JSONList
 
 
 class ContactCard(Document):
@@ -237,11 +238,8 @@ def parse_contact_card_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Delete multiple Contact Cards based on their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

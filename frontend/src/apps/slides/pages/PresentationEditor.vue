@@ -84,14 +84,17 @@ import {
 	onActivated,
 	onDeactivated,
 	onBeforeUnmount,
+	onScopeDispose,
 	provide,
 	nextTick,
 	useTemplateRef,
 } from 'vue'
-import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
 import { call, toast, usePageMeta, Button, KeyboardShortcutsDialog } from 'frappe-ui'
 import { appPageMeta } from '@/utils/documentTitle'
+import { useRootStore } from '@/stores/root'
+import { confirmLeave } from '@/utils/confirmLeave'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -156,6 +159,7 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
+import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 
 const route = useRoute()
 const router = useRouter()
@@ -180,6 +184,36 @@ const showThemeDialog = ref(false)
 const themeDialogAction = ref('update')
 const isSlideInteractionActive = ref(false)
 
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	'slides-editor-settings',
+	() => {
+		if (
+			route.name !== 'slides-editor' ||
+			presentationDoc.value?.name !== props.presentationId ||
+			inReadonlyMode.value
+		)
+			return []
+
+		return [
+			{
+				commands: [
+					{
+						id: 'slides-presentation-theme',
+						label: 'Change presentation theme',
+						icon: 'lucide-palette',
+						keywords: ['slides', 'theme', 'appearance'],
+						run: () => {
+							themeDialogAction.value = 'update'
+							showThemeDialog.value = true
+						},
+					},
+				],
+			},
+		]
+	},
+)
+onScopeDispose(unregisterPaletteGroups)
+
 const showLayoutDialog = ref(false)
 const insertIndex = ref(null)
 const showExportView = ref(false)
@@ -193,6 +227,7 @@ const commandHistoryInstance = useCommandHistory(slides, historyMetaForCommandHi
 setCommandHistory(commandHistoryInstance)
 
 useShortcuts(inReadonlyMode, inSlideShowMode)
+useBrowserZoomGuard()
 
 usePageMeta(() => {
 	return appPageMeta(pageTitle(), 'Slides')
@@ -402,8 +437,15 @@ watch(
 	},
 )
 
-onBeforeRouteLeave(() => {
+const confirmUnsavedNavigation = async () => {
 	hideOpenDialogs()
+	if (!dirty.value || inReadonlyMode.value) return true
+	return confirmLeave()
+}
+onBeforeRouteLeave(confirmUnsavedNavigation)
+onBeforeRouteUpdate((to, from) => {
+	if (to.params.presentationId === from.params.presentationId) return true
+	return confirmUnsavedNavigation()
 })
 
 window.addEventListener('popstate', hideOpenDialogs)

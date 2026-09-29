@@ -4,7 +4,7 @@
     v-bind="$attrs"
     :title="batchResultText(result, verb)"
     :theme="result.failed.length ? 'amber' : 'green'"
-    :primary-action="result.failed.length ? { label: 'Details', onClick: () => (details = true) } : undefined"
+    :primary-action="result.failed.length ? detailsAction : undefined"
     dismissible
     @dismiss="$emit('dismiss')"
   />
@@ -24,12 +24,18 @@ export default { inheritAttrs: false }
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Alert, Dialog } from 'frappe-ui'
+import { Alert, Dialog, type AlertAction } from 'frappe-ui'
 import type { DriveBatchResult } from '@/apps/drive/client/types'
 import { batchResultText } from './batchResult'
 
 defineProps<{ result: DriveBatchResult | null; verb: string }>()
 defineEmits<{ dismiss: [] }>()
 const details = ref(false)
+const detailsAction: AlertAction = {
+  label: 'Details',
+  onClick: () => {
+    details.value = true
+  },
+}
 </script>
 

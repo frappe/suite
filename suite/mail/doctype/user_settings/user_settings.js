@@ -9,6 +9,12 @@ frappe.ui.form.on('User Settings', {
 	add_actions(frm) {
 		if (frm.doc.__islocal) return
 
+		if (frm.doc.username && frm.doc.app_password) {
+			frm.add_custom_button(__('Sync Accounts'), () => {
+				frm.trigger('sync_accounts')
+			})
+		}
+
 		if (frm.doc.session_state) {
 			frm.add_custom_button(__('Clear JMAP Session'), () => {
 				frm.trigger('clear_jmap_session')
@@ -20,6 +26,26 @@ frappe.ui.form.on('User Settings', {
 				frm.trigger('show_app_password')
 			})
 		}
+	},
+
+	sync_accounts(frm) {
+		frappe.call({
+			doc: frm.doc,
+			method: 'sync_accounts',
+			freeze: true,
+			freeze_message: __('Syncing Accounts...'),
+			callback: (r) => {
+				if (!r.exc) {
+					frappe.show_alert(
+						{
+							message: __('Accounts synced successfully'),
+							indicator: 'green',
+						},
+						3,
+					)
+				}
+			},
+		})
 	},
 
 	clear_jmap_session(frm) {

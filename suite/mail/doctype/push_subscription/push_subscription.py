@@ -21,6 +21,7 @@ from suite.mail.utils.user import get_jmap_configured_users, is_jmap_configured
 from suite.utils import enqueue_job, parse_filters
 from suite.utils.dt import get_utc_now, parse_iso_datetime
 from suite.utils.user import is_system_manager
+from suite.utils.validation import JSONList
 
 # Renew push subscriptions that expire within this many days of the scheduled run.
 RENEW_THRESHOLD_DAYS = 3
@@ -134,11 +135,8 @@ def is_push_subscription_disabled(user: str, raise_exception: bool = False) -> b
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple push subscriptions given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     user_ids_map = {}
     for name in names:

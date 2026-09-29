@@ -137,6 +137,15 @@ describe('loading a presentation', () => {
 		expect(writeDraft).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }))
 	})
 
+	it('exposes advance_after as advanceAfter', async () => {
+		served = { modified: 'M1', slides: [{ ...slide('#ff0000ff'), advance_after: '5' }] }
+
+		await initPresentationDoc('p1')
+
+		expect(slides.value[0].advanceAfter).toBe('5')
+		expect(slides.value[0]).not.toHaveProperty('advance_after')
+	})
+
 	it('stops editing once the server refused this version', async () => {
 		saveRefused.value = true
 		expect(inReadonlyMode.value).toBe(true)

@@ -47,6 +47,13 @@ export function loadTranslations(): Promise<void> {
 
 export const ready = loadTranslations()
 
+declare module 'vue' {
+  interface ComponentCustomProperties {
+    /** Template translation helper that `translationPlugin` installs. */
+    __: TranslationFunction
+  }
+}
+
 export const translationPlugin: Plugin = {
   install(app: App) {
     app.config.globalProperties.__ = translate

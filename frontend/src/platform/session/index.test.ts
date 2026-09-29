@@ -44,6 +44,42 @@ describe('session', () => {
     expect(request.mock.calls.map(([operation]) => operation.id)).toContain('frappe.logout')
   })
 
+  it('runs every logout cleanup once the server ends the session, even when one fails', async () => {
+    const order: string[] = []
+    const request = vi.fn(async () => {
+      order.push('server')
+      return {}
+    })
+    const session = createSession({ request } as Transport)
+    session.onLogout(() => {
+      order.push('failing')
+      throw new Error('cache gone')
+    })
+    session.onLogout(async () => {
+      order.push('clear')
+    })
+    const removed = vi.fn()
+    session.onLogout(removed)()
+
+    await session.logout()
+
+    expect(order).toEqual(['server', 'failing', 'clear'])
+    expect(removed).not.toHaveBeenCalled()
+    expect(session.status.value).toBe('guest')
+  })
+
+  it('keeps per-user data when the server refuses the logout', async () => {
+    const request = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    const session = createSession({ request } as Transport)
+    const cleanup = vi.fn()
+    session.onLogout(cleanup)
+
+    await expect(session.logout()).rejects.toThrow('offline')
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
   it('keeps guests idle until login supplies an identity', async () => {
     document.cookie = 'user_id=Guest; path=/'
     const request = vi.fn(async () => ({ name: 'user@example.com' }))

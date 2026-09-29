@@ -28,6 +28,7 @@ import {
   presentationDoc,
   resetEditorState,
   slidesLength,
+  viewOnly,
 } from "@/apps/slides/stores/presentation";
 import {
   dirty,
@@ -86,7 +87,7 @@ watch(editable, (canEdit, couldEdit) => {
     void saveCurrentState();
     toast.warning("Editing access changed. Your local presentation copy was kept.");
   }
-  inReadonlyMode.value = !canEdit;
+  viewOnly.value = !canEdit;
 }, { immediate: true });
 
 async function rename() {

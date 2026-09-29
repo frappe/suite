@@ -1726,6 +1726,18 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     }
     if (e.key === 'Enter') {
       e.preventDefault()
+      // Google Sheets opens the selected cell for editing on a plain Enter,
+      // caret after the existing text — the same begin-edit path as F2. The
+      // move-down below is what the *second* Enter does, from inside the
+      // editor. Shift/modified Enter, a multi-cell selection and a read-only
+      // viewer keep Enter as pure navigation, so moving around the grid never
+      // depends on being allowed to write.
+      const { r0, c0, r1, c1 } = getSelRange()
+      const singleCell = r0 === r1 && c0 === c1
+      if (singleCell && !e.shiftKey && !mod && !e.altKey && canEdit()) {
+        showEditor(getValue(cellId(r, c)) ?? '', 'edit')
+        return
+      }
       const anchorC = _tabAnchorCol ?? c
       _tabAnchorCol = null
       const dr = e.shiftKey ? -1 : 1

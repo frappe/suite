@@ -80,8 +80,14 @@ export const userStore = defineStore('mail-user', () => {
 
 	const userResource: UserResource = createResource({
 		url: 'suite.mail.api.account.get_user_info',
+		// Only the accounts with mail for the user: one that shares a calendar and nothing else
+		// is among their accounts, and has no inbox to show. In place, so onSuccess — which is
+		// handed the response rather than this — reads the same list.
+		transform: (data) => {
+			if (data?.accounts) data.accounts = data.accounts.filter((account) => account.in_mail)
+			return data
+		},
 		onSuccess: (data) => {
-			if (data?.is_suite_admin) domains.fetch()
 			// The unified All Inboxes badge only applies when there's more than one account to merge.
 			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
 			resolveAccount(data?.accounts)
@@ -169,8 +175,6 @@ export const userStore = defineStore('mail-user', () => {
 		cache: ['sieveScripts', accountId.value],
 	})
 
-	const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains' })
-
 	// Clear all user/account state so the next sign-in starts from a clean slate. Without
 	// resetting accountId, resolveAccount() would see the resolved account as unchanged and skip
 	// setAccount(), so the per-account resources (mailboxes, etc.) would never re-fetch until a
@@ -184,7 +188,6 @@ export const userStore = defineStore('mail-user', () => {
 		screenedAddresses.reset()
 		globalScreenedAddresses.reset()
 		sieveScripts.reset()
-		domains.reset()
 		allInboxesUnread.reset()
 	}
 
@@ -197,7 +200,6 @@ export const userStore = defineStore('mail-user', () => {
 		accountShortNames,
 		addressBooks,
 		identities,
-		domains,
 		sieveScripts,
 		screenedAddresses,
 		globalScreenedAddresses,

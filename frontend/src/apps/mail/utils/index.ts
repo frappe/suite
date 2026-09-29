@@ -23,6 +23,10 @@ export const toTitleCase = (str: string) =>
 		})
 		.join(' ') || ''
 
+// A quota or allotment in gigabytes as the dashboard prints it; unknown reads as a dash.
+export const formatGb = (gb?: number | null) =>
+	gb == null ? '—' : __('{0} GB', [String(Math.round(gb * 100) / 100)])
+
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
 
@@ -415,25 +419,11 @@ export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
 	// stray Mailbox Settings icon (it must never render as a generic folder).
 	if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
+	if (mailbox.icon === 'spam') return 'mail-warning'
 	if (mailbox.icon) return mailbox.icon
 	if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
 	return 'folder'
 }
-
-/**
- * Whether a mailbox can be moved into. The "Move to" menu and the folders that
- * take a dragged thread are the same question asked twice, so they ask it here:
- * a thread cannot be moved to where it already is, and Sent, Drafts and the
- * Screener hold mail that is defined by how it got there rather than by a folder
- * anyone files into.
- */
-export const canMoveToMailbox = (
-	mailboxId: string | undefined,
-	current: string | undefined,
-	mailboxIds: { sent?: string; drafts?: string; screener?: string },
-): boolean =>
-	!!mailboxId &&
-	![current, mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)
 
 // The Screening folder is surfaced to users as the "Screener".
 export const getMailboxName = (mailbox: MailboxData) =>

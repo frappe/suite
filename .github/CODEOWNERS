@@ -32,5 +32,6 @@
 /frontend/src/platform/ @netchampfaris
 /frontend/scripts/ @netchampfaris
 /e2e/unified-frontend/shell/ @netchampfaris
+/e2e/unified-frontend/home/ @netchampfaris
 /frontend/src/apps/drive/ @BreadGenie @netchampfaris
 /e2e/unified-frontend/files/ @BreadGenie @netchampfaris

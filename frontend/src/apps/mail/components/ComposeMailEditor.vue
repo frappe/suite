@@ -7,17 +7,24 @@
 	<!-- 75vh is a modal's height — it has the screen to itself. Docked, the composer sits beside
 	     the mail it is being written about, so it takes a fixed 30rem and leaves the rest of the
 	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
-	     height is the thread's. -->
+	     height is the thread's — unless the draft is the whole thread, when the card it sits in
+	     is stretched to the pane and the composer fills that (`fillsHost`). -->
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, QuotedContentExtension, ...mentionExtensions]"
 		:content="editorContent"
 		:upload-function="uploadInlineImage"
 		class="flex flex-col"
 		:class="[
 			{ 'pointer-events-none opacity-50': !show },
-			isInThread ? '' : docked ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
+			fillsHost
+				? 'sm:min-h-0 sm:flex-1'
+				: isInThread
+					? ''
+					: docked
+						? 'sm:h-[30rem]'
+						: 'sm:h-[75vh]',
 		]"
 		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
@@ -61,7 +68,7 @@
 								})) || []
 							"
 							trigger="button"
-							class="min-w-0 max-w-full"
+							class="min-w-0 max-w-full !text-ink-gray-8"
 						/>
 					</div>
 					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
@@ -95,6 +102,8 @@
 							<RecipientInput
 								ref="toInput"
 								v-model="mail.to"
+								field="to"
+								@move="moveRecipient"
 								@show-cc-bcc="showCcBcc = true"
 							/>
 							<div class="flex gap-1.5">
@@ -122,7 +131,12 @@
 										{{ __('Cc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput ref="ccInput" v-model="mail.cc" />
+								<RecipientInput
+									ref="ccInput"
+									v-model="mail.cc"
+									field="cc"
+									@move="moveRecipient"
+								/>
 							</div>
 							<div class="flex gap-2">
 								<Tooltip :text="__('Select from contacts')">
@@ -133,7 +147,7 @@
 										{{ __('Bcc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput v-model="mail.bcc" />
+								<RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
 							</div>
 						</template>
 					</div>
@@ -152,10 +166,14 @@
 			</div>
 		</template>
 		<template #editor="{ editor }">
+			<!-- In a thread the body scrolls on its own past 24rem, so a long reply does not push
+			     the conversation up out of view. Given the pane to itself it has no conversation
+			     to protect and takes whatever height the fields and toolbar leave. -->
 			<div
 				class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 sm:overflow-y-auto"
 				:class="{
-					'max-h-96 min-h-32': isInThread,
+					'max-h-96 min-h-32': isInThread && !fillsHost,
+					'sm:min-h-0': fillsHost,
 					'!border-outline-gray-3 rounded-4 border-dashed': isDragging,
 				}"
 				@click="editor.commands.focus('end')"
@@ -269,6 +287,7 @@ import {
 	CustomParagraphExtension,
 	uploadFunction,
 } from '@/apps/mail/utils/text-editor'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
 import type { Attachment, ComposeMailData, File as FileDoc, Identity } from '@/apps/mail/types'
@@ -284,12 +303,16 @@ const {
 	mailDetails,
 	isInThread = false,
 	docked = false,
+	fillsHost = false,
 } = defineProps<{
 	reloadMails: () => void
 	mailDetails?: ComposeMailData
 	isInThread?: boolean
 	// Docked composer: shorter than a modal, which has the screen to itself.
 	docked?: boolean
+	// The host is a flex column of a definite height, and the composer is to take all of it —
+	// a draft that is the whole thread, given the reading pane to itself.
+	fillsHost?: boolean
 }>()
 
 const emit = defineEmits(['discardMail', 'discardStarted', 'reply', 'replyAll', 'forward', 'popOut'])
@@ -326,6 +349,7 @@ const {
 	isLoading,
 	isDraftUpdated,
 	isRecipientsEmpty,
+	moveRecipient,
 	updateOriginalMail,
 	saveDraft,
 	payListDebt,

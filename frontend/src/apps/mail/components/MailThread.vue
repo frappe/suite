@@ -40,12 +40,18 @@
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
 			     end in a gap explaining nothing. -->
+			<!-- A draft with no conversation around it is given the pane: the column is pinned
+			     to the scroller's height and the card grows to fill it, so the editor reaches the
+			     bottom of the viewport rather than stopping at its own 24rem and leaving the rest
+			     blank. The body scrolls inside the card past that. A reply draft under other mail
+			     keeps its cap — there the thread is what scrolls. -->
 			<div
 				class="sm:space-y-3 sm:px-5 sm:pt-6"
 				:class="{
 					'pb-16': isMobile && !thread?.at(-1)?.draft,
 					'sm:pb-24': isComposeWindowOpen(),
 					'sm:pb-6': !isComposeWindowOpen(),
+					'sm:flex sm:h-full sm:flex-col': isDraftAlone,
 				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
@@ -106,6 +112,7 @@
 									(mail.draft && dataTheme === 'dark'),
 								'cursor-pointer': isCollapsed(mail),
 								'sm:shadow-md': mail.draft && dataTheme === 'light',
+								'sm:flex sm:min-h-0 sm:flex-1 sm:flex-col': isDraftAlone,
 							}"
 							@click="mail.collapsed = false"
 						>
@@ -115,6 +122,7 @@
 								:reload-mails="reload"
 								:mail-details="draftMails[mail.name]"
 								:is-in-thread="true"
+								:fills-host="isDraftAlone"
 								@discard-mail="discardLocalDraft(mail.name)"
 								@reply="reply(getSourceMail(mail.name))"
 								@reply-all="replyAll(getSourceMail(mail.name))"
@@ -202,6 +210,17 @@
 											<div class="flex items-center space-x-1.5">
 												<span
 													class="truncate text-[15px] !font-semibold sm:text-base"
+													:class="{
+														/* A collapsed row is centered against the taller avatar, so
+														   whatever sets the text block's height decides where the name
+														   sits. The preview beside it states a 20px line box, matching
+														   the 20px hover actions that replace the timestamp — but a mail
+														   with no body has an empty preview, so the name's own 16.1px box
+														   set the height and the row rose ~2px under the cursor.
+														   sm:, because the preset's font sizes carry a line-height of
+														   their own: a bare leading-5 loses to the sm:text-base above. */
+														'sm:leading-5': isCollapsed(mail) && !isMobile,
+													}"
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>
@@ -582,6 +601,7 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
+import { isCollapsed as isCollapsedIn, lastMessageOf } from '@/apps/mail/utils/threadFolding'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
@@ -784,6 +804,9 @@ const mailBeforeUnseenMarker = computed(() => {
 
 const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen))
 const unseenCount = computed(() => (thread.value || []).filter((m) => !m.seen && !m.draft).length)
+
+// A draft that is the whole thread — opened from Drafts, nothing above it to read.
+const isDraftAlone = computed(() => thread.value.length === 1 && !!thread.value[0]?.draft)
 const firstUnseenMail = computed(() => thread.value?.find((m) => !m.seen && !m.draft)?.id)
 
 const unseenMessage = computed(() =>
@@ -1150,17 +1173,8 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 	}
 }
 
-// The message at the end of the conversation stays open — it is the one being read. Drafts do not
-// count towards which that is: a reply written at the bottom of the thread is not a newer message,
-// it is a thing being written about the last one, and the reader wants both on screen. Read as the
-// last row outright, the message being replied to folded itself away the moment the draft under it
-// was saved and the thread reloaded around it — every mail already seen comes back collapsed, and
-// the exemption had moved on to the draft.
-const lastMessage = computed(
-	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
-)
-
-const isCollapsed = (mail: Mail) => !!(mail.collapsed && mail !== lastMessage.value)
+const lastMessage = computed(() => lastMessageOf(thread.value))
+const isCollapsed = (mail: Mail) => isCollapsedIn(mail, lastMessage.value)
 
 const showReplyAll = (mail: Mail) =>
 	!mail.draft &&

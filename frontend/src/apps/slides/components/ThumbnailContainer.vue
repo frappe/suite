@@ -22,7 +22,6 @@ import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import TransitionIcon from '@/apps/slides/icons/TransitionIcon.vue'
 
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
-import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	slide: { type: Object, required: true },
@@ -51,7 +50,10 @@ const slideNumber = computed(() =>
 )
 
 const isFocused = computed(() => focusedSlide.value == slides.value.indexOf(props.slide))
-const usesSelectionRing = computed(() => (props.isActive && recentlyRestored.value) || isFocused.value)
+
+const ringBase = 'ring-2 ring-offset-[0.5px] ring-offset-[color:var(--surface-elevation-1)]'
+const focusedRing = `${ringBase} ring-[color:var(--outline-gray-8)]`
+const activeRing = `${ringBase} ring-[color:var(--outline-gray-5)]`
 
 const getThumbnailClasses = () => {
 	const baseClasses = [
@@ -73,14 +75,11 @@ const getThumbnailClasses = () => {
 
 	let outlineClasses = []
 	if (isActive && recentlyRestored.value) {
-		outlineClasses.push('ring-[3px]', 'scale-[1.02]')
+		outlineClasses.push(focusedRing, 'scale-[1.02]')
 	} else if (isFocused.value) {
-		outlineClasses.push('ring-[3px]')
+		outlineClasses.push(focusedRing)
 	} else if (isActive) {
-		outlineClasses.push(
-			'ring-[color:var(--surface-gray-8)] dark:ring-[color:var(--surface-gray-5)]',
-			'ring-[3px]',
-		)
+		outlineClasses.push(activeRing)
 	} else {
 		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
 	}
@@ -92,7 +91,6 @@ const getThumbnailStyles = (s) => {
 	return {
 		backgroundColor: s.background || '#ffffff',
 		height: `${props.height}px`,
-		...(usesSelectionRing.value ? { '--tw-ring-color': `color-mix(in srgb, ${selectionColor} 60%, transparent)` } : {}),
 	}
 }
 </script>

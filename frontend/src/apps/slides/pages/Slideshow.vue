@@ -71,6 +71,7 @@ import { appPageMeta } from '@/utils/documentTitle'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
+import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 
 import {
 	inSlideShowMode,
@@ -80,11 +81,16 @@ import {
 	requestWakeLock,
 	releaseWakeLock,
 	releaseVideoWarmers,
+	resetSlideShowState,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
 	performNextStep,
 	performPreviousStep,
+	scheduleAdvance,
+	cancelAdvance,
+	prevSlide,
+	isMagicMoveApplied,
 } from '@/apps/slides/stores/slideshow'
 
 import {
@@ -124,20 +130,6 @@ const clipPath = computed(() => {
 const getElementKey = (element) => getTransitionKey(element)
 
 const cursorHidden = ref(true)
-
-const prevSlide = computed(() => {
-	if (slideIndex.value == 0) return null
-	return slides.value[slideIndex.value - 1]
-})
-
-const isMagicMoveApplied = computed(() => {
-	if (applyReverseTransition.value) return false
-
-	return (
-		currentSlide.value?.transition == 'Magic Move' ||
-		prevSlide.value?.transition == 'Magic Move'
-	)
-})
 
 const slideStyles = computed(() => {
 	// scale slide to fit screen width while maintaining 16:9 aspect ratio
@@ -305,10 +297,14 @@ const slideContainerStyles = computed(() => {
 	}
 })
 
+let active = false
+
 const initFullscreenMode = async () => {
 	// fullscreen is requested on the click that starts the slideshow, so the
 	// change event fires before this component is around to hear it
-	if (!document.fullscreenElement && !(await requestFullscreen())) {
+	const inFullscreen = Boolean(document.fullscreenElement) || (await requestFullscreen())
+	if (!active) return exitFullscreen()
+	if (!inFullscreen) {
 		toast.error('Could not enter fullscreen mode')
 		endSlideShow()
 		return
@@ -319,7 +315,8 @@ const initFullscreenMode = async () => {
 
 const loadPresentation = async () => {
 	if (slides.value.length) return
-	initPresentationDoc(props.presentationId)
+	// the slide asked for was picked before there were any to pick from
+	if (await initPresentationDoc(props.presentationId)) setSlideIndex(props.activeSlideId)
 }
 
 const updateWindowSize = () => {
@@ -328,8 +325,10 @@ const updateWindowSize = () => {
 }
 
 usePageMeta(() => appPageMeta(pageTitle(), 'Slides'))
+useBrowserZoomGuard()
 
 onActivated(() => {
+	active = true
 	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
@@ -346,18 +345,18 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
+	active = false
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
 	document.removeEventListener('visibilitychange', handleVisibilityChange)
 	window.removeEventListener('resize', updateWindowSize)
+	cancelAdvance()
 	stopCursorTracking()
 	releaseWakeLock()
 	releaseVideoWarmers()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
-	if (inSlideShowMode.value) {
-		inSlideShowMode.value = false
-		exitFullscreen()
-	}
+	resetSlideShowState()
+	exitFullscreen()
 })
 
 watch(
@@ -371,6 +370,13 @@ watch(
 	},
 	{ immediate: true },
 )
+
+// any change of slide, by hand, by the timer, or by the load, restarts the wait
+// the slide the show opens on, or loads into, waits only its delay
+watch([currentSlide, inSlideShowMode], ([, presenting], [previous, wasPresenting]) => {
+	if (presenting) scheduleAdvance(wasPresenting && Boolean(previous))
+	else cancelAdvance()
+})
 
 provide('inReadonlyMode', inReadonlyMode)
 provide('inSlideShowMode', inSlideShowMode)
@@ -394,8 +400,16 @@ useKeyboardShortcut([
 	cursor: none !important;
 }
 
-.forward-transition .textElement span {
+.forward-transition .textElement span,
+.forward-transition .textElement li {
 	transition-property: all;
+	transition-duration: var(--transition-duration);
+	transition-timing-function: ease-in-out;
+}
+
+/* the marker inherits the rest from its item, only its fade is its own */
+.forward-transition .textElement li > p:first-child::before {
+	transition-property: opacity;
 	transition-duration: var(--transition-duration);
 	transition-timing-function: ease-in-out;
 }

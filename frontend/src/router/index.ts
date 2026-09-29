@@ -184,7 +184,12 @@ router.beforeEach(async (to) => {
 
   // Public Mail entry pages belong to the legacy Mail surface. Load their
   // metadata before the auth gate so their existing allowGuest rules survive.
-  if (session.status.value === 'guest' && isLegacyMailGuestPath(to.path)) {
+  // Once loaded, the route carries that metadata, so the gate below decides.
+  if (
+    session.status.value === 'guest' &&
+    isLegacyMailGuestPath(to.path) &&
+    !registeredAreas.has('mail')
+  ) {
     await ensureAreaRoutesLoaded('mail')
     return to.fullPath
   }

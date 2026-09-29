@@ -1,6 +1,5 @@
 <template>
 	<Navbar
-		:primaryButton="primaryButtonProps"
 		:dropdown="route.name === 'slides-editor-new' ? 'home' : 'context'"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
@@ -30,13 +29,16 @@
 				</template>
 			</Button>
 			<SharePopover v-if="!viewOnly && presentationDoc" />
+			<PresentButton
+				v-if="route.name !== 'slides-editor-new'"
+				@start="(options) => emit('startSlideShow', options)"
+			/>
 		</template>
 	</Navbar>
 </template>
 
 <script setup>
 import { ref, computed, inject } from 'vue'
-import { Play } from 'lucide-vue-next'
 
 import { Badge, Button } from 'frappe-ui'
 
@@ -44,6 +46,7 @@ import Navbar from '@/apps/slides/components/Navbar.vue'
 import PresentationHeader from '@/apps/slides/components/PresentationHeader.vue'
 import SharePopover from '@/apps/slides/components/SharePopover.vue'
 import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 
 // export and share need write access, not the edit lock: a second tab keeps both
 import { presentationDoc, viewOnly } from '@/apps/slides/stores/presentation'
@@ -65,12 +68,5 @@ const canPin = computed(() => {
 	if (!('serviceWorker' in navigator) || !('caches' in window)) return false
 	return isMediaOwner(presentationDoc.value?.owner, sessionStore.user)
 })
-
-const primaryButtonProps = computed(() => ({
-	label: 'Present',
-	icon: Play,
-	onClick: () => emit('startSlideShow'),
-	hide: route.name === 'slides-editor-new',
-}))
 
 </script>

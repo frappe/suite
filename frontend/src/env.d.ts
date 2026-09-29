@@ -28,6 +28,15 @@ declare global {
     __?: (message: string, replace?: Array<string | number>) => string
   }
 
+  /** Chromium's install prompt event. It is not in the DOM typings yet. */
+  interface BeforeInstallPromptEvent extends Event {
+    prompt(): Promise<void>
+  }
+
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent
+  }
+
   /** Bare `__('text')` available in templates via globalProperties. */
   const __: (message: string, replace?: Array<string | number>) => string
 
