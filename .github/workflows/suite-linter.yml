@@ -81,6 +81,7 @@ jobs:
           ruff check .
 
       - name: Install and run pip-audit
+        if: ${{ !cancelled() }}
         run: |
           pip install pip-audit
           pip-audit --desc on .
