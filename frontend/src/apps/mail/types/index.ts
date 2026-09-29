@@ -251,15 +251,6 @@ interface AutomationRules {
 	add_star: boolean
 }
 
-export interface NotificationPayload {
-	data?: {
-		title?: string
-		body?: string
-		notification_icon?: string
-		click_action?: string
-	}
-}
-
 export interface QuotaUsage {
 	total: number
 	used: number

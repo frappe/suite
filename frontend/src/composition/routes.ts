@@ -2,7 +2,7 @@ import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
 import { readBootFlag } from "@/platform/boot";
-import type { ShellFrame } from "@/platform/contracts";
+import type { PhoneChromeOwner, ShellFrame } from "@/platform/contracts";
 
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
 const driveLogo = "/assets/suite/drive/images/logo.svg";
@@ -30,6 +30,7 @@ function areaMeta(
   options: {
     frame?: ShellFrame;
     scroll?: "shell" | "content";
+    phoneChrome?: PhoneChromeOwner;
     allowGuest?: boolean;
   } = {},
 ): RouteMeta {
@@ -37,6 +38,7 @@ function areaMeta(
     area,
     frame: options.frame ?? "shell",
     scroll: options.scroll ?? "shell",
+    phoneChrome: options.phoneChrome,
     allowGuest: options.allowGuest,
     title,
     favicon,
@@ -93,12 +95,15 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     "area-placeholder-files-trash",
     areaMeta("files", "Trash", driveLogo),
   ),
+  // Mail and Calendar keep their own phone chrome: inset and tab bar [T010]. The area group
+  // copies this metadata, so every Mail and Calendar page inherits it.
   placeholder(
     "/mail/:pathMatch(.*)*",
     "area-placeholder-mail",
     areaMeta("mail", "Mail", mailLogo, {
       frame: adoptedAppFrame,
       scroll: "content",
+      phoneChrome: "page",
     }),
   ),
   placeholder(
@@ -107,6 +112,7 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     areaMeta("calendar", "Calendar", calendarLogo, {
       frame: adoptedAppFrame,
       scroll: "content",
+      phoneChrome: "page",
     }),
   ),
   // One placeholder holds the whole prefix. A call (`/meet/:meetingId`) sets

@@ -6,7 +6,7 @@ import {
   type RouteRecordRaw,
 } from 'vue-router'
 
-import { SUITE_APPS, isInstallableApp } from '@/apps/registry'
+import { SUITE_APPS } from '@/apps/registry'
 import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import {
   areaDefinitions,
@@ -19,13 +19,13 @@ import {
   routes,
 } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
+import { installPwa } from '@/platform/pwa'
 import { useSession } from '@/platform/session'
 import { transport, type Operation } from '@/platform/transport'
-import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
 
 declare module 'vue-router' {
   interface RouteMeta {
-    /** Temporary legacy product identity used by old layouts and Mail PWA scoping. */
+    /** Temporary legacy product identity used by old layouts, the last app and the install offer. */
     appId?: string
   }
 }
@@ -235,10 +235,10 @@ router.beforeEach(async (to) => {
 })
 
 installPageMeta(router)
+installPwa(session)
 
 router.afterEach((to, _from, failure) => {
   if (failure) return
-  setPwaTags(to)
   rememberLastApp(to.meta.appId ?? to.meta.area)
 })
 
@@ -272,72 +272,6 @@ function isLegacyMailGuestPath(path: string): boolean {
 // Dashboard. They load without the Mail capability; Mail's guard decides.
 function isMailPathWithoutAccount(path: string): boolean {
   return /^\/mail\/(?:mime-message\/|dashboard(?:\/|$))/.test(path)
-}
-
-/**
- * The suite installs as one app. The install offer appears only in product
- * areas whose registry entry has a phone layout.
- */
-const PWA_METAS: Array<[name: string, content: string]> = [
-  ['mobile-web-app-capable', 'yes'],
-  ['apple-mobile-web-app-capable', 'yes'],
-  ['apple-mobile-web-app-status-bar-style', 'black-translucent'],
-]
-
-let pwaTagsAttached = false
-
-function setPwaTags(to: RouteLocationNormalizedLoaded) {
-  const installable = isInstallableApp(to.meta.appId ?? to.meta.area)
-  if (installable === pwaTagsAttached) return
-  pwaTagsAttached = installable
-
-  if (!installable) {
-    document.head
-      .querySelectorAll('[data-pwa-scope="suite"]')
-      .forEach((element) => element.remove())
-    return
-  }
-
-  const assets = `${import.meta.env.BASE_URL}pwa/suite/`
-  appendPwaTag('link', {
-    rel: 'manifest',
-    href: `${assets}manifest.webmanifest`,
-  })
-  appendPwaTag('link', {
-    rel: 'apple-touch-icon',
-    href: `${assets}apple-icon-180.png`,
-  })
-  for (const [name, content] of PWA_METAS)
-    appendPwaTag('meta', { name, content })
-
-  for (const {
-    width: cssWidth,
-    height: cssHeight,
-    dpr,
-  } of APPLE_SPLASH_DEVICES) {
-    const device =
-      `(device-width: ${cssWidth}px) and (device-height: ${cssHeight}px) and ` +
-      `(-webkit-device-pixel-ratio: ${dpr})`
-    const [width, height] = [cssWidth * dpr, cssHeight * dpr]
-    appendPwaTag('link', {
-      rel: 'apple-touch-startup-image',
-      href: `${assets}splash/apple-splash-${width}-${height}.png`,
-      media: `${device} and (orientation: portrait)`,
-    })
-    appendPwaTag('link', {
-      rel: 'apple-touch-startup-image',
-      href: `${assets}splash/apple-splash-${height}-${width}.png`,
-      media: `${device} and (orientation: landscape)`,
-    })
-  }
-}
-
-function appendPwaTag(tag: 'link' | 'meta', attrs: Record<string, string>) {
-  const element = document.createElement(tag)
-  for (const [key, value] of Object.entries(attrs))
-    element.setAttribute(key, value)
-  element.dataset.pwaScope = 'suite'
-  document.head.appendChild(element)
 }
 
 /** @deprecated Page metadata is installed through @/platform/page-meta. */

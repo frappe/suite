@@ -26,7 +26,11 @@
       </ContentPane>
     </DesktopShell>
 
-    <MobileShell v-else class="h-full">
+    <MobileShell
+      v-else
+      class="h-full"
+      :class="{ 'suite-page-phone-chrome': pageOwnsPhoneChrome }"
+    >
       <ContentPane :scroll="scrollOwner">
         <UnavailableSurface
           v-if="unavailable"
@@ -37,7 +41,7 @@
         <slot v-else />
       </ContentPane>
       <AccountSheet v-model:open="accountSheetOpen" />
-      <template #nav>
+      <template v-if="!pageOwnsPhoneChrome" #nav>
         <MobileNav
           :areas="areas"
           :active-area="activeArea?.id"
@@ -64,6 +68,7 @@ import type {
   ShellFrame,
   ScrollOwner,
 } from "@/platform/contracts";
+import { shellPhoneChromeRequested } from "@/platform/phone-chrome";
 import { missingCapabilities, useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
 import AccountSheet from "@/shell/AccountSheet.vue";
@@ -114,6 +119,16 @@ const resolvedFrame = computed<ShellFrame | null>(() => {
 const scrollOwner = computed<ScrollOwner>(() =>
   route.meta.scroll === "content" ? "content" : "shell",
 );
+// A page with its own phone chrome gets neither the bottom nav nor the top
+// inset from the shell, so the inset applies once. The unavailable surface
+// replaces that page and its chrome, so the shell draws its own again; so does
+// a page that asks for it.
+const pageOwnsPhoneChrome = computed(
+  () =>
+    route.meta.phoneChrome === "page" &&
+    unavailable.value === null &&
+    !shellPhoneChromeRequested.value,
+);
 
 const accountSheetOpen = ref(false);
 // Close on navigation, and when the phone layout unmounts. Left open, the
@@ -146,6 +161,13 @@ function describeUnavailable(
 </script>
 
 <style scoped>
+/* frappe-ui's MobileShell pads its header target (its first child) by the top
+   safe-area inset in an installed app. A page that owns its phone chrome
+   applies that inset itself. */
+.suite-page-phone-chrome > :deep(div:first-child) {
+  padding-top: 0;
+}
+
 /* ScrollArea's content wrapper must stretch for short pages to fill the viewport. */
 .suite-area-shell :deep([data-slot="desktop-shell-content"] > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"] > div) {
   display: flex;
