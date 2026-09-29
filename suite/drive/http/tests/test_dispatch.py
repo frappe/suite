@@ -1373,6 +1373,37 @@ class TestRoots(DriveHTTPCase):
         answer = self.data(self.drive("GET", f"{PREFIX}/roots/{self.root.name}/usage", sid=sid))
         self.assertIn("used_bytes", answer)
 
+    def test_the_breakdown_expansion_lists_what_the_root_holds(self):
+        path = f"{PREFIX}/roots/{self.root.name}/usage"
+        answer = self.data(self.as_owner("GET", path, query={"expand": "breakdown"}))
+        self.assertEqual(
+            set(answer),
+            {"used_bytes", "reserved_bytes", "quota_bytes", "effective_quota", "by_type", "largest"},
+        )
+        # The fixture holds one 11-byte file; the folder and the empty document are free.
+        self.assertEqual([row["bytes"] for row in answer["by_type"]], [11])
+        self.assertEqual(
+            answer["largest"],
+            [
+                {
+                    "node": self.file,
+                    "title": "report.bin",
+                    "size": 11,
+                    "mime": answer["largest"][0]["mime"],
+                    "kind": "file",
+                    "type": answer["by_type"][0]["type"],
+                }
+            ],
+        )
+
+        sid = self.session_for("Administrator")
+        admin = self.data(self.drive("GET", path, query={"expand": "breakdown"}, sid=sid))
+        self.assertEqual(admin["largest"], answer["largest"])
+
+        stranger = self.session_for(STRANGER)
+        refused = self.drive("GET", path, query={"expand": "breakdown"}, sid=stranger)
+        self.refusal(refused, 404, "DriveNotFound")
+
     def test_an_ordinary_user_cannot_change_a_quota(self):
         response = self.as_owner("PATCH", f"{PREFIX}/roots/{self.root.name}", body={"quota_bytes": 10})
         self.assertIn(response.status_code, (403, 404))

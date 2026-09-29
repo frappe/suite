@@ -3162,7 +3162,7 @@ There is no per-row access or breadcrumb query.
 | GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
 | POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{read: <n>}` |
 | GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
-| GET | `/roots/<id>/usage` | own root, or Suite Admin for any | none | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}` |
+| GET | `/roots/<id>/usage` | own root, or Suite Admin for any | `?expand=breakdown` | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}`; `breakdown` adds `by_type: [{type, bytes}]` and `largest: [{node, title, size, mime, kind, type}]` |
 | PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
 | POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{purged: <n>}` |
@@ -3210,8 +3210,17 @@ today's `is_drive_site_admin` rule. None of these routes admits a guest.
   `suite.utils.user.generate_user_keys`, a Suite method outside this
   namespace. `is_admin` appears here and on `/site-settings` because the
   legacy client read it from both `webdav_config` and `is_site_admin`.
-- Storage usage has no new route: `GET /roots/<id>/usage` above already
-  replaces `storage_breakdown` and `storage_bar_data`.
+- Storage usage has no new route: `GET /roots/<id>/usage` above replaces
+  `storage_bar_data`, and with `?expand=breakdown` it replaces
+  `storage_breakdown`. The breakdown reads the root's Active nodes that hold
+  bytes, so folders, links, and empty nodes are never listed. `by_type`
+  groups them by one rule: a content document by its `content_doctype`, a
+  file by its mime family in the legacy mime table (`Unknown` when the table
+  has no entry). It is ordered by bytes, largest first. `largest` holds the
+  10 largest of those nodes. Trash and versions count towards `used_bytes`
+  (§7.1) but are not in the breakdown. The breakdown lists titles, so only
+  the root's own user or a Suite Admin gets it; a manager of the root who is
+  neither reads the totals and gets 403 for `?expand=breakdown`.
 
 Three product methods are served by Suite-owned resources, defined in
 `suite/api/routes.py` and the unified frontend spec §4.3, not here:
@@ -3397,8 +3406,14 @@ to `GET /nodes/<id>/grants`.
 `GET /notifications`; `get_unread_count` to
 `GET /notifications/unread-count`; `mark_as_read` to `POST /notifications/read`.
 
-**`suite.drive.api.storage` (2)**: `storage_breakdown` and
-`storage_bar_data` to `GET /roots/<id>/usage`.
+**`suite.drive.api.storage` (2)**: `storage_breakdown` to
+`GET /roots/<id>/usage?expand=breakdown` and `storage_bar_data` to
+`GET /roots/<id>/usage`, both on the caller's Personal Root. The shim renames
+the route's two lists and keeps no type rule of its own; it lists files by
+root, not by owner, and the route's cap replaces the old quota floor. Each
+total row is `{mime_type, file_size}`, the keys the legacy Storage tab reads:
+`mime_type` is the first non-`frappe…` mime of that type in the legacy mime
+table, or null for a type the table does not hold.
 
 **`suite.drive.api.scripts` (2)**: `sync_preview` to
 `POST /nodes/<id>/preview`; `sync_from_disk` is dropped, because Build

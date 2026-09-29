@@ -1001,9 +1001,9 @@ const operationRootsDiscover: Operation<RootsDiscoverInput, RootsDiscoverOutput,
   validateOutput(value): asserts value is RootsDiscoverOutput { assertSchema(value, {"$defs":{"RootLocation":{"properties":{"node":{"title":"Node","type":"string"},"title":{"title":"Title","type":"string"}},"required":["node","title"],"title":"RootLocation","type":"object"}},"properties":{"personal":{"$ref":"#/$defs/RootLocation"},"organization":{"anyOf":[{"$ref":"#/$defs/RootLocation"},{"type":"null"}]}},"required":["personal","organization"],"title":"RootLocations","type":"object"}, 'roots_discover output') },
 }
 
-export type RootUsageInput = { "root": string }
+export type RootUsageInput = { "expand"?: "breakdown"; "root": string }
 
-export type RootUsageOutput = { "used_bytes": number; "reserved_bytes": number; "quota_bytes": (number) | (null); "effective_quota": number }
+export type RootUsageOutput = { "used_bytes": number; "reserved_bytes": number; "quota_bytes": (number) | (null); "effective_quota": number; "by_type"?: Array<{ "type": string; "bytes": number }>; "largest"?: Array<{ "node": string; "title": string; "size": number; "mime": (string) | (null); "kind": "file" | "document"; "type": string }> }
 
 export type RootUsageError = never
 
@@ -1017,8 +1017,8 @@ const operationRootUsage: Operation<RootUsageInput, RootUsageOutput, RootUsageEr
   nodeParams: [],
   entity: null,
   errors: [],
-  validateInput(value): asserts value is RootUsageInput { assertSchema(value, {"type":"object","properties":{"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_usage input') },
-  validateOutput(value): asserts value is RootUsageOutput { assertSchema(value, {"properties":{"used_bytes":{"title":"Used Bytes","type":"integer"},"reserved_bytes":{"title":"Reserved Bytes","type":"integer"},"quota_bytes":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Quota Bytes"},"effective_quota":{"title":"Effective Quota","type":"integer"}},"required":["used_bytes","reserved_bytes","quota_bytes","effective_quota"],"title":"RootUsage","type":"object"}, 'root_usage output') },
+  validateInput(value): asserts value is RootUsageInput { assertSchema(value, {"type":"object","properties":{"expand":{"const":"breakdown","title":"Expand","type":"string"},"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_usage input') },
+  validateOutput(value): asserts value is RootUsageOutput { assertSchema(value, {"$defs":{"LargestNode":{"properties":{"node":{"title":"Node","type":"string"},"title":{"title":"Title","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"kind":{"enum":["file","document"],"title":"Kind","type":"string"},"type":{"title":"Type","type":"string"}},"required":["node","title","size","mime","kind","type"],"title":"LargestNode","type":"object"},"TypeBytes":{"properties":{"type":{"title":"Type","type":"string"},"bytes":{"title":"Bytes","type":"integer"}},"required":["type","bytes"],"title":"TypeBytes","type":"object"}},"properties":{"used_bytes":{"title":"Used Bytes","type":"integer"},"reserved_bytes":{"title":"Reserved Bytes","type":"integer"},"quota_bytes":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Quota Bytes"},"effective_quota":{"title":"Effective Quota","type":"integer"},"by_type":{"items":{"$ref":"#/$defs/TypeBytes"},"title":"By Type","type":"array"},"largest":{"items":{"$ref":"#/$defs/LargestNode"},"title":"Largest","type":"array"}},"required":["used_bytes","reserved_bytes","quota_bytes","effective_quota"],"title":"RootUsage","type":"object"}, 'root_usage output') },
 }
 
 export type RootPatchInput = { "root": string }

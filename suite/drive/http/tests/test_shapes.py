@@ -391,6 +391,13 @@ class TestCoercion(UnitTestCase):
         for bad in ("grants", "access,grants", 1):
             self.refused(shapes.expansions, bad)
 
+    def test_usage_expansions_accept_only_the_breakdown(self):
+        allowed = shapes.USAGE_EXPANSIONS
+        self.assertEqual(shapes.expansions("breakdown", allowed=allowed), frozenset({"breakdown"}))
+        self.assertEqual(shapes.expansions(None, allowed=allowed), frozenset())
+        for bad in ("access", "breakdown,preview"):
+            self.refused(shapes.expansions, bad, allowed=allowed)
+
     def test_identifiers_are_bounded_distinct_and_ordered(self):
         self.assertEqual(shapes.identifiers(["b", "a", "b"], "nodes"), ("b", "a"))
         for bad in (None, [], "n1", ["", "a"], [1], [None]):
