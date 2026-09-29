@@ -27,22 +27,22 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 1 frame rework | `forge/uf-1-frame-rework` | done | `b7f3b49f7` | codex review: sheet focus and phone-to-desktop close; AccountSheet named. Shell journeys 24 of 24 |
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
-| Stage 4 settings | `forge/uf-4-settings` | in progress | | |
+| Stage 4 settings | `forge/uf-4-settings` | review fixes in progress | | codex review: 10 findings (phone profile lists, typed Mail openSettings, Admin dashboard row, drill-in history, focus trap) |
 | Stage 5 adoption | | waiting on 1, 3, 4 | | |
 | Stage 6 flip plumbing | | waiting on 5 | | |
 | Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
 | Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
 | Stage 10 upload, restore, batch | | waiting on 8 | | |
-| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer merged into the stage branch (`cefc6916e`); Sheets in review; Slides and Drive sub-lanes waiting | | Writer: codex review, 7 fixes plus recovery-copy expiry. Sheets journey 2 of 2 |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer merged into the stage branch (`cefc6916e`); Sheets fixing 8 review findings; Slides and Drive sub-lanes waiting | | Writer: codex review, 7 fixes plus recovery-copy expiry. Sheets journey 2 of 2 |
 | Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | | waiting on 0 | | |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
 | Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
-| Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | in progress | | |
-| Drive 45 legacy-call counter | | waiting on 0 | | |
+| Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
+| Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | in progress | | |
 | Drive 47 recents content doctype filter | | waiting on 0 | | |
-| Suite S1 to S4 | | waiting on 0 | | |
+| Suite S1, S2 (server) | `forge/uf-suite-asks-s1-s3` | done | `9852ca10b` | codex review: bounded people cursor. S3 moves to stage 8; S4 shipped with stage 11 Writer |
 | Flip rehearsal | | waiting on all | | |
 
 ## Open questions for Faris
@@ -83,6 +83,23 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    on that node and skips the name check for it only, and the session can
    finish only as that replace. One round trip, as ticket 007 implies.
    D15 is a separate `POST /nodes/batch/purge` route, not a flag.
+
+7. **Share button on a Sheets document (stage 11, Sheets).**
+   `new-and-open.spec.ts:146` (a `fixme`) expects no Share button on a
+   Sheets document; the Sheets brief asks for a disabled one until stage 9.
+   Interim: disabled button with a tooltip. Stage 9 decides.
+8. **Sheets cell Notes next to Drive Comments.** Both now show, with
+   similar icons. Interim: both stay.
+9. **Who a non-admin sees in `/api/suite/people` (S1).** Interim: any
+   `Suite User` sees all enabled System Users and all User Groups, and
+   the caller is listed. `member_count` counts disabled members, as legacy
+   did.
+10. **Deny plus `notify` (Drive 44).** A deny grant with `notify: true`
+    sends no email. Interim: accepted.
+11. **Stage 4 settings details.** Mail PWA Notifications has no Settings
+    row (still reachable from Mail's Profile view); Mail Credentials now
+    shows only under the JMAP condition; Workspace has two tabs, General
+    and Users.
 
 ## Needs a manual check (cannot run on this devbox)
 
