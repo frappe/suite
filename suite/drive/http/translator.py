@@ -178,6 +178,34 @@ ROUTES = (
     Route("GET", "roots/{root}/usage", "root_usage", output=shapes.RootUsage),
     Route("PATCH", "roots/{root}", "root_patch"),
     Route("DELETE", "roots/{root}", "root_purge"),
+    Route("GET", "settings", "settings_get", output=shapes.UserSettings),
+    Route(
+        "PATCH",
+        "settings",
+        "settings_patch",
+        body=shapes.WebdavSwitch,
+        output=shapes.UserSettings,
+    ),
+    Route(
+        "GET",
+        "site-settings",
+        "site_settings_get",
+        output=shapes.SiteSettings | shapes.AdminSiteSettings,
+    ),
+    Route(
+        "PATCH",
+        "site-settings",
+        "site_settings_patch",
+        body=shapes.WebdavSwitch,
+        errors=(DriveForbidden,),
+        output=shapes.AdminSiteSettings,
+    ),
+    Route(
+        "GET",
+        "webdav",
+        "webdav_get",
+        output=shapes.WebdavHidden | shapes.WebdavOff | shapes.WebdavConnection,
+    ),
 )
 
 

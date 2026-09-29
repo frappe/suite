@@ -8,6 +8,7 @@ from suite.drive.webdav.settings import (
     allowed_webdav_methods,
     dav_compliance,
     global_webdav_enabled,
+    set_user_webdav_enabled,
     user_webdav_enabled,
 )
 from suite.tests.utils import ensure_user
@@ -96,6 +97,16 @@ class TestWebDAVSettings(IntegrationTestCase):
             self.assertTrue(user_webdav_enabled(USER))
             set_settings({"webdav_enabled": 0})
             self.assertFalse(user_webdav_enabled(USER))
+
+    def test_a_first_write_that_loses_the_race_becomes_an_update(self):
+        """Two first writes can both see no row. The second insert then hits
+        the unique `user` name, and must update the row the first one made."""
+        frappe.db.delete("Drive Settings", {"user": FRESH})
+        frappe.get_doc({"doctype": "Drive Settings", "user": FRESH}).insert(ignore_permissions=True)
+        with patch.object(frappe.db, "exists", return_value=None), self.set_user(FRESH):
+            set_user_webdav_enabled(FRESH, True)
+        self.assertTrue(user_webdav_enabled(FRESH))
+        self.assertEqual(frappe.db.count("Drive Settings", {"user": FRESH}), 1)
 
     def test_missing_settings_row_defaults_to_disabled(self):
         frappe.db.delete("Drive Settings", {"user": FRESH})

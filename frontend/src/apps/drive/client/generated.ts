@@ -1041,6 +1041,106 @@ const operationRootPurge: Operation<RootPurgeInput, RootPurgeOutput, RootPurgeEr
   validateOutput(value): asserts value is RootPurgeOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'root_purge output') },
 }
 
+export type SettingsGetInput = Record<string, never>
+
+export type SettingsGetOutput = { "webdav_enabled": boolean; "writer_settings": {  } }
+
+export type SettingsGetError = never
+
+const operationSettingsGet: Operation<SettingsGetInput, SettingsGetOutput, SettingsGetError> = {
+  id: "settings_get",
+  owner: "drive",
+  method: "GET",
+  path: "settings",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  validateInput(value): asserts value is SettingsGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'settings_get input') },
+  validateOutput(value): asserts value is SettingsGetOutput { assertSchema(value, {"description":"The caller's own `Drive Settings` row (§3.14), or its field defaults.","properties":{"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"},"writer_settings":{"additionalProperties":true,"title":"Writer Settings","type":"object"}},"required":["webdav_enabled","writer_settings"],"title":"UserSettings","type":"object"}, 'settings_get output') },
+}
+
+export type SettingsPatchInput = { "webdav_enabled": boolean }
+
+export type SettingsPatchOutput = { "webdav_enabled": boolean; "writer_settings": {  } }
+
+export type SettingsPatchError = never
+
+const operationSettingsPatch: Operation<SettingsPatchInput, SettingsPatchOutput, SettingsPatchError> = {
+  id: "settings_patch",
+  owner: "drive",
+  method: "PATCH",
+  path: "settings",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  validateInput(value): asserts value is SettingsPatchInput { assertSchema(value, {"type":"object","properties":{"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"}},"required":["webdav_enabled"],"additionalProperties":false,"$defs":{}}, 'settings_patch input') },
+  validateOutput(value): asserts value is SettingsPatchOutput { assertSchema(value, {"description":"The caller's own `Drive Settings` row (§3.14), or its field defaults.","properties":{"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"},"writer_settings":{"additionalProperties":true,"title":"Writer Settings","type":"object"}},"required":["webdav_enabled","writer_settings"],"title":"UserSettings","type":"object"}, 'settings_patch output') },
+}
+
+export type SiteSettingsGetInput = Record<string, never>
+
+export type SiteSettingsGetOutput = ({ "is_admin": boolean; "preview_size": number }) | ({ "is_admin": boolean; "preview_size": number; "webdav_enabled": boolean; "webdav_allowed_methods": string; "default_personal_quota": number; "shared_quota": number })
+
+export type SiteSettingsGetError = never
+
+const operationSiteSettingsGet: Operation<SiteSettingsGetInput, SiteSettingsGetOutput, SiteSettingsGetError> = {
+  id: "site_settings_get",
+  owner: "drive",
+  method: "GET",
+  path: "site-settings",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  validateInput(value): asserts value is SiteSettingsGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'site_settings_get input') },
+  validateOutput(value): asserts value is SiteSettingsGetOutput { assertSchema(value, {"$defs":{"AdminSiteSettings":{"description":"What a Drive admin reads. Quotas are bytes, and 0 is unlimited.","properties":{"is_admin":{"title":"Is Admin","type":"boolean"},"preview_size":{"title":"Preview Size","type":"integer"},"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"},"webdav_allowed_methods":{"title":"Webdav Allowed Methods","type":"string"},"default_personal_quota":{"title":"Default Personal Quota","type":"integer"},"shared_quota":{"title":"Shared Quota","type":"integer"}},"required":["is_admin","preview_size","webdav_enabled","webdav_allowed_methods","default_personal_quota","shared_quota"],"title":"AdminSiteSettings","type":"object"},"SiteSettings":{"description":"What every signed-in caller reads from `Drive Disk Settings` (§3.13).","properties":{"is_admin":{"title":"Is Admin","type":"boolean"},"preview_size":{"title":"Preview Size","type":"integer"}},"required":["is_admin","preview_size"],"title":"SiteSettings","type":"object"}},"anyOf":[{"$ref":"#/$defs/SiteSettings"},{"$ref":"#/$defs/AdminSiteSettings"}]}, 'site_settings_get output') },
+}
+
+export type SiteSettingsPatchInput = { "webdav_enabled": boolean }
+
+export type SiteSettingsPatchOutput = { "is_admin": boolean; "preview_size": number; "webdav_enabled": boolean; "webdav_allowed_methods": string; "default_personal_quota": number; "shared_quota": number }
+
+export type SiteSettingsPatchError = "DriveForbidden"
+
+const operationSiteSettingsPatch: Operation<SiteSettingsPatchInput, SiteSettingsPatchOutput, SiteSettingsPatchError> = {
+  id: "site_settings_patch",
+  owner: "drive",
+  method: "PATCH",
+  path: "site-settings",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveForbidden"],
+  validateInput(value): asserts value is SiteSettingsPatchInput { assertSchema(value, {"type":"object","properties":{"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"}},"required":["webdav_enabled"],"additionalProperties":false,"$defs":{}}, 'site_settings_patch input') },
+  validateOutput(value): asserts value is SiteSettingsPatchOutput { assertSchema(value, {"description":"What a Drive admin reads. Quotas are bytes, and 0 is unlimited.","properties":{"is_admin":{"title":"Is Admin","type":"boolean"},"preview_size":{"title":"Preview Size","type":"integer"},"webdav_enabled":{"title":"Webdav Enabled","type":"boolean"},"webdav_allowed_methods":{"title":"Webdav Allowed Methods","type":"string"},"default_personal_quota":{"title":"Default Personal Quota","type":"integer"},"shared_quota":{"title":"Shared Quota","type":"integer"}},"required":["is_admin","preview_size","webdav_enabled","webdav_allowed_methods","default_personal_quota","shared_quota"],"title":"AdminSiteSettings","type":"object"}, 'site_settings_patch output') },
+}
+
+export type WebdavGetInput = Record<string, never>
+
+export type WebdavGetOutput = (Record<string, never>) | ({ "globally_enabled": boolean; "is_admin": boolean }) | ({ "globally_enabled": boolean; "is_admin": boolean; "server_url": string; "username": string; "enabled_for_user": boolean; "two_factor_blocked": boolean; "api_key": (string) | (null) })
+
+export type WebdavGetError = never
+
+const operationWebdavGet: Operation<WebdavGetInput, WebdavGetOutput, WebdavGetError> = {
+  id: "webdav_get",
+  owner: "drive",
+  method: "GET",
+  path: "webdav",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  validateInput(value): asserts value is WebdavGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'webdav_get input') },
+  validateOutput(value): asserts value is WebdavGetOutput { assertSchema(value, {"$defs":{"WebdavConnection":{"additionalProperties":false,"description":"How to mount `/dav/` while the site switch is on. Closed, as `WebdavOff`.\n\n`api_key` doubles as the DAV username for key-based sign-in. The secret is\nminted once by `suite.utils.user.generate_user_keys` and never read back.","properties":{"globally_enabled":{"title":"Globally Enabled","type":"boolean"},"is_admin":{"title":"Is Admin","type":"boolean"},"server_url":{"title":"Server Url","type":"string"},"username":{"title":"Username","type":"string"},"enabled_for_user":{"title":"Enabled For User","type":"boolean"},"two_factor_blocked":{"title":"Two Factor Blocked","type":"boolean"},"api_key":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Api Key"}},"required":["globally_enabled","is_admin","server_url","username","enabled_for_user","two_factor_blocked","api_key"],"title":"WebdavConnection","type":"object"},"WebdavHidden":{"additionalProperties":false,"description":"WebDAV is off for the site and the caller is no admin: nothing to show.","properties":{},"title":"WebdavHidden","type":"object"},"WebdavOff":{"additionalProperties":false,"description":"The site switch, shown to an admin while it is off.","properties":{"globally_enabled":{"title":"Globally Enabled","type":"boolean"},"is_admin":{"title":"Is Admin","type":"boolean"}},"required":["globally_enabled","is_admin"],"title":"WebdavOff","type":"object"}},"anyOf":[{"$ref":"#/$defs/WebdavHidden"},{"$ref":"#/$defs/WebdavOff"},{"$ref":"#/$defs/WebdavConnection"}]}, 'webdav_get output') },
+}
+
 export const api = {
   "node_create": operationNodeCreate,
   "node_batch": operationNodeBatch,
@@ -1097,7 +1197,12 @@ export const api = {
   "roots_discover": operationRootsDiscover,
   "root_usage": operationRootUsage,
   "root_patch": operationRootPatch,
-  "root_purge": operationRootPurge
+  "root_purge": operationRootPurge,
+  "settings_get": operationSettingsGet,
+  "settings_patch": operationSettingsPatch,
+  "site_settings_get": operationSiteSettingsGet,
+  "site_settings_patch": operationSiteSettingsPatch,
+  "webdav_get": operationWebdavGet
 } as const
 
 function assertSchema(value: unknown, schema: any, label: string, root: any = schema): void {
