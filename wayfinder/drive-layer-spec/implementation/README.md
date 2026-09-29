@@ -164,7 +164,7 @@ Numbers follow dependency order. Follow the linked blocking edges, not a require
 | [44 — List inherited grants, keep a link's password on update, and send share email](issues/44-inherited-grants-passwords-and-share-email.md) | Suite Drive engine and HTTP | [22](issues/22-http-sharing-and-records.md) | done |
 | [45 — Count every legacy `suite.drive.api.*` call by name and user agent](issues/45-legacy-call-counter.md) | Suite Drive HTTP compatibility | [23](issues/23-legacy-compatibility.md) | done |
 | [46 — Carry `favourite` on the node shape and accept an expected `modified` on PATCH](issues/46-node-shape-favourite-and-expected-modified.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
-| [47 — Filter the recents view by content doctype](issues/47-recents-content-doctype-filter.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | ready-for-agent |
+| [47 — Filter the recents view by content doctype](issues/47-recents-content-doctype-filter.md) | Suite Drive HTTP | [21](issues/21-http-node-workflows.md) | done |
 
 Tickets 39 and 40 are asks raised by unified frontend ticket
 [017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md):
