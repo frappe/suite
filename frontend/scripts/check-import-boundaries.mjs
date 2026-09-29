@@ -42,13 +42,6 @@ const boundaryDebtGroups = [
       "meet/pages/Home.vue|@/apps/calendar/components/ParticipantSelector.vue",
       "meet/pages/Home.vue|@/apps/calendar/utils/scheduleTime"
     ]
-  },
-  {
-    "owner": "Slides frontend owner",
-    "removal": "Move to @/apps/drive when Slides adopts the Drive interface.",
-    "entries": [
-      "slides/components/SharePopover.vue|@/apps/drive/legacy/sdk"
-    ]
   }
 ];
 

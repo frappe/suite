@@ -435,10 +435,11 @@ class TestCompositeGroups(IntegrationTestCase):
             [self._docname(node) for node in references],
         )
         self.assertEqual([row["index"] for row in answered["references"]], [1, 2, 3])
-        # The manifest names references; it never says whether one can be read
-        # and never carries a reference's content or node id.
+        # The manifest names references, and the nodes of the decks this
+        # caller can read. It never carries a reference's content.
         for row in answered["references"]:
-            self.assertEqual(set(row), {"reference", "index", "presentation"})
+            self.assertEqual(set(row), {"reference", "index", "presentation", "node"})
+        self.assertEqual([row["node"] for row in answered["references"]], references)
 
     def test_a_reference_id_is_the_row_and_never_the_deck_or_the_node(self):
         reference = self._deck(title="Ref")
@@ -561,21 +562,48 @@ class TestCompositeGroups(IntegrationTestCase):
                 {"reference", "index", "presentation", "readable", "node", "composite", "slides"},
             )
 
-    def test_the_manifest_names_an_unreadable_reference_exactly_like_a_readable_one(self):
-        """The manifest opens nothing, so it must not become a readability oracle."""
+    def test_the_manifest_names_no_node_for_a_private_reference(self):
+        """A node id the caller cannot open would let them match private decks across composites."""
         mine = self._deck(title="Mine")
         hidden = self._deck(title="Hidden", parent=self.other_root.node)
         composite = self._composite([mine, hidden])
         self._share(composite, VIEWER)
         self._share(mine, VIEWER)
+        # A link on the private deck that this caller does not hold opens nothing.
+        self._link(hidden)
+        stray = self._link(self._deck(title="Elsewhere"))
 
         self._as(VIEWER)
-        answered = api.composite_manifest(self._docname(composite))["references"]
+        with link_header(stray):
+            answered = api.composite_manifest(self._docname(composite))["references"]
 
-        self.assertEqual(len(answered), 2)
-        self.assertEqual([set(row) for row in answered], [{"reference", "index", "presentation"}] * 2)
+        self.assertEqual([set(row) for row in answered], [{"reference", "index", "presentation", "node"}] * 2)
         self.assertEqual([row["index"] for row in answered], [1, 2])
         self.assertEqual(answered[1]["presentation"], self._docname(hidden))
+        self.assertEqual([row["node"] for row in answered], [mine, None])
+        [group_row] = api.composite_group(self._docname(composite), [answered[1]["reference"]])["references"]
+        self.assertFalse(group_row["readable"])
+        self.assertIsNone(group_row["node"])
+
+    def test_the_manifest_names_a_reference_the_caller_reaches_only_through_a_held_link(self):
+        linked = self._deck(title="Linked", parent=self.other_root.node)
+        composite = self._composite([linked])
+        composite_code = self._link(composite)
+        code = self._link(linked)
+
+        self._as(STRANGER)
+        with link_header(composite_code, code):
+            held = api.composite_manifest(self._docname(composite))["references"]
+        with link_header(composite_code):
+            without = api.composite_manifest(self._docname(composite))["references"]
+
+        self.assertEqual([row["node"] for row in held], [linked])
+        self.assertEqual([row["node"] for row in without], [None])
+        # The node the manifest named selects the code, and that code opens the group.
+        with link_header(composite_code, code):
+            [row] = api.composite_group(self._docname(composite), [held[0]["reference"]])["references"]
+        self.assertTrue(row["readable"])
+        self.assertEqual(row["node"], linked)
 
     def test_a_reference_id_held_across_a_version_restore_is_refused_not_guessed(self):
         """`restore_version` rewrites the table, so a held list is stale, not wrong."""
@@ -620,7 +648,9 @@ class TestCompositeGroups(IntegrationTestCase):
         # `None`, the same empty value `composite_references` answers below, so
         # a client never reads an empty string as a docname.
         self.assertIsNone(answered[1]["presentation"])
-        self.assertIsNone(api.composite_manifest(self._docname(composite))["references"][1]["presentation"])
+        blank = api.composite_manifest(self._docname(composite))["references"][1]
+        self.assertIsNone(blank["presentation"])
+        self.assertIsNone(blank["node"])
         # The whole-deck path reads the same table. A falsy name is "no
         # filters" to `get_value`, which would have answered some other deck's
         # node id on a guest-reachable route.
@@ -1006,7 +1036,8 @@ class TestCompositeGroups(IntegrationTestCase):
         ids = self._ids(composite_node)
 
         self._as("Guest")
-        with link_header(composite_code):
+        # The client sends every code it holds to the manifest, up to 20.
+        with link_header(composite_code, *codes[:19]):
             manifest = api.composite_manifest(docname)
         with link_header(composite_code, *codes[:19]):
             first = api.composite_group(docname, ids[:19])
