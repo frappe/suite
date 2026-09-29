@@ -21,9 +21,9 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Unit | Branch | Status | Merge | Notes |
 |---|---|---|---|---|
 | Stage 0 baseline | `forge/uf-0-baseline` | done | `06d5c0225` | upstream `a3dba155c` merged at `98a0558fb`; codex review: 3 fixes applied |
-| Stage 1 frame rework | | waiting on 0 | | |
-| Stage 2 link credentials | | waiting on 0 | | |
-| Stage 3 four fixes | | waiting on 0 | | |
+| Stage 1 frame rework | `forge/uf-1-frame-rework` | in progress | | |
+| Stage 2 link credentials | `forge/uf-2-link-credentials` | in review (`apps/drive/index.ts` patch after stage 1) | | |
+| Stage 3 four fixes | `forge/uf-3-shell-fixes` | in progress | | |
 | Stage 4 settings | | waiting on 1, Drive 39 | | |
 | Stage 5 adoption | | waiting on 1, 3, 4 | | |
 | Stage 6 flip plumbing | | waiting on 5 | | |
@@ -32,10 +32,10 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 10 upload, restore, batch | | waiting on 8, Drive 42 | | |
 | Stage 11 document surfaces | | waiting on 0 (parts on 2, 8, 9, Drive 47) | | |
 | Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
-| Drive 39 settings and webdav routes | | waiting on 0 | | |
+| Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | | waiting on 0 | | |
 | Drive 42 upload, restore, purge routes | | waiting on 0 | | |
-| Drive 43 link routes and unlock | | waiting on 0 | | |
+| Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | in progress | | |
 | Drive 44 grants, passwords, share email | | waiting on 0 | | |
 | Drive 45 legacy-call counter | | waiting on 0 | | |
 | Drive 47 recents content doctype filter | | waiting on 0 | | |
@@ -49,6 +49,18 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    Ticket 012 says launch has no palette. Production already has it,
    because production tracks `develop`. Interim: the run keeps upstream's
    palette and builds nothing new on it.
+2. **`auto_detect_links` (Drive 39).** Upstream #879 (`c005af4b1`) deleted
+   this field from `Drive Settings`. Drive spec §3.14 and §11.2 still list
+   it. Orchestrator ruling: follow upstream; `GET /settings` answers
+   `{webdav_enabled, writer_settings}`. Overrule to restore the field.
+   `writer_settings` is a JSON object on the new route (legacy returned
+   the stored text).
+3. **Link eviction and tagging (stage 2).** Orchestrator reading of ticket
+   008: a 404 drops a link only when one code was sent and the 404 is on
+   the link's own target; any 410 drops it. A 404 inside a shared folder
+   keeps the link. Any node-returning response through one code tags its
+   nodes, writes included (ticket 008 says "a read or listing"), so a
+   node created through a link stays reachable.
 
 ## Old bugs found, assigned to a unit
 
