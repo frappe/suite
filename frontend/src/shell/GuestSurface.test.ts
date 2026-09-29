@@ -84,6 +84,17 @@ describe("the guest frame", () => {
     expect(root.textContent).toContain("Shared folder");
   });
 
+  it("never carries a fragment, and so no share-link token, into the Sign-in redirect", async () => {
+    const { root } = await mountFrame("/d/doc-1?view=comments#link=L000000000000000000001&x=1");
+    await nextTick();
+    const assign = vi.fn();
+    vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, assign });
+
+    root.querySelector<HTMLButtonElement>("header button")?.click();
+
+    expect(assign).toHaveBeenCalledWith("/login?redirect-to=%2Fd%2Fdoc-1%3Fview%3Dcomments");
+  });
+
   it("shows the Sign-in screen when it has no page to show", async () => {
     const { root } = await mountFrame("/d/doc-1", false);
 

@@ -8,6 +8,11 @@ import { DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
  * caller's own grants give less. Starred, Recent and Shared with me send no
  * link codes, so they could never show such a node. Star is hidden and no
  * visit is recorded. A guest has no views at all.
+ *
+ * Known gap: the access payload (`_describe_rows` in
+ * `suite/drive/_core/access.py`) names only the winning role and source, so a
+ * member with a lower grant of their own who opens a higher link also counts
+ * as link-only here. The fix waits on the server sending the caller's own role.
  */
 
 type Node = Pick<DriveNode, 'access'> | null | undefined

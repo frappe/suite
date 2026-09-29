@@ -13,7 +13,13 @@ export interface GuestFrame {
 
 export const GUEST_FRAME_KEY: InjectionKey<GuestFrame> = Symbol("guest-frame");
 
-/** `/login` returns to the same item inside the shell (spec §10.9). */
+/**
+ * `/login` returns to the same item inside the shell (spec §10.9).
+ *
+ * The fragment never goes along: it can hold a share-link token, and the
+ * redirect would put it in a query string, server logs and referrers.
+ */
 export function signInUrl(fullPath: string): string {
-  return `/login?redirect-to=${encodeURIComponent(fullPath)}`;
+  const [pathAndQuery = ""] = fullPath.split("#");
+  return `/login?redirect-to=${encodeURIComponent(pathAndQuery)}`;
 }

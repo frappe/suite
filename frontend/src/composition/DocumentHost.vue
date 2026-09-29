@@ -34,6 +34,7 @@ import {
   DriveUnlockScreen,
   driveNodeRoute,
   isDriveLocked,
+  isDriveNodeLocked,
   openDocumentSession,
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
@@ -117,12 +118,23 @@ watch(
   { immediate: true },
 );
 
-// An open document the server stops answering, as when an unlock ticket expires, opens again.
-// Opening again tells a lock (unlock screen) apart from lost access.
+// An open document the server stops answering is asked once why. A `401 DriveLocked`
+// means the unlock ticket expired: the unlock screen shows, and only a new password opens
+// the document again. Any other refusal keeps the refusal surface. Nothing reopens by itself,
+// so a server that keeps refusing cannot cause a loop.
 watch(
   () => session.value?.state.value,
-  (state, before) => {
-    if (state === "Refused" && before === "Active") reopen.value += 1;
+  async (state, before) => {
+    if (state !== "Refused" || before !== "Active" || !session.value) return;
+    const request = opening;
+    const lapsed = session.value;
+    if (!(await isDriveNodeLocked(lapsed.nodeId)) || request !== opening) return;
+    opening += 1;
+    session.value = null;
+    surface.value = null;
+    lapsed.dispose();
+    loading.value = false;
+    locked.value = true;
   },
 );
 

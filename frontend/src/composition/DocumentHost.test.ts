@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
+  nodeLocked: vi.fn(),
   surface: { name: "WriterTestSurface", render: () => null },
   preview: { name: "FileTestSurface", render: () => null },
 }));
@@ -18,6 +19,7 @@ vi.mock("@/apps/drive", async () => {
       setup: (_props, { emit }) => () => render("button", { "data-unlock": "", onClick: () => emit("unlocked") }, "Password required"),
     }),
     isDriveLocked: (error: { type?: string }) => error?.type === "DriveLocked",
+    isDriveNodeLocked: testState.nodeLocked,
     filePreviewSurface: testState.preview,
     openDocumentSession: testState.open,
     driveNodeRoute: (node: string, title: string) => ({
@@ -72,6 +74,7 @@ function session(contentDoctype = "Writer Document") {
 afterEach(() => {
   testState.open.mockReset();
   testState.dispose.mockReset();
+  testState.nodeLocked.mockReset();
   document.body.innerHTML = "";
 });
 
@@ -120,15 +123,37 @@ describe("DocumentHost", () => {
     app.unmount();
   });
 
-  it("opens again when an open document's access lapses, so an expired ticket asks for the password", async () => {
+  it("asks for the password again when an open document's unlock ticket expires", async () => {
     const open = session();
-    testState.open.mockResolvedValueOnce(open).mockRejectedValue(refusal(401, "DriveLocked"));
+    testState.open.mockResolvedValue(open);
+    testState.nodeLocked.mockResolvedValue(true);
     const { root, app } = await mountHost();
     await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
 
     open.state.value = "Refused";
 
     await vi.waitFor(() => expect(root.querySelector("[data-unlock]")).not.toBeNull());
+    expect(testState.open).toHaveBeenCalledOnce();
+    expect(testState.dispose).toHaveBeenCalledOnce();
+    root.querySelector<HTMLButtonElement>("[data-unlock]")!.click();
+    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledTimes(2));
+    app.unmount();
+  });
+
+  it("shows the refusal for any other lapse, and never reopens by itself", async () => {
+    const open = session();
+    testState.open.mockResolvedValue(open);
+    testState.nodeLocked.mockResolvedValue(false);
+    const { root, app } = await mountHost();
+    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
+
+    open.state.value = "Refused";
+    await vi.waitFor(() => expect(root.textContent).toContain("You do not have access"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(testState.nodeLocked).toHaveBeenCalledOnce();
+    expect(testState.open).toHaveBeenCalledOnce();
+    expect(root.querySelector("[data-unlock]")).toBeNull();
     app.unmount();
   });
 

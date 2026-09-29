@@ -7,7 +7,7 @@
       </div>
       <h1 id="drive-unlock-title" class="mt-4 text-2xl-semibold text-ink-gray-9">Password required</h1>
       <p class="mt-2 text-p-base text-ink-gray-6">Enter the password to open this link.</p>
-      <div class="mt-6 flex items-start gap-2 text-left">
+      <div ref="field" class="mt-6 flex items-start gap-2 text-left">
         <FormControl
           v-model="form.password.value"
           class="flex-1"
@@ -36,6 +36,7 @@
 
 <script setup lang="ts">
 import { Button, FormControl } from 'frappe-ui'
+import { onMounted, useTemplateRef } from 'vue'
 
 import { useUnlockForm } from './unlockForm'
 
@@ -43,6 +44,10 @@ const props = defineProps<{ node: string }>()
 const emit = defineEmits<{ unlocked: [] }>()
 
 const form = useUnlockForm(() => props.node)
+const field = useTemplateRef<HTMLElement>('field')
+
+// The password is the only thing to do here.
+onMounted(() => field.value?.querySelector('input')?.focus())
 
 async function open() {
   if (await form.submit()) emit('unlocked')

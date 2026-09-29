@@ -52,6 +52,22 @@ export async function unlockNode(
   }
 }
 
+const nodeGet = driveOperation<{ node: string }, unknown>(api.node_get, { entity: true })
+
+/**
+ * Asks the server once whether this node is refused for a link password, as
+ * when an unlock ticket expires while someone browses. Any other answer,
+ * success included, is `false`.
+ */
+export async function isDriveNodeLocked(node: string, transport: Transport = defaultTransport): Promise<boolean> {
+  try {
+    await transport.request(nodeGet, { node })
+    return false
+  } catch (error) {
+    return isDriveLocked(error)
+  }
+}
+
 /** Whether a refusal asks for the link password: the node route shows the unlock screen in place. */
 export function isDriveLocked(error: unknown): boolean {
   return error instanceof TransportError && error.status === 401 && error.type === 'DriveLocked'

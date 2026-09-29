@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h } from 'vue'
 
-import { takeLinkFragment } from './linkFragment'
+import { splitLinkFragment, takeLinkFragment } from './linkFragment'
 
 const TOKEN = 'L000000000000000000001'
 const Page = defineComponent({ setup: () => () => h('div') })
@@ -35,6 +35,33 @@ describe('the #link= fragment', () => {
     expect(seeded).toEqual([[TOKEN, 'folder-1'], [TOKEN, 'doc-1']])
     expect(resolvedWithSeed.mock.calls.every(([count]) => count > 0)).toBe(true)
     expect([folder, router.currentRoute.value.fullPath]).toEqual(['/drive/f/folder-1', '/d/doc-1/q3-plan?view=grid'])
+  })
+
+  it('removes the link in every form and keeps the other parameters', async () => {
+    const seeded: Array<[string, string]> = []
+    const router = linkRouter((token, node) => seeded.push([token, node]))
+    const landed: string[] = []
+
+    for (const hash of [
+      `#link=${TOKEN}&x=1`,
+      `#x=1&link=${TOKEN}`,
+      `#x=1&link=${TOKEN}&link=${TOKEN}&y=2`,
+      `#%6Cink=${TOKEN}`,
+      '#link',
+      '#link=&x=1',
+    ]) {
+      await router.push(`/d/doc-1${hash}`)
+      landed.push(router.currentRoute.value.fullPath)
+    }
+
+    expect(landed).toEqual(['/d/doc-1#x=1', '/d/doc-1#x=1', '/d/doc-1#x=1&y=2', '/d/doc-1', '/d/doc-1', '/d/doc-1#x=1'])
+    expect(landed.join(' ')).not.toContain(TOKEN)
+    expect(seeded).toEqual(Array.from({ length: 4 }, () => [TOKEN, 'doc-1']))
+  })
+
+  it('splits a fragment without decoding the parameters it keeps', () => {
+    expect(splitLinkFragment(`#a=%20b&link=${TOKEN}`)).toEqual({ token: TOKEN, hadLink: true, rest: '#a=%20b' })
+    expect(splitLinkFragment('#comment-4')).toEqual({ token: null, hadLink: false, rest: '#comment-4' })
   })
 
   it('leaves other fragments alone and strips a link fragment on a route with no node', async () => {

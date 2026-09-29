@@ -4,26 +4,30 @@ import { effectScope } from 'vue'
 import type { UnlockOutcome } from '@/apps/drive/client/unlock'
 import { formatWait, useUnlockForm } from './unlockForm'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  sessionStorage.clear()
+})
 
-function form(outcomes: UnlockOutcome[]) {
+function form(outcomes: UnlockOutcome[], node = 'locked-folder') {
   const unlock = vi.fn(async () => outcomes.shift() ?? { status: 'unlocked' as const })
   const scope = effectScope()
-  const state = scope.run(() => useUnlockForm(() => 'locked-folder', { unlock }))!
+  const state = scope.run(() => useUnlockForm(() => node, { unlock }))!
   return { state, unlock, scope }
 }
 
 describe('the unlock form', () => {
-  it('says "Wrong password" inline and lets the visitor try again', async () => {
+  it('says "Wrong password" inline, lets the visitor try again, and clears the password every time', async () => {
     const { state, unlock } = form([{ status: 'wrong-password' }, { status: 'unlocked' }])
 
     state.password.value = 'guess'
     const first = await state.submit()
     const error = state.message.value
+    const afterWrong = state.password.value
     state.password.value = 'open sesame'
     const second = await state.submit()
 
-    expect([first, error, second]).toEqual([false, 'Wrong password', true])
+    expect([first, error, afterWrong, second, state.password.value]).toEqual([false, 'Wrong password', '', true, ''])
     expect(unlock).toHaveBeenLastCalledWith('locked-folder', 'open sesame')
   })
 
@@ -45,6 +49,27 @@ describe('the unlock form', () => {
     expect(unlock).toHaveBeenCalledOnce()
     expect([state.disabled.value, state.message.value]).toEqual([false, ''])
     scope.stop()
+  })
+
+  it('keeps the lockout through a reload for that node only, and never stores the password', async () => {
+    vi.useFakeTimers()
+    const before = form([{ status: 'locked-out', retryAfterMs: 600_000 }])
+    before.state.password.value = 'guess'
+    await before.state.submit()
+    before.scope.stop()
+    vi.advanceTimersByTime(100_000)
+
+    const reloaded = form([])
+    const other = form([], 'another-folder')
+
+    expect([reloaded.state.disabled.value, reloaded.state.message.value]).toEqual([true, 'Try again in 8:20'])
+    expect(other.state.disabled.value).toBe(false)
+    expect(JSON.stringify({ ...sessionStorage })).not.toContain('guess')
+    vi.advanceTimersByTime(500_000)
+    expect(reloaded.state.disabled.value).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+    reloaded.scope.stop()
+    other.scope.stop()
   })
 
   it('formats a wait as minutes and seconds, rounding up', () => {
