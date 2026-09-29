@@ -72,5 +72,8 @@ def get_boot():
             # `bench set-config disable_slides_service_worker 1` unregisters the worker
             # on every slides visit, no deploy needed
             "disable_slides_service_worker": bool(frappe.conf.get("disable_slides_service_worker")),
+            # `bench set-config suite_flip_shell 1` puts Mail, Calendar and Meet in the
+            # shell; off, they keep their standalone chrome. Read on each page load.
+            "suite_flip_shell": bool(frappe.conf.get("suite_flip_shell")),
         }
     )
