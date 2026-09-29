@@ -18,7 +18,7 @@ from suite.drive._core.activity import (
     visit,
 )
 from suite.drive._core.errors import DriveNotFound
-from suite.drive._core.nodes import create_folder, purge
+from suite.drive._core.nodes import create_folder, purge, views
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.drive._core.roots import create_root
@@ -217,3 +217,145 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         # Adding one back does still need Read, and an unreadable node is hidden.
         with self.assertRaises(DriveNotFound):
             set_favourite(self.other, self.node)
+
+    def test_recents_filter_by_content_doctype_inside_the_query(self):
+        # The owner's history, oldest first. The two newest visits are not
+        # sheets, so an unfiltered two-row window holds no sheet at all.
+        opened = [
+            self.document("Sheet one", "Sheet"),
+            self.document("Sheet two", "Sheet"),
+            self.document("Sheet three", "Sheet"),
+            self.document("Deck one", "Presentation"),
+            self.document("Letter", "Writer Document"),
+            self.node,
+            self.document("Deck two", "Presentation"),
+        ]
+        for minute, node in enumerate(opened):
+            self.opened(node, minute)
+        newest_first = list(reversed(opened))
+        sheets = [newest_first[4], newest_first[5], newest_first[6]]
+
+        def names(page):
+            return [row.node.name for row in page["rows"]]
+
+        self.assertEqual(names(recents(self.owner, limit=2)), newest_first[:2])
+
+        first = recents(self.owner, content_doctype="Sheet", limit=2)
+        self.assertEqual(names(first), sheets[:2])
+        self.assertIsNotNone(first["next_cursor"])
+        second = recents(self.owner, content_doctype="Sheet", cursor=first["next_cursor"], limit=2)
+        self.assertEqual(names(second), sheets[2:])
+        self.assertIsNone(second["next_cursor"])
+
+        self.assertEqual(
+            names(recents(self.owner, content_doctype="Presentation")),
+            [newest_first[0], newest_first[3]],
+        )
+        letters = recents(self.owner, content_doctype="Writer Document")
+        self.assertEqual(names(letters), [newest_first[2]])
+        self.assertEqual(letters["rows"][0].opened_at, frappe.utils.get_datetime(self.stamp(4)))
+
+        unknown = recents(self.owner, content_doctype="No Such Doctype")
+        self.assertEqual(unknown, {"rows": [], "next_cursor": None})
+        self.assertEqual(names(recents(self.owner)), newest_first)
+
+        # The view door carries the filter through to the same query.
+        view = views(self.owner, "recents", content_doctype="Sheet", limit=2)
+        self.assertEqual([row.name for row in view["rows"]], sheets[:2])
+        self.assertEqual(view["rows"][0].opened_at, frappe.utils.get_datetime(self.stamp(2)))
+
+    def test_recents_pages_tied_visits_once_each_with_or_without_the_filter(self):
+        tied = [self.document(f"Sheet {index}", "Sheet") for index in range(3)]
+        for node in tied:
+            self.opened(node, 7)
+        self.opened(self.node, 1)
+        for content_doctype, expected in (("Sheet", set(tied)), (None, {*tied, self.node})):
+            with self.subTest(content_doctype=content_doctype):
+                seen, cursor = [], None
+                while True:
+                    page = recents(self.owner, content_doctype=content_doctype, cursor=cursor, limit=2)
+                    seen += [row.node.name for row in page["rows"]]
+                    cursor = page["next_cursor"]
+                    if cursor is None:
+                        break
+                self.assertEqual(len(seen), len(expected))
+                self.assertEqual(set(seen), expected)
+
+    def test_recents_read_past_unreadable_rows_to_fill_a_page(self):
+        # OTHER's history, newest first: readable, unreadable, readable, readable.
+        readable = [self.document(f"Readable {index}", "Sheet") for index in range(3)]
+        hidden = self.document("Hidden", "Sheet")
+        for node in readable:
+            grant(node, OTHER, READ, self.admin)
+        frappe.db.delete("Drive Recent", {"user": OTHER})
+        for minute, node in enumerate((readable[2], readable[1], hidden, readable[0])):
+            self.opened(node, minute, user=OTHER)
+        for content_doctype in ("Sheet", None):
+            with self.subTest(content_doctype=content_doctype):
+                first = recents(self.other, content_doctype=content_doctype, limit=2)
+                self.assertEqual([row.node.name for row in first["rows"]], readable[:2])
+                second = recents(
+                    self.other, content_doctype=content_doctype, cursor=first["next_cursor"], limit=2
+                )
+                self.assertEqual([row.node.name for row in second["rows"]], readable[2:])
+                self.assertIsNone(second["next_cursor"])
+
+    def test_recents_stop_after_a_bounded_number_of_windows(self):
+        from suite.drive._core.activity import MAX_RECENT_WINDOWS
+
+        frappe.db.delete("Drive Recent", {"user": OTHER})
+        readable = self.document("Readable", "Sheet")
+        grant(readable, OTHER, READ, self.admin)
+        self.opened(readable, 0, user=OTHER)
+        for minute in range(1, MAX_RECENT_WINDOWS + 2):
+            self.opened(self.document(f"Hidden {minute}", "Sheet"), minute, user=OTHER)
+
+        first = recents(self.other, content_doctype="Sheet", limit=1)
+        self.assertEqual(first["rows"], [])
+        self.assertIsNotNone(first["next_cursor"])
+        second = recents(self.other, content_doctype="Sheet", cursor=first["next_cursor"], limit=1)
+        self.assertEqual([row.node.name for row in second["rows"]], [readable])
+
+    def test_recents_leave_out_trashed_nodes(self):
+        kept = self.document("Kept", "Sheet")
+        trashed = self.document("Trashed", "Sheet")
+        self.opened(kept, 0)
+        self.opened(trashed, 1)
+        frappe.db.set_value("Drive Node", trashed, "state", "Trashed", update_modified=False)
+        for content_doctype in ("Sheet", None):
+            with self.subTest(content_doctype=content_doctype):
+                page = recents(self.owner, content_doctype=content_doctype)
+                names = [row.node.name for row in page["rows"]]
+                self.assertIn(kept, names)
+                self.assertNotIn(trashed, names)
+
+    def document(self, title: str, content_doctype: str) -> str:
+        """Insert a document node directly; `create_document` needs an active content type."""
+        return (
+            frappe.get_doc(
+                {
+                    "doctype": "Drive Node",
+                    "title": title,
+                    "parent": self.root.name,
+                    "root": self.root.name,
+                    "path": "",
+                    "kind": "document",
+                    "content_doctype": content_doctype,
+                    "content_docname": f"recents-{frappe.generate_hash(length=8)}",
+                    "state": "Active",
+                    "size": 0,
+                    "is_template": 0,
+                }
+            )
+            .insert(ignore_permissions=True, ignore_links=True)
+            .name
+        )
+
+    def opened(self, node: str, minute: int, user: str = OWNER) -> None:
+        frappe.get_doc(
+            {"doctype": "Drive Recent", "user": user, "node": node, "opened_at": self.stamp(minute)}
+        ).insert(ignore_permissions=True)
+
+    @staticmethod
+    def stamp(minute: int) -> str:
+        return f"2026-09-15 12:{minute:02d}:00"

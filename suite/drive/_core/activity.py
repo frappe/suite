@@ -181,33 +181,70 @@ def _insert_unique(doc: dict, reread) -> tuple[str | None, bool]:
     return name, True
 
 
+# `recents` reads further SQL windows while unreadable rows leave its page
+# short, and gives up after this many. A page can still come back short or
+# empty; its cursor then points past the last row read (§11.4).
+MAX_RECENT_WINDOWS = 5
+
+# STRAIGHT_JOIN keeps the plan on the caller's own rows: `recent_user_opened`
+# walks `user = ?` in `opened_at` order, and each node is one primary-key
+# lookup. Left to itself the planner can start from `node_content` and read
+# every document of the type on the site first. `r.name` breaks ties between
+# visits stamped the same second, so offset pages never repeat or skip a row;
+# the secondary index carries the primary key, so it adds no sort.
+RECENTS_SQL = """
+SELECT STRAIGHT_JOIN r.name, r.node, r.opened_at
+FROM `tabDrive Recent` r
+JOIN `tabDrive Node` n ON n.name = r.node
+WHERE r.user = %(user)s
+  AND n.state = 'Active'
+  AND (%(content_doctype)s IS NULL OR (n.kind = 'document' AND n.content_doctype = %(content_doctype)s))
+ORDER BY r.opened_at DESC, r.name DESC
+LIMIT %(limit)s OFFSET %(offset)s
+"""
+
+
 def recents(
     principals: Principals,
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
     with_access: bool = False,
+    content_doctype: str | None = None,
 ) -> dict:
-    """Page only the caller's still-readable recent nodes, newest first."""
-    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+    """Page only the caller's still-readable, Active recent nodes, newest first.
+
+    `content_doctype` keeps only documents of that type. It is a predicate in
+    the query, not a filter on the fetched window, so a history full of other
+    types cannot leave a page short. An unknown doctype answers an empty page.
+
+    Readability is checked after the query, so a window can lose rows. Further
+    windows are read, up to `MAX_RECENT_WINDOWS`, until the page is full.
+    """
+    from suite.drive._core.nodes import decode_cursor, encode_cursor, page_limit
 
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    rows = frappe.get_all(
-        "Drive Recent",
-        filters={"user": principals.user},
-        fields=["name", "node", "opened_at"],
-        order_by="opened_at desc",
-        limit=window,
-        start=offset,
-    )
-    return page_of(
-        _visible_personal_rows(principals, rows, with_access=with_access),
-        offset,
-        len(rows),
-        window,
-    )
+    values = {"user": principals.user, "content_doctype": content_doctype, "limit": window}
+    page: list = []
+    read = 0
+    exhausted = False
+    for _ in range(MAX_RECENT_WINDOWS):
+        values["offset"] = offset + read
+        rows = frappe.db.sql(RECENTS_SQL, values, as_dict=True)
+        kept = {row.name for row in _visible_personal_rows(principals, rows, with_access=with_access)}
+        for row in rows:
+            read += 1
+            if row.name in kept:
+                page.append(row)
+                if len(page) == window:
+                    break
+        # A short window is the end of the history, once every row in it is read.
+        exhausted = len(rows) < window and values["offset"] + len(rows) == offset + read
+        if len(page) == window or exhausted:
+            break
+    return {"rows": page, "next_cursor": None if exhausted else encode_cursor(offset + read)}
 
 
 def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) -> int:
