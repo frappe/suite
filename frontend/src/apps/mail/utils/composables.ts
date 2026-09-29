@@ -9,6 +9,7 @@ import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
 
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -564,19 +565,11 @@ export const useFilterBySender = () => {
 /** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
 export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
 
-// Shared state for the Settings dialog, so any view can open it (optionally on a specific tab).
-// <SettingsModal> (rendered in MailLayout) reacts to `showSettings` and opens `settingsTab`.
-const showSettings = ref(false)
-const settingsTab = ref<MailSettingsTabId | undefined>()
-
-export const useSettings = () => {
-	const openSettings = (tab?: MailSettingsTabId) => {
-		settingsTab.value = tab
-		showSettings.value = true
-	}
-
-	return { showSettings, settingsTab, openSettings }
-}
+// Every Mail entry point opens the Suite Settings dialog on a Mail tab. This is Mail's one
+// import of the shell's Settings [T018].
+export const useSettings = () => ({
+	openSettings: (tab: MailSettingsTabId) => openSuiteSettings(tab),
+})
 
 const showShortcuts = ref(false)
 

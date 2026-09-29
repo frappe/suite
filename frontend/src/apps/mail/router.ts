@@ -79,14 +79,14 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 	// site connected to one. Mail itself needs neither, just a mailbox.
 	const canAdminister = !!user?.is_suite_admin && !!user?.is_suite_cloud_configured
 
-	// No mailbox: the dashboard is all Mail has for them, if they may have it.
+	// No mailbox. A MIME page needs none, and the dashboard is all Mail has for them, if they may
+	// have it. Every other Mail page answers with the shell's "Mail is unavailable": the Mail
+	// root does, and the dashboard, which carries no rail context, sends them there.
 	if (!user?.is_jmap_configured) {
-		if (!canAdminister) {
-			window.location.replace('/desk')
-			return false
-		}
-		if (to.meta.isDashboard) return
-		return { name: 'mail-overview' }
+		if (to.name === 'mail-mime-message') return
+		if (canAdminister) return to.meta.isDashboard ? undefined : { name: 'mail-overview' }
+		if (to.meta.isDashboard) return { name: 'mail-root-shortcut' }
+		return
 	}
 
 	// Resolve active account. The merged All Inboxes thread route carries the thread's

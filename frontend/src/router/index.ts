@@ -221,7 +221,12 @@ router.beforeEach(async (to) => {
   const areaId = areaPlaceholderId(to)
   if (areaId) {
     const area = findArea(areaId)
-    if (area && !areaIsAvailable(area, session)) return true
+    if (
+      area &&
+      !areaIsAvailable(area, session) &&
+      !isMailPathWithoutAccount(to.path)
+    )
+      return true
     await ensureAreaRoutesLoaded(areaId)
     return to.fullPath
   }
@@ -261,6 +266,12 @@ function isLegacyMailGuestPath(path: string): boolean {
   return /^\/mail\/(?:login|signup(?:\/|$)|reset-password(?:\/|$)|mime-message\/)/.test(
     path,
   )
+}
+
+// Mail pages that need no mail account: the public MIME view and the Admin
+// Dashboard. They load without the Mail capability; Mail's guard decides.
+function isMailPathWithoutAccount(path: string): boolean {
+  return /^\/mail\/(?:mime-message\/|dashboard(?:\/|$))/.test(path)
 }
 
 /**

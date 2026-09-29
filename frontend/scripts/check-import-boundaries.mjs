@@ -184,7 +184,6 @@ const moduleGraphDebtGroups = [
       "mail/components/MailActions.vue|@/components/AdaptiveDropdown.vue",
       "mail/components/MailListItem.vue|@/components/HighlightedText.vue",
       "mail/components/MailListToolbar.vue|@/components/AdaptiveDropdown.vue",
-      "mail/components/Modals/SettingsModal.vue|@/shell/settings/SuiteSettingsDialog.vue",
       "mail/components/PlainTextBody.vue|@/components/LinkifiedText.vue",
       "mail/components/QuotaBar.vue|@/components/SidebarStorage.vue",
       "mail/components/SearchResultsHeader.vue|@/stores/root",
@@ -268,6 +267,7 @@ const moduleGraphDebtGroups = [
       "mail/stores/session.ts|@/boot/session",
       "mail/utils/composables.ts|@/composables/useScreenSize",
       "mail/utils/composables.ts|@/composables/useTheme",
+      "mail/utils/composables.ts|@/shell/settings/useSettingsDialog",
       "mail/utils/composables.ts|@/stores/root"
     ]
   },

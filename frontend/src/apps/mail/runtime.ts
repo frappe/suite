@@ -1,15 +1,8 @@
-import { createResource } from 'frappe-ui'
+import suiteRouter, { mailGuard } from '@/apps/mail/router'
 
-import { mailGuard } from '@/apps/mail/router'
-
-export function bootstrap() {
-  if (!window.translatedMessages) {
-    createResource({
-      url: 'suite.mail.api.get_translations',
-      cache: 'translations',
-      transform: (data) => (window.translatedMessages = data),
-    }).fetch()
-  }
-}
-
-export const beforeEach = mailGuard
+/**
+ * Mail's navigation guard on the suite router: account resolution, shortcut expansion (bare
+ * `/mail` lands on the inbox), mailbox validation and dashboard access. Installed once, when
+ * `routes.ts` first loads.
+ */
+suiteRouter.beforeEach(mailGuard)
