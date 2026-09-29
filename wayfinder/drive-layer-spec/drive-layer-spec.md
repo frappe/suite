@@ -352,6 +352,7 @@ The only permission table. Naming: `autoname: hash`.
 | `role` | Int | | reqd 1 | One of 0, 10, 20, 30, 40, 50. 0 is a stored deny. |
 | `expires_on` | Datetime | | | The grant stops at this moment. Valid on every principal [008 §8]. |
 | `password_hash` | Data | | length 255 | Passlib hash. Valid on `$LINK:*` only [008 §8]. |
+| `sent_to` | Data | Email | | The address a new link was emailed to (§5.9 `send_to`). Set on `$LINK:*` only, at mint time [issue 44, D21]. |
 
 Accepted in [accepted decisions](#accepted-decisions): all grants target a
 `Drive Node`, including grants on a root. Use a normal Link. The permission
@@ -1222,8 +1223,14 @@ needs MANAGE at the node, like the share dialog it feeds (§11).
 
 ```python
 def grant(node_id: str, principal: str, role: int, p: Principals, *,
-          expires_on: datetime | None = None, password: str | None = None) -> dict:
+          expires_on: datetime | None = None, password: str | None | Keep = KEEP,
+          send_to: str | None = None, notify: bool = False) -> dict:
 ```
+
+`password` is a patch: `KEEP` (the default, an omitted field over HTTP)
+leaves the stored hash, `None` clears it, and a string sets it. `role` and
+`expires_on` are replaced on every write; `expires_on=None` clears the expiry
+[issue 44, D20].
 
 Refusal list, in order. Every refusal is a raise, and none of them
 writes a row.
@@ -1242,6 +1249,8 @@ writes a row.
 | 10 | `password` is set and the principal is not a link | `DriveForbidden` | [008 §8] |
 | 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included) | `DriveForbidden` | [002] |
 | 12 | `expires_on` is in the past | `frappe.ValidationError` | |
+| 13 | `send_to` is given and the principal is not the bare `$LINK`, or `send_to` is not exactly one bare email address | `frappe.ValidationError` | [issue 44, D21] |
+| 14 | `notify` is true and the principal is not an `<email>` | `frappe.ValidationError` | [issue 44, D22] |
 
 Refusals 7, 8, and 11 bind a Suite Admin as well.
 
@@ -1253,13 +1262,22 @@ What it does when nothing refuses:
 
 1. When `principal == "$LINK"` with no token, mint one: 22 chars base62.
    The stored principal is `$LINK:<token>` [014].
-2. Hash `password` with the same passlib context as User passwords
-   [008 §3].
-3. Upsert on `(node, principal)`: insert, or update `role`,
-   `expires_on`, and `password_hash`.
-4. Write one activity row (§5.12).
-5. Return the row. For a link, the response carries the URL
+2. Hash a string `password` with the same passlib context as User
+   passwords [008 §3].
+3. Upsert on `(node, principal)`: insert, or update `role` and
+   `expires_on`, and `password_hash` only when `password` is not `KEEP`.
+   Changing a link's expiry alone never clears its password [issue 44, D20].
+   A new link minted with `send_to` stores the address in `sent_to`.
+4. Write one activity row (§5.12). `has_password` describes the row after
+   the write.
+5. Return the row with `sent_to`. For a link, the response carries the URL
    `/l/<token>` [014; unified frontend ask D17].
+6. With `send_to`, queue one share email to that address with the link URL.
+   With `notify`, queue one share email to the user with `node_url(node)`
+   (§9.5). Neither is stored as a flag, and a role 0 write sends none.
+
+One outsider address means one link: two sends to the same address mint two
+rows [unified frontend spec §7.8].
 
 There is no grant ceiling. A MANAGE holder may set any role up to
 MANAGE. Self-removal is allowed, self-lockout included [002].
@@ -1358,8 +1376,8 @@ def unlock_link(token: str, password: str) -> dict
 
 No role is needed: the password is the proof. It reads the grant by
 `principal = '$LINK:<token>'` (index `grant_principal`), verifies the
-passlib hash, and returns `{"ticket": make_ticket(...)}`, valid 30
-days. It writes no row anywhere. Rate limit in §6.3. It raises
+passlib hash, and returns `{"ticket": make_ticket(...), "expires": exp}`,
+valid 30 days; `expires` is the ticket's Unix expiry. It writes no row anywhere. Rate limit in §6.3. It raises
 `DriveLinkExpired` when the grant is past `expires_on`, and
 `DriveNotFound` when the token names no grant.
 
@@ -2474,6 +2492,17 @@ Rules.
   that row and cannot drift [011 §10].
 - All three are deleted when their node is purged (§8.8).
 
+**Share email** [issue 44, D21, D22]. A grant write asks for one explicitly:
+`send_to` on a new `$LINK`, or `notify: true` on an `<email>` principal. The
+email names the sharer, the node title, and the role, and links to `/l/<token>`
+for a link or `node_url(node)` for a user, as an absolute URL. `grant`
+registers one after-commit callback that pushes a `frappe.enqueue` job; the
+job calls `frappe.sendmail`. Sending is never on the request path. The
+callback catches and logs any push failure, such as Redis being down, so the
+request still answers with the committed grant and a retry never mints a
+second link. A mail failure never fails the grant. The in-app Notification above is written
+either way.
+
 Every mutating Drive workflow publishes one payload-free `drive:changed`
 realtime event after commit to each affected user's room. Affected users are
 the node owner and user or group grant holders that can be resolved for the
@@ -3007,8 +3036,8 @@ and get the same error [012].
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain | `{grants: [...], explain?: [...]}` |
-| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?}` | `{grant, url?}` |
+| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain; `?inherited=1` for ancestor grants | `{grants: [...], inherited?: [{grant, redacted, source_node, source_title}], explain?: {role, source, rows}}` |
+| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?, send_to?, notify?}` | `{grant, url?}` |
 | DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{"result": "revoked"}`, or `{"result": "revoked", "rows": <n>}` with `below=1` |
 | POST | `/grants/<id>/rotate` | MANAGE on the grant's node | none | `{grant, url}` |
 | POST | `/links/<token>/unlock` | none | `{password}` | `{ticket, expires}` |
@@ -3025,6 +3054,30 @@ and get the same error [012].
   base62 token and returns `url = "/l/<token>"`. Rotate and the grant list
   return the same `url` for every link grant [008 §1, 014; unified frontend
   ask D17].
+- A grant row is `{name, node, principal, role, expires_on, has_password,
+  sent_to, url?}`. `grants` holds the node's local rows, expired ones
+  included. `inherited` holds every live grant on an ancestor, nearest
+  ancestor first, read in one query over the chain (`EXPLAIN_SQL` without
+  the node itself). A deny on the node itself is local and stays in
+  `grants` [issue 44, D19].
+- An inherited link row carries its secrets (token, `url`, `sent_to`, and
+  the grant `name`) only when the caller has MANAGE on its source node.
+  MANAGE on a child does not reach the parent, and an unprotected parent
+  link opens the parent's whole subtree. Otherwise the entry has
+  `redacted: true` and its `grant` is exactly `{node, principal: "$LINK",
+  role, expires_on, has_password}`, with no other key. Every other entry has
+  `redacted: false` and a full grant row.
+- PUT body: `role` and `expires_on` replace; an omitted or null
+  `expires_on` clears the expiry. `password` patches: omitted keeps the
+  hash, null or `""` clears it, a string sets it [issue 44, D20].
+  `send_to: <email>` on `$LINK` mints the link, stores the address, and
+  emails the link. It takes exactly one bare address; a list, a
+  `Name <address>` form, or any other principal is refused with 400. `notify:
+  true` on an `<email>` principal emails that user; it is never stored and
+  omitted means no email (§9.5) [issue 44, D21, D22].
+- `explain` is §5.8's object: `role`, `source`, and `rows`, each row
+  `{node, depth, principal, role, expires_on, pass, held, winner}`
+  [issue 44, D23].
 - Refusals on the grant route: `$PUBLIC` above READ; `$PUBLIC` or `$LINK`
   naming a root node; `password` on a principal that is not `$LINK:*`; a
   link role above EDIT; a deny naming a Personal Root's own user inside

@@ -217,6 +217,11 @@ One person's pointer at one Activity, with whether they have seen it. It
 says nothing the Activity does not.
 _Avoid_: Alert, Message, Inbox item
 
+**Share Email**:
+One email that tells one address a node or a Share Link was shared with
+it. Sent only when the grant write asks for it, and never stored as a flag.
+_Avoid_: Invite, Invitation, Share notification
+
 ### Deployment
 
 **Business site**:
