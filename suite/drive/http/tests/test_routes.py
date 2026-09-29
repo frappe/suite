@@ -806,7 +806,7 @@ class TestViewRoutes(BoundaryCase):
             ("templates", {"content_doctype": "Presentation"}),
             ("search", {"term": "budget"}),
             ("shared", {}),
-            ("recents", {}),
+            ("recents", {"content_doctype": "Presentation"}),
             ("favourites", {}),
             ("archived-roots", {}),
         )

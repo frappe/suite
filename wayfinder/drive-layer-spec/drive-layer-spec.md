@@ -3119,7 +3119,7 @@ caller cannot read marked as unreadable, instead of dropping it silently
 | Name | Rows | Role |
 |---|---|---|
 | `shared` | the caller's grant roots outside their own Personal Root | per grant |
-| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at` | READ |
+| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at`; Active nodes only; `?content_doctype=` keeps only documents of that type, filtered in the query, and an unknown type answers an empty page | READ |
 | `favourites` | `Drive Favourite` for the caller | READ |
 | `trash` | Trashed nodes where `trash_root = name`, in roots the caller reaches | READ to list; EDIT or MANAGE to restore (§8.8) |
 | `archived-roots` | Archived Roots holding a grant for the caller | per grant [001] |

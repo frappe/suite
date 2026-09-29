@@ -905,7 +905,7 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given) -
     """
     if name == "trash":
         return {"root": shapes.required_text(root, "root")}
-    if name == "templates":
+    if name in ("templates", "recents"):
         return {"content_doctype": shapes.text(content_doctype, "content_doctype")}
     if name == "search":
         return {"term": shapes.required_text(term, "term")}
