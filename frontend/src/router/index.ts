@@ -6,7 +6,7 @@ import {
   type RouteRecordRaw,
 } from 'vue-router'
 
-import { SUITE_APPS, isInstallableApp } from '@/apps/registry'
+import { SUITE_APPS } from '@/apps/registry'
 import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import {
   areaDefinitions,
@@ -19,13 +19,13 @@ import {
   routes,
 } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
+import { installPwa } from '@/platform/pwa'
 import { useSession } from '@/platform/session'
 import { transport, type Operation } from '@/platform/transport'
-import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
 
 declare module 'vue-router' {
   interface RouteMeta {
-    /** Temporary legacy product identity used by old layouts and Mail PWA scoping. */
+    /** Temporary legacy product identity used by old layouts, the last app and the install offer. */
     appId?: string
   }
 }
@@ -38,7 +38,6 @@ const legacyRouteLoaders: Record<
   slides: () => import('@/apps/slides/routes'),
   writer: () => import('@/apps/writer/routes'),
   sheets: () => import('@/apps/sheets/routes'),
-  meet: () => import('@/apps/meet/routes'),
 }
 const legacyApps = SUITE_APPS.filter((app) => app.id in legacyRouteLoaders).map(
   (app) => ({
@@ -135,7 +134,8 @@ async function ensureAreaRoutesLoaded(areaId: string): Promise<void> {
   const routeModule = await area.loadRoutes()
   const seed = canonicalRoutes.find((route) => route.meta?.area === areaId)
   const meta = { ...seed?.meta }
-  if (areaId === 'mail' || areaId === 'calendar') meta.appId = areaId
+  if (areaId === 'mail' || areaId === 'calendar' || areaId === 'meet')
+    meta.appId = areaId
 
   router.addRoute({
     path: area.to,
@@ -194,6 +194,16 @@ router.beforeEach(async (to) => {
     return to.fullPath
   }
 
+  // A guest may join a Meet call. Load Meet's routes first, so the call
+  // route's own metadata decides who may enter.
+  if (
+    session.status.value === 'guest' &&
+    areaPlaceholderId(to) === 'meet'
+  ) {
+    await ensureAreaRoutesLoaded('meet')
+    return to.fullPath
+  }
+
   if (session.status.value === 'guest') {
     if (to.meta.allowGuest) return true
     window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
@@ -211,7 +221,12 @@ router.beforeEach(async (to) => {
   const areaId = areaPlaceholderId(to)
   if (areaId) {
     const area = findArea(areaId)
-    if (area && !areaIsAvailable(area, session)) return true
+    if (
+      area &&
+      !areaIsAvailable(area, session) &&
+      !isMailPathWithoutAccount(to.path)
+    )
+      return true
     await ensureAreaRoutesLoaded(areaId)
     return to.fullPath
   }
@@ -220,10 +235,10 @@ router.beforeEach(async (to) => {
 })
 
 installPageMeta(router)
+installPwa(session)
 
 router.afterEach((to, _from, failure) => {
   if (failure) return
-  setPwaTags(to)
   rememberLastApp(to.meta.appId ?? to.meta.area)
 })
 
@@ -253,70 +268,10 @@ function isLegacyMailGuestPath(path: string): boolean {
   )
 }
 
-/**
- * The suite installs as one app. The install offer appears only in product
- * areas whose registry entry has a phone layout.
- */
-const PWA_METAS: Array<[name: string, content: string]> = [
-  ['mobile-web-app-capable', 'yes'],
-  ['apple-mobile-web-app-capable', 'yes'],
-  ['apple-mobile-web-app-status-bar-style', 'black-translucent'],
-]
-
-let pwaTagsAttached = false
-
-function setPwaTags(to: RouteLocationNormalizedLoaded) {
-  const installable = isInstallableApp(to.meta.appId ?? to.meta.area)
-  if (installable === pwaTagsAttached) return
-  pwaTagsAttached = installable
-
-  if (!installable) {
-    document.head
-      .querySelectorAll('[data-pwa-scope="suite"]')
-      .forEach((element) => element.remove())
-    return
-  }
-
-  const assets = `${import.meta.env.BASE_URL}pwa/suite/`
-  appendPwaTag('link', {
-    rel: 'manifest',
-    href: `${assets}manifest.webmanifest`,
-  })
-  appendPwaTag('link', {
-    rel: 'apple-touch-icon',
-    href: `${assets}apple-icon-180.png`,
-  })
-  for (const [name, content] of PWA_METAS)
-    appendPwaTag('meta', { name, content })
-
-  for (const {
-    width: cssWidth,
-    height: cssHeight,
-    dpr,
-  } of APPLE_SPLASH_DEVICES) {
-    const device =
-      `(device-width: ${cssWidth}px) and (device-height: ${cssHeight}px) and ` +
-      `(-webkit-device-pixel-ratio: ${dpr})`
-    const [width, height] = [cssWidth * dpr, cssHeight * dpr]
-    appendPwaTag('link', {
-      rel: 'apple-touch-startup-image',
-      href: `${assets}splash/apple-splash-${width}-${height}.png`,
-      media: `${device} and (orientation: portrait)`,
-    })
-    appendPwaTag('link', {
-      rel: 'apple-touch-startup-image',
-      href: `${assets}splash/apple-splash-${height}-${width}.png`,
-      media: `${device} and (orientation: landscape)`,
-    })
-  }
-}
-
-function appendPwaTag(tag: 'link' | 'meta', attrs: Record<string, string>) {
-  const element = document.createElement(tag)
-  for (const [key, value] of Object.entries(attrs))
-    element.setAttribute(key, value)
-  element.dataset.pwaScope = 'suite'
-  document.head.appendChild(element)
+// Mail pages that need no mail account: the public MIME view and the Admin
+// Dashboard. They load without the Mail capability; Mail's guard decides.
+function isMailPathWithoutAccount(path: string): boolean {
+  return /^\/mail\/(?:mime-message\/|dashboard(?:\/|$))/.test(path)
 }
 
 /** @deprecated Page metadata is installed through @/platform/page-meta. */

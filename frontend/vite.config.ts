@@ -109,15 +109,12 @@ export default defineConfig(({ mode }) => ({
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which
-    // MailLayout.registerServiceWorker() registers. Scoped to FCM only: precaching
+    // the platform (src/platform/pwa) registers. Scoped to FCM only: precaching
     // is disabled (injectionPoint: undefined). Registration is manual
     // (injectRegister: null).
-    // `manifest: false`: the webmanifest is NOT generated here. All seven apps
-    // share one HTML shell, so a <link rel="manifest"> injected into <head> at
-    // build time would offer the install from every app, phone layout or not.
-    // It lives at public/pwa/suite/ instead and is linked at runtime only
-    // while the route is inside an installable app (see router/index.ts
-    // setPwaTags).
+    // `manifest: false`: the webmanifest is NOT generated here. It lives at
+    // public/pwa/suite/ and the platform links it on every route at runtime
+    // (see src/platform/pwa setPwaTags).
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/apps/mail',

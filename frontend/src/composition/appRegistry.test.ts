@@ -38,6 +38,16 @@ vi.mock("@/apps/calendar", () => ({
   },
 }));
 
+vi.mock("@/apps/meet", () => ({
+  meetArea: {
+    id: "meet",
+    label: () => "meet",
+    icon: {},
+    to: "/meet",
+    loadRoutes: vi.fn(),
+  },
+}));
+
 import {
   areaDefinitions,
   deriveAreaBadges,
@@ -53,6 +63,7 @@ describe("app registry", () => {
       "files",
       "mail",
       "calendar",
+      "meet",
     ]);
   });
 
@@ -61,12 +72,12 @@ describe("app registry", () => {
       filterAreas(areaDefinitions, { jmap: false, systemManager: false }).map(
         (area) => area.id,
       ),
-    ).toEqual(["home", "files"]);
+    ).toEqual(["home", "files", "meet"]);
     expect(
       filterAreas(areaDefinitions, { jmap: true, systemManager: false }).map(
         (area) => area.id,
       ),
-    ).toEqual(["home", "files", "mail", "calendar"]);
+    ).toEqual(["home", "files", "mail", "calendar", "meet"]);
   });
 
   it("derives the Mail badge from the inbox unread summary", () => {

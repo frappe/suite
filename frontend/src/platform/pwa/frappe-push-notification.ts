@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import {
+	type MessagePayload,
 	type Messaging,
 	deleteToken,
 	getMessaging,
@@ -15,15 +16,6 @@ type WebConfigType = {
 	apiKey: string
 	authDomain: string
 	messagingSenderId: string
-}
-
-type MessagePayload = {
-	data: {
-		title: string
-		body: string
-		click_action: string | null
-		notification_icon?: string
-	}
 }
 
 type OnMessageCallback = (payload: MessagePayload) => void
@@ -173,6 +165,19 @@ class FrappePushNotification {
 			console.error(e)
 		}
 		// remove token
+		localStorage.removeItem(`firebase_token_${this.projectName}`)
+		this.token = null
+	}
+
+	// Delete this browser's token at Firebase and forget it here, without a server call.
+	// For a token another user left behind: this user's session cannot unsubscribe it.
+	async forgetToken(): Promise<void> {
+		try {
+			await deleteToken(this.messaging!)
+		} catch (e) {
+			console.error('Failed to delete token from firebase')
+			console.error(e)
+		}
 		localStorage.removeItem(`firebase_token_${this.projectName}`)
 		this.token = null
 	}

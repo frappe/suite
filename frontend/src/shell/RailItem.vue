@@ -49,7 +49,13 @@ defineEmits<{ click: [event: MouseEvent] }>();
 const route = useRoute();
 const slots = useSlots();
 const hasBadgeSlot = computed(() => Boolean(slots.badge));
+// The item is active on every route its area's route group holds, also on a
+// child that clears `area` to skip the capability gate (Mail's admin dashboard).
 const resolvedActive = computed(
-  () => props.active ?? (props.area ? route.meta.area === props.area : false),
+  () =>
+    props.active ??
+    (props.area
+      ? route.matched.some((record) => record.meta.area === props.area)
+      : false),
 );
 </script>

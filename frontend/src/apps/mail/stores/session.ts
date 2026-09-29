@@ -30,14 +30,9 @@ export const sessionStore = defineStore('mail-session', () => {
 		},
 	})
 
-	const logout = createResource({
-		url: 'logout',
-		onSuccess() {
-			reset()
-			session.user = null
-			window.location.reload()
-		},
-	})
+	// The platform logout: it runs every logout cleanup, such as dropping this browser's push
+	// token, and then reloads the page, which clears Mail's state.
+	const logout = session.logout
 
 	const branding = createResource({
 		url: 'suite.mail.api.get_branding',

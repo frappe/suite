@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter, type RouteLocation, type Router } from 'vue-router'
 
-// routes.ts imports the mail guard (which drags in the whole suite router) for its
-// side effects, and frappe-ui for a resource — neither affects route matching.
-vi.mock('@/apps/mail/router', () => ({}))
-vi.mock('frappe-ui', () => ({ createResource: () => ({ fetch: () => {} }) }))
+// routes.ts imports Mail's runtime, which installs the mail guard on the whole suite router,
+// for its side effect. It does not affect route matching.
+vi.mock('@/apps/mail/runtime', () => ({}))
 
 import { routes } from './routes'
 
@@ -32,6 +31,14 @@ describe('mail route matching', () => {
 	it('bare /mail lands on the root shortcut', () => {
 		const landed = resolveFollowingRedirect(makeRouter(), '/mail')
 		expect(String(landed.name)).toBe('mail-root-shortcut')
+	})
+
+	it('sign-in and mime-message pages stay outside the shell', () => {
+		const router = makeRouter()
+		for (const path of ['/mail/login', '/mail/signup', '/mail/reset-password', '/mail/mime-message/m1'])
+			expect(router.resolve(path).meta.frame, path).toBe('none')
+		// The authed pages take their frame from the Mail area group.
+		expect(router.resolve('/mail/account/a/mailbox/inbox').meta.frame).toBeUndefined()
 	})
 
 	it('public pre-auth routes still resolve', () => {

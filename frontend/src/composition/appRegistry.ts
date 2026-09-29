@@ -3,6 +3,7 @@ import { computed, type Ref } from "vue";
 import { calendarArea } from "@/apps/calendar";
 import { filesArea } from "@/apps/drive";
 import { mailArea, useInboxSummary } from "@/apps/mail";
+import { meetArea } from "@/apps/meet";
 import { homeArea } from "@/composition/home";
 import type { AreaDefinition, PlatformCapability } from "@/platform/contracts";
 import { hasCapabilities, type Session, useSession } from "@/platform/session";
@@ -12,6 +13,7 @@ export const areaDefinitions: readonly AreaDefinition[] = [
   filesArea,
   mailArea,
   calendarArea,
+  meetArea,
 ];
 
 export function filterAreas(

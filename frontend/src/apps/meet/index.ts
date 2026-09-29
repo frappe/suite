@@ -1,3 +1,8 @@
+import { defineComponent, h } from "vue";
+
+import type { AreaDefinition } from "@/platform/contracts";
+import { translate as __ } from "@/platform/translation";
+
 export { createRoom, scheduleMeeting } from "@/apps/meet/client/mutations";
 export type {
   RoomsPostInput as CreateRoomInput,
@@ -9,3 +14,18 @@ export type {
 /** Meet's Settings group. Loads when Settings opens. */
 export const loadMeetSettings = () =>
   import("@/apps/meet/settings").then((module) => module.meetSettings);
+
+const MeetIcon = defineComponent({
+  name: "MeetAreaIcon",
+  setup: () => () =>
+    h("span", { class: "lucide-video size-4", "aria-hidden": "true" }),
+});
+
+/** Meet has no capability gate: every signed-in user can start or join a call [T010]. */
+export const meetArea: AreaDefinition = {
+  id: "meet",
+  label: () => __("Meet"),
+  icon: MeetIcon,
+  to: "/meet",
+  loadRoutes: () => import("@/apps/meet/routes"),
+};

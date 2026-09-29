@@ -58,8 +58,8 @@ def get_boot():
             "sentry_dsn": sentry_dsn,
             "sentry_environment": "development" if frappe.conf.developer_mode else "production",
             "sentry_release": f"suite@{__version__}",
-            # Surfaced on window.push_relay_server_url for mail's FCM push setup
-            # (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
+            # Surfaced on window.push_relay_server_url for the platform's FCM push
+            # setup (frontend/src/platform/pwa). Mirrors the old
             # standalone www/mail.py boot, which the suite shell replaced.
             "push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
             # Onboarding gate, read synchronously by the router (extend_bootinfo
@@ -72,5 +72,21 @@ def get_boot():
             # `bench set-config disable_slides_service_worker 1` unregisters the worker
             # on every slides visit, no deploy needed
             "disable_slides_service_worker": bool(frappe.conf.get("disable_slides_service_worker")),
+            # `bench set-config -p suite_flip_shell 1` puts Mail, Calendar and Meet in the
+            # shell; off, they keep their standalone chrome. Read on each page load.
+            "suite_flip_shell": flip_is_on("suite_flip_shell"),
         }
     )
+
+
+def flip_is_on(key: str) -> bool:
+    """Whether the flip site config `key` is on.
+
+    On for 1, "1", True and "true" in any case. Off for anything else,
+    including a missing key: `bench set-config` without `-p` stores "0" and
+    "false" as strings, and those must read as off.
+    """
+    value = frappe.conf.get(key)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true")
+    return value is True or (type(value) is int and value == 1)

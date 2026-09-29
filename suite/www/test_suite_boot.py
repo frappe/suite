@@ -35,12 +35,39 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["socketio_port"], 9000)
         self.assertEqual(boot["push_relay_server_url"], "")
         self.assertIs(boot["disable_slides_service_worker"], False)
+        self.assertIs(boot["suite_flip_shell"], False)
 
     def test_kill_switch_reaches_the_boot(self):
         self.frappe.conf.get.side_effect = lambda key, default=None: (
             1 if key == "disable_slides_service_worker" else default
         )
         self.assertIs(www.get_boot()["disable_slides_service_worker"], True)
+
+    def test_shell_flip_reads_on_only_for_one_or_true(self):
+        # A list, not a dict: 1 and True (0 and False) are one dict key.
+        cases = [
+            (1, True),
+            ("1", True),
+            (True, True),
+            ("true", True),
+            ("TRUE", True),
+            ("True", True),
+            (0, False),
+            ("0", False),
+            (False, False),
+            ("false", False),
+            ("False", False),
+            ("", False),
+            ("yes", False),
+            (2, False),
+            (None, False),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.frappe.conf.get.side_effect = lambda key, default=None, value=value: (
+                    value if key == "suite_flip_shell" else default
+                )
+                self.assertIs(www.get_boot()["suite_flip_shell"], expected)
 
     def test_guest_boot_is_redacted(self):
         self.frappe.session.user = "Guest"
