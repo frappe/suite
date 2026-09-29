@@ -16,7 +16,7 @@ from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.url import signed_url_for_blob
-from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
+from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
@@ -340,6 +340,33 @@ def get(principals: Principals, node: str) -> frappe._dict:
     row = _node(node)
     require(row, READ, principals)
     return row
+
+
+# The kinds the Drive area opens as a folder. Every other kind opens in the
+# document host. A root is here too: the router replaces `/drive/f/<root>` with
+# `/drive` or `/drive/organization` (unified frontend spec §2.2).
+FOLDER_KINDS = frozenset({"root", "folder"})
+
+
+def node_url(node: str) -> str:
+    """Answer the browser address of one node (unified frontend spec §14.5).
+
+    `suite_flip_files` in the site config selects which route table mounts
+    under `/drive`, so the address follows it. With the key on, a folder or a
+    root opens at `/drive/f/<id>` and every other kind at `/d/<id>`. With the
+    key off, every kind opens at `/drive/g/<id>`, the old pages' kind-agnostic
+    address, and no row is read.
+
+    No role is checked. An address says where a node opens; the page that
+    opens asks for the node and is refused there. No slug is added: the router
+    adds one.
+    """
+    if not cint(frappe.conf.get("suite_flip_files")):
+        return f"/drive/g/{node}"
+    kind = frappe.db.get_value("Drive Node", node, "kind")
+    if kind is None:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
 
 
 def stored(node: str) -> frappe._dict:

@@ -646,6 +646,7 @@ class TestArchitecture(unittest.TestCase):
                 "grow_storage_reservation",
                 "import_document",
                 "list_versions",
+                "node_url",
                 "personal_root_for",
                 "push_preview",
                 "read_file",

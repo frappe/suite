@@ -259,8 +259,8 @@ class TestGrantShape(UnitTestCase):
 
     def test_a_url_appears_only_when_the_row_carries_one(self):
         self.assertNotIn("url", shapes.grant_shape(GRANT))
-        linked = shapes.grant_shape(frappe._dict({**GRANT, "url": "/drive/l/tok"}))
-        self.assertEqual(linked["url"], "/drive/l/tok")
+        linked = shapes.grant_shape(frappe._dict({**GRANT, "url": "/l/tok"}))
+        self.assertEqual(linked["url"], "/l/tok")
 
     def test_the_expiry_is_published_to_the_second(self):
         self.assertEqual(shapes.grant_shape(GRANT)["expires_on"], "2026-03-01 09:08:07")

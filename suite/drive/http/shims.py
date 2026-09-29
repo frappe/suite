@@ -2164,7 +2164,7 @@ def update_access(entity_name: str, method: str, **kwargs):
     if principal == "":
         principal = "$PUBLIC"
     if principal == "$LINK" or principal.startswith("$LINK:"):
-        # `access.grant("$LINK", ...)` mints a token and answers its `/drive/l/`
+        # `access.grant("$LINK", ...)` mints a token and answers its `/l/`
         # URL. §11.7 gives no legacy name that contract, and `File.share` had
         # no branch for it: an unknown principal went to `create_invites`, which
         # refused an address that is not one. A share link is §8.5's route to
