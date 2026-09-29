@@ -27,20 +27,20 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 1 frame rework | `forge/uf-1-frame-rework` | done | `b7f3b49f7` | codex review: sheet focus and phone-to-desktop close; AccountSheet named. Shell journeys 24 of 24 |
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
-| Stage 4 settings | `forge/uf-4-settings` | review fixes in progress | | codex review: 10 findings (phone profile lists, typed Mail openSettings, Admin dashboard row, drill-in history, focus trap) |
-| Stage 5 adoption | | waiting on 1, 3, 4 | | |
+| Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
+| Stage 5 adoption | `forge/uf-5-adoption` | Meet and boot-flag sub-lane in progress; Mail, Calendar, then PWA and shell after it | | |
 | Stage 6 flip plumbing | | waiting on 5 | | |
 | Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
 | Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
 | Stage 10 upload, restore, batch | | waiting on 8 | | |
-| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer merged into the stage branch (`cefc6916e`); Sheets fixing 8 review findings; Slides and Drive sub-lanes waiting | | Writer: codex review, 7 fixes plus recovery-copy expiry. Sheets journey 2 of 2 |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer merged (`cefc6916e`); Sheets second review; Slides in progress; Drive sub-lane waiting on Drive 47 | | Writer: codex review, 7 fixes plus recovery-copy expiry. Sheets: 8 review fixes, journey 4 of 4 |
 | Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | | waiting on 0 | | |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
 | Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
 | Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
-| Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | in progress | | |
+| Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | in review | | |
 | Drive 47 recents content doctype filter | | waiting on 0 | | |
 | Suite S1, S2 (server) | `forge/uf-suite-asks-s1-s3` | done | `9852ca10b` | codex review: bounded people cursor. S3 moves to stage 8; S4 shipped with stage 11 Writer |
 | Flip rehearsal | | waiting on all | | |
@@ -96,6 +96,12 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    did.
 10. **Deny plus `notify` (Drive 44).** A deny grant with `notify: true`
     sends no email. Interim: accepted.
+12. **Sheets recovery file format.** The recovery copy downloads as
+    .xlsx with values and formulas, without formatting. Interim: accepted.
+13. **Stage 4 phone Back from a Profile row** goes tab, then the full
+    Settings list, then Profile (one step more than the old Mail
+    sub-page). The failed-group row does not name the product. Interim:
+    accepted.
 11. **Stage 4 settings details.** Mail PWA Notifications has no Settings
     row (still reachable from Mail's Profile view); Mail Credentials now
     shows only under the JMAP condition; Workspace has two tabs, General
