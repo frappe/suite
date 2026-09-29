@@ -23,6 +23,7 @@ from typing import Generic, Literal, NotRequired, TypedDict, TypeVar
 
 import frappe
 from frappe import _
+from pydantic import with_config
 
 from suite.drive._core import nodes
 
@@ -230,6 +231,65 @@ class RootUsage(TypedDict):
     reserved_bytes: int
     quota_bytes: int | None
     effective_quota: int
+
+
+class UserSettings(TypedDict):
+    """The caller's own `Drive Settings` row (§3.14), or its field defaults."""
+
+    webdav_enabled: bool
+    writer_settings: dict
+
+
+class WebdavSwitch(TypedDict):
+    """The one field `PATCH /settings` and `PATCH /site-settings` write."""
+
+    webdav_enabled: bool
+
+
+class SiteSettings(TypedDict):
+    """What every signed-in caller reads from `Drive Disk Settings` (§3.13)."""
+
+    is_admin: bool
+    preview_size: int
+
+
+class AdminSiteSettings(SiteSettings):
+    """What a Drive admin reads. Quotas are bytes, and 0 is unlimited."""
+
+    webdav_enabled: bool
+    webdav_allowed_methods: str
+    default_personal_quota: int
+    shared_quota: int
+
+
+# The three `GET /webdav` answers are closed: the exported schema carries
+# `additionalProperties: false`. An open empty shape would match any object, so
+# the generated client would accept an answer that carried the API secret.
+@with_config(extra="forbid")
+class WebdavHidden(TypedDict):
+    """WebDAV is off for the site and the caller is no admin: nothing to show."""
+
+
+@with_config(extra="forbid")
+class WebdavOff(TypedDict):
+    """The site switch, shown to an admin while it is off."""
+
+    globally_enabled: bool
+    is_admin: bool
+
+
+class WebdavConnection(WebdavOff):
+    """How to mount `/dav/` while the site switch is on. Closed, as `WebdavOff`.
+
+    `api_key` doubles as the DAV username for key-based sign-in. The secret is
+    minted once by `suite.utils.user.generate_user_keys` and never read back.
+    """
+
+    server_url: str
+    username: str
+    enabled_for_user: bool
+    two_factor_blocked: bool
+    api_key: str | None
 
 
 def node_shape(row: Mapping) -> NodeShape:

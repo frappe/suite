@@ -36,16 +36,18 @@ import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/Screen
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 import { useSettings } from '@/apps/mail/utils/composables'
+import type { User } from '@/apps/mail/types'
 import type { SettingsGroup } from '@/components/settings/types'
 import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
 
 const open = defineModel<boolean>('open', { default: false })
 const activeTab = ref('profile')
 const { settingsTab } = useSettings()
-const user = inject('$user') as { data: Record<string, any> }
+// Mail's user resource: `data` is null until `get_user_info` returns.
+const user = inject('$user') as { data: User | null }
 
 const groups = computed<SettingsGroup[]>(() => {
-	const jmap = () => Boolean(user.data.is_jmap_configured)
+	const jmap = () => Boolean(user.data?.is_jmap_configured)
 	return [
 		{
 			id: 'mail-account',

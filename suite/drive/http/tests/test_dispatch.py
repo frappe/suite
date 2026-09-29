@@ -1249,6 +1249,185 @@ class TestRoots(DriveHTTPCase):
         frappe.db.commit()
 
 
+# `Drive Settings.writer_settings` default, as the doctype declares it.
+WRITER_DEFAULTS = {"font_family": "inter", "font_size": "15", "line_height": "1.5", "versioning": 5}
+
+SITE_SETTINGS_FIELDS = {"is_admin", "preview_size"}
+
+ADMIN_SITE_SETTINGS_FIELDS = SITE_SETTINGS_FIELDS | {
+    "webdav_enabled",
+    "webdav_allowed_methods",
+    "default_personal_quota",
+    "shared_quota",
+}
+
+WEBDAV_CONNECTION_FIELDS = {
+    "globally_enabled",
+    "is_admin",
+    "server_url",
+    "username",
+    "enabled_for_user",
+    "two_factor_blocked",
+    "api_key",
+}
+
+
+class TestSettingsRoutes(DriveHTTPCase):
+    """§11.2 "Settings and WebDAV": the caller's row, the site's, and the mount."""
+
+    def setUp(self):
+        super().setUp()
+        self.site_switch = frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled")
+        self.addCleanup(self.restore)
+        self.drop_owner_row()
+        self.switch_site(0)
+
+    def restore(self):
+        self.drop_owner_row()
+        self.switch_site(self.site_switch)
+
+    def drop_owner_row(self):
+        frappe.db.rollback()
+        frappe.db.delete("Drive Settings", {"user": OWNER})
+        frappe.db.commit()
+
+    def switch_site(self, value):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        frappe.db.commit()
+
+    def as_admin(self, method, path, **kwargs):
+        return self.drive(method, path, sid=self.session_for("Administrator"), **kwargs)
+
+    def test_a_guest_is_refused_on_every_settings_route(self):
+        for method, path in (
+            ("GET", "settings"),
+            ("PATCH", "settings"),
+            ("GET", "site-settings"),
+            ("PATCH", "site-settings"),
+            ("GET", "webdav"),
+        ):
+            with self.subTest(method=method, path=path):
+                body = {"webdav_enabled": True} if method == "PATCH" else None
+                response = self.drive(method, f"{PREFIX}/{path}", body=body)
+                self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.reread()
+        self.assertFalse(frappe.db.exists("Drive Settings", OWNER))
+        self.assertFalse(frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled"))
+
+    def test_a_caller_without_a_row_reads_the_field_defaults(self):
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/settings"))
+        self.assertEqual(answer, {"webdav_enabled": False, "writer_settings": WRITER_DEFAULTS})
+
+    def test_the_first_patch_creates_the_callers_row(self):
+        answer = self.data(self.as_owner("PATCH", f"{PREFIX}/settings", body={"webdav_enabled": True}))
+        self.assertEqual(answer, {"webdav_enabled": True, "writer_settings": WRITER_DEFAULTS})
+        self.reread()
+        self.assertEqual(frappe.db.get_value("Drive Settings", OWNER, "webdav_enabled"), 1)
+
+        answer = self.data(self.as_owner("PATCH", f"{PREFIX}/settings", body={"webdav_enabled": False}))
+        self.assertFalse(answer["webdav_enabled"])
+        self.assertFalse(self.data(self.as_owner("GET", f"{PREFIX}/settings"))["webdav_enabled"])
+
+    def test_a_drive_admin_reads_and_writes_only_their_own_row(self):
+        kept = frappe.db.get_value("Drive Settings", "Administrator", "webdav_enabled")
+        self.addCleanup(self.restore_admin_row, kept)
+
+        answer = self.data(self.as_admin("PATCH", f"{PREFIX}/settings", body={"webdav_enabled": True}))
+        self.assertIs(answer["webdav_enabled"], True)
+        self.assertEqual(set(answer), {"webdav_enabled", "writer_settings"})
+        self.assertIs(self.data(self.as_admin("GET", f"{PREFIX}/settings"))["webdav_enabled"], True)
+        self.reread()
+        self.assertFalse(frappe.db.exists("Drive Settings", OWNER))
+
+    def restore_admin_row(self, kept):
+        frappe.db.rollback()
+        if kept is None:
+            frappe.db.delete("Drive Settings", {"user": "Administrator"})
+        else:
+            frappe.db.set_value(
+                "Drive Settings", "Administrator", "webdav_enabled", kept, update_modified=False
+            )
+        frappe.db.commit()
+
+    def test_a_settings_patch_without_the_field_is_a_bad_request(self):
+        response = self.as_owner("PATCH", f"{PREFIX}/settings", body={})
+        self.refusal(response, 400, "DriveError")
+
+    def test_a_plain_user_reads_only_the_public_site_settings(self):
+        answer = self.data(self.as_owner("GET", f"{PREFIX}/site-settings"))
+        self.assertEqual(set(answer), SITE_SETTINGS_FIELDS)
+        self.assertIs(answer["is_admin"], False)
+
+    def test_a_drive_admin_reads_the_admin_site_settings(self):
+        answer = self.data(self.as_admin("GET", f"{PREFIX}/site-settings"))
+        self.assertEqual(set(answer), ADMIN_SITE_SETTINGS_FIELDS)
+        self.assertIs(answer["is_admin"], True)
+        self.assertIs(answer["webdav_enabled"], False)
+
+    def test_every_numeric_site_setting_is_a_json_integer(self):
+        # A Single keeps its values as text, and `Long Int` survives the load
+        # as a string. The contract says integer, so the client refuses text.
+        quotas = {"default_personal_quota": 5 * 1024**3, "shared_quota": 50 * 1024**3}
+        kept = {field: frappe.db.get_single_value("Drive Disk Settings", field) for field in quotas}
+        self.addCleanup(self.set_site_values, kept)
+        self.set_site_values(quotas)
+
+        answer = self.data(self.as_admin("GET", f"{PREFIX}/site-settings"))
+        for field, value in (*quotas.items(), ("preview_size", answer["preview_size"])):
+            with self.subTest(field=field):
+                self.assertIs(type(answer[field]), int, answer)
+                self.assertEqual(answer[field], value)
+        self.assertIs(type(self.data(self.as_owner("GET", f"{PREFIX}/site-settings"))["preview_size"]), int)
+
+    def set_site_values(self, values):
+        frappe.db.rollback()
+        for field, value in values.items():
+            frappe.db.set_single_value("Drive Disk Settings", field, value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        frappe.db.commit()
+
+    def test_a_plain_user_cannot_turn_the_site_switch_on(self):
+        response = self.as_owner("PATCH", f"{PREFIX}/site-settings", body={"webdav_enabled": True})
+        self.refusal(response, 403, "DriveForbidden")
+        self.reread()
+        self.assertFalse(frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled"))
+
+    def test_a_drive_admin_turns_the_site_switch_on_and_off(self):
+        answer = self.data(self.as_admin("PATCH", f"{PREFIX}/site-settings", body={"webdav_enabled": True}))
+        self.assertEqual(set(answer), ADMIN_SITE_SETTINGS_FIELDS)
+        self.assertIs(answer["webdav_enabled"], True)
+        self.reread()
+        self.assertTrue(frappe.db.get_single_value("Drive Disk Settings", "webdav_enabled"))
+
+        answer = self.data(self.as_admin("PATCH", f"{PREFIX}/site-settings", body={"webdav_enabled": False}))
+        self.assertIs(answer["webdav_enabled"], False)
+
+    def test_webdav_is_empty_for_a_plain_user_while_the_site_switch_is_off(self):
+        self.assertEqual(self.data(self.as_owner("GET", f"{PREFIX}/webdav")), {})
+
+    def test_webdav_shows_an_admin_the_switch_while_it_is_off(self):
+        answer = self.data(self.as_admin("GET", f"{PREFIX}/webdav"))
+        self.assertEqual(answer, {"globally_enabled": False, "is_admin": True})
+
+    def test_webdav_gives_the_connection_but_never_the_secret_while_the_switch_is_on(self):
+        key, secret = self.api_key_for(OWNER).split(":", 1)
+        self.switch_site(1)
+        response = self.as_owner("GET", f"{PREFIX}/webdav")
+        answer = self.data(response)
+        self.assertEqual(set(answer), WEBDAV_CONNECTION_FIELDS)
+        self.assertEqual(answer["globally_enabled"], True)
+        self.assertEqual(answer["is_admin"], False)
+        self.assertEqual(answer["username"], OWNER)
+        self.assertEqual(answer["api_key"], key)
+        self.assertTrue(answer["server_url"].endswith("/dav/"))
+        self.assertIs(answer["enabled_for_user"], False)
+        self.assertNotIn(secret, response.get_data(as_text=True))
+
+        self.data(self.as_owner("PATCH", f"{PREFIX}/settings", body={"webdav_enabled": True}))
+        self.assertIs(self.data(self.as_owner("GET", f"{PREFIX}/webdav"))["enabled_for_user"], True)
+
+
 class TestErrorEnvelope(DriveHTTPCase):
     """§11.6: the class name is the code, and the message reaches the client."""
 

@@ -11,16 +11,19 @@ Four classes, and every name is in exactly one of them (`CLASSIFICATION`).
 - **Forwarder.** The call is translated into the same private workflow the
   §11.2 route calls, and the answer is translated back into the shape the old
   client reads. No policy is decided here.
-- **Permanent.** The name, its signature, and its guest flag outlive Cleanup,
-  because the address is written into data or into a shipped artifact:
-  `suite.drive.api.s3.fetch` sits inside stored `File.file_url` values,
-  `get_file_for_doc` sits inside the checked-in `sdk-o7hlQ1xj.js` bundle, and
-  `/dav` sits inside third-party file managers. The nineteen product methods
-  stay on `/api/method/` as well: none of them touches a node. Twenty of the
-  twenty-one bodies are untouched too. The exception is `api.s3.fetch`, whose
-  `except` clause had to name the `_core` refusals once `get_file_content`
-  below it became a forwarder; the test compares all twenty-one against
-  `e390a4487` and carries that one exception by name.
+- **Permanent.** Answered by its untouched legacy body until Cleanup. No
+  forwarder replaces that body, whether or not a Drive route carries the same
+  capability. The class keeps its old name, but no name in it outlives
+  Cleanup (§11.7): `api.s3.fetch` and `get_file_for_doc` resolve through `File`
+  rows that Cleanup deletes, and Cleanup deletes `api/product.py` whole. The
+  nineteen product methods touch no node. Their successors are the §11.2
+  settings and WebDAV routes, Suite-owned resources, or nothing. The only
+  permanent Drive address is `/dav`, and it is no dotted name. The test
+  compares the twenty-one bodies with their structure at `e390a4487`. It
+  carries two exceptions by name: `api.s3.fetch`, whose `except` clause had to
+  name the `_core` refusals once `get_file_content` below it became a
+  forwarder, and `api.product.set_settings`, which upstream `c005af4b1` changed
+  when it removed the `auto_detect_links` field.
 - **Retired.** §11.7 drops the behavior. The name still answers, and it answers
   a refusal that names its replacement. It never mints a capability and never
   reports a mutation it did not make.
@@ -67,6 +70,8 @@ from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 # the dotted path after `suite.drive.`. `File.<method>` is a document method,
 # reached through `run_doc_method`, and keeps that spelling.
 FORWARDER = "forwarder"
+# Answered by its untouched legacy body until Cleanup. Not a name that survives
+# Cleanup: none does (§11.7).
 PERMANENT = "permanent"
 RETIRED = "retired"
 RETAINED = "retained"
@@ -668,8 +673,8 @@ def _legacy_entity_with_permissions(entity_name: str) -> dict | None:
 def get_entity_with_permissions(entity_name: str | None = None) -> dict:
     """`get_entity_with_permissions` -> `GET /nodes/<id>?expand=access,breadcrumbs`.
 
-    The payload `get_file_for_doc` returns, so it is the one shape §11.7 makes
-    permanent by reference. Every part of it comes from a workflow: the row and
+    The payload `get_file_for_doc` also returns until Cleanup, so the two
+    names answer one shape. Every part of it comes from a workflow: the row and
     the trail from `nodes`, the role from `access`, the favourite mark from
     `activity`, and the general marker from the two site-wide principals.
 

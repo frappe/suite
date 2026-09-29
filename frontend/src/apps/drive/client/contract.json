@@ -4233,6 +4233,332 @@
       "errors": [],
       "entity": null,
       "nodeParams": []
+    },
+    {
+      "id": "settings_get",
+      "method": "GET",
+      "path": "settings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "description": "The caller's own `Drive Settings` row (\u00a73.14), or its field defaults.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "writer_settings": {
+            "additionalProperties": true,
+            "title": "Writer Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "webdav_enabled",
+          "writer_settings"
+        ],
+        "title": "UserSettings",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "settings_patch",
+      "method": "PATCH",
+      "path": "settings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "The one field `PATCH /settings` and `PATCH /site-settings` write.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "webdav_enabled"
+        ],
+        "title": "WebdavSwitch",
+        "type": "object"
+      },
+      "output": {
+        "description": "The caller's own `Drive Settings` row (\u00a73.14), or its field defaults.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "writer_settings": {
+            "additionalProperties": true,
+            "title": "Writer Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "webdav_enabled",
+          "writer_settings"
+        ],
+        "title": "UserSettings",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "site_settings_get",
+      "method": "GET",
+      "path": "site-settings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "AdminSiteSettings": {
+            "description": "What a Drive admin reads. Quotas are bytes, and 0 is unlimited.",
+            "properties": {
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "preview_size": {
+                "title": "Preview Size",
+                "type": "integer"
+              },
+              "webdav_enabled": {
+                "title": "Webdav Enabled",
+                "type": "boolean"
+              },
+              "webdav_allowed_methods": {
+                "title": "Webdav Allowed Methods",
+                "type": "string"
+              },
+              "default_personal_quota": {
+                "title": "Default Personal Quota",
+                "type": "integer"
+              },
+              "shared_quota": {
+                "title": "Shared Quota",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "is_admin",
+              "preview_size",
+              "webdav_enabled",
+              "webdav_allowed_methods",
+              "default_personal_quota",
+              "shared_quota"
+            ],
+            "title": "AdminSiteSettings",
+            "type": "object"
+          },
+          "SiteSettings": {
+            "description": "What every signed-in caller reads from `Drive Disk Settings` (\u00a73.13).",
+            "properties": {
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "preview_size": {
+                "title": "Preview Size",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "is_admin",
+              "preview_size"
+            ],
+            "title": "SiteSettings",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SiteSettings"
+          },
+          {
+            "$ref": "#/$defs/AdminSiteSettings"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "site_settings_patch",
+      "method": "PATCH",
+      "path": "site-settings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "The one field `PATCH /settings` and `PATCH /site-settings` write.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "webdav_enabled"
+        ],
+        "title": "WebdavSwitch",
+        "type": "object"
+      },
+      "output": {
+        "description": "What a Drive admin reads. Quotas are bytes, and 0 is unlimited.",
+        "properties": {
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "preview_size": {
+            "title": "Preview Size",
+            "type": "integer"
+          },
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "webdav_allowed_methods": {
+            "title": "Webdav Allowed Methods",
+            "type": "string"
+          },
+          "default_personal_quota": {
+            "title": "Default Personal Quota",
+            "type": "integer"
+          },
+          "shared_quota": {
+            "title": "Shared Quota",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "is_admin",
+          "preview_size",
+          "webdav_enabled",
+          "webdav_allowed_methods",
+          "default_personal_quota",
+          "shared_quota"
+        ],
+        "title": "AdminSiteSettings",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden"
+      ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "webdav_get",
+      "method": "GET",
+      "path": "webdav",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "WebdavConnection": {
+            "additionalProperties": false,
+            "description": "How to mount `/dav/` while the site switch is on. Closed, as `WebdavOff`.\n\n`api_key` doubles as the DAV username for key-based sign-in. The secret is\nminted once by `suite.utils.user.generate_user_keys` and never read back.",
+            "properties": {
+              "globally_enabled": {
+                "title": "Globally Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "server_url": {
+                "title": "Server Url",
+                "type": "string"
+              },
+              "username": {
+                "title": "Username",
+                "type": "string"
+              },
+              "enabled_for_user": {
+                "title": "Enabled For User",
+                "type": "boolean"
+              },
+              "two_factor_blocked": {
+                "title": "Two Factor Blocked",
+                "type": "boolean"
+              },
+              "api_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Api Key"
+              }
+            },
+            "required": [
+              "globally_enabled",
+              "is_admin",
+              "server_url",
+              "username",
+              "enabled_for_user",
+              "two_factor_blocked",
+              "api_key"
+            ],
+            "title": "WebdavConnection",
+            "type": "object"
+          },
+          "WebdavHidden": {
+            "additionalProperties": false,
+            "description": "WebDAV is off for the site and the caller is no admin: nothing to show.",
+            "properties": {},
+            "title": "WebdavHidden",
+            "type": "object"
+          },
+          "WebdavOff": {
+            "additionalProperties": false,
+            "description": "The site switch, shown to an admin while it is off.",
+            "properties": {
+              "globally_enabled": {
+                "title": "Globally Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "globally_enabled",
+              "is_admin"
+            ],
+            "title": "WebdavOff",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/WebdavHidden"
+          },
+          {
+            "$ref": "#/$defs/WebdavOff"
+          },
+          {
+            "$ref": "#/$defs/WebdavConnection"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
     }
   ]
 }
