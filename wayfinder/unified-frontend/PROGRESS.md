@@ -140,7 +140,6 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 23. **Drive seam naming.** Spec §5.15 lists `createDriveDocument()` as a
     descriptor; the seam exports `useDriveDocumentCreation()` because
     creation first finds the Personal root.
-
 24. **Share expiry timezone.** The dialog sends `YYYY-MM-DD 23:59:59`; the
     server reads it in site time. Interim: end of that day in site time.
 25. **Share picker default role** is View. Interim: accepted.
