@@ -9,7 +9,7 @@ import {
   watch,
 } from "vue";
 
-import type { DocumentSession } from "@/apps/drive";
+import type { CredentialGrouper, DocumentSession } from "@/apps/drive";
 import NavigationPanel from "@/apps/slides/components/NavigationPanel.vue";
 import PropertiesPanel from "@/apps/slides/components/PropertiesPanel.vue";
 import SlideContainer from "@/apps/slides/components/SlideContainer.vue";
@@ -127,19 +127,18 @@ async function openPanel(kind: "comments" | "versions") {
 }
 
 async function loadComposite() {
-  const ownCodes = await props.session.credentials.codesFor([props.session.nodeId]);
   const manifest = await frappeGet<CompositeManifest>(
     "suite.slides.api.composite.composite_manifest",
     { name: props.session.contentDocname },
-    ownCodes,
+    props.session.credentials.fetch,
   );
   const loader = new CompositeGroupLoader(
     manifest,
     props.session.credentials,
-    async (references, codes) => frappeGet(
+    async (references, send) => frappeGet(
       "suite.slides.api.composite.composite_group",
       { name: props.session.contentDocname, references },
-      [...new Set([...ownCodes, ...codes])],
+      send,
     ),
     (items) => {
       compositeItems.value = items.map((item) => ({ ...item }));
@@ -198,15 +197,16 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
   };
 }
 
-async function frappeGet<T>(method: string, args: Record<string, unknown>, codes: readonly string[]): Promise<T> {
+async function frappeGet<T>(
+  method: string,
+  args: Record<string, unknown>,
+  send: CredentialGrouper["fetch"],
+): Promise<T> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(args)) {
     query.set(key, Array.isArray(value) ? JSON.stringify(value) : String(value));
   }
-  const response = await fetch(`/api/method/${method}?${query}`, {
-    credentials: "same-origin",
-    headers: codes.length ? { "X-Drive-Links": codes.join(",") } : undefined,
-  });
+  const response = await send(`/api/method/${method}?${query}`, { credentials: "same-origin" });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.exc) throw new Error(body.message ?? body.exc_type ?? "Request failed");
   return (body.message ?? body.data ?? body) as T;

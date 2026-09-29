@@ -2,10 +2,10 @@ import { readonly, ref, type Ref } from "vue";
 
 import { api } from "@/apps/drive/client/generated";
 import { driveOperation } from "@/apps/drive/client/operation";
-import type {
-  CredentialGroup,
-  DocumentSession,
-  MediaHandle,
+import {
+  documentCredentials,
+  type DocumentSession,
+  type MediaHandle,
 } from "@/apps/drive/client/session";
 import type { DriveNode, DrivePreview } from "@/apps/drive/client/types";
 import { transport } from "@/platform/transport";
@@ -31,9 +31,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const state = ref<"Active" | "Trashed" | "Refused">(sessionState(initial));
   const access = ref(initial.access ?? {});
   const preview = ref<DrivePreview | null>(initial.preview ?? null);
-  const credentials = new Map<string, string[]>();
   let disposed = false;
-  remember(initial);
 
   void request<Record<string, never>>(api.node_visit, { node: nodeId }).catch(() => {});
 
@@ -45,7 +43,6 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       access.value = node.access ?? {};
       state.value = sessionState(node);
       preview.value = node.preview ?? null;
-      remember(node);
     } catch {
       state.value = "Refused";
       access.value = {};
@@ -53,26 +50,9 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     }
   }
 
-  function remember(node: DriveNode) {
-    const held = node.access?.via_link;
-    credentials.set(node.name, held?.startsWith("$LINK:") ? [held.slice(6)] : []);
-  }
-
-  async function codesFor(ids: readonly string[]): Promise<readonly string[]> {
-    for (const id of new Set(ids)) {
-      if (credentials.has(id)) continue;
-      try {
-        remember(await transport.request(nodeGet, { node: id, expand: "access" }, { signal: controller.signal }));
-      } catch {
-        credentials.set(id, []);
-      }
-    }
-    return [...new Set(ids.flatMap((id) => credentials.get(id) ?? []))];
-  }
-
   function request<Output>(operation: any, input: Record<string, unknown>) {
     return transport.request(
-      driveOperation<Record<string, unknown>, Output>(operation, { looseInput: true }),
+      driveOperation<Record<string, unknown>, Output>(operation, { looseInput: true, covers: [nodeId] }),
       input,
       { signal: controller.signal },
     );
@@ -130,14 +110,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       restore: (seq) => request(api.node_version_restore, { node: nodeId, seq }),
     },
     media: () => media,
-    credentials: {
-      async group(ids) {
-        const codes = [...await codesFor(ids)];
-        const group: CredentialGroup = { nodeIds: [...ids], codes };
-        return ids.length ? [group] : [];
-      },
-      codesFor,
-    },
+    credentials: documentCredentials(nodeId),
     refreshAccess: refresh,
     refreshPreview: refresh,
     dispose() {

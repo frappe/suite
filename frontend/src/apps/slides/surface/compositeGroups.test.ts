@@ -21,8 +21,8 @@ const manifest: CompositeManifest = {
 describe("composite group loading", () => {
   it("keeps manifest order when one group fails and retries only that group", async () => {
     const grouper = {
-      group: vi.fn(async (ids: readonly string[]) => [{ nodeIds: [...ids], codes: [] }]),
-      codesFor: vi.fn(),
+      group: vi.fn((ids: readonly string[]) => [{ nodeIds: [...ids], fetch: vi.fn() }]),
+      fetch: vi.fn(),
     };
     let fail = true;
     const request = vi.fn(async (references: string[]) => {

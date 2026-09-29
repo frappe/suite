@@ -21,13 +21,10 @@ afterEach(() => {
 })
 
 describe('transport', () => {
-  it('builds Suite URLs, adds CSRF and link headers, and decodes v2 success', async () => {
+  it('builds Suite URLs, adds CSRF, and decodes v2 success', async () => {
     window.csrf_token = 'csrf'
     const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
-    const client = createTransport({
-      fetch: fetcher,
-      linkStore: { codesFor: () => Array.from({ length: 24 }, (_, index) => `c${index}`) },
-    })
+    const client = createTransport({ fetch: fetcher })
 
     await expect(client.request(getNode, { node: 'n1', expand: ['breadcrumbs'] })).resolves.toEqual({
       name: 'n1',
@@ -35,7 +32,7 @@ describe('transport', () => {
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('/api/suite/drive/nodes/n1?expand=%5B%22breadcrumbs%22%5D')
     expect(new Headers(init?.headers).get('X-Frappe-CSRF-Token')).toBe('csrf')
-    expect(new Headers(init?.headers).get('X-Drive-Links')?.split(',')).toHaveLength(20)
+    expect(new Headers(init?.headers).has('X-Drive-Links')).toBe(false)
   })
 
   it('classifies errors by errors[0].type instead of status', async () => {
@@ -118,13 +115,52 @@ describe('transport', () => {
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
-  it('deduplicates link codes before enforcing the twenty-code cap', async () => {
+  it('sends the link header the caller gives, unchanged, and no other', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
-    const codes = ['same', 'same', ...Array.from({ length: 24 }, (_, index) => `c${index}`)]
-    const client = createTransport({ fetch: fetcher, linkStore: { codesFor: () => codes } })
-    await client.request(getNode, { node: 'n1' })
-    const header = new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('X-Drive-Links')
-    expect(header?.split(',')).toEqual(['same', ...Array.from({ length: 19 }, (_, index) => `c${index}`)])
+    const client = createTransport({ fetch: fetcher })
+    const given = Array.from({ length: 24 }, (_, index) => `c${index}`).join(',')
+
+    await client.request(getNode, { node: 'n1' }, { headers: { 'X-Drive-Links': given } })
+    await client.request({ ...getNode, scope: () => ({ headers: { 'X-Drive-Links': 'scoped' } }) }, { node: 'n1' })
+
+    const sent = fetcher.mock.calls.map(([, init]) => new Headers(init?.headers).get('X-Drive-Links'))
+    expect(sent).toEqual([given, 'scoped'])
+  })
+
+  it('tells an operation scope the final outcome once, after retries', async () => {
+    const outcomes: unknown[] = []
+    const scoped: Operation<{ node: string }, { name: string }> = {
+      ...getNode,
+      scope: () => ({ settled: (outcome) => outcomes.push(outcome) }),
+    }
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ errors: [{ type: 'Busy', message: 'Busy' }] }, 503))
+      .mockResolvedValueOnce(response({ data: { name: 'n1' } }))
+      .mockResolvedValueOnce(response({ errors: [{ type: 'DriveLinkExpired', message: 'Expired' }] }, 410))
+    const client = createTransport({ fetch: fetcher, maxRetries: 1, retryBaseMs: 0 })
+
+    await client.request(scoped, { node: 'n1' })
+    await client.request(scoped, { node: 'n1' }).catch(() => {})
+
+    expect(outcomes).toMatchObject([
+      { ok: true, output: { name: 'n1' } },
+      { ok: false, error: { type: 'DriveLinkExpired', status: 410 } },
+    ])
+  })
+
+  it('sends nothing when an operation scope refuses the request', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
+    const refusing: Operation<{ node: string }, { name: string }> = {
+      ...getNode,
+      scope: () => {
+        throw new TransportError({ type: 'Refused', message: 'Too many', status: 0 })
+      },
+    }
+    await expect(createTransport({ fetch: fetcher }).request(refusing, { node: 'n1' })).rejects.toMatchObject({
+      type: 'Refused',
+    })
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('passes AbortSignal through without converting AbortError', async () => {

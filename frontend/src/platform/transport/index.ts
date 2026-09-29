@@ -41,11 +41,24 @@ export interface Operation<Input = unknown, Output = unknown, ErrorType extends 
   errors?: readonly ErrorType[]
   validateInput?: (input: unknown) => asserts input is Input
   validateOutput?: (output: unknown) => asserts output is Output
+  /**
+   * Lets the module that owns the operation add headers to one request and
+   * see how it ended. Runs once per call, before the first attempt. It may
+   * throw to refuse the call, and then nothing is sent.
+   */
+  scope?(input: Input): RequestScope<Output>
 }
 
-export interface LinkStore {
-  codesFor(nodeIds: readonly string[]): readonly string[] | Promise<readonly string[]>
+export interface RequestScope<Output = unknown> {
+  /** Sent as given. Transport does not read, cut or merge them. */
+  headers?: Readonly<Record<string, string>>
+  /** Runs once after the final attempt. It does not run when the call is aborted. */
+  settled?(outcome: RequestOutcome<Output>): void
 }
+
+export type RequestOutcome<Output = unknown> =
+  | { ok: true; output: Output }
+  | { ok: false; error: TransportError }
 
 export interface TransportOptions {
   signal?: AbortSignal
@@ -62,7 +75,6 @@ export interface Transport {
 
 export interface CreateTransportOptions {
   fetch?: typeof fetch
-  linkStore?: LinkStore
   maxRetries?: number
   retryBaseMs?: number
   onSessionExpired?: (error: PlatformError<'SessionExpired'>) => void
@@ -75,7 +87,6 @@ type ErrorEnvelope = {
 }
 
 const DEFAULT_RETRIES = 2
-const LINK_HEADER_CAP = 20
 
 export function createTransport(options: CreateTransportOptions = {}): Transport {
   const fetcher = options.fetch ?? globalThis.fetch
@@ -91,19 +102,12 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
 
       const pathInput = asRecord(input)
       const url = buildUrl(operation, pathInput)
-      const headers = new Headers(requestOptions.headers)
+      const scope = operation.scope?.(input)
+      const headers = new Headers(scope?.headers)
+      new Headers(requestOptions.headers).forEach((value, name) => headers.set(name, value))
       headers.set('Accept', 'application/json')
       const csrf = readCsrfToken()
       if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
-
-      const nodeIds = (operation.nodeParams ?? [])
-        .map((name) => pathInput[name])
-        .filter((value): value is string => typeof value === 'string')
-      if (nodeIds.length && options.linkStore) {
-        const codes = await options.linkStore.codesFor(nodeIds)
-        const selected = [...new Set(codes)].slice(0, LINK_HEADER_CAP)
-        if (selected.length) headers.set('X-Drive-Links', selected.join(','))
-      }
 
       const init: RequestInit = {
         method: operation.method,
@@ -116,6 +120,11 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         init.body = JSON.stringify(withoutPathParams(pathInput, operation.pathParams ?? []))
       }
 
+      const failed = (error: TransportError): TransportError => {
+        scope?.settled?.({ ok: false, error })
+        return error
+      }
+
       let attempt = 0
       while (true) {
         let response: Response
@@ -124,7 +133,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         } catch (cause) {
           if (isAbort(cause)) throw cause
           if (operation.method !== 'GET' || attempt >= maxRetries) {
-            throw new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
+            throw failed(new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 }))
           }
           await delay(retryBaseMs * 2 ** attempt, requestOptions.signal)
           attempt += 1
@@ -135,6 +144,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         if (response.ok) {
           const output = decodeSuccess(body)
           if (import.meta.env.DEV) operation.validateOutput?.(output)
+          scope?.settled?.({ ok: true, output: output as never })
           return output as never
         }
 
@@ -147,7 +157,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           operation.method === 'GET' &&
           attempt < maxRetries &&
           (response.status >= 500 || response.status === 429)
-        if (!retryable) throw new TransportError(error)
+        if (!retryable) throw failed(new TransportError(error))
 
         const retryAfter = response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
         await delay(retryAfter ?? retryBaseMs * 2 ** attempt, requestOptions.signal)
