@@ -1,33 +1,62 @@
+<!--
+  The in-call and preview Settings dialog: Controls for a host, then the Meet
+  settings tabs the Suite Settings dialog also shows.
+-->
 <template>
-	<SuiteSettingsDialog
-		v-model:open="open"
-		v-model:tab="activeTab"
-		:groups="groups"
-		:include-common="false"
-	/>
+	<SettingsDialog v-model:open="open" v-model:tab="activeTab" size="5xl" :keyboard-shortcut="false">
+		<template #title>{{ __('Meeting settings') }}</template>
+		<SettingsSidebar>
+			<SettingsNavGroup v-if="canManageMeeting" :label="__('Meeting')">
+				<SettingsNavItem :value="CONTROLS_TAB">
+					<template #prefix>
+						<span class="lucide-user text-ink-gray-6 size-4 shrink-0" aria-hidden="true" />
+					</template>
+					{{ __('Controls') }}
+				</SettingsNavItem>
+			</SettingsNavGroup>
+			<SettingsNavGroup :label="meetSettings.label()">
+				<SettingsNavItem v-for="tab in tabs" :key="tab.id" :value="tab.id">
+					<template #prefix>
+						<span :class="[tab.icon, 'text-ink-gray-6 size-4 shrink-0']" aria-hidden="true" />
+					</template>
+					{{ tab.label() }}
+				</SettingsNavItem>
+			</SettingsNavGroup>
+		</SettingsSidebar>
+		<SettingsContent>
+			<SettingsPanel v-if="canManageMeeting" :value="CONTROLS_TAB">
+				<MeetingAccessSettingsTab v-if="meetingId" :meeting-id="meetingId" />
+			</SettingsPanel>
+			<SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
+				<component :is="bodies[tab.id]" v-bind="bodyProps(tab.id)" />
+			</SettingsPanel>
+		</SettingsContent>
+	</SettingsDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, ref } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, ref, type Component } from 'vue'
 import {
-	AudioLines,
-	Bell,
-	Camera,
-	LayoutDashboard,
-	MonitorSmartphone,
-	User,
-} from 'lucide-vue-next'
-import { useDoc } from 'frappe-ui'
+	LoadingIndicator,
+	SettingsContent,
+	SettingsDialog,
+	SettingsNavGroup,
+	SettingsNavItem,
+	SettingsPanel,
+	SettingsSidebar,
+	useDoc,
+} from 'frappe-ui'
 
-import { session } from '@/boot/session'
-import type { SettingsGroup } from '@/components/settings/types'
-import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
-import AudioSettingsTab from './AudioSettingsTab.vue'
-import BackgroundSettingsTab from './BackgroundSettingsTab.vue'
-import DeviceSettingsTab from './DeviceSettingsTab.vue'
-import LayoutSettingsTab from './LayoutSettingsTab.vue'
+import { meetSettings } from '@/apps/meet/settings'
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 import MeetingAccessSettingsTab from './MeetingAccessSettingsTab.vue'
-import NotificationSettingsTab from './NotificationSettingsTab.vue'
+
+type MeetTabId = (typeof meetSettings.tabs)[number]['id']
+
+const CONTROLS_TAB = 'meeting-access'
+// The media tabs report a device switch, so the call can apply it.
+const DEVICE_TABS: readonly MeetTabId[] = ['meet.devices', 'meet.audio', 'meet.video']
 
 const props = defineProps<{
 	meetingId?: string
@@ -39,7 +68,9 @@ const emit = defineEmits<{
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const activeTab = ref('devices')
+const activeTab = ref<string>('meet.devices')
+
+const session = useSession()
 
 const meetingDoc = useDoc<{
 	name: string
@@ -50,86 +81,50 @@ const meetingDoc = useDoc<{
 	name: () => props.meetingId || '',
 })
 
-const canManageMeeting = computed(
-	() =>
-		!props.isPreview &&
-		(meetingDoc.doc?.owner === session.user?.sessionUser ||
-			meetingDoc.doc?.co_hosts?.some((row) => row.user === session.user?.sessionUser)),
+const canManageMeeting = computed(() => {
+	const user = session.user.value?.id
+	if (props.isPreview || !user) return false
+	return meetingDoc.doc?.owner === user || Boolean(meetingDoc.doc?.co_hosts?.some((row) => row.user === user))
+})
+
+// Layout arranges the call grid, so the preview has no use for it.
+const tabs = computed(() =>
+	meetSettings.tabs.filter((tab) => !(props.isPreview && tab.id === 'meet.layout')),
 )
 
-const groups = computed<SettingsGroup[]>(() => {
-	const panelProps = (value: string) => ({
-		isVisible: open.value && activeTab.value === value,
-		meetingId: props.meetingId,
-	})
-	const deviceListener = { 'device-changed': (event: unknown) => emit('device-changed', event) }
-
-	return [
-		{
-			id: 'meet-controls',
-			label: 'Meeting',
-			condition: () => Boolean(canManageMeeting.value),
-			items: [
-				{
-					label: 'Controls',
-					value: 'meeting-access',
-					icon: User,
-					component: markRaw(MeetingAccessSettingsTab),
-					props: panelProps('meeting-access'),
-				},
-			],
-		},
-		{
-			id: 'meet-media',
-			label: 'Media',
-			items: [
-				{
-					label: 'Devices',
-					value: 'devices',
-					icon: MonitorSmartphone,
-					component: markRaw(DeviceSettingsTab),
-					props: panelProps('devices'),
-					listeners: deviceListener,
-				},
-				{
-					label: 'Audio',
-					value: 'audio',
-					icon: AudioLines,
-					component: markRaw(AudioSettingsTab),
-					props: panelProps('audio'),
-					listeners: deviceListener,
-				},
-				{
-					label: 'Video',
-					value: 'background',
-					icon: Camera,
-					component: markRaw(BackgroundSettingsTab),
-					props: panelProps('background'),
-					listeners: deviceListener,
-				},
-			],
-		},
-		{
-			id: 'meet-interface',
-			label: 'Interface',
-			items: [
-				{
-					label: 'Notifications',
-					value: 'notifications',
-					icon: Bell,
-					component: markRaw(NotificationSettingsTab),
-					props: panelProps('notifications'),
-				},
-				{
-					label: 'Layout',
-					value: 'layout',
-					icon: LayoutDashboard,
-					component: markRaw(LayoutSettingsTab),
-					condition: () => !props.isPreview,
-					props: panelProps('layout'),
-				},
-			],
-		},
-	]
+// The same loading and error states as the Suite Settings tab bodies. Meet
+// may not import the shell, so they are drawn here.
+const Loading = defineComponent({
+	name: 'MeetSettingsTabLoading',
+	setup: () => () =>
+		h(
+			'div',
+			{ class: 'flex min-h-0 flex-1 items-center justify-center', role: 'status', 'aria-label': __('Loading') },
+			h(LoadingIndicator, { class: 'size-5 text-ink-gray-5' }),
+		),
 })
+
+const Failed = defineComponent({
+	name: 'MeetSettingsTabFailed',
+	setup: () => () =>
+		h(
+			'div',
+			{ class: 'flex min-h-0 flex-1 items-center justify-center px-6 text-center' },
+			h('p', { class: 'text-p-base text-ink-gray-6' }, __('This tab could not load. Reload the page and try again.')),
+		),
+})
+
+const bodies = Object.fromEntries(
+	meetSettings.tabs.map((tab) => [
+		tab.id,
+		defineAsyncComponent({ loader: tab.body, loadingComponent: Loading, errorComponent: Failed, delay: 0 }),
+	]),
+) as Record<MeetTabId, Component>
+
+function bodyProps(id: MeetTabId): Record<string, unknown> {
+	return {
+		...(id === 'meet.video' ? { isVisible: open.value && activeTab.value === id } : {}),
+		...(DEVICE_TABS.includes(id) ? { onDeviceChanged: (event: unknown) => emit('device-changed', event) } : {}),
+	}
+}
 </script>

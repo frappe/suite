@@ -6,17 +6,7 @@
 	<component :is="Layout" v-else class="mail-app mail-app-root">
 		<router-view />
 	</component>
-	<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model:open="showSettings" />
-	<Teleport v-else-if="!mailServerUnavailable" :to="overlayLayer">
-		<Transition
-			enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			enter-from-class="translate-x-full"
-			leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			leave-to-class="translate-x-full"
-		>
-			<PWASettings v-if="showSettings" @close="showSettings = false" />
-		</Transition>
-	</Teleport>
+	<SettingsModal v-if="!mailServerUnavailable" v-model:open="showSettings" />
 	<ShortcutsModal v-model:open="showShortcuts" />
 </template>
 
@@ -30,7 +20,7 @@ import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { isMailRoute } from '@/apps/mail/router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
+import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -39,7 +29,6 @@ import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
-import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import { useRootStore } from '@/stores/root'
 
 import type { NotificationPayload } from '@/apps/mail/types'
@@ -81,7 +70,6 @@ onScopeDispose(() => overlayLayer.remove())
 // died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
 // its own layout and never sees these.
 const { showShortcuts } = useShortcuts()
-const { isMobile } = useScreenSize()
 const gPrefix = useGPrefix()
 
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners

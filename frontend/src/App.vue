@@ -18,7 +18,9 @@ import { defineAsyncComponent, provide } from "vue";
 
 import { useAppRegistry } from "@/composition/appRegistry";
 import { documentTypes } from "@/composition/documentRegistry";
+import { settingsGroups } from "@/composition/settings";
 import { DOCUMENT_TYPES_KEY } from "@/platform/contracts";
+import { SETTINGS_GROUPS_KEY } from "@/shell/settings/settings";
 
 const FeedbackProvider = defineAsyncComponent(() =>
   import("@/platform/feedback").then(
@@ -33,4 +35,5 @@ const NotificationsBell = defineAsyncComponent(
 );
 const registry = useAppRegistry();
 provide(DOCUMENT_TYPES_KEY, documentTypes);
+provide(SETTINGS_GROUPS_KEY, settingsGroups);
 </script>

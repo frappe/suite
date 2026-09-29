@@ -4,11 +4,6 @@
        container with its own app-level layout (sidebar/toolbar) by pointing the
        group's component at its own shell in src/apps/<id>/routes.ts. -->
   <router-view />
-  <SuiteSettingsDialog
-    v-if="showCommonSettings"
-    v-model:open="showSettings"
-    v-model:tab="settingsTab"
-  />
 </template>
 
 <script setup lang="ts">
@@ -16,12 +11,7 @@ import { computed, onScopeDispose } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
-import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
-import {
-  openSettings,
-  settingsTab,
-  showSettings,
-} from '@/shell/settings/useSettingsDialog'
+import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
 
 const route = useRoute()

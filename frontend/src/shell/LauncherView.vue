@@ -13,7 +13,7 @@
           class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
           :aria-label="__('User menu')"
         >
-          <Avatar :image="imageURL" :label="fullName" size="lg" />
+          <Avatar :image="avatar ?? undefined" :label="fullName" size="lg" />
         </button>
       </Dropdown>
     </header>
@@ -33,13 +33,11 @@
         </div>
       </div>
     </div>
-
-    <SuiteSettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, onUnmounted } from 'vue'
+import { computed, h, onMounted, onUnmounted } from 'vue'
 import { Avatar, Dropdown, toast } from 'frappe-ui'
 import { CircleUser, LogOut } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
@@ -47,11 +45,10 @@ import { useRouter } from 'vue-router'
 import { SUITE_APPS } from '@/apps/registry'
 import { useStartMeeting } from '@/apps/meet/composables/useStartMeeting'
 import settingsLogo from '@/assets/app-logos/settings.svg'
-import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useSession } from '@/platform/session'
 import LauncherTile from '@/shell/LauncherTile.vue'
-import SuiteSettingsDialog from '@/shell/settings/SuiteSettingsDialog.vue'
-import { openSettings, settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
+import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useWorkspace } from '@/shell/useWorkspace'
 import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
@@ -59,7 +56,9 @@ import { setupTheme } from '@/utils/setupTheme'
 const apps = SUITE_APPS
 const router = useRouter()
 const root = useRootStore()
-const { fullName, imageURL } = useCurrentUser()
+const session = useSession()
+const fullName = computed(() => session.user.value?.fullName ?? '')
+const avatar = computed(() => session.user.value?.avatar ?? null)
 const { startMeeting } = useStartMeeting()
 
 const composeMail = async () => {
@@ -145,19 +144,17 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () 
 
 const { workspaceName, workspaceLogo } = useWorkspace()
 
-const sessionStore = useSessionStore()
-
 const userMenuOptions = [
   {
     label: __('My Profile'),
     icon: h(CircleUser, { class: 'stroke-[1.5]' }),
-    onClick: () => openSettings('profile'),
+    onClick: () => openSettings('account.profile'),
   },
   useThemeMenuOption(),
   {
     label: __('Log out'),
     icon: h(LogOut, { class: 'stroke-[1.5]' }),
-    onClick: () => sessionStore.logout.submit(),
+    onClick: () => void session.logout().then(() => window.location.reload()),
   },
 ]
 

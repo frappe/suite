@@ -17,7 +17,7 @@ import sheetsLogo from '@/assets/app-logos/sheets.svg'
 import slidesLogo from '@/assets/app-logos/slides.svg'
 import suiteLogo from '@/assets/app-logos/suite.svg'
 import writerLogo from '@/assets/app-logos/writer.png'
-import { jmapUser, systemUser } from '@/boot/session'
+import { jmapUser } from '@/boot/session'
 
 interface SuiteApp {
   id: string
@@ -68,17 +68,9 @@ const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((app) =>
   spa: true,
 }))
 
-const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
-  name: 'frappe',
-  title: 'Desk',
-  route: '/app',
-  logo: '/assets/frappe/images/framework.png',
-  spa: false,
-}
-
 /**
  * The phone's switcher: the app you are in first, then the other apps with a phone
- * layout (`pwa`) that the desktop menu would offer you. Desk has none, so it is left out.
+ * layout (`pwa`) that the desktop menu would offer you.
  */
 export function getPhoneAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
   const current = SUITE_APP_SWITCHER_ITEMS.find((app) => app.name === currentApp)
@@ -90,12 +82,9 @@ export function getAppSwitcherItems(
   currentApp: string,
   includeCurrent = false,
 ): SuiteAppSwitcherItem[] {
-  const items = [
-    ...(systemUser.value ? [DESK_APP_SWITCHER_ITEM] : []),
-    ...SUITE_APP_SWITCHER_ITEMS.filter(
-      (app) => includeCurrent || app.name !== currentApp,
-    ),
-  ]
+  const items = SUITE_APP_SWITCHER_ITEMS.filter(
+    (app) => includeCurrent || app.name !== currentApp,
+  )
   if (!jmapUser.value) {
     return items.filter((app) => app.name !== 'mail' && app.name !== 'calendar')
   }

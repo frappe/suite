@@ -53,6 +53,10 @@ export const filesArea: AreaDefinition = {
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
 }
 
+/** Drive's Settings group. Loads when Settings opens. */
+export const loadDriveSettings = () =>
+  import('@/apps/drive/files/features/settings/settingsGroup').then((module) => module.driveSettings())
+
 export function driveRecents(limit = 12) {
   return recents(limit)
 }
