@@ -111,7 +111,10 @@ vi.mock("@/shell/useIsMobile", async () => {
 
 vi.mock("@/apps/drive", () => ({
   driveRecents: () => ({ test: "recent" }),
-  createDriveDocument: () => ({ test: "create-document" }),
+  useDriveDocumentCreation: () => ({
+    isPending: false,
+    run: state.createDocument,
+  }),
   driveNodeRoute: (node: { name: string }) => `/d/${node.name}/document`,
 }));
 

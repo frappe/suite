@@ -1,19 +1,17 @@
 <template>
   <!-- Mutation dialogs -->
   <ShareDialog v-if="dialog === 's'" v-model="dialog" :add-users="params || []" :file="entity" @success="() => resource.fetch()" />
-  <MoveDialog v-else-if="dialog === 'm'" v-model="dialog" :entities @complete="refresh" />
   
   <!-- Confirmation dialogs -->
   <RemoveDialog v-if="dialog === 'remove'" v-model="dialog" :entities @success="$router.push({ name: 'writer-home' })" />
-  
-  <InfoDialog v-else-if="dialog === 'i'" v-model="dialog" :entity :emitter />
+
   <SearchDialog v-if="dialog === 'search'" v-model="dialog" />
 </template>
 <script setup>
 import { ref, watch, computed } from 'vue'
 import emitter from '@/apps/writer/emitter'
 
-import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive'
+import { ShareDialog, useDriveDialogs } from '@/apps/drive'
 import RemoveDialog from './RemoveDialog.vue'
 import SearchDialog from './SearchDialog.vue'
 
@@ -28,6 +26,7 @@ const resource = computed(() => props.docs?.[0])
 const entities = computed(() => props.docs?.map(r => r.doc) ?? [])
 const entity = computed(() => entities.value?.[0])
 const dialog = defineModel(String)
+const driveDialogs = useDriveDialogs()
 const params = ref(null)
 const open = ref(false)
 watch(dialog, (val) => {
@@ -38,6 +37,19 @@ const refresh = () => {
   dialog.value = ''
   resource.value.fetch()
 }
+
+// Move and Details are Drive dialogs, opened by function call.
+watch(dialog, async (value) => {
+  if ((value !== 'm' && value !== 'i') || !entity.value) return
+  const node = entity.value.name
+  if (value === 'm') {
+    const moved = await driveDialogs.move(node)
+    if (moved) return refresh()
+  } else {
+    await driveDialogs.showDetails(node)
+  }
+  if (dialog.value === value) dialog.value = ''
+})
 
 emitter.on('share', (data) => {
   params.value = data

@@ -1,8 +1,9 @@
-import { infinite, mutation, query, upload } from '@/platform/server-state'
+import { infinite, mutation, query } from '@/platform/server-state'
+import { transport } from '@/platform/transport'
 
 import { api } from './generated'
 import { driveOperation } from './operation'
-import type { DriveBatchResult, DriveNode, DrivePage, DriveRoots } from './types'
+import type { DriveBatchResult, DriveNode, DrivePage } from './types'
 
 export interface ChildrenInput {
   node: string
@@ -24,31 +25,21 @@ const createOperation = driveOperation<Record<string, unknown>, DriveNode>(api.n
   looseInput: true,
 })
 export interface CreateDriveDocumentInput {
+  /** The folder or root that receives the document. */
+  parent: string
   content_doctype: string
 }
-type DocumentCreationInput = CreateDriveDocumentInput & {
-  upload?: DriveRoots
-  parent?: string
-  title?: string
-  kind?: 'document'
-}
-const discoverForCreation = {
-  ...driveOperation<CreateDriveDocumentInput, DriveRoots>(api.roots_discover, { looseInput: true }),
-  // Hide the workflow input from the roots query string.
-  pathParams: ['content_doctype'],
-}
-const finishDocumentCreation = {
+type DocumentCreationInput = CreateDriveDocumentInput & { title?: string; kind?: 'document' }
+const documentCreateOperation = {
   ...driveOperation<DocumentCreationInput, DriveNode>(api.node_create, { entity: true, looseInput: true }),
+  // `POST /nodes` needs a title and a kind. A new document takes its type's default title.
   validateInput(value: unknown): asserts value is DocumentCreationInput {
     if (!value || typeof value !== 'object') throw new TypeError('Document creation input is required')
     const input = value as DocumentCreationInput
+    if (!input.parent) throw new TypeError('parent is required')
     if (!input.content_doctype) throw new TypeError('content_doctype is required')
-    const personal = input.upload?.personal
-    if (!personal?.node) throw new TypeError('The Personal Root is unavailable')
-    input.parent = personal.node
-    input.title = defaultDocumentTitle(input.content_doctype)
+    input.title ||= defaultDocumentTitle(input.content_doctype)
     input.kind = 'document'
-    delete input.upload
   },
 }
 const renameOperation = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, {
@@ -85,13 +76,10 @@ export const createNode = () => mutation(createOperation, {
   invalidates: ['node_children', 'view_list'],
 })
 
-/** Resolve the caller's Personal Root, then create one generic content node. */
-export const createDocument = () => upload<CreateDriveDocumentInput, DriveNode>(
-  discoverForCreation,
-  api.upload_chunk,
-  finishDocumentCreation,
-  { invalidates: ['node_children', 'view_list'] },
-)
+/** Create one generic content node with its type's default title. */
+export const createDocument = () => mutation<CreateDriveDocumentInput, DriveNode>(documentCreateOperation, {
+  invalidates: ['node_children', 'view_list'],
+})
 
 export const renameNode = () => mutation(renameOperation, {
   touches: ({ node }) => [node],
@@ -121,6 +109,11 @@ export const batchNodes = () => mutation(batchOperation, {
 })
 
 export const visitNode = () => mutation(emptyOperation<{ node: string }>(api.node_visit))
+
+/** Record that the caller opened a node, for Recent. Outside any query cache. */
+export async function recordVisit(node: string): Promise<void> {
+  await transport.request(emptyOperation<{ node: string }>(api.node_visit), { node })
+}
 export const starNode = () => mutation(emptyOperation<{ node: string }>(api.node_put_favourite, true), {
   touches: ({ node }) => [node],
   optimistic: () => ({ favourite: true }),

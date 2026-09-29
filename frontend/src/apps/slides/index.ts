@@ -13,6 +13,7 @@ const SlidesIcon = defineComponent({
 });
 
 export const slidesDocument: DocumentTypeDefinition = {
+  key: "slides",
   contentDoctype: "Presentation",
   newLabel: () => __("Presentation"),
   icon: SlidesIcon,
