@@ -97,11 +97,15 @@ def _route(handler):
             return handler(*args, **kwargs)
         except DriveError as refusal:
             _refuse(type(refusal), str(refusal))
-        except frappe.RateLimitExceededError:
+        except frappe.RateLimitExceededError as limited:
             # 429, and already carrying its message: §6.3 locks a link out for
             # fifteen minutes after five wrong passwords, and the caller has to
             # be able to tell that apart from a wrong password. The clause
             # below would flatten it to 400 with every other bad argument.
+            # `Retry-After` carries the seconds left, so the unlock screen can
+            # count down to the next attempt.
+            if retry_after := getattr(limited, "retry_after", None):
+                frappe.local.response_headers["Retry-After"] = str(retry_after)
             raise
         except frappe.DoesNotExistError as missing:
             # A row a workflow reached for is gone. The framework already
@@ -731,8 +735,10 @@ def link_unlock(token: Given = None, password: Given = None) -> dict:
     so a password change or a rotation kills every ticket at once.
 
     Guest-reachable, because unlocking is what a caller does before they have
-    any access at all. Five failures in fifteen minutes lock the token out and
-    answer 429, which the boundary keeps distinct from a wrong password (§6.3).
+    any access at all. A wrong password answers 401. The fifth failure in
+    fifteen minutes locks the token out, and it and every attempt during the
+    lockout answer 429 with `Retry-After`, which the boundary keeps distinct
+    from a wrong password (§6.3).
     """
     return access.unlock_link(
         shapes.required_text(token, "token"),

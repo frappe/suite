@@ -2884,7 +2884,7 @@ class TestAccessForwarder(ShimCase):
 
     def test_a_legacy_share_cannot_mint_a_share_link(self):
         """`access.grant("$LINK", ...)` mints a token and answers its
-        `/drive/l/` URL. `File.share` had no branch for it: an unknown
+        `/l/` URL. `File.share` had no branch for it: an unknown
         principal went to `create_invites`, which refuses a non-address. §11.7
         gives no legacy name a link-issuing contract."""
         access = self.stub("access")

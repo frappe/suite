@@ -1758,7 +1758,11 @@ class TestGrantRoutes(DriveHTTPCase):
             self.as_owner("PUT", f"{PREFIX}/nodes/{self.inner}/grants/$LINK", body={"role": READ})
         )
         token = minted["grant"]["principal"].split(":", 1)[1]
-        self.assertEqual(minted["url"], f"/drive/l/{token}")
+        self.assertEqual(minted["url"], f"/l/{token}")
+        listed = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants"))["grants"]
+        self.assertEqual(
+            [row["url"] for row in listed if row["name"] == minted["grant"]["name"]], [f"/l/{token}"]
+        )
         opened = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=token))
         self.assertEqual(opened["name"], self.inner)
 
@@ -1767,7 +1771,7 @@ class TestGrantRoutes(DriveHTTPCase):
         )
         fresh = rotated["grant"]["principal"].split(":", 1)[1]
         self.assertNotEqual(fresh, token)
-        self.assertEqual(rotated["url"], f"/drive/l/{fresh}")
+        self.assertEqual(rotated["url"], f"/l/{fresh}")
         self.assertEqual(rotated["grant"]["name"], minted["grant"]["name"])
         self.refusal(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=token), 404, "DriveNotFound")
         reopened = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=fresh))
@@ -1840,6 +1844,25 @@ class TestShareLinkRoutes(DriveHTTPCase):
         _created, token = self.link(password="correct horse")
         response = self.drive("POST", f"{PREFIX}/links/{token}/unlock", body={"password": "wrong"})
         self.refusal(response, 401, "DriveLocked")
+
+    def test_the_failure_that_sets_the_lockout_answers_429_with_the_seconds_left(self):
+        _created, token = self.link(password="correct horse")
+        bucket = f"drive:link_unlock:{token}"
+        self.addCleanup(frappe.cache.delete_value, bucket)
+        unlock = f"{PREFIX}/links/{token}/unlock"
+        for _attempt in range(4):
+            self.refusal(self.drive("POST", unlock, body={"password": "wrong"}), 401, "DriveLocked")
+
+        locked = self.drive("POST", unlock, body={"password": "wrong"})
+        self.refusal(locked, 429, "RateLimitExceededError")
+        self.assertIn(int(locked.headers["Retry-After"]), range(899, 901))
+
+        # Ten minutes pass. The next refusal names the five that are left, even
+        # for the right password.
+        frappe.cache.expire_key(bucket, 300)
+        later = self.drive("POST", unlock, body={"password": "correct horse"})
+        self.refusal(later, 429, "RateLimitExceededError")
+        self.assertIn(int(later.headers["Retry-After"]), range(299, 301))
 
     def test_a_password_link_with_no_ticket_answers_locked(self):
         _created, token = self.link(password="correct horse")

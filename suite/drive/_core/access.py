@@ -6,6 +6,7 @@ import string
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from typing import Literal
 from uuid import uuid4
 
 import frappe
@@ -48,6 +49,10 @@ WHERE node IN %(chain)s
 """
 
 BASE62 = string.ascii_letters + string.digits
+# The share-link entry route (§6.2). A website route, outside the Drive area,
+# so the URL a grant returns stays valid whichever route table
+# `suite_flip_files` mounts under `/drive`.
+LINK_ROUTE = "/l/"
 UNLOCK_FAILURE_LIMIT = 5
 UNLOCK_WINDOW_SECONDS = 15 * 60
 _UNLOCK_FAILURE_SCRIPT = """
@@ -605,7 +610,7 @@ def grants_for(
 def resolve_link(token: str) -> dict:
     """Answer which node one share-link token addresses (§6.2).
 
-    The website route `/drive/l/<token>` has to name a node before the SPA can
+    The website route `/l/<token>` has to name a node before the SPA can
     ask for anything, so this resolves the grant and stops there. It does not
     check a role and it does not ask for a password: a password link's holder
     needs the node id in order to be told, by the ordinary node route, that it
@@ -946,20 +951,42 @@ def unlock_link(token: str, password: str) -> dict:
         password,
         row.password_hash,
     )
-    if outcome == "locked":
-        frappe.throw(
-            _("Too many failed Drive link unlock attempts; try again later"),
-            frappe.RateLimitExceededError,
-        )
-    if outcome == "busy":
+    if outcome.kind == "locked":
+        # 429, never the wrong-password 401: the fifth failure is a lockout
+        # too, and `retry_after` tells the HTTP boundary how long it has left.
+        lockout = frappe.RateLimitExceededError()
+        lockout.retry_after = outcome.retry_after
+        frappe.throw(_("Too many failed Drive link unlock attempts; try again later"), lockout)
+    if outcome.kind == "busy":
         frappe.throw(_("Drive link unlock is busy; try again"), frappe.ValidationError)
-    if outcome == "failed":
+    if outcome.kind == "failed":
         raise DriveLocked(_("The Drive link password is incorrect"))
     expires = int(time.time()) + TICKET_TTL
     return {
         "ticket": make_ticket(token, row.password_hash, expires),
         "expires": expires,
     }
+
+
+@dataclasses.dataclass(frozen=True)
+class UnlockOutcome:
+    """What one password attempt decided, under the per-token lock."""
+
+    kind: Literal["success", "failed", "locked", "busy"]
+    # Whole seconds left in the lockout, for `locked` only.
+    retry_after: int = 0
+
+
+def _locked_out(cache, raw_cache_key: bytes) -> UnlockOutcome:
+    """Answer a lockout with the seconds left in the bucket that refused.
+
+    Called under the per-token lock. Once the lock is released, the lockout
+    can expire and another failure can open a fresh counter in its key, so a
+    later read would describe that counter instead. The bucket can also
+    expire between the refusal and this read, and redis then answers -2. The
+    caller was refused all the same, so it waits one second.
+    """
+    return UnlockOutcome("locked", max(int(cache.ttl(raw_cache_key)), 1))
 
 
 def _unlock_bucket_locked(cache, raw_cache_key: bytes) -> bool:
@@ -973,18 +1000,23 @@ def _verify_link_password(
     raw_lock_key: bytes,
     password: str,
     password_hash: str,
-) -> str:
+) -> UnlockOutcome:
     """Serialize check, passlib verification, and bucket mutation per token."""
     lock = cache.lock(raw_lock_key, timeout=30)
     if not lock.acquire(blocking=True, blocking_timeout=10):
-        return "busy"
+        return UnlockOutcome("busy")
     try:
         if _unlock_bucket_locked(cache, raw_cache_key):
-            return "locked"
+            return _locked_out(cache, raw_cache_key)
         if passlibctx.verify(password, password_hash):
             cache.delete(raw_cache_key)
-            return "success"
-        return "locked" if _record_unlock_failure(cache, raw_cache_key) < 0 else "failed"
+            return UnlockOutcome("success")
+        failures = _record_unlock_failure(cache, raw_cache_key)
+        # -1 is a bucket that was already locked; the limit is the failure
+        # that just locked it. Both answer as a lockout (§6.3).
+        if failures < 0 or failures >= UNLOCK_FAILURE_LIMIT:
+            return _locked_out(cache, raw_cache_key)
+        return UnlockOutcome("failed")
     finally:
         lock.release()
 
@@ -1058,7 +1090,7 @@ def _refuse_borrowed_link_token(node: Mapping, principal: str, role: int) -> Non
        row that grants and, below it, ordinary deny rows; §5.11's `unlock_link`
        and §6.2's `resolve_link` both read a token as one grant. A second
        capability row elsewhere makes a password link answer "ambiguous" for
-       everyone holding it, and makes `/drive/l/<token>` resolve to whichever
+       everyone holding it, and makes `/l/<token>` resolve to whichever
        node sorts first.
 
     A deny (role NONE) stays legal on any node, because that is exactly §6.1's
@@ -1158,5 +1190,5 @@ def _grant_result(
         "has_password": bool(password_hash),
     }
     if principal.startswith("$LINK:"):
-        result["url"] = f"/drive/l/{principal.removeprefix('$LINK:')}"
+        result["url"] = LINK_ROUTE + principal.removeprefix("$LINK:")
     return result

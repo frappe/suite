@@ -366,12 +366,17 @@ class TestSubjectPrincipals(BoundaryCase):
 
 
 class TestShareLinkPage(BoundaryCase):
-    """§6.2: `/drive/l/<token>` answers which node, never whether."""
+    """§6.2: `/l/<token>` answers which node, never whether."""
 
     def context_for(self, token, **patched):
+        # `node_url` is stubbed, so no case reads the site's `suite_flip_files`
+        # or a node row. `test_drive_link` covers the address per kind and key.
         frappe.local.form_dict = frappe._dict({"token": token})
         frappe.flags.redirect_location = None
-        with patch.object(drive_link.drive, "resolve_share_link", **patched) as resolved:
+        with (
+            patch.object(drive_link.drive, "resolve_share_link", **patched) as resolved,
+            patch.object(drive_link.drive, "node_url", return_value="/d/n1") as self.addressed,
+        ):
             context = frappe._dict()
             try:
                 return drive_link.get_context(context), None, resolved
@@ -382,8 +387,9 @@ class TestShareLinkPage(BoundaryCase):
         answer = {"node": "n1", "token": "t" * 22}
         _context, sent, resolved = self.context_for("t" * 22, return_value=answer)
         resolved.assert_called_once_with("t" * 22)
+        self.addressed.assert_called_once_with("n1")
         self.assertEqual(sent.http_status_code, 302)
-        self.assertEqual(frappe.flags.redirect_location, "/drive/g/n1#link=" + "t" * 22)
+        self.assertEqual(frappe.flags.redirect_location, "/d/n1#link=" + "t" * 22)
 
     def test_the_token_rides_the_fragment_so_no_log_or_referer_holds_it(self):
         _context, _sent, _resolved = self.context_for(
@@ -636,11 +642,11 @@ class TestGrantRoutes(BoundaryCase):
         self.assertEqual(workflow.call_args.kwargs["expires_on"], "2026-10-01")
 
     def test_a_link_url_is_published_beside_the_row_only_when_one_was_minted(self):
-        minted = {"name": "g1", "node": "n1", "principal": "$LINK:tok", "role": 20, "url": "/drive/l/tok"}
+        minted = {"name": "g1", "node": "n1", "principal": "$LINK:tok", "role": 20, "url": "/l/tok"}
         with patch.object(routes.access, "grant", return_value=minted):
             answer = routes.node_put_grant(node="n1", principal="$LINK", role=20)
         self.assertEqual(set(answer), {"grant", "url"})
-        self.assertEqual(answer["url"], "/drive/l/tok")
+        self.assertEqual(answer["url"], "/l/tok")
         with patch.object(routes.access, "grant", return_value={"name": "g2", "role": 40}):
             answer = routes.node_put_grant(node="n1", principal="b@example.com", role=40)
         self.assertEqual(set(answer), {"grant"})
@@ -674,11 +680,11 @@ class TestGrantRoutes(BoundaryCase):
     def test_rotation_addresses_the_grant_row_and_forwards_its_id(self):
         # §5.11: the address is the `Drive Grant` id. Naming the old token
         # would put the secret being replaced into the access log.
-        rotated = {"name": "g1", "node": "n1", "principal": "$LINK:new", "url": "/drive/l/new"}
+        rotated = {"name": "g1", "node": "n1", "principal": "$LINK:new", "url": "/l/new"}
         with patch.object(routes.access, "rotate_link", return_value=rotated) as workflow:
             answer = routes.grant_rotate(grant="g1")
         workflow.assert_called_once_with("g1", SOMEONE)
-        self.assertEqual(answer["url"], "/drive/l/new")
+        self.assertEqual(answer["url"], "/l/new")
 
     def test_a_blank_grant_id_rotates_nothing(self):
         with patch.object(routes.access, "rotate_link") as workflow:
