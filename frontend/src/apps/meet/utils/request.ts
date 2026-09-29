@@ -18,11 +18,11 @@ export class MeetRequestError extends Error {
 }
 
 export async function request<T>(
-	path: `/api/v2/${string}`,
+	path: `/api/suite/meet/${string}`,
 	params: Record<string, string | number | boolean | null | undefined> = {},
 ): Promise<T> {
-	if (!path.startsWith("/api/v2/")) {
-		throw new TypeError("Meet requests require an absolute /api/v2/ path");
+	if (!path.startsWith("/api/suite/meet/")) {
+		throw new TypeError("Meet requests require an absolute /api/suite/meet/ path");
 	}
 
 	const headers: Record<string, string> = {

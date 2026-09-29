@@ -625,7 +625,7 @@ describe("getConnectionDetails", () => {
 		expect(details.isHost).toBe(true);
 		expect(details.isCohost).toBe(false);
 		expect(request).toHaveBeenCalledWith(
-			"/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+			"/api/suite/meet/rooms/connections",
 			{ meeting_id: "meet-1" },
 		);
 	});
@@ -651,7 +651,7 @@ describe("getConnectionDetails", () => {
 		expect(details.userData?.is_guest).toBe(true);
 		expect(details.e2eeRequired).toBe(true);
 		expect(request).toHaveBeenCalledWith(
-			"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+			"/api/suite/meet/rooms/guest-tokens",
 			{
 				meeting_id: "meet-2",
 				guest_id: "guest-1",
@@ -972,7 +972,7 @@ describe("E2EE signaling payloads", () => {
 		await client.refreshToken();
 
 		expect(request).toHaveBeenCalledWith(
-			"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+			"/api/suite/meet/rooms/guest-tokens",
 			{
 				meeting_id: "meet-2",
 				guest_id: "guest-2",
