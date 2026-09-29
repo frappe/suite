@@ -173,9 +173,16 @@ def whitelisted_names() -> dict[str, bool]:
 
 
 # The revision §11.7 is measured against: the last commit before the shim
-# landed. A permanent name is one the plan never touches, so "untouched" is
-# checked against this tree rather than against a phrase in the body.
+# landed. A permanent name is answered by its legacy body until Cleanup and the
+# shim work never touches it, so "untouched" is checked against this tree rather
+# than against a phrase in the body.
 BASE_REVISION = "e390a4487"
+
+# A permanent body that changed after `BASE_REVISION` for a reason outside the
+# shim work, and the revision that changed it. Upstream `c005af4b1` (#879)
+# removed the `auto_detect_links` field from `Drive Settings`, and with it the
+# line `set_settings` used to write that field.
+REVISED_UPSTREAM = {"api.product.set_settings": "c005af4b1"}
 
 
 def _relative_of(name: str) -> tuple[str, str]:
@@ -209,12 +216,14 @@ def _function_shape(text: str, wanted: str) -> str:
 
 
 def original_shape(name: str) -> str:
-    """Return one legacy function's structure at `BASE_REVISION`."""
+    """Return one legacy function's structure at `BASE_REVISION`, or at the
+    upstream revision that last changed it (`REVISED_UPSTREAM`)."""
     import subprocess
 
     relative, tail = _relative_of(name)
+    revision = REVISED_UPSTREAM.get(name, BASE_REVISION)
     text = subprocess.run(
-        ["git", "-C", str(APP.parent), "show", f"{BASE_REVISION}:suite/{relative}"],
+        ["git", "-C", str(APP.parent), "show", f"{revision}:suite/{relative}"],
         capture_output=True,
         text=True,
         check=True,
@@ -461,7 +470,7 @@ class TestInventory(ShimCase):
         self.assertEqual(len(shims.names_of("retired")), 3)
         self.assertEqual(len(shims.names_of("retained")), 8)
 
-    def test_the_two_permanent_names_of_the_table_are_permanent(self):
+    def test_the_two_file_row_names_keep_their_legacy_bodies(self):
         for name in ("api.s3.fetch", "overrides.file.get_file_for_doc"):
             self.assertEqual(shims.CLASSIFICATION[name], "permanent", name)
 
@@ -3574,7 +3583,7 @@ class TestNotificationRouting(ShimCase):
 
 
 # --------------------------------------------------------------------------
-# What must not move
+# What must not move before Cleanup
 # --------------------------------------------------------------------------
 
 
@@ -3623,13 +3632,14 @@ class TestPermanentSurface(ShimCase):
         self.assertEqual(whitelisted_names()["overrides.file.get_file_for_doc"], False)
 
     def test_every_permanent_name_is_byte_for_byte_the_body_it_always_was(self):
-        """ "Permanent" is checked against the tree, not against a phrase.
+        """ "Untouched" is checked against the tree, not against a phrase.
 
         A substring assertion passes on a body that kept the line it greps for
         and changed everything around it. Each of the twenty-one is compared
-        with its own structure at `BASE_REVISION`: decorators, signature, and
-        every statement. Comments and docstrings are excluded, so prose may be
-        corrected and code may not.
+        with its own structure at `BASE_REVISION`, or at the upstream revision
+        `REVISED_UPSTREAM` names: decorators, signature, and every statement.
+        Comments and docstrings are excluded, so prose may be corrected and
+        code may not.
         """
         permanent = shims.names_of("permanent")
         self.assertEqual(len(permanent), 21)

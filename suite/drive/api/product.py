@@ -281,7 +281,9 @@ def get_translations():
 
 
 def is_drive_site_admin():
-    return frappe.has_permission("Drive Disk Settings", "write")
+    from suite.drive.webdav.settings import is_drive_admin
+
+    return is_drive_admin()
 
 
 @frappe.whitelist()

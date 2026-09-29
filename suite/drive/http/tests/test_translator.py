@@ -63,7 +63,7 @@ GUEST_ROUTES = frozenset(
         "unknown",
     }
 )
-# Three reasons a row is not heard without a session, and no fourth.
+# Four reasons a row is not heard without a session, and no fifth.
 #
 # MANAGE, which no open principal reaches: a link caps at EDIT and `$PUBLIC` at
 # READ (§5.9), so the grant routes, the version delete, and the root routes can
@@ -75,6 +75,9 @@ GUEST_ROUTES = frozenset(
 #
 # A view, which is answered from the caller's own principals or from those same
 # personal lists (§5.4-5.7). A Guest has neither.
+#
+# A setting, which is the caller's own `Drive Settings` row or the site's. §11.2
+# says none of the settings and WebDAV routes admits a guest.
 SESSION_ONLY_ROUTES = frozenset(
     {
         "node_purge",
@@ -95,6 +98,11 @@ SESSION_ONLY_ROUTES = frozenset(
         "root_usage",
         "root_patch",
         "root_purge",
+        "settings_get",
+        "settings_patch",
+        "site_settings_get",
+        "site_settings_patch",
+        "webdav_get",
     }
 )
 
@@ -212,6 +220,11 @@ class TestTranslator(HttpConformanceMixin, UnitTestCase):
             ("GET", "/api/suite/drive/roots/r1/usage", "root_usage", {"root": "r1"}),
             ("PATCH", "/api/suite/drive/roots/r1", "root_patch", {"root": "r1"}),
             ("DELETE", "/api/suite/drive/roots/r1", "root_purge", {"root": "r1"}),
+            ("GET", "/api/suite/drive/settings", "settings_get", {}),
+            ("PATCH", "/api/suite/drive/settings", "settings_patch", {}),
+            ("GET", "/api/suite/drive/site-settings", "site_settings_get", {}),
+            ("PATCH", "/api/suite/drive/site-settings", "site_settings_patch", {}),
+            ("GET", "/api/suite/drive/webdav", "webdav_get", {}),
         )
         self.assertEqual(len(cases), len(translator.ROUTES))
         for method, path, expected, ids in cases:
