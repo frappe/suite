@@ -11,8 +11,9 @@ import type { RouteRecordRaw } from "vue-router";
  * shortcuts dialog. The platform provides the one FrappeUIProvider.
  *
  * `meet-meeting` is marked `meta.allowGuest` so the suite's auth guard lets
- * guests join meetings. The meet-local guard (./router.ts) enforces
- * `requiresAdmin` for audio-test.
+ * guests join meetings, and `meta.frame: "none"` so a call never shows the
+ * shell. The other routes take their frame from the Meet area group. The
+ * meet-local guard (./router.ts) enforces `requiresAdmin` for audio-test.
  */
 export const routes: RouteRecordRaw[] = [
 	{
@@ -34,7 +35,8 @@ export const routes: RouteRecordRaw[] = [
 				path: ":meetingId",
 				name: "meet-meeting",
 				component: () => import("@/apps/meet/pages/Meeting.vue"),
-				meta: { allowGuest: true },
+				// A call stays outside the shell: fixed, dark, full screen [T010].
+				meta: { allowGuest: true, frame: "none" },
 			},
 		],
 	},

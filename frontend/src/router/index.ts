@@ -38,7 +38,6 @@ const legacyRouteLoaders: Record<
   slides: () => import('@/apps/slides/routes'),
   writer: () => import('@/apps/writer/routes'),
   sheets: () => import('@/apps/sheets/routes'),
-  meet: () => import('@/apps/meet/routes'),
 }
 const legacyApps = SUITE_APPS.filter((app) => app.id in legacyRouteLoaders).map(
   (app) => ({
@@ -135,7 +134,8 @@ async function ensureAreaRoutesLoaded(areaId: string): Promise<void> {
   const routeModule = await area.loadRoutes()
   const seed = canonicalRoutes.find((route) => route.meta?.area === areaId)
   const meta = { ...seed?.meta }
-  if (areaId === 'mail' || areaId === 'calendar') meta.appId = areaId
+  if (areaId === 'mail' || areaId === 'calendar' || areaId === 'meet')
+    meta.appId = areaId
 
   router.addRoute({
     path: area.to,
@@ -191,6 +191,16 @@ router.beforeEach(async (to) => {
     !registeredAreas.has('mail')
   ) {
     await ensureAreaRoutesLoaded('mail')
+    return to.fullPath
+  }
+
+  // A guest may join a Meet call. Load Meet's routes first, so the call
+  // route's own metadata decides who may enter.
+  if (
+    session.status.value === 'guest' &&
+    areaPlaceholderId(to) === 'meet'
+  ) {
+    await ensureAreaRoutesLoaded('meet')
     return to.fullPath
   }
 

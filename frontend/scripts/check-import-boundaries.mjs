@@ -277,7 +277,7 @@ const moduleGraphDebtGroups = [
     "entries": [
       "meet/components/MeetSidebar.vue|../../../boot/session",
       "meet/components/MeetSidebar.vue|@/composables/useAppSwitcher",
-      "meet/components/MeetSidebar.vue|@/composables/useSettingsMenuOption",
+      "meet/components/MeetSidebar.vue|@/shell/settings/useSettingsDialog",
       "meet/components/MeetSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
       "meet/components/MeetSidebar.vue|@/utils/setupTheme",
       "meet/components/MeetingPreview.vue|@/boot/session",
