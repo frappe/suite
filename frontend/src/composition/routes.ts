@@ -102,7 +102,7 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     "/calendar/:pathMatch(.*)*",
     "area-placeholder-calendar",
     areaMeta("calendar", "Calendar", calendarLogo, {
-      frame: "none",
+      frame: adoptedAppFrame,
       scroll: "content",
     }),
   ),

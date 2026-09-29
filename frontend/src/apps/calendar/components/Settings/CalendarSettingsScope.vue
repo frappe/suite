@@ -16,22 +16,14 @@
 </template>
 
 <script setup lang="ts">
-import { onScopeDispose, provide } from 'vue'
+import { provide } from 'vue'
 import { LoadingIndicator } from 'frappe-ui'
 
-import { initSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { translate as __ } from '@/platform/translation'
 
-const props = defineProps<{ socket?: boolean }>()
-
 const { userResource } = userStore()
 provide('$user', userResource)
 provide('$dayjs', dayjs)
-if (props.socket) {
-	const socket = initSocket()
-	provide('$socket', socket)
-	onScopeDispose(() => socket.disconnect())
-}
 </script>

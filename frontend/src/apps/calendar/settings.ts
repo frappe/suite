@@ -7,7 +7,7 @@ import { translate as __ } from '@/platform/translation'
 type BodyModule = { default: Component }
 
 /** Wraps a Calendar tab body in the Calendar injections, loaded with the body. */
-function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } = {}) {
+function scoped(load: () => Promise<BodyModule>) {
 	return async (): Promise<Component> => {
 		const [{ default: Body }, { default: Scope }] = await Promise.all([
 			load(),
@@ -15,7 +15,7 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
 		])
 		return defineComponent({
 			name: 'CalendarSettingsTab',
-			setup: () => () => h(Scope, { socket: options.socket }, { default: () => h(Body) }),
+			setup: () => () => h(Scope, null, { default: () => h(Body) }),
 		})
 	}
 }
@@ -47,13 +47,13 @@ const calendar = {
 			id: 'calendar.import',
 			label: () => __('Import'),
 			icon: 'lucide-hard-drive-download',
-			body: scoped(() => import('@/apps/calendar/components/Settings/ImportSettings.vue'), { socket: true }),
+			body: scoped(() => import('@/apps/calendar/components/Settings/ImportSettings.vue')),
 		},
 		{
 			id: 'calendar.export',
 			label: () => __('Export'),
 			icon: 'lucide-hard-drive-upload',
-			body: scoped(() => import('@/apps/calendar/components/Settings/ExportSettings.vue'), { socket: true }),
+			body: scoped(() => import('@/apps/calendar/components/Settings/ExportSettings.vue')),
 		},
 		{
 			id: 'calendar.advanced',
