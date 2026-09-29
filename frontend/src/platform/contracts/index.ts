@@ -16,6 +16,13 @@ export type PlatformCapability = 'jmap' | 'systemManager'
  */
 export type ShellFrame = 'shell' | 'none'
 export type ScrollOwner = 'shell' | 'content'
+/**
+ * Who draws the phone chrome: the top safe-area inset and the bottom bar.
+ * `shell`: the shell pads its header target and draws its bottom nav.
+ * `page`: the page applies the inset and draws its own tab bar, so the shell
+ * does neither (Mail and Calendar, spec section 9.3).
+ */
+export type PhoneChromeOwner = 'shell' | 'page'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -23,6 +30,8 @@ declare module 'vue-router' {
     area?: string
     frame?: ShellFrame
     scroll?: ScrollOwner
+    /** Absent reads as `shell`. */
+    phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
     favicon?: string

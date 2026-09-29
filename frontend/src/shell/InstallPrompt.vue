@@ -2,9 +2,10 @@
 	<!-- The offer to install the suite. Mounted once by the shell on phones and
 	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
 	     listener that is not there at the time misses it. Shown only while the
-	     route is inside an app the phone can use (`pwa` in the registry): Chrome
-	     only fires inside those anyway, since that is where the manifest is
-	     attached (see setPwaTags), and the iOS hint follows the same gate. -->
+	     route is inside an app the phone can use (`pwa` in the registry). The
+	     manifest is on every route (see platform/pwa setPwaTags), so Chrome may
+	     fire elsewhere; the offer waits for such an app. The iOS hint follows
+	     the same gate. -->
 	<Dialog :open="showDialog && installable" @update:open="showDialog = $event">
 		<template #title>
 			<h2 class="text-lg-bold">{{ __('Install Frappe Suite') }}</h2>

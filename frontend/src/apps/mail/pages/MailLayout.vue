@@ -20,7 +20,6 @@ import { isMailRoute } from '@/apps/mail/router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
-import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
@@ -29,19 +28,16 @@ import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import { useRootStore } from '@/stores/root'
 
-import type { NotificationPayload } from '@/apps/mail/types'
-
 /**
  * Mail route-group layout.
  *
  * The suite shell already provides the top-level chrome, and the platform provides the one
- * FrappeUIProvider, but neither provides mail's `$user` / `$dayjs` / `$socket` injects or
- * registers mail's push-notification SW. So this layout:
+ * FrappeUIProvider and registers the push service worker, but neither provides mail's
+ * `$user` / `$dayjs` / `$socket` injects. So this layout:
  *   - provides the mail-local `$user` / `$dayjs` / `$socket` injections, and closes the
  *     socket when it unmounts,
  *   - owns Mail's overlay layer, where every Mail overlay teleports,
  *   - picks the inner layout (DefaultLayout / bare div for noLayout routes),
- *   - wires push-notification onMessage and registers the (fail-safe) SW,
  *   - renders the nested <router-view>.
  *
  * Public pre-auth routes (login/signup/...) sit OUTSIDE this layout since they
@@ -166,49 +162,6 @@ const Layout = computed(() => {
 	return DefaultLayout
 })
 
-/* -------------------------------------------------------------------------- */
-/* Push-notification service worker.                                          */
-/*                                                                            */
-/* `sw.js` (the FCM service worker) is                                        */
-/* emitted at /assets/suite/frontend/sw.js by vite-plugin-pwa from             */
-/* src/apps/mail/sw.ts (see vite.config.ts). It is a build-only artifact, so   */
-/* push notifications work in a production build, not the dev server. Kept     */
-/* FULLY fail-safe so it never breaks the build or first paint. `firebase` is  */
-/* dynamically imported so it stays code-split out of the shared shell chunk.  */
-/* -------------------------------------------------------------------------- */
-const registerServiceWorker = async () => {
-	try {
-		if (!('serviceWorker' in navigator)) return
-
-		const { default: FrappePushNotification } = await import(
-			'@/apps/mail/utils/frappe-push-notification'
-		)
-		window.frappePushNotification = new FrappePushNotification('mail')
-
-		let serviceWorkerURL = '/assets/suite/frontend/sw.js'
-		let config: unknown = ''
-
-		try {
-			config = await window.frappePushNotification.fetchWebConfig()
-			serviceWorkerURL = `${serviceWorkerURL}?config=${encodeURIComponent(
-				JSON.stringify(config),
-			)}`
-		} catch (err) {
-			console.error('Failed to fetch FCM config', err)
-		}
-
-		const registration = await navigator.serviceWorker.register(serviceWorkerURL, {
-			type: 'module',
-		})
-		if (config)
-			window.frappePushNotification
-				.initialize(registration)
-				.then(() => console.log('Frappe Push Notification initialized'))
-	} catch (err) {
-		console.error('Failed to register service worker', err)
-	}
-}
-
 // iOS standalone scrolls the whole document to reveal a focused input above the
 // keyboard, and can leave that offset behind after dismissal — the entire shell
 // then sits displaced (rows under the clock, tab bar mid-screen, void below).
@@ -222,10 +175,6 @@ const resetDocumentScroll = () => {
 }
 
 onMounted(() => {
-	registerServiceWorker()
-	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
-		showNotification(payload),
-	)
 	window.addEventListener('keydown', handleGlobalShortcuts)
 	window.addEventListener('focusout', resetDocumentScroll)
 })

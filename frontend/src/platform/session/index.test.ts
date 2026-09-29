@@ -57,7 +57,7 @@ describe('session', () => {
     expect(request.mock.calls.map(([operation]) => operation.id)).toContain('frappe.logout')
   })
 
-  it('runs every logout cleanup once the server ends the session, even when one fails', async () => {
+  it('runs signed-in cleanups before the server ends the session and the rest after, even when one fails', async () => {
     const order: string[] = []
     const request = vi.fn(async () => {
       order.push('server')
@@ -71,12 +71,15 @@ describe('session', () => {
     session.onLogout(async () => {
       order.push('clear')
     })
+    session.onLogout(() => {
+      order.push('unsubscribe')
+    }, { whileSignedIn: true })
     const removed = vi.fn()
     session.onLogout(removed)()
 
     await session.logout()
 
-    expect(order).toEqual(['server', 'failing', 'clear'])
+    expect(order).toEqual(['unsubscribe', 'server', 'failing', 'clear'])
     expect(removed).not.toHaveBeenCalled()
     expect(session.status.value).toBe('guest')
   })
