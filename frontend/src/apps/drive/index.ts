@@ -36,7 +36,6 @@ export const filesArea: AreaDefinition = {
   icon: FilesIcon,
   to: '/files',
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
-  loadPanel: async () => (await import('@/apps/drive/files/pages/FilesPanel.vue')).default,
 }
 
 export function driveRecents(limit = 12) {
