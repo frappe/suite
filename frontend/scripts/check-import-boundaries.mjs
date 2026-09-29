@@ -532,14 +532,6 @@ const legacyCallDebtGroups = [
       "shell/SuiteCommandPalette.vue|suite.drive.api.files.search",
       "shell/SuiteCommandPalette.vue|suite.drive.api.list.files"
     ]
-  },
-  {
-    "owner": "Slides sub-lane of stage 11",
-    "removal": "Stage 11 Slides: track_visit becomes POST /nodes/<id>/visit and SharePopover reads GET /nodes/<id>?expand=access. Remove at that merge.",
-    "entries": [
-      "slides/stores/presentation.js|suite.drive.api.files.track_visit",
-      "slides/components/SharePopover.vue|@/apps/drive/legacy/sdk"
-    ]
   }
 ];
 const LEGACY_CALL = /suite\.drive\.api\.[A-Za-z_][\w.]*[A-Za-z_\d]/g;

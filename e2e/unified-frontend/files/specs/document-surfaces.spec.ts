@@ -117,10 +117,7 @@ test("Writer, Sheets and file /d/ routes make no legacy Drive call", async ({ pa
 	expect(calls).toEqual([]);
 });
 
-// The Slides surface still records visits through the legacy
-// `suite.drive.api.files.track_visit` (apps/slides/stores/presentation.js).
-// The Slides sub-lane of stage 11 moves it to `recordDriveVisit`.
-test.fixme("a Slides /d/ route makes no legacy Drive call", async ({ page }) => {
+test("a Slides /d/ route makes no legacy Drive call", async ({ page }) => {
 	const calls = watchLegacyDriveCalls(page);
 	const deck = await createDocument(api, home.name, "legacy-free-deck", "Presentation");
 	await page.goto(`/d/${deck.name}`);
