@@ -535,6 +535,11 @@ jobs:
         working-directory: frontend
         run: yarn check:import-boundaries
 
+      - name: Typecheck frontend
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn typecheck
+
       - name: Check frontend bundle budget
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend

@@ -10,7 +10,7 @@
         <Select
           :model-value="themeMode"
           :options="THEME_OPTIONS"
-          @update:model-value="switchTheme"
+          @update:model-value="selectTheme"
         />
       </SettingsRow>
       <SettingsRow
@@ -57,16 +57,22 @@ import {
 } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
+import type { ThemeMode } from '@/platform/theme'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
 import { switchTheme, themeMode } from '@/utils/setupTheme'
 
-const THEME_OPTIONS = [
+const THEME_OPTIONS: { label: string; value: ThemeMode; icon: string }[] = [
   { label: __('Light'), value: 'light', icon: 'lucide-sun' },
   { label: __('Dark'), value: 'dark', icon: 'lucide-moon' },
   { label: __('Automatic'), value: 'automatic', icon: 'lucide-monitor' },
 ]
+
+function selectTheme(value?: string | number | null) {
+  const option = THEME_OPTIONS.find((candidate) => candidate.value === value)
+  if (option) void switchTheme(option.value)
+}
 
 const session = useSessionStore()
 
@@ -99,9 +105,9 @@ const { timezoneOptions } = useTimezones()
 
 // Language and time zone shape the whole session (translations, rendered
 // dates), so a full reload after save is the only way to apply them.
-async function saveUserField(fieldname: 'language' | 'time_zone', value?: string | null) {
+async function saveUserField(fieldname: 'language' | 'time_zone', value?: string | number | null) {
   if (!user.doc || saving.value) return
-  if (!value || value === user.originalDoc?.[fieldname]) return
+  if (typeof value !== 'string' || !value || value === user.originalDoc?.[fieldname]) return
   try {
     await user.setValue.submit({ [fieldname]: value })
     window.location.reload()

@@ -46,6 +46,7 @@ function localIso(
   day: number,
   hour: number,
   minute: number,
+  second = 0,
 ): string {
-  return new Date(year, month, day, hour, minute).toISOString();
+  return new Date(year, month, day, hour, minute, second).toISOString();
 }

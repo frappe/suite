@@ -22,6 +22,7 @@
     "generate:contract": "node scripts/generate-contract.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
   "dependencies": {
@@ -112,6 +113,7 @@
     "vite": "^8.0.16",
     "vite-plugin-pwa": "^1.0.1",
     "vitest": "^4.1.6",
+    "vue-tsc": "^3.3.11",
     "workbox-range-requests": "7.4.1"
   }
 }

@@ -62,7 +62,9 @@ const root = useRootStore()
 const { fullName, imageURL } = useCurrentUser()
 const { startMeeting } = useStartMeeting()
 
-const composeMail = () => router.push({ path: '/mail', query: { compose: '1' } })
+const composeMail = async () => {
+  await router.push({ path: '/mail', query: { compose: '1' } })
+}
 
 const startInstantMeeting = () => startMeeting('open')
 
@@ -114,7 +116,9 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () 
         enterHint: 'create sheet',
         icon: 'lucide-table-2',
         keywords: ['create', 'spreadsheet', 'sheets'],
-        run: () => router.push('/sheets/new'),
+        run: async () => {
+          await router.push('/sheets/new')
+        },
       },
       {
         id: 'suite-new-presentation',
@@ -122,7 +126,9 @@ const unregisterPaletteGroups = root.registerPaletteGroups('suite-launcher', () 
         enterHint: 'create presentation',
         icon: 'lucide-presentation',
         keywords: ['create', 'slides'],
-        run: () => router.push('/slides/presentation/new'),
+        run: async () => {
+          await router.push('/slides/presentation/new')
+        },
       },
       {
         id: 'suite-settings',

@@ -412,6 +412,7 @@ const savePresentationDoc = async (id, updatedSlides, baseModified) => {
 }
 
 // returns the committed doc, or null if a later load took over
+/** @returns {Promise<Record<string, unknown> | null>} */
 const initPresentationDoc = async (id, readonly = false, load = startLoad()) => {
 	let loaded
 

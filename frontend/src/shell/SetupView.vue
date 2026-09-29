@@ -137,7 +137,7 @@
                 @click="openSuite"
               />
             </div>
-            <ErrorMessage :message="markOnboarded.error" />
+            <ErrorMessage :message="markOnboarded.error instanceof Error ? markOnboarded.error : undefined" />
           </div>
         </div>
       </Transition>
@@ -176,7 +176,9 @@ const workspaceForm = ref<InstanceType<typeof WorkspaceBrandingForm>>()
 const inviteStep = ref<InstanceType<typeof InviteStep>>()
 const openSuiteButton = ref<ComponentPublicInstance>()
 
-const stepFocus: Record<Step, Ref<ComponentPublicInstance | undefined>> = {
+// Only the root element matters here, and each step's component has its own
+// instance type, so the map names just that part.
+const stepFocus: Record<Step, Readonly<Ref<{ $el: Node | undefined } | undefined>>> = {
   welcome: getStartedButton,
   workspace: workspaceForm,
   invite: inviteStep,

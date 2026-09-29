@@ -19,6 +19,7 @@ import { toast } from 'frappe-ui'
 import { inSlideShowMode } from './slideshow'
 import { addSlideCommand, removeSlideCommand, editSlideCommand } from './commands'
 
+/** @type {import('vue').Ref<Record<string, unknown>[]>} */
 const slides = ref([])
 
 const slideIndex = ref()
