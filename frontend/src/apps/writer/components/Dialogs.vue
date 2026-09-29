@@ -1,19 +1,19 @@
 <template>
   <!-- Mutation dialogs -->
   <ShareDialog v-if="dialog === 's'" v-model="dialog" :add-users="params || []" :file="entity" @success="() => resource.fetch()" />
-  <MoveDialog v-else-if="dialog === 'm'" v-model="dialog" :entities @complete="refresh" />
+  <DriveMoveDialog v-else-if="dialog === 'm' && entity" v-model:open="dialogOpen" :node="entity.name" @moved="refresh" />
   
   <!-- Confirmation dialogs -->
   <RemoveDialog v-if="dialog === 'remove'" v-model="dialog" :entities @success="$router.push({ name: 'writer-home' })" />
   
-  <InfoDialog v-else-if="dialog === 'i'" v-model="dialog" :entity :emitter />
+  <DriveInfoDialog v-else-if="dialog === 'i' && entity" v-model:open="dialogOpen" :node="entity.name" />
   <SearchDialog v-if="dialog === 'search'" v-model="dialog" />
 </template>
 <script setup>
 import { ref, watch, computed } from 'vue'
 import emitter from '@/apps/writer/emitter'
 
-import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive'
+import { ShareDialog, DriveMoveDialog, DriveInfoDialog } from '@/apps/drive'
 import RemoveDialog from './RemoveDialog.vue'
 import SearchDialog from './SearchDialog.vue'
 
@@ -28,6 +28,12 @@ const resource = computed(() => props.docs?.[0])
 const entities = computed(() => props.docs?.map(r => r.doc) ?? [])
 const entity = computed(() => entities.value?.[0])
 const dialog = defineModel(String)
+const dialogOpen = computed({
+  get: () => !!dialog.value,
+  set: (value) => {
+    if (!value) dialog.value = ''
+  },
+})
 const params = ref(null)
 const open = ref(false)
 watch(dialog, (val) => {

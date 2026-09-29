@@ -342,9 +342,9 @@ import {
   type CalendarEvent,
 } from "@/apps/calendar";
 import {
-  createDriveDocument,
   driveNodeRoute,
   driveRecents,
+  useDriveDocumentCreation,
   type DriveNodeSummary,
 } from "@/apps/drive";
 import { createRoom, scheduleMeeting } from "@/apps/meet";
@@ -367,7 +367,7 @@ const homeNow = new Date();
 const eventWindow = homeEventWindow(homeNow);
 const recentQuery = useQuery(driveRecents());
 const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow));
-const createDocumentMutation = useMutation(createDriveDocument());
+const createDocumentMutation = useDriveDocumentCreation();
 const createRoomMutation = useMutation(createRoom);
 const scheduleMeetingMutation = useMutation(scheduleMeeting);
 

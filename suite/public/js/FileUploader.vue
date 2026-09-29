@@ -1,6 +1,6 @@
 <template>
   <div class="drive-picker">
-    <!-- Tabs: Home (the caller's private folder) / Site (the shared Drive tree) -->
+    <!-- Tabs: My files, and Organization files on a business site -->
     <div class="tab-bar">
       <button v-for="t in tabs" :key="t.key" class="tab" :class="{ active: tab === t.key }" @click="switchTab(t.key)">
         <span class="tab-icon" v-html="t.icon" />
@@ -9,12 +9,11 @@
     </div>
 
     <!-- Search -->
-    <input v-model="searchText" type="search" class="search" :placeholder="__('Search')
-      " />
+    <input v-model="searchText" type="search" class="search" :placeholder="__('Search')" />
 
     <!-- Breadcrumbs (hidden while searching) -->
     <div v-if="!searching" class="crumbs">
-      <template v-for="(c, i) in crumbs" :key="c.name">
+      <template v-for="(c, i) in crumbs" :key="c.node">
         <button class="crumb" :class="{ last: i === crumbs.length - 1 }" @click="goTo(i)">
           {{ c.label }}
         </button>
@@ -30,15 +29,16 @@
       <div v-if="loading" class="state">
         <span class="spinner-border spinner-border-sm" />
       </div>
+      <div v-else-if="failure" class="state muted">{{ failure }}</div>
       <div v-else-if="!rows.length" class="state muted">
         {{ searching ? __('No matches') : __('Empty folder') }}
       </div>
       <button v-for="row in rows" :key="row.name" class="file-row"
         :class="{ selected: selected && selected.name === row.name }" @click="onRow(row)"
-        @dblclick="row.is_folder && openFolder(row)">
+        @dblclick="row.kind === 'folder' && openFolder(row)">
         <img class="row-icon" :src="iconUrl(row)" @error="$event.target.src = UNKNOWN_ICON" />
-        <span class="row-name" :title="row.file_name">{{ row.file_name }}</span>
-        <span v-if="row.is_folder" class="row-chevron" v-html="chevronIcon" />
+        <span class="row-name" :title="row.title">{{ row.title }}</span>
+        <span v-if="row.kind === 'folder'" class="row-chevron" v-html="chevronIcon" />
       </button>
       <div v-if="loadingMore" class="state">
         <span class="spinner-border spinner-border-sm" />
@@ -53,7 +53,7 @@
           <b>{{ here.label }}</b>
         </template>
         <template v-else-if="selected">
-          <b>{{ selected.file_name }}</b>
+          <b>{{ selected.title }}</b>
         </template>
         <template v-else-if="canUpload">
           {{ __('Choose a file, or open a folder') }}
@@ -76,6 +76,14 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 
+// Every call goes to Drive's routes under /api/suite/drive/, never to a
+// legacy `suite.drive.api.*` method (ticket 017).
+const DRIVE = '/api/suite/drive'
+const PAGE = 50
+const CHUNK = 8 * 1024 * 1024
+// Drive roles (Drive spec §4): UPLOAD may add files to a folder.
+const UPLOAD = 30
+
 const chevronIcon =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
 
@@ -84,61 +92,68 @@ const props = defineProps({
   onComplete: { type: Function, default: () => { } },
 })
 
-const tabs = [
-  { key: 'home', label: __('Home'), icon: frappe.utils.icon('home', 'sm') },
-  { key: 'site', label: __('Site'), icon: frappe.utils.icon('users', 'sm') },
-]
+const discovered = ref({ personal: null, organization: null })
+const tabs = computed(() => [
+  { key: 'personal', label: __('My files'), icon: frappe.utils.icon('home', 'sm') },
+  ...(discovered.value.organization
+    ? [{ key: 'organization', label: __('Organization files'), icon: frappe.utils.icon('users', 'sm') }]
+    : []),
+])
 
-const tab = ref('home')
+const tab = ref('personal')
 const rows = ref([])
 const loading = ref(false) // initial page
 const loadingMore = ref(false) // appending next page
+const failure = ref('')
 const selected = ref(null)
 const staged = ref(null)
 const busy = ref(false)
 const fileInput = ref(null)
 const listEl = ref(null)
 
-// Drive's two entry points, resolved once on mount.
-const roots = ref({ home: '', root: '' })
-
-const PAGE = 50
-const start = ref(0)
-const hasMore = ref(false)
+const cursor = ref(null)
 const searchText = ref('')
 const searching = computed(() => searchText.value.trim().length >= 2)
 
 // Breadcrumb trail for the active tab. The tip is the current folder, which is
-// also the upload destination on the Drive tabs.
-const crumbs = ref([{ name: '', label: __('Home') }])
-const here = computed(() => crumbs.value[crumbs.value.length - 1])
-const canUpload = computed(() => true)
+// also the upload destination. `role` is the caller's Drive role on it.
+const crumbs = ref([])
+const here = computed(() => crumbs.value[crumbs.value.length - 1] ?? { node: '', label: '', role: 0 })
+const canUpload = computed(() => !searching.value && here.value.role >= UPLOAD)
 const ready = computed(() => (staged.value ? canUpload.value : !!selected.value))
+
 onMounted(async () => {
-  const { message } = await frappe.call('suite.drive.api.files.get_root_folder')
-  roots.value = message || { home: '', root: '' }
-  switchTab('home')
+  loading.value = true
+  try {
+    discovered.value = await drive('GET', 'roots')
+  } catch (err) {
+    failure.value = err.message
+    loading.value = false
+    return
+  }
+  switchTab('personal')
 })
 
-function rootCrumb(key) {
-  return key === 'home'
-    ? { name: roots.value.home, label: __('Home') }
-    : { name: roots.value.root, label: __('Site') }
-}
-
-function switchTab(key) {
+async function switchTab(key) {
   tab.value = key
   searchText.value = ''
   selected.value = null
   staged.value = null
-  crumbs.value = [rootCrumb(key)]
+  const root = discovered.value[key]
+  if (!root) return
+  // The root crumb carries the tab's name, as in the Files sidebar.
+  const label = tabs.value.find((t) => t.key === key)?.label ?? root.title
+  crumbs.value = [{ node: root.node, label, role: 0 }]
   reload()
+  // The root row is not in any listing, so its role needs one read.
+  const detail = await drive('GET', `nodes/${encodeURIComponent(root.node)}`, { query: { expand: 'access' } }).catch(() => null)
+  if (detail && crumbs.value[0]?.node === root.node) crumbs.value[0].role = detail.access?.role ?? 0
 }
 
 function openFolder(row) {
   searchText.value = ''
   selected.value = null
-  crumbs.value.push({ name: row.name, label: row.file_name })
+  crumbs.value.push({ node: row.name, label: row.title, role: row.access?.role ?? 0 })
   reload()
 }
 
@@ -150,7 +165,7 @@ function goTo(i) {
 }
 
 function onRow(row) {
-  if (row.is_folder) return openFolder(row)
+  if (row.kind === 'folder') return openFolder(row)
   selected.value = row
   staged.value = null
 }
@@ -161,29 +176,37 @@ function onStage(e) {
 }
 
 // Re-fetch from the first page (tab/folder change or a new search).
+let generation = 0
 async function reload() {
-  start.value = 0
+  const current = ++generation
+  cursor.value = null
   rows.value = []
+  failure.value = ''
   loading.value = true
   try {
-    const { items, more } = await fetchPage(0)
-    rows.value = sortRows(items)
-    hasMore.value = more
-    start.value = items.length
+    const page = await fetchPage(null)
+    if (current !== generation) return
+    rows.value = sortRows(page.rows)
+    cursor.value = page.next_cursor
+  } catch (err) {
+    if (current === generation) failure.value = err.message
   } finally {
-    loading.value = false
+    if (current === generation) loading.value = false
   }
   topUp()
 }
 
 async function loadMore() {
-  if (loadingMore.value || loading.value || !hasMore.value) return
+  if (loadingMore.value || loading.value || !cursor.value) return
+  const current = generation
   loadingMore.value = true
   try {
-    const { items, more } = await fetchPage(start.value)
-    rows.value = rows.value.concat(sortRows(items))
-    hasMore.value = more
-    start.value += items.length
+    const page = await fetchPage(cursor.value)
+    if (current !== generation) return
+    rows.value = rows.value.concat(sortRows(page.rows))
+    cursor.value = page.next_cursor
+  } catch (err) {
+    if (current === generation) failure.value = err.message
   } finally {
     loadingMore.value = false
   }
@@ -198,26 +221,29 @@ function onScroll(e) {
 function topUp() {
   requestAnimationFrame(() => {
     const el = listEl.value
-    if (el && hasMore.value && el.scrollHeight <= el.clientHeight) loadMore()
+    if (el && cursor.value && el.scrollHeight <= el.clientHeight) loadMore()
   })
 }
 
 const sortRows = (items) =>
-  items.slice().sort((a, b) => Number(b.is_folder) - Number(a.is_folder))
+  items.slice().sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder'))
 
-// One page of results: { items, more }. Both tabs are Drive listings now; they
-// differ only in which root they start from. A query searches the whole tree.
-async function fetchPage(offset) {
+// Only folders and stored files can reach a Desk attachment. Documents have no
+// stored bytes, and links point elsewhere.
+const attachable = (row) => row.kind === 'folder' || row.kind === 'file'
+
+// One page: the current folder's children, or a search over what the caller
+// may read. `rows` keeps only attachable nodes.
+async function fetchPage(after) {
   const q = searchText.value.trim()
-  if (!here.value.name) return { items: [], more: false }
-  const r = await frappe.call('suite.drive.api.list.files', {
-    entity_name: here.value.name,
-    search: q || undefined,
-    start: offset,
-    limit: PAGE,
-  })
-  const raw = r.message || []
-  return { items: raw.filter((f) => !f.file_name?.startsWith('.')), more: raw.length === PAGE }
+  const page = q.length >= 2
+    ? await drive('GET', 'views/search', { query: { term: q, limit: PAGE, cursor: after, expand: 'access' } })
+    : here.value.node
+      ? await drive('GET', `nodes/${encodeURIComponent(here.value.node)}/children`, {
+        query: { limit: PAGE, cursor: after, order_by: 'title', ascending: 1, expand: 'access' },
+      })
+      : { rows: [], next_cursor: null }
+  return { rows: page.rows.filter(attachable), next_cursor: page.next_cursor }
 }
 
 let searchTimer = null
@@ -227,11 +253,10 @@ watch(searchText, () => {
 })
 
 // ---- file-type icons (matches Drive's list view) ----
-const ICON_BASE = '/assets/drive/images/icons'
+const ICON_BASE = '/assets/suite/drive/images/icons'
 const UNKNOWN_ICON = `${ICON_BASE}/unknown.svg`
 
-// Maps a file extension to one of Drive's icon names for framework (Site) rows,
-// which don't carry a Drive `file_type`.
+// Maps a file extension to one of Drive's icon names.
 const EXT_ICON = {
   pdf: 'pdf',
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', heic: 'image', bmp: 'image',
@@ -246,9 +271,8 @@ const EXT_ICON = {
 }
 
 function iconUrl(row) {
-  if (row.is_folder) return `${ICON_BASE}/folder.svg`
-  if (row.file_type) return `${ICON_BASE}/${row.file_type.toLowerCase()}.svg`
-  const ext = (row.file_name || '').split('.').pop().toLowerCase()
+  if (row.kind === 'folder') return `${ICON_BASE}/folder.svg`
+  const ext = (row.title || '').split('.').pop().toLowerCase()
   return `${ICON_BASE}/${EXT_ICON[ext] || 'unknown'}.svg`
 }
 
@@ -257,50 +281,82 @@ async function submit() {
   busy.value = true
   try {
     if (staged.value) {
-      const driveFile = await driveUpload(staged.value, here.value.name)
-      attach(driveFile.name)
+      await driveUpload(staged.value, here.value.node)
+      await attach(staged.value)
     } else {
-      attach(selected.value.name)
+      await attach(await readContent(selected.value))
     }
     props.onComplete()
   } catch (err) {
-    frappe.msgprint({
-      title: __('Upload failed'),
-      message: err.message,
-      indicator: 'red',
-    })
+    // The framework uploader reports its own refusals and rejects without an error.
+    if (err instanceof Error) {
+      frappe.msgprint({ title: __('Upload failed'), message: err.message, indicator: 'red' })
+    }
   } finally {
     busy.value = false
   }
 }
 
-// Hand the file to the framework engine via library_file_name so the caller's
-// on_success (field + attachments) fires exactly as before.
-function attach(libraryFileName) {
-  props.uploader.upload_file({ library_file_name: libraryFileName })
+// Hand the bytes to the framework engine, so the caller's on_success (field and
+// attachments) fires exactly as for a file from the device. Storage keeps one
+// copy of identical bytes.
+function attach(file) {
+  return props.uploader.upload_file({ file_obj: file, name: file.name, private: true })
 }
 
+async function readContent(row) {
+  const res = await fetch(`${DRIVE}/nodes/${encodeURIComponent(row.name)}/content`, { credentials: 'same-origin' })
+  if (!res.ok) throw new Error(await errorMessage(res, __('Could not read this file from Drive')))
+  const blob = await res.blob()
+  return new File([blob], row.title, { type: row.mime || blob.type })
+}
+
+// Drive's three upload routes: open a session, send the bytes, finish into `parent`.
 async function driveUpload(file, parent) {
-  const form = new FormData()
-  form.append('file', file, file.name)
-  if (parent) form.append('parent', parent)
-  form.append('total_file_size', file.size)
-  form.append('uuid', frappe.utils.get_random(10))
-  const res = await fetch('/api/method/suite.drive.api.files.upload_file', {
-    method: 'POST',
-    headers: { 'X-Frappe-CSRF-Token': frappe.csrf_token },
-    body: form,
+  const session = await drive('POST', 'uploads', {
+    body: { parent, filename: file.name, size: file.size, mime: file.type || undefined },
   })
-  const data = await res.json()
-  if (!res.ok) {
-    throwUploadError(data, __('Could not upload to Drive'))
+  const id = encodeURIComponent(session.upload_id)
+  if (session.mode === 'direct') {
+    const form = new FormData()
+    for (const [key, value] of Object.entries(session.fields || {})) form.append(key, value)
+    form.append('file', file)
+    const res = await fetch(session.url, { method: 'POST', body: form })
+    if (!res.ok) throw new Error(__('Could not upload to Drive'))
+  } else {
+    // One chunk at least, so an empty file still finishes.
+    let offset = 0
+    do {
+      await drive('PUT', `uploads/${id}/chunk`, { query: { offset }, raw: file.slice(offset, offset + CHUNK) })
+      offset += CHUNK
+    } while (offset < file.size)
   }
-  return data.message
+  return drive('POST', `uploads/${id}/finish`, { body: { parent, title: file.name } })
 }
 
-function throwUploadError(data, fallback) {
-  const msgs = JSON.parse(data?._server_messages || '[]')
-  throw new Error(msgs.length ? JSON.parse(msgs[0]).message : fallback)
+async function drive(method, path, { query, body, raw } = {}) {
+  const url = new URL(`${DRIVE}/${path}`, window.location.origin)
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, String(value))
+  }
+  const headers = { Accept: 'application/json', 'X-Frappe-CSRF-Token': frappe.csrf_token }
+  if (body) headers['Content-Type'] = 'application/json; charset=utf-8'
+  if (raw) headers['Content-Type'] = 'application/octet-stream'
+  const res = await fetch(url, {
+    method,
+    headers,
+    credentials: 'same-origin',
+    body: raw ?? (body ? JSON.stringify(body) : undefined),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, __('Drive could not complete the request')))
+  const data = await res.json().catch(() => null)
+  return data && 'data' in data ? data.data : data
+}
+
+async function errorMessage(res, fallback) {
+  const data = await res.json().catch(() => null)
+  const first = Array.isArray(data?.errors) ? data.errors[0] : data?.error
+  return (typeof first?.message === 'string' && first.message) || fallback
 }
 
 defineExpose({ submit })

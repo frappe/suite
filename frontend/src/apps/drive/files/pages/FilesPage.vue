@@ -58,6 +58,13 @@
             <template #prefix><span class="lucide-search size-4" aria-hidden="true" /></template>
           </TextInput>
           <div class="flex items-center gap-2">
+            <Button
+              v-if="recentType"
+              :label="`Type: ${recentType.newLabel()}`"
+              icon-right="lucide-x"
+              tooltip="Clear filter"
+              @click="clearRecentType"
+            />
             <Dropdown :options="viewSettings" align="end">
               <Button icon="lucide-settings-2" aria-label="View settings" />
             </Dropdown>
@@ -99,6 +106,7 @@
 
     <RenameDialog v-model:open="renameOpen" :node="activeNode" @renamed="replaceSlug" />
     <FolderPicker v-model:open="pickerOpen" :mode="pickerMode" @choose="applyPicker" />
+    <TemplatePicker v-if="parentId" v-model:open="templatesOpen" :parent="parentId" @created="openNode" />
   </div>
 </template>
 
@@ -144,6 +152,7 @@ import BatchOutcome from '../features/BatchOutcome.vue'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import RenameDialog from '../features/RenameDialog.vue'
+import TemplatePicker from '../features/TemplatePicker.vue'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import {
   clearSelection,
@@ -173,6 +182,7 @@ const searchText = ref(String(route.query.q ?? ''))
 const activeNode = ref<DriveNode | null>(null)
 const renameOpen = ref(false)
 const pickerOpen = ref(false)
+const templatesOpen = ref(false)
 const pickerMode = ref<'move' | 'copy'>('move')
 const pickerBulk = ref(false)
 const batchOutcome = ref<DriveBatchResult | null>(null)
@@ -240,6 +250,10 @@ const expansion = computed(() => {
   if (presentation.value.view === 'grid') parts.push('preview')
   return parts.join(',')
 })
+// Recent's `?type=` is a document type key (spec §5.1). It is filter state, not a preference.
+const recentType = computed(() => props.destination === 'recent' && !isSearching.value
+  ? documentTypes.find((definition) => definition.key === route.query.type)
+  : undefined)
 const listing = useQuery(() => {
   if (isSearching.value) return view({ view: 'search', term: String(route.query.q), expand: expansion.value })
   if (concreteDestination.value) {
@@ -259,9 +273,11 @@ const listing = useQuery(() => {
     ? (route.query.root === 'organization' ? discovered.data?.organization?.node : discovered.data?.personal.node)
     : undefined
   if (props.destination === 'trash' && !root) return false
-  return view({ view: name, root, expand: expansion.value })
+  return view({ view: name, root, content_doctype: recentType.value?.contentDoctype, expand: expansion.value })
 })
 const canCreate = computed(() => concreteDestination.value && !isSearching.value && hasRole(detail.data, DRIVE_ROLES.upload))
+// Through a link below EDIT, New offers no document kinds and no templates (spec §10.14).
+const canCreateDocuments = computed(() => !detail.data?.access?.via_link || hasRole(detail.data, DRIVE_ROLES.edit))
 const selectedRows = computed(() => (listing.rows as DriveNode[]).filter((row) => selection.value.includes(row.name)))
 const canBulkEdit = computed(() => !!selectedRows.value.length && selectedRows.value.every((row) => hasRole(row, DRIVE_ROLES.edit)))
 const emptyTitle = computed(() => isSearching.value ? 'No files match this search' : `${destinationLabel.value} is empty`)
@@ -299,6 +315,12 @@ watch(() => presentation.value.view, (mode) => {
   if (mode === 'grid') startPreviewObservation()
   else { stopPreviews?.(); stopPreviews = null }
 })
+// An unknown type is dropped without a history entry.
+watch(() => [props.destination, route.query.type] as const, ([destination, type]) => {
+  if (destination === 'recent' && type !== undefined && !documentTypes.some((definition) => definition.key === type)) {
+    clearRecentType()
+  }
+}, { immediate: true })
 watch(() => route.fullPath, () => {
   searchText.value = String(route.query.q ?? '')
   clearSelected()
@@ -345,12 +367,15 @@ const moreOptions = computed(() => [
 const newOptions = computed(() => [
   { label: 'Folder', icon: 'lucide-folder-plus', onClick: () => create('folder') },
   { label: 'Upload files', icon: 'lucide-upload', disabled: true, description: 'Available after ticket 007' },
-  ...documentTypes.map((definition) => ({
+  ...(canCreateDocuments.value ? documentTypes.map((definition) => ({
     label: definition.newLabel(),
     icon: definition.icon,
     onClick: () => create('document', definition.contentDoctype),
-  })),
+  })) : []),
   { label: 'Link', icon: 'lucide-link', onClick: () => create('link') },
+  ...(canCreateDocuments.value && documentTypes.length
+    ? [{ label: 'From template', icon: 'lucide-layout-template', onClick: () => { templatesOpen.value = true } }]
+    : []),
 ])
 
 function setPresentation(change: Partial<typeof presentation.value>) {
@@ -401,6 +426,10 @@ function rootPath(id: string): string | null {
   if (id === discovered.data?.personal.node) return '/files'
   if (id === discovered.data?.organization?.node) return '/files/organization'
   return null
+}
+function clearRecentType() {
+  const { type: _type, ...query } = route.query
+  void router.replace({ query })
 }
 function switchTrashRoot(value: string | number) {
   clearSelected()
