@@ -28,13 +28,13 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
-| Stage 5 adoption | `forge/uf-5-adoption` | Meet, Mail, Calendar merged into the stage branch (`4e69793ff`), each codex-reviewed; PWA and shell sub-lane in progress | | Stage branch gates: 141 unified, boundaries 349/71, typecheck 0, bundle 152.85 KiB. `/mail` blank bug and Calendar socket and `recurrence_rule` bugs fixed. The shell router had stopped loading app `runtime.ts`; Mail and Meet guards restored |
-| Stage 6 flip plumbing | | waiting on 5 | | |
-| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | in progress: parts outside the shared-files table; `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` and `hooks.py` wait for stage 6 | | Based on `a15886a7a` |
-| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | in progress; the `FilesPage.vue` row Share waits for stage 8 | | Based on `a15886a7a`. Share opens through a function (`session.share()`), like stage 11's `useDriveDialogs()` |
+| Stage 5 adoption | `forge/uf-5-adoption` | done | `431d97980` | Four sub-lanes (Meet, Mail, Calendar, PWA and shell), each codex-reviewed. Gates after merging drive-layer: 195 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.08 KiB, architecture and boot OK. Shell journeys on the PWA sub-lane: 64 passed, 1 known socket failure. PWA review: logout drops the push token, one notification per message across tabs, click handler for every browser, one top inset. Manifest `id` is `/suite` (question 21) |
+| Stage 6 flip plumbing | `forge/uf-6-shell-flip-plumbing` | in progress | | Based on `8cfd957f8`. Adds the `^/(drive/)?l/` Vite proxy for stage 8 |
+| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | first half committed `8e2616e47`; codex fixes in progress; wiring in `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` waits for stage 6 | | Server needed no change (Drive 43 and S2 meet the gate). Guest name field belongs to stage 11 after this wiring |
+| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | committed `32ec36583`; codex review running; the `FilesPage.vue` row Share waits for stage 8 | | Share opens through `session.share()` and `useDriveDialogs().share()`. Journeys 7 of 7. S1 reservation test passes |
 | Stage 10 upload, restore, batch | | waiting on 8 | | |
 | Stage 11 document surfaces | `forge/uf-11-document-surfaces` | done | `a15886a7a` | Four sub-lanes, each codex-reviewed. Gates after merging drive-layer: 177 unified, legacy manifest, boundaries 333/71 plus 2 legacy Drive calls (SuiteCommandPalette, stage 15), typecheck 0, bundle 116.25 KiB, architecture OK. Files journeys 81 passed, 2 skipped. Legacy-call rule is a substring scan over `frontend/src` and `suite/public/js`, comments included. Drive dialogs cross the seam as `useDriveDialogs()`. Desk picker attach checked by hand (a repo journey needs `bench build`) |
-| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half committed `b81a4a634`, merge waits for stage 5 (the branch carries the Meet sub-lane); client half waits on 6 | | codex review: redirect only when the caller can READ the target, encoded separators fall through. Only while `suite_flip_files` is on (spec §14.3 over the brief). `flip_is_on` moved to `suite/suite_core/flips.py`. Edits `hooks.py` ahead of 6 and 8 in the shared-files order |
+| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half merged `8cfd957f8`; client half waits on 6 | | codex review: redirect only when the caller can READ the target, encoded separators fall through. Only while `suite_flip_files` is on (spec §14.3 over the brief). `flip_is_on` moved to `suite/suite_core/flips.py`. Edits `hooks.py` ahead of 6 and 8 in the shared-files order |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | `forge/drive-41-storage-breakdown` | done | `817900a18` | codex review: breakdown only for the root owner or a Suite Admin; legacy rows carry `mime_type`; fixed-height lists. `test_quota` 12 errors from Administrator's old Personal root `4b15fe1948`, same on base |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
@@ -141,6 +141,12 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
     descriptor; the seam exports `useDriveDocumentCreation()` because
     creation first finds the Personal root.
 
+24. **Share expiry timezone.** The dialog sends `YYYY-MM-DD 23:59:59`; the
+    server reads it in site time. Interim: end of that day in site time.
+25. **Share picker default role** is View. Interim: accepted.
+26. **Dead-link "Go to Home"** links to `/`, which lands on `/mail` before
+    flip 2. Interim: unchanged.
+
 ## Needs a manual check (cannot run on this devbox)
 
 - iOS standalone keyboard in Mail after stage 3 removed body
@@ -166,6 +172,8 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
 | `views/favourites` has no tie-breaker, reads one window, and lists trashed nodes (Drive 47 fixed the same in recents); `_view_eligible` can still return short pages | Drive 47 review | Drive program |
 | `meet.api.test.test_recording`: `test_reprovision_during_recording_keeps_reservation_bound_to_archived_root` errors with "Unsupported recording callback protocol version". Same error on `forge/drive-layer` | stage 12 server | Meet (not in this run) |
+| Mail shows a blank page when `get_user_info` fails: its route guard waits with no error handler. Before stage 5 | stage 5 PWA | not assigned |
+| Guest "Your name" field in comment composers (plan stage 11) waits for stage 8's wiring | stage 8 | stage 11 follow-up after 8 |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Backend asks raised during the run
@@ -175,6 +183,8 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Socket room join that checks Drive link credentials, so link-only readers get live Sheets updates | stage 11 Sheets | nothing at launch (they can open and save) |
 | Link codes in the collaboration v2 (Hocuspocus) token, e.g. a `driveLinkCodes(node)` root export | stage 11 Sheets | nothing while `collab_v2` is off |
 | Server-side "attach a Drive node to a document" route, so the Desk picker does not move bytes through the browser (now capped at the framework's `max_file_size`) | stage 11 Drive | nothing (cap in place) |
+| User full names on grant rows (`users_get` is System Manager only; the dialog shows emails for people the picker has not seen) | stage 9 | nothing (emails shown) |
+| Creation date on link grant rows, for the "made on" text | stage 9 | nothing (text left out) |
 | `recordDriveVisit(node)` root export in `apps/drive/index.ts` | stage 11 Sheets | nothing (a local operation works) |
 
 ## Baselines
