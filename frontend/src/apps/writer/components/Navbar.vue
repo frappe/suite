@@ -19,10 +19,11 @@
         </template>
       </Dropdown>
       <slot name="breadcrumbs">
-        <EditableBreadcrumbs
+        <TitleBreadcrumbs
           v-if="route.name !== 'writer-home'"
+          v-model:editing="renaming"
           :items="formattedCrumbs"
-          :entity="file?.doc || null"
+          :title="file?.doc?.file_name ?? ''"
           class="select-none truncate max-w-[80%]"
         />
       </slot>
@@ -39,14 +40,6 @@
         class="pointer-events-none"
         :icon-left="h(LucideWifiOff, { class: 'size-4' })"
       />
-      <div v-if="file?.doc?.share_count" class="flex items-center">
-        <LucideGlobe2 v-if="file.doc.share_count === -2" class="size-4 text-ink-gray-6" />
-        <LucideBuilding2
-          v-else-if="file.doc.share_count === -1"
-          class="size-4 text-ink-gray-6"
-        />
-        <LucideUsers v-else-if="file.doc.share_count > 0" class="size-4 text-ink-gray-6" />
-      </div>
       <LucideStar
         v-if="file?.doc?.is_favourite"
         class="size-4 my-auto stroke-amber-500 fill-amber-500 mx-1.5"
@@ -106,17 +99,16 @@
   </nav>
 </template>
 <script setup>
-import { Button, Dropdown } from 'frappe-ui'
-import EditableBreadcrumbs from '@/apps/drive/legacy/components/EditableBreadcrumbs.vue'
-import { getFileLink } from '@/apps/drive/legacy/sdk'
-import { toggleFav } from '@/apps/drive/legacy/resources/files'
+import { Button, Dropdown, toast } from 'frappe-ui'
+import { setFavourite } from '@/apps/writer/drive'
+import TitleBreadcrumbs from '@/apps/writer/components/TitleBreadcrumbs.vue'
 
 import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import emitter from '@/apps/writer/emitter'
-import { ref, computed, inject, h } from 'vue'
+import { ref, computed, inject, h, onBeforeUnmount } from 'vue'
 import { createDocument, apps } from '@/apps/writer/resources/'
 import { exportBlog } from '@/apps/writer/utils/exports'
 import Dialogs from '@/apps/writer/components/Dialogs.vue'
@@ -127,9 +119,6 @@ import { importDocx } from '../utils/docximporter'
 import { orderedTabs } from '@/apps/writer/extensions/tabs'
 import { createDialog } from '@/apps/writer/utils/dialogs'
 
-import LucideUsers from '~icons/lucide/users'
-import LucideBuilding2 from '~icons/lucide/building-2'
-import LucideGlobe2 from '~icons/lucide/globe-2'
 import LucideStar from '~icons/lucide/star'
 import LucideLock from '~icons/lucide/lock'
 import LucideFile from '~icons/lucide/file'
@@ -184,6 +173,24 @@ const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
 const docxInputRef = ref(null)
+const renaming = ref(false)
+const startRename = () => {
+  if (props.file?.doc?.write) renaming.value = true
+}
+emitter.on('rename', startRename)
+onBeforeUnmount(() => emitter.off('rename', startRename))
+
+const copyLink = () =>
+  navigator.clipboard
+    .writeText(`${window.location.origin}/writer/w/${props.file.doc.name}`)
+    .then(() => toast.success('Copied to your clipboard.'))
+
+const markFavourite = (favourite) => {
+  props.file.doc.is_favourite = favourite
+  setFavourite(props.file.doc.name, favourite).catch(() => {
+    props.file.doc.is_favourite = !favourite
+  })
+}
 
 const exportDocx = () => {
   if (!editor.value) return
@@ -287,7 +294,7 @@ const fileActions = computed(() =>
             {
               label: __('Copy Link'),
               icon: LucideLink,
-              onClick: () => getFileLink(props.file.doc),
+              onClick: copyLink,
             },
           ],
         },
@@ -315,38 +322,14 @@ const fileActions = computed(() =>
             {
               label: __('Favourite'),
               icon: LucideStar,
-              onClick: () => {
-                props.file.doc.is_favourite = true
-                toggleFav.submit(
-                  {
-                    entities: [{ name: props.file.doc.name, is_favourite: true }],
-                  },
-                  {
-                    onError: () => {
-                      props.file.doc.is_favourite = false
-                    },
-                  }
-                )
-              },
+              onClick: () => markFavourite(true),
               isEnabled: () => isLoggedIn.value && !props.file.doc.is_favourite,
             },
             {
               label: __('Unfavourite'),
               icon: LucideStar,
               color: 'stroke-amber-500 fill-amber-500',
-              onClick: () => {
-                props.file.doc.is_favourite = false
-                toggleFav.submit(
-                  {
-                    entities: [{ name: props.file.doc.name, is_favourite: false }],
-                  },
-                  {
-                    onError: () => {
-                      props.file.doc.is_favourite = true
-                    },
-                  }
-                )
-              },
+              onClick: () => markFavourite(false),
               isEnabled: () => isLoggedIn.value && props.file.doc.is_favourite,
             },
           ],

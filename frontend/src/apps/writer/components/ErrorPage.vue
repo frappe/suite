@@ -3,18 +3,14 @@
     class="flex flex-col items-center h-screen p-6 text-center mt-[10%] w-full"
   >
     <div class="size-16 rounded-full bg-surface-gray-2 flex items-center justify-center">
-      <LucideFileUser v-if="error.type === 'PermissionError'" class="size-8 text-ink-gray-5" />
+      <LucideFileUser v-if="forbidden" class="size-8 text-ink-gray-5" />
       <LucideFileQuestionMark v-else class="size-8 text-ink-gray-5" />
     </div>
     <h1 class="text-4xl-bold text-ink-gray-8 mt-4">Uh oh!</h1>
     <p class="text-lg text-ink-gray-5 mt-4">
       <template v-if="typeof error === 'string'">{{ error }}</template>
       <template v-else>
-        {{
-          error.type === 'PageDoesNotExistError'
-            ? "This document doesn't exist."
-            : 'You do not have access to this.'
-        }}
+        {{ forbidden ? 'You do not have access to this.' : "This document doesn't exist." }}
       </template>
     </p>
     <div class="flex gap-8 my-12">
@@ -56,16 +52,21 @@ import LucideFileQuestionMark from '~icons/lucide/file-question-mark'
 import LucideHome from '~icons/lucide/home'
 import LucideUser from '~icons/lucide/user'
 
-const props = defineProps({ error: Object })
+import { useRoute } from 'vue-router'
 
-const redirectLogin = () => (window.location.href = '/drive/login')
+const props = defineProps({ error: [Object, String] })
+const route = useRoute()
+
+// Drive answers `DriveNotFound` when the caller cannot read a node at all, and
+// `DriveForbidden` when they can read it but not do what they asked.
+const forbidden = computed(() => props.error?.type === 'DriveForbidden')
+const refused = computed(() => forbidden.value || props.error?.type === 'DriveNotFound')
+
+const redirectLogin = () =>
+  (window.location.href = `/login?redirect-to=${encodeURIComponent(route.fullPath)}`)
+
+// A guest may be refused only because they are not signed in.
 watchEffect(() => {
-  if (
-    (String(props.error).includes('FORBIDDEN') ||
-      props.error.exc_type === 'PermissionError') &&
-    !isLoggedIn.value
-  )
-    redirectLogin()
-
+  if (refused.value && !isLoggedIn.value) redirectLogin()
 })
 </script>
