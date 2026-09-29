@@ -28,15 +28,15 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
-| Stage 5 adoption | `forge/uf-5-adoption` | Meet and boot flag merged into the stage branch (`aadc501fb`), in review; Mail in progress; Calendar next; PWA and shell last | | Flag on slides.localhost: `bench --site slides.localhost set-config -p suite_flip_shell 1`. The Vite dev server does not render the boot script, so journeys set `window.suite_flip_shell` |
+| Stage 5 adoption | `forge/uf-5-adoption` | Meet, Mail, Calendar merged into the stage branch (`4e69793ff`), each codex-reviewed; PWA and shell sub-lane in progress | | Stage branch gates: 141 unified, boundaries 349/71, typecheck 0, bundle 152.85 KiB. `/mail` blank bug and Calendar socket and `recurrence_rule` bugs fixed. The shell router had stopped loading app `runtime.ts`; Mail and Meet guards restored |
 | Stage 6 flip plumbing | | waiting on 5 | | |
 | Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
 | Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
 | Stage 10 upload, restore, batch | | waiting on 8 | | |
-| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer and Sheets merged into the stage branch; Slides in progress; Drive sub-lane waiting on Drive 47 | | Stage branch gates: 157 unified tests, boundaries 335/71, bundle 142.49 KiB, typecheck 0. Sheets: relay events now go to a per-sheet room (the site-wide room leak was already on the base) |
-| Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer, Sheets, Slides merged into the stage branch (`84ac247fb`); Drive sub-lane in progress | | Stage branch gates: 172 unified, boundaries 334/71, typecheck 0, bundle 142.56 KiB. Slides manifest names a referenced deck only when readable |
+| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half in progress; client half waits on 6 | | |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
-| Drive 41 storage breakdown | | waiting on 0 | | |
+| Drive 41 storage breakdown | `forge/drive-41-storage-breakdown` | done | `817900a18` | codex review: breakdown only for the root owner or a Suite Admin; legacy rows carry `mime_type`; fixed-height lists. `test_quota` 12 errors from Administrator's old Personal root `4b15fe1948`, same on base |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
 | Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
 | Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
@@ -106,6 +106,16 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
     Settings list, then Profile (one step more than the old Mail
     sub-page). The failed-group row does not name the product. Interim:
     accepted.
+
+14. **Slides decks reached through a parent-folder link.** A composite
+    reference whose deck is readable only through a link on a parent
+    folder shows as unreadable: the client matches codes to a link's own
+    target. Fix needs a Drive function naming which presented code opens
+    a node. Interim: not handled.
+15. **Slides on a phone.** The stage stays 900 px wide (as on the base);
+    spec §16.1 items 2 and 3 leave phone Slides open.
+16. **Largest files rows.** They do not open the file (the spec does not
+    say they should); the cap is 10.
 
 ## Needs a manual check (cannot run on this devbox)
 
