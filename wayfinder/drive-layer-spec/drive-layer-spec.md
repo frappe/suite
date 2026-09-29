@@ -3472,6 +3472,48 @@ and the upload routes. Suite Python that imports a body Cleanup deletes
 `suite/slides/doctype/presentation/presentation.py`,
 `suite/drive/utils/api.py`) is retargeted in the same release (§14.10).
 
+**The legacy-call counter** proves the move on production. Build counts
+every call to every name in `CLASSIFICATION`, whatever its class, by name and
+user agent. It counts every address Frappe runs a name on: the dotted path on
+`/api/method/` in any API version or the old `cmd` form, and the three `File`
+document methods through `run_doc_method`, `/api/resource/File`, and
+`/api/v2/document/File`, for the verbs that run the method there (not PUT or
+DELETE on the document). A refused call counts too. A CORS preflight does not.
+The rule is that the counter never shows a false zero: a call may be counted
+twice, never lost.
+
+- `before_request` (`suite.drive.framework.count_legacy_call`, then
+  `suite/drive/http/legacy_calls.py`) only buffers the call: one Redis script,
+  no database write on the request. A path that cannot name a legacy call
+  leaves before the shim table is imported. A counter fault never fails the
+  call.
+- Each name keeps at most 50 distinct user agents. Later ones count into one
+  row whose user agent is `(other)`, so a client that rotates its user agent
+  grows neither Redis nor the table, and every call is still counted.
+- The scheduler job `suite.drive.jobs.flush_legacy_calls` runs every tick
+  (`all`). It renames the buffer to an in-flight key in one atomic step, adds
+  the batch to `Drive Legacy Call` rows, commits, and only then deletes the
+  in-flight key. A flush that dies before its commit leaves the batch for the
+  next flush. Flushes hold one Redis lock, so two never overlap.
+- A row holds `legacy_name`, `user_agent` (cut to 255 characters), `count`,
+  `first_seen`, and `last_seen`, one row per name and user agent. The rows
+  survive a migrate, a deploy, and a cache flush. The buffer does not: calls
+  not yet flushed are lost if Redis evicts the keys or the whole cache is
+  flushed, which is why the flush runs every tick.
+- Counts are cumulative and never reset. "Zero" means no count rose between
+  two reads.
+- A System Manager reads the rows in the Desk list of `Drive Legacy Call`,
+  latest `last_seen` first. Only System Manager can read them. No role can
+  create, edit, or delete a row, and the controller refuses every write that
+  is not the flush, Administrator included.
+- `bench --site <site> drive-legacy-calls` flushes and reads under the flush
+  lock, then prints every row latest first and a final
+  `total: <n> calls over <m> names`. `--json` prints the same as JSON. There
+  is no reset flag.
+
+Cleanup drops the doctype, the module, the command, and both hook entries
+with the names (§14.10).
+
 Hardening: Build adds `/api/suite/drive/` to `ALLOWED_WILDCARD_PATHS` and
 Cleanup removes `/api/method/suite.drive.api.`
 (`suite/hooks.py:564-592`). After that no Suite client or Suite server code
@@ -4180,7 +4222,10 @@ Ships one release after Build. It refuses to run unless all three hold
 3. Every Suite client has moved off all 69 old method names: the SPA
    (`frontend/src`), the Desk file picker (`suite/public/js`), and Suite
    Python outside `suite/drive/api` and `suite/drive/http` imports none of
-   the bodies below (§11.7). No name is exempt.
+   the bodies below (§11.7). No name is exempt. The runtime evidence is the
+   legacy-call counter (§11.7): on every site Cleanup runs on, no count on
+   any name rose between the first and the last read of the hold (unified
+   plan stage 14).
 
 Then, in order:
 
@@ -4204,6 +4249,9 @@ Then, in order:
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota` and the S3 fields on
   `Drive Disk Settings`; `storage_owner` on `Drive Storage Reservation`.
+- Drop the legacy-call counter (§11.7): the `Drive Legacy Call` doctype and
+  its table, `suite/drive/http/legacy_calls.py`, the `drive-legacy-calls`
+  command, and the `count_legacy_call` and `flush_legacy_calls` hook entries.
 - Delete all 69 legacy names (§11.7): `suite/drive/http/shims.py`, every
   module under `suite/drive/api/` including `product.py` and `s3.py`, and
   `suite/drive/overrides/file.py` with the `File` override. `after_request`

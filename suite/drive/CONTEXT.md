@@ -222,6 +222,12 @@ One email that tells one address a node or a Share Link was shared with
 it. Sent only when the grant write asks for it, and never stored as a flag.
 _Avoid_: Invite, Invitation, Share notification
 
+**Legacy Call**:
+One count of calls to one legacy `suite.drive` name from one user agent,
+kept until Cleanup deletes the names. It proves which clients still call
+the old API.
+_Avoid_: API log, Request log, Hit
+
 ### Deployment
 
 **Business site**:
