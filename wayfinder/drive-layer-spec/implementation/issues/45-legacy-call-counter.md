@@ -6,7 +6,7 @@
 
 **Blocked by:** [23 — Keep legacy callers working through the new Drive workflows](23-legacy-compatibility.md)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Owner:** Suite Drive HTTP compatibility
 
