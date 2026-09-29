@@ -252,5 +252,5 @@ def get_wiki_link(title: str):
         frappe.throw("Cannot get this wikilink.", frappe.NotFound)
 
     frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = "/drive/f/" + name
+    frappe.local.response["location"] = drive.node_url(name)
     return title

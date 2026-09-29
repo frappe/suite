@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote
 
 import frappe
 from frappe import _
@@ -205,9 +206,7 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
     Two surfaces:
 
       * **In-app notification** (Notification Log) — shows in the bell
-        icon. Subject is plain text; clicking lands on /sheets?id=…
-        instead of /app/sheet/<hash> (the Desk form view of the doctype,
-        which is a raw JSON blob).
+        icon. Subject is plain text.
       * **Email** — only if the site has SMTP configured. `now=False`
         enqueues it so the share API stays fast and a flaky mailer
         doesn't break the user's flow. The email body links to the SPA
@@ -225,7 +224,11 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
         role = "edit" if can_edit else "view"
         # Link points at the SPA, not the Desk. `get_url` respects the
         # site's `host_name`, so this works behind reverse proxies too.
-        link = f"{frappe.utils.get_url()}/sheets?id={sheet_name}"
+        # Only a sheet with no node reaches here (`refuse_drive_native`), so
+        # it has no node address: it opens in the old editor at
+        # `/sheets/<name>`, where the redirect table finds no node and lets
+        # it through.
+        link = frappe.utils.get_url(f"/sheets/{quote(sheet_name, safe='')}")
         subject = f"{sharer} shared a sheet with you"
         # Frappe's Notification Log surfaces in the bell-icon dropdown.
         frappe.get_doc(

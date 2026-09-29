@@ -4,6 +4,7 @@ import frappe
 
 from suite import __version__
 from suite.api.account import get_onboarding_state, get_workspace
+from suite.suite_core.flips import flip_is_on
 
 no_cache = 1
 
@@ -77,16 +78,3 @@ def get_boot():
             "suite_flip_shell": flip_is_on("suite_flip_shell"),
         }
     )
-
-
-def flip_is_on(key: str) -> bool:
-    """Whether the flip site config `key` is on.
-
-    On for 1, "1", True and "true" in any case. Off for anything else,
-    including a missing key: `bench set-config` without `-p` stores "0" and
-    "false" as strings, and those must read as off.
-    """
-    value = frappe.conf.get(key)
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true")
-    return value is True or (type(value) is int and value == 1)
