@@ -41,7 +41,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
 | Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
 | Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | done | `4d879dff0` | codex review: durable Redis hand-off, flush lock, 50 user agents per name then `(other)`, verb-aware File methods, controller refuses hand edits. Desk list checked in a browser as a non-Administrator System Manager |
-| Drive 47 recents content doctype filter | `forge/drive-47-recents-doctype-filter` | in progress | | |
+| Drive 47 recents content doctype filter | `forge/drive-47-recents-doctype-filter` | done | `15721d624` | codex review: stable order, windows past unreadable rows, Active only, STRAIGHT_JOIN from the user's recents. These also change unfiltered recents |
 | Suite S1, S2 (server) | `forge/uf-suite-asks-s1-s3` | done | `9852ca10b` | codex review: bounded people cursor. S3 moves to stage 8; S4 shipped with stage 11 Writer |
 | Flip rehearsal | | waiting on all | | |
 
@@ -130,6 +130,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Slides composite references are Reference Presentation row ids, not node ids, so a separately linked deck sends no code. Needs the manifest to return each reference's node id (backend ask) | stage 2 review | stage 11 (Slides) |
 | Legacy share shim maps `read, write, comment` without `upload` to COMMENT, so the old-page journey "editor can edit" fails now that Writer shows the real Drive role. Not checked on the base commit | stage 11 Writer | Drive program (check `shims._legacy_role`) |
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
+| `views/favourites` has no tie-breaker, reads one window, and lists trashed nodes (Drive 47 fixed the same in recents); `_view_eligible` can still return short pages | Drive 47 review | Drive program |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Backend asks raised during the run
