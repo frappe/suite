@@ -502,6 +502,7 @@ import {
 	CommandPaletteItem,
 	CommandPaletteList,
 	type CommandPaletteSelectEvent,
+	type CommandPaletteValue,
 } from 'frappe-ui/experimental'
 import { DialogDescription } from 'reka-ui'
 import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
@@ -529,7 +530,7 @@ import type {
 	MailRecentSearch,
 	MailSearchResult as MailResult,
 } from '@/apps/mail/components/CommandPalette/types'
-import { getRecents } from '@/apps/drive/resources/files'
+import { getRecents } from '@/apps/drive/legacy/resources/files'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
@@ -537,28 +538,27 @@ import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/ca
 import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
-interface DriveResult {
+type DriveResult = {
 	name: string
 	file_name: string
 	file_type?: string
 	is_folder: boolean
+	content_doctype?: string | null
 	modified?: string
 	user_name?: string
 	full_name?: string
-	[key: string]: unknown
 }
 
-interface SheetResult {
+type SheetResult = {
 	resultType: 'sheet'
 	name: string
 	title?: string
 	modified?: string
 	content_doctype: 'Sheet'
 	file_type: 'Spreadsheet'
-	[key: string]: unknown
 }
 
-interface SlideResult {
+type SlideResult = {
 	resultType: 'slide'
 	name: string
 	file_name: string
@@ -567,16 +567,14 @@ interface SlideResult {
 	thumbnail?: string
 	owner?: string
 	content_doctype: 'Presentation'
-	[key: string]: unknown
 }
 
-interface WriterResult {
+type WriterResult = {
 	resultType: 'writer'
 	name: string
 	title?: string
 	content_doctype: 'Writer Document'
 	file_type: 'Document'
-	[key: string]: unknown
 }
 
 interface MeetResult {
@@ -616,10 +614,10 @@ const calendarMinimumQueryLength = 1
 // counts the cap before it expands them, so the rows are not sliced again here.
 const CALENDAR_RESULT_LIMIT = 10
 const DriveSearchResultIcon = defineAsyncComponent(
-	() => import('@/apps/drive/components/DriveSearchResultIcon.vue')
+	() => import('@/apps/drive/legacy/components/DriveSearchResultIcon.vue')
 )
 const DriveSearchResultModified = defineAsyncComponent(
-	() => import('@/apps/drive/components/DriveSearchResultModified.vue')
+	() => import('@/apps/drive/legacy/components/DriveSearchResultModified.vue')
 )
 const root = useRootStore()
 const route = useRoute()
@@ -1027,12 +1025,13 @@ function commandRank(command: PaletteCommand) {
 	return 1
 }
 
-function enterHint(item: unknown) {
-	if (!item || typeof item !== 'object')
+function enterHint(value: unknown) {
+	if (!value || typeof value !== 'object')
 		return mailSearchAsked.value ? 'to see all results' : 'to open'
-	if ('id' in item) {
-		item = filteredCommands.value.find((command) => command.id === item.id) ?? item
-	}
+	const item: object =
+		'id' in value
+			? (filteredCommands.value.find((command) => command.id === value.id) ?? value)
+			: value
 	if ('resultType' in item) {
 		if (item.resultType === 'mail') return 'to view thread'
 		if (item.resultType === 'mail-search-page') return 'to see all results'
@@ -1293,7 +1292,9 @@ function cancelSearches() {
 		meetSearch,
 		calendarSearch,
 	]) {
-		resource.submit.cancel()
+		// A debounced resource's submit carries the debouncer's cancel.
+		const submit: object = resource.submit
+		if ('cancel' in submit && typeof submit.cancel === 'function') submit.cancel()
 		resource.abort()
 	}
 	cancelMailSearch()
@@ -1368,7 +1369,15 @@ async function openMailSearchPage() {
 	root.paletteOpen = false
 }
 
-async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
+// Every item in the list carries a PaletteItem as its value, and the palette hands
+// that value back untouched, so any object it reports is one of ours.
+function isPaletteItem(value: CommandPaletteValue): value is PaletteItem {
+	return typeof value === 'object' && value !== null
+}
+
+async function selectItem(value: CommandPaletteValue, event: CommandPaletteSelectEvent) {
+	if (!isPaletteItem(value)) return
+	const item = value
 	const originalEvent = event.detail.originalEvent
 	const openInNewTab =
 		openSelectionInNewTab || originalEvent.metaKey || originalEvent.ctrlKey
@@ -1484,7 +1493,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 		return
 	}
 
-	const { openEntity } = await import('@/apps/drive/utils/files')
+	const { openEntity } = await import('@/apps/drive/legacy/utils/files')
 	openEntity(item, openInNewTab)
 }
 

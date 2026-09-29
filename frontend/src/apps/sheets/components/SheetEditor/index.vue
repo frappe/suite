@@ -1346,7 +1346,9 @@ const themeMenuOption = useThemeMenuOption()
 const settingsMenuOption = useSettingsMenuOption()
 const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
-  { label: 'Sheets', route: { name: 'sheets-home' } },
+  // A path, not the route name: in the unified shell the Sheets routes register
+  // only once /sheets is first visited, so the name does not resolve yet.
+  { label: 'Sheets', route: '/sheets' },
 ])
 const sheetBreadcrumbs = computed(() => [
   ...sheetHomeBreadcrumbs.value,
