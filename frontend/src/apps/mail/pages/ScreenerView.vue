@@ -137,7 +137,7 @@
 												{{ __('You can undo decisions or turn the Screener off in') }}
 												<a
 													class="cursor-pointer underline"
-													@click="openSettings(__('Screener'))"
+													@click="openSettings('mail.screener')"
 												>{{ __('Settings') }}</a>{{ '.' }}
 											</p>
 										</div>
@@ -257,9 +257,9 @@
 				</div>
 
 				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise.
-				     Teleported to body on mobile (like the selection bar): inside the layout's
+				     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's
 				     isolate stacking context the tab bar would paint over the sliding pane. -->
-				<Teleport to="body" :disabled="!isMobile">
+				<Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
 				<div
 					class="bg-surface-base flex flex-col"
 					:class="{
@@ -449,6 +449,7 @@ import {
 	createResource,
 	toast,
 	usePageMeta,
+	usePortalTarget,
 } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
@@ -486,6 +487,8 @@ const { senderEmail } = defineProps<{
 
 const router = useRouter()
 const { isMobile } = useScreenSize()
+// MailLayout's overlay layer; see the preview pane's Teleport.
+const overlayLayer = usePortalTarget()
 const { listReloadRequest } = useListReload()
 const { openSettings } = useSettings()
 

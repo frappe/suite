@@ -1,6 +1,7 @@
 import { defineAsyncComponent, defineComponent, h } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
+import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
@@ -18,7 +19,21 @@ export type {
   SessionState,
   UnavailableShare,
 } from '@/apps/drive/client/session'
-export { CredentialOverflowError } from '@/apps/drive/client/session'
+export { CredentialOverflowError } from '@/apps/drive/client/links'
+
+/** Remembers the share link a `#link=` fragment carried, for the node it opened. */
+export function rememberDriveLink(token: string, node: string): void {
+  driveLinks.seed(token, node)
+}
+
+/** The name a guest typed for comments. `null` while signed in. */
+export function driveGuestName(): string | null {
+  return driveLinks.guestName()
+}
+
+export function setDriveGuestName(name: string): void {
+  driveLinks.setGuestName(name)
+}
 
 export type DriveNodeSummary = Pick<
   DriveNode,
@@ -36,8 +51,11 @@ export const filesArea: AreaDefinition = {
   icon: FilesIcon,
   to: '/files',
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
-  loadPanel: async () => (await import('@/apps/drive/files/pages/FilesPanel.vue')).default,
 }
+
+/** Drive's Settings group. Loads when Settings opens. */
+export const loadDriveSettings = () =>
+  import('@/apps/drive/files/features/settings/settingsGroup').then((module) => module.driveSettings())
 
 export function driveRecents(limit = 12) {
   return recents(limit)

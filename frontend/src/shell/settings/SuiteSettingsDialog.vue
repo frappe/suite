@@ -1,49 +1,62 @@
+<!--
+  Settings: the composition settings list as a dialog on desktop and as a
+  drill-in on phone. Group modules load when it opens; a tab body loads when
+  its tab first shows.
+-->
 <template>
+  <SettingsDrillIn
+    v-if="isMobile"
+    v-model:open="open"
+    :groups="groups"
+    :failed="failed"
+    :retry="load"
+    :tab="requestedTab"
+  />
   <SettingsDialog
+    v-else
     v-model:open="open"
     v-model:tab="activeTab"
     size="5xl"
-    :shortcut="false"
+    :keyboard-shortcut="false"
   >
     <template #title>{{ __('Settings') }}</template>
-    <SettingsSidebar>
-      <SettingsNavGroup v-for="group in visibleGroups" :key="group.id" :label="__(group.label)">
-        <SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
-          <template #prefix>
-            <Avatar
-              v-if="tab.value === 'profile'"
-              :image="imageURL"
-              :label="fullName"
-              size="xs"
-              class="shrink-0"
-            />
-            <span
-              v-else-if="typeof tab.icon === 'string'"
-              :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']"
-              aria-hidden="true"
-            />
-            <component
-              :is="tab.icon"
-              v-else
-              class="size-4 shrink-0 text-ink-gray-6 stroke-[1.5]"
-            />
-          </template>
-          {{ __(tab.label) }}
-        </SettingsNavItem>
-      </SettingsNavGroup>
-    </SettingsSidebar>
-    <SettingsContent>
-      <SettingsPanel v-for="tab in visibleTabs" :key="tab.value" :value="tab.value">
-        <component :is="tab.component" v-bind="tab.props" v-on="tab.listeners || {}" />
-      </SettingsPanel>
-    </SettingsContent>
+    <template v-if="groups">
+      <SettingsSidebar>
+        <SettingsNavGroup v-for="group in groups" :key="group.label" :label="group.label">
+          <SettingsNavItem v-for="tab in group.tabs" :key="tab.id" :value="tab.id">
+            <template #prefix>
+              <Avatar
+                v-if="tab.id === PROFILE_TAB"
+                :image="avatar ?? undefined"
+                :label="fullName"
+                size="xs"
+                class="shrink-0"
+                aria-hidden="true"
+              />
+              <span v-else :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']" aria-hidden="true" />
+            </template>
+            {{ tab.label() }}
+          </SettingsNavItem>
+        </SettingsNavGroup>
+        <SettingsLoadFailed v-if="failed" class="px-2 py-1.5" :retry="load" />
+      </SettingsSidebar>
+      <SettingsContent>
+        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
+          <SettingsTabBody :tab="tab" />
+        </SettingsPanel>
+      </SettingsContent>
+    </template>
+    <div v-else class="flex min-h-0 flex-1 items-center justify-center" role="status" :aria-label="__('Loading')">
+      <LoadingIndicator class="size-5 text-ink-gray-5" />
+    </div>
   </SettingsDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   Avatar,
+  LoadingIndicator,
   SettingsContent,
   SettingsDialog,
   SettingsNavGroup,
@@ -51,42 +64,46 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
-import { useCurrentUser } from '@/boot/session'
-import { getVisibleSettingsGroups } from '@/components/settings/settingsCatalog'
-import type { SettingsGroup } from '@/components/settings/types'
-import { useCommonSettingsGroups } from '@/components/settings/useCommonSettingsGroups'
 
-const props = withDefaults(
-  defineProps<{
-    groups?: SettingsGroup[]
-    includeCommon?: boolean
-  }>(),
-  {
-    groups: () => [],
-    includeCommon: true,
-  },
-)
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+import SettingsDrillIn from '@/shell/settings/SettingsDrillIn.vue'
+import SettingsLoadFailed from '@/shell/settings/SettingsLoadFailed.vue'
+import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
+import { resolveSettingsTab, type SettingsTabId } from '@/shell/settings/settings'
+import { useSettingsGroups } from '@/shell/settings/useSettingsDialog'
+import { isMobile } from '@/shell/useIsMobile'
+
+const PROFILE_TAB = 'account.profile'
 
 const open = defineModel<boolean>('open', { default: false })
-const activeTab = defineModel<string>('tab', { default: 'profile' })
+/** The tab to show. Unset shows the first tab on desktop and the list on phone. */
+const requestedTab = defineModel<SettingsTabId | undefined>('tab')
 
-const { fullName, imageURL } = useCurrentUser()
-const commonGroups = useCommonSettingsGroups()
+const session = useSession()
+const fullName = computed(() => session.user.value?.fullName ?? '')
+const avatar = computed(() => session.user.value?.avatar ?? null)
 
-const visibleGroups = computed(() =>
-  getVisibleSettingsGroups([
-    ...(props.includeCommon ? commonGroups.value : []),
-    ...props.groups,
-  ]),
-)
-const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.items))
+const { groups, failed, load } = useSettingsGroups()
+const tabs = computed(() => groups.value?.flatMap((group) => group.tabs) ?? [])
+
+// The dialog's own selection. It follows the requested tab, falls back to the
+// first visible tab, and stays local so a sidebar click does not rewrite the
+// caller's request.
+const activeTab = ref<string | undefined>()
 
 watch(
-  visibleTabs,
-  (tabs) => {
-    if (!tabs.some((tab) => tab.value === activeTab.value)) {
-      activeTab.value = tabs[0]?.value ?? 'profile'
-    }
+  [groups, requestedTab],
+  ([visible, requested]) => {
+    if (visible) activeTab.value = resolveSettingsTab(visible, requested)
+  },
+  { immediate: true },
+)
+
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) void load()
   },
   { immediate: true },
 )

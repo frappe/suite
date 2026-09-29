@@ -42,6 +42,9 @@ class BoundaryCase(UnitTestCase):
     def setUp(self):
         frappe.local.response_headers = {}
         frappe.local.message_log = []
+        # The parsed request body. A handler reads it only to tell an omitted
+        # key from an explicit JSON null.
+        frappe.local.form_dict = frappe._dict()
         self.principals = patch.object(routes, "_principals", return_value=SOMEONE)
         self.principals.start()
         self.addCleanup(self.principals.stop)
@@ -366,12 +369,17 @@ class TestSubjectPrincipals(BoundaryCase):
 
 
 class TestShareLinkPage(BoundaryCase):
-    """§6.2: `/drive/l/<token>` answers which node, never whether."""
+    """§6.2: `/l/<token>` answers which node, never whether."""
 
     def context_for(self, token, **patched):
+        # `node_url` is stubbed, so no case reads the site's `suite_flip_files`
+        # or a node row. `test_drive_link` covers the address per kind and key.
         frappe.local.form_dict = frappe._dict({"token": token})
         frappe.flags.redirect_location = None
-        with patch.object(drive_link.drive, "resolve_share_link", **patched) as resolved:
+        with (
+            patch.object(drive_link.drive, "resolve_share_link", **patched) as resolved,
+            patch.object(drive_link.drive, "node_url", return_value="/d/n1") as self.addressed,
+        ):
             context = frappe._dict()
             try:
                 return drive_link.get_context(context), None, resolved
@@ -382,8 +390,9 @@ class TestShareLinkPage(BoundaryCase):
         answer = {"node": "n1", "token": "t" * 22}
         _context, sent, resolved = self.context_for("t" * 22, return_value=answer)
         resolved.assert_called_once_with("t" * 22)
+        self.addressed.assert_called_once_with("n1")
         self.assertEqual(sent.http_status_code, 302)
-        self.assertEqual(frappe.flags.redirect_location, "/drive/g/n1#link=" + "t" * 22)
+        self.assertEqual(frappe.flags.redirect_location, "/d/n1#link=" + "t" * 22)
 
     def test_the_token_rides_the_fragment_so_no_log_or_referer_holds_it(self):
         _context, _sent, _resolved = self.context_for(
@@ -590,6 +599,29 @@ class TestGrantRoutes(BoundaryCase):
             routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="")
         self.assertIsNone(workflow.call_args.kwargs["password"])
 
+    def test_an_omitted_password_keeps_the_stored_one_and_null_clears_it(self):
+        # D20: §5.9 step 3 patches the password. Omitted keeps the hash, null
+        # and blank clear it, and a string sets it.
+        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20)
+            self.assertIs(workflow.call_args.kwargs["password"], routes.access.KEEP)
+            frappe.local.form_dict = frappe._dict(password=None)
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password=None)
+            self.assertIsNone(workflow.call_args.kwargs["password"])
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="secret")
+            self.assertEqual(workflow.call_args.kwargs["password"], "secret")
+
+    def test_send_to_and_notify_reach_the_workflow_and_default_to_no_mail(self):
+        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
+            routes.node_put_grant(node="n1", principal="b@example.com", role=10)
+            self.assertEqual(
+                (workflow.call_args.kwargs["send_to"], workflow.call_args.kwargs["notify"]), (None, False)
+            )
+            routes.node_put_grant(node="n1", principal="b@example.com", role=10, notify="1")
+            self.assertIs(workflow.call_args.kwargs["notify"], True)
+            routes.node_put_grant(node="n1", principal="$LINK", role=10, send_to="c@example.com")
+            self.assertEqual(workflow.call_args.kwargs["send_to"], "c@example.com")
+
     def test_a_blank_role_is_refused_and_never_reaches_the_workflow_as_a_deny(self):
         # `shapes.whole` reads "" as its default, and the default a role would
         # take is 0, which is §5.10's explicit deny.
@@ -636,11 +668,11 @@ class TestGrantRoutes(BoundaryCase):
         self.assertEqual(workflow.call_args.kwargs["expires_on"], "2026-10-01")
 
     def test_a_link_url_is_published_beside_the_row_only_when_one_was_minted(self):
-        minted = {"name": "g1", "node": "n1", "principal": "$LINK:tok", "role": 20, "url": "/drive/l/tok"}
+        minted = {"name": "g1", "node": "n1", "principal": "$LINK:tok", "role": 20, "url": "/l/tok"}
         with patch.object(routes.access, "grant", return_value=minted):
             answer = routes.node_put_grant(node="n1", principal="$LINK", role=20)
         self.assertEqual(set(answer), {"grant", "url"})
-        self.assertEqual(answer["url"], "/drive/l/tok")
+        self.assertEqual(answer["url"], "/l/tok")
         with patch.object(routes.access, "grant", return_value={"name": "g2", "role": 40}):
             answer = routes.node_put_grant(node="n1", principal="b@example.com", role=40)
         self.assertEqual(set(answer), {"grant"})
@@ -674,11 +706,11 @@ class TestGrantRoutes(BoundaryCase):
     def test_rotation_addresses_the_grant_row_and_forwards_its_id(self):
         # §5.11: the address is the `Drive Grant` id. Naming the old token
         # would put the secret being replaced into the access log.
-        rotated = {"name": "g1", "node": "n1", "principal": "$LINK:new", "url": "/drive/l/new"}
+        rotated = {"name": "g1", "node": "n1", "principal": "$LINK:new", "url": "/l/new"}
         with patch.object(routes.access, "rotate_link", return_value=rotated) as workflow:
             answer = routes.grant_rotate(grant="g1")
         workflow.assert_called_once_with("g1", SOMEONE)
-        self.assertEqual(answer["url"], "/drive/l/new")
+        self.assertEqual(answer["url"], "/l/new")
 
     def test_a_blank_grant_id_rotates_nothing(self):
         with patch.object(routes.access, "rotate_link") as workflow:

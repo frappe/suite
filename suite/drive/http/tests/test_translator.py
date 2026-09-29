@@ -81,6 +81,7 @@ GUEST_ROUTES = frozenset(
 SESSION_ONLY_ROUTES = frozenset(
     {
         "node_purge",
+        "node_batch_purge",
         "node_grants",
         "node_put_grant",
         "node_delete_grant",
@@ -98,6 +99,7 @@ SESSION_ONLY_ROUTES = frozenset(
         "root_usage",
         "root_patch",
         "root_purge",
+        "root_empty_trash",
         "settings_get",
         "settings_patch",
         "site_settings_get",
@@ -135,6 +137,7 @@ class TestTranslator(HttpConformanceMixin, UnitTestCase):
         cases = (
             ("POST", "/api/suite/drive/nodes", "node_create", {}),
             ("POST", "/api/suite/drive/nodes/batch", "node_batch", {}),
+            ("POST", "/api/suite/drive/nodes/batch/purge", "node_batch_purge", {}),
             ("GET", "/api/suite/drive/nodes/n1", "node_get", {"node": "n1"}),
             ("PATCH", "/api/suite/drive/nodes/n1", "node_patch", {"node": "n1"}),
             ("DELETE", "/api/suite/drive/nodes/n1", "node_purge", {"node": "n1"}),
@@ -220,6 +223,7 @@ class TestTranslator(HttpConformanceMixin, UnitTestCase):
             ("GET", "/api/suite/drive/roots/r1/usage", "root_usage", {"root": "r1"}),
             ("PATCH", "/api/suite/drive/roots/r1", "root_patch", {"root": "r1"}),
             ("DELETE", "/api/suite/drive/roots/r1", "root_purge", {"root": "r1"}),
+            ("POST", "/api/suite/drive/roots/r1/trash/empty", "root_empty_trash", {"root": "r1"}),
             ("GET", "/api/suite/drive/settings", "settings_get", {}),
             ("PATCH", "/api/suite/drive/settings", "settings_patch", {}),
             ("GET", "/api/suite/drive/site-settings", "site_settings_get", {}),

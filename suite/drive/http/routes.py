@@ -96,12 +96,16 @@ def _route(handler):
         try:
             return handler(*args, **kwargs)
         except DriveError as refusal:
-            _refuse(type(refusal), str(refusal))
-        except frappe.RateLimitExceededError:
+            _refuse(type(refusal), str(refusal), free_title=getattr(refusal, "free_title", None))
+        except frappe.RateLimitExceededError as limited:
             # 429, and already carrying its message: §6.3 locks a link out for
             # fifteen minutes after five wrong passwords, and the caller has to
             # be able to tell that apart from a wrong password. The clause
             # below would flatten it to 400 with every other bad argument.
+            # `Retry-After` carries the seconds left, so the unlock screen can
+            # count down to the next attempt.
+            if retry_after := getattr(limited, "retry_after", None):
+                frappe.local.response_headers["Retry-After"] = str(retry_after)
             raise
         except frappe.DoesNotExistError as missing:
             # A row a workflow reached for is gone. The framework already
@@ -113,14 +117,29 @@ def _route(handler):
     return answered
 
 
-def _refuse(kind: type, message: str) -> None:
+def _refuse(kind: type, message: str, **fields) -> None:
+    """Throw `kind` so the envelope carries its message and any extra `fields`.
+
+    `report_error` merges the `msgprint` entry stamped with the exception's id
+    into the envelope, so an extra field (§11.6's `free_title`) is written onto
+    that entry. A field whose value is None is left out.
+    """
     if kind is DriveLocked:
         # `process_response` puts an OAuth Bearer challenge on any 401 when
         # resource metadata is enabled, and merges `response_headers` after it.
         # A password link is opened at POST /links/<token>/unlock, not by
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
-    frappe.throw(message, kind)
+    extra = {name: value for name, value in fields.items() if value is not None}
+    try:
+        frappe.throw(message, kind)
+    except kind as thrown:
+        if extra:
+            stamp = getattr(thrown, "__frappe_exc_id", None)
+            for entry in frappe.local.message_log:
+                if stamp and entry.get("__frappe_exc_id") == stamp:
+                    entry.update(extra)
+        raise
 
 
 def _principals():
@@ -350,20 +369,54 @@ def node_batch(nodes: Given = None, patch: Given = None) -> shapes.BatchResult:
     principals = _principals()
     asked = shapes.identifiers(nodes, "nodes")
     mutation = shapes.patch(patch, "patch")
+    return _each(
+        asked,
+        lambda node: node_core.update(
+            principals,
+            node,
+            title=shapes.text(mutation.get("title"), "title"),
+            parent=shapes.text(mutation.get("parent"), "parent"),
+            state=shapes.text(mutation.get("state"), "state"),
+            content_modified=mutation.get("content_modified"),
+        ),
+    )
+
+
+@frappe.whitelist(methods=["POST"])
+@_route
+def node_batch_purge(nodes: Given = None) -> shapes.BatchResult:
+    """Purge many subtrees, isolating each failure (§11.5).
+
+    Each node is `DELETE /nodes/<id>`: MANAGE on the node, in its own
+    savepoint, with one activity row. MANAGE is never reached through a link,
+    so a Guest is not heard.
+
+    Shallowest first: a selected folder is purged before a selected node below
+    it. That purge removes the descendant too, so the descendant is reported
+    purged, not missing.
+    """
+    principals = _principals()
+    asked = shapes.identifiers(nodes, "nodes")
+    ancestors = node_core.stored_ancestors(asked)
+    purged: set[str] = set()
+
+    def purge(node: str) -> None:
+        if purged.isdisjoint(ancestors.get(node, ())):
+            node_core.purge(principals, node)
+        purged.add(node)
+
+    return _each(tuple(sorted(asked, key=lambda node: len(ancestors.get(node, ())))), purge)
+
+
+def _each(asked: tuple[str, ...], act) -> shapes.BatchResult:
+    """Run `act` once per node in its own savepoint, and report §11.5's shape."""
     ok: list[str] = []
-    failed: list[dict] = []
+    failed: list[shapes.BatchFailure] = []
     for node in asked:
         savepoint = f"drive_http_batch_{uuid4().hex[:12]}"
         frappe.db.savepoint(savepoint)
         try:
-            node_core.update(
-                principals,
-                node,
-                title=shapes.text(mutation.get("title"), "title"),
-                parent=shapes.text(mutation.get("parent"), "parent"),
-                state=shapes.text(mutation.get("state"), "state"),
-                content_modified=mutation.get("content_modified"),
-            )
+            act(node)
         except frappe.ValidationError as refusal:
             rollback_savepoint(savepoint, refusal)
             kind = type(refusal) if isinstance(refusal, DriveError) else DriveError
@@ -481,11 +534,14 @@ def upload_create(
     filename: Given = None,
     size: Given = None,
     mime: Given = None,
+    replaces: Given = None,
 ) -> dict:
     """Open one private blob session, refusing on the declared size (§11.2).
 
     The refusal is `DriveOverQuota`, never a permission error: a caller who may
-    upload here and has no room is told which of the two is missing.
+    upload here and has no room is told which of the two is missing. A taken
+    `filename` is `DriveConflict` with `free_title`, unless the taken title is
+    the file named by `replaces`.
     """
     return upload_core.create_upload(
         _principals(),
@@ -493,6 +549,7 @@ def upload_create(
         shapes.required_text(filename, "filename"),
         shapes.whole(size, "size", 0),
         mime=shapes.text(mime, "mime"),
+        replaces=shapes.text(replaces, "replaces"),
     )
 
 
@@ -591,6 +648,13 @@ def root_patch(
     )
 
 
+@frappe.whitelist(methods=["POST"])
+@_route
+def root_empty_trash(root: Given = None) -> dict:
+    """Purge every trashed tree in one root. MANAGE on the root node (§8.8)."""
+    return {"purged": node_core.empty_trash(_principals(), shapes.required_text(root, "root"))}
+
+
 @frappe.whitelist(methods=["DELETE"])
 @_route
 def root_purge(root: Given = None) -> dict:
@@ -605,8 +669,12 @@ def root_purge(root: Given = None) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def node_grants(node: Given = None, principal: Given = None) -> dict:
+def node_grants(node: Given = None, principal: Given = None, inherited: Given = None) -> dict:
     """Answer one node's local grants, and optionally one explanation (§11.2).
+
+    `?inherited=1` adds every live grant on an ancestor, each with the node it
+    sits on and that node's title, nearest ancestor first. The share dialog
+    shows them under "From <folder>" (issue 44, D19).
 
     `?principal=` is the accepted spelling of §5.8's `explain`. MANAGE on the
     target is what the caller needs, and it is checked before the named
@@ -627,9 +695,12 @@ def node_grants(node: Given = None, principal: Given = None) -> dict:
     answer = access.grants_for(
         shapes.required_text(node, "node"),
         principals,
+        inherited=shapes.flag(inherited, "inherited", False),
         resolve_subject=(lambda: framework.principals_for_principal(named)) if named else None,
     )
     shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]]}
+    if "inherited" in answer:
+        shaped["inherited"] = [shapes.inherited_grant_shape(row) for row in answer["inherited"]]
     if "explain" in answer:
         shaped["explain"] = shapes.explain_shape(answer["explain"])
     return shaped
@@ -643,6 +714,8 @@ def node_put_grant(
     role: Given = None,
     expires_on: Given = None,
     password: Given = None,
+    send_to: Given = None,
+    notify: Given = None,
 ) -> dict:
     """Write one grant, including an explicit deny and a new share link (§5.9).
 
@@ -655,26 +728,38 @@ def node_put_grant(
     Publishing is this route with principal `$PUBLIC` and `role: 10`. There is
     no separate publish verb (§6.5).
 
-    §5.9 step 3 upserts all three columns, so this is a replace and not a
-    patch: a link keeps its password and its expiry only while the caller keeps
-    sending them.
+    `role` and `expires_on` are replaced: an omitted or null `expires_on`
+    clears the expiry. `password` is patched (§5.9 step 3): omitted keeps the
+    stored hash, null clears it, and a string sets it, so changing a link's
+    expiry never drops its password.
+
+    `send_to` on `$LINK` mails the new link to one address and stores it on
+    the row. `notify: true` on a user principal mails that user. `notify` is
+    never stored. Both mails leave the request path (§9.5).
     """
     # An absent role and a blank one are the same refusal. `shapes.whole` reads
     # `""` as its default, and the default a role would take is 0, which is the
     # explicit deny of §5.10. A dropped form field must never become a denial.
     if role is None or role == "":
         frappe.throw(_("Drive argument role is required"), frappe.ValidationError)
+    # Frappe passes `None` for an omitted key and for an explicit JSON `null`
+    # alike. Only the parsed body tells them apart, and they mean opposite
+    # things here: keep the password, or clear it.
+    if password is None and "password" not in frappe.form_dict:
+        password = access.KEEP
     written = access.grant(
         shapes.required_text(node, "node"),
         shapes.required_text(principal, "principal"),
         shapes.whole(role, "role", 0),
         _principals(),
         expires_on=expires_on,
-        # A blank password is no password. `""` reaching the workflow would be
-        # hashed and stored, and §6.3's unlock would then guard the link behind
-        # a secret nobody typed; on a principal that is not a link it would
-        # trip refusal 10 and answer 403 for an empty form field.
-        password=shapes.text(password, "password") or None,
+        # A blank password is a cleared one. `""` reaching the workflow would
+        # be hashed and stored, and §6.3's unlock would then guard the link
+        # behind a secret nobody typed; on a principal that is not a link it
+        # would trip refusal 10 and answer 403 for an empty form field.
+        password=password if password is access.KEEP else shapes.text(password, "password") or None,
+        send_to=shapes.text(send_to, "send_to"),
+        notify=shapes.flag(notify, "notify", False),
     )
     return _grant_answer(written)
 
@@ -731,8 +816,10 @@ def link_unlock(token: Given = None, password: Given = None) -> dict:
     so a password change or a rotation kills every ticket at once.
 
     Guest-reachable, because unlocking is what a caller does before they have
-    any access at all. Five failures in fifteen minutes lock the token out and
-    answer 429, which the boundary keeps distinct from a wrong password (§6.3).
+    any access at all. A wrong password answers 401. The fifth failure in
+    fifteen minutes locks the token out, and it and every attempt during the
+    lockout answer 429 with `Retry-After`, which the boundary keeps distinct
+    from a wrong password (§6.3).
     """
     return access.unlock_link(
         shapes.required_text(token, "token"),

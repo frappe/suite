@@ -13,6 +13,9 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 - Opus agents on medium effort implement. Codex `gpt-5.6-sol` reviews,
   researches and gives second opinions.
 - Error tracking (Sentry) is out of this run.
+- Heavy lock: typecheck, bundle budget, build and journeys run under
+  `flock /tmp/suite-uf-heavy.lock` (7 GB RAM, `earlyoom`). At most two
+  frontend implementers at once.
 - Site lock: every `run-tests`, `migrate`, `bench execute` and browser
   journey on `slides.localhost` runs under `flock /tmp/suite-uf-site.lock`.
 
@@ -21,25 +24,25 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Unit | Branch | Status | Merge | Notes |
 |---|---|---|---|---|
 | Stage 0 baseline | `forge/uf-0-baseline` | done | `06d5c0225` | upstream `a3dba155c` merged at `98a0558fb`; codex review: 3 fixes applied |
-| Stage 1 frame rework | `forge/uf-1-frame-rework` | in progress | | |
-| Stage 2 link credentials | `forge/uf-2-link-credentials` | in review (`apps/drive/index.ts` patch after stage 1) | | |
-| Stage 3 four fixes | `forge/uf-3-shell-fixes` | in progress | | |
-| Stage 4 settings | | waiting on 1, Drive 39 | | |
+| Stage 1 frame rework | `forge/uf-1-frame-rework` | done | `b7f3b49f7` | codex review: sheet focus and phone-to-desktop close; AccountSheet named. Shell journeys 24 of 24 |
+| Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
+| Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
+| Stage 4 settings | `forge/uf-4-settings` | review fixes in progress | | codex review: 10 findings (phone profile lists, typed Mail openSettings, Admin dashboard row, drill-in history, focus trap) |
 | Stage 5 adoption | | waiting on 1, 3, 4 | | |
 | Stage 6 flip plumbing | | waiting on 5 | | |
 | Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
 | Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
-| Stage 10 upload, restore, batch | | waiting on 8, Drive 42 | | |
-| Stage 11 document surfaces | | waiting on 0 (parts on 2, 8, 9, Drive 47) | | |
+| Stage 10 upload, restore, batch | | waiting on 8 | | |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer merged into the stage branch (`cefc6916e`); Sheets fixing 8 review findings; Slides and Drive sub-lanes waiting | | Writer: codex review, 7 fixes plus recovery-copy expiry. Sheets journey 2 of 2 |
 | Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | | waiting on 0 | | |
-| Drive 42 upload, restore, purge routes | | waiting on 0 | | |
-| Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | in progress | | |
-| Drive 44 grants, passwords, share email | | waiting on 0 | | |
-| Drive 45 legacy-call counter | | waiting on 0 | | |
+| Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
+| Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
+| Drive 44 grants, passwords, share email | `forge/drive-44-grants-passwords-email` | done | `740cd8cca` | codex review: ancestor link secrets redacted unless the caller manages that ancestor; enqueue failure after commit never fails the PUT; `send_to` takes one address |
+| Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | in progress | | |
 | Drive 47 recents content doctype filter | | waiting on 0 | | |
-| Suite S1 to S4 | | waiting on 0 | | |
+| Suite S1, S2 (server) | `forge/uf-suite-asks-s1-s3` | done | `9852ca10b` | codex review: bounded people cursor. S3 moves to stage 8; S4 shipped with stage 11 Writer |
 | Flip rehearsal | | waiting on all | | |
 
 ## Open questions for Faris
@@ -62,17 +65,65 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    nodes, writes included (ticket 008 says "a read or listing"), so a
    node created through a link stays reachable.
 
+4. **Writer automatic versions on `/d/` (stage 11).** The Writer editor
+   asks for `new_version` on the first edit of each page load. Drive
+   refuses it for a Drive-owned document, so it threw on every `/d/`
+   document. The surface now skips it. Option: route it through
+   `session.versions.create('auto')`; Drive does not throttle, so each
+   first edit per load would add a version that counts against quota.
+   Interim: skipped.
+5. **Mentions for non-admins (stage 11).** Writer mentions read
+   `GET /api/suite/users`, which answers only a System Manager, so other
+   users see an empty list until Suite ask S1 (`/api/suite/people`)
+   ships. Interim: accepted; S1 is in this run's backend lane.
+
+6. **Replace after a collision (Drive 42).** `POST /uploads` refuses a
+   taken name (D11), including the file a Replace targets. Orchestrator
+   ruling: `create_upload` takes an optional `replaces`; it checks EDIT
+   on that node and skips the name check for it only, and the session can
+   finish only as that replace. One round trip, as ticket 007 implies.
+   D15 is a separate `POST /nodes/batch/purge` route, not a flag.
+
+7. **Share button on a Sheets document (stage 11, Sheets).**
+   `new-and-open.spec.ts:146` (a `fixme`) expects no Share button on a
+   Sheets document; the Sheets brief asks for a disabled one until stage 9.
+   Interim: disabled button with a tooltip. Stage 9 decides.
+8. **Sheets cell Notes next to Drive Comments.** Both now show, with
+   similar icons. Interim: both stay.
+9. **Who a non-admin sees in `/api/suite/people` (S1).** Interim: any
+   `Suite User` sees all enabled System Users and all User Groups, and
+   the caller is listed. `member_count` counts disabled members, as legacy
+   did.
+10. **Deny plus `notify` (Drive 44).** A deny grant with `notify: true`
+    sends no email. Interim: accepted.
+11. **Stage 4 settings details.** Mail PWA Notifications has no Settings
+    row (still reachable from Mail's Profile view); Mail Credentials now
+    shows only under the JMAP condition; Workspace has two tabs, General
+    and Users.
+
+## Needs a manual check (cannot run on this devbox)
+
+- iOS standalone keyboard in Mail after stage 3 removed body
+  `overflow:hidden` (Mail's focusout scroll reset remains).
+- Mail dark mode safe-area strips on a phone.
+
 ## Old bugs found, assigned to a unit
 
 | Bug | Found in | Assigned to |
 |---|---|---|
-| `shell/MobileNav.vue` passes `:to`; frappe-ui item takes `route`, so phone nav items do nothing | stage 0 | stage 1 |
+| `shell/MobileNav.vue` passes `:to`; frappe-ui item takes `route`, so phone nav items do nothing | stage 0 | stage 1 (fixed) |
 | Capability journeys assume Administrator has no mail account; the site has `administrator@suite.test` since 2026-09-18 | stage 0 | stage 1 (shell journeys), stage 5 |
 | `FilePreviewSurface.vue` passes `:link`; Button takes `href`, so Download does nothing | stage 0 | stage 11 (Drive sub-lane) |
 | Writer surface throws on `storage.styleClipboard` | stage 0 | stage 11 (Writer) |
-| `test_shims` permanent-surface check fails on `api.product.set_settings` | stage 0 | Drive 39 |
+| `test_shims` permanent-surface check fails on `api.product.set_settings` | stage 0 | Drive 39 (fixed) |
 | Logout no longer calls `clearSlidesUserData` (merge regression) | stage 0 | stage 0 |
 | Upstream `SuiteCommandPalette.vue` calls legacy `suite.drive.api.*` for search | stage 0 review | stage 11 (legacy-call baseline) |
+| `/mail` stays blank and does not redirect to the inbox | stage 3 | stage 5 (Mail sub-lane) |
+| Calendar opens a site socket per mount and never closes it | stage 3 | stage 5 (Calendar sub-lane) |
+| `shell/SuiteLayout.vue` is mounted nowhere; its theme-cycle and Mod+Shift+Comma shortcuts are dead | stage 3 | stage 15 |
+| Slides composite references are Reference Presentation row ids, not node ids, so a separately linked deck sends no code. Needs the manifest to return each reference's node id (backend ask) | stage 2 review | stage 11 (Slides) |
+| Legacy share shim maps `read, write, comment` without `upload` to COMMENT, so the old-page journey "editor can edit" fails now that Writer shows the real Drive role. Not checked on the base commit | stage 11 Writer | Drive program (check `shims._legacy_role`) |
+| Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Baselines

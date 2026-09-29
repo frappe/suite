@@ -1,5 +1,8 @@
 <template>
   <div class="min-w-0 text-ink-gray-8">
+    <AreaSidebar area="files" title="Files" :loading="discovered.status === 'pending' && !discovered.data">
+      <FilesPanel />
+    </AreaSidebar>
     <PageHeader class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
         <Breadcrumbs :items="breadcrumbs" />
@@ -133,6 +136,7 @@ import { observeDriveChanges } from '@/apps/drive/client/realtime'
 import { roots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveBatchResult, type DriveNode } from '@/apps/drive/client/types'
 import { view } from '@/apps/drive/client/views'
+import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 import { confirm, prompt, toast } from '@/platform/feedback'
 import { useMutation, useQuery } from '@/platform/server-state'
@@ -154,6 +158,7 @@ import {
   type FilesSort,
 } from '../features/presentation'
 import { slugify } from '../internal/slugify'
+import FilesPanel from './FilesPanel.vue'
 
 type Destination = 'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
 
@@ -212,7 +217,10 @@ const breadcrumbs = computed(() => {
   if (props.destination !== 'folder') return [{ label: destinationLabel.value, route: route.path }]
   const items = detail.data?.breadcrumbs?.map((crumb) => ({
     label: crumb.title,
-    route: { path: `/files/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`, query: presentationQuery.value },
+    route: {
+      path: rootPath(crumb.name) ?? `/files/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
+      query: presentationQuery.value,
+    },
   })) ?? []
   return [...items, { label: detail.data?.title ?? 'Folder', route: route.fullPath }]
 })
@@ -295,8 +303,13 @@ watch(() => route.fullPath, () => {
   searchText.value = String(route.query.q ?? '')
   clearSelected()
 })
+// A root never shows as a folder route. Its own route replaces it [T001, T015].
+watch(() => [props.destination, String(route.params.node ?? ''), discovered.data] as const, ([destination, id]) => {
+  const root = destination === 'folder' ? rootPath(id) : null
+  if (root) void router.replace({ path: root, query: route.query })
+}, { immediate: true })
 watch(() => detail.data, (folder) => {
-  if (!folder || props.destination !== 'folder') return
+  if (!folder || props.destination !== 'folder' || rootPath(folder.name)) return
   const expected = slugify(folder.title)
   if (String(route.params.slug ?? '') !== expected) {
     void router.replace({ path: `/files/f/${encodeURIComponent(folder.name)}${expected ? `/${expected}` : ''}`, query: route.query })
@@ -381,7 +394,13 @@ function onMobileBack() {
   if (selectionMode.value) clearSelected()
 }
 function requestPanel() {
-  window.dispatchEvent(new CustomEvent('suite:open-active-area-panel', { detail: { area: 'files' } }))
+  openAreaSidebar('files')
+}
+function rootPath(id: string): string | null {
+  if (!id) return null
+  if (id === discovered.data?.personal.node) return '/files'
+  if (id === discovered.data?.organization?.node) return '/files/organization'
+  return null
 }
 function switchTrashRoot(value: string | number) {
   clearSelected()

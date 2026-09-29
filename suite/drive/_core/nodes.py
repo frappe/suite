@@ -16,7 +16,7 @@ from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.url import signed_url_for_blob
-from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
+from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
@@ -38,6 +38,7 @@ from suite.drive._core.errors import (
     DriveConflict,
     DriveForbidden,
     DriveNotFound,
+    DriveRestoreDestinationRequired,
 )
 from suite.drive._core.errors import (
     rollback_savepoint as _rollback_savepoint,
@@ -340,6 +341,33 @@ def get(principals: Principals, node: str) -> frappe._dict:
     row = _node(node)
     require(row, READ, principals)
     return row
+
+
+# The kinds the Drive area opens as a folder. Every other kind opens in the
+# document host. A root is here too: the router replaces `/drive/f/<root>` with
+# `/drive` or `/drive/organization` (unified frontend spec §2.2).
+FOLDER_KINDS = frozenset({"root", "folder"})
+
+
+def node_url(node: str) -> str:
+    """Answer the browser address of one node (unified frontend spec §14.5).
+
+    `suite_flip_files` in the site config selects which route table mounts
+    under `/drive`, so the address follows it. With the key on, a folder or a
+    root opens at `/drive/f/<id>` and every other kind at `/d/<id>`. With the
+    key off, every kind opens at `/drive/g/<id>`, the old pages' kind-agnostic
+    address, and no row is read.
+
+    No role is checked. An address says where a node opens; the page that
+    opens asks for the node and is refused there. No slug is added: the router
+    adds one.
+    """
+    if not cint(frappe.conf.get("suite_flip_files")):
+        return f"/drive/g/{node}"
+    kind = frappe.db.get_value("Drive Node", node, "kind")
+    if kind is None:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
 
 
 def stored(node: str) -> frappe._dict:
@@ -713,19 +741,7 @@ def available_title(principals: Principals, parent: str, title: str) -> str:
     _validate_parent(parent_row)
     if not isinstance(title, str) or not title.strip():
         frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
-
-    def taken(candidate: str) -> bool:
-        return bool(
-            frappe.db.exists("Drive Node", {"parent": parent_row.name, "title": candidate, "state": "Active"})
-        )
-
-    if not taken(title):
-        return title
-    stem, extension = os.path.splitext(title)
-    suffix = 2
-    while taken(f"{stem} ({suffix}){extension}"):
-        suffix += 1
-    return f"{stem} ({suffix}){extension}"
+    return _free_title(parent_row.name, title, for_update=False)
 
 
 def create_folder(principals: Principals, parent: str, title: str) -> str:
@@ -1178,8 +1194,13 @@ def update(
     content_modified: datetime | int | float | str | None = None,
     _via_link: str | None = None,
     _bound_parent: str | None = None,
+    _keep_old_head: bool = True,
 ) -> dict:
-    """Apply one complete node mutation, or restore with an explicit parent."""
+    """Apply one complete node mutation, or restore with an explicit parent.
+
+    `_keep_old_head=False` is the browser replace (§8.5): §8.4's finish passes
+    it, and WebDAV and internal workflows leave it set.
+    """
     if any(value is not None for value in (blob, size, mime)):
         if title is not None or parent is not None or state is not None:
             frappe.throw(_("A file replacement cannot include a tree mutation"), frappe.ValidationError)
@@ -1192,6 +1213,7 @@ def update(
             content_modified=content_modified,
             _via_link=_via_link,
             _bound_parent=_bound_parent,
+            _keep_old_head=_keep_old_head,
         )
 
     if content_modified is not None:
@@ -1257,6 +1279,7 @@ def _replace_file(
     content_modified: datetime | int | float | str | None = None,
     _via_link: str | None = None,
     _bound_parent: str | None = None,
+    _keep_old_head: bool = True,
 ) -> dict:
     """Replace a file head, preserving a nonempty old head as one auto version.
 
@@ -1265,6 +1288,10 @@ def _replace_file(
     are §8.4's bound finish and the WebDAV PUT, and each stored what it
     passes. `create_file`'s `_client_named_blob` proof has nothing to guard on
     this path (`test_blob_provenance`).
+
+    `_keep_old_head=False` is §8.5's browser exception: no version is written,
+    and the old head's charge is released before the new head is admitted, so
+    the root moves by new - old.
     """
     if blob is None or size is None or mime is None:
         frappe.throw(_("A file replacement requires blob, size, and MIME type"), frappe.ValidationError)
@@ -1287,11 +1314,15 @@ def _replace_file(
         _validate_existing_head(current)
 
         version = None
-        if current.blob and int(current.size or 0) > 0:
+        if not _keep_old_head:
+            # Nothing references the old head any more, so its charge goes.
+            # The framework GC reclaims the blob once no row names it.
+            release(current.root, int(current.size or 0))
+        elif current.blob and int(current.size or 0) > 0:
             version = _preserve_head(current, principals)
 
-        # The old head's existing charge becomes the version's charge. Only
-        # the new head increases total logical usage, including same-blob edits.
+        # A kept old head's charge becomes the version's charge. Only the new
+        # head increases total logical usage, including same-blob edits.
         admit(current.root, blob_row.file_size)
         frappe.db.delete("Drive Node Preview", {"node": current.name})
         frappe.db.set_value(
@@ -1508,7 +1539,9 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
             reparented_to = None
         else:
             if parent is None:
-                raise DriveConflict(_("Choose an active destination before restoring this node"))
+                raise DriveRestoreDestinationRequired(
+                    _("Choose an active destination before restoring this node")
+                )
             destination = _node(parent, for_update=True)
             reparented_to = destination.name
 
@@ -1557,6 +1590,18 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
     return _node(current.name)
 
 
+def stored_ancestors(nodes: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    """Each stored node's non-root ancestor ids, read from its `path`.
+
+    An id with no stored row is absent. The result says nothing about access;
+    a caller uses it to order work, never to decide who may do it.
+    """
+    if not nodes:
+        return {}
+    rows = frappe.get_all("Drive Node", filters={"name": ["in", list(nodes)]}, fields=["name", "path"])
+    return {row.name: tuple(part for part in (row.path or "").split("/") if part) for row in rows}
+
+
 def purge(principals: Principals, node: str) -> int:
     """Permanently remove a non-root subtree and release its logical bytes."""
     savepoint = f"drive_purge_{uuid4().hex[:12]}"
@@ -1597,6 +1642,48 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
     except DriveNotFound as exc:
         _rollback_savepoint(savepoint, exc)
         return 0
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return count
+
+
+def empty_trash(principals: Principals, root: str) -> int:
+    """Purge every trashed tree in one root, and return how many nodes went.
+
+    Trash is listed per root (§5.6), so it is emptied per root. MANAGE on the
+    root node is the one check: below READ the root is hidden (404), and
+    below MANAGE it is forbidden (403). The trash empties whole or not at all.
+
+    Trash roots are purged shallowest first. A tree trashed earlier inside one
+    trashed later goes with the outer tree, and is skipped when its turn comes.
+    """
+    savepoint = f"drive_empty_trash_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        current = _node(root, for_update=True)
+        via_link = require(current, MANAGE, principals)
+        if current.kind != "root":
+            raise DriveConflict(_("Only a Drive root has a trash to empty"))
+        trash_roots = frappe.db.sql(
+            """
+            SELECT name FROM `tabDrive Node`
+            WHERE root = %(root)s AND state = 'Trashed' AND trash_root = name
+            ORDER BY CHAR_LENGTH(path), name
+            """,
+            {"root": current.name},
+            pluck=True,
+        )
+        count = 0
+        for name in trash_roots:
+            trashed = frappe.db.get_value("Drive Node", name, NODE_FIELD_NAMES, as_dict=True, for_update=True)
+            if not trashed or trashed.state != "Trashed":
+                continue
+            subtree = _subtree(trashed)
+            _validate_purge_root(trashed)
+            count += _purge_locked(trashed, principals, via_link=via_link, subtree=subtree)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise
@@ -1940,25 +2027,35 @@ def _require_restore_actor(node: dict, principals: Principals, via_link: str | N
 
 
 def _deduplicated_title(parent: str, title: str, *, exclude: str | None = None) -> str:
-    if not _title_exists(parent, title, exclude=exclude):
+    return _free_title(parent, title, exclude=exclude, for_update=True)
+
+
+def _free_title(parent: str, title: str, *, exclude: str | None = None, for_update: bool) -> str:
+    """Return §8.6's free title: `title` itself, else the first free ` (n)`.
+
+    The oldest keeps the plain title and later ones get ` (2)`, ` (3)`, before
+    the extension. Only Active siblings count, so a Trashed one never blocks.
+    """
+    if not _title_exists(parent, title, exclude=exclude, for_update=for_update):
         return title
     stem, extension = os.path.splitext(title)
     suffix = 2
-    while _title_exists(parent, f"{stem} ({suffix}){extension}", exclude=exclude):
+    while _title_exists(parent, f"{stem} ({suffix}){extension}", exclude=exclude, for_update=for_update):
         suffix += 1
     return f"{stem} ({suffix}){extension}"
 
 
-def _title_exists(parent: str, title: str, *, exclude: str | None = None) -> bool:
+def _title_exists(parent: str, title: str, *, exclude: str | None = None, for_update: bool = True) -> bool:
+    lock = "FOR UPDATE" if for_update else ""
     return bool(
         frappe.db.sql(
-            """
+            f"""
             SELECT name
             FROM `tabDrive Node`
             WHERE parent = %(parent)s AND state = 'Active' AND title = %(title)s
               AND (%(exclude)s IS NULL OR name <> %(exclude)s)
             LIMIT 1
-            FOR UPDATE
+            {lock}
             """,
             {"parent": parent, "title": title, "exclude": exclude},
         )
@@ -2252,20 +2349,18 @@ def _validate_title(title: str) -> None:
         frappe.throw(_("A Drive file title is required"), frappe.ValidationError)
 
 
-def _refuse_sibling_collision(parent: str, title: str, *, exclude: str | None = None) -> None:
-    collision = frappe.db.sql(
-        """
-        SELECT name
-        FROM `tabDrive Node`
-        WHERE parent = %(parent)s AND title = %(title)s AND state = 'Active'
-          AND (%(exclude)s IS NULL OR name <> %(exclude)s)
-        LIMIT 1
-        FOR UPDATE
-        """,
-        {"parent": parent, "title": title, "exclude": exclude},
-    )
-    if collision:
-        raise DriveConflict(_("An active Drive node with this title already exists"))
+def _refuse_sibling_collision(
+    parent: str, title: str, *, exclude: str | None = None, for_update: bool = True
+) -> None:
+    """Refuse a title an Active sibling holds, naming the free one (§8.6).
+
+    A write path locks the candidate rows, so the answer holds until it
+    commits. The upload preflight reads without a lock: it writes nothing, and
+    its finish checks again under the lock.
+    """
+    free = _free_title(parent, title, exclude=exclude, for_update=for_update)
+    if free != title:
+        raise DriveConflict(_("An active Drive node with this title already exists"), free_title=free)
 
 
 # Page size for both blob-source scans below. Storage dedup is

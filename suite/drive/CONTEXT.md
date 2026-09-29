@@ -217,6 +217,11 @@ One person's pointer at one Activity, with whether they have seen it. It
 says nothing the Activity does not.
 _Avoid_: Alert, Message, Inbox item
 
+**Share Email**:
+One email that tells one address a node or a Share Link was shared with
+it. Sent only when the grant write asks for it, and never stored as a flag.
+_Avoid_: Invite, Invitation, Share notification
+
 ### Deployment
 
 **Business site**:
@@ -322,8 +327,10 @@ _Avoid_: Deletion, Ownership transfer, Handover
   else.
 - **Versions**, **Comments**, and the **Preview** belong to the node. They go
   when the node is purged. Trashing the node keeps them.
-- Replacing a file's bytes keeps the old bytes as a **Version** and replaces
-  the **Preview**.
+- Replacing a file's bytes replaces the **Preview**. Over WebDAV, and inside
+  Drive's own workflows, it also keeps the old bytes as a **Version**. A
+  replace from the browser keeps no **Version**: the person confirmed that
+  the old file is not kept.
 - Drive keeps every named or pinned **Version**. It thins the automatic ones
   as they age, on one ladder for every node kind.
 - A **Satellite** has no rights of its own. The node decides.
@@ -350,7 +357,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A write that would take **Usage** past **Quota** is refused. **Usage**
   never passes **Quota** by a write.
 - Purging a node, thinning a **Version**, or releasing a **Reservation**
-  lowers **Usage**. Trashing lowers nothing.
+  lowers **Usage**. A browser replace releases the old bytes, then charges the
+  new ones. Trashing lowers nothing.
 - Moving a node to another **Drive Root** moves its charge, **Versions**
   included. A **Reservation** never moves.
 - Copying a node charges the destination root for the copy alone, because

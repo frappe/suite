@@ -52,6 +52,8 @@ vi.mock("frappe-ui", async () => {
     PageHeaderMobile: passthrough,
     PageHeaderTitle: passthrough,
     ScrollArea: passthrough,
+    SidebarItem: passthrough,
+    SidebarLabel: passthrough,
     Skeleton: passthrough,
     toast: { success: vi.fn() },
   };
@@ -88,6 +90,17 @@ vi.mock("vue-router", async () => {
       },
     }),
     useRouter: () => ({ push: state.push }),
+  };
+});
+
+vi.mock("@/platform/area-sidebar", async () => {
+  const { defineComponent, h } = await import("vue");
+  return {
+    AreaSidebar: defineComponent({
+      setup(_props, { slots }) {
+        return () => h("aside", slots.default?.());
+      },
+    }),
   };
 });
 

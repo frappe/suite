@@ -1,5 +1,8 @@
 <template>
   <div class="flex h-full min-h-0 flex-col">
+    <AreaSidebar area="home" :title="__('Home')">
+      <HomePanel />
+    </AreaSidebar>
     <PageHeader v-if="!isMobile">
       <div class="flex w-full items-center justify-between">
         <PageHeaderTitle :title="__('Home')" />
@@ -346,6 +349,7 @@ import {
 } from "@/apps/drive";
 import { createRoom, scheduleMeeting } from "@/apps/meet";
 import { documentTypes } from "@/composition/documentRegistry";
+import HomePanel from "@/composition/home/HomePanel.vue";
 import {
   formatEventTime,
   formatOpenedAt,
@@ -353,6 +357,7 @@ import {
   homeEventWindow,
   toLocalDateTimeInput,
 } from "@/composition/home/homeTime";
+import { AreaSidebar } from "@/platform/area-sidebar";
 import { useMutation, useQuery } from "@/platform/server-state";
 import { translate as __ } from "@/platform/translation";
 import { isMobile } from "@/shell/useIsMobile";

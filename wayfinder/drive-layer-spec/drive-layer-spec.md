@@ -352,6 +352,7 @@ The only permission table. Naming: `autoname: hash`.
 | `role` | Int | | reqd 1 | One of 0, 10, 20, 30, 40, 50. 0 is a stored deny. |
 | `expires_on` | Datetime | | | The grant stops at this moment. Valid on every principal [008 §8]. |
 | `password_hash` | Data | | length 255 | Passlib hash. Valid on `$LINK:*` only [008 §8]. |
+| `sent_to` | Data | Email | | The address a new link was emailed to (§5.9 `send_to`). Set on `$LINK:*` only, at mint time [issue 44, D21]. |
 
 Accepted in [accepted decisions](#accepted-decisions): all grants target a
 `Drive Node`, including grants on a root. Use a normal Link. The permission
@@ -361,7 +362,7 @@ never a grant target. Drive still owns explicit removal and purge ordering.
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `UNIQUE grant_node_principal (node, principal)` | `add_unique` in `on_doctype_update()` | The engine's two hot queries: grants on the parent chain and grants on the page's child ids, both `node IN (...) AND principal IN (...)`. Also the share dialog's list for one node, and the one-row-per-pair rule. |
-| `grant_principal (principal, node)` | `add_index` | Shared-with-me and archived-roots, both `principal IN (...)` (§5.4, §5.5). Also link lookup by token, `principal = '$LINK:<token>'`, on `/drive/l/<token>` and on unlock. |
+| `grant_principal (principal, node)` | `add_index` | Shared-with-me and archived-roots, both `principal IN (...)` (§5.4, §5.5). Also link lookup by token, `principal = '$LINK:<token>'`, on `/l/<token>` and on unlock. |
 
 ### 3.4 `Drive Node Version`
 
@@ -1222,8 +1223,14 @@ needs MANAGE at the node, like the share dialog it feeds (§11).
 
 ```python
 def grant(node_id: str, principal: str, role: int, p: Principals, *,
-          expires_on: datetime | None = None, password: str | None = None) -> dict:
+          expires_on: datetime | None = None, password: str | None | Keep = KEEP,
+          send_to: str | None = None, notify: bool = False) -> dict:
 ```
+
+`password` is a patch: `KEEP` (the default, an omitted field over HTTP)
+leaves the stored hash, `None` clears it, and a string sets it. `role` and
+`expires_on` are replaced on every write; `expires_on=None` clears the expiry
+[issue 44, D20].
 
 Refusal list, in order. Every refusal is a raise, and none of them
 writes a row.
@@ -1242,6 +1249,8 @@ writes a row.
 | 10 | `password` is set and the principal is not a link | `DriveForbidden` | [008 §8] |
 | 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included) | `DriveForbidden` | [002] |
 | 12 | `expires_on` is in the past | `frappe.ValidationError` | |
+| 13 | `send_to` is given and the principal is not the bare `$LINK`, or `send_to` is not exactly one bare email address | `frappe.ValidationError` | [issue 44, D21] |
+| 14 | `notify` is true and the principal is not an `<email>` | `frappe.ValidationError` | [issue 44, D22] |
 
 Refusals 7, 8, and 11 bind a Suite Admin as well.
 
@@ -1253,13 +1262,22 @@ What it does when nothing refuses:
 
 1. When `principal == "$LINK"` with no token, mint one: 22 chars base62.
    The stored principal is `$LINK:<token>` [014].
-2. Hash `password` with the same passlib context as User passwords
-   [008 §3].
-3. Upsert on `(node, principal)`: insert, or update `role`,
-   `expires_on`, and `password_hash`.
-4. Write one activity row (§5.12).
-5. Return the row. For a link, the response carries the URL
-   `/drive/l/<token>` [014].
+2. Hash a string `password` with the same passlib context as User
+   passwords [008 §3].
+3. Upsert on `(node, principal)`: insert, or update `role` and
+   `expires_on`, and `password_hash` only when `password` is not `KEEP`.
+   Changing a link's expiry alone never clears its password [issue 44, D20].
+   A new link minted with `send_to` stores the address in `sent_to`.
+4. Write one activity row (§5.12). `has_password` describes the row after
+   the write.
+5. Return the row with `sent_to`. For a link, the response carries the URL
+   `/l/<token>` [014; unified frontend ask D17].
+6. With `send_to`, queue one share email to that address with the link URL.
+   With `notify`, queue one share email to the user with `node_url(node)`
+   (§9.5). Neither is stored as a flag, and a role 0 write sends none.
+
+One outsider address means one link: two sends to the same address mint two
+rows [unified frontend spec §7.8].
 
 There is no grant ceiling. A MANAGE holder may set any role up to
 MANAGE. Self-removal is allowed, self-lockout included [002].
@@ -1358,8 +1376,8 @@ def unlock_link(token: str, password: str) -> dict
 
 No role is needed: the password is the proof. It reads the grant by
 `principal = '$LINK:<token>'` (index `grant_principal`), verifies the
-passlib hash, and returns `{"ticket": make_ticket(...)}`, valid 30
-days. It writes no row anywhere. Rate limit in §6.3. It raises
+passlib hash, and returns `{"ticket": make_ticket(...), "expires": exp}`,
+valid 30 days; `expires` is the ticket's Unix expiry. It writes no row anywhere. Rate limit in §6.3. It raises
 `DriveLinkExpired` when the grant is past `expires_on`, and
 `DriveNotFound` when the token names no grant.
 
@@ -1418,10 +1436,15 @@ node [008 §1].
 
 ### 6.2 Transport is stateless
 
-The URL `/drive/l/<token>` seeds the client. The server resolves the grant,
-redirects to the node route, and seeds the token, so the node id never appears
-in a shared URL and a rotation changes the URL [008 §9]. The SPA keeps tokens
-in `localStorage`, associated with the file or folder resolved by each link.
+The URL `/l/<token>` seeds the client. The server resolves the grant,
+redirects to the node's address, and seeds the token in the URL fragment
+(`#link=<token>`), so the node id never appears in a shared URL and a rotation
+changes the URL [008 §9]. The address comes from `node_url`, on the Drive
+Python interface. It reads `suite_flip_files` from the site config: with the
+key on, a folder or a root opens at `/drive/f/<id>` and every other kind at
+`/d/<id>`; with it off, every kind opens at `/drive/g/<id>` [unified frontend
+ask D24]. The SPA keeps tokens in `localStorage`, associated with the file or
+folder resolved by each link.
 
 Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): the browser
 sends only link codes relevant to the current operation in `X-Drive-Links`.
@@ -1452,7 +1475,8 @@ requests, and Guest has no CSRF token); a server-side link-session doctype
 
 Rate limit, per token, in the site cache: **5 failures in 15 minutes**, then a
 **15-minute lockout**. The counter key is `drive:link_unlock:<token>`, and a
-success clears it. The shape follows the framework's login-attempt tracker
+success clears it. The failure that sets the lockout answers 429, as does every
+attempt during it, with `Retry-After` set to the seconds left (§11.2). The shape follows the framework's login-attempt tracker
 [008 §3].
 
 A node reached through a password link with no ticket answers `DriveLocked`
@@ -1808,7 +1832,8 @@ def children(p: Principals, parent: str, *, cursor: str | None = None, limit: in
 def views(p: Principals, name: str, *, cursor: str | None = None, limit: int = 60, **filters) -> dict: ...
 
 # suite/drive/_core/upload.py
-def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None) -> dict: ...
+def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None,
+	replaces: str | None = None) -> dict: ...
 def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, title: str | None = None,
 	checksum: str | None = None, content_modified: datetime | None = None,
 	replaces: str | None = None) -> str: ...
@@ -1816,7 +1841,21 @@ def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, t
 
 `finish_upload` takes either `parent` and `title` (a create) or `replaces`
 (a replace), never both and never neither. Any other combination raises
-`frappe.ValidationError`. `PUT /nodes/<id>/content` is the replace form and
+`frappe.ValidationError`.
+
+`create_upload(replaces=<node>)` opens a replace session. It needs EDIT on
+that node, which must be an Active file below `parent`. The node's own title
+does not block `filename`; another sibling's title still does. The session
+finishes only with the same `replaces`: a finish with `parent` and `title`, or
+with a different `replaces`, raises `DriveForbidden` before any byte is
+claimed. This is how a client replaces after a collision (unified frontend
+ask D11). Its quota preflight asks only for the growth over the replaced
+head (§8.4 step 3).
+
+A create finish checks `title` under the parent-chain lock before storage
+claims the session (§8.4 step 6). A finish that loses its title to a
+concurrent one gets `DriveConflict` with `free_title` and keeps its session,
+so the client retries that session under the free title. `PUT /nodes/<id>/content` is the replace form and
 `POST /uploads/<upload_id>/finish` is either (§11.2).
 
 ### 8.2 Role, activity, quota, refusals
@@ -1837,7 +1876,7 @@ def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, t
 | `copy` | READ on `node`, UPLOAD on `parent` [009 §8] | `create`: `kind`, `title`, `copied_from` | `+size` of the new nodes on the destination root; no version is copied | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 | `children` | READ on `parent` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
 | `views` | per view, see §11 | none | none | `DriveForbidden` |
-| `create_upload` | UPLOAD on `parent` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveOverQuota` |
+| `create_upload` | UPLOAD on `parent`; EDIT on `replaces` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (with `free_title`) |
 | `finish_upload` | UPLOAD on `parent`; EDIT on `replaces` | `create` or `edit` | `+actual size` through the admission `UPDATE` | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 
 Rules that hold for every row above.
@@ -1887,9 +1926,15 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
 1. `POST /api/suite/drive/uploads` with `parent`, `filename`, `size`.
    The handler calls `sdk.upload.create_upload`.
 2. `access.require(parent, UPLOAD)`.
-3. Preflight, a plain read and no write: `Drive Root.used_bytes` and
-   `quota.effective_quota(root)` (§7.4). Refuse with `DriveOverQuota` when
-   the quota is not 0 and `size > quota - used` [010 §5]. `quota.admit`
+3. Preflight, a plain read and no write. First `filename` against the
+   Active siblings of `parent`: a collision answers `DriveConflict` with
+   `free_title` (§8.6), and no session is created. Finish checks the title
+   again, because it can be taken during the upload. Then
+   `Drive Root.used_bytes` and `quota.effective_quota(root)` (§7.4). Refuse with `DriveOverQuota` when
+   the quota is not 0 and `size > quota - used` [010 §5]. A replace
+   session asks for `size - <replaced head size>` instead, never below 0,
+   because the finish releases the old head before it admits the new one
+   (§8.5). `quota.admit`
    does not run here; no byte has landed and no counter moves.
 4. Call the internal `frappe.storage.upload.create_blob_upload(filename,
    size, is_private=True)` (§13.7), after Drive authorization. Bind the
@@ -1906,6 +1951,12 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
 6. `POST /api/suite/drive/uploads/<upload_id>/finish` with `parent`,
    `title`, optional `checksum`, optional `content_modified` (epoch ms),
    optional `replaces`. The handler calls `sdk.upload.finish_upload`.
+   A create locks the parent chain (the order `create_file` uses) and checks
+   `title` against the Active siblings before step 7. A collision answers
+   `DriveConflict` with `free_title`, and the session is not claimed: the
+   client finishes the same session again under a new title. The lock holds
+   until the transaction ends, so of two finishes racing for one title, one
+   creates and the other gets that refusal.
 7. `frappe.storage.upload.finish_upload_to_blob(upload_id, checksum=...)`
    runs only after Drive revalidates the session binding and current
    destination/replacement permissions. It returns a `File Blob` and creates
@@ -1945,12 +1996,21 @@ after its own UPLOAD check. Public waiver keywords are not introduced.
 2. When the current head blob is set and its size is greater than 0, write
    one `Drive Node Version` row of kind `auto` holding the old blob, and
    charge its size to the root. A head of size 0 is not kept
-   [009 §5]. This rule holds for every replace path: the HTTP route, the
-   WebDAV PUT, and internal Drive workflows.
+   [009 §5]. This rule holds for the WebDAV PUT and for internal Drive
+   workflows.
 3. `quota.admit(root, new_size)`.
 4. Write `blob`, `size`, `mime`, and `content_modified` on the node.
 5. Delete the `Drive Node Preview` row and enqueue a render [006 §5].
 6. Activity `edit` with `detail = {"blob", "size", "version": <seq>}`.
+
+The browser replace is the exception (unified frontend ask D13). A replace
+through `POST /uploads/<id>/finish` with `replaces`, or through
+`PUT /nodes/<id>/content`, skips step 2: it writes no version and releases
+the old head's size from the root before step 3. `used_bytes` moves by
+`new - old`, and the recompute (§7.7) agrees. The activity `detail` carries
+`"version": null`. The confirm tells the person the current file is not
+kept. The WebDAV PUT keeps the version, because it is the only undo for an
+editor's save over WebDAV.
 
 ### 8.6 Rename, and the sibling dedupe rule
 
@@ -1960,6 +2020,9 @@ after its own UPLOAD check. Public waiver keywords are not introduced.
   never blocks a title [011 §8].
 - On collision the caller is refused with `DriveConflict`. The UI asks for
   a new title. Drive does not silently suffix a user's rename.
+- The refusal carries `free_title`: the title the dedupe rule below would
+  give. A client offers it as Keep both and never predicts a suffix
+  (unified frontend asks D11, D12).
 - Every path that creates a node without a user in the loop deduplicates
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
@@ -2091,8 +2154,11 @@ Drive must not select the nearest Active ancestor or root automatically.
 - Otherwise, require an explicit eligible Active destination in the same root.
   The client submits the selected destination through `update(parent=...,
   state="Active")`. The HTTP request carries both `parent` and `state`.
-- Without that destination, raise `DriveConflict` before changing any state,
-  paths, titles, or activity. The client must ask the user where to restore.
+- Without that destination, raise `DriveRestoreDestinationRequired`, a
+  `DriveConflict` subclass with status 409, before changing any state,
+  paths, titles, or activity. The envelope `type` is the subclass name, on
+  `PATCH /nodes/<id>` and in a `POST /nodes/batch` failure. The client must
+  ask the user where to restore (unified frontend ask D14).
 - Validate destination access, root, and ancestry before applying the restore.
   Reparenting and subtree path changes occur in the same transaction as the
   state change. Deduplicate the title against the selected destination.
@@ -2131,6 +2197,11 @@ Link field stops naming them [003].
 
 The daily trash sweep purges every node whose `trashed_at` is older than
 30 days, one `trash_root` at a time.
+
+Empty trash is per root, because trash is listed per root (§5.6). It needs
+MANAGE on the root node, and it purges every trash root in that root,
+shallowest first, in one transaction. A tree trashed earlier inside one
+trashed later goes with the outer tree (unified frontend ask D16).
 
 ### 8.9 Copy
 
@@ -2225,7 +2296,7 @@ Who writes a version.
 
 | Trigger | Kind | Role |
 |---|---|---|
-| A file node's bytes are replaced (HTTP, WebDAV, or a Drive workflow) | `auto` | EDIT |
+| A file node's bytes are replaced over WebDAV or by a Drive workflow; a browser replace writes none (§8.5) | `auto` | EDIT |
 | An app calls `take_version` on its save path | `auto` | EDIT |
 | A person names a version | `named` | EDIT |
 | A person marks a milestone or pins one | `milestone`, `pinned = 1` | EDIT |
@@ -2420,6 +2491,17 @@ Rules.
 - A Notification is a pointer at one Activity row. Its message renders from
   that row and cannot drift [011 §10].
 - All three are deleted when their node is purged (§8.8).
+
+**Share email** [issue 44, D21, D22]. A grant write asks for one explicitly:
+`send_to` on a new `$LINK`, or `notify: true` on an `<email>` principal. The
+email names the sharer, the node title, and the role, and links to `/l/<token>`
+for a link or `node_url(node)` for a user, as an absolute URL. `grant`
+registers one after-commit callback that pushes a `frappe.enqueue` job; the
+job calls `frappe.sendmail`. Sending is never on the request path. The
+callback catches and logs any push failure, such as Redis being down, so the
+request still answers with the committed grant and a retry never mints a
+second link. A mail failure never fails the grant. The in-app Notification above is written
+either way.
 
 Every mutating Drive workflow publishes one payload-free `drive:changed`
 realtime event after commit to each affected user's room. Affected users are
@@ -2901,6 +2983,7 @@ are listed.
 | GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
 | GET | `/nodes/<id>/archive/download` | READ on folder | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
+| POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
@@ -2909,6 +2992,16 @@ are listed.
 | POST | `/nodes/<id>/visit` | READ on node | none | `{}` | none |
 | PUT | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
+
+A title collision on `POST /nodes`, for every kind, answers `DriveConflict`
+with `free_title` in the error envelope (§8.6, §11.6).
+
+`POST /nodes/batch/purge` is `DELETE /nodes/<id>` per node, each in its own
+savepoint, with one activity row per purged node (unified frontend ask D15).
+It purges the shallowest selected nodes first. A selected node below a
+selected folder that was purged is gone with it, and is reported in `ok`.
+It is a separate route rather than a `purge` flag on `POST /nodes/batch`, so
+each route takes one body shape.
 
 `GET /nodes/<id>/media` is the deck-media call. It runs one READ check on
 the document, then mints a signed `/f/` URL per child node with a 15-minute
@@ -2927,20 +3020,24 @@ the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| POST | `/uploads` | UPLOAD on `parent` | `{parent, filename, size, mime?}` | `{mode, upload_id, ...}` |
+| POST | `/uploads` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, filename, size, mime?, replaces?}` | `{mode, upload_id, ...}`; 409 with `free_title` when `filename` is taken by a node other than `replaces` |
 | PUT | `/uploads/<upload_id>/chunk` | UPLOAD on `parent` | raw bytes, `?offset=` | `{upload_id, received}` |
 | POST | `/uploads/<upload_id>/finish` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, title, checksum?, content_modified?, replaces?}` | node shape |
 
 `POST /uploads` returns `DriveOverQuota` (413) from the declared size, never
-a permission error [010 §5, 014]. Slide media uploads use this same call
+a permission error [010 §5, 014]. It returns `DriveConflict` (409) with
+`free_title` when an Active sibling of `parent` holds `filename`, before any
+session exists (§8.4, unified frontend ask D11). With `replaces`, the session
+is a replace session (§8.1): that file's own title does not collide, and the
+session finishes only through that replace. Slide media uploads use this same call
 and get the same error [012].
 
 **Grants, links, publishing**
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain | `{grants: [...], explain?: [...]}` |
-| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?}` | `{grant, url?}` |
+| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain; `?inherited=1` for ancestor grants | `{grants: [...], inherited?: [{grant, redacted, source_node, source_title}], explain?: {role, source, rows}}` |
+| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?, send_to?, notify?}` | `{grant, url?}` |
 | DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{"result": "revoked"}`, or `{"result": "revoked", "rows": <n>}` with `below=1` |
 | POST | `/grants/<id>/rotate` | MANAGE on the grant's node | none | `{grant, url}` |
 | POST | `/links/<token>/unlock` | none | `{password}` | `{ticket, expires}` |
@@ -2954,7 +3051,33 @@ and get the same error [012].
   principal's grants on the node and on every node under it, and returns the
   count [002].
 - A link is created with principal `$LINK`; the server mints the 22-char
-  base62 token and returns `url = "/drive/l/<token>"` [008 §1, 014].
+  base62 token and returns `url = "/l/<token>"`. Rotate and the grant list
+  return the same `url` for every link grant [008 §1, 014; unified frontend
+  ask D17].
+- A grant row is `{name, node, principal, role, expires_on, has_password,
+  sent_to, url?}`. `grants` holds the node's local rows, expired ones
+  included. `inherited` holds every live grant on an ancestor, nearest
+  ancestor first, read in one query over the chain (`EXPLAIN_SQL` without
+  the node itself). A deny on the node itself is local and stays in
+  `grants` [issue 44, D19].
+- An inherited link row carries its secrets (token, `url`, `sent_to`, and
+  the grant `name`) only when the caller has MANAGE on its source node.
+  MANAGE on a child does not reach the parent, and an unprotected parent
+  link opens the parent's whole subtree. Otherwise the entry has
+  `redacted: true` and its `grant` is exactly `{node, principal: "$LINK",
+  role, expires_on, has_password}`, with no other key. Every other entry has
+  `redacted: false` and a full grant row.
+- PUT body: `role` and `expires_on` replace; an omitted or null
+  `expires_on` clears the expiry. `password` patches: omitted keeps the
+  hash, null or `""` clears it, a string sets it [issue 44, D20].
+  `send_to: <email>` on `$LINK` mints the link, stores the address, and
+  emails the link. It takes exactly one bare address; a list, a
+  `Name <address>` form, or any other principal is refused with 400. `notify:
+  true` on an `<email>` principal emails that user; it is never stored and
+  omitted means no email (§9.5) [issue 44, D21, D22].
+- `explain` is §5.8's object: `role`, `source`, and `rows`, each row
+  `{node, depth, principal, role, expires_on, pass, held, winner}`
+  [issue 44, D23].
 - Refusals on the grant route: `$PUBLIC` above READ; `$PUBLIC` or `$LINK`
   naming a root node; `password` on a principal that is not `$LINK:*`; a
   link role above EDIT; a deny naming a Personal Root's own user inside
@@ -2963,8 +3086,11 @@ and get the same error [012].
   and writes one `share_edit` activity row carrying `old_principal`
   [008 §8].
 - `unlock` verifies the passlib hash, counts failures per token in the site
-  cache and refuses after 5 in 15 minutes with a 15-minute lockout, then
-  returns `ticket = exp + "." + HMAC-SHA256(site_secret, token + "|" +
+  cache and refuses after 5 in 15 minutes with a 15-minute lockout. A wrong
+  password before the limit answers 401 `DriveLocked`. The fifth failure, and
+  every attempt during the lockout, answers 429 `RateLimitExceededError` with
+  `Retry-After: <seconds left in the lockout>` [unified frontend ask D25].
+  Success returns `ticket = exp + "." + HMAC-SHA256(site_secret, token + "|" +
   password_hash + "|" + exp)` with a 30-day `exp`. No row is written
   [008 §3].
 
@@ -2972,10 +3098,14 @@ Accepted in [accepted decisions](#accepted-decisions): expose `explain` as
 `?principal=<p>` on `GET /nodes/<id>/grants`. The response includes the
 explanation alongside grants. Test authorization and response shape.
 
-`GET /drive/l/<token>` is a website route, not an API route. It resolves
-the grant, seeds the token into the SPA, and redirects to the node route.
-The node id never appears in a shared URL, and rotation changes the URL
-[008 §9].
+`GET /l/<token>` is a website route, not an API route, served by
+`suite/www/drive_link.py`. It resolves the grant and answers 302 to
+`node_url(node)` with `#link=<token>` appended (§6.2). It sends no slug. An
+unknown token answers 404 and an expired one 410, on the same page. The node
+id never appears in a shared URL, and rotation changes the URL [008 §9;
+unified frontend ask D24]. The old address `/drive/l/<token>` answers through
+the same page until the composition redirect table sends it to `/l/<token>`
+(unified frontend spec §14.3).
 
 A composite deck's render is a Slides route, outside the Drive namespace.
 It runs one READ check per referenced deck and returns a reference the
@@ -3035,6 +3165,7 @@ There is no per-row access or breadcrumb query.
 | GET | `/roots/<id>/usage` | own root, or Suite Admin for any | none | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}` |
 | PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
+| POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{purged: <n>}` |
 
 `DELETE /roots/<id>` purges every node in an Archived Root. Only a Suite
 Admin may call it, and only on an Archived Root. It removes the root pair
@@ -3042,6 +3173,10 @@ after descendant and reference cleanup (§3.2). The route id is the shared
 root-node/metadata id. There is no reclaim clock
 [010 §7]. The reservation functions stay Python-only for Meet and get no
 HTTP endpoint [010 §3, 014].
+
+`POST /roots/<id>/trash/empty` purges every trashed tree in the root (§8.8)
+and counts the nodes removed. A caller below READ on the root gets 404, and
+one below MANAGE gets 403 (§5.2).
 
 `GET /roots` returns active root entry points only. `personal` is the
 caller's Personal Root. `organization` is the active Shared Root when the
@@ -3146,6 +3281,12 @@ Partial success is a result, not an error, and the response is 200. `patch`
 takes the same fields as `PATCH /nodes/<id>`. One gesture is one request
 and produces one activity row per node that moved [014 §8].
 
+`POST /nodes/batch/purge` takes `{nodes}` and answers the same shape, in
+purge order: shallowest first, then request order. A node removed by a
+selected ancestor's purge is in `ok`. A
+failure's `type` is the refusal's class name, so a restore that needs a
+destination reads `DriveRestoreDestinationRequired`.
+
 ### 11.6 Errors
 
 ```python
@@ -3159,6 +3300,8 @@ class DriveLocked(DriveError):      http_status_code = 401
 class DriveLinkExpired(DriveError): http_status_code = 410
 class DriveOverQuota(DriveError):   http_status_code = 413
 class DriveConflict(DriveError):    http_status_code = 409
+
+class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
 ```
 
 | Condition | Class | Status |
@@ -3169,6 +3312,7 @@ class DriveConflict(DriveError):    http_status_code = 409
 | Link past `expires_on` | `DriveLinkExpired` | 410 |
 | Admission `UPDATE` hit zero rows | `DriveOverQuota` | 413 |
 | Title taken, or node moved under itself | `DriveConflict` | 409 |
+| Restore with the original parent chain gone and no `parent` | `DriveRestoreDestinationRequired` | 409 |
 
 The body is the v2 envelope, produced by the framework:
 
@@ -3180,6 +3324,15 @@ The body is the v2 envelope, produced by the framework:
 The class name is the code. Over quota is never a permission error, a
 locked link is never a 403, and an expired link is never a locked one
 [014 §5].
+
+A title collision adds one field to its error entry, `free_title`, the
+title §8.6's dedupe rule would give:
+
+```json
+{ "errors": [ { "type": "DriveConflict",
+                "message": "An active Drive node with this title already exists",
+                "free_title": "report (2).pdf" } ] }
+```
 
 ### 11.7 The shim plan
 

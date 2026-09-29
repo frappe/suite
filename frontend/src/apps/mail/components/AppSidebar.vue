@@ -276,17 +276,6 @@ const menuItems = computed(() => [
 					user.data.is_jmap_configured &&
 					route.meta.isDashboard,
 			},
-			{
-				icon: Crown,
-				label: __('Admin Dashboard'),
-				onClick: () => router.push('/mail/dashboard'),
-				condition: () =>
-					user.data.is_jmap_configured &&
-					user.data.is_suite_admin &&
-					user.data.is_suite_cloud_configured &&
-					!route.meta.isDashboard &&
-					!isMobile.value,
-			},
 		],
 	},
 	{
@@ -551,6 +540,18 @@ const sidebarItems = computed(() => {
 	if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)
 
 	if (pinnedItems.length) groups.unshift({ label: '', items: pinnedItems })
+
+	// Admins reach the dashboard from its own row, last in the sidebar.
+	if (
+		user.data.is_jmap_configured &&
+		user.data.is_suite_admin &&
+		user.data.is_suite_cloud_configured &&
+		!isMobile.value
+	)
+		groups.push({
+			label: __('Admin'),
+			items: [{ label: __('Admin Dashboard'), icon: Crown, to: { path: '/mail/dashboard' } }],
+		})
 
 	return groups
 })

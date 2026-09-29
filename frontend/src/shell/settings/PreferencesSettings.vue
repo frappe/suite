@@ -1,6 +1,6 @@
 <template>
-  <AppSettingsHeader :title="__('Preferences')" />
-  <AppSettingsBody>
+  <SettingsTabHeader :title="__('Preferences')" />
+  <SettingsTabContent>
     <!-- pt-2.5 + first row's py-3.5 = 24px, level with the profile tab's pt-6 -->
     <div class="divide-y divide-outline-gray-1 pt-2.5">
       <SettingsRow
@@ -8,7 +8,7 @@
         :description="__('Choose a light, dark, or system-matched interface')"
       >
         <Select
-          :model-value="themeMode"
+          :model-value="theme.savedMode.value"
           :options="THEME_OPTIONS"
           @update:model-value="selectTheme"
         />
@@ -42,7 +42,7 @@
         />
       </SettingsRow>
     </div>
-  </AppSettingsBody>
+  </SettingsTabContent>
 </template>
 
 <script setup lang="ts">
@@ -56,12 +56,12 @@ import {
   toast,
 } from 'frappe-ui'
 
-import { useSessionStore } from '@/boot/session'
-import type { ThemeMode } from '@/platform/theme'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { useSession } from '@/platform/session'
+import { useTheme, type ThemeMode } from '@/platform/theme'
+import { translate as __ } from '@/platform/translation'
+import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
+import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
 import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
-import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const THEME_OPTIONS: { label: string; value: ThemeMode; icon: string }[] = [
   { label: __('Light'), value: 'light', icon: 'lucide-sun' },
@@ -71,14 +71,15 @@ const THEME_OPTIONS: { label: string; value: ThemeMode; icon: string }[] = [
 
 function selectTheme(value?: string | number | null) {
   const option = THEME_OPTIONS.find((candidate) => candidate.value === value)
-  if (option) void switchTheme(option.value)
+  if (option) void theme.set(option.value)
 }
 
-const session = useSessionStore()
+const theme = useTheme()
+const session = useSession()
 
 const user = createDocumentResource({
   doctype: 'User',
-  name: session.user as string,
+  name: session.user.value?.id ?? '',
   auto: true,
 })
 

@@ -15,8 +15,4 @@ export const homeArea: AreaDefinition = {
   icon: HomeIcon,
   to: "/home",
   loadRoutes: () => import("@/composition/home/routes"),
-  loadPanel: () =>
-    import("@/composition/home/HomePanel.vue").then(
-      ({ default: panel }) => panel,
-    ),
 };

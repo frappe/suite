@@ -22,6 +22,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
     login: async () => {},
     logout: async () => {},
     refresh: async () => {},
+    onLogout: () => () => {},
   }
   return { ...actual, useSession: () => session }
 })

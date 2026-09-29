@@ -6,17 +6,15 @@ import { getAppSwitcherItems, getPhoneAppSwitcherItems } from './registry'
 // stands in its own values for them.
 const session = vi.hoisted(() => ({
 	jmapUser: { value: false },
-	systemUser: { value: false },
 }))
 vi.mock('@/boot/session', () => session)
-const { jmapUser, systemUser } = session
+const { jmapUser } = session
 
 const names = (currentApp: string) => getPhoneAppSwitcherItems(currentApp).map((app) => app.name)
 
 describe('getPhoneAppSwitcherItems', () => {
 	afterEach(() => {
 		jmapUser.value = false
-		systemUser.value = false
 	})
 
 	it('leads with the current app, then only the other apps with a phone layout', () => {
@@ -25,10 +23,9 @@ describe('getPhoneAppSwitcherItems', () => {
 		expect(names('calendar')).toEqual(['calendar', 'mail'])
 	})
 
-	it('leaves Desk out even for a system user, since it has no phone layout', () => {
+	it('offers no Desk entry: Open Desk lives in the account menu', () => {
 		jmapUser.value = true
-		systemUser.value = true
-		expect(names('mail')).toEqual(['mail', 'calendar'])
+		expect(getAppSwitcherItems('mail', true).every((app) => app.spa)).toBe(true)
 	})
 
 	it('offers no other app the desktop menu would not', () => {

@@ -156,6 +156,22 @@ class BatchNodes(TypedDict):
     patch: BatchPatch
 
 
+class OpenUpload(TypedDict):
+    parent: str
+    filename: str
+    size: int
+    mime: NotRequired[str]
+    replaces: NotRequired[str]
+
+
+class BatchPurge(TypedDict):
+    nodes: list[str]
+
+
+class Purged(TypedDict):
+    purged: int
+
+
 class BatchFailure(TypedDict):
     node: str
     type: str
@@ -398,10 +414,38 @@ def grant_shape(row: Mapping) -> dict:
         "role": row.get("role"),
         "expires_on": stamp(row.get("expires_on")),
         "has_password": bool(row.get("has_password")),
+        "sent_to": row.get("sent_to"),
     }
     if row.get("url"):
         answer["url"] = row["url"]
     return answer
+
+
+def inherited_grant_shape(row: Mapping) -> dict:
+    """Return one ancestor's grant with the node it sits on (issue 44, D19).
+
+    A `redacted` row is a link on an ancestor the caller does not manage. Its
+    grant has only `node`, `principal` (`$LINK`), `role`, `expires_on`, and
+    `has_password`: no `name`, `url`, or `sent_to` key at all.
+    """
+    grant = row.get("grant") or {}
+    redacted = bool(row.get("redacted"))
+    return {
+        "grant": _redacted_grant_shape(grant) if redacted else grant_shape(grant),
+        "redacted": redacted,
+        "source_node": row.get("source_node"),
+        "source_title": row.get("source_title"),
+    }
+
+
+def _redacted_grant_shape(row: Mapping) -> dict:
+    return {
+        "node": row.get("node"),
+        "principal": "$LINK",
+        "role": row.get("role"),
+        "expires_on": stamp(row.get("expires_on")),
+        "has_password": bool(row.get("has_password")),
+    }
 
 
 def explain_shape(result: Mapping) -> dict:

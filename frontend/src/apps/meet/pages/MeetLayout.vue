@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { FrappeUIProvider, KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
-import { computed, provide, ref } from "vue";
+import { KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
+import { computed, onScopeDispose, provide, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import { useKeyboardShortcuts } from "@/apps/meet/composables/useKeyboardShortcuts";
-import { initSocket } from "@/apps/meet/socket";
+import { disposeSocket, initSocket } from "@/apps/meet/socket";
 import { getPlatform } from "@/apps/meet/utils/device";
 
+// One site socket per mount, closed on unmount so a return to Meet does not add one.
 initSocket();
+onScopeDispose(disposeSocket);
 
 provide("$platform", getPlatform());
 
@@ -29,8 +31,6 @@ useKeyboardShortcut({
 </script>
 
 <template>
-	<FrappeUIProvider>
-		<router-view />
-		<KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
-	</FrappeUIProvider>
+	<router-view />
+	<KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
 </template>

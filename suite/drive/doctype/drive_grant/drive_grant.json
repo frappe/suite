@@ -8,7 +8,8 @@
   "principal",
   "role",
   "expires_on",
-  "password_hash"
+  "password_hash",
+  "sent_to"
  ],
  "fields": [
   {
@@ -41,6 +42,12 @@
    "fieldtype": "Data",
    "label": "Password Hash",
    "length": 255
+  },
+  {
+   "fieldname": "sent_to",
+   "fieldtype": "Data",
+   "label": "Sent To",
+   "options": "Email"
   }
  ],
  "index_web_pages_for_search": 0,

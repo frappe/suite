@@ -1,4 +1,4 @@
-import type { CredentialGrouper } from "@/apps/drive";
+import type { CredentialGroup, CredentialGrouper } from "@/apps/drive";
 
 export interface CompositeReference {
   reference: string;
@@ -33,12 +33,12 @@ interface CompositeGroupResponse {
 
 export class CompositeGroupLoader {
   readonly items: CompositeItem[];
-  private groups: { nodeIds: string[]; codes: string[] }[] = [];
+  private groups: CredentialGroup[] = [];
 
   constructor(
     private readonly manifest: CompositeManifest,
     private readonly grouper: CredentialGrouper,
-    private readonly request: (references: string[], codes: string[]) => Promise<CompositeGroupResponse>,
+    private readonly request: (references: string[], send: CredentialGrouper["fetch"]) => Promise<CompositeGroupResponse>,
     private readonly changed: (items: readonly CompositeItem[]) => void = () => {},
   ) {
     this.items = [...manifest.references]
@@ -54,7 +54,7 @@ export class CompositeGroupLoader {
     }
     this.groups = [];
     for (const chunk of bounded) {
-      this.groups.push(...await this.grouper.group(chunk));
+      this.groups.push(...this.grouper.group(chunk));
     }
     await Promise.all(this.groups.map((_group, index) => this.loadGroup(index)));
     return this.items;
@@ -72,7 +72,7 @@ export class CompositeGroupLoader {
     const group = this.groups[groupIndex];
     if (!group) return;
     try {
-      const response = await this.request(group.nodeIds, group.codes);
+      const response = await this.request(group.nodeIds, group.fetch);
       const answers = new Map(response.references.map((row) => [row.reference, row]));
       for (const reference of group.nodeIds) {
         const item = this.items.find((candidate) => candidate.reference === reference);

@@ -7,7 +7,7 @@ from typing import Literal, NotRequired, TypedDict
 import frappe
 from frappe import _
 
-from suite.api import account
+from suite.api import account, people
 from suite.composition.http import BadRequest, Route
 
 Given = str | int | float | bool | list | dict | None
@@ -70,6 +70,11 @@ class InvitationResult(TypedDict):
     invited_emails: list[str]
 
 
+class PeopleQuery(TypedDict, total=False):
+    q: str
+    cursor: str
+
+
 ROUTES = (
     Route("GET", "account", "account_get", allow_guest=True, output=Account | None),
     Route("GET", "site", "site_get", output=Site),
@@ -96,6 +101,14 @@ ROUTES = (
         body=InviteUsers,
         errors=(BadRequest, frappe.PermissionError),
         output=InvitationResult,
+    ),
+    Route(
+        "GET",
+        "people",
+        "people_get",
+        errors=(BadRequest, people.BadCursor, frappe.PermissionError),
+        query=PeopleQuery,
+        output=people.PeoplePage,
     ),
 )
 
@@ -152,6 +165,11 @@ def invitations_get() -> list[Invitation]:
 @frappe.whitelist(methods=["POST"])
 def invitations_post(emails: Given = None) -> InvitationResult:
     return account.invite_users(_required_text(emails, "emails"))
+
+
+@frappe.whitelist(methods=["GET"])
+def people_get(q: Given = None, cursor: Given = None) -> people.PeoplePage:
+    return people.search(_optional_text(q, "q"), _optional_text(cursor, "cursor"))
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])

@@ -141,6 +141,26 @@ const operationInvitationsPost: Operation<InvitationsPostInput, InvitationsPostO
   validateOutput(value): asserts value is InvitationsPostOutput { assertSchema(value, {"properties":{"disabled_user_emails":{"items":{"type":"string"},"title":"Disabled User Emails","type":"array"},"accepted_invite_emails":{"items":{"type":"string"},"title":"Accepted Invite Emails","type":"array"},"pending_invite_emails":{"items":{"type":"string"},"title":"Pending Invite Emails","type":"array"},"invited_emails":{"items":{"type":"string"},"title":"Invited Emails","type":"array"}},"required":["disabled_user_emails","accepted_invite_emails","pending_invite_emails","invited_emails"],"title":"InvitationResult","type":"object"}, 'invitations_post output') },
 }
 
+export type PeopleGetInput = { "q"?: string; "cursor"?: string }
+
+export type PeopleGetOutput = { "rows": Array<({ "kind": "user"; "name": string; "email": string; "full_name": (string) | (null); "user_image": (string) | (null) }) | ({ "kind": "group"; "name": string; "member_count": number })>; "next_cursor": (string) | (null) }
+
+export type PeopleGetError = "BadRequest" | "BadCursor" | "PermissionError"
+
+const operationPeopleGet: Operation<PeopleGetInput, PeopleGetOutput, PeopleGetError> = {
+  id: "people_get",
+  owner: "suite",
+  method: "GET",
+  path: "people",
+  prefix: "/api/suite/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ["BadRequest","BadCursor","PermissionError"],
+  validateInput(value): asserts value is PeopleGetInput { assertSchema(value, {"type":"object","properties":{"q":{"title":"Q","type":"string"},"cursor":{"title":"Cursor","type":"string"}},"required":[],"additionalProperties":false,"$defs":{}}, 'people_get input') },
+  validateOutput(value): asserts value is PeopleGetOutput { assertSchema(value, {"$defs":{"PersonGroup":{"properties":{"kind":{"const":"group","title":"Kind","type":"string"},"name":{"title":"Name","type":"string"},"member_count":{"title":"Member Count","type":"integer"}},"required":["kind","name","member_count"],"title":"PersonGroup","type":"object"},"PersonUser":{"properties":{"kind":{"const":"user","title":"Kind","type":"string"},"name":{"title":"Name","type":"string"},"email":{"title":"Email","type":"string"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["kind","name","email","full_name","user_image"],"title":"PersonUser","type":"object"}},"properties":{"rows":{"items":{"anyOf":[{"$ref":"#/$defs/PersonUser"},{"$ref":"#/$defs/PersonGroup"}]},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"PeoplePage","type":"object"}, 'people_get output') },
+}
+
 export const api = {
   "account_get": operationAccountGet,
   "site_get": operationSiteGet,
@@ -150,7 +170,8 @@ export const api = {
   },
   "users_get": operationUsersGet,
   "invitations_get": operationInvitationsGet,
-  "invitations_post": operationInvitationsPost
+  "invitations_post": operationInvitationsPost,
+  "people_get": operationPeopleGet
 } as const
 
 function assertSchema(value: unknown, schema: any, label: string, root: any = schema): void {

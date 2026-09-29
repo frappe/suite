@@ -16,10 +16,10 @@
 	     Mobile opens as a page push (iOS-style slide from the right): the pane stays mounted and
 	     slides via transform, so close animates too. visibility rides the same transition — it
 	     flips only after the slide-out ends, keeping the offscreen pane out of the focus order.
-	     Teleported to body on mobile (like the selection bar): inside the layout's isolate
+	     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's isolate
 	     stacking context the remounting tab bar paints over the pane during the slide-out,
 	     whatever the pane's own z-index says. -->
-	<Teleport to="body" :disabled="!isMobile">
+	<Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
 		<div
 			class="bg-surface-base"
 			:class="{
@@ -46,6 +46,8 @@
 </template>
 
 <script setup lang="ts">
+import { usePortalTarget } from 'frappe-ui'
+
 import { useReadingPane, useScreenSize } from '@/apps/mail/utils/composables'
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 
@@ -76,5 +78,7 @@ const emit = defineEmits<{
 }>()
 
 const { isMobile } = useScreenSize()
+// MailLayout's overlay layer; see the Teleport above.
+const overlayLayer = usePortalTarget()
 const showReadingPane = useReadingPane()
 </script>

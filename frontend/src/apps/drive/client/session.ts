@@ -1,13 +1,18 @@
 import { readonly, ref, type Ref } from 'vue'
 
 import { api } from './generated'
+import { driveLinks } from './links'
 import { driveOperation } from './operation'
 import type { DriveAccess, DriveNode } from './types'
-import { transport as defaultTransport, type Transport } from '@/platform/transport'
+import {
+  TransportError,
+  transport as defaultTransport,
+  type RequestScope,
+  type Transport,
+} from '@/platform/transport'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
-export const CREDENTIAL_CAP = 20
 
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 export type MediaStatus = 'loading' | 'ready' | 'refused'
@@ -20,23 +25,29 @@ export interface MediaHandle {
   refresh(): Promise<void>
 }
 
+export { CredentialOverflowError } from './links'
+
+/**
+ * `fetch` with the share-link credentials of one request. The response
+ * updates the link store, as a Drive request's does.
+ */
+export type CredentialFetch = (url: string, init?: RequestInit) => Promise<Response>
+
 export interface CredentialGroup {
   nodeIds: string[]
-  /** For product-private connection payloads. Do not render or persist. */
-  codes: string[]
+  fetch: CredentialFetch
 }
 
-export class CredentialOverflowError extends Error {
-  readonly type = 'DriveCredentialOverflow'
-
-  constructor(readonly nodeId: string, readonly count: number) {
-    super(`Drive node ${nodeId} needs ${count} link codes. The limit is ${CREDENTIAL_CAP}.`)
-  }
-}
-
+/**
+ * Share-link credentials for requests a product sends itself. Each one
+ * includes the document's own code. The Drive client selects the codes; the
+ * product never sees them.
+ */
 export interface CredentialGrouper {
-  group(nodeIds: readonly string[]): Promise<CredentialGroup[]>
-  codesFor(nodeIds: readonly string[]): Promise<readonly string[]>
+  /** Splits node ids into ordered groups that each fit one request. */
+  group(nodeIds: readonly string[]): CredentialGroup[]
+  /** Sends one request about the document itself. */
+  fetch: CredentialFetch
 }
 
 export interface UnavailableShare {
@@ -115,11 +126,8 @@ export async function openDriveDocumentSession(
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
   const handles = new Map<string, InternalMediaHandle>()
-  const credentialsByNode = new Map<string, string[]>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
-
-  rememberCredential(node)
 
   const refreshAccess = async () => {
     if (disposed) return
@@ -132,7 +140,6 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
-      rememberCredential(fresh)
     } catch {
       state.value = 'Refused'
       access.value = {}
@@ -193,49 +200,9 @@ export async function openDriveDocumentSession(
     return handle
   }
 
-  function rememberCredential(value: DriveNode): void {
-    const held = value.access?.via_link
-    if (held && held.startsWith('$LINK:')) credentialsByNode.set(value.name, [held.slice(6)])
-  }
-
-  const credentials: CredentialGrouper = {
-    async group(nodeIds) {
-      for (const id of new Set(nodeIds)) {
-        if (credentialsByNode.has(id)) continue
-        try {
-          rememberCredential(
-            await requester.request(nodeGet, { node: id, expand: 'access' }, { signal: controller.signal }),
-          )
-        } catch {
-          credentialsByNode.set(id, [])
-        }
-      }
-      const groups: CredentialGroup[] = []
-      let current: CredentialGroup = { nodeIds: [], codes: [] }
-      for (const id of nodeIds) {
-        const codes = credentialsByNode.get(id) ?? []
-        if (codes.length > CREDENTIAL_CAP) throw new CredentialOverflowError(id, codes.length)
-        const combined = [...new Set([...current.codes, ...codes])]
-        if (current.nodeIds.length && combined.length > CREDENTIAL_CAP) {
-          groups.push(current)
-          current = { nodeIds: [], codes: [] }
-        }
-        current.nodeIds.push(id)
-        current.codes = [...new Set([...current.codes, ...codes])]
-      }
-      if (current.nodeIds.length) groups.push(current)
-      return groups
-    },
-    async codesFor(nodeIds) {
-      const groups = await this.group(nodeIds)
-      if (groups.length > 1) throw new CredentialOverflowError(nodeIds.join(','), groups.flatMap((g) => g.codes).length)
-      return groups[0]?.codes ?? []
-    },
-  }
-
   const request = <Input, Output>(operation: any, input: Input) =>
     requester.request(
-      driveOperation<Input, Output>(operation, { looseInput: true }),
+      driveOperation<Input, Output>(operation, { looseInput: true, covers: [nodeId] }),
       input,
       { signal: controller.signal },
     )
@@ -299,7 +266,7 @@ export async function openDriveDocumentSession(
       restore: (seq) => request(api.node_version_restore, { node: nodeId, seq }),
     },
     media: (id) => getHandle(id).public,
-    credentials,
+    credentials: documentCredentials(nodeId),
     refreshAccess,
     dispose() {
       if (disposed) return
@@ -310,6 +277,36 @@ export async function openDriveDocumentSession(
       targetWindow?.removeEventListener('focus', onFocus)
     },
   }
+}
+
+/** The credentials of one open document. */
+export function documentCredentials(nodeId: string): CredentialGrouper {
+  return {
+    group: (nodeIds) =>
+      driveLinks.group(nodeIds, [nodeId]).map((group) => ({
+        nodeIds: group.nodeIds,
+        fetch: (url, init) => fetchWith(group.scope, url, init),
+      })),
+    fetch: (url, init) => fetchWith(driveLinks.scope([nodeId]), url, init),
+  }
+}
+
+async function fetchWith(scope: RequestScope, url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(scope.headers)
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value))
+  const response = await globalThis.fetch(url, { ...init, headers })
+  if (response.ok) scope.settled?.({ ok: true, output: undefined })
+  else scope.settled?.({ ok: false, error: await responseError(response) })
+  return response
+}
+
+/** The error a Frappe response names: the v2 envelope type, or the v1 `exc_type`. */
+async function responseError(response: Response): Promise<TransportError> {
+  const body: unknown = await response.clone().json().catch(() => null)
+  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+  const first = Array.isArray(record.errors) ? (record.errors[0] as Record<string, unknown> | undefined) : undefined
+  const type = [first?.type, record.exc_type].find((value): value is string => typeof value === 'string')
+  return new TransportError({ type: type ?? 'RequestError', message: response.statusText, status: response.status })
 }
 
 interface InternalMediaHandle {

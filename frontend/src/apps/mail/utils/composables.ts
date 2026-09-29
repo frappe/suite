@@ -6,6 +6,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import router from '@/apps/mail/router'
+import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import { useRootStore } from '@/stores/root'
@@ -560,14 +561,16 @@ export const useFilterBySender = () => {
 	return { filterBySender }
 }
 
+/** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
+export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
+
 // Shared state for the Settings dialog, so any view can open it (optionally on a specific tab).
-// <SettingsModal> (rendered in AppSidebar) reacts to `showSettings`, and selects `settingsTab` by
-// label when it opens.
+// <SettingsModal> (rendered in MailLayout) reacts to `showSettings` and opens `settingsTab`.
 const showSettings = ref(false)
-const settingsTab = ref('')
+const settingsTab = ref<MailSettingsTabId | undefined>()
 
 export const useSettings = () => {
-	const openSettings = (tab = '') => {
+	const openSettings = (tab?: MailSettingsTabId) => {
 		settingsTab.value = tab
 		showSettings.value = true
 	}

@@ -1089,8 +1089,8 @@ ships. The stage that builds it waits on the ask. D17 is the exception:
 | Id | Ask | Source | Stage waiting | Status |
 |---|---|---|---|---|
 | none | Ticket 003 routes: `account`, `site`, `users`, `invitations`, Mail `inbox-summary`, Calendar `events`, Meet `rooms` and `scheduled-meetings`; dispatcher; conformance kit | 003 | done | shipped; no spec id |
-| S1 | `GET /api/suite/people?q=` (users and groups; also carries `get_user_groups`'s job) | 008, 017 | 9 | not shipped |
-| S2 | `drive_link.html` 404 and 410 copy, Go to Home | 011 | 8 | not shipped |
+| S1 | `GET /api/suite/people?q=` (users and groups; also carries `get_user_groups`'s job) | 008, 017 | 9 | shipped (server): route, reserved Suite names, Suite contract; caller needs `Suite User`; lists enabled System Users and all User Groups |
+| S2 | `drive_link.html` 404 and 410 copy, Go to Home | 011 | 8 | shipped |
 | S3 | Setup gate skips `allowGuest` routes | 011 | 8 | partial: guests pass, signed-in users do not |
 | S4 | Writer `ErrorPage.vue:61` to `/login?redirect-to=` | 011 | 11 | not shipped |
 | S5 | `GET /api/suite/site` carries `upgrade_url`, null when the site has no plan page | 021 | none: Upgrade plan stays disabled | not shipped |

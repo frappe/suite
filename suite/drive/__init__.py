@@ -48,7 +48,7 @@ right status.
 
 | Error | Raised when |
 |---|---|
-| `DriveNotFound` | the root, root pair, or reservation key does not exist |
+| `DriveNotFound` | the root, root pair, reservation key, or node does not exist |
 | `DriveOverQuota` | the admission UPDATE would push `used_bytes` past the effective quota |
 | `DriveForbidden` | the caller's role at the node is below the one the workflow needs |
 | `DriveConflict` | a reservation exists with different values, names another root, or a resize runs in the wrong direction; a content type is unregistered, invalid, or already linked to another node |
@@ -125,6 +125,7 @@ which is what an offboarded user looks like.
 | `get_storage_reservation` | one primary-key read, no lock |
 | `create` / `grow` / `reduce` / `release` | two locking row reads and one counter UPDATE; no table scan |
 | `bind_legacy_storage_reservation` | the same, plus one read to detect an already-bound row |
+| `node_url` | no read with `suite_flip_files` off; one primary-key read of the node's kind with it on |
 
 No workflow scans `Drive Node`. Every one is bounded work per call, so a
 migration or a per-request caller can run them in a loop. They hold row locks
@@ -283,9 +284,9 @@ def import_document(parent: str, title: str, *, content_doctype: str, from_node:
 def resolve_share_link(token: str) -> dict:
     """Answer which node one share-link token addresses (§6.2).
 
-    The website route `/drive/l/<token>` is the one caller. It runs outside
-    Drive, so it comes through this interface rather than reaching into the
-    engine, and it needs exactly this much: the node id, and enough of the
+    The share-link page, `suite/www/drive_link.py`, is the one caller. It runs
+    outside Drive, so it comes through this interface rather than reaching into
+    the engine, and it needs exactly this much: the node id, and enough of the
     grant to render a page when the token is unknown or expired.
 
     No role is checked and no password is asked for. Resolution says which node
@@ -295,6 +296,20 @@ def resolve_share_link(token: str) -> dict:
     from suite.drive._core.access import resolve_link
 
     return resolve_link(token)
+
+
+def node_url(node: str) -> str:
+    """Answer the browser address of one node, for a link the server sends.
+
+    Server code that sends a node link builds it here, so the link matches the
+    route table `suite_flip_files` selects (unified frontend spec §14.5). With
+    the key on, a folder or a root gives `/drive/f/<id>` and every other kind
+    `/d/<id>`; with it off, every kind gives `/drive/g/<id>`. No role is
+    checked, and an unknown node raises `DriveNotFound` when the key is on.
+    """
+    from suite.drive._core.nodes import node_url as _node_url
+
+    return _node_url(node)
 
 
 def read_file(node: str) -> tuple[IO[bytes], str]:
@@ -394,6 +409,7 @@ __all__ = (
     "grow_storage_reservation",
     "import_document",
     "list_versions",
+    "node_url",
     "personal_root_for",
     "push_preview",
     "read_file",
