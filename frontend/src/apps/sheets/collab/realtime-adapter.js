@@ -10,6 +10,11 @@
 // Server payloads arrive as `{ sheet, user, payload }`. We unwrap `payload`
 // (a JSON string) before handing it to the consumer so they get the
 // original `{ sheet, from, ... }` shape they published.
+//
+// The server publishes to the sheet's own room, `doc:Sheet/<name>`. The
+// adapter joins it with `doc_subscribe`, which the socket server grants only
+// after a read check on the sheet, and joins again after every reconnect
+// because a new socket starts in no rooms. `close()` leaves it.
 
 import { call } from '../utils/api.js'
 
@@ -30,6 +35,15 @@ export function createRealtimeAdapter({
 	// remove the exact wrapped callback we registered on the socket.
 	const wrapped = new Map()
 
+	const join = () => realtime?.emit?.('doc_subscribe', 'Sheet', sheetId)
+	join()
+	realtime?.on?.('connect', join)
+
+	function close() {
+		realtime?.off?.('connect', join)
+		realtime?.emit?.('doc_unsubscribe', 'Sheet', sheetId)
+	}
+
 	function publish(event, payload) {
 		// Fire-and-forget; the relay errors land in the console but never
 		// block typing.
@@ -46,6 +60,7 @@ export function createRealtimeAdapter({
 	function on(event, cb) {
 		if (!realtime?.on) return
 		const w = (msg) => {
+			if (msg?.sheet !== sheetId) return
 			let inner = null
 			try { inner = msg?.payload ? JSON.parse(msg.payload) : null } catch (_) { /* ignore */ }
 			if (inner) cb(inner)
@@ -65,5 +80,5 @@ export function createRealtimeAdapter({
 		}
 	}
 
-	return { publish, on, off }
+	return { publish, on, off, close }
 }

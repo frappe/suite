@@ -346,6 +346,32 @@ def node_of(docname: str) -> str | None:
     return frappe.db.get_value(DOCTYPE, docname, NODE_FIELD) or None
 
 
+def require_sheet(docname: str, *, write: bool = False) -> None:
+    """Raise unless the caller may read, or write, one sheet's body.
+
+    A linked sheet answers through Drive alone, with this request's link
+    credentials, so a Guest who holds a link reaches it the way Drive does.
+    Drive opens a trashed node read-only and refuses a write to it. A legacy
+    row answers through Frappe, and its own `trashed` flag refuses a write.
+    """
+    node = node_of(docname)
+    if node:
+        drive.check(node, drive.EDIT if write else drive.READ)
+        return
+    frappe.has_permission(DOCTYPE, doc=docname, ptype="write" if write else "read", throw=True)
+    if write and frappe.db.get_value(DOCTYPE, docname, "trashed"):
+        frappe.throw(_("This sheet is in the trash."), frappe.PermissionError)
+
+
+def may_write_sheet(docname: str) -> bool:
+    """True when `require_sheet(docname, write=True)` would pass."""
+    try:
+        require_sheet(docname, write=True)
+    except (frappe.PermissionError, drive.DriveError):
+        return False
+    return True
+
+
 def docname_for_node(node: str) -> str | None:
     """Return the sheet bound to this Drive node, or None.
 
