@@ -96,16 +96,16 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    did.
 10. **Deny plus `notify` (Drive 44).** A deny grant with `notify: true`
     sends no email. Interim: accepted.
+11. **Stage 4 settings details.** Mail PWA Notifications has no Settings
+    row (still reachable from Mail's Profile view); Mail Credentials now
+    shows only under the JMAP condition; Workspace has two tabs, General
+    and Users.
 12. **Sheets recovery file format.** The recovery copy downloads as
     .xlsx with values and formulas, without formatting. Interim: accepted.
 13. **Stage 4 phone Back from a Profile row** goes tab, then the full
     Settings list, then Profile (one step more than the old Mail
     sub-page). The failed-group row does not name the product. Interim:
     accepted.
-11. **Stage 4 settings details.** Mail PWA Notifications has no Settings
-    row (still reachable from Mail's Profile view); Mail Credentials now
-    shows only under the JMAP condition; Workspace has two tabs, General
-    and Users.
 
 ## Needs a manual check (cannot run on this devbox)
 
