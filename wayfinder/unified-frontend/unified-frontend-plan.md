@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Decisions folded 2026-09-29 (tickets 017 to 021). Agents wrote it for ticket 015 and folded the decisions for ticket 022. |
+| Status | Approved by Faris 2026-09-29. Decisions folded 2026-09-29 (tickets 017 to 021). Agents wrote it for ticket 015 and folded the decisions for ticket 022. |
 | Date | 2026-09-29 |
 | Spec | [`unified-frontend-spec.md`](unified-frontend-spec.md) |
 | Source map | [`MAP.md`](MAP.md) and the closed tickets in [`tickets/`](tickets/) |
@@ -1237,9 +1237,12 @@ closed and folded (ticket 022); no stage waits on a ticket.
 - **Error tracking.** Faris's direction: think forward; bugs may happen,
   but we fix them fast, so ship with error tracking. Code is instrumented
   so bugs are caught early, without users filing them [Faris, 2026-09-29].
-  It is a launch requirement and blocks stage 7's release. How it is
-  built is open: an agent is researching options, and Faris chooses the
-  tool (spec §16 item 15). Not designed here.
+  It is a launch requirement and blocks stage 7's release. Spec §16 item
+  15 owns the decisions: Sentry, the reporter in `platform/`, the
+  frontend privacy and release fixes, and failed-call reporting from
+  `platform/transport`. The work starts after stage 0 and lands before
+  stage 7. Faris sets up the Sentry project. The backend reporter is
+  proposed, not decided.
 
 ### Environment
 

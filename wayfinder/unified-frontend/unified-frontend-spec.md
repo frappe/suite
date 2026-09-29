@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Decisions folded 2026-09-29 (tickets 017 to 021) |
+| Status | Approved by Faris 2026-09-29. Decisions folded 2026-09-29 (tickets 017 to 021). |
 | Date | 2026-09-29 |
 | Source map | [`MAP.md`](MAP.md) and [`tickets/`](tickets/) |
 | Companion plan | [`unified-frontend-plan.md`](unified-frontend-plan.md) (stages, file ownership, gates) |
@@ -2009,7 +2009,8 @@ frontend/src/
 - Legacy code may use temporary compatibility shims into the platform.
   Old `boot/`, composable and utility paths may forward to platform modules
   [T013].
-- Sentry stays where it is until its ownership is decided [T013].
+- The Sentry reporter moves into `platform/` (section 16, item 15)
+  [T013, Faris, 2026-09-29].
 - Shared-looking utilities do not move only because they sit outside a
   product [T013].
 
@@ -2109,7 +2110,7 @@ Fix forward [Faris, 2026-09-29]:
 - Instrumentation catches production bugs early. The plan does not wait
   for users to report them.
 - Error tracking is a launch requirement. It blocks the `develop` release.
-  How it is built is open (section 16, item 15).
+  Section 16, item 15 sets how it is built.
 - The flip keys turn areas on in order. They are not the rollback plan.
 
 ### 14.1 Two flips
@@ -2564,8 +2565,8 @@ post-launch fog.
 3. **Phone behavior per area beyond the shell chrome** (9.3, 11). Ticket
    006 answers the Drive area (section 5.14). The other areas stay open
    [MAP, T006].
-4. **Sentry ownership** (13.1). Meanwhile Sentry stays where it is
-   [T010, T013]. The error tracking choice (item 15) may settle it.
+4. **Sentry ownership** (13.1). Settled: `platform/` owns the Sentry
+   reporter (item 15) [T010, T013, Faris, 2026-09-29].
 5. **Meet recordings and past meetings** (9.4). Meanwhile they are not on
    `/meet` (ask M1) [T010].
 6. **Keyboard shortcuts across areas** (Cmd+number, Escape) (3.5). Cmd+K
@@ -2605,10 +2606,31 @@ post-launch fog.
     (`references/frappe-ui-shell-gap.md`). No source names it for the
     dialog.
 15. **Error tracking** (14.1). Production bugs are caught by
-    instrumentation, not by user reports. Error tracking is a launch
-    requirement and blocks the `develop` release. How it is built is open:
-    an agent is researching options, and Faris chooses. Owner: Faris
-    [Faris, 2026-09-29].
+    instrumentation, not by user reports. Error tracking blocks the
+    `develop` release. Decided, except the backend part
+    [Faris, 2026-09-29]:
+    - Tool: Sentry. Faris sets up the project and its alerts.
+    - The reporter moves into `platform/`. This settles item 4.
+    - `attachProps: false`, so component props never leave the browser.
+    - `beforeSend` strips query strings from breadcrumb URLs and drops
+      console breadcrumbs.
+    - The release is a build id (git SHA or entry-chunk hash), not
+      `suite@0.0.1`. Events carry `environment` and the product area.
+    - `platform/transport` reports status 500 and above and network errors
+      once, with the route template, status and error type. Never the body.
+    - The `frappe_user` tag keeps the user's email for now.
+    - Session replay stays on error only, with text and media masked, on
+      every area including Mail. The setup check confirms that mail bodies
+      in iframes are masked.
+    - Check on staging: one test error resolves to `.vue` or `.ts` lines
+      and shows the build id.
+    - Backend, proposed and not decided: Suite reports its own backend
+      exceptions to the same Sentry project. The DSN comes from site
+      config, not `FRAPPE_SENTRY_DSN`, because the production bench is
+      shared. Events carry the exception, stack, route, user and release,
+      never request bodies or local variables. Background jobs flush before
+      they exit (frappe #43176). Error Log stays as the on-site copy.
+    Owner: Faris.
 16. **Soft 404 under `/drive`** (14.3). After deletion an unknown
     `/drive/...` URL shows the Drive area's not-found view with HTTP 200.
     Ticket 020 decision 5 set out to avoid a soft 404. Not designed here.

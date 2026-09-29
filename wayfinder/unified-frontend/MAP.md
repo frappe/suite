@@ -104,6 +104,8 @@ Scope, decided 2026-09-11:
   block later stages only. The critical decisions review of 2026-09-29
   made the release one `develop` release for Build and stages 0 to 12,
   fixes forward, and makes error tracking block that release.
+  Faris approved the spec on 2026-09-29. Error tracking is Sentry, with
+  the reporter in `platform/`; the backend reporter is proposed, not decided.
 
 - [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
   No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only
@@ -292,7 +294,6 @@ Scope, decided 2026-09-11:
   Sheets canvas, and the Slides stage on desktop and mobile; ticket 009 assigns
   all internal geometry, panels and presence presentation to each product.
 - Mobile behaviour per area beyond the shell chrome.
-- Sentry ownership. PWA scoping is decided under ticket 010: one Suite PWA.
 - Recordings and past meetings in the Meet area. Neither has a route or a
   list endpoint today. A Meet-program ask before the area can show them.
 - Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K is not among
