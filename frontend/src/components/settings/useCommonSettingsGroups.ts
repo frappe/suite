@@ -1,12 +1,15 @@
 import { computed, markRaw } from 'vue'
-import { Settings, SlidersHorizontal, User } from 'lucide-vue-next'
+import { Settings, SlidersHorizontal, User, Users } from 'lucide-vue-next'
 
 import { useCurrentUser } from '@/boot/session'
-import UserProfileSettings from '@/components/settings/UserProfileSettings.vue'
 import type { SettingsGroup } from '@/components/settings/types'
 import PreferencesSettings from '@/shell/settings/PreferencesSettings.vue'
-import WorkspaceSettings from '@/shell/settings/WorkspaceSettings.vue'
+import ProfileSettings from '@/shell/settings/ProfileSettings.vue'
+import WorkspaceGeneralSettings from '@/shell/settings/WorkspaceGeneralSettings.vue'
+import WorkspaceUsersSettings from '@/shell/settings/WorkspaceUsersSettings.vue'
 
+// The legacy lists (Mail and Calendar profile pages, the legacy Drive dialog)
+// read these groups until those surfaces move to the shell settings list.
 export function useCommonSettingsGroups() {
   const { isSystemManager } = useCurrentUser()
 
@@ -19,7 +22,7 @@ export function useCommonSettingsGroups() {
           label: 'Profile',
           value: 'profile',
           icon: User,
-          component: markRaw(UserProfileSettings),
+          component: markRaw(ProfileSettings),
         },
         {
           label: 'Preferences',
@@ -38,7 +41,13 @@ export function useCommonSettingsGroups() {
           label: 'General',
           value: 'workspace',
           icon: Settings,
-          component: markRaw(WorkspaceSettings),
+          component: markRaw(WorkspaceGeneralSettings),
+        },
+        {
+          label: 'Users',
+          value: 'workspace-users',
+          icon: Users,
+          component: markRaw(WorkspaceUsersSettings),
         },
       ],
     },

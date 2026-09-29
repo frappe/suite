@@ -21,6 +21,12 @@ export const mailArea: AreaDefinition = {
   loadRoutes: () => import("@/apps/mail/routes"),
 };
 
+export type { MailSettingsTabId } from "@/apps/mail/utils/composables";
+
+/** Mail's Settings group. Loads when Settings opens. */
+export const loadMailSettings = () =>
+  import("@/apps/mail/settings").then((module) => module.mailSettings);
+
 export function useInboxSummary(enabled: () => boolean = () => true) {
   return useQuery(() => (enabled() ? inboxSummary() : false));
 }

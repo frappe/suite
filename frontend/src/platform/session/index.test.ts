@@ -6,6 +6,7 @@ import { ACCOUNT_REQUEST_PATH, createSession, hasCapabilities, missingCapabiliti
 afterEach(() => {
   document.cookie = 'user_id=Guest; path=/'
   document.cookie = 'full_name=; path=/'
+  document.cookie = 'system_user=; path=/'
 })
 
 describe('session', () => {
@@ -27,6 +28,18 @@ describe('session', () => {
     expect(session.capabilities.value).toEqual({ jmap: true, systemManager: true })
     expect(hasCapabilities(['jmap'], session)).toBe(true)
     expect(missingCapabilities(['jmap', 'systemManager'], session)).toEqual([])
+  })
+
+  it('grants no capability before the account route answers, whatever the cookies say', async () => {
+    document.cookie = 'user_id=user%40example.com; path=/'
+    document.cookie = 'system_user=yes; path=/'
+    let answer: (account: Record<string, unknown>) => void = () => {}
+    const request = vi.fn(() => new Promise((resolve) => (answer = resolve)))
+    const session = createSession({ request } as unknown as Transport)
+    expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
+    answer({ name: 'user@example.com', roles: [] })
+    await session.refresh()
+    expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
   })
 
   it('logs in, refreshes, and logs out through transport', async () => {

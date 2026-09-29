@@ -387,7 +387,7 @@
 												<button
 													type="button"
 													class="hover:text-ink-gray-8 underline"
-													@click="openSettings(__('Block List'))"
+													@click="openSettings('mail.screener')"
 												>
 													{{ __('block list') }}</button
 												>{{

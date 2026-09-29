@@ -1,11 +1,10 @@
 <template>
   <section>
     <div class="flex flex-col gap-4">
-      <h2 class="text-md-semibold text-ink-gray-8">{{ __('Users') }}</h2>
       <div class="flex items-center justify-between gap-3">
         <TextInput
           v-model="search"
-          class="w-72"
+          class="min-w-0 flex-1 sm:max-w-72"
           :placeholder="__('Search by name or email')"
           :debounce="300"
         >
@@ -13,7 +12,7 @@
             <span class="lucide-search size-4 text-ink-gray-4" />
           </template>
         </TextInput>
-        <Button icon-left="lucide-plus" @click="showInviteDialog = true">
+        <Button class="shrink-0" icon-left="lucide-plus" @click="showInviteDialog = true">
           {{ __('Invite') }}
         </Button>
       </div>

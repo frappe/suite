@@ -9,8 +9,6 @@
 	  still underneath it and the other three tabs one tap away.
 	-->
 	<MobileProfilePage
-		:groups
-		:find-tab="findTab"
 		:accounts
 		:account-id="store.accountId"
 		always-show-accounts
@@ -34,7 +32,6 @@
 import { computed } from 'vue'
 
 import { useAccountSwitch } from '@/apps/mail/utils/composables'
-import { useSettingsTabs } from '@/apps/mail/composables/useSettingsTabs'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -42,9 +39,6 @@ import MobileProfilePage from '@/components/MobileProfilePage.vue'
 
 const store = userStore()
 const { logout } = sessionStore()
-
-// Profile leaves the list — the identity card above it opens that tab instead.
-const { groups, findTab } = useSettingsTabs(['profile'])
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
 

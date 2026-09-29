@@ -18,11 +18,10 @@
 			class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3"
 		>
 			<!-- The identity card is the screen's subject, so it stands outside the groups
-			     and opens the Profile tab the list no longer carries. -->
+			     and opens the Profile tab the list leaves out. -->
 			<button
-				v-if="profileTab"
 				class="active:bg-surface-gray-1 flex w-full items-center gap-3.5 rounded-6 px-1 py-3.5"
-				@click="openTab(profileTab)"
+				@click="openSettings('account.profile')"
 			>
 				<Avatar :label="fullName" :image="user?.data?.user_image" size="2xl" class="size-14" />
 				<div class="min-w-0 flex-1 text-left">
@@ -50,15 +49,15 @@
 				</MobileSettingsRow>
 			</MobileSettingsCard>
 
-			<MobileSettingsCard v-for="group in groups" :key="group.label" :label="group.label">
-				<MobileSettingsRow
-					v-for="tab in group.items"
-					:key="tab.value"
-					:icon="tab.icon"
-					:label="tab.label"
-					@click="openTab(tab)"
-				/>
-			</MobileSettingsCard>
+			<!-- The Suite settings list, as the Settings drill-in shows it. A row opens
+			     its tab in Settings. -->
+			<SettingsList
+				:groups="settings.groups.value"
+				:failed="settings.failed.value"
+				:retry="settings.load"
+				:exclude="['account.profile']"
+				@open="(tab) => openSettings(tab.id as SettingsTabId)"
+			/>
 
 			<!-- Its own card: the destructive row is kept apart from the rest. -->
 			<MobileSettingsCard>
@@ -71,8 +70,6 @@
 				/>
 			</MobileSettingsCard>
 		</div>
-
-		<MobileSettingsSubPage :tab="activeTab" @close="closeTab" />
 
 		<!-- The row rests at the bottom of a scroll rather than behind a deliberate
 		     gesture, so it asks first. -->
@@ -89,24 +86,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, type Component } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, inject, onMounted, ref } from 'vue'
 import { Check, ChevronRight, LogOut } from 'lucide-vue-next'
 import { Avatar, Dialog } from 'frappe-ui'
 
-// The three shells are mail's — a settings card, its rows, and the pushed page a row
-// opens. They carry no mail in them.
+// The two shells are mail's: a settings card and its rows. They carry no mail in them.
 import MobileSettingsCard from '@/apps/mail/components/mobile/MobileSettingsCard.vue'
 import MobileSettingsRow from '@/apps/mail/components/mobile/MobileSettingsRow.vue'
-import MobileSettingsSubPage from '@/apps/mail/components/mobile/MobileSettingsSubPage.vue'
+import SettingsList from '@/shell/settings/SettingsList.vue'
+import type { SettingsTabId } from '@/shell/settings/settings'
+import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 
-type ProfileTab = { label: string; value: string; icon: Component; component?: Component }
-
-const { findTab } = defineProps<{
-	/** The app's settings, grouped, minus the Profile row the identity card stands in for. */
-	groups: { label: string; items: ProfileTab[] }[]
-	/** Resolves a tab by value against the whole list, excluded rows included. */
-	findTab: (value: string) => ProfileTab | undefined
+defineProps<{
 	accounts: any[]
 	accountId?: string
 	/** Mail lists the one account too; the calendar only lists a choice. */
@@ -118,20 +109,9 @@ const emit = defineEmits<{ switchAccount: [accountId: string] }>()
 
 const user = inject('$user') as { data?: Record<string, any> } | undefined
 
-const route = useRoute()
-const router = useRouter()
-
-const profileTab = computed(() => findTab('profile'))
-
-// Which sub-page is open lives in the URL (?tab=appearance) rather than in a local
-// ref, so the back gesture closes it, re-tapping the Profile tab can pop back to the
-// page root by dropping the query, and a tab that is not available to this account
-// (findTab honours the same conditions the list does) resolves to nothing.
-const activeTab = computed<ProfileTab | null>(
-	() => (route.query.tab ? findTab(String(route.query.tab)) : null) ?? null,
-)
-const openTab = (tab?: ProfileTab) => tab && router.push({ query: { tab: tab.value } })
-const closeTab = () => router.replace({ query: {} })
+// The same list the Settings dialog shows, so the two cannot drift.
+const settings = useSettingsGroups()
+onMounted(() => void settings.load())
 
 const showLogoutConfirm = ref(false)
 

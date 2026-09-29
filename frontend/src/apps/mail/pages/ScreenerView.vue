@@ -137,7 +137,7 @@
 												{{ __('You can undo decisions or turn the Screener off in') }}
 												<a
 													class="cursor-pointer underline"
-													@click="openSettings(__('Screener'))"
+													@click="openSettings('mail.screener')"
 												>{{ __('Settings') }}</a>{{ '.' }}
 											</p>
 										</div>

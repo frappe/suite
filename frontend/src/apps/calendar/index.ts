@@ -24,3 +24,7 @@ export const calendarArea: AreaDefinition = {
   // Ticket 010 owns shell adoption. The existing CalendarLayout keeps its full frame for now.
   loadRoutes: () => import("@/apps/calendar/routes"),
 };
+
+/** Calendar's Settings group. Loads when Settings opens. */
+export const loadCalendarSettings = () =>
+  import("@/apps/calendar/settings").then((module) => module.calendarSettings());
