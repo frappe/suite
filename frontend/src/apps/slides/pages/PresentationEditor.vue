@@ -81,7 +81,6 @@ import {
 	ref,
 	watch,
 	onMounted,
-	onActivated,
 	onDeactivated,
 	onBeforeUnmount,
 	onScopeDispose,
@@ -93,10 +92,11 @@ import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vu
 
 import { call, toast, usePageMeta, Button, KeyboardShortcutsDialog } from 'frappe-ui'
 import { appPageMeta } from '@/utils/documentTitle'
+import { usePageTitle } from '@/platform/page-meta'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
 
-import ExportView from '@/apps/slides/pages/ExportView.vue'
+import ExportView from '@/apps/slides/surface/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
@@ -229,11 +229,9 @@ setCommandHistory(commandHistoryInstance)
 useShortcuts(inReadonlyMode, inSlideShowMode)
 useBrowserZoomGuard()
 
-usePageMeta(() => {
-	return appPageMeta(pageTitle(), 'Slides')
-})
-
-onActivated(() => (document.title = pageTitle()))
+// the title goes through the platform's page meta, which also restores it when this page is reactivated
+usePageTitle(pageTitle)
+usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 
 // a drag in progress would push every intermediate position
 const handleAutoSave = () => {

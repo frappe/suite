@@ -75,8 +75,10 @@ const isCmdOrCtrl = (e: KeyboardEvent | MouseEvent) => {
 
 const normalizeRotation = (deg: number) => ((deg % 360) + 360) % 360
 
-// runs the first call now and the latest of any that follow at the next frame
-const throttleToFrame = (fn: (...args: any[]) => void) => {
+// runs the first call now and the latest of any that follow at the next frame.
+// A hoisted declaration: element.js calls useTextEditor() while it loads, and
+// this module can still be loading then (helpers -> mediaUploads -> element).
+function throttleToFrame(fn: (...args: any[]) => void) {
 	let frame: number | null = null
 	let latest: any[] | null = null
 
