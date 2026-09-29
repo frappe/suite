@@ -6,11 +6,15 @@ import Text from '@tiptap/extension-text'
 import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const uploadMock = vi.fn()
-const callMock = vi.fn()
+// Every Drive request the importer makes, as `METHOD path`.
+const driveRequests = []
+vi.stubGlobal('fetch', async (url, init) => {
+  driveRequests.push(`${init.method} ${url}`)
+  return new Response(JSON.stringify({ data: {} }), { headers: { 'Content-Type': 'application/json' } })
+})
 const toastMock = { success: vi.fn(), error: vi.fn() }
 
 vi.mock('frappe-ui', () => ({
-  call: (...args) => callMock(...args),
   useFileUpload: () => ({ upload: uploadMock }),
   toast: toastMock,
 }))
@@ -117,6 +121,7 @@ describe('_normaliseHtml', () => {
 describe('_convertDocxToHtml', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    driveRequests.length = 0
   })
 
   it('converts a docx to normalised HTML and returns mammoth messages', async () => {
@@ -200,6 +205,7 @@ describe('_convertDocxToHtml', () => {
 describe('importDocx', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    driveRequests.length = 0
   })
 
   it('inserts directly into an empty document', async () => {
@@ -257,7 +263,7 @@ describe('importDocx', () => {
     await importDocx(fakeFile('corrupt.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
     expect(toastMock.error).toHaveBeenCalled()
-    expect(callMock).not.toHaveBeenCalled() // nothing was uploaded, so nothing to roll back
+    expect(driveRequests).toEqual([]) // nothing was uploaded, so nothing to roll back
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
     expect(editor.getText()).toBe('Original text')
   })
@@ -306,9 +312,7 @@ describe('importDocx', () => {
 
     await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
-    expect(callMock).toHaveBeenCalledWith('suite.drive.api.files.delete_entities', {
-      entity_names: ['embed-1'],
-    })
+    expect(driveRequests).toEqual(['DELETE /api/suite/drive/nodes/embed-1'])
     expect(toastMock.error).toHaveBeenCalled()
     expect(editor.getText()).toBe('Original text')
   })

@@ -121,6 +121,34 @@ describe('Drive link codes on requests', () => {
   })
 })
 
+describe('every held code on one request', () => {
+  it('sends the document code and the most recently used others, at most 20', () => {
+    driveLinks.seed(code(99), 'document')
+    const ids = Array.from({ length: 25 }, (_, index) => `n${index}`)
+    ids.forEach((id, index) => driveLinks.seed(code(index), id))
+
+    const links = driveLinks.scopeHeld(['document']).headers!['X-Drive-Links']!.split(',')
+
+    expect(links).toHaveLength(LINK_CAP)
+    expect(links).toContain(code(99))
+    expect(links.filter((sent) => sent !== code(99)).sort()).toEqual(
+      ids.slice(6).map((_, index) => code(index + 6)).sort(),
+    )
+  })
+
+  it('keeps which links were used least recently, so eviction still drops those', () => {
+    driveLinks.seed(code(1), 'old')
+    driveLinks.seed(code(2), 'new')
+    driveLinks.scopeHeld([])
+    const nodes = Array.from({ length: 49 }, (_, index) => `x${index}`)
+    nodes.forEach((id, index) => driveLinks.seed(code(100 + index), id))
+
+    // 51 links: the least recently used one goes.
+    expect(driveLinks.scope(['old']).headers).toEqual({})
+    expect(driveLinks.scope(['new']).headers).toEqual({ 'X-Drive-Links': code(2) })
+  })
+})
+
 describe('forgetting Drive link codes', () => {
   it('drops a link and its tags when its target answers 404, or any node answers 410', async () => {
     let target = ok({ rows: [row('inside')], next_cursor: null })

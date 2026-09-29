@@ -623,9 +623,13 @@ def roots_discover() -> shapes.RootLocations:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def root_usage(root: Given = None) -> shapes.RootUsage:
-    """Report one root's counters to its own user, its managers, or an admin."""
-    return dict(roots.usage_for(shapes.required_text(root, "root"), _principals()))
+def root_usage(root: Given = None, expand: Given = None) -> shapes.RootUsage:
+    """Report one root's counters to its own user, its managers, or an admin.
+
+    `?expand=breakdown` adds bytes by type and the largest nodes.
+    """
+    breakdown = "breakdown" in shapes.expansions(expand, allowed=shapes.USAGE_EXPANSIONS)
+    return dict(roots.usage_for(shapes.required_text(root, "root"), _principals(), breakdown=breakdown))
 
 
 @frappe.whitelist(methods=["PATCH"])
@@ -905,7 +909,7 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given) -
     """
     if name == "trash":
         return {"root": shapes.required_text(root, "root")}
-    if name == "templates":
+    if name in ("templates", "recents"):
         return {"content_doctype": shapes.text(content_doctype, "content_doctype")}
     if name == "search":
         return {"term": shapes.required_text(term, "term")}

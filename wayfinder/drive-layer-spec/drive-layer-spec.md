@@ -3119,7 +3119,7 @@ caller cannot read marked as unreadable, instead of dropping it silently
 | Name | Rows | Role |
 |---|---|---|
 | `shared` | the caller's grant roots outside their own Personal Root | per grant |
-| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at` | READ |
+| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at`; Active nodes only; `?content_doctype=` keeps only documents of that type, filtered in the query, and an unknown type answers an empty page | READ |
 | `favourites` | `Drive Favourite` for the caller | READ |
 | `trash` | Trashed nodes where `trash_root = name`, in roots the caller reaches | READ to list; EDIT or MANAGE to restore (§8.8) |
 | `archived-roots` | Archived Roots holding a grant for the caller | per grant [001] |
@@ -3162,7 +3162,7 @@ There is no per-row access or breadcrumb query.
 | GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
 | POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{read: <n>}` |
 | GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
-| GET | `/roots/<id>/usage` | own root, or Suite Admin for any | none | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}` |
+| GET | `/roots/<id>/usage` | own root, or Suite Admin for any | `?expand=breakdown` | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}`; `breakdown` adds `by_type: [{type, bytes}]` and `largest: [{node, title, size, mime, kind, type}]` |
 | PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
 | POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{purged: <n>}` |
@@ -3210,8 +3210,17 @@ today's `is_drive_site_admin` rule. None of these routes admits a guest.
   `suite.utils.user.generate_user_keys`, a Suite method outside this
   namespace. `is_admin` appears here and on `/site-settings` because the
   legacy client read it from both `webdav_config` and `is_site_admin`.
-- Storage usage has no new route: `GET /roots/<id>/usage` above already
-  replaces `storage_breakdown` and `storage_bar_data`.
+- Storage usage has no new route: `GET /roots/<id>/usage` above replaces
+  `storage_bar_data`, and with `?expand=breakdown` it replaces
+  `storage_breakdown`. The breakdown reads the root's Active nodes that hold
+  bytes, so folders, links, and empty nodes are never listed. `by_type`
+  groups them by one rule: a content document by its `content_doctype`, a
+  file by its mime family in the legacy mime table (`Unknown` when the table
+  has no entry). It is ordered by bytes, largest first. `largest` holds the
+  10 largest of those nodes. Trash and versions count towards `used_bytes`
+  (§7.1) but are not in the breakdown. The breakdown lists titles, so only
+  the root's own user or a Suite Admin gets it; a manager of the root who is
+  neither reads the totals and gets 403 for `?expand=breakdown`.
 
 Three product methods are served by Suite-owned resources, defined in
 `suite/api/routes.py` and the unified frontend spec §4.3, not here:
@@ -3397,8 +3406,14 @@ to `GET /nodes/<id>/grants`.
 `GET /notifications`; `get_unread_count` to
 `GET /notifications/unread-count`; `mark_as_read` to `POST /notifications/read`.
 
-**`suite.drive.api.storage` (2)**: `storage_breakdown` and
-`storage_bar_data` to `GET /roots/<id>/usage`.
+**`suite.drive.api.storage` (2)**: `storage_breakdown` to
+`GET /roots/<id>/usage?expand=breakdown` and `storage_bar_data` to
+`GET /roots/<id>/usage`, both on the caller's Personal Root. The shim renames
+the route's two lists and keeps no type rule of its own; it lists files by
+root, not by owner, and the route's cap replaces the old quota floor. Each
+total row is `{mime_type, file_size}`, the keys the legacy Storage tab reads:
+`mime_type` is the first non-`frappe…` mime of that type in the legacy mime
+table, or null for a type the table does not hold.
 
 **`suite.drive.api.scripts` (2)**: `sync_preview` to
 `POST /nodes/<id>/preview`; `sync_from_disk` is dropped, because Build
@@ -3471,6 +3486,48 @@ and the upload routes. Suite Python that imports a body Cleanup deletes
 `suite/sheets/doctype/sheet/sheet.py`,
 `suite/slides/doctype/presentation/presentation.py`,
 `suite/drive/utils/api.py`) is retargeted in the same release (§14.10).
+
+**The legacy-call counter** proves the move on production. Build counts
+every call to every name in `CLASSIFICATION`, whatever its class, by name and
+user agent. It counts every address Frappe runs a name on: the dotted path on
+`/api/method/` in any API version or the old `cmd` form, and the three `File`
+document methods through `run_doc_method`, `/api/resource/File`, and
+`/api/v2/document/File`, for the verbs that run the method there (not PUT or
+DELETE on the document). A refused call counts too. A CORS preflight does not.
+The rule is that the counter never shows a false zero: a call may be counted
+twice, never lost.
+
+- `before_request` (`suite.drive.framework.count_legacy_call`, then
+  `suite/drive/http/legacy_calls.py`) only buffers the call: one Redis script,
+  no database write on the request. A path that cannot name a legacy call
+  leaves before the shim table is imported. A counter fault never fails the
+  call.
+- Each name keeps at most 50 distinct user agents. Later ones count into one
+  row whose user agent is `(other)`, so a client that rotates its user agent
+  grows neither Redis nor the table, and every call is still counted.
+- The scheduler job `suite.drive.jobs.flush_legacy_calls` runs every tick
+  (`all`). It renames the buffer to an in-flight key in one atomic step, adds
+  the batch to `Drive Legacy Call` rows, commits, and only then deletes the
+  in-flight key. A flush that dies before its commit leaves the batch for the
+  next flush. Flushes hold one Redis lock, so two never overlap.
+- A row holds `legacy_name`, `user_agent` (cut to 255 characters), `count`,
+  `first_seen`, and `last_seen`, one row per name and user agent. The rows
+  survive a migrate, a deploy, and a cache flush. The buffer does not: calls
+  not yet flushed are lost if Redis evicts the keys or the whole cache is
+  flushed, which is why the flush runs every tick.
+- Counts are cumulative and never reset. "Zero" means no count rose between
+  two reads.
+- A System Manager reads the rows in the Desk list of `Drive Legacy Call`,
+  latest `last_seen` first. Only System Manager can read them. No role can
+  create, edit, or delete a row, and the controller refuses every write that
+  is not the flush, Administrator included.
+- `bench --site <site> drive-legacy-calls` flushes and reads under the flush
+  lock, then prints every row latest first and a final
+  `total: <n> calls over <m> names`. `--json` prints the same as JSON. There
+  is no reset flag.
+
+Cleanup drops the doctype, the module, the command, and both hook entries
+with the names (§14.10).
 
 Hardening: Build adds `/api/suite/drive/` to `ALLOWED_WILDCARD_PATHS` and
 Cleanup removes `/api/method/suite.drive.api.`
@@ -4180,7 +4237,10 @@ Ships one release after Build. It refuses to run unless all three hold
 3. Every Suite client has moved off all 69 old method names: the SPA
    (`frontend/src`), the Desk file picker (`suite/public/js`), and Suite
    Python outside `suite/drive/api` and `suite/drive/http` imports none of
-   the bodies below (§11.7). No name is exempt.
+   the bodies below (§11.7). No name is exempt. The runtime evidence is the
+   legacy-call counter (§11.7): on every site Cleanup runs on, no count on
+   any name rose between the first and the last read of the hold (unified
+   plan stage 14).
 
 Then, in order:
 
@@ -4204,6 +4264,9 @@ Then, in order:
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota` and the S3 fields on
   `Drive Disk Settings`; `storage_owner` on `Drive Storage Reservation`.
+- Drop the legacy-call counter (§11.7): the `Drive Legacy Call` doctype and
+  its table, `suite/drive/http/legacy_calls.py`, the `drive-legacy-calls`
+  command, and the `count_legacy_call` and `flush_legacy_calls` hook entries.
 - Delete all 69 legacy names (§11.7): `suite/drive/http/shims.py`, every
   module under `suite/drive/api/` including `product.py` and `s3.py`, and
   `suite/drive/overrides/file.py` with the `File` override. `after_request`

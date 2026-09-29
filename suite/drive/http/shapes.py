@@ -28,6 +28,7 @@ from pydantic import with_config
 from suite.drive._core import nodes
 
 EXPANSIONS = ("access", "breadcrumbs", "preview")
+USAGE_EXPANSIONS = ("breakdown",)
 
 # §11.5 gives no bound of its own. One gesture is one request, and a page is
 # capped at 200 rows, so a batch is capped at the same number: a client cannot
@@ -242,11 +243,31 @@ class ArchiveStatus(TypedDict):
     error: str | None
 
 
+class RootUsageQuery(TypedDict, total=False):
+    expand: Literal["breakdown"]
+
+
+class TypeBytes(TypedDict):
+    type: str
+    bytes: int
+
+
+class LargestNode(TypedDict):
+    node: str
+    title: str
+    size: int
+    mime: str | None
+    kind: Literal["file", "document"]
+    type: str
+
+
 class RootUsage(TypedDict):
     used_bytes: int
     reserved_bytes: int
     quota_bytes: int | None
     effective_quota: int
+    by_type: NotRequired[list[TypeBytes]]
+    largest: NotRequired[list[LargestNode]]
 
 
 class UserSettings(TypedDict):
@@ -573,14 +594,14 @@ def flag(value, name: str, default: bool) -> bool:
     _refuse(name)
 
 
-def expansions(value, name: str = "expand") -> frozenset:
-    """Accept the comma-separated subset of §11.3's three expansions."""
+def expansions(value, name: str = "expand", allowed: tuple[str, ...] = EXPANSIONS) -> frozenset:
+    """Accept a comma-separated subset of `allowed`, §11.3's three by default."""
     if value is None or value == "":
         return frozenset()
     if not isinstance(value, str):
         _refuse(name)
     asked = tuple(item.strip() for item in value.split(",") if item.strip())
-    unknown = sorted(set(asked) - set(EXPANSIONS))
+    unknown = sorted(set(asked) - set(allowed))
     if unknown:
         frappe.throw(
             _("Drive expansion {0} is not supported").format(", ".join(unknown)),

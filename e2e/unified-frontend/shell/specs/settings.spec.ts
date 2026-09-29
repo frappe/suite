@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
+import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
 /**
  * Stage 4 (spec section 12): one settings list, shown as a dialog on desktop
@@ -115,6 +115,105 @@ test.describe("desktop", () => {
 		await expect(settings.getByText("Mail", { exact: true })).toHaveCount(0);
 	});
 });
+
+const USAGE = "**/api/suite/drive/roots/*/usage*";
+
+/** Answer the usage route with the real answer, some fields replaced, once `release` runs. */
+async function holdUsage(page: Page, breakdown: Record<string, unknown>) {
+	let release = () => {};
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route(USAGE, async (route) => {
+		const url = new URL(route.request().url());
+		expect(url.searchParams.get("expand")).toBe("breakdown");
+		const response = await route.fetch();
+		const body = (await response.json()) as { data: Record<string, unknown> };
+		expect(body.data).toHaveProperty("by_type");
+		expect(body.data).toHaveProperty("largest");
+		await released;
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ data: { ...body.data, ...breakdown } }),
+		});
+	});
+	return release;
+}
+
+const FILLED = {
+	by_type: [
+		{ type: "PDF", bytes: 900_000 },
+		{ type: "Image", bytes: 500_000 },
+	],
+	largest: [
+		{ node: "n1", title: "report.pdf", size: 900_000, mime: "application/pdf", kind: "file", type: "PDF" },
+		{ node: "n2", title: "photo.png", size: 500_000, mime: "image/png", kind: "file", type: "Image" },
+	],
+};
+
+for (const phone of [false, true]) {
+	test.describe(phone ? "drive statistics on a phone" : "drive statistics", () => {
+		if (phone) test.use({ viewport: MOBILE_VIEWPORT, hasTouch: true, isMobile: true });
+
+		async function openStatistics(page: Page) {
+			await page.goto("/home");
+			if (!phone) {
+				const settings = await openSettingsFromAccountMenu(page);
+				await settings.getByRole("tab", { name: "Statistics" }).click();
+				return settings.getByRole("tabpanel");
+			}
+			await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Account" }).click();
+			await page.getByRole("navigation", { name: "Account" }).getByRole("button", { name: "Settings" }).click();
+			const settings = page.getByRole("dialog", { name: "Settings" });
+			await settings
+				.getByRole("region", { name: "Drive", exact: true })
+				.getByRole("button", { name: "Statistics", exact: true })
+				.click();
+			return settings.getByRole("region", { name: "Statistics", exact: true });
+		}
+
+		async function headingTops(panel: Locator) {
+			const tops = [];
+			for (const name of ["By type", "Largest files"]) {
+				const heading = panel.getByRole("heading", { name, exact: true });
+				await expect(heading).toBeVisible();
+				tops.push((await heading.boundingBox())?.y);
+			}
+			return tops;
+		}
+
+		test("failed, loading and loaded share one layout", async ({ page }) => {
+			await patchAccount(page, FULL_ACCOUNT);
+			await failRequest(page, USAGE);
+			let panel = await openStatistics(page);
+			await expect(panel.getByText("Storage use could not load.", { exact: true })).toBeVisible();
+			const failed = await headingTops(panel);
+
+			await page.unroute(USAGE);
+			const release = await holdUsage(page, FILLED);
+			panel = await openStatistics(page);
+			await expect(panel.getByText("Loading…")).toBeVisible();
+			expect(await headingTops(panel)).toEqual(failed);
+
+			release();
+			await expect(panel.getByText("report.pdf")).toBeVisible();
+			await expect(panel.getByRole("listitem").filter({ hasText: "PDF" }).first()).toContainText("900 KB");
+			await expect(panel.getByRole("listitem").filter({ hasText: "photo.png" })).toContainText("500 KB");
+			expect(await headingTops(panel)).toEqual(failed);
+		});
+
+		test("usage with no active file explains what still counts", async ({ page }) => {
+			await patchAccount(page, FULL_ACCOUNT);
+			const release = await holdUsage(page, { used_bytes: 4096, by_type: [], largest: [] });
+			release();
+			const panel = await openStatistics(page);
+			await expect(
+				panel.getByText("No active files. Files in the trash and their versions still count towards storage."),
+			).toBeVisible();
+			await expect(panel.getByText("No files", { exact: true })).toBeVisible();
+			await expect(panel.getByText("4 KB used")).toBeVisible();
+		});
+	});
+}
 
 test.describe("phone", () => {
 	test.use({ viewport: MOBILE_VIEWPORT, hasTouch: true, isMobile: true });

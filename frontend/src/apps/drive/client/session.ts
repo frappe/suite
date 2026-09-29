@@ -48,6 +48,12 @@ export interface CredentialGrouper {
   group(nodeIds: readonly string[]): CredentialGroup[]
   /** Sends one request about the document itself. */
   fetch: CredentialFetch
+  /**
+   * Sends one request with every held link code, at most 20, the document's
+   * own always among them. For a request that asks the server which nodes the
+   * caller can open, such as a composite's manifest.
+   */
+  fetchHeld: CredentialFetch
 }
 
 export interface UnavailableShare {
@@ -288,6 +294,7 @@ export function documentCredentials(nodeId: string): CredentialGrouper {
         fetch: (url, init) => fetchWith(group.scope, url, init),
       })),
     fetch: (url, init) => fetchWith(driveLinks.scope([nodeId]), url, init),
+    fetchHeld: (url, init) => fetchWith(driveLinks.scopeHeld([nodeId]), url, init),
   }
 }
 

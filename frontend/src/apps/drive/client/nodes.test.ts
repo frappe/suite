@@ -12,8 +12,8 @@ describe('children descriptors', () => {
 })
 
 describe('generic document creation', () => {
-  it('discovers the Personal Root before posting the content node', async () => {
-    const calls: Array<{ id: string; input: any }> = []
+  it('posts one content node with its type default title into the given parent', async () => {
+    const calls: Array<{ id: string; input: unknown }> = []
     const state = createServerState({
       realtime: false,
       persistence: false,
@@ -21,22 +21,18 @@ describe('generic document creation', () => {
         async request(operation, input) {
           operation.validateInput?.(input)
           calls.push({ id: operation.id, input: structuredClone(input) })
-          if (operation.id === 'roots_discover') {
-            return { personal: { node: 'personal-root', title: 'Me' }, organization: null } as never
-          }
           return {
-            name: 'new-node', title: 'Untitled presentation', kind: 'document', parent: 'personal-root',
+            name: 'new-node', title: 'Untitled presentation', kind: 'document', parent: 'folder-1',
           } as never
         },
       },
     })
     const mutation = state.useMutation(createDocument())
-    await mutation.run({ content_doctype: 'Presentation' })
-    expect(calls.map((call) => call.id)).toEqual(['roots_discover', 'node_create'])
-    expect(calls[1]?.input).toMatchObject({
-      parent: 'personal-root', title: 'Untitled presentation', kind: 'document', content_doctype: 'Presentation',
-    })
-    expect(calls[1]?.input).not.toHaveProperty('upload')
+    await mutation.run({ parent: 'folder-1', content_doctype: 'Presentation' })
+    expect(calls).toEqual([{
+      id: 'node_create',
+      input: { parent: 'folder-1', title: 'Untitled presentation', kind: 'document', content_doctype: 'Presentation' },
+    }])
     state.dispose()
   })
 })

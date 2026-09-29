@@ -37,6 +37,7 @@ from suite.sheets.doctype.sheet.storage import (
 
 from . import seq as seq_mod
 from . import snapshots as snapshots_mod
+from suite.sheets.drive import require_sheet
 
 MAX_TITLE_LEN = 280
 MAX_OPS_PER_SAVE = 500
@@ -60,7 +61,7 @@ def save_sheet(
     to ``Sheet.after_insert``.
     """
     if name and request_id:
-        frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
+        require_sheet(name, write=True)
         completed_seq = frappe.db.get_value("Sheet Op Log", {"sheet": name, "request_id": request_id}, "seq")
         if completed_seq is not None:
             return {"name": name, "head_seq": int(completed_seq)}
@@ -116,12 +117,13 @@ def _update_existing(
     ops_list: list[dict],
     request_id: str | None = None,
 ) -> tuple[str, int]:
-    frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
+    require_sheet(name, write=True)
     # Cheap PK read so the rare rename path (below) only runs on an actual title
-    # change, not on every autosave.
-    old_title = frappe.db.get_value("Sheet", name, "title")
+    # change, not on every autosave. Drive owns a linked sheet's title and the
+    # column is frozen there (§10.2), so a linked sheet never takes that path.
+    old_title, node = frappe.db.get_value("Sheet", name, ("title", "node"))
     head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save", request_id=request_id)
-    if title != old_title:
+    if not node and title != old_title:
         # The editor's inline rename rides the autosave. A title change is rare,
         # so route the whole write through the ORM: on_update then fires and Drive
         # renames the backing File via the standard doc-event — the same front

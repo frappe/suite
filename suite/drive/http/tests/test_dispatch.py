@@ -1373,6 +1373,37 @@ class TestRoots(DriveHTTPCase):
         answer = self.data(self.drive("GET", f"{PREFIX}/roots/{self.root.name}/usage", sid=sid))
         self.assertIn("used_bytes", answer)
 
+    def test_the_breakdown_expansion_lists_what_the_root_holds(self):
+        path = f"{PREFIX}/roots/{self.root.name}/usage"
+        answer = self.data(self.as_owner("GET", path, query={"expand": "breakdown"}))
+        self.assertEqual(
+            set(answer),
+            {"used_bytes", "reserved_bytes", "quota_bytes", "effective_quota", "by_type", "largest"},
+        )
+        # The fixture holds one 11-byte file; the folder and the empty document are free.
+        self.assertEqual([row["bytes"] for row in answer["by_type"]], [11])
+        self.assertEqual(
+            answer["largest"],
+            [
+                {
+                    "node": self.file,
+                    "title": "report.bin",
+                    "size": 11,
+                    "mime": answer["largest"][0]["mime"],
+                    "kind": "file",
+                    "type": answer["by_type"][0]["type"],
+                }
+            ],
+        )
+
+        sid = self.session_for("Administrator")
+        admin = self.data(self.drive("GET", path, query={"expand": "breakdown"}, sid=sid))
+        self.assertEqual(admin["largest"], answer["largest"])
+
+        stranger = self.session_for(STRANGER)
+        refused = self.drive("GET", path, query={"expand": "breakdown"}, sid=stranger)
+        self.refusal(refused, 404, "DriveNotFound")
+
     def test_an_ordinary_user_cannot_change_a_quota(self):
         response = self.as_owner("PATCH", f"{PREFIX}/roots/{self.root.name}", body={"quota_bytes": 10})
         self.assertIn(response.status_code, (403, 404))
@@ -2207,6 +2238,17 @@ class TestViewRoutes(DriveHTTPCase):
                 theirs = self.data(self.drive("GET", f"{PREFIX}/views/{name}", sid=sid))
                 self.assertEqual(theirs["rows"], [])
                 self.assertEqual([row["name"] for row in self.view(name)["rows"]], [self.file])
+
+    def test_recents_filter_by_content_doctype_from_the_query_string(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.document}/visit", body={}))
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        everything = self.view("recents")
+        self.assertEqual({row["name"] for row in everything["rows"]}, {self.document, self.file})
+        todo = self.view("recents", content_doctype="ToDo")
+        self.assertEqual([row["name"] for row in todo["rows"]], [self.document])
+        self.assertIsNotNone(todo["rows"][0]["opened_at"])
+        unknown = self.view("recents", content_doctype="No Such Doctype")
+        self.assertEqual(unknown, {"rows": [], "next_cursor": None})
 
     def test_clearing_recents_leaves_the_favourites_alone(self):
         self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))

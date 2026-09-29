@@ -1,5 +1,5 @@
 import { ref, watch, onUnmounted } from 'vue'
-import { call }                        from '../../utils/api.js'
+import { call, isRefusal }             from '../../utils/api.js'
 import { getSessionUser, fullName as sessionFullName, imageURL as sessionImageURL } from '@/boot/session'
 import { userInitials }                from '../../utils/session.js'
 import { createYDoc, hydrateYDoc }     from '../../collab/ydoc.js'
@@ -117,12 +117,27 @@ export function useCollaboration({
   currentSheet,
   getSheet,
   repopulateGrid,
+  // A collaboration verdict: the relay refused this client's write, or the
+  // collaboration server refused the connection. The editor narrows access.
+  onRefused    = () => {},
+  // Send relay calls through this fetch. The `/d/` surface passes the Drive
+  // session's, which adds its link credentials.
+  credentialFetch,
   _self        = getSessionUser(),
   _realtime    = window.frappe?.realtime,
-  _callFn      = (method, args) => call(method, args),
+  _callFn      = (method, args) => call(method, args, { fetch: credentialFetch }),
   _watch       = watch,
   _onUnmounted = onUnmounted,
 }) {
+  const _relay = async (method, args) => {
+    try {
+      return await _callFn(method, args)
+    } catch (err) {
+      if (isRefusal(err)) onRefused()
+      throw err
+    }
+  }
+
   const presentUsers  = ref([])           // other users currently viewing
   const remoteCursors = ref(new Map())    // userId → { row, col, subSheet, color, ... }
 
@@ -130,6 +145,7 @@ export function useCollaboration({
   let _provider  = null
   let _awareness = null
   let _binding   = null
+  let _adapter   = null   // legacy relay only: holds the sheet-room subscription
   let _sheetId   = null
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
@@ -269,10 +285,10 @@ export function useCollaboration({
       if (!_realtime || typeof _realtime.on !== 'function') {
         _realtime = ensureFrappeRealtime() || _realtime
       }
-      const adapter = createRealtimeAdapter({
+      const adapter = _adapter = createRealtimeAdapter({
         sheetId:  _sheetId,
         realtime: _realtime,
-        callFn:   _callFn,
+        callFn:   _relay,
       })
       _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
       _awareness = createAwareness({
@@ -299,6 +315,9 @@ export function useCollaboration({
       // in hocuspocus-client.js. Subsequent opens see a populated server
       // state and skip this entirely.
       getSnapshot: () => sheet?.snapshot?.(),
+      onStatusChange: (status) => {
+        if (status === 'authentication-failed') onRefused()
+      },
     })
   }
 
@@ -317,8 +336,9 @@ export function useCollaboration({
     _binding?.dispose()
     _awareness?.destroy()
     _provider?.destroy()
+    _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _doc = null
+    _binding = _awareness = _provider = _adapter = _doc = null
     _sheetId = null
     presentUsers.value  = []
     remoteCursors.value = new Map()

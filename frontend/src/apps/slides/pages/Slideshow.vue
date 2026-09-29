@@ -67,6 +67,7 @@
 import { computed, onActivated, onDeactivated, ref, watch, provide } from 'vue'
 import { toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
 import { appPageMeta } from '@/utils/documentTitle'
+import { usePageTitle } from '@/platform/page-meta'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
@@ -324,12 +325,13 @@ const updateWindowSize = () => {
 	windowHeight.value = window.innerHeight
 }
 
-usePageMeta(() => appPageMeta(pageTitle(), 'Slides'))
+// the title goes through the platform's page meta, which also restores it when this page is reactivated
+usePageTitle(pageTitle)
+usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 useBrowserZoomGuard()
 
 onActivated(() => {
 	active = true
-	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
 	initFullscreenMode()

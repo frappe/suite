@@ -1158,50 +1158,49 @@ def storage_bar_data() -> dict:
 
 @_legacy
 def storage_breakdown() -> dict:
-    """`storage_breakdown` -> `GET /roots/<id>/usage`, plus the two aggregates.
+    """`storage_breakdown` -> `GET /roots/<id>/usage?expand=breakdown`.
 
-    §11.2 has no route for a by-type total or a largest-files list, so the two
-    lists are read here from the caller's own root. It is a read of node rows
-    the caller owns, not a second answer to a permission question: the root is
-    authorized by `usage_for` first, and nothing is listed outside it.
+    The caller's own root, as `storage_bar_data` reads it. Both lists are the
+    route's own, under the keys the legacy Storage tab reads: types by the
+    rule `roots.usage_for` applies, each spelled as a mime the tab maps back
+    to that type, and files by root rather than by owner, because a file
+    someone else put in this root is charged to it (§7.1). Legacy listed
+    every file above a quota floor; the route's fixed cap replaces that floor.
     """
     principals = _principals()
     root = _own_root(principals)
     if not root:
         return {"limit": 0, "total": [], "entities": []}
-    limit = int(roots.usage_for(root, principals).effective_quota or 0)
-
-    rows = frappe.get_all(
-        "Drive Node",
-        filters={
-            "root": root,
-            "owner": principals.user,
-            "state": "Active",
-            "kind": ["in", ["file", "document", "link"]],
-        },
-        fields=["name", "title", "owner", "size", "mime", "kind"],
-        order_by="size desc",
-    )
-    by_type: dict[str, int] = {}
-    for row in rows:
-        by_type[_file_type(row)] = by_type.get(_file_type(row), 0) + int(row.size or 0)
-    # Legacy listed only the files worth acting on when a quota existed.
-    floor = limit / 200 if limit else 0
+    usage = roots.usage_for(root, principals, breakdown=True)
     return {
-        "limit": limit,
-        "total": [{"file_type": name, "file_size": size} for name, size in by_type.items()],
+        "limit": int(usage.effective_quota or 0),
+        "total": [
+            {"mime_type": _legacy_mime(row["type"]), "file_size": row["bytes"]} for row in usage.by_type
+        ],
         "entities": [
             {
-                "name": row.name,
-                "file_name": row.title,
-                "owner": row.owner,
-                "file_size": int(row.size or 0),
-                "file_type": _file_type(row),
+                "name": row["node"],
+                "file_name": row["title"],
+                "file_size": row["size"],
+                "file_type": row["type"],
             }
-            for row in rows
-            if int(row.size or 0) >= floor
+            for row in usage.largest
         ],
     }
+
+
+def _legacy_mime(file_type: str) -> str | None:
+    """One mime the legacy Storage tab maps back to `file_type`.
+
+    `StorageSettings.vue` reads `mime_type` from each total and finds its type
+    in the client's own mime table. That table has no `frappe…` pseudo-mimes,
+    so the first ordinary mime of the type is sent. A type the table does not
+    hold - a content doctype such as `Writer Document` - gets `None`, which the
+    tab shows as Unknown.
+    """
+    from suite.drive.utils import MIME_LIST_MAP
+
+    return next((mime for mime in MIME_LIST_MAP.get(file_type, ()) if not mime.startswith("frappe")), None)
 
 
 # --------------------------------------------------------------------------

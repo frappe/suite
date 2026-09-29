@@ -47,6 +47,7 @@
 <script setup>
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   provide,
@@ -69,7 +70,6 @@ import {
   RichTextKit,
 } from 'frappe-ui/editor'
 import { Button, toast, useFileUpload, Dropdown } from 'frappe-ui'
-import { rename, allUsers } from '@/apps/drive/legacy/sdk'
 import { onKeyDown } from '@vueuse/core'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -84,11 +84,14 @@ import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { cssLineHeight } from '@/apps/writer/utils/typography'
 import MediaDownload from '@/apps/writer/extensions/media-download'
+import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { TabsExtension } from '@/apps/writer/extensions/tabs'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
+import { useUsers } from '@/apps/writer/composables/useUsers'
+import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 
 
 import { useSessionStore } from '@/boot/session'
@@ -98,7 +101,6 @@ import {
   COMMON_EXTENSIONS,
   isModKey,
   printDoc,
-  updateURLSlug,
 } from '@/apps/writer/utils'
 
 import LucideMessageSquareQuote from '~icons/lucide/message-square-quote'
@@ -151,8 +153,18 @@ const scrollParent = computed(() =>
   document.querySelector('#editor-scroll-container'),
 )
 
-const isPainting = computed(
-  () => !!editor.value?.storage.styleClipboard.styleClipboard,
+// The format painter keeps its flag in plain editor storage, which Vue does
+// not track. Read it again after each transaction.
+const isPainting = ref(false)
+watch(
+  editor,
+  (instance, _previous, onCleanup) => {
+    if (!instance) return
+    const read = () => (isPainting.value = !!instance.storage.styleClipboard?.painting)
+    instance.on('transaction', read)
+    onCleanup(() => instance.off('transaction', read))
+  },
+  { immediate: true },
 )
 
 const showUnanchoredButton = computed(() => {
@@ -210,6 +222,8 @@ const onCommentActivated = (id) => {
 }
 
 const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collaboration')
+const { users } = useUsers()
+const renameDocument = inject(RENAME_DOCUMENT, null)
 
 const editorExtensions = [
   RichTextKit.configure({
@@ -219,7 +233,9 @@ const editorExtensions = [
       gapcursor: false,
       ...(hasCollaboration && { undoRedo: false }),
     },
-    mention: { items: () => allUsers.data ?? [] },
+    mention: { items: () => users.value },
+    // The Paint Styles button arms the format painter.
+    styleClipboard: {},
   }),
   ...COMMON_EXTENSIONS,
   CoreEditorExtension,
@@ -243,6 +259,7 @@ const editorExtensions = [
     scrollParent: () => scrollParent.value,
   }),
   MediaDownload,
+  DriveMedia.configure({ media: inject(DOCUMENT_MEDIA, null) }),
   CommentExtension.configure({
     comments: props.comments,
     doc: props.yjsDoc,
@@ -348,20 +365,9 @@ const autorename = () => {
     .trim()
   if (!implicitTitle.length) return
 
-  rename.submit(
-    {
-      entity_name: props.file.doc.name,
-      new_title: implicitTitle.slice(0, 100),
-    },
-    {
-      onSuccess: () => {
-        props.file.doc.file_name = rename.params.new_title
-        const crumbs = props.file.doc.breadcrumbs
-        crumbs[crumbs.length - 1].file_name = rename.params.new_title
-        updateURLSlug(rename.params.new_title)
-      },
-    },
-  )
+  renameDocument?.(implicitTitle.slice(0, 100)).catch((error) => {
+    toast.error(error?.message || 'Could not rename this file.')
+  })
 }
 
 const addComment = () => {

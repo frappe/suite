@@ -4278,9 +4278,88 @@
       "pathParams": [
         "root"
       ],
-      "query": null,
+      "query": {
+        "properties": {
+          "expand": {
+            "const": "breakdown",
+            "title": "Expand",
+            "type": "string"
+          }
+        },
+        "title": "RootUsageQuery",
+        "type": "object"
+      },
       "body": null,
       "output": {
+        "$defs": {
+          "LargestNode": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mime"
+              },
+              "kind": {
+                "enum": [
+                  "file",
+                  "document"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "title",
+              "size",
+              "mime",
+              "kind",
+              "type"
+            ],
+            "title": "LargestNode",
+            "type": "object"
+          },
+          "TypeBytes": {
+            "properties": {
+              "type": {
+                "title": "Type",
+                "type": "string"
+              },
+              "bytes": {
+                "title": "Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "bytes"
+            ],
+            "title": "TypeBytes",
+            "type": "object"
+          }
+        },
         "properties": {
           "used_bytes": {
             "title": "Used Bytes",
@@ -4304,6 +4383,20 @@
           "effective_quota": {
             "title": "Effective Quota",
             "type": "integer"
+          },
+          "by_type": {
+            "items": {
+              "$ref": "#/$defs/TypeBytes"
+            },
+            "title": "By Type",
+            "type": "array"
+          },
+          "largest": {
+            "items": {
+              "$ref": "#/$defs/LargestNode"
+            },
+            "title": "Largest",
+            "type": "array"
           }
         },
         "required": [

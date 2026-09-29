@@ -502,6 +502,25 @@ class TestRootDiscoveryRoute(BoundaryCase):
         self.assertEqual(answer, result)
 
 
+class TestRootUsageRoute(BoundaryCase):
+    def test_the_breakdown_is_read_only_when_it_is_named(self):
+        for expand, wanted in ((None, False), ("", False), ("breakdown", True)):
+            with self.subTest(expand=expand):
+                usage = frappe._dict(used_bytes=1)
+                with patch.object(routes.roots, "usage_for", return_value=usage) as workflow:
+                    answer = routes.root_usage(root="r1", expand=expand)
+                workflow.assert_called_once_with("r1", SOMEONE, breakdown=wanted)
+                self.assertEqual(answer, {"used_bytes": 1})
+
+    def test_a_node_expansion_is_not_a_usage_expansion(self):
+        for expand in ("access", "breakdown,preview"):
+            with self.subTest(expand=expand):
+                with patch.object(routes.roots, "usage_for") as workflow:
+                    with self.assertRaises(frappe.ValidationError):
+                        routes.root_usage(root="r1", expand=expand)
+                workflow.assert_not_called()
+
+
 class TestChunkBody(BoundaryCase):
     def request_with(self, body, cached=False):
         builder = EnvironBuilder(
@@ -806,7 +825,7 @@ class TestViewRoutes(BoundaryCase):
             ("templates", {"content_doctype": "Presentation"}),
             ("search", {"term": "budget"}),
             ("shared", {}),
-            ("recents", {}),
+            ("recents", {"content_doctype": "Presentation"}),
             ("favourites", {}),
             ("archived-roots", {}),
         )

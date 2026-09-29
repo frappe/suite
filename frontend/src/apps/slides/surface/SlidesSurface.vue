@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput, toast } from "frappe-ui";
+import { Badge, Button, TextInput, Tooltip, toast } from "frappe-ui";
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   provide,
@@ -27,48 +28,106 @@ import {
   inReadonlyMode,
   presentationDoc,
   resetEditorState,
+  setDocumentFetch,
   slidesLength,
   viewOnly,
 } from "@/apps/slides/stores/presentation";
 import {
   dirty,
   isSaving,
+  resumeWrites,
   saveChanges,
   saveCurrentState,
   saveFailed,
+  stopWrites,
 } from "@/apps/slides/stores/saving";
 import {
   changeEditorSlide,
   focusedSlide,
   setSlideIndex,
+  slideIndex,
   slides,
 } from "@/apps/slides/stores/slide";
 import { inSlideShowMode } from "@/apps/slides/stores/slideshow";
+import { createSlidesAccess } from "./access";
 import {
   CompositeGroupLoader,
+  indexOfPlace,
   mergeCompositeSlides,
+  placeAt,
   type CompositeItem,
   type CompositeManifest,
+  type MergedCompositeSlide,
 } from "./compositeGroups";
+import ExportView from "./ExportView.vue";
+import SlidesVersionsPanel from "./SlidesVersionsPanel.vue";
 import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
+import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from "./recovery";
+
+type Send = CredentialGrouper["fetch"];
+type Panel = "comments" | "versions";
+
+/** `GET nodes/<id>/threads` */
+interface CommentThread {
+  name: string;
+  resolved: boolean;
+  comments: { name: string; content: string; author_name: string | null; creation: string | null }[];
+}
 
 const props = defineProps<{ session: DocumentSession }>();
-const role = computed(() => props.session.access.value.role ?? 0);
-const readable = computed(() => props.session.state.value !== "Refused" && role.value >= 10);
-const editable = computed(
-  () => readable.value && props.session.state.value === "Active" && role.value >= 40,
-);
 const titleDraft = ref(props.session.title.value);
 const loading = ref(true);
 const loadError = ref("");
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
+const composite = ref(false);
 const compositeItems = ref<CompositeItem[]>([]);
 const compositeLoader = ref<CompositeGroupLoader | null>(null);
-const showPanel = ref<"comments" | "versions" | null>(null);
-const panelRows = ref<unknown[]>([]);
+const panel = ref<Panel | null>(null);
+const threads = ref<CommentThread[]>([]);
 const panelLoading = ref(false);
+const commentText = ref("");
+const exporting = ref(false);
+const hasRecovery = ref(readRecovery(props.session.nodeId) !== null);
 const isSlideInteractionActive = ref(false);
 let autosaveTimer: number | undefined;
+
+const access = createSlidesAccess(props.session, {
+  narrowed() {
+    // First, so no snapshot and no push leaves after this point. `stopWrites`
+    // also cancels a save under way and retires the draft, so it never replays.
+    const unsaved = dirty.value || isSaving.value || saveFailed.value;
+    viewOnly.value = true;
+    void stopWrites(props.session.contentDocname);
+    if (!unsaved) {
+      toast.warning("Editing access changed. This presentation is now view only.");
+      return;
+    }
+    retainRecovery();
+    toast.warning("Editing access changed. Your unsaved changes are kept on this device.", {
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: "Download my changes", onClick: downloadChanges },
+    });
+  },
+  widened() {
+    // The server copy is the truth now: reload it rather than replay anything.
+    resumeWrites(props.session.contentDocname);
+    toast.info("You can edit this presentation again.");
+    void load();
+  },
+});
+// A restore pauses editing: nothing is written while the server rewrites the deck.
+const restoring = ref(false);
+const editable = computed(() => access.writable.value && !composite.value && !restoring.value);
+const trashed = computed(() => props.session.state.value === "Trashed");
+
+// Body requests go through the session, with this document's link credentials.
+// A refused write is a verdict: access narrows until the presentation opens again.
+const send: Send = async (url, init) => {
+  const response = await props.session.credentials.fetch(url, init);
+  if (init?.method === "POST" && (response.status === 401 || response.status === 403)) access.refuse();
+  return response;
+};
+const releaseFetch = setDocumentFetch(props.session.contentDocname, send);
 
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
@@ -82,17 +141,17 @@ provide("inSlideShowMode", inSlideShowMode);
 provide("isOnline", online);
 
 watch(() => props.session.title.value, (title) => { titleDraft.value = title; });
-watch(editable, (canEdit, couldEdit) => {
-  if (couldEdit && !canEdit) {
-    void saveCurrentState();
-    toast.warning("Editing access changed. Your local presentation copy was kept.");
-  }
-  viewOnly.value = !canEdit;
-}, { immediate: true });
+watch(editable, (canEdit) => { viewOnly.value = !canEdit; }, { immediate: true, flush: "sync" });
+// A save that lands with edit access makes the recovery copy stale.
+watch(isSaving, (now, before) => {
+  if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return;
+  clearRecovery(props.session.nodeId);
+  hasRecovery.value = false;
+});
 
 async function rename() {
   const title = titleDraft.value.trim();
-  if (!title || title === props.session.title.value || !editable.value) {
+  if (!title || title === props.session.title.value || !access.writable.value) {
     titleDraft.value = props.session.title.value;
     return;
   }
@@ -105,49 +164,93 @@ async function rename() {
   }
 }
 
-async function share() {
-  const result = await props.session.share();
-  if (!result.available) toast.info(result.title, { description: result.reason });
+function togglePanel(kind: Panel) {
+  panel.value = panel.value === kind ? null : kind;
+  if (panel.value === "comments") void loadComments();
 }
 
-async function openPanel(kind: "comments" | "versions") {
-  showPanel.value = showPanel.value === kind ? null : kind;
-  if (!showPanel.value) return;
+async function loadComments() {
   panelLoading.value = true;
   try {
-    const result = kind === "comments"
-      ? await props.session.comments.list()
-      : await props.session.versions.list();
-    panelRows.value = Array.isArray(result)
-      ? result
-      : ((result as any)?.rows ?? (result as any)?.data ?? []);
+    const result = (await props.session.comments.list()) as { threads?: CommentThread[] };
+    threads.value = result.threads ?? [];
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Could not load the comments.");
   } finally {
     panelLoading.value = false;
   }
 }
 
+/** Save pending edits, or refuse: a version holds only the saved state. */
+async function flushEdits() {
+  await saveChanges();
+  if (dirty.value || isSaving.value || saveFailed.value) {
+    throw new Error("Your latest changes are not saved yet. Try again when the presentation is saved.");
+  }
+}
+
+async function restoreVersion(seq: string) {
+  await flushEdits();
+  restoring.value = true;
+  try {
+    await props.session.versions.restore(seq);
+    await load();
+  } finally {
+    restoring.value = false;
+  }
+}
+
+async function addComment() {
+  const text = commentText.value.trim();
+  if (!text || !access.canComment.value) return;
+  try {
+    await props.session.comments.create("document", text);
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Could not add the comment.");
+    return;
+  }
+  commentText.value = "";
+  await loadComments();
+}
+
+function exportPdf() {
+  exporting.value = true;
+  void nextTick(() => {
+    window.setTimeout(() => {
+      window.addEventListener("afterprint", () => { exporting.value = false; }, { once: true });
+      window.print();
+    }, 200);
+  });
+}
+
 async function loadComposite() {
+  // Sent with every held link code: the server names the node of each
+  // reference those codes open, and each group then sends only its own codes.
   const manifest = await frappeGet<CompositeManifest>(
     "suite.slides.api.composite.composite_manifest",
     { name: props.session.contentDocname },
-    props.session.credentials.fetch,
+    props.session.credentials.fetchHeld,
   );
+  let shown: MergedCompositeSlide[] = [];
   const loader = new CompositeGroupLoader(
     manifest,
     props.session.credentials,
-    async (references, send) => frappeGet(
+    async (references, groupSend) => frappeGet(
       "suite.slides.api.composite.composite_group",
       { name: props.session.contentDocname, references },
-      send,
+      groupSend,
     ),
     (items) => {
       compositeItems.value = items.map((item) => ({ ...item }));
-      const merged = mergeCompositeSlides(items).map((entry) =>
+      // A group that arrives moves indexes; the viewer stays on the slide they read.
+      const place = placeAt(shown, slideIndex.value ?? 0);
+      shown = mergeCompositeSlides(items);
+      const merged = shown.map((entry) =>
         entry.slide ? normalizeCompositeSlide(entry.slide) : placeholderSlide(entry),
       );
       slides.value = merged;
       slidesLength.value = merged.length;
-      if (merged.length) setSlideIndex(1);
+      if (merged.length) setSlideIndex((place ? indexOfPlace(shown, place) : 0) + 1);
     },
   );
   compositeLoader.value = loader;
@@ -159,10 +262,12 @@ async function load() {
   loading.value = true;
   loadError.value = "";
   try {
-    const doc = await initPresentationDoc(props.session.contentDocname, !editable.value);
+    // Not `editable`: a restore pauses editing, and its reload is still an editor load.
+    const doc = await initPresentationDoc(props.session.contentDocname, !access.writable.value || composite.value);
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value;
     setSlideIndex(1);
-    if (doc?.is_composite) await loadComposite();
+    composite.value = !!doc?.is_composite;
+    if (composite.value) await loadComposite();
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : "Could not open this presentation.";
   } finally {
@@ -171,7 +276,7 @@ async function load() {
 }
 
 function normalizeCompositeSlide(value: unknown) {
-  const slide = { ...(value as Record<string, any>) };
+  const slide: Record<string, unknown> = { ...(value as Record<string, unknown>) };
   if (typeof slide.elements === "string") {
     try { slide.elements = JSON.parse(slide.elements); }
     catch { slide.elements = []; }
@@ -197,26 +302,42 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
   };
 }
 
-async function frappeGet<T>(
-  method: string,
-  args: Record<string, unknown>,
-  send: CredentialGrouper["fetch"],
-): Promise<T> {
+async function frappeGet<T>(method: string, args: Record<string, unknown>, through: Send): Promise<T> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(args)) {
     query.set(key, Array.isArray(value) ? JSON.stringify(value) : String(value));
   }
-  const response = await send(`/api/method/${method}?${query}`, { credentials: "same-origin" });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.exc) throw new Error(body.message ?? body.exc_type ?? "Request failed");
+  const response = await through(`/api/method/${method}?${query}`, { credentials: "same-origin" });
+  const body = (await response.json().catch(() => ({}))) as {
+    message?: T;
+    data?: T;
+    exc?: string;
+    exc_type?: string;
+  };
+  if (!response.ok || body.exc) throw new Error(body.exc_type ?? "Request failed");
   return (body.message ?? body.data ?? body) as T;
+}
+
+function retainRecovery() {
+  if (!slides.value?.length) return;
+  try {
+    keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[]);
+    hasRecovery.value = true;
+  } catch {
+    toast.error("Your latest changes could not be kept on this device.");
+  }
+}
+
+function downloadChanges() {
+  const downloaded = downloadRecovery(props.session.nodeId, props.session.title.value);
+  hasRecovery.value = false;
+  if (!downloaded) toast.error("No recovery copy is kept for this presentation.");
 }
 
 const saveState = computed<DocumentSaveState>(() =>
   isSaving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean",
 );
 async function flush() { await saveChanges(); }
-function retainRecovery() { void saveCurrentState(); }
 useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery });
 
 function setOnline() { online.value = true; }
@@ -234,7 +355,11 @@ onBeforeUnmount(() => {
   window.removeEventListener("online", setOnline);
   window.removeEventListener("offline", setOffline);
   resetFocus();
-  void saveCurrentState();
+  // A deck whose writes stopped sends nothing here; the next open starts afresh.
+  void saveCurrentState().finally(() => {
+    releaseFetch();
+    resumeWrites(props.session.contentDocname);
+  });
   resetEditorState();
 });
 </script>
@@ -243,19 +368,65 @@ onBeforeUnmount(() => {
   <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
     <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
       <span class="lucide-presentation size-5 text-ink-gray-6" aria-hidden="true" />
-      <TextInput v-model="titleDraft" class="min-w-0 max-w-md flex-1" variant="ghost" :disabled="!editable" aria-label="Presentation title" @blur="rename" />
-      <span class="ml-auto text-sm text-ink-gray-5">{{ isSaving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}</span>
+      <TextInput
+        v-model="titleDraft"
+        class="min-w-0 max-w-md flex-1"
+        variant="ghost"
+        :disabled="!access.writable.value"
+        aria-label="Presentation title"
+        @blur="rename"
+        @keydown.stop
+        @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        @keydown.escape.prevent="titleDraft = session.title.value; ($event.target as HTMLInputElement).blur()"
+      />
+      <span class="ml-auto text-sm text-ink-gray-5">
+        {{ isSaving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}
+      </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
-      <Badge v-if="!editable" :label="session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
-      <Button icon="lucide-message-square" tooltip="Comments" variant="ghost" @click="openPanel('comments')" />
-      <Button icon="lucide-history" tooltip="Versions" variant="ghost" @click="openPanel('versions')" />
-      <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
+      <Badge v-if="trashed" label="Trashed" theme="gray" variant="subtle" />
+      <Badge v-if="!editable" label="View only" theme="gray" variant="subtle" />
+      <Button v-if="hasRecovery" label="Download my changes" icon-left="lucide-download" variant="ghost" @click="downloadChanges" />
+      <Button
+        icon="lucide-file-down"
+        tooltip="Export"
+        aria-label="Export"
+        variant="ghost"
+        :disabled="loading || !access.readable.value || !slides.length"
+        @click="exportPdf"
+      />
+      <Button
+        icon="lucide-message-square"
+        tooltip="Comments"
+        aria-label="Comments"
+        :variant="panel === 'comments' ? 'subtle' : 'ghost'"
+        :aria-pressed="panel === 'comments'"
+        @click="togglePanel('comments')"
+      />
+      <Button
+        icon="lucide-history"
+        tooltip="Versions"
+        aria-label="Versions"
+        :variant="panel === 'versions' ? 'subtle' : 'ghost'"
+        :aria-pressed="panel === 'versions'"
+        @click="togglePanel('versions')"
+      />
+      <!-- Stage 9 wires this to session.share. A disabled button fires no
+           hover event, so the tooltip sits on a wrapper. -->
+      <Tooltip text="Sharing arrives with the new share dialog">
+        <span class="inline-flex" tabindex="0">
+          <Button label="Share" icon-left="lucide-share-2" variant="solid" disabled />
+        </span>
+      </Tooltip>
     </header>
 
-    <div v-if="loading" class="m-auto text-sm text-ink-gray-5">Opening presentation…</div>
-    <div v-else-if="loadError || !readable" class="m-auto max-w-md px-6 text-center">
+    <div v-if="!access.readable.value" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
-      <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError || "You no longer have permission to read this presentation." }}</p>
+      <p class="mt-2 text-p-sm text-ink-gray-6">You no longer have permission to read this presentation.</p>
+    </div>
+    <div v-else-if="loading" class="m-auto text-sm text-ink-gray-5">Opening presentation…</div>
+    <div v-else-if="loadError" class="m-auto max-w-md px-6 text-center">
+      <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
+      <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
     <div v-else class="relative flex min-h-0 flex-1 bg-surface-gray-1">
       <SlideContainer v-if="presentationDoc" v-model:has-ongoing-interaction="isSlideInteractionActive" />
@@ -264,7 +435,7 @@ onBeforeUnmount(() => {
       <PropertiesPanel v-if="editable" class="absolute inset-y-0 right-0" />
     </div>
 
-    <div v-if="compositeItems.length" class="absolute bottom-3 left-1/2 z-20 flex max-w-[70%] -translate-x-1/2 gap-1 rounded-6 border border-outline-gray-1 bg-surface-elevation-2 p-2 shadow-2xl">
+    <div v-if="compositeItems.length && access.readable.value" class="absolute bottom-3 left-1/2 z-20 flex max-w-[70%] -translate-x-1/2 gap-1 rounded-6 border border-outline-gray-1 bg-surface-elevation-2 p-2 shadow-2xl">
       <button
         v-for="item in compositeItems"
         :key="item.reference"
@@ -278,16 +449,48 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <aside v-if="showPanel" class="absolute inset-y-0 right-0 z-30 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
-      <div class="flex min-h-12 items-center justify-between border-b px-4">
-        <h2 class="text-lg-semibold">{{ showPanel === 'comments' ? 'Comments' : 'Versions' }}</h2>
-        <Button icon="lucide-x" variant="ghost" @click="showPanel = null" />
+    <aside
+      v-if="panel === 'comments'"
+      class="absolute bottom-0 right-0 top-12 z-30 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
+      aria-label="Comments"
+    >
+      <div class="flex min-h-12 items-center justify-between border-b border-outline-gray-1 px-4">
+        <h2 class="text-lg-semibold">Comments</h2>
+        <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="panel = null" />
       </div>
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
-        <pre v-for="(row, index) in panelRows" v-else :key="index" class="whitespace-pre-wrap rounded-4 bg-surface-gray-1 p-3 text-p-xs">{{ row }}</pre>
-        <p v-if="!panelLoading && !panelRows.length" class="text-sm text-ink-gray-5">Nothing here yet.</p>
+        <template v-else>
+          <form v-if="access.canComment.value" class="flex gap-2" @submit.prevent="addComment">
+            <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" @keydown.stop />
+            <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+          </form>
+          <article
+            v-for="thread in threads"
+            :key="thread.name"
+            class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
+            :class="thread.resolved && 'opacity-60'"
+          >
+            <div v-for="comment in thread.comments" :key="comment.name">
+              <p class="text-sm-medium text-ink-gray-8">{{ comment.author_name || "Someone" }}</p>
+              <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
+            </div>
+          </article>
+          <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
+        </template>
       </div>
     </aside>
+    <SlidesVersionsPanel
+      v-else-if="panel === 'versions'"
+      :session="session"
+      :writable="access.writable.value && !restoring"
+      :flush="flushEdits"
+      :restore="restoreVersion"
+      @close="panel = null"
+    />
+
+    <teleport to="body">
+      <ExportView v-if="exporting" :slides="slides" />
+    </teleport>
   </div>
 </template>

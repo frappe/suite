@@ -8,12 +8,14 @@
           <span v-html="dialogData.message" />
         </div>
       </div>
-      <ErrorMessage class="my-1 text-center" :message="updateResource.error" />
+      <ErrorMessage class="my-1 text-center" :message="error" />
   </Dialog>
 </template>
 <script setup>
 import { ref, computed } from 'vue'
-import { createResource, Dialog, ErrorMessage, toast } from 'frappe-ui'
+import { Dialog, ErrorMessage, toast } from 'frappe-ui'
+
+import { setNodeState } from '@/apps/writer/drive'
 
 import LucideRotateCcw from '~icons/lucide/rotate-ccw'
 
@@ -35,7 +37,7 @@ const dialogData = computed(() => {
       message: `will be restored to ${
         props.entities.length === 1 ? 'its original location' : 'their original locations'
       }.`,
-      url: 'suite.drive.api.files.remove_or_restore',
+      state: 'Active',
       button: {
         variant: 'solid',
         label: 'Restore',
@@ -47,7 +49,7 @@ const dialogData = computed(() => {
       title: `Move ${itemString} to Trash`,
       message:
         'will be moved to Trash.<br/><br/> Items in trash are deleted forever after 30 days.',
-      url: 'suite.drive.api.files.remove_or_restore',
+      state: 'Trashed',
       button: {
         label: 'Move to Trash',
         theme: 'red',
@@ -59,20 +61,15 @@ const dialogData = computed(() => {
   return MAP[dialogType.value]
 })
 
-const loading = computed(() => (dialogData.value.resource || updateResource).loading)
+const loading = ref(false)
+const error = ref(null)
 const dialogOptions = computed(() => {
   return {
     title: dialogData.value.title,
     size: 'sm',
     actions: [
       {
-        onClick: async () => {
-          if (dialogData.value.resource) {
-            open.value = false
-            await dialogData.value.resource.submit()
-            emit('success')
-          } else updateResource.submit()
-        },
+        onClick: () => update(),
         ...dialogData.value.button,
         disabled: loading.value,
         // loading: loading.value,
@@ -81,22 +78,20 @@ const dialogOptions = computed(() => {
   }
 })
 
-const updateResource = createResource({
-  url: dialogData.value.url,
-  makeParams: () => {
-    open.value = ''
-    return {
-      entity_names:
-        typeof props.entities === 'string'
-          ? JSON.stringify([props.entities])
-          : JSON.stringify(props.entities.map((entity) => entity.name)),
-    }
-  },
-  onSuccess(data) {
-    emit('success', data)
-    updateResource.reset()
-    if (dialogData.value.onSuccess) dialogData.value.onSuccess(props.entities, data)
+async function update() {
+  const names =
+    typeof props.entities === 'string' ? [props.entities] : props.entities.map((entity) => entity.name)
+  loading.value = true
+  error.value = null
+  try {
+    for (const name of names) await setNodeState(name, dialogData.value.state)
+    open.value = false
+    emit('success')
     toast.success(dialogData.value.toastMessage)
-  },
-})
+  } catch (failure) {
+    error.value = failure
+  } finally {
+    loading.value = false
+  }
+}
 </script>

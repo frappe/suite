@@ -407,6 +407,10 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
+    "all": [
+        # drive
+        "suite.drive.jobs.flush_legacy_calls",
+    ],
     "hourly": [
         # drive
         "suite.drive.api.scripts.clear_download_archives",
@@ -442,9 +446,12 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
-# WebDAV protocol dispatcher, then the Suite resource dispatcher. The two own
-# disjoint prefixes. WebDAV's entry predates the framework-adapter rule.
+# The legacy-call counter first: it only buffers, and it must see every legacy
+# call before a dispatcher can answer it. Then the WebDAV protocol dispatcher
+# and the Suite resource dispatcher, which own disjoint prefixes. WebDAV's
+# entry predates the framework-adapter rule.
 before_request = [
+    "suite.drive.framework.count_legacy_call",
     "suite.drive.webdav.dispatch.handle_before_request",
     "suite.composition.http.handle_before_request",
 ]

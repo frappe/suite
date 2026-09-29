@@ -1,7 +1,8 @@
 """Frappe scheduler adapters for Drive-owned lifecycle work.
 
 Five daily jobs and no sixth: recompute root usage, purge expired trash,
-thin version history, sweep missing previews, and sweep unused media. There
+thin version history, sweep missing previews, and sweep unused media. One job
+runs on every scheduler tick: it stores the buffered legacy-call counts. There
 is deliberately no expired-grant cleanup. Every expired grant, including a
 share-link grant, is kept and is inert on every read, so nothing may delete
 one on a schedule (spec §6.4, accepted decisions).
@@ -85,3 +86,10 @@ def thin_versions() -> dict:
 def sweep_unused_document_media() -> dict:
     """Trash media no content document has named for seven days."""
     return sweep_unused_media()
+
+
+def flush_legacy_calls() -> int:
+    """Store the buffered legacy-call counts in `Drive Legacy Call` (§11.7)."""
+    from suite.drive.http.legacy_calls import flush
+
+    return flush()

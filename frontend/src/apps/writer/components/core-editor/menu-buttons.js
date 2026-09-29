@@ -113,10 +113,8 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
       label: 'Paint Styles',
       icon: LucidePaintRoller,
       isActive: () => isPainting.value,
-      action: (e) => {
-        e.commands.focus()
-        e.commands.storeStyles()
-      },
+      // One chain, so the transaction it ends with shows the armed painter.
+      action: (e) => e.chain().focus().storeStyles().run(),
     },
     {
       label: 'Clear formatting',

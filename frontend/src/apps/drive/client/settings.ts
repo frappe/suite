@@ -30,9 +30,15 @@ const generateUserKeysOperation: Operation<{ user: string }, { api_key: string; 
   path: '/api/v2/method/suite.utils.user.generate_user_keys',
 }
 
-/** Bytes used by one root, and its quota. A quota of 0 is unlimited. */
-export function rootUsage(root: string) {
-  return query(rootUsageOperation, { root }, { staleTime: 0 })
+/** One file in a root's largest-files list. */
+export type LargestFile = NonNullable<RootUsageOutput['largest']>[number]
+
+/**
+ * Bytes used by one root, its quota, and what the bytes are made of. A quota
+ * of 0 is unlimited.
+ */
+export function rootStorage(root: string) {
+  return query(rootUsageOperation, { root, expand: 'breakdown' }, { staleTime: 0 })
 }
 
 /** How to mount Drive over WebDAV, or `{}` when there is nothing to show. */
