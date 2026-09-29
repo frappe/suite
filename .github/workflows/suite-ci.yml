@@ -40,9 +40,6 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     name: Backend
-    # Safety net only: without this a hung bench or service container bills the
-    # 6h default. Set a little above the observed p90 (~6 min, max ~10 min over
-    # 529 successful runs) so only real hangs are cut off.
     timeout-minutes: 20
 
     services:
@@ -209,8 +206,6 @@ jobs:
   node-servers:
     runs-on: ubuntu-latest
     name: Node Servers
-    # Higher than the other jobs: the recorder integration scenarios run only on
-    # schedule/workflow_dispatch and take ~5 min on their own.
     timeout-minutes: 30
 
     steps:
@@ -325,7 +320,6 @@ jobs:
   mail-calendar:
     runs-on: ubuntu-latest
     name: ${{ matrix.name }}
-    # Safety net: observed p90 ~6 min, max ~7.5 min over 600+ successful runs.
     timeout-minutes: 20
 
     # One matrix leg per module; both legs run whenever either module changes,
@@ -494,7 +488,6 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     name: Frontend
-    # Safety net: observed p90 ~2.9 min, max ~3.6 min over 625 successful runs.
     timeout-minutes: 15
 
     steps:

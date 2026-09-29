@@ -27,8 +27,6 @@ jobs:
   linter:
     name: Frappe Linter
     runs-on: ubuntu-latest
-    # Safety net: all four jobs here finish in ~1 min. Without a timeout a hung
-    # semgrep scan bills the 6h default.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +47,6 @@ jobs:
   ruff-format:
     name: Ruff Format Check
     runs-on: ubuntu-latest
-    # Safety net: observed p90 ~0.3 min, max ~0.8 min.
     timeout-minutes: 10
 
     steps:
@@ -78,7 +75,6 @@ jobs:
   javascript-health:
     name: JavaScript Health Baseline
     runs-on: ubuntu-latest
-    # Safety net: observed p90 ~1.1 min, max ~2.5 min.
     timeout-minutes: 10
 
     steps:
@@ -132,7 +128,6 @@ jobs:
   deps-vulnerable-check:
     name: Vulnerable Dependency Check
     runs-on: ubuntu-latest
-    # Safety net: observed p90 ~0.7 min, max ~2.3 min.
     timeout-minutes: 10
 
     steps:
