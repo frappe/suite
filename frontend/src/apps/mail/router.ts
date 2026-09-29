@@ -54,9 +54,13 @@ const resolveShortcut = (
 	}
 }
 
+/** Every route in Mail's route module is named `mail-*`. */
+export const isMailRoute = (route: Pick<RouteLocationNormalized, 'name'>): boolean =>
+	typeof route.name === 'string' && route.name.startsWith('mail-')
+
 export const mailGuard = async (to: RouteLocationNormalized) => {
 	// Only act on mail routes; let the suite handle everything else.
-	if (typeof to.name !== 'string' || !to.name.startsWith('mail-')) return
+	if (!isMailRoute(to)) return
 
 	handleSetupWizardEscape()
 

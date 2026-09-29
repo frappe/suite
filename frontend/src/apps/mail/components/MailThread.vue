@@ -28,7 +28,7 @@
 		     and its border is the separator content passes under. -->
 		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
 			<!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
-			     baked in) and the global body.mail-app h2 rule outrank a plain leading-*
+			     baked in) and MailLayout's `.mail-app h2` rule outrank a plain leading-*
 			     utility — wrapped lines sat nearly touching. -->
 			<h2 class="text-lg-semibold !leading-7">
 				{{ thread[0].subject || __('[No subject]') }}
@@ -588,6 +588,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
 import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui'
 
+import { isMailRoute } from '@/apps/mail/router'
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	decodeHtmlEntities,
@@ -1258,7 +1259,8 @@ const discardLocalDraft = (mail: string) => {
 
 const handleKeydown = (e: KeyboardEvent) => {
 	// Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
-	if (readonly || shouldIgnoreKeypress(e)) return
+	// The listener sits on window, so it only acts while a Mail route is active.
+	if (readonly || !isMailRoute(route) || shouldIgnoreKeypress(e)) return
 
 	const key = e.key.toLowerCase()
 	const lastMail = thread.value?.at(-1)
