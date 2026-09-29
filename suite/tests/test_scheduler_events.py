@@ -50,4 +50,11 @@ class TestSchedulerEvents(unittest.TestCase):
             with self.subTest(method=method):
                 self.assertEqual(module_name, jobs.__name__)
                 self.assertIn(attr, expected_targets)
-        self.assertEqual({method.rpartition(".")[2] for method in daily_drive_jobs}, expected_targets)
+        # The one job outside `daily` stores the legacy-call counts (§11.7) on
+        # every tick. Every target in `jobs.py` is wired, and nothing else.
+        tick_drive_jobs = [
+            method for method in hooks.scheduler_events["all"] if method.startswith(drive_package)
+        ]
+        self.assertEqual(tick_drive_jobs, [f"{jobs.__name__}.flush_legacy_calls"])
+        wired = {method.rpartition(".")[2] for method in daily_drive_jobs + tick_drive_jobs}
+        self.assertEqual(wired, expected_targets)

@@ -84,6 +84,18 @@ def handle_http_request() -> None:
     handle_before_request()
 
 
+def count_legacy_call() -> None:
+    """Buffer this request's call if it addresses a legacy `suite.drive` name (§11.7).
+
+    The import is function-local for the reason `handle_http_request` gives.
+    The counter itself imports the shim table only for a request that could
+    name a legacy call.
+    """
+    from suite.drive.http.legacy_calls import record
+
+    record(frappe.request)
+
+
 def is_drive_admin(user: str | None = None) -> bool:
     user = user or frappe.session.user
     return user == "Administrator" or "Suite Admin" in frappe.get_roles(user)

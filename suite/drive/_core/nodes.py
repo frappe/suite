@@ -2727,6 +2727,7 @@ def views(
             limit=limit,
             with_access=with_access,
             with_breadcrumbs=with_breadcrumbs,
+            content_doctype=filters.get("content_doctype"),
         )
 
     page_size = page_limit(limit)
@@ -2797,12 +2798,25 @@ def _personal_view(
     limit: int,
     with_access: bool,
     with_breadcrumbs: bool,
+    content_doctype: str | None = None,
 ) -> dict:
-    """Answer a personal list as node rows, keeping its own cursor."""
+    """Answer a personal list as node rows, keeping its own cursor.
+
+    Only `recents` takes a `content_doctype` filter; the adapter passes it to
+    no other personal list.
+    """
     from suite.drive._core import activity
 
-    reader = activity.recents if name == "recents" else activity.favourites
-    result = reader(principals, cursor=cursor, limit=limit, with_access=with_access)
+    if name == "recents":
+        result = activity.recents(
+            principals,
+            cursor=cursor,
+            limit=limit,
+            with_access=with_access,
+            content_doctype=content_doctype,
+        )
+    else:
+        result = activity.favourites(principals, cursor=cursor, limit=limit, with_access=with_access)
     rows = _view_eligible([row.node for row in result["rows"]])
     if with_breadcrumbs:
         rows = _readable_rows(rows, principals, with_breadcrumbs=True)

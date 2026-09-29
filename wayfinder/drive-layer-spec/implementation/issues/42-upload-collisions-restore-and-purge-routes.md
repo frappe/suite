@@ -6,7 +6,7 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md); [21 — Expose node, upload, and root workflows through HTTP](21-http-node-workflows.md)
 
-**Status:** done (2026-09-29, uncommitted in worktree `suite-drive-42` on `forge/drive-42-upload-restore-purge`, base `ec448fa23`; the orchestrator commits)
+**Status:** done (merged into `forge/drive-layer` at `116dfa952`)
 
 **Owner:** Suite Drive node workflows and HTTP
 
