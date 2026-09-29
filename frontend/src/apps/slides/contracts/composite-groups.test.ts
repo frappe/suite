@@ -21,9 +21,17 @@ describe("the manifest", () => {
     for (const row of manifest.references) {
       expect(Object.keys(row).sort()).toEqual([
         "index",
+        "node",
         "presentation",
         "reference",
       ]);
+    }
+  });
+
+  it("names a node only for the decks the codes it carried open", () => {
+    const opened = groups[0].references.map((row) => row.reference);
+    for (const row of manifest.references) {
+      expect(row.node !== null).toBe(opened.includes(row.reference));
     }
   });
 

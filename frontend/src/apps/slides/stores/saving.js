@@ -47,8 +47,12 @@ const openDB = () => {
 	})
 }
 
-const savePresentationToLocalDB = async (data) => {
+// `allowed` is asked right before the transaction opens: IndexedDB runs
+// read-write transactions on one store in the order they open, so a write that
+// is refused here can never land after one that `stopWrites` made
+const savePresentationToLocalDB = async (data, allowed = () => true) => {
 	const db = await openDB()
+	if (!allowed()) return false
 
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, 'readwrite')
@@ -60,7 +64,7 @@ const savePresentationToLocalDB = async (data) => {
 		}
 
 		tx.oncomplete = () => {
-			resolve()
+			resolve(true)
 		}
 
 		tx.onerror = () => {
@@ -71,13 +75,33 @@ const savePresentationToLocalDB = async (data) => {
 
 let persistRequested = false
 
-// a store that refuses the draft must not stop the push
-const writeDraft = (record) => {
+// Edit access gone: `stopWrites` bumps the presentation's epoch, and every step
+// that writes the draft or sends a save checks the epoch it started under. A
+// save already under way stops at its next step, and no draft write lands after.
+const stopped = new Set()
+const epochs = new Map()
+// aborts the push of a presentation whose writes stop
+const saveAborts = new Map()
+
+const epochFor = (id) => epochs.get(id) ?? 0
+
+const mayWrite = (id, epoch = epochFor(id)) => !stopped.has(id) && epochFor(id) === epoch
+
+const abortFor = (id) => {
+	if (!saveAborts.has(id)) saveAborts.set(id, new AbortController())
+	return saveAborts.get(id).signal
+}
+
+// a store that refuses the draft must not stop the push; answers whether it wrote
+const writeDraft = (record, epoch) => {
 	if (!persistRequested) {
 		persistRequested = true
 		navigator.storage?.persist?.().catch(() => {})
 	}
-	return savePresentationToLocalDB(record).then(() => true, () => false)
+	return savePresentationToLocalDB(record, () => mayWrite(record.id, epoch)).then(
+		(wrote) => wrote,
+		() => false,
+	)
 }
 
 const getPresentationFromLocalDB = async (id) => {
@@ -133,10 +157,10 @@ const markClean = () => {
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
 
-const writeSnapshot = async (snapshot) => {
+const writeSnapshot = async (snapshot, epoch) => {
 	const generation = generationFor(snapshot.id)
 	if (draftGenerations.get(snapshot.id) === generation) return
-	if (await writeDraft(snapshot)) draftGenerations.set(snapshot.id, generation)
+	if (await writeDraft(snapshot, epoch)) draftGenerations.set(snapshot.id, generation)
 }
 
 // true when an online save to the server failed; drives the "Not saved" indicator
@@ -161,14 +185,18 @@ const saveRefused = computed(
 	() => refusedBase.value != null && refusedBase.value === presentationDoc.value?.modified,
 )
 
-const syncSnapshotToServer = async (snapshot, id, generation) => {
+// answers false when the writes stopped before the save finished
+const syncSnapshotToServer = async (snapshot, id, generation, epoch) => {
+	if (!mayWrite(id, epoch)) return false
 	// the version this save produced, read from its own response: presentationDoc
 	// may already point at another presentation by the time it resolves
 	const savedModified = await savePresentationDoc(
 		snapshot.id,
 		snapshot.content,
 		snapshot.baseModified,
+		abortFor(id),
 	)
+	if (!mayWrite(id, epoch)) return false
 	const tail = queuedSnapshots.get(id)
 	queuedSnapshots.delete(id)
 
@@ -176,31 +204,38 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 		// the tail was built on what the server just took, so it goes out on that base
 		if (tail) {
 			const next = { ...tail, baseModified: savedModified }
-			await writeDraft(next)
-			return syncSnapshotToServer(next, id, generationFor(id))
+			await writeDraft(next, epoch)
+			return syncSnapshotToServer(next, id, generationFor(id), epoch)
 		}
 		// slides.value belongs to another presentation now and can't be read back;
 		// the server has this snapshot
-		await writeDraft({
-			...snapshot,
-			dirty: false,
-			updatedAt: Date.now(),
-			baseModified: savedModified,
-		})
-		return
+		await writeDraft(
+			{
+				...snapshot,
+				dirty: false,
+				updatedAt: Date.now(),
+				baseModified: savedModified,
+			},
+			epoch,
+		)
+		return true
 	}
 
 	// an edit made mid-save isn't in the snapshot the server just took, so the
 	// local copy has to keep it and stay dirty; baseModified tracks the server version
 	const editedDuringSave = generationFor(id) !== generation
 
-	await writeDraft({
-		...snapshot,
-		content: editedDuringSave ? getLatestSlideContent() : snapshot.content,
-		dirty: editedDuringSave,
-		updatedAt: Date.now(),
-		baseModified: savedModified,
-	})
+	await writeDraft(
+		{
+			...snapshot,
+			content: editedDuringSave ? getLatestSlideContent() : snapshot.content,
+			dirty: editedDuringSave,
+			updatedAt: Date.now(),
+			baseModified: savedModified,
+		},
+		epoch,
+	)
+	return true
 }
 
 const getLatestSlideContent = () => {
@@ -231,13 +266,15 @@ const saveDraft = async () => {
 
 const saveCurrentState = async () => {
 	const snapshot = takeSnapshot()
-	if (!snapshot) return
+	if (!snapshot || stopped.has(snapshot.id)) return
 
 	const idAtSnapshot = snapshot.id
 	const generationAtSnapshot = generationFor(idAtSnapshot)
+	const epoch = epochFor(idAtSnapshot)
 
 	// written before the gate, so the draft follows the edits while a push is stuck
-	await writeSnapshot(snapshot)
+	await writeSnapshot(snapshot, epoch)
+	if (!mayWrite(idAtSnapshot, epoch)) return
 
 	if (isSaving.value) {
 		queuedSnapshots.set(idAtSnapshot, snapshot)
@@ -253,13 +290,15 @@ const saveCurrentState = async () => {
 	try {
 		// only mark clean once the server actually has the changes,
 		// and only if no edit arrived while this save was in flight
-		await syncSnapshotToServer(snapshot, idAtSnapshot, generationAtSnapshot)
+		if (!(await syncSnapshotToServer(snapshot, idAtSnapshot, generationAtSnapshot, epoch))) return
 		clearSaveFailure()
 
 		// dirty belongs to another presentation now, so it isn't ours to clear
 		if (presentationId.value !== idAtSnapshot) return
 		if (generationFor(idAtSnapshot) === generationAtSnapshot) markClean()
 	} catch (err) {
+		// the writes stopped mid-push: nothing of this save may land, the failure included
+		if (!mayWrite(idAtSnapshot, epoch)) return
 		// kept, the older queued edit would ride out on a later push over the newer ones
 		queuedSnapshots.delete(idAtSnapshot)
 		// keep dirty so autosave retries; log once per outage
@@ -269,7 +308,7 @@ const saveCurrentState = async () => {
 			if (presentationId.value !== idAtSnapshot) return
 			// the hold turns the editor read-only, so the edits made during the push go in first
 			const latest = takeSnapshot()
-			if (latest) await writeSnapshot(latest)
+			if (latest) await writeSnapshot(latest, epoch)
 			refusedBase.value = snapshot.baseModified
 		} else {
 			retryDelay = Math.min(retryDelay * 2 || 500, MAX_RETRY_MS)
@@ -278,6 +317,29 @@ const saveCurrentState = async () => {
 	} finally {
 		isSaving.value = false
 	}
+}
+
+// Edit access is gone. No save starts, the one under way is aborted and lands
+// nothing, and the draft is retired so it never replays: the edits live on only
+// in the explicit recovery copy the surface keeps.
+const stopWrites = async (id) => {
+	if (!id) return
+	stopped.add(id)
+	epochs.set(id, epochFor(id) + 1)
+	queuedSnapshots.delete(id)
+	draftGenerations.delete(id)
+	saveAborts.get(id)?.abort()
+	saveAborts.delete(id)
+	const local = await getPresentationFromLocalDB(id).catch(() => null)
+	if (local?.dirty) {
+		await savePresentationToLocalDB({ ...local, dirty: false, updatedAt: Date.now() }).catch(() => {})
+	}
+}
+
+// Edit access is back. The caller reloads from the server; the old epoch stays
+// refused, so nothing started before `stopWrites` lands now.
+const resumeWrites = (id) => {
+	stopped.delete(id)
 }
 
 const saveChanges = async () => {
@@ -296,6 +358,8 @@ export {
 	saveChanges,
 	saveWithoutDelay,
 	saveDraft,
+	stopWrites,
+	resumeWrites,
 	isSaving,
 	dirty,
 	markDirty,
