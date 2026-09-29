@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-30 12:00:00.000000",
+ "description": "Counts every call to a legacy suite.drive name (§11.7) by name and user agent. Cleanup gate 3 reads it, and Cleanup drops it with the names.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "legacy_name",
+  "user_agent",
+  "count",
+  "first_seen",
+  "last_seen"
+ ],
+ "fields": [
+  {
+   "fieldname": "legacy_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Legacy Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "user_agent",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User Agent",
+   "length": 255,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_seen",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "First Seen",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Seen",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Drive",
+ "name": "Drive Legacy Call",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "last_seen",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "legacy_name"
+}
