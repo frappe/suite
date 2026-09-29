@@ -3,18 +3,6 @@ name: Suite CI
 on:
   schedule:
     - cron: "17 22 * * *"
-  push:
-    branches:
-      - develop
-    paths:
-      - "suite/**"
-      - "frontend/**"
-      - "realtime/**"
-      - "package.json"
-      - "yarn.lock"
-      - "pyproject.toml"
-      - ".github/scripts/**"
-      - ".github/workflows/suite-ci.yml"
   pull_request:
     paths:
       - "suite/**"
@@ -197,7 +185,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Backend Coverage
-        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
         uses: actions/upload-artifact@v7
         with:
           name: suite-backend-coverage
@@ -563,7 +551,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Frontend Coverage
-        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push') && steps.frontend-changes.outputs.run == '1'
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule') && steps.frontend-changes.outputs.run == '1'
         uses: actions/upload-artifact@v7
         with:
           name: suite-frontend-coverage
