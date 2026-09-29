@@ -2333,28 +2333,58 @@ class TestStorageAndEmbedForwarders(ShimCase):
         self.assertEqual(shims.storage_bar_data(), {"total_size": 0, "reserved_size": 0, "limit": 0})
         self.assertEqual(shims.storage_breakdown(), {"limit": 0, "total": [], "entities": []})
 
-    def test_the_breakdown_keeps_its_three_keys(self):
+    def test_the_breakdown_renames_the_roots_own_aggregates(self):
         roots = self.stub("roots")
         roots.personal_root_for.return_value = "r1"
-        roots.usage_for.return_value = frappe._dict(effective_quota=100_000)
-        rows = [
-            frappe._dict(
-                name="n1", title="a.pdf", owner="a@example.com", size=900, mime="application/pdf", kind="file"
-            ),
-            frappe._dict(
-                name="n2", title="b.png", owner="a@example.com", size=100, mime="image/png", kind="file"
-            ),
-        ]
-        with patch.object(shims.frappe, "get_all", return_value=rows):
-            answer = shims.storage_breakdown()
-        self.assertEqual(answer["limit"], 100_000)
-        self.assertEqual(
-            sorted(answer["total"], key=lambda row: row["file_type"]),
-            [{"file_type": "Image", "file_size": 100}, {"file_type": "PDF", "file_size": 900}],
+        roots.usage_for.return_value = frappe._dict(
+            used_bytes=1000,
+            effective_quota=100_000,
+            by_type=[
+                {"type": "PDF", "bytes": 900},
+                {"type": "Presentation", "bytes": 300},
+                {"type": "Image", "bytes": 100},
+                {"type": "Writer Document", "bytes": 5},
+            ],
+            largest=[
+                {
+                    "node": "n1",
+                    "title": "a.pdf",
+                    "size": 900,
+                    "mime": "application/pdf",
+                    "kind": "file",
+                    "type": "PDF",
+                },
+                {
+                    "node": "n2",
+                    "title": "b.png",
+                    "size": 100,
+                    "mime": "image/png",
+                    "kind": "file",
+                    "type": "Image",
+                },
+            ],
         )
-        # The quota floor is limit/200 = 500, so the small file is not listed.
-        self.assertEqual([row["name"] for row in answer["entities"]], ["n1"])
-        self.assertEqual(answer["entities"][0]["file_name"], "a.pdf")
+        with patch.object(shims.frappe, "get_all", side_effect=AssertionError("no second query")):
+            answer = shims.storage_breakdown()
+        roots.usage_for.assert_called_once_with("r1", SOMEONE, breakdown=True)
+        self.assertEqual(
+            answer,
+            {
+                "limit": 100_000,
+                # The keys `StorageSettings.vue` reads. Its own mime table maps each
+                # `mime_type` back to the type; a type it has no mime for is Unknown there.
+                "total": [
+                    {"mime_type": "application/pdf", "file_size": 900},
+                    {"mime_type": "application/vnd.ms-powerpoint", "file_size": 300},
+                    {"mime_type": "image/png", "file_size": 100},
+                    {"mime_type": None, "file_size": 5},
+                ],
+                "entities": [
+                    {"name": "n1", "file_name": "a.pdf", "file_size": 900, "file_type": "PDF"},
+                    {"name": "n2", "file_name": "b.png", "file_size": 100, "file_type": "Image"},
+                ],
+            },
+        )
 
     def test_an_embed_redirects_to_its_own_signed_url(self):
         content = self.stub("content")

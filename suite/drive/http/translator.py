@@ -197,7 +197,13 @@ ROUTES = (
         output=shapes.ReadResult,
     ),
     Route("GET", "roots", "roots_discover", output=shapes.RootLocations),
-    Route("GET", "roots/{root}/usage", "root_usage", output=shapes.RootUsage),
+    Route(
+        "GET",
+        "roots/{root}/usage",
+        "root_usage",
+        query=shapes.RootUsageQuery,
+        output=shapes.RootUsage,
+    ),
     Route("PATCH", "roots/{root}", "root_patch"),
     Route("DELETE", "roots/{root}", "root_purge"),
     Route(
