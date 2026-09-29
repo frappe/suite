@@ -10,6 +10,7 @@ config there, so the key is switched on by wrapping the config read itself.
 """
 
 from contextlib import contextmanager
+from html import unescape
 from unittest.mock import patch
 
 import frappe
@@ -19,7 +20,7 @@ from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.nodes import create_link
 from suite.drive._core.roles import READ
-from suite.drive.http.tests.test_dispatch import DriveHTTPCase
+from suite.drive.http.tests.test_dispatch import OWNER, DriveHTTPCase
 
 PAST = "2000-01-01 00:00:00"
 
@@ -112,3 +113,49 @@ class TestShareLinkRoute(DriveHTTPCase):
         frappe.db.set_value("Drive Grant", created["name"], "expires_on", PAST, update_modified=False)
         frappe.db.commit()
         self.assertRefused(self.open(f"/l/{token}", flipped=True), 410)
+
+
+class TestDeadLinkPage(DriveHTTPCase):
+    """The page a refused link shows (unified frontend §10.11, ask S2)."""
+
+    link = TestShareLinkRoute.link
+    revoke = TestShareLinkRoute.revoke
+
+    NOT_FOUND = "This link doesn't work. It may be mistyped, or its owner turned it off."
+    EXPIRED = "This link has expired. Ask the person who shared it for a new one."
+    UNKNOWN = f"/l/{'a' * 22}"
+
+    def expired_link(self) -> str:
+        created, token = self.link(self.folder)
+        frappe.db.set_value("Drive Grant", created["name"], "expires_on", PAST, update_modified=False)
+        frappe.db.commit()
+        return f"/l/{token}"
+
+    def page(self, path: str, status: int, *, sid: str | None = None) -> str:
+        response = self.drive("GET", path, sid=sid)
+        self.assertEqual(response.status_code, status)
+        return unescape(response.get_data(as_text=True))
+
+    def test_each_refusal_has_its_own_copy_and_no_node_details(self):
+        missing = self.page(self.UNKNOWN, 404)
+        self.assertIn(self.NOT_FOUND, missing)
+        self.assertNotIn(self.EXPIRED, missing)
+
+        expired = self.page(self.expired_link(), 410)
+        self.assertIn(self.EXPIRED, expired)
+        self.assertNotIn(self.NOT_FOUND, expired)
+        self.assertNotIn("Folder", expired)
+        self.assertNotIn(self.folder, expired)
+
+    def test_a_visitor_without_a_session_gets_no_home_and_no_sign_in(self):
+        body = self.page(self.UNKNOWN, 404)
+        self.assertNotIn("Go to Home", body)
+        self.assertNotIn("/login", body)
+        self.assertNotIn("Sign in", body)
+
+    def test_a_signed_in_visitor_can_go_to_home(self):
+        sid = self.session_for(OWNER)
+        for path, status in ((self.UNKNOWN, 404), (self.expired_link(), 410)):
+            with self.subTest(status=status):
+                body = self.page(path, status, sid=sid)
+                self.assertIn('<a class="home" href="/">Go to Home</a>', body)
