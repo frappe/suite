@@ -116,6 +116,15 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
     spec §16.1 items 2 and 3 leave phone Slides open.
 16. **Largest files rows.** They do not open the file (the spec does not
     say they should); the cap is 10.
+17. **Legacy Drive invitations after flip 2.** The new route table has no
+    `/drive/signup`, and `File.share` to an unknown email still creates
+    legacy invitations. Interim: with `suite_flip_files` on, accepting one
+    does what `POST /api/suite/invitations` does (same user type, roles and
+    `/update-password` landing). With the key off, nothing changes.
+18. **Meet recording emails after flip 2.** New recordings are legacy
+    `File` rows, not Drive nodes, so `node_url` has no address for them.
+    Interim: the email goes without the file link. Meet does not adopt
+    nodes in this run.
 
 ## Needs a manual check (cannot run on this devbox)
 
@@ -141,6 +150,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Legacy share shim maps `read, write, comment` without `upload` to COMMENT, so the old-page journey "editor can edit" fails now that Writer shows the real Drive role. Not checked on the base commit | stage 11 Writer | Drive program (check `shims._legacy_role`) |
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
 | `views/favourites` has no tie-breaker, reads one window, and lists trashed nodes (Drive 47 fixed the same in recents); `_view_eligible` can still return short pages | Drive 47 review | Drive program |
+| `meet.api.test.test_recording`: `test_reprovision_during_recording_keeps_reservation_bound_to_archived_root` errors with "Unsupported recording callback protocol version". Same error on `forge/drive-layer` | stage 12 server | Meet (not in this run) |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Backend asks raised during the run
