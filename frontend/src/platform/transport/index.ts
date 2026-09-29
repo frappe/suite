@@ -12,6 +12,8 @@ export class TransportError<Type extends string = string> extends Error implemen
   readonly type: Type
   readonly status: number
   readonly details: Record<string, unknown>
+  /** How long the server asked the caller to wait, from a 429's `Retry-After`. */
+  readonly retryAfterMs?: number
 
   constructor(error: PlatformError<Type>) {
     super(error.message)
@@ -19,6 +21,7 @@ export class TransportError<Type extends string = string> extends Error implemen
     this.type = error.type
     this.status = error.status
     this.details = { ...error }
+    if (typeof error.retryAfterMs === 'number') this.retryAfterMs = error.retryAfterMs
   }
 }
 
@@ -149,6 +152,8 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         }
 
         const error = decodeError(body, response.status, response.statusText)
+        const retryAfter = response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
+        if (retryAfter !== null) error.retryAfterMs = retryAfter
         if (error.type === 'SessionExpired') {
           options.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
         }
@@ -159,7 +164,6 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           (response.status >= 500 || response.status === 429)
         if (!retryable) throw failed(new TransportError(error))
 
-        const retryAfter = response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
         await delay(retryAfter ?? retryBaseMs * 2 ** attempt, requestOptions.signal)
         attempt += 1
       }
