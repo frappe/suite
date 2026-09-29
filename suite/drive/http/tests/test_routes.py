@@ -42,6 +42,9 @@ class BoundaryCase(UnitTestCase):
     def setUp(self):
         frappe.local.response_headers = {}
         frappe.local.message_log = []
+        # The parsed request body. A handler reads it only to tell an omitted
+        # key from an explicit JSON null.
+        frappe.local.form_dict = frappe._dict()
         self.principals = patch.object(routes, "_principals", return_value=SOMEONE)
         self.principals.start()
         self.addCleanup(self.principals.stop)
@@ -595,6 +598,29 @@ class TestGrantRoutes(BoundaryCase):
         with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
             routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="")
         self.assertIsNone(workflow.call_args.kwargs["password"])
+
+    def test_an_omitted_password_keeps_the_stored_one_and_null_clears_it(self):
+        # D20: §5.9 step 3 patches the password. Omitted keeps the hash, null
+        # and blank clear it, and a string sets it.
+        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20)
+            self.assertIs(workflow.call_args.kwargs["password"], routes.access.KEEP)
+            frappe.local.form_dict = frappe._dict(password=None)
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password=None)
+            self.assertIsNone(workflow.call_args.kwargs["password"])
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="secret")
+            self.assertEqual(workflow.call_args.kwargs["password"], "secret")
+
+    def test_send_to_and_notify_reach_the_workflow_and_default_to_no_mail(self):
+        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
+            routes.node_put_grant(node="n1", principal="b@example.com", role=10)
+            self.assertEqual(
+                (workflow.call_args.kwargs["send_to"], workflow.call_args.kwargs["notify"]), (None, False)
+            )
+            routes.node_put_grant(node="n1", principal="b@example.com", role=10, notify="1")
+            self.assertIs(workflow.call_args.kwargs["notify"], True)
+            routes.node_put_grant(node="n1", principal="$LINK", role=10, send_to="c@example.com")
+            self.assertEqual(workflow.call_args.kwargs["send_to"], "c@example.com")
 
     def test_a_blank_role_is_refused_and_never_reaches_the_workflow_as_a_deny(self):
         # `shapes.whole` reads "" as its default, and the default a role would

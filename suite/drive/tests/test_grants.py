@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import passlibctx
 
+from suite.drive import node_url
 from suite.drive._core.access import (
     UNLOCK_WINDOW_SECONDS,
     _verify_link_password,
@@ -819,3 +820,299 @@ class TestGrantFixtureIsolation(_GrantFixture):
     def test_the_fixture_root_is_the_only_active_personal_root_for_the_target(self):
         self.assertEqual(personal_root_for(TARGET), self.root.name)
         self.assertEqual(frappe.db.count("Drive Root", {"user": TARGET, "state": "Active"}), 1)
+
+
+SHARED_WITH = "drive-grant-shared-with@example.com"
+OUTSIDER = "drive-grant-outsider@example.com"
+
+
+class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
+    """Issue 44: the share dialog's inherited rows, password patching, and share email."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(SHARED_WITH)
+        drop_personal_root(SHARED_WITH)
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self._drop_mail, (SHARED_WITH, OUTSIDER))
+
+    def _drop_mail(self, recipients):
+        queued = frappe.get_all(
+            "Email Queue Recipient", filters={"recipient": ["in", recipients]}, pluck="parent"
+        )
+        if queued:
+            frappe.db.delete("Email Queue Recipient", {"parent": ["in", queued]})
+            frappe.db.delete("Email Queue", {"name": ["in", queued]})
+
+    def _committed(self, operation):
+        """Run `operation`, then commit's callbacks; answer its result and the mail jobs pushed."""
+        with patch("frappe.enqueue") as enqueue:
+            result = operation()
+            frappe.db.after_commit.run()
+        jobs = [
+            {key: value for key, value in call.kwargs.items() if key != "queue"}
+            for call in enqueue.call_args_list
+            if call.args and call.args[0] == "suite.drive._core.activity.send_share_email"
+        ]
+        return result, jobs
+
+    def _send(self, jobs):
+        """Run share-mail jobs as a worker would."""
+        from suite.drive._core import activity
+
+        # The test site has no outgoing Email Account. Muted mail still
+        # builds an Email Queue row, through Frappe's stand-in account.
+        muted = frappe.flags.mute_emails
+        frappe.flags.mute_emails = True
+        self.addCleanup(setattr, frappe.flags, "mute_emails", muted)
+        for job in jobs:
+            activity.send_share_email(**job)
+
+    def _mail_to(self, recipient) -> list[str]:
+        """Answer the decoded text of every queued email for one address."""
+        import email
+
+        bodies = []
+        for parent in frappe.get_all(
+            "Email Queue Recipient", filters={"recipient": recipient}, pluck="parent", order_by="creation"
+        ):
+            message = email.message_from_string(frappe.db.get_value("Email Queue", parent, "message"))
+            text = str(message["Subject"] or "")
+            for part in message.walk():
+                payload = part.get_payload(decode=True)
+                if payload:
+                    text += payload.decode()
+            bodies.append(text)
+        return bodies
+
+    def _grant_row(self, node, principal):
+        return frappe.db.get_value(
+            "Drive Grant",
+            {"node": node, "principal": principal},
+            ["name", "role", "expires_on", "password_hash", "sent_to"],
+            as_dict=True,
+        )
+
+    def test_inherited_rows_come_from_every_ancestor_nearest_first(self):
+        from suite.drive._core.access import grants_for
+
+        frappe.db.set_value("Drive Node", self.folder.name, "title", "Middle folder")
+        leaf = self._child(self.folder.name, "Leaf")
+        rows = (
+            (self.root.name, "$GROUP:root-readers", READ, None),
+            (self.root.name, "$GROUP:root-expired", EDIT, "2000-01-01 00:00:00"),
+            (self.folder.name, UNHELD, NONE, None),
+            (self.folder.name, "$GENERAL", READ, None),
+            (leaf.name, "$GROUP:leaf-deny", NONE, None),
+        )
+        for node, principal, role, expires_on in rows:
+            frappe.get_doc(
+                {
+                    "doctype": "Drive Grant",
+                    "node": node,
+                    "principal": principal,
+                    "role": role,
+                    "expires_on": expires_on,
+                }
+            ).insert(ignore_permissions=True)
+
+        answer = grants_for(leaf.name, self.admin, inherited=True)
+
+        self.assertEqual(
+            [(row["node"], row["principal"], row["role"]) for row in answer["grants"]],
+            [(leaf.name, "$GROUP:leaf-deny", NONE)],
+        )
+        listed = [
+            (row["source_node"], row["grant"]["principal"], row["grant"]["role"])
+            for row in answer["inherited"]
+        ]
+        root_title = frappe.db.get_value("Drive Node", self.root.name, "title")
+        # Nearest ancestor first: the middle folder, then the root. The deny on
+        # the middle node is inherited like any other row; the expired root
+        # row is inert and absent (§6.4).
+        self.assertEqual(
+            listed[:2],
+            [(self.folder.name, "$GENERAL", READ), (self.folder.name, UNHELD, NONE)],
+        )
+        self.assertIn((self.root.name, "$GROUP:root-readers", READ), listed[2:])
+        self.assertTrue(all(node == self.root.name for node, _, _ in listed[2:]))
+        self.assertNotIn("$GROUP:root-expired", [principal for _, principal, _ in listed])
+        self.assertEqual(
+            {row["source_node"]: row["source_title"] for row in answer["inherited"]},
+            {self.folder.name: "Middle folder", self.root.name: root_title},
+        )
+        self.assertTrue(all("password_hash" not in row["grant"] for row in answer["inherited"]))
+
+        self.assertNotIn("inherited", grants_for(leaf.name, self.admin))
+        self.assertEqual(grants_for(self.root.name, self.admin, inherited=True)["inherited"], [])
+        outsider = Principals(UNHELD, (UNHELD,), ("$PUBLIC",))
+        with self.assertRaises(DriveNotFound):
+            grants_for(leaf.name, outsider, inherited=True)
+
+    def test_a_link_password_is_kept_cleared_and_set(self):
+        created = grant(self.folder.name, "$LINK", READ, self.admin, password="first secret")
+        principal = created["principal"]
+        first_hash = self._grant_row(self.folder.name, principal).password_hash
+
+        # Expiry alone: the password stays (D20).
+        expiry = add_to_date(now_datetime(), days=2)
+        kept = grant(self.folder.name, principal, READ, self.admin, expires_on=expiry)
+        self.assertTrue(kept["has_password"])
+        self.assertEqual(self._grant_row(self.folder.name, principal).password_hash, first_hash)
+        self.assertEqual(self._activity(self.folder.name)[-1].detail["has_password"], True)
+
+        # A new string replaces it.
+        grant(self.folder.name, principal, READ, self.admin, password="second secret")
+        stored = self._grant_row(self.folder.name, principal).password_hash
+        self.assertTrue(passlibctx.verify("second secret", stored))
+
+        # `None` clears it, and expiry keeps its replace semantics.
+        cleared = grant(self.folder.name, principal, EDIT, self.admin, password=None)
+        row = self._grant_row(self.folder.name, principal)
+        self.assertFalse(cleared["has_password"])
+        self.assertFalse(row.password_hash)
+        self.assertIsNone(row.expires_on)
+        self.assertEqual(row.role, EDIT)
+        self.assertEqual(self._activity(self.folder.name)[-1].detail["has_password"], False)
+
+        # A null password on a user principal is a no-op, not refusal 10.
+        written = grant(self.folder.name, SHARED_WITH, READ, self.admin, password=None)
+        self.assertFalse(written["has_password"])
+        with self.assertRaises(DriveForbidden):
+            grant(self.folder.name, SHARED_WITH, READ, self.admin, password="secret")
+
+    def test_a_link_sent_to_an_address_is_stored_and_mailed_once_per_send(self):
+        (first, second), jobs = self._committed(
+            lambda: [grant(self.folder.name, "$LINK", READ, self.admin, send_to=OUTSIDER) for _ in range(2)]
+        )
+        self.assertEqual(len(jobs), 2)
+        self._send(jobs)
+
+        # One outsider email means one link: two sends make two rows.
+        self.assertNotEqual(first["principal"], second["principal"])
+        for written in (first, second):
+            self.assertEqual(written["sent_to"], OUTSIDER)
+            self.assertEqual(self._grant_row(self.folder.name, written["principal"]).sent_to, OUTSIDER)
+        mail = self._mail_to(OUTSIDER)
+        self.assertEqual(len(mail), 2)
+        self.assertTrue(any(frappe.utils.get_url(first["url"]) in body for body in mail))
+        self.assertTrue(any(frappe.utils.get_url(second["url"]) in body for body in mail))
+        self.assertTrue(all("Folder" in body for body in mail))
+
+    def test_send_to_is_refused_on_anything_but_a_new_link(self):
+        existing = grant(self.folder.name, "$LINK", READ, self.admin)
+        for principal, send_to in (
+            (SHARED_WITH, OUTSIDER),
+            (existing["principal"], OUTSIDER),
+            ("$PUBLIC", OUTSIDER),
+            ("$LINK", "not an address"),
+            # Exactly one bare address: one link is minted for one outsider.
+            ("$LINK", f"{OUTSIDER}, {SHARED_WITH}"),
+            ("$LINK", f"{OUTSIDER},{SHARED_WITH}"),
+            ("$LINK", f"{OUTSIDER}\n{SHARED_WITH}"),
+            ("$LINK", f"{OUTSIDER}; {SHARED_WITH}"),
+            ("$LINK", f"Outsider <{OUTSIDER}>"),
+            ("$LINK", f" {OUTSIDER}"),
+        ):
+            _, jobs = self._committed(
+                lambda principal=principal, send_to=send_to: self._assert_no_mutation(
+                    lambda: grant(self.folder.name, principal, READ, self.admin, send_to=send_to),
+                    frappe.ValidationError,
+                )
+            )
+            self.assertEqual(jobs, [], send_to)
+
+    def test_notify_mails_the_user_once_and_is_never_stored(self):
+        _, jobs = self._committed(lambda: grant(self.folder.name, SHARED_WITH, EDIT, self.admin))
+        self.assertEqual(jobs, [])
+
+        written, jobs = self._committed(
+            lambda: grant(self.folder.name, SHARED_WITH, READ, self.admin, notify=True)
+        )
+        self.assertEqual(len(jobs), 1)
+        self._send(jobs)
+
+        mail = self._mail_to(SHARED_WITH)
+        self.assertEqual(len(mail), 1)
+        self.assertIn(frappe.utils.get_url(node_url(self.folder.name)), mail[0])
+        self.assertIn("Folder", mail[0])
+        self.assertNotIn("notify", written)
+        self.assertIsNone(written["sent_to"])
+        # The §9.5 in-app notification is written either way.
+        self.assertEqual(
+            frappe.db.count(
+                "Drive Notification",
+                {
+                    "to_user": SHARED_WITH,
+                    "activity": ["in", [row.name for row in self._activity(self.folder.name)]],
+                },
+            ),
+            2,
+        )
+
+    def test_notify_on_a_principal_that_is_not_a_user_is_refused(self):
+        self._assert_no_mutation(
+            lambda: grant(self.folder.name, "$PUBLIC", READ, self.admin, notify=True),
+            frappe.ValidationError,
+        )
+
+    def test_a_mail_that_cannot_be_queued_never_fails_the_grant(self):
+        # The push runs after commit. Redis refusing it there must not raise
+        # out of the commit, or the PUT would answer 500 for a written grant.
+        with patch("frappe.enqueue", side_effect=RuntimeError("redis down")) as enqueue:
+            written = grant(self.folder.name, SHARED_WITH, READ, self.admin, notify=True)
+            frappe.db.after_commit.run()
+        self.assertTrue(enqueue.called)
+        self.assertTrue(frappe.db.exists("Drive Grant", written["name"]))
+
+    def test_an_ancestor_link_shows_its_secrets_only_to_a_manager_of_that_ancestor(self):
+        from suite.drive._core.access import grants_for
+
+        leaf = self._child(self.folder.name, "Leaf")
+        token = "AbCdEfGhIjKlMnOpQrSt34"
+        for node, principal, role, sent_to in (
+            (self.folder.name, f"$LINK:{token}", READ, OUTSIDER),
+            (leaf.name, MANAGER, MANAGE, None),
+        ):
+            frappe.get_doc(
+                {
+                    "doctype": "Drive Grant",
+                    "node": node,
+                    "principal": principal,
+                    "role": role,
+                    "sent_to": sent_to,
+                }
+            ).insert(ignore_permissions=True)
+        manager = Principals(MANAGER, (MANAGER,), ("$PUBLIC",))
+
+        # MANAGE on the leaf only: the parent's link is described, not handed over.
+        answer = grants_for(leaf.name, manager, inherited=True)
+        link = next(row for row in answer["inherited"] if row["grant"]["principal"].startswith("$LINK"))
+        self.assertTrue(link["redacted"])
+        self.assertEqual(
+            link["grant"],
+            {
+                "node": self.folder.name,
+                "principal": "$LINK",
+                "role": READ,
+                "expires_on": None,
+                "has_password": False,
+            },
+        )
+        self.assertEqual((link["source_node"], link["source_title"]), (self.folder.name, "Folder"))
+        self.assertNotIn(token, repr(answer))
+        self.assertNotIn(OUTSIDER, repr(answer))
+
+        # MANAGE on the parent: the same row in full.
+        frappe.get_doc(
+            {"doctype": "Drive Grant", "node": self.folder.name, "principal": MANAGER, "role": MANAGE}
+        ).insert(ignore_permissions=True)
+        answer = grants_for(leaf.name, manager, inherited=True)
+        link = next(row for row in answer["inherited"] if row["grant"]["principal"].startswith("$LINK"))
+        self.assertFalse(link["redacted"])
+        self.assertEqual(link["grant"]["principal"], f"$LINK:{token}")
+        self.assertEqual(link["grant"]["url"], f"/l/{token}")
+        self.assertEqual(link["grant"]["sent_to"], OUTSIDER)

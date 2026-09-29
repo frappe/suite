@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import escape_html, get_fullname, get_url, now_datetime
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -16,7 +16,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import READ
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 
 ACTIVITY_ACTIONS = (
     "create",
@@ -341,6 +341,51 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
 
             emit_for_users((user,))
     return created
+
+
+# What a share email tells the recipient they may do. A deny shares nothing,
+# so role 0 has no entry and sends no email.
+SHARE_VERBS = {READ: "view", COMMENT: "comment on", UPLOAD: "upload to", EDIT: "edit", MANAGE: "manage"}
+
+
+def queue_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
+    """Queue one share email after commit; the grant never waits on it (§9.5).
+
+    The job is pushed from Drive's own after-commit callback, not through
+    `enqueue_after_commit`. Frappe's deferred push runs inside `commit`, so a
+    Redis failure there would answer 500 for a grant that is already
+    committed, and a retry would mint a second link. The push is best-effort:
+    any failure is logged and the request answers with the committed grant.
+    """
+    if role == NONE:
+        return
+    job = {"node": node, "recipient": recipient, "role": role, "path": path, "sharer": sharer}
+    frappe.db.after_commit.add(lambda: _push_share_email(job))
+
+
+def _push_share_email(job: dict) -> None:
+    try:
+        frappe.enqueue("suite.drive._core.activity.send_share_email", queue="short", **job)
+    except Exception:
+        # A file log, not an Error Log row: this runs after the request's only
+        # commit, so a row written here would never be committed.
+        frappe.logger("suite.drive").exception("Drive: could not queue a share email for %s", job["node"])
+
+
+def send_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
+    """Background job: mail one share with the sharer, the title, the role, and the link."""
+    title = frappe.db.get_value("Drive Node", node, "title")
+    if title is None:
+        # Purged between the grant and the job: there is nothing to open.
+        return
+    name = get_fullname(sharer)
+    message = _('<p>{0} shared <b>{1}</b> with you. You can {2} it.</p><p><a href="{3}">Open {1}</a></p>')
+    frappe.sendmail(
+        recipients=[recipient],
+        subject=_("{0} shared {1} with you").format(name, title),
+        message=message.format(escape_html(name), escape_html(title), SHARE_VERBS[role], get_url(path)),
+        now=False,
+    )
 
 
 def notifications(

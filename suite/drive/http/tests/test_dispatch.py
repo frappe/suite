@@ -65,6 +65,7 @@ GRANT_SHAPE_FIELDS = {
     "role",
     "expires_on",
     "has_password",
+    "sent_to",
 }
 
 EXPLAIN_ROW_FIELDS = {
@@ -1953,6 +1954,109 @@ class TestGrantRoutes(DriveHTTPCase):
         self.refusal(response, 400, "DriveError")
         self.reread()
         self.assertEqual(frappe.db.count("Drive Grant", {"node": self.inner}), before)
+
+    def test_inherited_rows_arrive_with_their_source_node_nearest_first(self):
+        self.add_grant(self.shared, STRANGER, NONE)
+        self.add_grant(self.inner, "$GROUP:drive-http-readers", READ)
+        answer = self.data(
+            self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants", query={"inherited": "1"})
+        )
+        self.assertEqual([row["principal"] for row in answer["grants"]], ["$GROUP:drive-http-readers"])
+        inherited = answer["inherited"]
+        for entry in inherited:
+            self.assertEqual(set(entry), {"grant", "redacted", "source_node", "source_title"})
+            self.assertFalse(entry["redacted"])
+            self.assertEqual(set(entry["grant"]), GRANT_SHAPE_FIELDS)
+        self.assertEqual(
+            (inherited[0]["source_node"], inherited[0]["source_title"], inherited[0]["grant"]["role"]),
+            (self.shared, "Shared", NONE),
+        )
+        anchor = next(entry for entry in inherited if entry["grant"]["principal"] == OWNER)
+        self.assertEqual((anchor["source_node"], anchor["grant"]["role"]), (self.root.name, MANAGE))
+        self.assertNotIn("inherited", self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.inner}/grants")))
+
+    def test_a_child_manager_sees_an_ancestor_link_without_its_secrets(self):
+        minted = grant(self.shared, "$LINK", READ, self.owner)
+        grant(self.inner, STRANGER, MANAGE, self.owner)
+        frappe.db.commit()
+        token = minted["principal"].split(":", 1)[1]
+        response = self.drive(
+            "GET",
+            f"{PREFIX}/nodes/{self.inner}/grants",
+            query={"inherited": "1"},
+            sid=self.session_for(STRANGER),
+        )
+        entry = next(row for row in self.data(response)["inherited"] if row["redacted"])
+        self.assertEqual(set(entry["grant"]), {"node", "principal", "role", "expires_on", "has_password"})
+        self.assertEqual(entry["grant"]["principal"], "$LINK")
+        self.assertEqual((entry["source_node"], entry["source_title"]), (self.shared, "Shared"))
+        self.assertNotIn(token, response.get_data(as_text=True))
+
+    def test_a_link_password_survives_an_expiry_change_and_null_clears_it(self):
+        path = f"{PREFIX}/nodes/{self.inner}/grants"
+        minted = self.data(self.as_owner("PUT", f"{path}/$LINK", body={"role": READ, "password": "secret"}))
+        principal = minted["grant"]["principal"]
+        self.assertTrue(minted["grant"]["has_password"])
+
+        future = frappe.utils.add_days(frappe.utils.now_datetime(), 3).strftime("%Y-%m-%d %H:%M:%S")
+        kept = self.data(
+            self.as_owner("PUT", f"{path}/{principal}", body={"role": READ, "expires_on": future})
+        )
+        self.assertTrue(kept["grant"]["has_password"])
+        self.assertEqual(kept["grant"]["expires_on"], future)
+
+        cleared = self.data(
+            self.as_owner("PUT", f"{path}/{principal}", body={"role": READ, "password": None})
+        )
+        self.assertFalse(cleared["grant"]["has_password"])
+        self.assertIsNone(cleared["grant"]["expires_on"])
+        opened = self.data(
+            self.drive("GET", f"{PREFIX}/nodes/{self.inner}", links=principal.split(":", 1)[1])
+        )
+        self.assertEqual(opened["name"], self.inner)
+
+    def test_share_email_is_queued_for_a_sent_link_and_a_notified_user_only(self):
+        path = f"{PREFIX}/nodes/{self.inner}/grants"
+        with patch("frappe.enqueue") as enqueue:
+            sent = self.data(
+                self.as_owner("PUT", f"{path}/$LINK", body={"role": READ, "send_to": "outsider@example.com"})
+            )
+            self.assertEqual(enqueue.call_count, 1)
+            self.assertEqual(sent["grant"]["sent_to"], "outsider@example.com")
+            self.assertEqual(enqueue.call_args.kwargs["path"], sent["url"])
+
+            refused = self.as_owner(
+                "PUT", f"{path}/{STRANGER}", body={"role": READ, "send_to": "outsider@example.com"}
+            )
+            self.refusal(refused, 400, "DriveError")
+            self.assertEqual(enqueue.call_count, 1)
+
+            self.data(self.as_owner("PUT", f"{path}/{STRANGER}", body={"role": READ}))
+            self.assertEqual(enqueue.call_count, 1)
+            notified = self.data(
+                self.as_owner("PUT", f"{path}/{STRANGER}", body={"role": EDIT, "notify": True})
+            )
+            self.assertEqual(enqueue.call_count, 2)
+            self.assertEqual(enqueue.call_args.kwargs["recipient"], STRANGER)
+            self.assertIsNone(notified["grant"]["sent_to"])
+
+    def test_a_queue_failure_after_commit_still_answers_the_committed_link(self):
+        # Redis refusing the push after commit must not turn a written grant
+        # into a 500, or a retry would mint a second link for one address.
+        before = frappe.db.count("Drive Grant", {"node": self.inner})
+        with patch("frappe.enqueue", side_effect=RuntimeError("redis down")) as enqueue:
+            sent = self.data(
+                self.as_owner(
+                    "PUT",
+                    f"{PREFIX}/nodes/{self.inner}/grants/$LINK",
+                    body={"role": READ, "send_to": "outsider@example.com"},
+                )
+            )
+        self.assertTrue(enqueue.called)
+        self.assertEqual(sent["grant"]["sent_to"], "outsider@example.com")
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Grant", {"node": self.inner}), before + 1)
+        self.assertTrue(frappe.db.exists("Drive Grant", sent["grant"]["name"]))
 
     def test_a_guest_is_not_heard_on_any_grant_route(self):
         calls = (

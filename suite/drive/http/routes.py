@@ -669,8 +669,12 @@ def root_purge(root: Given = None) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def node_grants(node: Given = None, principal: Given = None) -> dict:
+def node_grants(node: Given = None, principal: Given = None, inherited: Given = None) -> dict:
     """Answer one node's local grants, and optionally one explanation (§11.2).
+
+    `?inherited=1` adds every live grant on an ancestor, each with the node it
+    sits on and that node's title, nearest ancestor first. The share dialog
+    shows them under "From <folder>" (issue 44, D19).
 
     `?principal=` is the accepted spelling of §5.8's `explain`. MANAGE on the
     target is what the caller needs, and it is checked before the named
@@ -691,9 +695,12 @@ def node_grants(node: Given = None, principal: Given = None) -> dict:
     answer = access.grants_for(
         shapes.required_text(node, "node"),
         principals,
+        inherited=shapes.flag(inherited, "inherited", False),
         resolve_subject=(lambda: framework.principals_for_principal(named)) if named else None,
     )
     shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]]}
+    if "inherited" in answer:
+        shaped["inherited"] = [shapes.inherited_grant_shape(row) for row in answer["inherited"]]
     if "explain" in answer:
         shaped["explain"] = shapes.explain_shape(answer["explain"])
     return shaped
@@ -707,6 +714,8 @@ def node_put_grant(
     role: Given = None,
     expires_on: Given = None,
     password: Given = None,
+    send_to: Given = None,
+    notify: Given = None,
 ) -> dict:
     """Write one grant, including an explicit deny and a new share link (§5.9).
 
@@ -719,26 +728,38 @@ def node_put_grant(
     Publishing is this route with principal `$PUBLIC` and `role: 10`. There is
     no separate publish verb (§6.5).
 
-    §5.9 step 3 upserts all three columns, so this is a replace and not a
-    patch: a link keeps its password and its expiry only while the caller keeps
-    sending them.
+    `role` and `expires_on` are replaced: an omitted or null `expires_on`
+    clears the expiry. `password` is patched (§5.9 step 3): omitted keeps the
+    stored hash, null clears it, and a string sets it, so changing a link's
+    expiry never drops its password.
+
+    `send_to` on `$LINK` mails the new link to one address and stores it on
+    the row. `notify: true` on a user principal mails that user. `notify` is
+    never stored. Both mails leave the request path (§9.5).
     """
     # An absent role and a blank one are the same refusal. `shapes.whole` reads
     # `""` as its default, and the default a role would take is 0, which is the
     # explicit deny of §5.10. A dropped form field must never become a denial.
     if role is None or role == "":
         frappe.throw(_("Drive argument role is required"), frappe.ValidationError)
+    # Frappe passes `None` for an omitted key and for an explicit JSON `null`
+    # alike. Only the parsed body tells them apart, and they mean opposite
+    # things here: keep the password, or clear it.
+    if password is None and "password" not in frappe.form_dict:
+        password = access.KEEP
     written = access.grant(
         shapes.required_text(node, "node"),
         shapes.required_text(principal, "principal"),
         shapes.whole(role, "role", 0),
         _principals(),
         expires_on=expires_on,
-        # A blank password is no password. `""` reaching the workflow would be
-        # hashed and stored, and §6.3's unlock would then guard the link behind
-        # a secret nobody typed; on a principal that is not a link it would
-        # trip refusal 10 and answer 403 for an empty form field.
-        password=shapes.text(password, "password") or None,
+        # A blank password is a cleared one. `""` reaching the workflow would
+        # be hashed and stored, and §6.3's unlock would then guard the link
+        # behind a secret nobody typed; on a principal that is not a link it
+        # would trip refusal 10 and answer 403 for an empty form field.
+        password=password if password is access.KEEP else shapes.text(password, "password") or None,
+        send_to=shapes.text(send_to, "send_to"),
+        notify=shapes.flag(notify, "notify", False),
     )
     return _grant_answer(written)
 
