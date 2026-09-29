@@ -1,13 +1,22 @@
 import { ref } from 'vue'
-import { frappeRequest } from 'frappe-ui'
-import { call }                  from '../../utils/api.js'
+import { call, isRefusal }      from '../../utils/api.js'
+import { recordVisit }           from './driveVisit'
 import { encodeForUpload, isDecompressionSupported, decodeFromDownload } from '../../utils/compress.js'
 import { packSheet, packSheetChunked, unpackSheet, boundsOf } from '../../utils/sheet-codec.js'
 
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
 // freeze panes / hidden cols/rows to silently disappear after every save.
-export function usePersistence({ sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot, charts, namedRanges, getViewState, applyViewState, currentTitle, emit }) {
+//
+// Access options, all optional:
+//   - `isWritable()` — checked before every save attempt, retries included. While
+//     it answers false a save sends nothing, so a pending save is cancelled.
+//   - `onRefused()` — the server refused a save for lack of access.
+//   - `recordVisits` — record a Drive visit when a linked sheet loads. The `/d/`
+//     surface passes false: its Drive session records the visit itself.
+//   - `credentialFetch` — send load and save through this fetch. The `/d/`
+//     surface passes the Drive session's, which adds its link credentials.
+export function usePersistence({ sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot, charts, namedRanges, getViewState, applyViewState, currentTitle, emit, isWritable = () => true, onRefused = () => {}, recordVisits = true, credentialFetch }) {
   const isSaving  = ref(false)
   const saveError = ref('')
   // Write permission for the currently-loaded sheet, from get_sheet's `can_write`.
@@ -28,11 +37,9 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     loadError.value = null
     try {
       const canGz  = isDecompressionSupported()
-      const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 })
-      frappeRequest({
-        url: 'suite.drive.api.files.track_visit',
-        params: { doctype: 'Sheet', docname: name },
-      }).catch(() => {})
+      const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 }, { fetch: credentialFetch })
+      // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
+      if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
       const plain  = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved  = JSON.parse(plain || '{}')
       if (saved.formats)    formats.restore(saved.formats)
@@ -60,9 +67,9 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       console.error('Load failed:', err)
       const t = err?.excType || ''
       const kind =
-        t === 'PermissionError'    ? 'denied'  :
-        t === 'DoesNotExistError'  ? 'missing' :
-                                     'other'
+        t === 'DoesNotExistError' || t === 'DriveNotFound' ? 'missing' :
+        isRefusal(err)                                     ? 'denied'  :
+                                                             'other'
       loadError.value = { kind, message: err?.message || 'Could not open this sheet' }
     }
   }
@@ -123,21 +130,7 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       // afford to yield (the page may die first), so it packs synchronously.
       const live   = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
       const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
-      const sheetsData = JSON.stringify({
-        sheet:      packed,
-        formats:    formats.snapshot(),
-        merge:      merge?.snapshot?.()      ?? null,
-        comments:   comments?.snapshot?.()   ?? null,
-        validation: validation?.snapshot?.() ?? null,
-        protection: protection?.snapshot?.() ?? null,
-        condFormat: condFormat?.snapshot?.() ?? null,
-        sortFilter: sortFilter?.snapshot?.() ?? null,
-        slicers:    slicers?.snapshot?.()    ?? null,
-        pivot:      pivot?.snapshot?.()      ?? null,
-        charts:     charts?.snapshot?.()     ?? null,
-        namedRanges: namedRanges?.snapshot?.() ?? null,
-        view:       getViewState?.()         ?? null,
-      })
+      const sheetsData = _workbookJson(packed)
       const payload = await encodeForUpload(sheetsData)
       args = {
         title,
@@ -156,6 +149,34 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     return _send(args, keepalive)
   }
 
+  // The whole workbook as the JSON `sheets_data` stores, packed synchronously.
+  // The surface keeps it as the local recovery copy when access narrows.
+  // `draft` is a cell edit still in progress ({ sheet, cell, value }); the copy
+  // holds it in its cell. The live workbook is not changed.
+  function workbookJson(draft = null) {
+    let sheets = sheet.getAllRaw()
+    if (draft) sheets = { ...sheets, [draft.sheet]: { ...sheets[draft.sheet], [draft.cell]: draft.value } }
+    return _workbookJson(packSheet({ sheets, current: sheet.getCurrentSheet() }))
+  }
+
+  function _workbookJson(packed) {
+    return JSON.stringify({
+      sheet:      packed,
+      formats:    formats.snapshot(),
+      merge:      merge?.snapshot?.()      ?? null,
+      comments:   comments?.snapshot?.()   ?? null,
+      validation: validation?.snapshot?.() ?? null,
+      protection: protection?.snapshot?.() ?? null,
+      condFormat: condFormat?.snapshot?.() ?? null,
+      sortFilter: sortFilter?.snapshot?.() ?? null,
+      slicers:    slicers?.snapshot?.()    ?? null,
+      pivot:      pivot?.snapshot?.()      ?? null,
+      charts:     charts?.snapshot?.()     ?? null,
+      namedRanges: namedRanges?.snapshot?.() ?? null,
+      view:       getViewState?.()         ?? null,
+    })
+  }
+
   async function _send(args, keepalive) {
     isSaving.value = true
     // keepalive saves fire from onBeforeUnmount — the browser may kill
@@ -167,8 +188,12 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
         if (backoffMs[attempt] > 0) {
           await new Promise(r => setTimeout(r, backoffMs[attempt]))
         }
+        if (!isWritable()) {
+          saveError.value = "Not saved: you can no longer edit this sheet."
+          return null
+        }
         try {
-          const result = await call('suite.sheets.api.save_sheet', args, { keepalive })
+          const result = await call('suite.sheets.api.save_sheet', args, { keepalive, fetch: credentialFetch })
           // Deliberately DON'T write `title` back into currentTitle here.
           // `title` is a snapshot captured when this save was queued (up to
           // the 2s debounce + network round-trip ago), and the server echoes
@@ -182,6 +207,7 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
           return typeof result === 'string' ? result : result?.name
         } catch (err) {
           lastErr = err
+          if (isRefusal(err)) onRefused()
           if (!_isTransientSaveError(err)) break
         }
       }
@@ -198,5 +224,5 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     }
   }
 
-  return { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave }
+  return { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave, workbookJson }
 }

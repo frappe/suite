@@ -15,6 +15,7 @@ from __future__ import annotations
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite import drive
 from suite.sheets import api
 from suite.tests.utils import ensure_user
 
@@ -63,6 +64,9 @@ class TestSheetTitlesOnSite(IntegrationTestCase):
     def test_the_editor_opens_it_under_the_name_it_was_given(self):
         self.assertEqual(api.get_sheet(self.name)["title"], self.title)
 
+    def test_the_editor_gets_the_node_it_records_a_visit_on(self):
+        self.assertEqual(api.get_sheet(self.name)["node"], self.node)
+
     def test_the_list_names_it_the_same_way(self):
         row = self._listed()
         self.assertIsNotNone(row)
@@ -94,5 +98,7 @@ class TestSheetTitlesOnSite(IntegrationTestCase):
 
     def test_a_stranger_cannot_open_it_by_id(self):
         frappe.set_user(OTHER)
-        with self.assertRaises(frappe.PermissionError):
+        # Drive answers a caller below Read with `DriveNotFound`, so the reply
+        # does not say whether the sheet exists (§5.4).
+        with self.assertRaises(drive.DriveNotFound):
             api.get_sheet(self.name)

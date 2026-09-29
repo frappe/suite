@@ -31,6 +31,12 @@ class _PermCheckBase(unittest.TestCase):
         node = mock.patch("suite.sheets.drive.node_of", return_value=None)
         node.start()
         self.addCleanup(node.stop)
+        # The body endpoints ask `suite.sheets.drive.require_sheet`, which asks
+        # Frappe from that module. One stub answers for both.
+        shared = mock.patch("suite.sheets.drive.frappe", self.frappe)
+        shared.start()
+        self.addCleanup(shared.stop)
+        self.frappe.db.get_value.return_value = 0
 
 
 class BroadcastsRequireWrite(_PermCheckBase):
