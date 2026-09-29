@@ -425,6 +425,143 @@
       ],
       "entity": null,
       "nodeParams": []
+    },
+    {
+      "id": "people_get",
+      "method": "GET",
+      "path": "people",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "q": {
+            "title": "Q",
+            "type": "string"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "title": "PeopleQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "PersonGroup": {
+            "properties": {
+              "kind": {
+                "const": "group",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "member_count": {
+                "title": "Member Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "member_count"
+            ],
+            "title": "PersonGroup",
+            "type": "object"
+          },
+          "PersonUser": {
+            "properties": {
+              "kind": {
+                "const": "user",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Full Name"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "email",
+              "full_name",
+              "user_image"
+            ],
+            "title": "PersonUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PersonUser"
+                },
+                {
+                  "$ref": "#/$defs/PersonGroup"
+                }
+              ]
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "PeoplePage",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "BadCursor",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": []
     }
   ]
 }
