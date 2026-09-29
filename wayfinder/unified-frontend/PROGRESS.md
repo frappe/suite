@@ -13,6 +13,9 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 - Opus agents on medium effort implement. Codex `gpt-5.6-sol` reviews,
   researches and gives second opinions.
 - Error tracking (Sentry) is out of this run.
+- Heavy lock: typecheck, bundle budget, build and journeys run under
+  `flock /tmp/suite-uf-heavy.lock` (7 GB RAM, `earlyoom`). At most two
+  frontend implementers at once.
 - Site lock: every `run-tests`, `migrate`, `bench execute` and browser
   journey on `slides.localhost` runs under `flock /tmp/suite-uf-site.lock`.
 
@@ -21,21 +24,21 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Unit | Branch | Status | Merge | Notes |
 |---|---|---|---|---|
 | Stage 0 baseline | `forge/uf-0-baseline` | done | `06d5c0225` | upstream `a3dba155c` merged at `98a0558fb`; codex review: 3 fixes applied |
-| Stage 1 frame rework | `forge/uf-1-frame-rework` | in progress | | |
-| Stage 2 link credentials | `forge/uf-2-link-credentials` | in review (`apps/drive/index.ts` patch after stage 1) | | |
-| Stage 3 four fixes | `forge/uf-3-shell-fixes` | in progress | | |
-| Stage 4 settings | | waiting on 1, Drive 39 | | |
+| Stage 1 frame rework | `forge/uf-1-frame-rework` | done | `b7f3b49f7` | codex review: sheet focus and phone-to-desktop close; AccountSheet named. Shell journeys 24 of 24 |
+| Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
+| Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
+| Stage 4 settings | `forge/uf-4-settings` | in progress | | |
 | Stage 5 adoption | | waiting on 1, 3, 4 | | |
 | Stage 6 flip plumbing | | waiting on 5 | | |
 | Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
 | Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
 | Stage 10 upload, restore, batch | | waiting on 8, Drive 42 | | |
-| Stage 11 document surfaces | | waiting on 0 (parts on 2, 8, 9, Drive 47) | | |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer sub-lane in progress; Sheets, Slides, Drive sub-lanes waiting | | |
 | Stage 12 drive flip plumbing | | waiting on 0 (client half on 6), Drive 43, 45 | | |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | | waiting on 0 | | |
-| Drive 42 upload, restore, purge routes | | waiting on 0 | | |
-| Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | in progress | | |
+| Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | in progress | | |
+| Drive 43 link routes and unlock | `forge/drive-43-link-routes-unlock` | done | `8f1bb3ff2` | codex review: Retry-After read inside the lock; route test independent of the flag |
 | Drive 44 grants, passwords, share email | | waiting on 0 | | |
 | Drive 45 legacy-call counter | | waiting on 0 | | |
 | Drive 47 recents content doctype filter | | waiting on 0 | | |
@@ -62,17 +65,27 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
    nodes, writes included (ticket 008 says "a read or listing"), so a
    node created through a link stays reachable.
 
+## Needs a manual check (cannot run on this devbox)
+
+- iOS standalone keyboard in Mail after stage 3 removed body
+  `overflow:hidden` (Mail's focusout scroll reset remains).
+- Mail dark mode safe-area strips on a phone.
+
 ## Old bugs found, assigned to a unit
 
 | Bug | Found in | Assigned to |
 |---|---|---|
-| `shell/MobileNav.vue` passes `:to`; frappe-ui item takes `route`, so phone nav items do nothing | stage 0 | stage 1 |
+| `shell/MobileNav.vue` passes `:to`; frappe-ui item takes `route`, so phone nav items do nothing | stage 0 | stage 1 (fixed) |
 | Capability journeys assume Administrator has no mail account; the site has `administrator@suite.test` since 2026-09-18 | stage 0 | stage 1 (shell journeys), stage 5 |
 | `FilePreviewSurface.vue` passes `:link`; Button takes `href`, so Download does nothing | stage 0 | stage 11 (Drive sub-lane) |
 | Writer surface throws on `storage.styleClipboard` | stage 0 | stage 11 (Writer) |
-| `test_shims` permanent-surface check fails on `api.product.set_settings` | stage 0 | Drive 39 |
+| `test_shims` permanent-surface check fails on `api.product.set_settings` | stage 0 | Drive 39 (fixed) |
 | Logout no longer calls `clearSlidesUserData` (merge regression) | stage 0 | stage 0 |
 | Upstream `SuiteCommandPalette.vue` calls legacy `suite.drive.api.*` for search | stage 0 review | stage 11 (legacy-call baseline) |
+| `/mail` stays blank and does not redirect to the inbox | stage 3 | stage 5 (Mail sub-lane) |
+| Calendar opens a site socket per mount and never closes it | stage 3 | stage 5 (Calendar sub-lane) |
+| `shell/SuiteLayout.vue` is mounted nowhere; its theme-cycle and Mod+Shift+Comma shortcuts are dead | stage 3 | stage 15 |
+| Slides composite references are Reference Presentation row ids, not node ids, so a separately linked deck sends no code. Needs the manifest to return each reference's node id (backend ask) | stage 2 review | stage 11 (Slides) |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Baselines
