@@ -6,14 +6,19 @@ const presentationDoc = ref<any>({ modified: 'M1' })
 const inReadonlyMode = ref(false)
 const slides = ref<any[]>([{ clientId: 'c1', background: '#ff0000ff', elements: [] }])
 
-let serverSave: (id: string, content: any, baseModified?: string) => Promise<string | undefined>
+let serverSave: (
+	id: string,
+	content: any,
+	baseModified?: string,
+	cancel?: AbortSignal,
+) => Promise<string | undefined>
 
 vi.mock('@/apps/slides/stores/presentation', () => ({
 	presentationId,
 	presentationDoc,
 	inReadonlyMode,
-	savePresentationDoc: (id: string, content: any, baseModified?: string) =>
-		serverSave(id, content, baseModified),
+	savePresentationDoc: (id: string, content: any, baseModified?: string, cancel?: AbortSignal) =>
+		serverSave(id, content, baseModified, cancel),
 }))
 
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
@@ -33,6 +38,8 @@ const {
 	saveFailed,
 	clearSaveFailure,
 	getPresentationFromLocalDB,
+	stopWrites,
+	resumeWrites,
 } = await import('./saving')
 
 const conflict = () => Object.assign(new Error('stale'), { exc_type: 'TimestampMismatchError' })
@@ -390,5 +397,62 @@ describe('drafts', () => {
 
 		sessionUser = 'me@example.com'
 		expect(await getPresentationFromLocalDB('p-user')).toBeNull()
+	})
+})
+
+describe('losing edit access', () => {
+	beforeEach(() => {
+		sessionUser = 'me@example.com'
+		clearSaveFailure()
+		presentationDoc.value = { modified: 'A1' }
+		slides.value = [{ clientId: 'c1', background: '#ff0000ff', elements: [] }]
+	})
+
+	it('cancels the save under way, starts none after, and leaves no draft to replay', async () => {
+		presentationId.value = 'p-narrowed'
+		const pushes: Array<{ content: any; cancel?: AbortSignal }> = []
+		let answer: (modified: string) => void = () => {}
+		serverSave = (_id, content, _base, cancel) => {
+			pushes.push({ content, cancel })
+			return new Promise((resolve) => (answer = resolve))
+		}
+
+		markDirty()
+		const underWay = saveCurrentState()
+		await vi.waitFor(() => expect(pushes).toHaveLength(1))
+		// an edit while the push is out queues a tail for the next push
+		slides.value[0].background = '#00ff00ff'
+		markDirty()
+		await saveCurrentState()
+
+		await stopWrites('p-narrowed')
+		expect(pushes[0]!.cancel?.aborted).toBe(true)
+		// the server answers anyway: nothing of that save lands
+		answer('A2')
+		await underWay
+		markDirty()
+		await saveCurrentState()
+
+		expect(pushes).toHaveLength(1)
+		const local: any = await getPresentationFromLocalDB('p-narrowed')
+		expect(local.dirty).toBe(false)
+	})
+
+	it('saves again once edit access is back', async () => {
+		presentationId.value = 'p-regained'
+		const pushed: string[] = []
+		serverSave = async (id) => {
+			pushed.push(id)
+			return 'B2'
+		}
+		await stopWrites('p-regained')
+		markDirty()
+		await saveCurrentState()
+		expect(pushed).toEqual([])
+
+		resumeWrites('p-regained')
+		await saveCurrentState()
+
+		expect(pushed).toEqual(['p-regained'])
 	})
 })

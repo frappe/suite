@@ -20,6 +20,7 @@ import { appDocumentTitle } from '@/utils/documentTitle'
 import { getSessionUser } from '@/boot/session'
 import { v4 as uuid4 } from 'uuid'
 import { commandHistory } from './historyMeta'
+import { recordVisit } from './driveVisit'
 
 const presentationDoc = ref()
 
@@ -35,6 +36,43 @@ const inReadonlyMode = computed(
 )
 
 const applyReverseTransition = ref(false)
+
+// The `/d/` surface sends a presentation's body requests through its Drive
+// document session, which adds that document's share-link credentials. Keyed by
+// presentation, so a save that lands after the editor moved to another deck
+// still goes out with its own deck's credentials. No entry means an old page,
+// which sends through frappe-ui.
+const documentFetches = new Map()
+
+// returns the release, which leaves a later surface's fetch for the same deck in place
+const setDocumentFetch = (id, send) => {
+	documentFetches.set(id, send)
+	return () => {
+		if (documentFetches.get(id) === send) documentFetches.delete(id)
+	}
+}
+
+// frappeRequest's contract: `message` on success, an error with `exc_type` and `status` otherwise
+const request = async ({ doc, url, method = 'GET', params = {}, signal }) => {
+	const documentFetch = documentFetches.get(doc)
+	if (!documentFetch) return frappeRequest({ url, method, params, signal })
+	const headers = { Accept: 'application/json', 'X-Frappe-CSRF-Token': window.csrf_token ?? '' }
+	let target = `/api/method/${url}`
+	const init = { method, headers, signal }
+	if (method === 'GET') {
+		target += `?${new URLSearchParams(params)}`
+	} else {
+		headers['Content-Type'] = 'application/json'
+		init.body = JSON.stringify(params)
+	}
+	const response = await documentFetch(target, init)
+	const body = await response.json().catch(() => ({}))
+	if (response.ok && !body.exc_type) return body.message
+	const error = new Error([url, body.exc_type].filter(Boolean).join(' '))
+	error.exc_type = body.exc_type
+	error.status = response.status
+	throw error
+}
 
 const createPresentationResource = createResource({
 	url: 'suite.slides.doctype.presentation.presentation.create_presentation',
@@ -251,7 +289,8 @@ const isLatestLoad = (load) => load === latestLoad
 
 // an offline copy warms exactly this url and param order (utils/pinTargets.ts)
 const fetchDoc = (name) =>
-	frappeRequest({
+	request({
+		doc: name,
 		url: 'frappe.client.get',
 		method: 'GET',
 		params: { doctype: 'Presentation', name },
@@ -317,7 +356,7 @@ const showPresentation = (id, { doc, content, dirty }) => {
 }
 
 const fetchReadonly = async (name, url) => {
-	const doc = await frappeRequest({ url, method: 'GET', params: { name } })
+	const doc = await request({ doc: name, url, method: 'GET', params: { name } })
 	normalizeSlideDoc(doc)
 	return doc
 }
@@ -367,12 +406,17 @@ const landedVersion = async (id, rows) => {
 // a push that never answers would otherwise hold the save gate for good
 const SAVE_TIMEOUT_MS = 30_000
 
-const pushSlides = async (id, rows, baseModified) => {
+// `cancel` aborts the push too: saving.js cancels it when edit access goes
+const pushSlides = async (id, rows, baseModified, cancel) => {
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS)
+	const abort = () => controller.abort()
+	if (cancel?.aborted) abort()
+	cancel?.addEventListener('abort', abort, { once: true })
 	let response
 	try {
-		response = await frappeRequest({
+		response = await request({
+			doc: id,
 			url: 'suite.slides.api.slides.save_slides',
 			method: 'POST',
 			params: {
@@ -384,15 +428,16 @@ const pushSlides = async (id, rows, baseModified) => {
 		})
 	} finally {
 		clearTimeout(timer)
+		cancel?.removeEventListener('abort', abort)
 	}
 	return response.modified
 }
 
-const savePresentationDoc = async (id, updatedSlides, baseModified) => {
+const savePresentationDoc = async (id, updatedSlides, baseModified, cancel) => {
 	const rows = updatedSlides.map(toSlideRow)
 	let modified
 	try {
-		modified = await pushSlides(id, rows, baseModified)
+		modified = await pushSlides(id, rows, baseModified, cancel)
 	} catch (err) {
 		if (err?.exc_type !== 'TimestampMismatchError') {
 			lastFailedPush = { id, rows }
@@ -437,10 +482,8 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
 	// a refused tab reloading in place writes again once the server copy is on screen
 	clearSaveFailure()
 	showPresentation(id, loaded)
-	frappeRequest({
-		url: 'suite.drive.api.files.track_visit',
-		params: { doctype: 'Presentation', docname: id },
-	}).catch(() => {})
+	// on `/d/` the Drive document session records the visit when it opens
+	if (!documentFetches.has(id) && loaded.doc.node) recordVisit(loaded.doc.node).catch(() => {})
 	return loaded.doc
 }
 
@@ -531,4 +574,5 @@ export {
 	duplicatePresentation,
 	resetEditorState,
 	pageTitle,
+	setDocumentFetch,
 }

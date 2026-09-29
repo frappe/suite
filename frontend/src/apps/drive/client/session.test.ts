@@ -43,6 +43,24 @@ describe('document session credentials', () => {
     session.dispose()
   })
 
+  it('asks with every held code, the document code among them, for a manifest', async () => {
+    const requester = transport((id, input) => id === 'node_get' ? documentNode(input.node) : {})
+    driveLinks.seed(code(0), 'deck')
+    driveLinks.seed(code(1), 'part-a')
+    driveLinks.seed(code(2), 'part-b')
+    const session = await openDriveDocumentSession('deck', { transport: requester })
+    const sent: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers).get('X-Drive-Links')!)
+      return new Response('{}', { status: 200 })
+    }))
+
+    await session.credentials.fetchHeld('/api/method/suite.slides.api.composite.composite_manifest')
+
+    expect(sent[0]!.split(',').sort()).toEqual([code(0), code(1), code(2)])
+    session.dispose()
+  })
+
   it('keeps the document link when a comment is missing, and forgets it when a product request answers 410', async () => {
     const sent: Array<string | null> = []
     const reply = (url: string) => {

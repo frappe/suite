@@ -41,7 +41,7 @@ import {
   Separator,
 } from 'frappe-ui/editor'
 import { Button } from 'frappe-ui'
-import { allUsers } from '@/apps/drive/legacy/sdk'
+import { useUsers } from '@/apps/writer/composables/useUsers'
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
 import LucideX from '~icons/lucide/x'
@@ -77,7 +77,8 @@ watch(
   },
 )
 
-const extensions = [RichTextKit.configure({ mention: { items: () => allUsers.data ?? [] } })]
+const { users } = useUsers()
+const extensions = [RichTextKit.configure({ mention: { items: () => users.value } })]
 
 const bubbleItems = [
   Bold,

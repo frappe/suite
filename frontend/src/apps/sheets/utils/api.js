@@ -7,9 +7,10 @@
 // CSRF token, so the normal path now delegates to frappe-ui's `call` directly.
 //
 // Two app-specific needs are preserved on top of frappe-ui:
-//   1. `keepalive` — fire-and-forget saves from onBeforeUnmount must outlive
-//      the document; frappe-ui's call() has no keepalive option, so that path
-//      falls back to a raw fetch (same endpoint/CSRF) with keepalive: true.
+//   1. `keepalive` and `fetch` — fire-and-forget saves from onBeforeUnmount must
+//      outlive the document, and the `/d/` surface sends through the Drive
+//      session's fetch. frappe-ui's call() has neither option, so both fall back
+//      to a raw fetch (same endpoint/CSRF).
 //   2. `err.excType` / `err.status` — callers (usePersistence) branch on the
 //      Frappe exception class without regexing the message; we re-attach those
 //      onto whatever error is thrown.
@@ -41,16 +42,18 @@ function decorateError(err, excType, status) {
   return err
 }
 
-// keepalive path: raw fetch so the request survives document unload.
-async function keepaliveCall(method, args) {
-  const res = await fetch(`/api/method/${method}`, {
+// Raw path: a plain fetch, for two needs frappe-ui's call() does not cover.
+// `keepalive` lets the request outlive the document. `fetch` sends through a
+// caller's fetch, which is how the `/d/` surface adds the Drive link header.
+async function rawCall(method, args, { keepalive = false, fetch: send = globalThis.fetch } = {}) {
+  const res = await send(`/api/method/${method}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Frappe-CSRF-Token': csrfToken(),
     },
     body: JSON.stringify(args),
-    keepalive: true,
+    keepalive,
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok || json.exc) {
@@ -59,9 +62,9 @@ async function keepaliveCall(method, args) {
   return json.message
 }
 
-export async function call(method, args = {}, { keepalive = false } = {}) {
-  if (keepalive) {
-    return keepaliveCall(method, args)
+export async function call(method, args = {}, { keepalive = false, fetch } = {}) {
+  if (keepalive || fetch) {
+    return rawCall(method, args, { keepalive, fetch })
   }
   try {
     return await frappeCall(method, args)
@@ -74,4 +77,13 @@ export async function call(method, args = {}, { keepalive = false } = {}) {
       err?.statusCode ?? err?.status,
     )
   }
+}
+
+// The refusals that mean "this caller may not do that here": Frappe's own, and
+// Drive's for a linked sheet. Drive answers a caller below Read with
+// `DriveNotFound`, so it is a refusal too.
+const REFUSALS = new Set(['PermissionError', 'DriveForbidden', 'DriveNotFound', 'DriveLocked', 'DriveLinkExpired'])
+
+export function isRefusal(err) {
+  return REFUSALS.has(err?.excType) || err?.status === 401 || err?.status === 403
 }

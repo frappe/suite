@@ -13,6 +13,7 @@ const SheetsIcon = defineComponent({
 });
 
 export const sheetsDocument: DocumentTypeDefinition = {
+  key: "sheets",
   contentDoctype: "Sheet",
   newLabel: () => __("Spreadsheet"),
   icon: SheetsIcon,

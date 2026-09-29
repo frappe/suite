@@ -7,6 +7,7 @@ import ts from "typescript";
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(frontendRoot, "src");
+const deskScriptRoot = path.join(frontendRoot, "..", "suite", "public", "js");
 const appsRoot = path.join(sourceRoot, "apps");
 const sourceExtensions = new Set([".cjs", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"]);
 const products = new Set(
@@ -41,31 +42,6 @@ const boundaryDebtGroups = [
       "meet/pages/Home.vue|@/apps/calendar/utils/dayjs",
       "meet/pages/Home.vue|@/apps/calendar/components/ParticipantSelector.vue",
       "meet/pages/Home.vue|@/apps/calendar/utils/scheduleTime"
-    ]
-  },
-  {
-    "owner": "Slides frontend owner",
-    "removal": "Move to @/apps/drive when Slides adopts the Drive interface.",
-    "entries": [
-      "slides/components/SharePopover.vue|@/apps/drive/legacy/sdk"
-    ]
-  },
-  {
-    "owner": "Writer frontend owner",
-    "removal": "Move to @/apps/drive when Writer adopts the Drive interface.",
-    "entries": [
-      "writer/components/CommentEditor.vue|@/apps/drive/legacy/sdk",
-      "writer/components/CoreEditor.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Dialogs.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Dialogs.vue|@/apps/drive/legacy/data/selection",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/components/EditableBreadcrumbs.vue",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/resources/files",
-      "writer/components/ToC.vue|@/apps/drive/legacy/sdk",
-      "writer/composables/useDocument.ts|@/apps/drive/legacy/sdk",
-      "writer/composables/useUsers.ts|@/apps/drive/legacy/sdk",
-      "writer/routes.ts|@/apps/drive/legacy/sdk",
-      "writer/utils/index.js|@/apps/drive/legacy/sdk"
     ]
   }
 ];
@@ -166,8 +142,7 @@ const moduleGraphDebtGroups = [
       "drive/legacy/utils/files.js|@/assets/app-logos/sheets.svg",
       "drive/legacy/utils/files.js|@/assets/app-logos/slides.svg",
       "drive/legacy/utils/files.js|@/assets/app-logos/writer.png",
-      "drive/legacy/utils/files.js|@/utils/session",
-      "drive/runtime.ts|@/utils/setupTheme"
+      "drive/legacy/utils/files.js|@/utils/session"
     ]
   },
   {
@@ -436,10 +411,7 @@ const moduleGraphDebtGroups = [
       "writer/pages/WriterLayout.vue|@/utils/setupTheme",
       "writer/resources/index.js|@/apps/registry",
       "writer/resources/index.js|@/boot/session",
-      "writer/router.ts|@/router",
-      "writer/routes.ts|@/boot/session",
-      "writer/runtime.ts|@/apps/drive/legacy/sdk",
-      "writer/runtime.ts|@/boot/session"
+      "writer/router.ts|@/router"
     ]
   }
 ];
@@ -547,6 +519,29 @@ const unstableFrappeUIDebtGroups = [
   }
 ];
 
+// Legacy Drive calls outside `apps/drive/legacy` (ticket 017, Drive §11.7).
+// One exact, shrinking baseline: no name is permanent, so there is no allowlist.
+// An entry is `<file>|<dotted name>`, or `<file>|<legacy module>` for a module
+// that exists only to make a legacy call. Test files send no request and are
+// not scanned.
+const legacyCallDebtGroups = [
+  {
+    "owner": "Shell owner (upstream SuiteCommandPalette search)",
+    "removal": "Stage 15: palette search moves to GET /api/suite/drive/views/search before the deletion commit.",
+    "entries": [
+      "shell/SuiteCommandPalette.vue|suite.drive.api.files.search",
+      "shell/SuiteCommandPalette.vue|suite.drive.api.list.files"
+    ]
+  }
+];
+// A plain substring scan over the whole source text, comments included, so a
+// template string such as `suite.drive.api.${name}` is caught too. The dotted
+// name that follows, when there is one, makes the baseline key readable. A name
+// split across a concatenation ('suite.drive.' + 'api') is out of scope.
+const LEGACY_CALL = /suite\.drive\.api(?:\.[A-Za-z_]\w*)*/g;
+// Legacy modules whose only job is a legacy call. Importing one is a call.
+const legacyCallModules = new Set(["apps/drive/legacy/sdk"]);
+
 function buildBaseline(groups, label) {
   const baseline = new Map();
   for (const group of groups) {
@@ -562,6 +557,7 @@ function buildBaseline(groups, label) {
 
 const boundaryBaseline = buildBaseline([...boundaryDebtGroups, ...moduleGraphDebtGroups], "import-boundary");
 const frappeUIBaseline = buildBaseline(unstableFrappeUIDebtGroups, "frappe-ui import");
+const legacyCallBaseline = buildBaseline(legacyCallDebtGroups, "legacy Drive call");
 
 function* walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -717,6 +713,43 @@ function scan() {
   return { boundary, frappeUI };
 }
 
+const isLegacyDrive = (relative) => relative === "apps/drive/legacy" || relative.startsWith("apps/drive/legacy/");
+const isTestFile = (relative) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(relative);
+
+/** Legacy calls in one file. `relative` is under `src`, or `suite/public/js/...` for Desk code. */
+function legacyCallsInSource(relative, source) {
+  if (isLegacyDrive(relative) || isTestFile(relative)) return [];
+  const found = [];
+  const lineAt = (index) => source.slice(0, index).split("\n").length;
+  for (const match of source.matchAll(LEGACY_CALL)) {
+    found.push({ path: displayPath(relative), line: lineAt(match.index), specifier: match[0], reason: "calls a legacy Drive method" });
+  }
+  if (relative.startsWith("suite/")) return found;
+  const file = path.join(sourceRoot, relative);
+  for (const unit of sourceUnits(file, source)) {
+    for (const item of moduleSpecifiers(unit.source, relative)) {
+      const target = targetFor(file, item.specifier);
+      if (!target || !legacyCallModules.has(target.relative.replace(/\.[cm]?[jt]s$/, ""))) continue;
+      found.push({
+        path: displayPath(relative), line: item.line + unit.lineOffset,
+        specifier: item.specifier, reason: "imports a module that calls a legacy Drive method",
+      });
+    }
+  }
+  return found;
+}
+
+function scanLegacyCalls() {
+  const found = [];
+  for (const file of walk(sourceRoot)) found.push(...legacyCallsInSource(sourcePath(file), fs.readFileSync(file, "utf8")));
+  if (!fs.existsSync(deskScriptRoot)) throw new Error(`Desk script root is missing: ${deskScriptRoot}`);
+  for (const file of walk(deskScriptRoot)) {
+    const relative = path.relative(path.join(frontendRoot, ".."), file).split(path.sep).join("/");
+    found.push(...legacyCallsInSource(relative, fs.readFileSync(file, "utf8")));
+  }
+  return found.sort((left, right) => left.path.localeCompare(right.path) || left.line - right.line);
+}
+
 function keyed(violations) {
   const counts = new Map();
   const result = new Map();
@@ -750,6 +783,24 @@ function selfTest() {
   );
   if (unstable.frappeUI.length !== 1)
     throw new Error("Import-boundary self-test did not reject unstable frappe-ui");
+  const legacyCases = [
+    ["apps/writer/newFeature.ts", "call('suite.drive.api.files.track_visit')\n", 1],
+    ["apps/drive/legacy/api.ts", "call('suite.drive.api.files.track_visit')\n", 0],
+    ["apps/writer/newFeature.test.ts", "expect(calls).not.toContain('suite.drive.api.files.track_visit')\n", 0],
+    ["suite/public/js/Picker.vue", "<script>frappe.call('suite.drive.api.list.files')</script>\n", 1],
+    ["apps/slides/newFeature.ts", "import { getFile } from '@/apps/drive/legacy/sdk'\n", 1],
+    ["apps/writer/newFeature.ts", "fetch('/api/suite/drive/nodes/n1/visit')\n", 0],
+    ["apps/writer/newFeature.ts", "const method = `suite.drive.api.files.get`\n", 1],
+    ["apps/writer/newFeature.ts", "call(`suite.drive.api.${module}.${name}`)\n", 1],
+    ["apps/writer/newFeature.ts", "call('suite.drive.api.' + name)\n", 1],
+    ["suite/public/js/Picker.js", "frappe.call({ method: 'suite.drive.api.files.get_file', args })\n", 1],
+    ["apps/writer/newFeature.ts", "// Replaces suite.drive.api.files.track_visit.\n", 1],
+    ["apps/writer/newFeature.vue", "<!-- was suite.drive.api.list.files -->\n", 1],
+  ];
+  for (const [relative, source, count] of legacyCases) {
+    if (legacyCallsInSource(relative, source).length !== count)
+      throw new Error(`Legacy-call self-test failed for ${relative}`);
+  }
   const unstableSubpath = violationsInSource(
     "apps/drive/files/newFeature.ts",
     "import ListView from 'frappe-ui/experimental/ListView'\n",
@@ -783,13 +834,15 @@ selfTest();
 const scanned = scan();
 const actualBoundary = keyed(scanned.boundary);
 const actualFrappeUI = keyed(scanned.frappeUI);
+const actualLegacyCalls = keyed(scanLegacyCalls());
 const failed = compare("frontend import-boundary", actualBoundary, boundaryBaseline)
-  | compare("unstable frappe-ui import", actualFrappeUI, frappeUIBaseline);
+  | compare("unstable frappe-ui import", actualFrappeUI, frappeUIBaseline)
+  | compare("legacy Drive call", actualLegacyCalls, legacyCallBaseline);
 
 if (failed) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Frontend import boundaries passed (${actualBoundary.size} owned graph violations and ${actualFrappeUI.size} unstable frappe-ui imports baselined).`,
+    `Frontend import boundaries passed (${actualBoundary.size} owned graph violations, ${actualFrappeUI.size} unstable frappe-ui imports and ${actualLegacyCalls.size} legacy Drive calls baselined).`,
   );
 }

@@ -13,6 +13,7 @@ const WriterIcon = defineComponent({
 });
 
 export const writerDocument: DocumentTypeDefinition = {
+  key: "writer",
   contentDoctype: "Writer Document",
   newLabel: () => __("Document"),
   icon: WriterIcon,

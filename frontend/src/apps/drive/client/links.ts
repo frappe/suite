@@ -60,6 +60,13 @@ export interface LinkStore {
    */
   scope(nodeIds: readonly string[], options?: ScopeOptions): RequestScope
   /**
+   * Credentials that carry every held code, at most 20: the codes of the
+   * `always` nodes, then the most recently used others. For a request that
+   * asks the server which nodes these links open, so a later request can send
+   * only the code for each node.
+   */
+  scopeHeld(always?: readonly string[]): RequestScope
+  /**
    * Splits node ids into ordered groups that each fit one request. Every group
    * also carries the codes of the `always` nodes, such as a document's own.
    */
@@ -302,6 +309,17 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         return send(state, codes)
       })
       return scopeFor({ sent, options: scopeOptions, generation })
+    },
+
+    scopeHeld(always = []) {
+      const sent = update((state) => {
+        const base = codesFor(state, always)
+        if (base.size > LINK_CAP) throw new CredentialOverflowError()
+        const others = [...state.links.keys()].filter((code) => !base.has(code))
+        // Oldest first, so sending them keeps their least recently used order.
+        return send(state, [...others.slice(Math.max(0, others.length - (LINK_CAP - base.size))), ...base])
+      })
+      return scopeFor({ sent, options: {}, generation })
     },
 
     group(nodeIds, always = []) {

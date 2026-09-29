@@ -32,7 +32,10 @@
     <!-- Bar 1 · Identity -->
     <div class="sn-topbar">
       <div class="sn-topbar-left">
-        <div class="sn-identity">
+        <!-- On /d/ the Sheets surface names the document through its Drive
+             session, and the shell owns app switching and the account. -->
+        <slot v-if="embedded" name="identity" />
+        <div v-else class="sn-identity">
           <Dropdown :options="brandMenuOptions" :offset="16">
             <template #default="{ open }">
 			  <Tooltip text="Open Sheets menu">
@@ -53,10 +56,8 @@
             <div class="flex min-w-0 items-center">
               <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
               <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
-              <InlineRenameInput
+              <InlineTitleInput
                 v-model="currentTitle"
-                :editing="isTitleEditing"
-                appearance="breadcrumb"
                 class="max-w-[520px]"
                 @submit="finishTitleEditing"
                 @cancel="cancelTitleEditing"
@@ -66,16 +67,20 @@
           </template>
         </div>
         <!-- Save status — muted inline text; never competes with the title -->
-        <span v-if="isSaving" class="sn-save-status">
+        <span v-if="isSaving" class="sn-save-status" aria-label="Saving…">
           <FeatherIcon name="loader" class="sn-save-icon sn-save-spin" />
-          Saving…
+          <span class="sn-save-label">Saving…</span>
         </span>
-        <span v-else-if="justSaved" class="sn-save-status">
+        <span v-else-if="justSaved" class="sn-save-status" aria-label="Saved">
           <FeatherIcon name="check" class="sn-save-icon" />
-          Saved
+          <span class="sn-save-label">Saved</span>
         </span>
         <template v-if="saveError">
-          <Badge theme="red" variant="subtle" size="sm" :label="saveError" :tooltip="saveError" />
+          <span class="sn-save-error">
+            <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
+              <span class="truncate">{{ saveError }}</span>
+            </Badge>
+          </span>
           <Button
             variant="ghost"
             size="sm"
@@ -91,8 +96,9 @@
              access is expected, not a failure. Uses the Frappe UI Badge so it
              matches the save-error chip beside it and the Espresso tokens. -->
         <Tooltip v-if="readOnly" text="You have view access. Ask the owner for edit access to make changes.">
-          <Badge theme="gray" variant="subtle" size="lg" label="View only">
+          <Badge theme="gray" variant="subtle" size="lg" aria-label="View only">
             <template #prefix><FeatherIcon name="eye" class="h-3.5 w-3.5" /></template>
+            <span class="sn-view-only-label">View only</span>
           </Badge>
         </Tooltip>
       </div>
@@ -100,21 +106,34 @@
         <!-- AI Assist entry point — shown only when an admin has configured a
              key and enabled it (gated server-side via the boot flag). -->
         <template v-if="aiEnabled && !readOnly">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="lucide-sparkles"
-            label="Ask AI"
-            tooltip="Ask AI to work on your selection"
-            @click="openAskBar"
-          />
+          <span class="sn-wide-only">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="lucide-sparkles"
+              label="Ask AI"
+              tooltip="Ask AI to work on your selection"
+              @click="openAskBar"
+            />
+          </span>
           <span class="sn-topbar-divider" aria-hidden="true" />
         </template>
-        <Dropdown :options="fileDropdownOptions" align="end">
-          <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconLeft="lucide-file-text" iconRight="lucide-chevron-down" label="File" tooltip="Import / export" />
-          </template>
-        </Dropdown>
+        <span class="sn-wide-only">
+          <Dropdown :options="fileDropdownOptions" align="end">
+            <template #default="{ open }">
+              <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconLeft="lucide-file-text" iconRight="lucide-chevron-down" label="File" tooltip="Import / export" />
+            </template>
+          </Dropdown>
+        </span>
+        <!-- A narrow bar folds Ask AI, File and Keyboard shortcuts into one
+             menu. A container query swaps the two, so nothing moves on load. -->
+        <span class="sn-compact-only">
+          <Dropdown :options="compactMenuOptions" align="end">
+            <template #default="{ open }">
+              <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis" aria-label="More actions" tooltip="More actions" />
+            </template>
+          </Dropdown>
+        </span>
         <input ref="csvInputRef"  name="csv-import"  type="file" accept=".csv"                   style="display:none" @change="importCSV" />
         <input ref="xlsxInputRef" name="xlsx-import" type="file" accept=".xlsx,.xls,.xlsm,.ods"  style="display:none" @change="importXLSX" />
         <span class="sn-topbar-divider" aria-hidden="true" />
@@ -129,11 +148,14 @@
         </span>
         <!-- Variant flips to "subtle" while the panel is open so the trigger
              reads as toggled, matching Frappe UI's standard toggle pattern. -->
-        <Button :variant="vhOpen ? 'subtle' : 'ghost'"
+        <Button v-if="!embedded"
+                :variant="vhOpen ? 'subtle' : 'ghost'"
                 size="sm" icon="lucide-clock"
                 tooltip="Version history"
                 @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
-        <Button variant="ghost" size="sm" icon="lucide-help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
+        <span class="sn-wide-only">
+          <Button variant="ghost" size="sm" icon="lucide-help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
+        </span>
         <span class="sn-topbar-divider" aria-hidden="true" />
         <!-- Presence avatars — other users currently in the workbook.
              Outline = their cursor color; tooltip says which sub-sheet
@@ -157,23 +179,27 @@
             :title="`${presentUsers.length - 3} more people`"
           >+{{ presentUsers.length - 3 }}</span>
         </div>
-        <!-- Share -->
-        <Button
-          variant="ghost"
-          size="sm"
-          icon="lucide-share-2"
-          :label="shareCount > 0 ? `Share · ${shareCount}` : 'Share'"
-          tooltip="Share this sheet"
-          @click="shareOpen = true"
-        />
-        <span class="sn-topbar-divider" aria-hidden="true" />
-        <Avatar
-          :label="userInitial"
-          :image="userImage || undefined"
-          size="sm"
-          :tooltip="userFullName || userEmail"
-          class="sn-user-avatar"
-        />
+        <!-- On /d/ the surface places Comments, Versions and Share here. -->
+        <slot v-if="embedded" name="document-actions" />
+        <template v-else>
+          <!-- Share -->
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="lucide-share-2"
+            :label="shareCount > 0 ? `Share · ${shareCount}` : 'Share'"
+            tooltip="Share this sheet"
+            @click="shareOpen = true"
+          />
+          <span class="sn-topbar-divider" aria-hidden="true" />
+          <Avatar
+            :label="userInitial"
+            :image="userImage || undefined"
+            size="sm"
+            :tooltip="userFullName || userEmail"
+            class="sn-user-avatar"
+          />
+        </template>
       </div>
     </div>
 
@@ -412,6 +438,9 @@
         @copy="makeACopyInline"
         @restore="restoreVersionInline"
       />
+
+      <!-- The surface's Drive panels (comments, versions) dock the same edge. -->
+      <slot name="side-panel" />
 
       <!-- Notes side panel — Google-Sheets-style global list. Lives inside
            sn-grid-wrap so it docks the same right edge as Version History. -->
@@ -857,6 +886,7 @@
 
     <!-- Share dialog -->
     <ShareDialog
+      v-if="!embedded"
       v-model="shareOpen"
       :sheet-id="props.id"
       :sheet-title="currentTitle"
@@ -1323,7 +1353,7 @@ import { createChartEngine } from '../../engine/charts.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import ChartDialog             from './ChartDialog.vue'
 import ChartOverlay            from './ChartOverlay.vue'
-import { InlineRenameInput }   from '@/apps/drive'
+import InlineTitleInput        from './InlineTitleInput.vue'
 import { createNamedRanges }   from '../../engine/named-ranges.js'
 import { getFunctionNames }    from '../../engine/formula.js'
 import NamedRangesDialog       from './NamedRangesDialog.vue'
@@ -1335,8 +1365,24 @@ import {
   Icon as FeatherIcon,
 } from 'frappe-ui/experimental'
 
-const props = defineProps({ id: { type: String, default: 'new' } })
-const emit  = defineEmits(['close', 'saved'])
+const props = defineProps({
+  id: { type: String, default: 'new' },
+  // Mounted by the /d/ surface. The surface fills the `identity`,
+  // `document-actions` and `side-panel` slots, owns the title, sharing and the
+  // leave guard, and its Drive session records the visit.
+  embedded: { type: Boolean, default: false },
+  // The surface's access verdict. False freezes the editor and cancels every
+  // pending save, retries included.
+  writable: { type: Boolean, default: true },
+  // The Drive title while embedded. Saves carry it, so it must follow a rename.
+  title: { type: String, default: null },
+  // The Drive session's fetch while embedded. Load, save and the collaboration
+  // relay go through it, so a caller who holds a share link reaches the sheet.
+  credentialFetch: { type: Function, default: undefined },
+})
+// `access-refused`: the server refused a save, or the collaboration server
+// refused the connection. `notes-opened`: the notes panel took the right edge.
+const emit  = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('sheets', async () => {
   await flushSave()
@@ -1697,6 +1743,9 @@ const activeNumberFormat = ref('')
 // commit; null when no cross-sheet edit is in flight.
 const editingHomeSheet = ref(null)
 const editingHomeCell  = ref(null)
+// The cell the formula bar or the cell editor last took typed text for. Reset
+// when that edit is committed or cancelled, or the selection moves.
+let _typedCell = null
 // Dropdown reflects the *type* only ('number' / 'currency' / ...), so a stored
 // `number:3` still shows "Number" as selected.
 const activeNumberFormatType = computed(() => parseNumberFmt(activeNumberFormat.value).type)
@@ -1926,6 +1975,17 @@ const fileDropdownOptions = computed(() => [
         { label: 'AI settings', icon: 'lucide-cpu', onClick: () => { aiSettingsOpen.value = true } },
       ]}]
     : []),
+])
+
+// The narrow top bar's one menu: what the wide bar shows as separate buttons.
+const compactMenuOptions = computed(() => [
+  ...(aiEnabled.value && !readOnly.value
+    ? [{ label: 'Ask AI', icon: 'lucide-sparkles', onClick: () => openAskBar() }]
+    : []),
+  ...fileDropdownOptions.value,
+  { group: 'Help', options: [
+    { label: 'Keyboard shortcuts', icon: 'lucide-help-circle', onClick: () => { showShortcutsHelp.value = true } },
+  ]},
 ])
 
 // ── AI Assist ─────────────────────────────────────────────────────────────────
@@ -2463,7 +2523,7 @@ const textWrapDropdownOptions = computed(() => [
 // fallbacks only cover the impossible window where someone saves before
 // useSheetTabs has finished initializing.
 let _sheetTabs = null
-const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave } =
+const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave, workbookJson } =
   usePersistence({
     sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot,
     charts, namedRanges,
@@ -2473,6 +2533,10 @@ const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCre
       else                         grid?.viewRestore?.(s)
     },
     currentTitle, emit,
+    isWritable:   () => props.writable,
+    onRefused:    () => emit('access-refused'),
+    recordVisits: !props.embedded,
+    credentialFetch: props.credentialFetch,
   })
 
 // View-only mode: the loaded sheet is shared with the current user at read
@@ -2480,7 +2544,31 @@ const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCre
 // grid edit gate, the toolbar/formula-bar disable, the context menu, and the
 // autosave path all no-op so a viewer is never misled into editing a doc they
 // can't persist (and never triggers the server's PermissionError on save).
-const readOnly = computed(() => !canWrite.value)
+const readOnly = computed(() => !canWrite.value || !props.writable)
+
+// Losing write access drops every pending edit from the save path: the queued
+// autosave, the failed-save watchdog, the op queue, and a failed batch. The
+// surface keeps those edits as its recovery copy instead. A save already in
+// flight stops before its next retry, and `_accessEpoch` disowns its result.
+// When access comes back the surface remounts the editor, so it reloads the
+// server workbook before editing resumes.
+let _accessEpoch = 0
+watch(readOnly, (frozen) => {
+  if (!frozen) return
+  _accessEpoch += 1
+  clearTimeout(_autoSaveTimer)
+  clearTimeout(_saveWatchdogTimer)
+  _opQueue.length = 0
+  _pendingSaveBatch = null
+  isDirty.value = false
+  saveError.value = ''
+})
+
+if (props.embedded) {
+  watch(() => props.title, (title) => {
+    if (title != null) currentTitle.value = title
+  }, { immediate: true })
+}
 
 _sheetTabs = useSheetTabs({ sheet, formats, extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers], getGrid: () => grid, activeCell, formulaValue, refreshActiveFormat, onSwitch: () => {
     filterPanel.open = false     // close any open filter popover so it doesn't carry stale state
@@ -2580,6 +2668,8 @@ const { presentUsers, remoteCursors, broadcastCellChange, broadcastBatchChange, 
     currentSheet,
     getSheet:       () => sheet,
     repopulateGrid: _repopulateGrid,
+    onRefused:      () => emit('access-refused'),
+    credentialFetch: props.credentialFetch,
   })
 // Wire the binding's per-segment touch-tracking into the history we declared
 // up top — undo() will now revert only this client's writes from the undone
@@ -3185,6 +3275,7 @@ function _setupGridInstance() {
     onSelect(id) {
       activeCell.value   = id
       formulaValue.value = sheet.getCell(id)
+      _typedCell = null
       refreshActiveFormat()
       _syncNumberFormat(id)
       computeSelectionStats()
@@ -3214,6 +3305,7 @@ function _setupGridInstance() {
         grid?.render?.()
         editingHomeSheet.value = null
         editingHomeCell.value  = null
+        _typedCell = null
         syncFlags()
         return
       }
@@ -3237,6 +3329,7 @@ function _setupGridInstance() {
           grid?.render?.()
           editingHomeSheet.value = null
           editingHomeCell.value  = null
+          _typedCell = null
           syncFlags()
           return
         }
@@ -3281,11 +3374,15 @@ function _setupGridInstance() {
       _maybeAutoLink([{ id, value, before }], writeSheet)
       editingHomeSheet.value = null
       editingHomeCell.value  = null
+      _typedCell = null
       syncFlags()
       isDirty.value = true
       recomputePivotsForSheet(writeSheet)
     },
-    onInput(id, value)  { formulaValue.value = value },
+    onInput(id, value)  {
+      formulaValue.value = value
+      _typedCell = { sheet: sheet.getCurrentSheet(), cell: id }
+    },
     onCancel(id)        {
       const homeSheet = editingHomeSheet.value
       if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
@@ -3293,6 +3390,7 @@ function _setupGridInstance() {
       }
       editingHomeSheet.value = null
       editingHomeCell.value  = null
+      _typedCell = null
       formulaValue.value = sheet.getCell(id)
     },
     getFormat:    id => formats.get(id, sheet.getCurrentSheet()),
@@ -3434,6 +3532,7 @@ async function _loadInitialData() {
   syncFlags()
   if (props.id && props.id !== 'new') {
     await loadSheet(props.id)
+    if (props.embedded && props.title != null) currentTitle.value = props.title
     // sheet.restore() now fires onCellsChanged → _repopulateGrid() as a
     // single bulk pass, so the explicit call here was duplicating work
     // (parseCellId + grid.setCell × every cell, on top of the per-cell
@@ -3526,6 +3625,8 @@ function hasUnsavedChanges() {
 }
 
 const confirmUnsavedNavigation = () => {
+  // Embedded, the surface's leave guard flushes and keeps a recovery copy.
+  if (props.embedded) return true
   if (!hasUnsavedChanges() || readOnly.value) return true
   return confirmLeave()
 }
@@ -3826,6 +3927,7 @@ async function _doAutoSave() {
   // rather than spamming the server on every typed character.
   if (props.id === 'new') return
   isDirty.value = false
+  const epoch = _accessEpoch
   // Drain queued ops BEFORE the save so the batch lands atomically with the
   // implicit `save` op and keeps the canonical user-action ordering intact.
   const batch = _pendingSaveBatch || { ..._opsForSave(), revision: _dirtyRevision }
@@ -3835,6 +3937,11 @@ async function _doAutoSave() {
     : saveExisting(props.id, currentTitle.value, { ops: batch.ops })
   await _savePromise
   _savePromise = null
+  // Access narrowed while this save was out. Its edits left the save path.
+  if (epoch !== _accessEpoch) {
+    saveError.value = ''
+    return
+  }
   if (saveError.value) {
     batch.failed = true
     isDirty.value = true
@@ -3861,7 +3968,7 @@ async function flushSave() {
 // one place. If somehow the user clicked retry from a sheet that
 // isn't dirty (rare race), still try once via retrySave.
 async function onRetrySave() {
-  if (isSaving.value) return
+  if (isSaving.value || readOnly.value) return
   if (isDirty.value && props.id && props.id !== 'new') {
     await _doAutoSave()
   } else {
@@ -3919,6 +4026,7 @@ function onSave() { _doAutoSave() }
 
 function onFormulaInput(e) {
   formulaValue.value = e.target.value
+  _typedCell = { sheet: sheet.getCurrentSheet(), cell: activeCell.value }
   updateAc(e.target.value, e.target.selectionStart)
 }
 
@@ -3962,6 +4070,7 @@ function _commitFormulaBar() {
   if (_cellBlocked(targetId, targetSheet)) {
     editingHomeSheet.value = null
     editingHomeCell.value  = null
+    _typedCell = null
     formulaValue.value = sheet.getCell(targetId, targetSheet)
     return
   }
@@ -3974,6 +4083,7 @@ function _commitFormulaBar() {
   }
   editingHomeSheet.value = null
   editingHomeCell.value  = null
+  _typedCell = null
   _pushEditOp(targetSheet, before, 'Edit cell')
   _maybeAutoLink([{ id: targetId, value: formulaValue.value, before: before[targetId] }], targetSheet)
 }
@@ -3993,6 +4103,7 @@ function _cancelFormulaBar() {
   }
   editingHomeSheet.value = null
   editingHomeCell.value  = null
+  _typedCell = null
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
@@ -4535,6 +4646,7 @@ function toggleNotesPanel() {
   if (vhOpen.value) closeVersionHistory()
   notesPanel.rev++  // force-refresh on open
   notesPanel.open = true
+  emit('notes-opened')
 }
 
 function jumpToNote(n) {
@@ -4548,6 +4660,46 @@ function jumpToNote(n) {
     openCommentPanel()
   })
 }
+
+// The /d/ surface's handle on the editor: where the cursor is, how to reach
+// a commented cell, and the save state its leave guard and restore act on.
+function goToCell(sheetName, id) {
+  if (!grid || !sheetNames.value.includes(sheetName)) return false
+  const p = parseCellId(id)
+  if (!p) return false
+  if (sheetName !== sheet.getCurrentSheet()) switchSheet(sheetName)
+  nextTick(() => {
+    grid.moveTo(p.row, p.col)
+    activeCell.value = id
+  })
+  return true
+}
+
+// The text in the formula bar or the cell editor that is not committed yet.
+// Both mirror into `formulaValue`. A cross-sheet formula edit writes back to
+// its home cell; any other edit to the cell it was typed for.
+function _draftEdit() {
+  const target = editingHomeCell.value
+    ? { sheet: editingHomeSheet.value, cell: editingHomeCell.value }
+    : _typedCell
+  if (!target) return null
+  const committed = sheet.getCell(target.cell, target.sheet)
+  if (String(committed ?? '') === String(formulaValue.value ?? '')) return null
+  return { ...target, value: formulaValue.value }
+}
+
+defineExpose({
+  activeCell,
+  currentSheet,
+  saveState: computed(() =>
+    isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean'),
+  flushSave,
+  // The workbook for a recovery copy, with the cell edit still in progress.
+  workbookJson: () => workbookJson(_draftEdit()),
+  hasDraft: () => _draftEdit() !== null,
+  goToCell,
+  closeNotes: () => { notesPanel.open = false },
+})
 
 function addNoteFromPanel() {
   // Convenience: same as topbar note button, but invoked from inside the panel.
@@ -6079,7 +6231,7 @@ function toggleShowFormulas() {
 .sn-load-error-sub   { font-size: 13px; color: var(--ink-gray-6); margin: 0 0 8px; max-width: 360px; }
 
 /* ── Bar 1 · Identity / topbar ───────────────────────────────────────────── */
-.sn-topbar       { position:relative; z-index:10; display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 12px; border-bottom:1px solid var(--outline-elevation-1); background:var(--surface-elevation-1); flex-shrink:0; }
+.sn-topbar       { container:sn-topbar / inline-size; position:relative; z-index:10; display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 12px; border-bottom:1px solid var(--outline-elevation-1); background:var(--surface-elevation-1); flex-shrink:0; }
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
@@ -6099,6 +6251,16 @@ function toggleShowFormulas() {
 /* Hairline between action buttons and avatar — groups the cluster without
    relying on extra padding. */
 .sn-topbar-divider { width:1px; height:20px; background:var(--outline-gray-2); margin:0 4px; flex-shrink:0; }
+.sn-save-error { display:inline-flex; min-width:0; max-width:240px; }
+.sn-wide-only { display:inline-flex; }
+.sn-compact-only { display:none; }
+/* A narrow bar, down to a 320 px phone, keeps every action on one row: labels
+   and dividers go, and Ask AI, File and Keyboard shortcuts fold into one menu. */
+@container sn-topbar (max-width: 640px) {
+  .sn-wide-only, .sn-topbar-divider, .sn-save-label, .sn-view-only-label { display:none; }
+  .sn-compact-only { display:inline-flex; }
+  .sn-save-error { max-width:96px; }
+}
 /* Notes count badge — workbook-wide teal badge on the notes icon. */
 .sn-notes-btn-wrap { position:relative; display:inline-flex; }
 .sn-notes-badge {

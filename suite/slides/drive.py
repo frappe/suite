@@ -394,7 +394,8 @@ def composite_reference_rows(docname: str) -> list[dict]:
 
     `presentation` is the referenced deck's docname. §6.6 marks an unreadable
     reference rather than dropping it, so the docname crosses for every
-    reference; the node id does not (see `composite_references`).
+    reference; the node id does not (see `composite_references`). The grouped
+    manifest adds a node id only where the caller can read the deck.
 
     The id is stable while the reference list is. `duplicate` and
     `restore_version` rewrite the table, so both mint new ids, and a client
