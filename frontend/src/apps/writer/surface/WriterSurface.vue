@@ -5,50 +5,119 @@ import {
   onBeforeUnmount,
   onMounted,
   provide,
+  reactive,
   ref,
   shallowRef,
+  toRefs,
   watch,
 } from "vue";
+
+import type { Editor } from "@tiptap/core";
 
 import type { DocumentSession } from "@/apps/drive";
 import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
 import emitter from "@/apps/writer/emitter";
-import { freezesEdits } from "./access";
+import { DOCUMENT_MEDIA } from "@/apps/writer/extensions/drive-media";
+import { RENAME_DOCUMENT } from "@/apps/writer/renameDocument";
 import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
+import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from "./recovery";
+import { createWriteGate, type DocumentWrite } from "./writes";
+
+const COMMENT = 20;
+
+type WriterSettings = Record<string, unknown>;
+
+interface WriterDocumentRow {
+  name: string;
+  collab?: number;
+  settings?: string | WriterSettings | null;
+}
+
+interface WriterDocumentResource {
+  doc: (Omit<WriterDocumentRow, "settings"> & { settings: WriterSettings }) | null;
+  newVersion: DocumentWrite;
+  saveDoc: DocumentWrite;
+  saveHtml: DocumentWrite;
+  updateSettings: DocumentWrite;
+}
+
+/** `GET nodes/<id>/threads` */
+interface CommentThread {
+  name: string;
+  resolved: boolean;
+  comments: { name: string; content: string; author_name: string | null; creation: string | null }[];
+}
+
+/** One row of `GET nodes/<id>/versions` */
+interface VersionRow {
+  seq: number;
+  kind: string;
+  label: string | null;
+  actor: string | null;
+  creation: string | null;
+}
+
+/** What `TextEditor` and `NonCollabEditor` expose. */
+interface EditorSurface {
+  editor?: Editor | null;
+  users?: readonly unknown[];
+}
 
 const props = defineProps<{ session: DocumentSession }>();
 const titleDraft = ref(props.session.title.value);
-const editorSurface = shallowRef<any>(null);
+const editorSurface = shallowRef<EditorSurface | null>(null);
+/** The editor's own unsaved flag, bound to its `dirty` model. */
 const dirty = ref(false);
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const showComments = ref(false);
 const showVersions = ref(false);
-const comments = ref<unknown[]>([]);
-const versions = ref<unknown[]>([]);
+const threads = ref<CommentThread[]>([]);
+const versions = ref<VersionRow[]>([]);
 const panelLoading = ref(false);
 const commentText = ref("");
+const hasRecovery = ref(readRecovery(props.session.nodeId) !== null);
 
-const documentResource = useDoc({
+const writes = createWriteGate(props.session, () => {
+  const unsaved = dirty.value;
+  if (unsaved) retainRecovery();
+  editorSurface.value?.editor?.setEditable(false);
+  if (!unsaved) {
+    toast.warning("Editing access changed. This document is now read-only.");
+    return;
+  }
+  toast.warning("Editing access changed. Your unsaved changes are kept on this device.", {
+    duration: Number.POSITIVE_INFINITY,
+    action: { label: "Download my changes", onClick: downloadChanges },
+  });
+});
+const writerDocument = useDoc<WriterDocumentRow>({
   doctype: "Writer Document",
   name: props.session.contentDocname,
-  transform(doc: any) {
-    if (typeof doc.settings === "string") doc.settings = JSON.parse(doc.settings || "{}");
+  transform(doc) {
+    if (typeof doc.settings === "string") doc.settings = JSON.parse(doc.settings || "{}") as WriterSettings;
     else if (!doc.settings) doc.settings = {};
     return doc;
   },
   methods: {
-    newVersion: "new_version",
     saveDoc: "save_doc",
     saveHtml: "save_html",
     updateSettings: "update_settings",
   },
-}) as any;
+}) as unknown as Omit<WriterDocumentResource, "newVersion">;
+// Drive owns this document's history, and `new_version` refuses a Drive
+// document. The editor's automatic version is skipped until Writer takes
+// versions through Drive.
+const noAutomaticVersion: DocumentWrite = { loading: false, error: null, submit: async () => null };
+const documentResource = writes.guard(
+  reactive({ ...toRefs(writerDocument), newVersion: noAutomaticVersion }) as WriterDocumentResource,
+  ["saveDoc", "saveHtml", "updateSettings"],
+);
 
-const role = computed(() => props.session.access.value.role ?? 0);
-const readable = computed(() => props.session.state.value !== "Refused" && role.value >= 10);
-const editable = computed(
-  () => readable.value && props.session.state.value === "Active" && role.value >= 40,
+const readable = computed(() => props.session.state.value !== "Refused" && writes.role.value >= 10);
+const editable = computed(() => readable.value && writes.writable.value);
+const canComment = computed(
+  () => props.session.state.value === "Active" && writes.role.value >= COMMENT,
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -72,21 +141,18 @@ const collaborators = computed(() => editorSurface.value?.users ?? []);
 
 provide("file", fakeFileResource);
 provide("isOffline", computed(() => !online.value));
+provide(RENAME_DOCUMENT, async (title) => {
+  await props.session.rename(title);
+});
+provide(DOCUMENT_MEDIA, (id) => props.session.media(id));
 
 watch(() => props.session.title.value, (title) => { titleDraft.value = title; });
-watch(role, (next, previous) => {
-  if (!freezesEdits(previous, next)) return;
-  retainRecovery();
-  editorSurface.value?.editor?.commands?.setEditable?.(false);
-  toast.warning("Editing access changed. Your local recovery copy was kept.");
+// A save that lands with edit access makes the recovery copy stale.
+watch(saving, (now, before) => {
+  if (!before || now || saveFailed.value || !writes.writable.value || !hasRecovery.value) return;
+  clearRecovery(props.session.nodeId);
+  hasRecovery.value = false;
 });
-watch(saving, (next, previous) => {
-  if (previous && !next && !saveFailed.value) dirty.value = false;
-});
-
-function markDirty(event: Event) {
-  if (editable.value && event.isTrusted) dirty.value = true;
-}
 
 async function rename() {
   const title = titleDraft.value.trim();
@@ -107,20 +173,25 @@ async function share() {
   if (!result.available) toast.info(result.title, { description: result.reason });
 }
 
-async function openPanel(kind: "comments" | "versions") {
-  showComments.value = kind === "comments" ? !showComments.value : false;
-  showVersions.value = kind === "versions" ? !showVersions.value : false;
-  if (!(showComments.value || showVersions.value)) return;
+function togglePanel(kind: "comments" | "versions") {
+  const open = kind === "comments" ? !showComments.value : !showVersions.value;
+  showComments.value = open && kind === "comments";
+  showVersions.value = open && kind === "versions";
+  if (open) void loadPanel(kind);
+}
+
+async function loadPanel(kind: "comments" | "versions") {
   panelLoading.value = true;
   try {
-    const result = kind === "comments"
-      ? await props.session.comments.list()
-      : await props.session.versions.list();
-    const rows = Array.isArray(result)
-      ? result
-      : ((result as any)?.rows ?? (result as any)?.data ?? []);
-    if (kind === "comments") comments.value = rows;
-    else versions.value = rows;
+    if (kind === "comments") {
+      const result = (await props.session.comments.list()) as { threads?: CommentThread[] };
+      threads.value = result.threads ?? [];
+    } else {
+      const result = (await props.session.versions.list()) as { rows?: VersionRow[] };
+      versions.value = result.rows ?? [];
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Could not load this panel.");
   } finally {
     panelLoading.value = false;
   }
@@ -128,20 +199,28 @@ async function openPanel(kind: "comments" | "versions") {
 
 async function addComment() {
   const text = commentText.value.trim();
-  if (!text) return;
-  await props.session.comments.create("document", text);
+  if (!text || !canComment.value) return;
+  try {
+    await props.session.comments.create("document", text);
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Could not add the comment.");
+    return;
+  }
   commentText.value = "";
-  await openPanel("comments");
-  showComments.value = true;
+  await loadPanel("comments");
 }
 
 function retainRecovery() {
-  const html = editorSurface.value?.editor?.getHTML?.();
+  const html = editorSurface.value?.editor?.getHTML();
   if (!html) return;
-  localStorage.setItem(
-    `suite:writer-recovery:${props.session.nodeId}`,
-    JSON.stringify({ savedAt: new Date().toISOString(), html }),
-  );
+  keepRecovery(props.session.nodeId, html);
+  hasRecovery.value = true;
+}
+
+function downloadChanges() {
+  const downloaded = downloadRecovery(props.session.nodeId, props.session.title.value);
+  hasRecovery.value = false;
+  if (!downloaded) toast.error("No recovery copy is kept for this document.");
 }
 
 function flush(): Promise<void> {
@@ -150,7 +229,6 @@ function flush(): Promise<void> {
     const timeout = window.setTimeout(resolve, 10_000);
     emitter.emit("manual-save", () => {
       window.clearTimeout(timeout);
-      if (!saveFailed.value) dirty.value = false;
       resolve();
     });
   });
@@ -171,7 +249,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface-base" @input.capture="markDirty" @keydown.capture="markDirty">
+  <div class="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface-base">
     <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
       <span class="lucide-file-text size-5 text-ink-gray-6" aria-hidden="true" />
       <TextInput
@@ -188,9 +266,10 @@ onBeforeUnmount(() => {
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
       <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
+      <Button v-if="hasRecovery" label="Download my changes" icon-left="lucide-download" variant="ghost" @click="downloadChanges" />
       <div v-if="collaborators.length" class="text-sm text-ink-gray-5">{{ collaborators.length }} present</div>
-      <Button icon="lucide-message-square" tooltip="Comments" variant="ghost" @click="openPanel('comments')" />
-      <Button icon="lucide-history" tooltip="Versions" variant="ghost" @click="openPanel('versions')" />
+      <Button icon="lucide-message-square" tooltip="Comments" aria-label="Comments" variant="ghost" @click="togglePanel('comments')" />
+      <Button icon="lucide-history" tooltip="Versions" aria-label="Versions" variant="ghost" @click="togglePanel('versions')" />
       <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
     </header>
 
@@ -205,6 +284,7 @@ onBeforeUnmount(() => {
       <NonCollabEditor
         v-if="documentResource.doc.collab === 0"
         ref="editorSurface"
+        v-model:dirty="dirty"
         :file="fakeFileResource.doc"
         :document="documentResource"
         :settings="settings"
@@ -213,6 +293,7 @@ onBeforeUnmount(() => {
       <TextEditor
         v-else
         ref="editorSurface"
+        v-model:dirty="dirty"
         :file="fakeFileResource"
         :document="documentResource"
         :settings="settings"
@@ -223,20 +304,33 @@ onBeforeUnmount(() => {
     <aside v-if="showComments || showVersions" class="absolute inset-y-0 right-0 z-20 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
       <div class="flex min-h-12 items-center justify-between border-b px-4">
         <h2 class="text-lg-semibold">{{ showComments ? "Comments" : "Versions" }}</h2>
-        <Button icon="lucide-x" variant="ghost" @click="showComments = showVersions = false" />
+        <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="showComments = showVersions = false" />
       </div>
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
         <template v-else-if="showComments">
-          <div class="flex gap-2">
-            <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" />
-            <Button label="Add" :disabled="!commentText.trim()" @click="addComment" />
-          </div>
-          <pre v-for="(comment, index) in comments" :key="index" class="whitespace-pre-wrap rounded-4 bg-surface-gray-1 p-3 text-p-xs">{{ comment }}</pre>
-          <p v-if="!comments.length" class="text-sm text-ink-gray-5">No comments yet.</p>
+          <form v-if="canComment" class="flex gap-2" @submit.prevent="addComment">
+            <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" />
+            <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+          </form>
+          <article
+            v-for="thread in threads"
+            :key="thread.name"
+            class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
+            :class="thread.resolved && 'opacity-60'"
+          >
+            <div v-for="comment in thread.comments" :key="comment.name">
+              <p class="text-sm-medium text-ink-gray-8">{{ comment.author_name || "Someone" }}</p>
+              <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
+            </div>
+          </article>
+          <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
         </template>
         <template v-else>
-          <pre v-for="(version, index) in versions" :key="index" class="whitespace-pre-wrap rounded-4 bg-surface-gray-1 p-3 text-p-xs">{{ version }}</pre>
+          <div v-for="version in versions" :key="version.seq" class="rounded-4 bg-surface-gray-1 p-3">
+            <p class="text-sm-medium text-ink-gray-8">{{ version.label || `Version ${version.seq}` }}</p>
+            <p class="text-p-xs text-ink-gray-5">{{ [version.actor, version.creation].filter(Boolean).join(" · ") }}</p>
+          </div>
           <p v-if="!versions.length" class="text-sm text-ink-gray-5">No versions yet.</p>
         </template>
       </div>

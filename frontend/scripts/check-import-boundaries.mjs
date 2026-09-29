@@ -49,24 +49,6 @@ const boundaryDebtGroups = [
     "entries": [
       "slides/components/SharePopover.vue|@/apps/drive/legacy/sdk"
     ]
-  },
-  {
-    "owner": "Writer frontend owner",
-    "removal": "Move to @/apps/drive when Writer adopts the Drive interface.",
-    "entries": [
-      "writer/components/CommentEditor.vue|@/apps/drive/legacy/sdk",
-      "writer/components/CoreEditor.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Dialogs.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Dialogs.vue|@/apps/drive/legacy/data/selection",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/components/EditableBreadcrumbs.vue",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/sdk",
-      "writer/components/Navbar.vue|@/apps/drive/legacy/resources/files",
-      "writer/components/ToC.vue|@/apps/drive/legacy/sdk",
-      "writer/composables/useDocument.ts|@/apps/drive/legacy/sdk",
-      "writer/composables/useUsers.ts|@/apps/drive/legacy/sdk",
-      "writer/routes.ts|@/apps/drive/legacy/sdk",
-      "writer/utils/index.js|@/apps/drive/legacy/sdk"
-    ]
   }
 ];
 
@@ -462,10 +444,7 @@ const moduleGraphDebtGroups = [
       "writer/pages/WriterLayout.vue|@/utils/setupTheme",
       "writer/resources/index.js|@/apps/registry",
       "writer/resources/index.js|@/boot/session",
-      "writer/router.ts|@/router",
-      "writer/routes.ts|@/boot/session",
-      "writer/runtime.ts|@/apps/drive/legacy/sdk",
-      "writer/runtime.ts|@/boot/session"
+      "writer/router.ts|@/router"
     ]
   }
 ];

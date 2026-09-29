@@ -13,8 +13,7 @@
 import { ref, watch, computed } from 'vue'
 import emitter from '@/apps/writer/emitter'
 
-import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/legacy/sdk'
-import { startRename } from '@/apps/drive/legacy/data/selection'
+import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive'
 import RemoveDialog from './RemoveDialog.vue'
 import SearchDialog from './SearchDialog.vue'
 
@@ -45,7 +44,6 @@ emitter.on('share', (data) => {
   dialog.value = 's'
 })
 emitter.on('newFolder', () => (dialog.value = 'f'))
-emitter.on('rename', () => entity.value && startRename(entity.value.name))
 emitter.on('remove', () => (dialog.value = 'remove'))
 emitter.on('move', () => (dialog.value = 'm'))
 emitter.on('newLink', () => (dialog.value = 'l'))
