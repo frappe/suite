@@ -48,7 +48,10 @@
     <!-- Footer -->
     <div class="footer">
       <div class="footer-info">
-        <template v-if="staged">
+        <span v-if="oversized" class="footer-error">
+          {{ __('Files larger than {0} MB cannot be attached.', [Number((maxFileSize / (1024 * 1024)).toFixed(2))]) }}
+        </span>
+        <template v-else-if="staged">
           {{ __('Upload') }} <b>{{ staged.name }}</b> {{ __('to') }}
           <b>{{ here.label }}</b>
         </template>
@@ -62,6 +65,10 @@
       </div>
 
       <input ref="fileInput" type="file" class="hidden" @change="onStage" />
+      <label v-if="canTogglePrivate" class="private-toggle">
+        <input v-model="isPrivate" type="checkbox" />
+        {{ __('Private') }}
+      </label>
       <button v-if="canUpload" class="ghost-btn" @click="$refs.fileInput.click()">
         {{ __('Upload new') }}
       </button>
@@ -77,7 +84,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 // Every call goes to Drive's routes under /api/suite/drive/, never to a
-// legacy `suite.drive.api.*` method (ticket 017).
+// legacy Drive API method (ticket 017).
 const DRIVE = '/api/suite/drive'
 const PAGE = 50
 const CHUNK = 8 * 1024 * 1024
@@ -91,6 +98,25 @@ const props = defineProps({
   uploader: { type: Object, required: true },
   onComplete: { type: Function, default: () => { } },
 })
+
+// The framework uploader's own settings. A device file starts private unless the
+// caller asked for public attachments and the user may upload public files; the
+// toggle shows only where the framework shows it.
+const uploaderProps = props.uploader.$props ?? {}
+const canTogglePrivate = !!uploaderProps.allow_toggle_private
+const isPrivate = ref(!uploaderProps.make_attachments_public || !frappe.utils.can_upload_public_files())
+
+// Attaching sends the bytes through the browser, so the framework's own size
+// limit applies before any byte moves. It is fetched when the uploader has not.
+const maxFileSize = ref(uploaderProps.restrictions?.max_file_size ?? null)
+if (maxFileSize.value == null) {
+  frappe.call('frappe.core.api.file.get_max_file_size').then((res) => {
+    maxFileSize.value = Number(res.message) || null
+  })
+}
+function tooLarge(size) {
+  return maxFileSize.value != null && size != null && size > maxFileSize.value
+}
 
 const discovered = ref({ personal: null, organization: null })
 const tabs = computed(() => [
@@ -120,7 +146,9 @@ const searching = computed(() => searchText.value.trim().length >= 2)
 const crumbs = ref([])
 const here = computed(() => crumbs.value[crumbs.value.length - 1] ?? { node: '', label: '', role: 0 })
 const canUpload = computed(() => !searching.value && here.value.role >= UPLOAD)
-const ready = computed(() => (staged.value ? canUpload.value : !!selected.value))
+const pickedSize = computed(() => staged.value?.size ?? selected.value?.size ?? null)
+const oversized = computed(() => tooLarge(pickedSize.value))
+const ready = computed(() => !oversized.value && (staged.value ? canUpload.value : !!selected.value))
 
 onMounted(async () => {
   loading.value = true
@@ -184,7 +212,7 @@ async function reload() {
   failure.value = ''
   loading.value = true
   try {
-    const page = await fetchPage(null)
+    const page = await fetchFilled(null)
     if (current !== generation) return
     rows.value = sortRows(page.rows)
     cursor.value = page.next_cursor
@@ -201,7 +229,7 @@ async function loadMore() {
   const current = generation
   loadingMore.value = true
   try {
-    const page = await fetchPage(cursor.value)
+    const page = await fetchFilled(cursor.value)
     if (current !== generation) return
     rows.value = rows.value.concat(sortRows(page.rows))
     cursor.value = page.next_cursor
@@ -210,6 +238,7 @@ async function loadMore() {
   } finally {
     loadingMore.value = false
   }
+  topUp()
 }
 
 function onScroll(e) {
@@ -244,6 +273,19 @@ async function fetchPage(after) {
       })
       : { rows: [], next_cursor: null }
   return { rows: page.rows.filter(attachable), next_cursor: page.next_cursor }
+}
+
+// The filter can leave a server page short or empty. Keep reading until a
+// page's worth of rows arrives or the cursor runs out.
+async function fetchFilled(after) {
+  const collected = []
+  let next = after
+  do {
+    const page = await fetchPage(next)
+    collected.push(...page.rows)
+    next = page.next_cursor
+  } while (collected.length < PAGE && next)
+  return { rows: collected, next_cursor: next }
 }
 
 let searchTimer = null
@@ -299,9 +341,10 @@ async function submit() {
 
 // Hand the bytes to the framework engine, so the caller's on_success (field and
 // attachments) fires exactly as for a file from the device. Storage keeps one
-// copy of identical bytes.
+// copy of identical bytes. The bytes pass through the browser once, so `ready`
+// refuses files above the framework's size limit.
 function attach(file) {
-  return props.uploader.upload_file({ file_obj: file, name: file.name, private: true })
+  return props.uploader.upload_file({ file_obj: file, name: file.name, private: isPrivate.value })
 }
 
 async function readContent(row) {
@@ -550,6 +593,24 @@ defineExpose({ submit })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.footer-error {
+  color: var(--ink-red-4, #e03636);
+}
+
+.private-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-gray-7);
+  cursor: pointer;
+}
+
+.private-toggle input {
+  margin: 0;
 }
 
 .footer-info b {

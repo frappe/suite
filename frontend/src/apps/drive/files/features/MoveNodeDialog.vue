@@ -21,7 +21,7 @@ async function move(parent: string) {
     toast.error(mutation.error?.message ?? 'Could not move this item.')
     return
   }
-  open.value = false
   emit('moved', moved)
+  open.value = false
 }
 </script>

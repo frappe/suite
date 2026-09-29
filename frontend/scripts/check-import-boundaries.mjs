@@ -534,7 +534,11 @@ const legacyCallDebtGroups = [
     ]
   }
 ];
-const LEGACY_CALL = /suite\.drive\.api\.[A-Za-z_][\w.]*[A-Za-z_\d]/g;
+// A plain substring scan over the whole source text, comments included, so a
+// template string such as `suite.drive.api.${name}` is caught too. The dotted
+// name that follows, when there is one, makes the baseline key readable. A name
+// split across a concatenation ('suite.drive.' + 'api') is out of scope.
+const LEGACY_CALL = /suite\.drive\.api(?:\.[A-Za-z_]\w*)*/g;
 // Legacy modules whose only job is a legacy call. Importing one is a call.
 const legacyCallModules = new Set(["apps/drive/legacy/sdk"]);
 
@@ -786,6 +790,12 @@ function selfTest() {
     ["suite/public/js/Picker.vue", "<script>frappe.call('suite.drive.api.list.files')</script>\n", 1],
     ["apps/slides/newFeature.ts", "import { getFile } from '@/apps/drive/legacy/sdk'\n", 1],
     ["apps/writer/newFeature.ts", "fetch('/api/suite/drive/nodes/n1/visit')\n", 0],
+    ["apps/writer/newFeature.ts", "const method = `suite.drive.api.files.get`\n", 1],
+    ["apps/writer/newFeature.ts", "call(`suite.drive.api.${module}.${name}`)\n", 1],
+    ["apps/writer/newFeature.ts", "call('suite.drive.api.' + name)\n", 1],
+    ["suite/public/js/Picker.js", "frappe.call({ method: 'suite.drive.api.files.get_file', args })\n", 1],
+    ["apps/writer/newFeature.ts", "// Replaces suite.drive.api.files.track_visit.\n", 1],
+    ["apps/writer/newFeature.vue", "<!-- was suite.drive.api.list.files -->\n", 1],
   ];
   for (const [relative, source, count] of legacyCases) {
     if (legacyCallsInSource(relative, source).length !== count)

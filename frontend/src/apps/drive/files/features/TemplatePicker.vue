@@ -6,10 +6,13 @@
         <div v-if="templates.status === 'pending' && !templates.rows.length" class="grid grid-cols-3 gap-3">
           <Skeleton v-for="index in 6" :key="index" class="h-30 w-full rounded-5" />
         </div>
-        <ErrorMessage
+        <div
           v-else-if="templates.error && !templates.rows.length"
-          :message="templates.error.message"
-        />
+          class="flex h-full flex-col items-center justify-center gap-3 text-center"
+        >
+          <ErrorMessage :message="templates.error.message" />
+          <Button label="Retry" :loading="templates.isFetching" @click="templates.refetch()" />
+        </div>
         <div
           v-else-if="!templates.rows.length"
           class="flex h-full flex-col items-center justify-center gap-3 text-center"

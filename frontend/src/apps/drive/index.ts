@@ -1,4 +1,4 @@
-import { defineAsyncComponent, defineComponent, h, ref } from 'vue'
+import { defineAsyncComponent, defineComponent, getCurrentInstance, h, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import { driveLinks } from '@/apps/drive/client/links'
@@ -7,6 +7,7 @@ import { roots } from '@/apps/drive/client/roots'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { recents } from '@/apps/drive/client/views'
+import { presentDialog } from '@/apps/drive/files/features/dialogHost'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { useMutation, useQuery } from '@/platform/server-state'
@@ -127,10 +128,25 @@ export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
 )
 
-/** Moves one node through the Drive folder picker. Props: `node`, `v-model:open`; emits `moved`. */
-export const DriveMoveDialog = defineAsyncComponent(() => import('@/apps/drive/files/features/MoveNodeDialog.vue'))
-/** Read-only details of one node. Props: `node`, `v-model:open`. */
-export const DriveInfoDialog = defineAsyncComponent(() => import('@/apps/drive/files/features/NodeInfoDialog.vue'))
+export interface DriveDialogs {
+  /** Opens the folder picker to move `node`. Resolves with the moved node, or `undefined` when cancelled. */
+  move(node: string): Promise<DriveNodeSummary | undefined>
+  /** Shows read-only details of `node`. Resolves when the dialog closes. */
+  showDetails(node: string): Promise<void>
+}
+
+/** Drive dialogs, opened by function call. Call it in a component's setup. */
+export function useDriveDialogs(): DriveDialogs {
+  const context = getCurrentInstance()?.appContext
+  if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
+  return {
+    move: (node) =>
+      presentDialog<DriveNodeSummary>(context, () => import('@/apps/drive/files/features/MoveNodeDialog.vue'), { node }, 'moved'),
+    showDetails: async (node) => {
+      await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), { node })
+    },
+  }
+}
 
 // Migration debt. Stage 9 replaces this legacy share dialog export.
 export const ShareDialog = defineAsyncComponent(
