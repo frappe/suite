@@ -1,14 +1,16 @@
-import { readonly, ref, type Ref } from "vue";
+import { computed, readonly, ref, type Ref } from "vue";
 
 import { api } from "@/apps/drive/client/generated";
 import { driveOperation } from "@/apps/drive/client/operation";
 import {
+  canShare,
   documentCredentials,
   type DocumentSession,
   type MediaHandle,
 } from "@/apps/drive/client/session";
 import type { DriveNode, DrivePreview } from "@/apps/drive/client/types";
 import { transport } from "@/platform/transport";
+import { presentShareDialog } from "../share/present";
 
 const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true });
 const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true });
@@ -79,18 +81,15 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
+    canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const node = await transport.request(renameNode, { node: nodeId, title: nextTitle }, { signal: controller.signal });
       title.value = node.title;
       return node;
     },
     async share() {
+      await presentShareDialog(nodeId);
       await refresh();
-      return {
-        available: false,
-        title: "Sharing is unavailable",
-        reason: "The Drive sharing workflow is coming in ticket 008.",
-      };
     },
     copy: (parent, nextTitle) => transport.request(copyNode, { node: nodeId, parent, title: nextTitle }, { signal: controller.signal }),
     comments: {

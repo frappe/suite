@@ -1,9 +1,9 @@
-import { readonly, ref, type Ref } from 'vue'
+import { computed, readonly, ref, type Ref } from 'vue'
 
 import { api } from './generated'
 import { driveLinks } from './links'
 import { driveOperation } from './operation'
-import type { DriveAccess, DriveNode } from './types'
+import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
 import {
   TransportError,
   transport as defaultTransport,
@@ -56,12 +56,6 @@ export interface CredentialGrouper {
   fetchHeld: CredentialFetch
 }
 
-export interface UnavailableShare {
-  available: false
-  title: string
-  reason: string
-}
-
 export interface DocumentSession {
   readonly nodeId: string
   readonly contentDoctype: string
@@ -69,8 +63,11 @@ export interface DocumentSession {
   readonly title: Readonly<Ref<string>>
   readonly state: Readonly<Ref<SessionState>>
   readonly access: Readonly<Ref<DriveAccess>>
+  /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
+  readonly canShare: Readonly<Ref<boolean>>
   rename(title: string): Promise<DriveNode>
-  share(): Promise<UnavailableShare>
+  /** Opens the Drive share dialog. Resolves when it closes, with access read again. */
+  share(): Promise<void>
   copy(parent: string, title?: string): Promise<DriveNode>
   comments: {
     list(resolved?: boolean): Promise<unknown>
@@ -94,8 +91,15 @@ export interface DocumentSession {
   dispose(): void
 }
 
+/** Opens the share dialog for a node. Resolves when it closes. */
+export type ShareOpener = (node: string) => Promise<void>
+
+const openShareDialog: ShareOpener = (node) =>
+  import('@/apps/drive/files/features/share/present').then(({ presentShareDialog }) => presentShareDialog(node))
+
 interface SessionDependencies {
   transport?: Transport
+  share?: ShareOpener
   window?: Window
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
@@ -230,6 +234,7 @@ export async function openDriveDocumentSession(
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
+    canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const updated = await requester.request(
         renameNode,
@@ -240,12 +245,9 @@ export async function openDriveDocumentSession(
       return updated
     },
     async share() {
+      await (dependencies.share ?? openShareDialog)(nodeId)
+      // A share write can change the caller's own access (spec §8.6).
       await refreshAccess()
-      return {
-        available: false,
-        title: 'Sharing is unavailable',
-        reason: 'The Drive sharing workflow is coming in ticket 008.',
-      }
     },
     copy: (parent, nextTitle) => requester.request(
       copyNode,
@@ -322,6 +324,10 @@ interface InternalMediaHandle {
   cacheKey: Ref<string>
   status: Ref<MediaStatus>
   public: MediaHandle
+}
+
+export function canShare(state: SessionState, access: DriveAccess): boolean {
+  return state !== 'Refused' && (access.role ?? 0) >= DRIVE_ROLES.manage
 }
 
 function toSessionState(node: DriveNode): SessionState {

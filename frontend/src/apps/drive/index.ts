@@ -7,7 +7,7 @@ import { roots } from '@/apps/drive/client/roots'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { recents } from '@/apps/drive/client/views'
-import { presentDialog } from '@/apps/drive/files/features/dialogHost'
+import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { useMutation, useQuery } from '@/platform/server-state'
@@ -20,7 +20,6 @@ export type {
   MediaHandle,
   MediaStatus,
   SessionState,
-  UnavailableShare,
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
 
@@ -117,6 +116,8 @@ export function driveNodeRoute(
 }
 
 export function openDocumentSession(nodeId: string) {
+  // `session.share()` opens its dialog in the app that opened the session.
+  rememberDialogContext(getCurrentInstance()?.appContext)
   return openDriveDocumentSession(nodeId).catch(async (error) => {
     if (!(error instanceof Error) || !error.message.includes('is not a content document')) throw error
     const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
@@ -133,6 +134,8 @@ export interface DriveDialogs {
   move(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
+  /** Opens the share dialog for `node`. Resolves when it closes. */
+  share(node: string): Promise<void>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
@@ -145,10 +148,6 @@ export function useDriveDialogs(): DriveDialogs {
     showDetails: async (node) => {
       await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), { node })
     },
+    share: (node) => import('@/apps/drive/files/features/share/present').then((share) => share.presentShareDialog(node, context)),
   }
 }
-
-// Migration debt. Stage 9 replaces this legacy share dialog export.
-export const ShareDialog = defineAsyncComponent(
-  () => import('@/apps/drive/legacy/ui/drive/components/ShareDialog.vue'),
-)

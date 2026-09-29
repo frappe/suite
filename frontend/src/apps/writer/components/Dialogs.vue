@@ -1,7 +1,4 @@
 <template>
-  <!-- Mutation dialogs -->
-  <ShareDialog v-if="dialog === 's'" v-model="dialog" :add-users="params || []" :file="entity" @success="() => resource.fetch()" />
-  
   <!-- Confirmation dialogs -->
   <RemoveDialog v-if="dialog === 'remove'" v-model="dialog" :entities @success="$router.push({ name: 'writer-home' })" />
 
@@ -11,7 +8,7 @@
 import { ref, watch, computed } from 'vue'
 import emitter from '@/apps/writer/emitter'
 
-import { ShareDialog, useDriveDialogs } from '@/apps/drive'
+import { useDriveDialogs } from '@/apps/drive'
 import RemoveDialog from './RemoveDialog.vue'
 import SearchDialog from './SearchDialog.vue'
 
@@ -38,13 +35,16 @@ const refresh = () => {
   resource.value.fetch()
 }
 
-// Move and Details are Drive dialogs, opened by function call.
+// Move, Details and Share are Drive dialogs, opened by function call.
 watch(dialog, async (value) => {
-  if ((value !== 'm' && value !== 'i') || !entity.value) return
+  if ((value !== 'm' && value !== 'i' && value !== 's') || !entity.value) return
   const node = entity.value.name
   if (value === 'm') {
     const moved = await driveDialogs.move(node)
     if (moved) return refresh()
+  } else if (value === 's') {
+    await driveDialogs.share(node)
+    resource.value?.fetch()
   } else {
     await driveDialogs.showDetails(node)
   }

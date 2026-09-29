@@ -30,6 +30,7 @@ const source = computed(() => previewUrl.value || contentUrl.value);
       <span class="lucide-file size-5 text-ink-gray-6" aria-hidden="true" />
       <h1 class="min-w-0 flex-1 truncate text-lg-semibold">{{ session.title.value }}</h1>
       <Button label="Download" icon-left="lucide-download" :href="contentUrl" />
+      <Button v-if="session.canShare.value" label="Share" icon-left="lucide-share-2" variant="solid" @click="session.share()" />
     </header>
     <div v-if="!canPreview" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-file-question mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
