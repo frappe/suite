@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { loginViaApi } from "../../../shared/auth";
+import { adminApi } from "../../helpers/drive";
 import { MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
 /**
@@ -58,6 +59,36 @@ test.describe("Meet in the shell", () => {
 		await expect(meetHome(page)).toHaveCount(0);
 	});
 
+	test("Meet's guard sends a user who is not a System Manager from the audio test to Meet", async ({ page }) => {
+		await patchAccount(page, { roles: [], capabilities: { jmap: true, systemManager: false } });
+		await page.goto("/meet/audio-test");
+		await expect(page).toHaveURL(/\/meet$/);
+		await expect(meetHome(page)).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Audio Notification Test" })).toHaveCount(0);
+	});
+
+	test("a guest opens an instant call without a login redirect", async ({ browser, baseURL }) => {
+		const api = await adminApi(baseURL!);
+		const created = await api.post("/api/suite/meet/rooms", { data: { type: "instant" } });
+		expect(created.ok()).toBe(true);
+		const { code } = ((await created.json()) as { data: { code: string } }).data;
+		const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+		try {
+			const page = await context.newPage();
+			await bootShellFlip(page, true);
+			await page.goto(`/meet/${code}`);
+			// The guest lobby asks for a name. A login redirect would never show it.
+			await expect(page.getByText("Ready to join?")).toBeVisible();
+			await expect(page.getByPlaceholder("Your name").or(page.getByLabel("Your name"))).toBeVisible();
+			await expect(page).toHaveURL(new RegExp(`/meet/${code}$`));
+			await expect(rail(page)).toHaveCount(0);
+		} finally {
+			await context.close();
+			await api.delete(`/api/resource/Meet Room/${code}`);
+			await api.dispose();
+		}
+	});
+
 	test.describe("phone", () => {
 		test.use({ viewport: MOBILE_VIEWPORT, hasTouch: true, isMobile: true });
 
@@ -93,6 +124,18 @@ test.describe("Meet standalone chrome", () => {
 		await expect(settings).toBeVisible();
 		await expect(settings.getByRole("tab", { name: "Devices", exact: true })).toHaveAttribute("aria-selected", "true");
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+	});
+
+	test("with the flip off, a collapsed Meet sidebar keeps a visible menu trigger", async ({ page }) => {
+		await bootShellFlip(page, false);
+		await page.addInitScript(() => window.localStorage.setItem("isSidebarCollapsed", "true"));
+		await page.goto("/meet");
+		await expect(meetHome(page)).toBeVisible();
+
+		const trigger = page.getByLabel("Meet menu");
+		await expect(trigger).toBeVisible();
+		await trigger.click();
+		await expect(page.getByRole("menu").getByRole("menuitem", { name: "Settings" })).toBeVisible();
 	});
 
 	test("with the flip off, Log out in the Meet header signs out", async ({ browser, baseURL }) => {
