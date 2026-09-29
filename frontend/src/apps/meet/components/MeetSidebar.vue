@@ -5,18 +5,17 @@ import {
 	SidebarHeader,
 	SidebarItem,
 	SidebarSection,
-	useCall,
 } from "frappe-ui";
 import { computed, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
 import { useAppSwitcher } from "@/composables/useAppSwitcher";
-import { useSettingsMenuOption } from "@/composables/useSettingsMenuOption";
 import { setupTheme, switchTheme, themeMode } from "@/utils/setupTheme";
 import { useSessionStore } from "../../../boot/session";
-import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 import CommandPaletteSidebarItem from "@/shell/CommandPaletteSidebarItem.vue";
+import { openSettings } from "@/shell/settings/useSettingsDialog";
+import { translate as __ } from "@/platform/translation";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
@@ -26,6 +25,7 @@ import LucideSun from "~icons/lucide/sun";
 import LucideMoon from "~icons/lucide/moon";
 import LucideMonitor from "~icons/lucide/monitor";
 import LucideCheck from "~icons/lucide/check";
+import LucideVideo from "~icons/lucide/video";
 
 const route = useRoute();
 const sessionStore = useSessionStore();
@@ -33,20 +33,21 @@ setupTheme();
 
 const isCollapsed = useStorage("isSidebarCollapsed", false);
 
-const userResource = useCall<{ name?: string; full_name?: string }>({
-	url: "/api/v2/method/suite.api.account.get_logged_in_user",
-});
+// Standalone chrome: Meet draws this sidebar only outside the shell
+// (`suite_flip_shell` off). Inside, the rail and the account menu replace
+// it [T010, T018].
+const standalone = computed(() => route.meta.frame === "none");
 
 function selectTheme(theme: string) {
 	switchTheme(theme);
 }
 
 const appsMenuOption = useAppSwitcher("meet");
-const settingsMenuOption = useSettingsMenuOption();
-
-const userName = computed(
-	() => userResource.data?.full_name || userResource.data?.name || "User",
-);
+const settingsMenuOption = {
+	label: __("Settings"),
+	icon: "lucide-settings",
+	onClick: () => openSettings("meet.devices"),
+};
 
 const settingsItems = computed(() => [
 	{
@@ -106,15 +107,18 @@ const showShortcutsDialog = inject(
 
 <template>
 	<Sidebar
+		v-if="standalone"
 		v-model:collapsed="isCollapsed"
 		class="hidden sm:flex"
 	>
-		<SidebarHeader
-			title="Meet"
-			:subtitle="userName"
-			:menu-items="settingsItems"
-			:logo="FrappeMeetingLogo"
-		/>
+		<!-- Collapsed, the title hides, so a Meet icon stays as the menu's trigger. -->
+		<SidebarHeader title="Meet" :menu-items="settingsItems" :show-logo="isCollapsed">
+			<template #prefix>
+				<span class="grid size-full place-items-center">
+					<LucideVideo class="size-4 text-ink-gray-7" :aria-label="__('Meet menu')" />
+				</span>
+			</template>
+		</SidebarHeader>
 		<div class="flex-1 px-2">
 			<SidebarSection>
 				<CommandPaletteSidebarItem />

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canonicalRoutes } from "@/composition/routes";
 
@@ -26,8 +26,32 @@ describe("canonical route metadata", () => {
       "/files/trash",
       "/mail/:pathMatch(.*)*",
       "/calendar/:pathMatch(.*)*",
+      "/meet/:pathMatch(.*)*",
       "/d/:node/:slug?",
       "/l/:token",
     ]);
+  });
+});
+
+describe("the shell flip", () => {
+  afterEach(() => {
+    delete window.suite_flip_shell;
+    vi.resetModules();
+  });
+
+  async function meetFrame() {
+    vi.resetModules();
+    const { canonicalRoutes } = await import("@/composition/routes");
+    return canonicalRoutes.find((route) => route.meta?.area === "meet")?.meta
+      ?.frame;
+  }
+
+  it("keeps Meet outside the shell while the boot leaves the flip off", async () => {
+    expect(await meetFrame()).toBe("none");
+  });
+
+  it("puts Meet in the shell once the boot turns the flip on", async () => {
+    window.suite_flip_shell = true;
+    expect(await meetFrame()).toBe("shell");
   });
 });

@@ -1,12 +1,22 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
+import { readBootFlag } from "@/platform/boot";
 import type { ShellFrame } from "@/platform/contracts";
 
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
 const driveLogo = "/assets/suite/drive/images/logo.svg";
 const mailLogo = "/assets/suite/mail/images/logo.svg";
+const meetLogo = "/assets/suite/meet/images/meet.png";
 const suiteLogo = "/assets/suite/frontend/logo.svg";
+
+/**
+ * Mail, Calendar and Meet render in the shell while `suite_flip_shell` is on.
+ * Off, they stay outside it and draw their standalone chrome [T018].
+ */
+export const adoptedAppFrame: ShellFrame = readBootFlag("suite_flip_shell")
+  ? "shell"
+  : "none";
 
 const RouteLoading = defineComponent({
   name: "RouteLoading",
@@ -93,6 +103,16 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     "area-placeholder-calendar",
     areaMeta("calendar", "Calendar", calendarLogo, {
       frame: "none",
+      scroll: "content",
+    }),
+  ),
+  // One placeholder holds the whole prefix. A call (`/meet/:meetingId`) sets
+  // its own frame `none` and admits guests in Meet's route module.
+  placeholder(
+    "/meet/:pathMatch(.*)*",
+    "area-placeholder-meet",
+    areaMeta("meet", "Meet", meetLogo, {
+      frame: adoptedAppFrame,
       scroll: "content",
     }),
   ),

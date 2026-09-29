@@ -64,7 +64,6 @@ describe('suite route table', () => {
     ['/slides', 'slides'],
     ['/writer', 'writer'],
     ['/sheets/new', 'sheets'],
-    ['/meet/room-1', 'meet'],
   ])('holds %s for the %s app before any navigation', (path, appId) => {
     const resolved = router.resolve(path)
     expect(resolved.name).not.toBe('not-found')
@@ -74,6 +73,7 @@ describe('suite route table', () => {
   it.each([
     ['/mail/login', 'mail'],
     ['/calendar', 'calendar'],
+    ['/meet/room-1', 'meet'],
   ])('holds %s for the %s area before any navigation', (path, area) => {
     const resolved = router.resolve(path)
     expect(resolved.name).not.toBe('not-found')
@@ -84,6 +84,7 @@ describe('suite route table', () => {
     ['/drive', 'drive-Home'],
     ['/sheets/new', 'sheets-editor'],
     ['/calendar', 'calendar-root-shortcut'],
+    ['/meet', 'meet-home'],
   ])('settles %s on its own route once the app loads', async (path, name) => {
     expect((await settle(path))?.name).toBe(name)
   })
