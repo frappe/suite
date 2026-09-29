@@ -27,7 +27,7 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.nodes import create_file, update
 from suite.drive._core.principals import Principals
-from suite.drive._core.quota import admit
+from suite.drive._core.quota import admit, recompute_usage
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive._core.upload import (
@@ -425,6 +425,162 @@ class TestDriveFileAccounting(IntegrationTestCase):
             with self.assertRaises(DriveOverQuota):
                 create_upload(self.principals, self.root.name, "too-large.bin", 6)
         storage_create.assert_not_called()
+
+    def test_a_taken_filename_is_refused_with_the_free_title_before_a_session_exists(self):
+        # D11: the collision is caught before a byte moves. A Trashed sibling
+        # never blocks a title (§8.6), and the refusal names the title the
+        # dedupe rule would give instead.
+        frappe.set_user(USER)
+        with frappe.storage.fake():
+            for title in ("report.pdf", "report (2).pdf"):
+                blob = self._blob(title.encode(), filename=title)
+                create_file(
+                    self.principals,
+                    self.root.name,
+                    title,
+                    blob=blob.name,
+                    size=blob.file_size,
+                    mime=blob.mime_type,
+                )
+            gone = self._blob(b"gone", filename="gone.pdf")
+            trashed = create_file(
+                self.principals,
+                self.root.name,
+                "gone.pdf",
+                blob=gone.name,
+                size=gone.file_size,
+                mime=gone.mime_type,
+            )
+        update(self.principals, trashed, state="Trashed")
+
+        with patch("suite.drive._core.upload.create_blob_upload") as storage_create:
+            with self.assertRaises(DriveConflict) as refused:
+                create_upload(self.principals, self.root.name, "report.pdf", 4)
+        storage_create.assert_not_called()
+        self.assertEqual(refused.exception.free_title, "report (3).pdf")
+
+        with storage_v2_on(), frappe.storage.fake():
+            opened = self._open(self.principals, self.root.name, "gone.pdf", 4)
+        self.assertTrue(opened["upload_id"])
+
+    def test_a_replace_session_may_reuse_its_own_title_and_finishes_only_as_that_replace(self):
+        # Replace after a collision: the session names the file it replaces,
+        # so that file's own title does not block it. Another sibling's title
+        # still does, and the session cannot turn into a create or into a
+        # replace of a different file.
+        frappe.set_user(USER)
+        with frappe.storage.fake():
+            nodes = {}
+            for title in ("report.pdf", "other.pdf"):
+                blob = self._blob(title.encode(), filename=title)
+                nodes[title] = create_file(
+                    self.principals,
+                    self.root.name,
+                    title,
+                    blob=blob.name,
+                    size=blob.file_size,
+                    mime=blob.mime_type,
+                )
+        target, other = nodes["report.pdf"], nodes["other.pdf"]
+
+        with patch("suite.drive._core.upload.create_blob_upload") as storage_create:
+            with self.assertRaises(DriveConflict) as refused:
+                create_upload(self.principals, self.root.name, "other.pdf", 4, replaces=target)
+            self.assertEqual(refused.exception.free_title, "other (2).pdf")
+            with self.assertRaises(DriveNotFound):
+                create_upload(self.principals, self.root.name, "report.pdf", 4, replaces="missing-node")
+        storage_create.assert_not_called()
+
+        frappe.get_doc({"doctype": "Drive Grant", "node": target, "principal": OTHER, "role": READ}).insert(
+            ignore_permissions=True
+        )
+        frappe.get_doc(
+            {"doctype": "Drive Grant", "node": self.root.name, "principal": OTHER, "role": UPLOAD}
+        ).insert(ignore_permissions=True)
+        reader = Principals(OTHER, (OTHER,), ("$PUBLIC",))
+        with self.assertRaises(DriveForbidden):
+            create_upload(reader, self.root.name, "report.pdf", 4, replaces=target)
+
+        payload = b"new report"
+        with storage_v2_on(), frappe.storage.fake():
+            opened = create_upload(
+                self.principals, self.root.name, "report.pdf", len(payload), replaces=target
+            )
+            self._upload_ids.append(opened["upload_id"])
+            upload_chunk(self.principals, opened["upload_id"], 0, payload)
+            with patch("suite.drive._core.upload.finish_upload_to_blob") as finalizer:
+                for wrong in ({"parent": self.root.name, "title": "report (2).pdf"}, {"replaces": other}):
+                    with self.subTest(finish=wrong), self.assertRaises(DriveForbidden):
+                        finish_upload(self.principals, opened["upload_id"], **wrong)
+            finalizer.assert_not_called()
+            self.assertEqual(finish_upload(self.principals, opened["upload_id"], replaces=target), target)
+
+        self.assertEqual(frappe.db.get_value("Drive Node", target, "size"), len(payload))
+
+    def test_a_browser_replace_keeps_no_version_and_releases_the_old_head(self):
+        # D13: an upload-session replace is the browser's, and keeps no auto
+        # version. The root pays for the new head only, so its counter moves by
+        # new - old, and the §7.7 recompute reaches the same number.
+        frappe.set_user(USER)
+        old_bytes = b"the old head, rather long"
+        new_bytes = b"short new head"
+        with storage_v2_on(), frappe.storage.fake():
+            old = self._blob(old_bytes)
+            target = create_file(
+                self.principals,
+                self.root.name,
+                "draft.bin",
+                blob=old.name,
+                size=old.file_size,
+                mime=old.mime_type,
+            )
+            before = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
+            opened = self._open(self.principals, self.root.name, "draft-upload.bin", len(new_bytes))
+            upload_chunk(self.principals, opened["upload_id"], 0, new_bytes)
+            finish_upload(self.principals, opened["upload_id"], replaces=target)
+
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": target}), 0)
+        self.assertEqual(frappe.db.get_value("Drive Node", target, "size"), len(new_bytes))
+        after = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
+        self.assertEqual(after - before, len(new_bytes) - len(old_bytes))
+        self.assertEqual(recompute_usage(self.root.name).after, after)
+        detail = frappe.parse_json(
+            frappe.db.get_value("Drive Activity", {"node": target, "action": "edit"}, "detail")
+        )
+        self.assertIsNone(detail["version"])
+
+    def test_a_replace_session_preflights_only_the_growth_over_the_file_it_replaces(self):
+        # The finish releases the old head before it admits the new one, so a
+        # full root can still take a smaller or equal replacement. The
+        # preflight asks for the same number: new - old, never below zero.
+        frappe.set_user(USER)
+        with storage_v2_on(), frappe.storage.fake():
+            for title, size in (("big.bin", 80), ("filler.bin", 20)):
+                blob = self._blob(b"x" * size, filename=title)
+                node = create_file(
+                    self.principals,
+                    self.root.name,
+                    title,
+                    blob=blob.name,
+                    size=blob.file_size,
+                    mime=blob.mime_type,
+                )
+                if title == "big.bin":
+                    target = node
+            frappe.db.set_value("Drive Root", self.root.name, "quota_bytes", 100)
+
+            with patch("suite.drive._core.upload.create_blob_upload") as storage_create:
+                with self.assertRaises(DriveOverQuota):
+                    create_upload(self.principals, self.root.name, "big.bin", 81, replaces=target)
+            storage_create.assert_not_called()
+
+            payload = b"y" * 70
+            opened = create_upload(self.principals, self.root.name, "big.bin", len(payload), replaces=target)
+            self._upload_ids.append(opened["upload_id"])
+            upload_chunk(self.principals, opened["upload_id"], 0, payload)
+            finish_upload(self.principals, opened["upload_id"], replaces=target)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), 90)
 
     def test_empty_upload_keeps_its_binding_and_can_be_retried(self):
         frappe.set_user(USER)
@@ -1117,6 +1273,53 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.db.get_value("Drive Root", self.root.name, "used_bytes"),
             old.file_size + first.file_size + second.file_size,
         )
+
+    def test_the_loser_of_a_title_race_keeps_its_session_and_retries_with_the_free_title(self):
+        # Two sessions open under one free title. Both finish at once: one
+        # creates the file, the other is refused with the free title before
+        # its session is claimed, so its bytes are still there to finish.
+        frappe.set_user(USER)
+        marker = uuid4().hex
+        title = f"race-{marker}.bin"
+        driver = MemoryDriver()
+        sessions = []
+        with storage_v2_on(), use_driver(driver):
+            for content in (b"first body", b"second body"):
+                opened = self._open(self.principals, self.root.name, title, len(content))
+                upload_chunk(self.principals, opened["upload_id"], 0, content)
+                sessions.append(opened["upload_id"])
+        frappe.db.commit()
+        site = frappe.local.site
+        barrier = Barrier(2)
+
+        def finish(upload_id: str):
+            frappe.init(site, force=True)
+            frappe.connect()
+            frappe.conf["storage_v2"] = 1
+            frappe.local.storage_driver_override = driver
+            frappe.set_user(USER)
+            try:
+                barrier.wait(timeout=10)
+                try:
+                    node = finish_upload(self.principals, upload_id, parent=self.root.name, title=title)
+                    frappe.db.commit()
+                    return ("created", upload_id, node)
+                except DriveConflict as refusal:
+                    frappe.db.rollback()
+                    return ("refused", upload_id, refusal.free_title)
+            finally:
+                frappe.destroy()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [future.result(timeout=30) for future in [pool.submit(finish, u) for u in sessions]]
+
+        frappe.db.rollback()
+        self.assertEqual(sorted(status for status, *_rest in results), ["created", "refused"])
+        _status, loser, free_title = next(result for result in results if result[0] == "refused")
+        self.assertEqual(free_title, f"race-{marker} (2).bin")
+        with storage_v2_on(), use_driver(driver):
+            retried = finish_upload(self.principals, loser, parent=self.root.name, title=free_title)
+        self.assertEqual(frappe.db.get_value("Drive Node", retried, "title"), free_title)
 
     def test_concurrent_finish_has_one_node_and_one_activity(self):
         frappe.set_user(USER)

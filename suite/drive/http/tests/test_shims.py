@@ -2444,7 +2444,8 @@ class TestFileForwarders(ShimCase):
 
         §8.6 refuses a collision so the UI can ask for another title, and this
         caller has no dialog: dropzone sends a filename and reads the row back.
-        Without the rename the second copy of `Report.pdf` is a 409.
+        Without the rename the second copy of `Report.pdf` is a 409, at the
+        session open (ask D11) and again at finish.
         """
         nodes = self.stub("node_core")
         uploads = self.stub("upload_core")
@@ -2468,7 +2469,9 @@ class TestFileForwarders(ShimCase):
         ):
             answer = shims.upload_file(parent="f1", total_file_size=1)
 
-        nodes.available_title.assert_called_once_with(SOMEONE, "f1", "Report.pdf")
+        self.assertEqual(nodes.available_title.call_count, 2)
+        nodes.available_title.assert_called_with(SOMEONE, "f1", "Report.pdf")
+        self.assertEqual(uploads.create_upload.call_args.args[2], "Report (2).pdf")
         self.assertEqual(uploads.finish_upload.call_args.kwargs["title"], "Report (2).pdf")
         self.assertEqual(answer["file_name"], "Report (2).pdf")
         # `GenericPage.vue` appends the row live; without the event the upload

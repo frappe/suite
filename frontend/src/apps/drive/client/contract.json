@@ -265,7 +265,11 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
       "entity": null,
       "nodeParams": []
     },
@@ -321,6 +325,81 @@
           "patch"
         ],
         "title": "BatchNodes",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "BatchFailure": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              },
+              "message": {
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "type",
+              "message"
+            ],
+            "title": "BatchFailure",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "ok": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ok",
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/$defs/BatchFailure"
+            },
+            "title": "Failed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "failed"
+        ],
+        "title": "BatchResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "node_batch_purge",
+      "method": "POST",
+      "path": "nodes/batch/purge",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes"
+        ],
+        "title": "BatchPurge",
         "type": "object"
       },
       "output": {
@@ -944,6 +1023,7 @@
       "errors": [
         "DriveForbidden",
         "DriveConflict",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1235,6 +1315,7 @@
       "errors": [
         "DriveForbidden",
         "DriveConflict",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1527,6 +1608,7 @@
       "errors": [
         "DriveForbidden",
         "DriveConflict",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1823,6 +1905,7 @@
       "errors": [
         "DriveForbidden",
         "DriveConflict",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -2114,6 +2197,7 @@
       "errors": [
         "DriveForbidden",
         "DriveConflict",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -3017,12 +3101,47 @@
       "path": "uploads",
       "pathParams": [],
       "query": null,
-      "body": null,
+      "body": {
+        "properties": {
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          },
+          "replaces": {
+            "title": "Replaces",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent",
+          "filename",
+          "size"
+        ],
+        "title": "OpenUpload",
+        "type": "object"
+      },
       "output": {
         "additionalProperties": true,
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
       "entity": null,
       "nodeParams": []
     },
@@ -4231,6 +4350,35 @@
         "type": "object"
       },
       "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "root_empty_trash",
+      "method": "POST",
+      "path": "roots/{root}/trash/empty",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "purged": {
+            "title": "Purged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged"
+        ],
+        "title": "Purged",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": []
     },

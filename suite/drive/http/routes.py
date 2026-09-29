@@ -96,7 +96,7 @@ def _route(handler):
         try:
             return handler(*args, **kwargs)
         except DriveError as refusal:
-            _refuse(type(refusal), str(refusal))
+            _refuse(type(refusal), str(refusal), free_title=getattr(refusal, "free_title", None))
         except frappe.RateLimitExceededError as limited:
             # 429, and already carrying its message: §6.3 locks a link out for
             # fifteen minutes after five wrong passwords, and the caller has to
@@ -117,14 +117,29 @@ def _route(handler):
     return answered
 
 
-def _refuse(kind: type, message: str) -> None:
+def _refuse(kind: type, message: str, **fields) -> None:
+    """Throw `kind` so the envelope carries its message and any extra `fields`.
+
+    `report_error` merges the `msgprint` entry stamped with the exception's id
+    into the envelope, so an extra field (§11.6's `free_title`) is written onto
+    that entry. A field whose value is None is left out.
+    """
     if kind is DriveLocked:
         # `process_response` puts an OAuth Bearer challenge on any 401 when
         # resource metadata is enabled, and merges `response_headers` after it.
         # A password link is opened at POST /links/<token>/unlock, not by
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
-    frappe.throw(message, kind)
+    extra = {name: value for name, value in fields.items() if value is not None}
+    try:
+        frappe.throw(message, kind)
+    except kind as thrown:
+        if extra:
+            stamp = getattr(thrown, "__frappe_exc_id", None)
+            for entry in frappe.local.message_log:
+                if stamp and entry.get("__frappe_exc_id") == stamp:
+                    entry.update(extra)
+        raise
 
 
 def _principals():
@@ -354,20 +369,54 @@ def node_batch(nodes: Given = None, patch: Given = None) -> shapes.BatchResult:
     principals = _principals()
     asked = shapes.identifiers(nodes, "nodes")
     mutation = shapes.patch(patch, "patch")
+    return _each(
+        asked,
+        lambda node: node_core.update(
+            principals,
+            node,
+            title=shapes.text(mutation.get("title"), "title"),
+            parent=shapes.text(mutation.get("parent"), "parent"),
+            state=shapes.text(mutation.get("state"), "state"),
+            content_modified=mutation.get("content_modified"),
+        ),
+    )
+
+
+@frappe.whitelist(methods=["POST"])
+@_route
+def node_batch_purge(nodes: Given = None) -> shapes.BatchResult:
+    """Purge many subtrees, isolating each failure (§11.5).
+
+    Each node is `DELETE /nodes/<id>`: MANAGE on the node, in its own
+    savepoint, with one activity row. MANAGE is never reached through a link,
+    so a Guest is not heard.
+
+    Shallowest first: a selected folder is purged before a selected node below
+    it. That purge removes the descendant too, so the descendant is reported
+    purged, not missing.
+    """
+    principals = _principals()
+    asked = shapes.identifiers(nodes, "nodes")
+    ancestors = node_core.stored_ancestors(asked)
+    purged: set[str] = set()
+
+    def purge(node: str) -> None:
+        if purged.isdisjoint(ancestors.get(node, ())):
+            node_core.purge(principals, node)
+        purged.add(node)
+
+    return _each(tuple(sorted(asked, key=lambda node: len(ancestors.get(node, ())))), purge)
+
+
+def _each(asked: tuple[str, ...], act) -> shapes.BatchResult:
+    """Run `act` once per node in its own savepoint, and report §11.5's shape."""
     ok: list[str] = []
-    failed: list[dict] = []
+    failed: list[shapes.BatchFailure] = []
     for node in asked:
         savepoint = f"drive_http_batch_{uuid4().hex[:12]}"
         frappe.db.savepoint(savepoint)
         try:
-            node_core.update(
-                principals,
-                node,
-                title=shapes.text(mutation.get("title"), "title"),
-                parent=shapes.text(mutation.get("parent"), "parent"),
-                state=shapes.text(mutation.get("state"), "state"),
-                content_modified=mutation.get("content_modified"),
-            )
+            act(node)
         except frappe.ValidationError as refusal:
             rollback_savepoint(savepoint, refusal)
             kind = type(refusal) if isinstance(refusal, DriveError) else DriveError
@@ -485,11 +534,14 @@ def upload_create(
     filename: Given = None,
     size: Given = None,
     mime: Given = None,
+    replaces: Given = None,
 ) -> dict:
     """Open one private blob session, refusing on the declared size (§11.2).
 
     The refusal is `DriveOverQuota`, never a permission error: a caller who may
-    upload here and has no room is told which of the two is missing.
+    upload here and has no room is told which of the two is missing. A taken
+    `filename` is `DriveConflict` with `free_title`, unless the taken title is
+    the file named by `replaces`.
     """
     return upload_core.create_upload(
         _principals(),
@@ -497,6 +549,7 @@ def upload_create(
         shapes.required_text(filename, "filename"),
         shapes.whole(size, "size", 0),
         mime=shapes.text(mime, "mime"),
+        replaces=shapes.text(replaces, "replaces"),
     )
 
 
@@ -593,6 +646,13 @@ def root_patch(
             state=shapes.text(state, "state"),
         )
     )
+
+
+@frappe.whitelist(methods=["POST"])
+@_route
+def root_empty_trash(root: Given = None) -> dict:
+    """Purge every trashed tree in one root. MANAGE on the root node (§8.8)."""
+    return {"purged": node_core.empty_trash(_principals(), shapes.required_text(root, "root"))}
 
 
 @frappe.whitelist(methods=["DELETE"])

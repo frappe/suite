@@ -1585,10 +1585,13 @@ def upload_file(
     key = _upload_key(principals, session)
     upload_id = frappe.cache().get_value(key)
     if not upload_id:
+        # `create_upload` refuses a taken filename (§8.6), and the legacy
+        # client has no dialog to answer that with. It always got the free
+        # title, so the session opens under it; finish picks it again below.
         opened = upload_core.create_upload(
             principals,
             parent,
-            upload.filename,
+            node_core.available_title(principals, parent, upload.filename),
             declared,
             mime=upload.mimetype,
         )
