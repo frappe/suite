@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LogOut, Settings, User } from 'lucide-vue-next'
+import { Ellipsis, Keyboard, LogOut, Plus, Settings, User } from 'lucide-vue-next'
 import {
+	Button,
+	Dropdown,
 	Sidebar,
 	SidebarCollapseToggle,
 	SidebarHeader,
@@ -23,12 +25,14 @@ import { userStore } from '@/apps/calendar/stores/user'
 import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
-import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
+import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
+import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
+import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
+import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
-const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
-	/** Each with a palette `color`, the one its events wear. */
-	calendars: any[]
-	visibleCalendars: string[]
+const { events, selectedEvent } = defineProps<{
 	/** The month the calendar shows; the mini month mirrors it. */
 	month?: number
 	year?: number
@@ -38,18 +42,42 @@ const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	events?: any[]
 	/** The open event, so its row reads as active. */
 	selectedEvent?: any
-	/** Palette colour per calendar id, for the mini month's dots. */
+	/** Palette colour per calendar id, for its dot here and the mini month's. */
 	calendarColor: (calendar: string) => string
 }>()
 
 const emit = defineEmits<{
-	'update:visibleCalendars': [name: string]
 	selectDate: [date: Date]
 	selectEvent: [event: any, e: MouseEvent]
 }>()
 
 
 const dotStyle = (color: string) => ({ background: eventColor(color) })
+
+// The account's own calendars, then those shared with the user from other accounts. The shared
+// section is only there when something is shared.
+const calendarGroups = computed(() => {
+	const calendars = store.calendars.data ?? []
+	const mine = calendars.filter((calendar) => calendar.account === store.accountId)
+	const shared = calendars.filter((calendar) => calendar.account !== store.accountId)
+	return [
+		{ key: 'mine', label: __('My Calendars'), calendars: mine },
+		...(shared.length ? [{ key: 'shared', label: __('Shared Calendars'), calendars: shared }] : []),
+	]
+})
+
+// Which sections are folded, remembered in this browser.
+const collapsedSections = useStorage<string[]>('calendar-collapsed-sections', [])
+const setSectionCollapsed = (key: string, collapsed: boolean) =>
+	(collapsedSections.value = collapsed
+		? [...collapsedSections.value, key]
+		: collapsedSections.value.filter((k) => k !== key))
+
+/** A shared calendar's owner, for its tooltip. */
+const ownerName = (calendar: CalendarRow) =>
+	calendar.account === store.accountId
+		? ''
+		: (user.data.all_accounts.find((a) => a.id === calendar.account)?._name ?? '')
 
 // A JMAP calendar is often named after its account — "Frappe Calendar
 // (akash@frappe.io)" — which never fits a sidebar row. The email moves to a
@@ -111,8 +139,13 @@ const subtitle = computed(() => {
 })
 
 const appsMenuOption = useAppSwitcher('calendar')
+const { openShortcuts } = useShortcuts()
 
-const showSettings = ref(false)
+const calendarActions = useCalendarActions()
+const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
+	calendarActions
+
+const openSettings = inject<() => void>('openCalendarSettings')!
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 const menuItems = computed(() => [
@@ -126,7 +159,12 @@ const menuItems = computed(() => [
 			{
 				icon: Settings,
 				label: __('Settings'),
-				onClick: () => (showSettings.value = true),
+				onClick: openSettings,
+			},
+			{
+				icon: Keyboard,
+				label: __('Shortcuts'),
+				onClick: openShortcuts,
 			},
 		],
 	},
@@ -162,6 +200,9 @@ const menuItems = computed(() => [
 		<div class="flex h-full flex-col">
 			<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
 			<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+				<SidebarSection>
+					<CommandPaletteSidebarItem />
+				</SidebarSection>
 				<!-- Stays mounted through a collapse and folds in step with the
 				     sidebar's 300ms width animation, like frappe-ui's own labels
 				     (they animate w-0/opacity-0; height is our axis). A fixed width
@@ -190,37 +231,71 @@ const menuItems = computed(() => [
 					/>
 				</div>
 				<!-- Collapsed, frappe-ui swaps a section's label for a divider line. That
-				     separates groups in mail's rail, but with a single section here it
-				     is a stray line under the header — so the label goes with the width. -->
-				<SidebarSection :label="isSidebarCollapsed ? undefined : __('Calendars')">
+				     separates groups in mail's rail, but with a single section here it is a
+				     stray line under the header — so the line is hidden. The label itself
+				     stays: frappe-ui fades it with the width, where unsetting it dropped it
+				     in one frame and jumped the rows up. -->
+				<SidebarSection
+					v-for="group in calendarGroups"
+					:key="group.key"
+					:label="group.label"
+					:collapsible="calendarGroups.length > 1"
+					:collapsed="collapsedSections.includes(group.key)"
+					class="[&_hr]:hidden"
+					@update:collapsed="(collapsed) => setSectionCollapsed(group.key, collapsed)"
+				>
 					<!-- A calendar that is switched off keeps its place but loses its colour. -->
 					<SidebarItem
-						v-for="calendar in calendars"
+						v-for="calendar in group.calendars"
 						:key="calendar.name"
 						:label="calendar._name"
-						:on-click="() => emit('update:visibleCalendars', calendar.name)"
+						:on-click="() => calendarActions.toggleVisible(calendar)"
 					>
 						<template #prefix>
-							<!-- Fills the 16px icon box: a dot beside the label, a swatch the size
-							     of an icon once the rail is all that is left. -->
-							<span
-								class="shrink-0 rounded-full transition-all"
-								:class="[
-									isSidebarCollapsed ? 'mx-0.5 size-3' : 'mx-1 size-2',
-									!visibleCalendars.includes(calendar.name) && 'opacity-30',
-								]"
-								:style="dotStyle(calendar.color)"
-							/>
+							<!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
+							     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
+							<span class="grid size-4 place-items-center">
+								<span
+									class="size-2.5 rounded-full transition-opacity"
+									:class="!calendar.visible && 'opacity-30'"
+									:style="dotStyle(calendarColor(calendar.name))"
+								/>
+							</span>
 						</template>
-						<Tooltip :text="calendarLabel(calendar).email" side="right">
+						<Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
 							<span
 								class="truncate text-sm"
-								:class="!visibleCalendars.includes(calendar.name) && 'text-ink-gray-4'"
+								:class="!calendar.visible && 'text-ink-gray-4'"
 							>
 								{{ calendarLabel(calendar).label }}
 							</span>
 						</Tooltip>
+						<template #suffix>
+							<Dropdown
+								v-if="calendarActions.hasMenuOptions(calendar)"
+								:options="calendarActions.menuOptions(calendar)"
+							>
+								<Button
+									variant="ghost"
+									class="!bg-transparent"
+									:aria-label="__('Calendar options')"
+									@click.stop
+								>
+									<template #icon>
+										<Ellipsis
+											class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
+										/>
+									</template>
+								</Button>
+							</Dropdown>
+						</template>
 					</SidebarItem>
+					<SidebarItem
+						v-if="group.key === 'mine'"
+						:label="__('New Calendar')"
+						:icon="Plus"
+						:on-click="calendarActions.create"
+					/>
 				</SidebarSection>
 			</div>
 			<!-- Pinned under the scrolling body, as mail's sidebar keeps it. -->
@@ -236,5 +311,6 @@ const menuItems = computed(() => [
 			</div>
 		</div>
 	</Sidebar>
-	<SettingsModal v-model:open="showSettings" />
+	<CalendarModal v-model="showCalendarModal" :calendar="selectedCalendar" />
+	<DeleteCalendarModal v-model="showDeleteCalendar" :calendar="selectedCalendar" />
 </template>

@@ -5,11 +5,12 @@ from frappe.utils import cint
 
 from suite.mail.utils import get_config, log_mail_error
 
-# Used when a subsystem's Mail Settings values are unset, which is the case for every channel added
-# after a site was installed: the Single doc only picks up a new field's default once it is saved.
+# Used while the Mail Settings values are unset: the Single doc only picks up a new field's default
+# once it is saved.
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FILE_COUNT = 10
-DEFAULT_LOG_MAX_FILE_SIZE = 5_000_000
+DEFAULT_LOG_MAX_FILE_SIZE_MB = 5
+MB = 1024 * 1024
 
 
 class EventLogger:
@@ -31,24 +32,22 @@ class EventLogger:
     - `exception` — same as `error` but also records the active traceback; use
                   it inside an `except` block.
 
-    Subclasses set `logger_name` (the frappe logger channel, e.g. "suite.mail.push")
-    and `config_prefix` (the Mail Settings key prefix, e.g. "push"), which
-    selects the `<prefix>_log_max_file_size`, `<prefix>_log_file_count` and
-    `<prefix>_log_level` config values.
+    Subclasses set `logger_name` (the frappe logger channel, e.g. "suite.mail.push"). Level,
+    rotation size and file count come from the one set of logging settings in Mail Settings
+    (`log_level`, `log_max_file_size_mb`, `log_file_count`), shared by every mail log.
     """
 
     logger_name: str
-    config_prefix: str
 
     def __init__(self, ctx: dict | None = None) -> None:
         config = get_config()
 
-        max_size = cint(config.get(f"{self.config_prefix}_log_max_file_size")) or DEFAULT_LOG_MAX_FILE_SIZE
-        file_count = cint(config.get(f"{self.config_prefix}_log_file_count")) or DEFAULT_LOG_FILE_COUNT
+        max_size = (cint(config.get("log_max_file_size_mb")) or DEFAULT_LOG_MAX_FILE_SIZE_MB) * MB
+        file_count = cint(config.get("log_file_count")) or DEFAULT_LOG_FILE_COUNT
         self.logger = frappe.logger(
             self.logger_name, allow_site=True, max_size=max_size, file_count=file_count
         )
-        self.logger.setLevel((config.get(f"{self.config_prefix}_log_level") or DEFAULT_LOG_LEVEL).upper())
+        self.logger.setLevel((config.get("log_level") or DEFAULT_LOG_LEVEL).upper())
 
         self.ctx = ctx if ctx is not None else {}
 
@@ -75,35 +74,30 @@ class PushLogger(EventLogger):
     """Structured event logger for mail push notifications ("suite.mail.push")."""
 
     logger_name = "suite.mail.push"
-    config_prefix = "push"
 
 
 class OutboundLogger(EventLogger):
     """Structured event logger for outbound mail operations ("suite.mail.outbound")."""
 
     logger_name = "suite.mail.outbound"
-    config_prefix = "outbound"
 
 
 class InboundLogger(EventLogger):
     """Structured event logger for inbound mail operations ("suite.mail.inbound")."""
 
     logger_name = "suite.mail.inbound"
-    config_prefix = "inbound"
 
 
 class ExchangeLogger(EventLogger):
     """Structured event logger for mail import/export operations ("suite.mail.exchange")."""
 
     logger_name = "suite.mail.exchange"
-    config_prefix = "exchange"
 
 
 class AdminLogger(EventLogger):
     """Structured event logger for mail administration ("suite.mail.admin")."""
 
     logger_name = "suite.mail.admin"
-    config_prefix = "admin"
 
 
 def get_push_logger(ctx: dict | None = None) -> PushLogger:

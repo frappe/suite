@@ -11,7 +11,7 @@
 	</div>
 </template>
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 
 import SelectionControls from '@/apps/slides/components/SelectionControls.vue'
 import LockBadge from '@/apps/slides/components/LockBadge.vue'
@@ -98,7 +98,8 @@ const boxStyles = computed(() => {
 
 const handleSelectionChange = (elementIds) => {
 	if (!elementIds.length) return
-	cropSelectionToFitContent(elementIds)
+	// a box losing its editor is empty until the next render, so it is measured after
+	nextTick(() => cropSelectionToFitContent(elementIds))
 }
 
 defineExpose({

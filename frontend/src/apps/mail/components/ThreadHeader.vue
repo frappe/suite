@@ -120,6 +120,7 @@ import { Button, Tooltip } from 'frappe-ui'
 import { FLAGGED_STAR_STYLE, FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
+import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
@@ -161,13 +162,11 @@ const backRoute = computed(() =>
 		: { name: 'mail-mailbox', params: { mailbox: mailbox.value }, query: route.query },
 )
 
-const threadMailboxes = computed(() => {
-	if (!thread?.length) return []
-	return thread
-		.filter((mail: Mail) => mail.id)
-		.map((mail: Mail) => mail.mailboxes.map((m) => m.mailbox_id))
-		.reduce((common, ids: string[]) => common.filter((id) => ids.includes(id)))
-})
+// The mailboxes the whole thread sits in — the same intersection the list takes across a selection,
+// here across the thread's mails (a mail still being sent has no id yet and doesn't count).
+const threadMailboxes = computed(() =>
+	commonMailboxIds((thread ?? []).filter((mail: Mail) => mail.id)),
+)
 
 // Every mailbox the thread's mails touch (union), and whether any mail is in more than one — used by
 // Remove From, which is only offered when removing won't orphan a mail.
@@ -257,17 +256,11 @@ const removeFromOptions = computed(() =>
 		.map((m) => getMailboxOption(m, 'removeThreadFromMailbox')),
 )
 
-const moveToOptions = computed(() => {
-	const excludedMailboxes = new Set([
-		mailboxIds.value.sent,
-		mailboxIds.value.drafts,
-		mailboxIds.value.screener,
-		...threadMailboxes.value,
-	])
-	return (mailboxes.value.data ?? [])
-		.filter((m) => !excludedMailboxes.has(m.id))
-		.map((m) => getMailboxOption(m, 'moveThread'))
-})
+const moveToOptions = computed(() =>
+	(mailboxes.value.data ?? [])
+		.filter((m) => canMoveToMailbox(m.id, threadMailboxes.value, mailboxIds.value))
+		.map((m) => getMailboxOption(m, 'moveThread')),
+)
 
 const getMailboxOption = (
 	mailbox: MailboxData,

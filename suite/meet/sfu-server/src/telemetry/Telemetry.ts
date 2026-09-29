@@ -178,6 +178,11 @@ export class Telemetry {
 		buckets: [0, 2, 4, 6, 8, 10],
 		registers: [this.registry],
 	});
+	readonly sttAudioSeconds = new Counter({
+		name: 'meet_sfu_stt_audio_sent_seconds_total',
+		help: 'PCM audio seconds sent from the SFU to the STT service',
+		registers: [this.registry],
+	});
 	private workerCpu = new Gauge({
 		name: 'meet_sfu_worker_cpu_seconds',
 		help: 'Mediasoup worker CPU time',

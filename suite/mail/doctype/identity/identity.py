@@ -1,7 +1,6 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from uuid import uuid7
 
 import frappe
@@ -13,6 +12,7 @@ from suite.mail.doctype.user_account.user_account import get_user_for_jmap_accou
 from suite.mail.jmap import get_identity_service
 from suite.mail.utils.html_to_text import html_to_text
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 
 class Identity(Document):
@@ -154,11 +154,8 @@ def parse_identity_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple identities given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

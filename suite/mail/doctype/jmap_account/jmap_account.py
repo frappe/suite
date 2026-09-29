@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from suite.mail.jmap.services.core import CoreService
 
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
-from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+from suite.mail.doctype.user_account.user_account import account_apps_cache_key, get_user_jmap_accounts
 from suite.mail.utils.user import get_account_emails
 from suite.utils import execute_with_logging, user_context
 from suite.utils.lock import acquire_lock, release_lock
@@ -396,6 +396,11 @@ def _sync_user_accounts(user: str, account_ids: set[str]) -> None:
     names_to_remove = duplicate_names + [user_account_map[account] for account in accounts_to_remove]
     if names_to_remove:
         frappe.db.delete("User Account", {"name": ["in", names_to_remove]})
+
+    if accounts_to_add or accounts_to_remove:
+        # What each app lists is worked out from the accounts; a new or lost one changes it.
+        frappe.cache.delete_value(account_apps_cache_key(user))
+        frappe.cache.delete_value(f"calendar|shared_calendars|{user}")
 
 
 def maybe_create_archive_mailbox(account: str) -> None:

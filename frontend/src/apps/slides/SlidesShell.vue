@@ -94,8 +94,10 @@ body.slides-presenting [data-sonner-toaster] {
   display: none;
 }
 
-.faded-scroll {
+:where(.faded-scroll) {
   --fade-length: 12px;
+}
+.faded-scroll {
   --fade-mask: linear-gradient(
     to bottom,
     rgb(0 0 0 / 0) 0,

@@ -88,7 +88,7 @@ export const useEventDensity = (
 	const key = computed(() => `${store.accountId}:${year()}-${month() + 1}`)
 
 	const density = createResource({
-		url: 'suite.calendar.api.get_calendar_event_density',
+		url: 'suite.calendar.api.get_calendar_event_density_with_shared',
 		makeParams: () => {
 			// The card's own six rows, which reach into the months either side of
 			// the one it names — so the ticks on those spill-over days are real.

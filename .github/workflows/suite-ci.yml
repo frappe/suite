@@ -381,7 +381,7 @@ jobs:
           echo "127.0.0.1 mail.example.test" | sudo tee -a /etc/hosts
           bash $GITHUB_WORKSPACE/suite/mail/tests/docker/start-stalwart.sh
         env:
-          STALWART_VERSION: v0.16.17
+          STALWART_VERSION: v0.16.20
           STALWART_CLI_VERSION: v1.0.12
           STALWART_ADMIN_USER: admin
           STALWART_ADMIN_PASSWORD: admin

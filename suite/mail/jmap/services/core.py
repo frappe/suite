@@ -339,6 +339,25 @@ class CoreService(CoreServiceHelper):
 
         return self._exec("set", create=create, **kwargs)
 
+    def get_across_accounts(self, accounts: list[str], properties: list[str]) -> dict[str, list[dict] | None]:
+        """`<type>/get` for each of several accounts, in as few requests as the server allows.
+
+        JMAP takes method calls addressed to different accounts in one request, so this costs
+        one round trip however many accounts there are, not one each. Keyed by account; `None`
+        where the server refused the call, as it does for an account whose objects of this type
+        the user has no access to.
+        """
+
+        results: dict[str, list[dict] | None] = {}
+        for batch in self.create_batches(accounts, self.max_calls_in_request):
+            calls = [
+                [f"{self._type}/get", {"accountId": account, "properties": properties}, account]
+                for account in batch
+            ]
+            for method, result, account in self._call(self.capabilities, calls)["methodResponses"]:
+                results[account] = None if method == "error" else result.get("list") or []
+        return results
+
     def _get(self, ids: list[str] | None = None, properties: list[str] | None = None, **kwargs) -> dict:
         """Internal method to get objects of the specified type using the JMAP 'get' method, optionally filtering by a list of IDs."""
 

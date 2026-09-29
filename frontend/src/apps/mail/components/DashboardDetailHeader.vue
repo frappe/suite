@@ -13,13 +13,16 @@
 				<Badge v-if="badgeLabel" :label="badgeLabel" :theme="badgeTheme" />
 			</div>
 			<div
-				v-if="metaItems.length"
+				v-if="metaItems.length || $slots.meta"
 				class="text-ink-gray-5 mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm"
 			>
-				<template v-for="(item, index) in metaItems" :key="index">
-					<span v-if="index" class="text-ink-gray-4">·</span>
-					<span class="truncate">{{ item }}</span>
-				</template>
+				<!-- The meta slot replaces the plain items when a page needs tooltips or badges. -->
+				<slot name="meta">
+					<template v-for="(item, index) in metaItems" :key="index">
+						<span v-if="index" class="text-ink-gray-4">·</span>
+						<span class="truncate">{{ item }}</span>
+					</template>
+				</slot>
 			</div>
 		</div>
 		<div class="flex shrink-0 items-center gap-2">

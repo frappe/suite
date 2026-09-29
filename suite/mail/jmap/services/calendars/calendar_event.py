@@ -245,6 +245,105 @@ class CalendarEventService(CalendarsService):
 
         return {"ids": ids[:limit], "total": total}
 
+    def _query_call(
+        self,
+        conditions: list[dict],
+        ascending: bool,
+        limit: int,
+        call_id: str,
+        time_zone: str | None,
+        expand_recurrences: bool,
+    ) -> list:
+        """One `CalendarEvent/query` method call for a batched request: the conditions ANDed,
+        ordered by start, without a total — a search reads the ids and nothing else."""
+
+        return [
+            f"{self._type}/query",
+            {
+                "accountId": self.account,
+                "filter": {"operator": "AND", "conditions": conditions},
+                "sort": [{"property": "start", "isAscending": ascending}],
+                "limit": limit,
+                "expandRecurrences": expand_recurrences,
+                "timeZone": time_zone,
+                "calculateTotal": False,
+            },
+            call_id,
+        ]
+
+    def query_around(
+        self,
+        conditions: list[dict],
+        now: str,
+        limit: int,
+        time_zone: str | None = None,
+        expand_recurrences: bool = False,
+    ) -> list[str]:
+        """The ids of up to `limit` matches of `conditions` on either side of `now`: what is
+        still to come, soonest first, then what has passed, most recent first.
+
+        Two queries in one request rather than one query in date order: the server cuts at
+        `limit` on its own, and cut at one end of a calendar the answer holds the matches
+        furthest from today. An event under way, or a series still running, answers on both
+        sides and is listed once, on the side it came first. One request rather than two, since
+        a search pays a round trip per account and this would have doubled it.
+        """
+
+        halves = (({"after": now}, True), ({"before": now}, False))
+        calls = [
+            self._query_call([*conditions, edge], ascending, limit, str(i), time_zone, expand_recurrences)
+            for i, (edge, ascending) in enumerate(halves)
+        ]
+        response = self._call(self.capabilities, calls)
+
+        answers = sorted(response.get("methodResponses") or [], key=lambda answer: answer[2])
+        ids: list[str] = []
+        for name, body, _call_id in answers:
+            if name != f"{self._type}/query":
+                raise ValueError(f"CalendarEvent/query failed: {body}")
+            ids.extend(id for id in body.get("ids") or [] if id not in ids)
+        return ids
+
+    def occurrences_from(
+        self,
+        after_by_uid: dict[str, str],
+        before: str,
+        per_series: int,
+        time_zone: str | None = None,
+    ) -> dict[str, list[str]]:
+        """The ids of the first `per_series` occurrences of each series from its own `after` up
+        to `before`, keyed by the series' uid.
+
+        One query per series, carried together in as few requests as the server allows, rather
+        than one query for all of them: the server orders a single answer by start, so a weekly
+        series would spend the whole limit before a yearly one had appeared once. The window is
+        not optional — expansion is refused without one — which is why both ends are named; the
+        near end is the caller's per series, since where a series' window should begin depends
+        on how often it runs. A series with nothing in its window is absent from the answer.
+        """
+
+        occurrences: dict[str, list[str]] = {}
+        for batch in self.create_batches(list(after_by_uid), self.max_calls_in_request):
+            calls = [
+                self._query_call(
+                    [{"uid": uid}, {"after": after_by_uid[uid]}, {"before": before}],
+                    True,
+                    per_series,
+                    str(i),
+                    time_zone,
+                    expand_recurrences=True,
+                )
+                for i, uid in enumerate(batch)
+            ]
+            response = self._call(self.capabilities, calls)
+            for name, body, call_id in response.get("methodResponses") or []:
+                # A refused call answers as "error" under the same id; it is simply not expanded.
+                if name != f"{self._type}/query":
+                    continue
+                occurrences[batch[int(call_id)]] = body.get("ids") or []
+
+        return occurrences
+
     def changes(self, since_state: str) -> dict:
         """Public method to get calendar event changes since a given state."""
 

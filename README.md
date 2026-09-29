@@ -38,9 +38,38 @@ Frappe Suite brings seven collaboration products into one Frappe app. Keep files
 | [Mail](https://github.com/frappe/mail) | Manage email in a modern client |
 | [Calendar](https://github.com/frappe/calendar_app) | Plan events and manage schedules |
 
-## Deploying Mail Servers
+## Mail Servers and Suite Cloud
 
-Provisioning Stalwart mail servers (Mail Cluster, Mail Server, Server Deployment, Server Job, Ansible plays, DNS Records) lives in the separate [Suite Cloud](https://github.com/frappe/suite_cloud) app. Suite only needs the server URL and admin credentials in Mail Settings to talk to a Stalwart server. Sites that deployed servers through Suite keep their data: update Suite, run `bench --site yoursite migrate`, then `bench --site yoursite install-app suite_cloud`. Installing it adopts the existing records and copies the root domain, DNS provider and timeouts that Mail Settings used to hold.
+Suite does not run or administer a mail server itself. The servers are Stalwart clusters managed
+by the separate [Suite Cloud](https://github.com/frappe/suite_cloud) app, and a Suite site is one
+tenant of a cluster:
+
+- **End users** read and send mail straight against the cluster over JMAP, with an app password
+  minted for each account. Suite only needs the cluster's URL for that.
+- **Every admin change** (domains, accounts, passwords, groups, mailing lists) goes through Suite
+  Cloud's site API. Suite Cloud checks that the site owns what it is touching and pushes the change
+  to the cluster. The site never holds cluster admin credentials.
+
+A site therefore carries five connection values, which Frappe Cloud writes into `site_config.json`
+when it registers the site (the settings override them on a self-managed site):
+
+- Mail Settings, or the `mail` key of the site config: `server_url` (the JMAP URL users connect to)
+  and `verify_ssl`.
+- Suite Settings, or top-level keys of the same name in the site config: `suite_cloud_url`,
+  `site_api_key` and `site_api_secret`. They are read through `get_suite_cloud_config` in
+  `suite/suite_core/utils.py`, and **Validate Suite Cloud Credentials** on Suite Settings confirms
+  them.
+
+The two halves stand apart. Mail and Calendar need only the JMAP server: a site with `server_url`
+and no Suite Cloud is fully usable by anyone who has an account. The Admin Dashboard, account
+creation and signup need Suite Cloud: without it the dashboard is hidden from admins, its routes
+lead back to the mailbox, and every endpoint in `suite/mail/api/admin.py` refuses.
+
+The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
+`suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.
+
+Sites that deployed servers through Suite before this split keep their data: update Suite, run
+`bench --site yoursite migrate`, then `bench --site yoursite install-app suite_cloud`.
 
 ## Under the Hood
 

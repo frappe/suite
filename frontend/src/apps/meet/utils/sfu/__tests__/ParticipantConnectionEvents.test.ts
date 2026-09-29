@@ -95,6 +95,37 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
+	it("updates participant media state when a participant reconnects", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", audio_enabled: false, video_enabled: false },
+		});
+
+		await manager.connect("token");
+		handlers.get("participant_updated")?.({
+			participantId: "remote-1",
+			userData: {
+				name: "Remote",
+				userId: "remote-1",
+				audio_enabled: true,
+				video_enabled: false,
+			},
+		});
+		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		});
+
+		expect(participantManager.getParticipant("remote-1")).toMatchObject({
+			audio_enabled: true,
+			video_enabled: false,
+		});
+	});
+
 	it("preserves remote progress while the subscription remains present", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");
@@ -542,11 +573,13 @@ describe("ParticipantConnection", () => {
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
 		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
 			createManager();
-		manager.initialize("meeting-1", { user_id: "me" });
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
 		await manager.joinRoom(
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
 		);
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 
 		await manager.rejoinAfterSignalingReconnect();
 
@@ -565,6 +598,21 @@ describe("ParticipantConnection", () => {
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.setupTransportEventHandlers).toHaveBeenCalledTimes(1);
+		expect(onRoomRejoined).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not notify room rejoin when the join request fails", async () => {
+		const { manager, sfuClient } = createManager();
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		sfuClient.joinRoom.mockRejectedValue(new Error("join failed"));
+
+		await manager.rejoinAfterSignalingReconnect();
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 	});
 
 	it("resubscribes expected remote media on a fresh Participant Connection", async () => {

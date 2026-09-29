@@ -217,6 +217,12 @@ export interface ParticipantJoinedEvent {
 	userData: UserData | Pick<UserData, 'name' | 'avatar'>;
 }
 
+export interface ParticipantUpdatedEvent {
+	roomId: string;
+	participantId: string;
+	userData: UserData;
+}
+
 export interface ParticipantLeftEvent {
 	roomId: string;
 	participantId: string;
@@ -237,6 +243,7 @@ export interface ProducerClosedEvent {
 	roomId: string;
 	producerId: string;
 	participantId: string;
+	kind: ProducerKind;
 	isScreen: boolean;
 	reason?: ProducerCloseReason;
 	source?: ProducerCloseSource;
@@ -464,4 +471,23 @@ export interface RaiseHandRequest {
 
 export interface LeaveRoomRequest {
 	roomId?: string;
+}
+
+export interface TranscriptSegment {
+	participantId: string;
+	participantName?: string;
+	text: string;
+	isFinal: boolean;
+	timestamp: string;
+	segmentStart: number;
+	segmentEnd: number;
+}
+
+export interface SttSegmentEvent {
+	roomId: string;
+	segment: TranscriptSegment;
+}
+
+export interface SttToggleRequest {
+	enabled: boolean;
 }

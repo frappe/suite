@@ -42,7 +42,9 @@
    "label": "Request Key",
    "no_copy": 1,
    "read_only": 1,
-   "unique": 1
+   "unique": 1,
+   "hidden": 1,
+   "permlevel": 1
   },
   {
    "description": "Alternate email that receives the invite link or the signup verification code; saved on the created account's settings and used for password resets.",

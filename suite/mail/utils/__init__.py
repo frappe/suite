@@ -10,10 +10,8 @@ from frappe.utils.caching import request_cache
 from suite.utils import log_error
 
 CONFIG_KEYS = [
-    # JMAP
+    # Mail server: the JMAP URL end users connect to
     "server_url",
-    "username",
-    "password",
     "verify_ssl",
     # SpamAssassin
     "spamd_host",
@@ -21,28 +19,14 @@ CONFIG_KEYS = [
     "spamd_scanning_mode",
     "spamd_hybrid_scanning_threshold",
     # Defaults
-    "default_dns_ttl",
     "default_disk_quota_gb",
-    "disabled_account_role",
     "enable_gravatar",
     "default_gravatar",
     "expand_mailing_list_participants",
-    # Logs
-    "admin_log_file_count",
-    "admin_log_level",
-    "admin_log_max_file_size",
-    "push_log_file_count",
-    "push_log_level",
-    "push_log_max_file_size",
-    "inbound_log_file_count",
-    "inbound_log_level",
-    "inbound_log_max_file_size",
-    "outbound_log_file_count",
-    "outbound_log_level",
-    "outbound_log_max_file_size",
-    "exchange_log_file_count",
-    "exchange_log_level",
-    "exchange_log_max_file_size",
+    # Logging (shared by every mail log)
+    "log_level",
+    "log_file_count",
+    "log_max_file_size_mb",
     # Limits
     "exchange_max_export",
     "exchange_max_import",
@@ -73,10 +57,7 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
 
     config = {}
     for field in CONFIG_KEYS:
-        if field == "password":
-            config[field] = password_or_none(settings, field) or mail_conf.get(field)
-        else:
-            config[field] = settings.get(field) or mail_conf.get(field)
+        config[field] = settings.get(field) or mail_conf.get(field)
 
     if key:
         if isinstance(key, str):
@@ -91,20 +72,18 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
     return config
 
 
-def is_stalwart_configured(raise_exception: bool = False) -> bool:
-    """Checks if the Stalwart server is properly configured."""
+def is_jmap_server_configured(raise_exception: bool = False) -> bool:
+    """Whether the site knows its JMAP server, in Mail Settings or the site config.
 
-    config = get_config()
+    That is all Mail and Calendar need: users read, send and schedule straight against the
+    server. Suite Cloud is only behind the Admin Dashboard and the creation of accounts.
+    """
 
-    server_url = config.get("server_url")
-    username = config.get("username")
-    password = config.get("password")
-
-    if server_url and (username and password):
+    if get_config("server_url"):
         return True
 
     if raise_exception:
-        frappe.throw(_("Stalwart server is not properly configured. Please check your Mail Settings."))
+        frappe.throw(_("The JMAP server is not configured. Please check your Mail Settings."))
 
     return False
 
@@ -138,12 +117,6 @@ def flatten_dict(d, parent_key="", sep=".") -> dict:
         else:
             items[new_key] = v
     return items
-
-
-def password_or_none(doc, field: str) -> str | None:
-    """Returns the password if the field is set, otherwise returns None."""
-
-    return doc.get_password(field) if doc.get(field) else None
 
 
 def generate_uuid_style_hash(input_str: str) -> str:

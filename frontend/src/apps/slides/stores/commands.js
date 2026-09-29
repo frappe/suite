@@ -210,14 +210,6 @@ const batchCommand = ({
 	focusElementId: focusElementId,
 	skipJumpOnExecute,
 	debug: 'Batch edit',
-	// history pops a burst that folds back to where it started, so the batch
-	// reports the leading command's values as its own
-	get oldValue() {
-		return commands[0]?.oldValue
-	},
-	get newValue() {
-		return commands[0]?.newValue
-	},
 	coalesceWith(incoming) {
 		commands.forEach((c, i) => c.coalesceWith(incoming.commands[i]))
 	},

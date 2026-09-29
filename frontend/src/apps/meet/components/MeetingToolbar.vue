@@ -178,11 +178,15 @@ import {
 	type Component,
 	computed,
 	onMounted,
+	onScopeDispose,
 	onUnmounted,
 	ref,
 	watch,
 } from "vue";
+import { useRootStore } from "@/stores/root";
 import LucideBug from "~icons/lucide/bug";
+import LucideCaptions from "~icons/lucide/captions";
+import LucideCaptionsOff from "~icons/lucide/captions-off";
 import { useE2EEState } from "../composables/useE2EEState";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { autoHideToolbar } from "../data/mediaPreferences";
@@ -230,6 +234,8 @@ const props = defineProps<{
 	statsVisible?: boolean;
 	cameraPermissionGranted?: boolean;
 	microphonePermissionGranted?: boolean;
+	isCaptionsEnabled?: boolean;
+	areCaptionsAvailable: boolean;
 	canManageRecording?: boolean;
 	recordingStatus?: string;
 	recordingLoading?: boolean;
@@ -244,6 +250,7 @@ const emit = defineEmits<{
 	"toggle-screen-share": [];
 	"toggle-fullscreen": [];
 	"toggle-raise-hand": [];
+	"toggle-captions": [];
 	"report-problem": [];
 	"toggle-stats": [];
 	"end-call": [];
@@ -277,6 +284,20 @@ const moreOptions = computed(() => [
 						["Pending", "Stopping"].includes(props.recordingStatus || ""),
 					onClick: () => {
 						emit("manage-recording");
+						resetHideTimer();
+					},
+				},
+			]
+		: []),
+	...(props.areCaptionsAvailable
+		? [
+				{
+					icon: props.isCaptionsEnabled ? LucideCaptionsOff : LucideCaptions,
+					label: props.isCaptionsEnabled
+						? "Disable captions"
+						: "Enable captions",
+					onClick: () => {
+						emit("toggle-captions");
 						resetHideTimer();
 					},
 				},
@@ -335,10 +356,7 @@ const moreOptions = computed(() => [
 	{
 		icon: "lucide-settings",
 		label: "Settings",
-		onClick: () => {
-			showSettingsDialog.value = true;
-			resetHideTimer();
-		},
+		onClick: openSettings,
 	},
 ]);
 
@@ -375,6 +393,31 @@ const resetHideTimer = (force = false) => {
 		isVisible.value = false;
 	}, 10000);
 };
+
+function openSettings() {
+	showSettingsDialog.value = true;
+	resetHideTimer();
+}
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
+	"meet-meeting-toolbar",
+	[
+		{
+			commands: [
+				{
+					id: "meet-settings",
+					label: "Settings",
+					shortcut: "Mod+Shift+Comma",
+					enterHint: "open meet settings",
+					icon: "lucide-settings",
+					keywords: ["audio", "video", "camera", "microphone", "devices"],
+					run: openSettings,
+				},
+			],
+		},
+	],
+);
+onScopeDispose(unregisterPaletteGroups);
 
 const handleActivity = () => {
 	showControls();

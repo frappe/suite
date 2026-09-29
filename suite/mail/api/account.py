@@ -8,19 +8,23 @@ from frappe.utils.data import sha256_hash
 
 from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.directory import get_domains
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_account_request.mail_account_request import otp_cache_key
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
-from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
-from suite.mail.stalwart import get_domains
-from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
-from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.doctype.user_account.user_account import (
+    get_account_apps,
+    get_user_personal_jmap_account,
+    is_jmap_account_belongs_to_user,
+)
+from suite.mail.utils import get_config, is_jmap_server_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
+    can_use_mail,
     has_user_settings,
-    is_jmap_configured,
 )
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import user_context
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager
@@ -128,7 +132,7 @@ def get_account_setup_options(request_key: str) -> dict:
     to arbitrary callers.
     """
 
-    from suite.mail.stalwart import get_account_metadata
+    from suite.mail.directory import get_account_metadata
 
     account_request = frappe.db.get_value(
         "Mail Account Request",
@@ -225,8 +229,18 @@ def get_user_info() -> dict | None:
 
     data.is_suite_admin = is_suite_admin(user)
     data.is_system_manager = is_system_manager(user)
-    data.is_jmap_configured = is_jmap_configured(user)
+    data.is_jmap_configured = can_use_mail(user)
+    # The Admin Dashboard is offered only on a site connected to a Suite Cloud, and only admins
+    # are told whether it is.
+    data.is_suite_cloud_configured = (
+        data.is_suite_admin or data.is_system_manager
+    ) and is_suite_cloud_configured()
     data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])
+    # An account shared with the user is personal to its owner, not to them; see
+    # pick_personal_account. And each app lists only the accounts with something for the user
+    # in it (get_account_apps) — the rest stay linked, for what is shared from them.
+    personal = get_user_personal_jmap_account(user) if data.is_jmap_configured else None
+    apps = get_account_apps(user) if data.is_jmap_configured else {}
 
     settings_by_account = {
         s["name"]: s
@@ -248,7 +262,9 @@ def get_user_info() -> dict | None:
         settings = settings_by_account.get(account["account"])
         account["id"] = account["account"]
         account["_name"] = settings["_name"] if settings else None
-        account["is_personal"] = bool(settings["is_personal"]) if settings else False
+        account["is_personal"] = account["account"] == personal
+        account["in_mail"] = apps.get(account["account"], {}).get("mail", True)
+        account["in_calendar"] = apps.get(account["account"], {}).get("calendar", True)
         account["jmap_account"] = settings["name"] if settings else None
         account["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
         account["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
@@ -285,7 +301,7 @@ def get_mail_client_config() -> list[dict]:
             for row in settings.mail_client_configurations
         ]
 
-    if is_stalwart_configured():
+    if is_suite_cloud_configured():  # the DNS records are Suite Cloud's to tell
         return _get_client_config_from_dns()
 
     return []
@@ -302,7 +318,7 @@ def get_calendar_client_config() -> dict:
     """
 
     settings = frappe.get_cached_doc("Mail Settings")
-    if not settings.show_calendar_client_config or not is_stalwart_configured():
+    if not settings.show_calendar_client_config or not is_jmap_server_configured():
         return {}
 
     username = frappe.db.get_value("User Settings", {"user": frappe.session.user}, "username")
@@ -325,35 +341,32 @@ def _get_client_config_from_dns() -> list[dict]:
     """
 
     try:
+        from suite.mail.suite_cloud import get_client
+
         domains = get_domains()
         if not domains:
             return []
 
         config = []
 
-        # Every domain on the cluster points at the same mail server, so their SRV records
-        # resolve to identical client endpoints. Any one domain's zone is enough.
-        domain = domains[0]
+        # Every domain of the site points at the same cluster, so their SRV records resolve to
+        # identical client endpoints. Any one domain's records are enough.
+        records = get_client().call("mail.domains.get_dns_records", domain=domains[0]["domain"])["records"]
 
-        for record in parse_dns_zone_file(domain["dnsZoneFile"]):
-            if record["type"] != "SRV":
+        for record in records:
+            if record["type"] != "SRV" or not record.get("value") or record["value"] == ".":
                 continue
 
-            mapping = _SRV_SERVICE_MAP.get(record["name"].split(".")[0])
+            mapping = _SRV_SERVICE_MAP.get(record["host"].split(".")[0])
             if not mapping:
-                continue
-
-            # SRV rdata: <priority> <weight> <port> <target>. "." target means not offered.
-            parts = record["value"].split()
-            if len(parts) < 4 or parts[3] == ".":
                 continue
 
             protocol, connection_security = mapping
             config.append(
                 {
                     "protocol": protocol,
-                    "hostname": parts[3].rstrip("."),
-                    "port": cint(parts[2]),
+                    "hostname": record["value"].rstrip("."),
+                    "port": cint(record.get("port")),
                     "connection_security": connection_security,
                 }
             )

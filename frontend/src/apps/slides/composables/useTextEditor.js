@@ -1,19 +1,26 @@
 import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
-import { createDocument } from '@tiptap/core'
+import { Editor as HeadlessEditor, createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
-import { Selection, TextSelection } from 'prosemirror-state'
+import { EditorState, Selection, TextSelection } from 'prosemirror-state'
 import { cellAround } from '@tiptap/pm/tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
 	activeElement,
+	activeElementIds,
+	activeElements,
 	findSlideElement,
+	firstEditableElement,
 	getInitialShapeTextContent,
+	hasTextContent,
+	isMultiSelection,
+	measureHTMLList,
 } from '@/apps/slides/stores/element'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { currentSlide } from '@/apps/slides/stores/slide'
+import { throttleToFrame } from '@/apps/slides/utils/helpers'
 
 export const activeEditor = ref(null)
 
@@ -57,6 +64,57 @@ const withRecordingSuppressed = (fn) => {
 }
 
 const patchedHTML = (html) => (html ? patchEmptyParagraphs(html).updatedHTML : html)
+
+// only an empty line takes anything from the patch, so a document without one skips the parse
+const hasEmptyLine = (doc) => {
+	let found = false
+	doc.descendants((node) => {
+		if (found || node.type.spec.isolating) return false
+		if (node.type.name === 'paragraph') found = !node.textContent.trim()
+		return !found
+	})
+	return found
+}
+
+// no view, so no DOM, no plugins and nothing the live editor could mistake for itself
+let scratchEditor = null
+
+// the edit the last step made per element, good while its content is still what that step
+// wrote: the document skips the parse, the content the patch and the width the measure
+let lastEdits = new Map()
+
+const lastEdit = (element) => {
+	const last = lastEdits.get(element.id)
+	return last?.newContent === element.content ? last : null
+}
+
+const restoreDocument = (doc) => {
+	const { schema, plugins } = scratchEditor.state
+	scratchEditor.view.updateState(EditorState.create({ schema, plugins, doc }))
+}
+
+const parseContent = (element) => {
+	scratchEditor.commands.setContent(element.content, { emitUpdate: false, parseOptions })
+
+	// the same legacy seed initTextEditor applies, or the write bakes in the parsed default
+	const lineHeight = element.editorMetadata?.lineHeight
+	if (lineHeight != null) scratchEditor.commands.setGlobalLineHeight(lineHeight)
+}
+
+const loadScratchEditor = (element) => {
+	scratchEditor ??= new HeadlessEditor({ element: null, editable: false, extensions, parseOptions })
+
+	const last = lastEdit(element)
+	if (last) restoreDocument(last.doc)
+	else parseContent(element)
+
+	// setContent leaves the selection at the end; the builders and the panel read the start
+	scratchEditor.commands.setTextSelection(0)
+	return scratchEditor
+}
+
+const canGrow = (element, anchor) =>
+	element.type === 'text' && !element.width && (anchor === 'center' || anchor === 'right')
 
 const isEditorLive = () => activeEditor.value && editorElement?.id === activeElement.value?.id
 
@@ -123,11 +181,14 @@ const editorStyles = reactive({
 	cellFill: null,
 })
 
+const listValues = { bulletList: 'bullet', orderedList: 'ordered' }
+
 export const useTextEditor = () => {
 	const setEditorStyles = (editor) => {
 		if (!editor) return
 
 		const activeStyles = editor.getAttributes('textStyle')
+		const listType = getActiveListType(editor)
 
 		Object.assign(editorStyles, {
 			textAlign: editor.getAttributes('paragraph').textAlign || 'left',
@@ -136,8 +197,8 @@ export const useTextEditor = () => {
 			italic: editor.isActive('italic'),
 			strike: editor.isActive('strike'),
 			underline: editor.isActive('underline'),
-			bulletList: editor.isActive('bulletList'),
-			orderedList: editor.isActive('orderedList'),
+			bulletList: listType == 'bullet',
+			orderedList: listType == 'ordered',
 			textTransform: activeStyles.textTransform || 'none',
 			fontSize: parseInt(activeStyles.fontSize, 10) || null,
 			fontFamily: activeStyles.fontFamily || null,
@@ -255,8 +316,7 @@ export const useTextEditor = () => {
 	}
 
 	// a cursor in a cell styles that cell, the whole element otherwise
-	const selectStyleTarget = (chain) => {
-		const editor = activeEditor.value
+	const selectStyleTarget = (editor, chain) => {
 		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
 		if (!$cell) return chain.selectAll()
 
@@ -269,19 +329,22 @@ export const useTextEditor = () => {
 		})
 	}
 
-	const toggleMark = (property) => {
-		const currentEditor = activeEditor.value
+	const toggleMarkOn = (editor, property) => {
+		const chain = editor.chain()
 
-		const chain = currentEditor.chain()
-
-		const { empty } = currentEditor.state.selection
-		if (empty) selectStyleTarget(chain)
+		const { empty } = editor.state.selection
+		if (empty) selectStyleTarget(editor, chain)
 
 		chain[markCommands[property]](property).run()
 	}
 
-	const selectListBlock = () => {
-		const { state } = activeEditor.value
+	const toggleMark = (property) =>
+		isMultiSelection.value
+			? toggleSelectedMark(property)
+			: toggleMarkOn(activeEditor.value, property)
+
+	const selectListBlock = (editor) => {
+		const { state } = editor
 		const doc = state.doc
 
 		let selectionStart = null,
@@ -300,7 +363,7 @@ export const useTextEditor = () => {
 		if (selectionStart && selectionEnd) {
 			const selection = TextSelection.create(doc, selectionStart, selectionEnd)
 			const transaction = state.tr.setSelection(selection)
-			activeEditor.value.view.dispatch(transaction)
+			editor.view.dispatch(transaction)
 		}
 	}
 
@@ -312,44 +375,89 @@ export const useTextEditor = () => {
 		return currentStyle ? `${currentStyle}; ${newStyle}` : newStyle
 	}
 
-	const getActiveListType = () => {
-		if (activeEditor.value.isActive('orderedList')) return 'ordered'
-		if (activeEditor.value.isActive('bulletList')) return 'bullet'
-		return 'none'
+	// the list each selected paragraph sits in directly, never an outer one
+	const getActiveListType = (editor) => {
+		const { doc, selection } = editor.state
+		const found = new Set()
+		doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+			if (!node.isTextblock) return
+			found.add(listValues[doc.resolve(pos).node(-1)?.type.name] || 'none')
+		})
+		return found.size == 1 ? [...found][0] : 'mixed'
 	}
 
-	const setListProperty = (value) => {
-		if (!activeEditor.value.isEditable) selectListBlock()
+	const setListProperty = (editor, value) => {
+		if (!editor.isEditable) selectListBlock(editor)
 
-		const current = getActiveListType()
+		const current = getActiveListType(editor)
 
 		if (value == current) return
 
-		const chain = activeEditor.value.chain()
+		if (value == 'none') return clearLists(editor)
 
-		if (value == 'none') {
-			chain.liftListItem('listItem').run()
-			return
-		}
-
-		const listType = value == 'ordered' ? 'orderedList' : 'bulletList'
-
-		if (current == 'none') {
-			chain.wrapInList(listType).run()
-		} else {
-			chain.liftListItem('listItem').wrapInList(listType).run()
-		}
+		applyListType(editor, value == 'ordered' ? 'orderedList' : 'bulletList')
 	}
 
-	const updateProperty = (property, value) => {
-		const currentEditor = activeEditor.value
+	// every selected paragraph leaves every list level it sits in
+	const clearLists = (editor) =>
+		editor.commands.command(({ tr, state, commands }) => {
+			const { from, to } = state.selection
+			const { listItem } = state.schema.nodes
+			const paragraphs = []
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (node.isTextblock) paragraphs.push(pos + 1)
+			})
 
-		const chain = currentEditor.chain()
+			// back to front, so a lift never moves one still to come
+			paragraphs.reverse().forEach((pos) => {
+				commands.setTextSelection(pos)
+				// tiptap's chained state only catches up with the transaction when its tr is read
+				while (state.tr.selection.$from.node(-1)?.type == listItem) {
+					if (!commands.liftListItem('listItem')) break
+				}
+			})
 
-		if (property == 'list') return setListProperty(value)
+			joinNeighbouringLists(tr)
+			tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(from), tr.mapping.map(to)))
+			return true
+		})
 
-		const { empty } = currentEditor.state.selection
-		if (empty) selectStyleTarget(chain)
+	// every selected paragraph ends up in a list of this type
+	const applyListType = (editor, listType) =>
+		editor.commands.command(({ tr, state }) => {
+			const { from, to } = state.selection
+			const { listItem, [listType]: list } = state.schema.nodes
+
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (!node.isTextblock) return
+				const $paragraph = tr.doc.resolve(tr.mapping.map(pos))
+				const end = tr.doc.resolve($paragraph.pos + node.nodeSize)
+
+				if ($paragraph.parent.type == listItem) tr.setNodeMarkup($paragraph.before(-1), list)
+				else tr.wrap($paragraph.blockRange(end), [{ type: list }, { type: listItem }])
+			})
+
+			joinNeighbouringLists(tr)
+			return true
+		})
+
+	const joinNeighbouringLists = (tr) => {
+		const joins = []
+		tr.doc.descendants((node, pos, parent, index) => {
+			const previous = index && parent.child(index - 1)
+			if (listValues[node.type.name] && previous?.type == node.type) joins.push(pos)
+		})
+		// back to front, so a join never moves one still to come
+		joins.reverse().forEach((pos) => tr.join(pos))
+	}
+
+	const setPropertyOn = (editor, property, value) => {
+		const chain = editor.chain()
+
+		if (property == 'list') return setListProperty(editor, value)
+
+		const { empty } = editor.state.selection
+		if (empty) selectStyleTarget(editor, chain)
 
 		switch (property) {
 			case 'textAlign':
@@ -359,7 +467,7 @@ export const useTextEditor = () => {
 				chain.setColor(value).run()
 				break
 			case 'lineHeight':
-				activeEditor.value.commands.setGlobalLineHeight(value)
+				editor.commands.setGlobalLineHeight(value)
 				break
 			default:
 				chain
@@ -369,6 +477,139 @@ export const useTextEditor = () => {
 					.run()
 				break
 		}
+	}
+
+	const updateProperty = (property, value) => {
+		if (!isMultiSelection.value) return setPropertyOn(activeEditor.value, property, value)
+		if (property === 'opacity') return setSelectedOpacity(value)
+		formatSelectedText(property, value)
+	}
+
+	const showFirstEditableStyles = () => {
+		const element = firstEditableElement.value
+		if (hasTextContent(element)) setEditorStyles(loadScratchEditor(element))
+	}
+
+	const selectedTextTargets = () =>
+		activeElements.value.filter((el) => !el.locked && hasTextContent(el))
+
+	// one element run through the chain, with what the step before already knows about it
+	const editContent = (element, runChain) => {
+		const last = lastEdit(element)
+		const editor = loadScratchEditor(element)
+		runChain(editor)
+		// a step that leaves the box as it is has nothing new to serialise or measure
+		if (last && editor.state.doc.eq(last.doc)) {
+			return { ...last, element, oldContent: last.newContent, oldWidth: last.newWidth }
+		}
+		const html = editor.getHTML()
+		return {
+			element,
+			doc: editor.state.doc,
+			oldContent: last ? element.content : patchedHTML(element.content),
+			oldWidth: last?.newWidth,
+			newContent: hasEmptyLine(editor.state.doc) ? patchedHTML(html) : html,
+			anchor: growthAnchor(editor),
+			left: element.left,
+		}
+	}
+
+	// centred and right-aligned auto-width boxes pay their growth out of left, as when typing
+	const shiftGrowingEdits = (edits) => {
+		const growing = edits.filter(
+			(edit) => edit.oldContent !== edit.newContent && canGrow(edit.element, edit.anchor),
+		)
+		const widths = measureHTMLList(
+			growing.flatMap((e) => (e.oldWidth == null ? [e.oldContent, e.newContent] : [e.newContent])),
+		).map((size) => size.elementWidth)
+
+		growing.forEach((edit) => {
+			edit.oldWidth ??= widths.shift()
+			edit.newWidth = widths.shift()
+			const delta = edit.newWidth - edit.oldWidth
+			edit.left -= edit.anchor === 'center' ? delta / 2 : delta
+		})
+	}
+
+	// three commands per element, so every batch of a burst has the shape coalescing folds
+	const editCommands = ({ element, oldContent, newContent, left }) => {
+		const command = (property, oldValue, newValue) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property,
+				oldValue,
+				newValue,
+			})
+
+		return [
+			command('content', oldContent, newContent),
+			command('left', element.left, left),
+			command('editorMetadata', element.editorMetadata, undefined),
+		]
+	}
+
+	const buildContentCommands = (targets, runChain) => {
+		const edits = targets.map((element) => editContent(element, runChain))
+		shiftGrowingEdits(edits)
+		lastEdits = new Map(edits.map((edit) => [edit.element.id, edit]))
+		return edits.flatMap(editCommands)
+	}
+
+	const runSelectedBatch = (key, commands) => {
+		if (commands.every((c) => c.oldValue === c.newValue)) return
+
+		const slideId = currentSlide.value.clientId
+		const elementIds = activeElementIds.value
+		commandHistory.execute(
+			batchCommand({
+				slideId,
+				elementIds,
+				commands,
+				coalesceKey: `${key}:${slideId}:${elementIds.join()}`,
+			}),
+		)
+	}
+
+	const editSelectedText = (runChain) =>
+		runSelectedBatch('content', buildContentCommands(selectedTextTargets(), runChain))
+
+	// opacity is a text-style mark on a text box and an element property on everything else
+	const setSelectedOpacity = throttleToFrame((value) => {
+		const editable = activeElements.value.filter((el) => !el.locked)
+		const textBoxes = editable.filter((el) => el.type === 'text')
+		const others = editable.filter((el) => el.type !== 'text')
+
+		const markOpacity = (editor) => setPropertyOn(editor, 'opacity', value)
+		const opacityCommand = (element) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'opacity',
+				oldValue: element.opacity,
+				newValue: value,
+			})
+
+		runSelectedBatch('opacity', [
+			...buildContentCommands(textBoxes, markOpacity),
+			...others.map(opacityCommand),
+		])
+	})
+
+	const formatSelectedText = throttleToFrame((property, value) =>
+		editSelectedText((editor) => setPropertyOn(editor, property, value)),
+	)
+
+	// tiptap's own rule, stretched across boxes: set unless every box is fully marked
+	const toggleSelectedMark = (property) => {
+		const marked = selectedTextTargets().every((element) => {
+			const editor = loadScratchEditor(element)
+			editor.commands.selectAll()
+			return editor.isActive(property)
+		})
+
+		const command = marked ? 'unsetMark' : 'setMark'
+		editSelectedText((editor) => editor.chain().selectAll()[command](property).run())
 	}
 
 	const initTextEditor = (id, content, isEditable = false, initialLineHeight = null) => {
@@ -416,6 +657,8 @@ export const useTextEditor = () => {
 		editorStyles,
 		toggleMark,
 		updateProperty,
+		formatSelectedText,
+		showFirstEditableStyles,
 		initTextEditor,
 	}
 }

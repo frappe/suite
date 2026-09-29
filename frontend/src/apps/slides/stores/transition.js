@@ -106,6 +106,7 @@ const getCommandsToAddMagicMove = (index) => {
 	const nextSlideId = nextSlide.clientId
 
 	currentSlide.elements.forEach((currElement) => {
+		if (currElement.refId && nextSlide.elements.some((el) => el.refId == currElement.refId)) return
 		const refElement = getReferenceElementOnSlide(nextSlide, currElement)
 		commands = commands.concat(
 			getConnectionCommands(currSlideId, nextSlideId, currElement, refElement, index),
@@ -306,26 +307,33 @@ const getCommandsForRefIdSeries = (fromSlideIndex, element, refId, isForward) =>
 
 const getCommandsToSetTransition = (slide, index, settings) => {
 	const { transition, transitionDuration, fadeUnmatchedElements } = settings
-	const commands = [
-		editSlideCommand({
-			slideId: slide.clientId,
-			property: 'transition',
-			oldValue: slide.transition,
-			newValue: transition,
-		}),
-		editSlideCommand({
-			slideId: slide.clientId,
-			property: 'transitionDuration',
-			oldValue: slide.transitionDuration,
-			newValue: transitionDuration,
-		}),
-		editSlideCommand({
-			slideId: slide.clientId,
-			property: 'fadeUnmatchedElements',
-			oldValue: slide.fadeUnmatchedElements,
-			newValue: fadeUnmatchedElements,
-		}),
-	]
+	const commands = []
+	if (
+		slide.transition != transition ||
+		slide.transitionDuration != transitionDuration ||
+		slide.fadeUnmatchedElements != fadeUnmatchedElements
+	) {
+		commands.push(
+			editSlideCommand({
+				slideId: slide.clientId,
+				property: 'transition',
+				oldValue: slide.transition,
+				newValue: transition,
+			}),
+			editSlideCommand({
+				slideId: slide.clientId,
+				property: 'transitionDuration',
+				oldValue: slide.transitionDuration,
+				newValue: transitionDuration,
+			}),
+			editSlideCommand({
+				slideId: slide.clientId,
+				property: 'fadeUnmatchedElements',
+				oldValue: slide.fadeUnmatchedElements,
+				newValue: fadeUnmatchedElements,
+			}),
+		)
+	}
 
 	if (transition == 'Magic Move') {
 		commands.push(...(getCommandsToAddMagicMove(index) || []))

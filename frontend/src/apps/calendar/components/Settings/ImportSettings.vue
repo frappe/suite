@@ -15,7 +15,7 @@
 				:label="__('Calendar')"
 				type="select"
 				variant="outline"
-				:options="calendarOptions"
+				:options="importOptions"
 			/>
 			<input
 				ref="fileInput"
@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onMounted, reactive, ref, watch } from 'vue'
 import { Button, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
@@ -64,8 +64,10 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { raiseToast } from '@/apps/calendar/utils'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 import { userStore } from '@/apps/calendar/stores/user'
+import { destinationOptions } from '@/apps/calendar/utils/calendars'
 
-const { accountId } = userStore()
+const store = userStore()
+const { accountId } = store
 
 const user = inject('$user')
 const socket = inject('$socket')
@@ -98,20 +100,18 @@ const onFileSelected = async (event: Event) => {
 	}
 }
 
-const calendars = createResource({
-	url: 'suite.calendar.doctype.calendar.calendar.fetch_calendars',
-	auto: true,
-	makeParams: () => ({ account: accountId, limit: 100 }),
-	onSuccess: (data: { id: string }[]) => {
-		if (!calendarImport.calendar && data?.length) calendarImport.calendar = data[0].id
-	},
-})
+// Only a calendar the account can write to takes the events.
+const importOptions = computed(() => destinationOptions(store.accountCalendarOptions(accountId)))
 
-const calendarOptions = computed(() =>
-	(calendars.data || []).map((c: { id: string; _name: string }) => ({
-		label: c._name,
-		value: c.id,
-	})),
+// Kept while it is still one of the account's calendars; otherwise the first — a calendar
+// that was deleted, or belongs to the account switched away from, is no target at all.
+watch(
+	importOptions,
+	(options) => {
+		if (!options.some((option) => option.value === calendarImport.calendar))
+			calendarImport.calendar = options[0]?.value ?? ''
+	},
+	{ immediate: true },
 )
 
 const fileUploadSubtitle = computed(() => {

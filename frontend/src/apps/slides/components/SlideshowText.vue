@@ -164,6 +164,12 @@ const updateSpanStyles = (span, newSpan) => {
 	span.innerHTML = newSpan.innerHTML
 }
 
+// the list marker takes its colour, size and fade from the item, not from a span
+const updateItemStyle = (block, newBlock) => {
+	const style = newBlock.closest('li')?.getAttribute('style')
+	if (style) block.closest('li')?.setAttribute('style', style)
+}
+
 const updateStylesForExistingContent = (newHTML) => {
 	const { currentBlocks, newBlocks } = getCurrentAndNewBlocks(newHTML)
 
@@ -186,6 +192,7 @@ const updateStylesForExistingContent = (newHTML) => {
 		for (let j = 0; j < currSpans.length; j++) {
 			updateSpanStyles(currSpans[j], newSpans[j])
 		}
+		updateItemStyle(currentBlocks[i], newBlocks[i])
 	}
 }
 

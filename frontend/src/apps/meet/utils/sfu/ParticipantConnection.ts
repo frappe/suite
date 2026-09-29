@@ -50,6 +50,7 @@ type ReconciliationEvent = MeetingReconciliationEvent<ReconciledParticipant>;
 interface SFUProducerClosedEvent {
 	participantId?: string;
 	producerId?: string;
+	kind?: "audio" | "video";
 	isScreen?: boolean;
 }
 
@@ -90,6 +91,8 @@ function normalizeProducerClosedEvent(
 			typeof value.participantId === "string" ? value.participantId : undefined,
 		producerId:
 			typeof value.producerId === "string" ? value.producerId : undefined,
+		kind:
+			value.kind === "audio" || value.kind === "video" ? value.kind : undefined,
 		isScreen: value.isScreen === true,
 	};
 }
@@ -144,6 +147,7 @@ export interface SFUEventHandlers {
 		detail?: string,
 	) => void;
 	onRecoveryExhausted?: (trigger?: ParticipantRecoveryTrigger) => void;
+	onRoomRejoined?: () => void;
 	onLifecycleStateChange?: (state: ParticipantConnectionState) => void;
 	onInitialPublicationError?: (error: unknown) => void;
 }
@@ -601,6 +605,7 @@ export class ParticipantConnection {
 			if (generation !== this.lifecycleGeneration) {
 				throw new DOMException("Participant sync cancelled", "AbortError");
 			}
+			const bufferedEvents = this.bufferedReconciliationEvents.splice(0);
 			this.reconciliation = reconcileMeetingSnapshot(
 				this.reconciliation,
 				{
@@ -615,14 +620,16 @@ export class ParticipantConnection {
 								: undefined,
 					})),
 				},
-				this.bufferedReconciliationEvents.splice(0),
+				bufferedEvents,
 			);
 			this.participantManager.syncParticipants([
 				...this.reconciliation.participants.values(),
 			]);
-
 			this.initialSyncInProgress = false;
 			this.flushBufferedMediaStateUpdates();
+			for (const event of bufferedEvents)
+				if (event.type === "producer-closed")
+					this.clearParticipantMediaStateForClosedProducer(event.value);
 			await this.flushBufferedProducers(signal);
 		} catch (error) {
 			if (!signal.aborted) {
@@ -866,6 +873,7 @@ export class ParticipantConnection {
 			{ connectionId: this.connectionId },
 		);
 		signal.throwIfAborted();
+		this.eventHandlers.onRoomRejoined?.();
 		if (!(await this.waitForE2EEContextIfRequired(signal))) {
 			throw new Error("E2EE context is not ready after fresh reconnect");
 		}
@@ -1186,8 +1194,32 @@ export class ParticipantConnection {
 			event.type === "producer-closed" &&
 			!previous.closedProducerIds.has(event.value.producerId)
 		) {
+			this.clearParticipantMediaStateForClosedProducer({
+				...event.value,
+				kind: previous.producers.get(event.value.producerId)?.kind,
+			});
 			this.removeProducerConsumers(event.value);
 		}
+	}
+
+	private clearParticipantMediaStateForClosedProducer(
+		producer: SFUProducerEvent,
+	): void {
+		if (producer.isScreen || !producer.kind) return;
+		const hasRemainingProducer = Array.from(
+			this.reconciliation.producers.values(),
+		).some(
+			(entry) =>
+				entry.participantId === producer.participantId &&
+				entry.kind === producer.kind &&
+				!entry.isScreen,
+		);
+		if (hasRemainingProducer) return;
+		this.participantManager.updateMediaState(producer.participantId, {
+			...(producer.kind === "audio"
+				? { audioEnabled: false }
+				: { videoEnabled: false }),
+		});
 	}
 
 	private getCurrentRejoinMediaState(): JoinRoomMediaState {
@@ -1388,6 +1420,44 @@ export class ParticipantConnection {
 			}
 		});
 
+		this.sfuClient.on("participant_updated", (value: unknown) => {
+			const data = normalizeParticipantData(value);
+			if (!data?.participantId) return;
+			if (this.initialSyncInProgress) {
+				const updates = this.bufferedMediaStateUpdates.get(data.participantId) ?? {};
+				if (data.userData?.audio_enabled !== undefined || data.audio_enabled !== undefined) {
+					updates.audioEnabled = data.userData?.audio_enabled ?? data.audio_enabled;
+				}
+				if (data.userData?.video_enabled !== undefined || data.video_enabled !== undefined) {
+					updates.videoEnabled = data.userData?.video_enabled ?? data.video_enabled;
+				}
+				if (Object.keys(updates).length) {
+					this.bufferedMediaStateUpdates.set(data.participantId, updates);
+				}
+				return;
+			}
+
+			const updates: ParticipantUpdate = {};
+			if (data.userData?.name !== undefined || data.user_name !== undefined) {
+				updates.user_name = data.userData?.name ?? data.user_name ?? "";
+			}
+			if (data.userData && "avatar" in data.userData) {
+				updates.avatar = data.userData.avatar ?? null;
+			} else if (data.avatar !== undefined) {
+				updates.avatar = data.avatar;
+			}
+			if (data.userData?.is_guest !== undefined || data.is_guest !== undefined) {
+				updates.is_guest = data.userData?.is_guest ?? data.is_guest;
+			}
+			if (data.userData?.audio_enabled === false || data.audio_enabled === false) {
+				updates.audio_enabled = false;
+			}
+			if (data.userData?.video_enabled === false || data.video_enabled === false) {
+				updates.video_enabled = false;
+			}
+			this.participantManager.updateParticipant(data.participantId, updates);
+		});
+
 		this.sfuClient.on("participant_left", (value: unknown) => {
 			const participant = normalizeParticipantData(value);
 			if (participant?.participantId) {
@@ -1426,6 +1496,15 @@ export class ParticipantConnection {
 				!this.reconciliation.producers.has(d.producerId)
 			)
 				return;
+			if (!d.isScreen && d.kind === "audio") {
+				this.participantManager.updateMediaState(d.participantId, {
+					audioEnabled: true,
+				});
+			} else if (!d.isScreen && d.kind === "video") {
+				this.participantManager.updateMediaState(d.participantId, {
+					videoEnabled: true,
+				});
+			}
 			await this.subscribeToReconciledProducer(event.value).catch((error) => {
 				console.warn("Failed to subscribe to producer_created event:", error);
 			});
@@ -1434,11 +1513,13 @@ export class ParticipantConnection {
 		this.sfuClient.on("producer_closed", (value: unknown) => {
 			const d = normalizeProducerClosedEvent(value);
 			if (!d?.participantId || !d.producerId) return;
+			const producer = this.reconciliation.producers.get(d.producerId);
 			const event: ReconciliationEvent = {
 				type: "producer-closed",
 				value: {
 					participantId: d.participantId,
 					producerId: d.producerId,
+					kind: d.kind,
 					isScreen: d.isScreen === true,
 				},
 			};
@@ -1449,6 +1530,10 @@ export class ParticipantConnection {
 			const previous = this.reconciliation;
 			this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 			if (previous.closedProducerIds.has(d.producerId)) return;
+			this.clearParticipantMediaStateForClosedProducer({
+				...event.value,
+				kind: producer?.kind,
+			});
 			this.removeProducerConsumers(event.value);
 
 			if (d.isScreen) {

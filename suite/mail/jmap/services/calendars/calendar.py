@@ -39,18 +39,35 @@ class CalendarService(CalendarsService):
 
         return result
 
+    # Named rather than left to the server: Stalwart's default set leaves out `isVisible`,
+    # which read as every calendar being hidden.
+    PROPERTIES: ClassVar[list[str]] = [
+        "id",
+        "name",
+        "description",
+        "color",
+        "timeZone",
+        "sortOrder",
+        "isDefault",
+        "isSubscribed",
+        "isVisible",
+        "includeInAvailability",
+        "myRights",
+        "shareWith",
+    ]
+
     def get(self, ids: list[str] | None = None) -> list[dict]:
         """Public method to get calendars, handling batching if a list of ids is provided."""
 
         results = []
         if ids:
             for batch in self.create_batches(ids, self.max_objects_in_get):
-                response = self._get(batch)
+                response = self._get(batch, properties=self.PROPERTIES)
 
                 if method_responses := response.get("methodResponses"):
                     results.extend(method_responses[0][1].get("list", []))
         else:
-            response = self._get()
+            response = self._get(properties=self.PROPERTIES)
             if method_responses := response.get("methodResponses"):
                 results.extend(method_responses[0][1].get("list", []))
 

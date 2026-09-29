@@ -11,6 +11,7 @@ from suite.mail.doctype.user_account.user_account import get_user_for_jmap_accou
 from suite.mail.jmap import get_calendar_event_notification_service
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 
 class EventNotification(Document):
@@ -104,11 +105,8 @@ def _get_total_cache_key(account: str) -> str:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple event notifications given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

@@ -44,6 +44,13 @@ export const COLORS = {
   get headerBg()     { return _token('--surface-sidebar', '#F8F8F8') },
   get headerText()   { return _token('--ink-gray-5', '#7C7C7C') },
   get cellText()     { return _token('--ink-gray-9', '#171717') },
+  // Ink for text sitting on a cell fill. A fill stores a literal colour and
+  // ignores the theme, so these must not flip with it either — they read the
+  // raw palette scale, which is fixed in both themes. They are the two values
+  // --ink-gray-9 itself resolves to, so a filled cell keeps the ink it already
+  // had in each theme. utils/contrast.js decides which one a fill gets.
+  get inkOnLight()   { return _token('--gray-950', '#171717') },
+  get inkOnDark()    { return _token('--gray-50',  '#FAFAFA') },
   get sparkline()    { return _token('--ink-teal-7', '#0F766E') },
   get selFill()      { return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)') },
   get selBorder()    { return _token('--ink-gray-9', '#171717') },

@@ -156,21 +156,22 @@ onBeforeMount(() => normalizeContent())
 	padding-left: 0;
 }
 
-.tiptap ul li,
-.textElement ul li,
-.tableElement ul li {
-	position: relative;
+.tiptap ul > li,
+.textElement ul > li,
+.tableElement ul > li {
 	padding-left: 0.8em;
 }
 
-.tiptap ul li::before,
-.textElement ul li::before,
-.tableElement ul li::before {
+/* inline on the first line, so the marker keeps that line's baseline and alignment */
+.tiptap ul > li > p:first-child::before,
+.textElement ul > li > p:first-child::before,
+.tableElement ul > li > p:first-child::before {
 	content: '\2022';
-	position: absolute;
-	left: 0;
-	top: 0;
-	font-size: 1em;
+	display: inline-block;
+	width: 0.8em;
+	margin-left: -0.8em;
+	text-align: left;
+	opacity: var(--marker-opacity, 1);
 }
 
 .tiptap ol,
@@ -180,25 +181,38 @@ onBeforeMount(() => normalizeContent())
 	margin: 0;
 	padding: 0;
 	counter-reset: step;
+	--marker-width: 2ch;
 }
 
-.tiptap ol li,
-.textElement ol li,
-.tableElement ol li {
+.tiptap ol:has(> li:nth-child(10)),
+.textElement ol:has(> li:nth-child(10)),
+.tableElement ol:has(> li:nth-child(10)) {
+	--marker-width: 3ch;
+}
+
+.tiptap ol:has(> li:nth-child(100)),
+.textElement ol:has(> li:nth-child(100)),
+.tableElement ol:has(> li:nth-child(100)) {
+	--marker-width: 4ch;
+}
+
+.tiptap ol > li,
+.textElement ol > li,
+.tableElement ol > li {
 	counter-increment: step;
-	position: relative;
-	padding-left: calc(2ch + 0.2em);
+	padding-left: calc(var(--marker-width) + 0.2em);
 }
 
-.tiptap ol li::before,
-.textElement ol li::before,
-.tableElement ol li::before {
+.tiptap ol > li > p:first-child::before,
+.textElement ol > li > p:first-child::before,
+.tableElement ol > li > p:first-child::before {
 	content: counter(step) '.';
-	position: absolute;
-	left: 0;
-	top: 0;
-	width: 2ch;
+	display: inline-block;
+	width: var(--marker-width);
+	margin-left: calc(-1 * var(--marker-width) - 0.2em);
+	margin-right: 0.2em;
 	text-align: right;
+	opacity: var(--marker-opacity, 1);
 }
 
 .text-auto-width,

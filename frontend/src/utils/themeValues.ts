@@ -11,3 +11,7 @@ export function nextTheme(theme: string): ThemeMode {
 	const current = normalizeTheme(theme)
 	return THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length]!
 }
+
+export function themeActionLabel(theme: ThemeMode): string {
+	return theme === 'automatic' ? 'Use system theme' : `Switch to ${theme} theme`
+}

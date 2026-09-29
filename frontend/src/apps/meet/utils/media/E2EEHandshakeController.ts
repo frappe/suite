@@ -2,8 +2,8 @@ import type { Ref } from "vue";
 import type { CurrentUser } from "../../composables/useCurrentUser";
 import type { MediaState } from "../../composables/useMediaState";
 import type { SFUClient } from "../SFUClient";
-import { waitForE2EEContextReady } from "./E2EEContextReady";
 import type { SFUMeetingManager } from "../SFUMeetingManager";
+import { waitForE2EEContextReady } from "./E2EEContextReady";
 import type { E2EEEpochSignalingController } from "./E2EEEpochSignalingController";
 import {
 	getActiveEpochState,
@@ -510,10 +510,13 @@ export class E2EEHandshakeController {
 			signal.throwIfAborted();
 		} catch (error) {
 			if (signal.aborted || isAbortError(error)) throw error;
-			console.warn(
-				"[DEBUG-e2ee] reconfigureMediaForE2EE: token refresh failed, proceeding with existing token",
-				error,
-			);
+			this.sfuClient.disconnect();
+			const recovered =
+				await this.sfuManager.value?.recoverParticipantConnection(
+					"e2ee_auth_sync_failed",
+				);
+			if (recovered) return;
+			throw error;
 		}
 		await this.sfuManager.value?.rejoinParticipantConnection(
 			{

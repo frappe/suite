@@ -22,6 +22,7 @@
 				:side-offset="4"
 				:collision-padding="10"
 				@interact-outside="onInteractOutside"
+				@focus-outside="onFocusOutside"
 			>
 				<!-- frappe-ui's floating-panel shell, to the class: the library keeps it
 				     behind its own Popover, which needs a trigger, so the surface is
@@ -50,6 +51,16 @@ const { open, anchor, side, anchorMoves = false } = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+// Focus leaving is not a dismissal. This card's open state belongs to the route, and
+// focus moves for reasons that have nothing to do with it — above all the command palette
+// closing, which hands focus back to whatever it took it from (the header's Next arrow,
+// say) and would otherwise shut the card the search had just opened.
+//
+// reka emits `focusOutside` and `interactOutside` on the same event and dismisses unless it
+// is default-prevented, so preventing here settles both. A press outside still closes the
+// card: that is `pointerDownOutside`, which reaches `onInteractOutside` below.
+const onFocusOutside = (event: Event) => event.preventDefault()
 
 // A press on the anchor is not a press outside: the host toggles on that press,
 // and a dismiss racing the toggle would close and reopen in one click — the

@@ -102,6 +102,22 @@ class UserSettings(OwnerFromUser, Document):
         if connection := self.connection:
             sync_jmap_accounts(self.user, connection.accounts)
 
+    @frappe.whitelist()
+    def sync_accounts(self) -> None:
+        """Reconcile the user's JMAP Account documents and User Account links with the JMAP server."""
+
+        self.check_permission("write")
+
+        connection = self.connection
+        if not connection:
+            frappe.throw(
+                _(
+                    "Unable to connect to the JMAP server with the provided username and app password. Please check your settings."
+                )
+            )
+
+        sync_jmap_accounts(self.user, connection.accounts)
+
     def validate_jmap_settings(self) -> None:
         """Validate the JMAP settings by connecting to the JMAP server."""
 

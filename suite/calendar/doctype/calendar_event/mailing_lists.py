@@ -32,8 +32,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from suite.mail.stalwart import get_domains, get_mailing_list_index
+from suite.mail.directory import get_domains, get_mailing_list_index
 from suite.mail.utils import get_config, log_mail_error
+from suite.suite_core.utils import is_suite_cloud_configured
 
 DEFAULT_MAX_PARTICIPANTS = 100
 
@@ -235,7 +236,7 @@ def _has_local_participant(participants: list[dict]) -> bool:
     invite external attendees only.
     """
 
-    domains = {(d.get("name") or "").lower() for d in _domains()}
+    domains = {(d.get("domain") or "").lower() for d in _domains()}
 
     return any(_email_of(p).rpartition("@")[2] in domains for p in participants if _email_of(p))
 
@@ -277,9 +278,12 @@ def _email_of(participant: dict) -> str:
 
 
 def _expansion_enabled() -> bool:
-    """True when mailing lists should be expanded into their members, per Mail Settings or site config."""
+    """True when mailing lists should be expanded into their members, per Mail Settings or site config.
 
-    return bool(get_config("expand_mailing_list_participants"))
+    The lists live in Suite Cloud's directory; a site with only a JMAP server has none to expand.
+    """
+
+    return bool(get_config("expand_mailing_list_participants")) and is_suite_cloud_configured()
 
 
 def _max_participants() -> int:

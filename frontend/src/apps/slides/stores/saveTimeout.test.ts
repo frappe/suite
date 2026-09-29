@@ -86,6 +86,58 @@ describe('savePresentationDoc', () => {
 		expect(presentationDoc.value.modified).toBe('M2')
 	})
 
+	it('sends advanceAfter as advance_after', async () => {
+		presentationDoc.value = { name: 'p1', modified: 'M1' }
+		let sent: any[] = []
+		server.answer = (options) => {
+			sent = options.params.slides
+			return { modified: 'M2' }
+		}
+
+		try {
+			await savePresentationDoc('p1', [{ ...slide, advanceAfter: 5 }], 'M1')
+		} finally {
+			server.answer = null
+		}
+		expect(sent[0].advance_after).toBe(5)
+	})
+
+	it('finds its own rows when the server echoes the advance delay as text', async () => {
+		presentationDoc.value = { name: 'p1', modified: 'M1' }
+		server.answer = (options) => {
+			if (options.url === 'frappe.client.get') {
+				return { modified: 'M2', modified_by: 'me@example.com', slides: [{ ...row, advance_after: '5' }] }
+			}
+			throw stale()
+		}
+
+		try {
+			expect(await savePresentationDoc('p1', [{ ...slide, advanceAfter: 5 }], 'M1')).toBe('M2')
+		} finally {
+			server.answer = null
+		}
+		expect(presentationDoc.value.modified).toBe('M2')
+	})
+
+	it('stays refused when only the advance delay differs', async () => {
+		presentationDoc.value = { name: 'p1', modified: 'M1' }
+		server.answer = (options) => {
+			if (options.url === 'frappe.client.get') {
+				return { modified: 'M2', modified_by: 'me@example.com', slides: [{ ...row, advance_after: '5' }] }
+			}
+			throw stale()
+		}
+
+		try {
+			await expect(savePresentationDoc('p1', [slide], 'M1')).rejects.toMatchObject({
+				exc_type: 'TimestampMismatchError',
+			})
+		} finally {
+			server.answer = null
+		}
+		expect(presentationDoc.value.modified).toBe('M1')
+	})
+
 	it('moves to the version a push it gave up on made', async () => {
 		presentationDoc.value = { name: 'p1', modified: 'M1' }
 		server.answer = () => {

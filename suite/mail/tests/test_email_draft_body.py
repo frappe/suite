@@ -3,7 +3,7 @@
 
 import unittest
 
-from suite.mail.jmap.models import EmailAttachment, EmailCreateModel, EmailRecipient
+from suite.mail.jmap.models import EmailAddress, EmailAttachment, EmailCreateModel, EmailRecipient
 from suite.mail.jmap.services.mail.email import TEXT_PLAIN_FLOWED, EmailService
 
 
@@ -77,6 +77,34 @@ class Structure(unittest.TestCase):
         payload = draft(attachments=[attachment("attachment")])
         self.assertNotIn("bodyStructure", payload)
         self.assertEqual(len(payload["attachments"]), 1)
+
+
+class ReplyTo(unittest.TestCase):
+    def test_goes_out_as_addresses_with_their_names(self):
+        payload = draft(
+            reply_to=[
+                EmailAddress(name='Ann "Nan" Lee', email="ann@example.com"),
+                EmailAddress(name="Doe, John", email="john@example.com"),
+            ]
+        )
+
+        self.assertEqual(
+            payload["replyTo"],
+            [
+                {"name": 'Ann "Nan" Lee', "email": "ann@example.com"},
+                {"name": "Doe, John", "email": "john@example.com"},
+            ],
+        )
+
+    def test_an_address_without_a_name_gets_no_name(self):
+        # An identity's Reply-To may carry no name; it used to be written out as "None".
+        payload = draft(reply_to=[EmailAddress(name=None, email="team@example.com")])
+
+        self.assertEqual(payload["replyTo"], [{"name": None, "email": "team@example.com"}])
+        self.assertNotIn("header:Reply-To", payload)
+
+    def test_no_reply_to_sets_nothing(self):
+        self.assertNotIn("replyTo", draft())
 
 
 if __name__ == "__main__":

@@ -2304,13 +2304,14 @@ def search(query: str):
 
 
 def _legacy_search_row(row) -> dict:
-    """The eleven columns `SEARCH_QUERY` selected, from one node row."""
+    """The twelve columns `SEARCH_QUERY` selected, from one node row."""
     owner = _user_info(row.get("owner"), ["name as user_name", "user_image", "full_name"])
     return {
         "name": row.get("name"),
         "file_name": row.get("title"),
         "file_type": _file_type(row),
         "is_folder": int(row.get("kind") in ("folder", "root")),
+        "modified": row.get("content_modified") or row.get("modified"),
         "owner": row.get("owner"),
         "attached_to_doctype": None,
         "attached_to_name": None,

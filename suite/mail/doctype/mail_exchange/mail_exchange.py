@@ -12,7 +12,7 @@ from email import message_from_binary_file
 from email.message import Message
 from email.parser import BytesHeaderParser
 from email.utils import parsedate_to_datetime
-from typing import Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid7
 
 import frappe
@@ -31,6 +31,7 @@ from frappe.utils import (
     random_string,
     time_diff_in_seconds,
 )
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from suite.mail.doctype.push_subscription.push_subscription import (
     freeze_jmap_push_notifications,
@@ -50,6 +51,7 @@ from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured
 from suite.mail.utils.validation import (
+    UtcZ,
     validate_jmap_structure,
     validate_maildir_or_maildirpp,
     validate_nested_maildir_tree,
@@ -59,6 +61,7 @@ from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
+from suite.utils.validation import parse_json
 
 MAILDIR_FLAG_MAP: dict[str, str] = {
     "$seen": "S",
@@ -66,6 +69,27 @@ MAILDIR_FLAG_MAP: dict[str, str] = {
     "$answered": "R",
     "$draft": "D",
 }
+
+
+def _set_only(flags: dict[str, bool]) -> dict[str, bool]:
+    return {key: True for key, value in flags.items() if value}
+
+
+# JMAP's id and keyword sets: a key set to false is not in the set.
+FlagSet = Annotated[dict[str, bool], AfterValidator(_set_only)]
+
+
+class MailImportMetadata(BaseModel):
+    """Where imported emails go and how they are flagged, for formats that carry no metadata.
+
+    A misspelt key is refused rather than ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mailbox_ids: FlagSet = Field(default_factory=dict, alias="mailboxIds")
+    keywords: FlagSet = Field(default_factory=dict)
+    received_at: UtcZ | None = Field(None, alias="receivedAt")
 
 
 @dataclass(slots=True)
@@ -566,15 +590,7 @@ class MailExchange(OwnerFromUser, Document):
         if self.operation != "Import" or not self.import_metadata:
             return {}
 
-        def filter_truthy_items(key: str) -> dict:
-            return {k: True for k, v in metadata.get(key, {}).items() if v}
-
-        metadata = json.loads(self.import_metadata)
-        return {
-            "mailboxIds": filter_truthy_items("mailboxIds"),
-            "keywords": filter_truthy_items("keywords"),
-            "receivedAt": metadata.get("receivedAt"),
-        }
+        return parse_json(MailImportMetadata, self.import_metadata, _("Metadata")).model_dump(by_alias=True)
 
     def autoname(self) -> None:
         self.name = str(uuid7())
@@ -628,9 +644,10 @@ class MailExchange(OwnerFromUser, Document):
         self._resolve_import_file()
 
         if self.import_format in ("eml", "mbox", "maildir"):
-            meta = self.import_metadata_dict
-            if not meta.get("mailboxIds"):
+            metadata = parse_json(MailImportMetadata, self.import_metadata or "{}", _("Metadata"))
+            if not metadata.mailbox_ids:
                 frappe.throw(_("mailboxIds are required in Metadata for EML, MBOX, and Maildir formats."))
+            self.import_metadata = metadata.model_dump_json(by_alias=True, exclude_none=True, indent=4)
         else:
             self.import_metadata = json.dumps({})
 
@@ -659,10 +676,8 @@ class MailExchange(OwnerFromUser, Document):
         """Validate the export parameters."""
 
         if self.export_filter:
-            try:
-                self.export_filter = json.dumps(json.loads(self.export_filter), indent=4)
-            except json.JSONDecodeError:
-                frappe.throw(_("Export filter must be valid JSON."))
+            export_filter = parse_json(dict[str, Any], self.export_filter, _("Filter"))
+            self.export_filter = json.dumps(export_filter, indent=4)
 
         if not self.export_archive_type:
             frappe.throw(_("Archive Type is required."))

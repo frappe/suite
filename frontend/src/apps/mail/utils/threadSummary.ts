@@ -11,10 +11,14 @@ import type { Thread } from '@/apps/mail/types'
  * This re-derives them from the conversation the row still has, and returns a closure putting the old
  * ones back — the rollback has to restore the summary, not just re-insert the message.
  *
- * `outgoingMailbox` is the current mailbox id, and only for Sent and Drafts: those rows follow the
- * latest message in the FOLDER rather than the conversation's most recent activity, so a draft reply
- * keeps its own recipients and its "Draft" badge when the thread it answers receives a newer mail (see
- * get_threads). Everywhere else the whole visible conversation is the right basis, so pass nothing.
+ * `mailbox` is the mailbox this row belongs to in this view — the row is dated by the newest message
+ * that mailbox itself holds, which is what keeps a thread on the day its last mail arrived rather than
+ * on the day you answered it (your reply lands in Sent, never in the folder you are looking at). Pass
+ * nothing in cross-mailbox views; a mailbox no message is in falls back the way the server does.
+ *
+ * `outgoing` says that mailbox is Sent or Drafts, whose rows describe the message you wrote rather
+ * than the conversation's most recent activity, so a draft reply keeps its own recipients and its
+ * "Draft" badge when the thread it answers receives a newer mail (see serialize_thread).
  *
  * Two row fields are deliberately left alone:
  * - `subject`, which comes from the conversation's OPENING message (serialize_thread's `first`, taken
@@ -24,7 +28,10 @@ import type { Thread } from '@/apps/mail/types'
  *   the RECIPIENT's avatar (add_user_images_to_emails with is_thread=False), which needs the account's
  *   own addresses to resolve. A stale avatar until the next refresh beats guessing the wrong face.
  */
-export const resummariseRow = (thread: Thread, outgoingMailbox?: string) => {
+export const resummariseRow = (
+	thread: Thread,
+	{ mailbox, outgoing = false }: { mailbox?: string; outgoing?: boolean } = {},
+) => {
 	const before = {
 		from_name: thread.from_name,
 		from_email: thread.from_email,
@@ -39,15 +46,16 @@ export const resummariseRow = (thread: Thread, outgoingMailbox?: string) => {
 	const messages = thread.messages ?? []
 	if (!messages.length) return restore
 
-	const inMailbox = outgoingMailbox
-		? messages.filter((m) => m.mailboxes.some((mb) => mb.mailbox_id === outgoingMailbox))
+	const inMailbox = mailbox
+		? messages.filter((m) => m.mailboxes.some((mb) => mb.mailbox_id === mailbox))
 		: []
 	// Falls back to the whole conversation rather than to nothing, exactly as the server does.
-	const latest = (inMailbox.length ? inMailbox : messages).at(-1)!
+	const inView = (inMailbox.length ? inMailbox : messages).at(-1)!
+	const latest = outgoing ? inView : messages.at(-1)!
 
 	thread.from_name = latest.from_name
 	thread.from_email = latest.from_email
-	thread.received_at = latest.received_at
+	thread.received_at = inView.received_at
 	thread.recipients = latest.recipients
 	thread.draft = latest.draft
 	thread.preview = latest.preview

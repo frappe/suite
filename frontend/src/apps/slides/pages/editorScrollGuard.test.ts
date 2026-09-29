@@ -10,3 +10,10 @@ describe('editor root overflow', () => {
 		expect(rootClass).toContain('overflow-clip')
 	})
 })
+
+describe('editor browser zoom', () => {
+	// without the guard, pinch over a panel or popover zooms the whole page
+	it('installs the browser zoom guard', () => {
+		expect(source).toContain('useBrowserZoomGuard()')
+	})
+})

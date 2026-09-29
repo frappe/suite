@@ -3,7 +3,7 @@
     v-model:open="open"
     v-model:tab="activeTab"
     size="5xl"
-    :shortcut="shortcut"
+    :shortcut="false"
   >
     <template #title>{{ __('Settings') }}</template>
     <SettingsSidebar>
@@ -60,12 +60,10 @@ const props = withDefaults(
   defineProps<{
     groups?: SettingsGroup[]
     includeCommon?: boolean
-    shortcut?: boolean
   }>(),
   {
     groups: () => [],
     includeCommon: true,
-    shortcut: true,
   },
 )
 

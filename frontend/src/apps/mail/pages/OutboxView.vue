@@ -386,7 +386,6 @@ const rowOptions = (row: Submission) => {
 		reschedule: act(() => (showReschedule.value = true)),
 		cancelDelivery: act(() => (showCancel.value = true)),
 		sendAgain: act(() => (showRetry.value = true)),
-		tryAgainNow: act(() => retryNow.submit()),
 		remove: act(() => dismissMail.submit()),
 	})
 }
@@ -441,16 +440,6 @@ const retryMail = createResource({
 		showRetry.value = false
 		refresh()
 		raiseToast(__('Message sent.'))
-	},
-	onError: onActionError,
-})
-
-const retryNow = createResource({
-	url: 'suite.mail.api.scheduled.retry_delivery_now',
-	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
-	onSuccess: () => {
-		refresh()
-		raiseToast(__('Delivery attempt scheduled.'))
 	},
 	onError: onActionError,
 })

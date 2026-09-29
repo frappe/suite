@@ -43,6 +43,16 @@ export const isAllDayEvent = (event: EventTiming): boolean => {
 	)
 }
 
+/**
+ * When the event starts, where the reader is. A timed event is stored in the zone it was made
+ * in and the reader wants it in theirs; an all-day event keeps its calendar date, which no zone
+ * may shift.
+ */
+export const eventStartLocal = (event: EventTiming & { time_zone?: string | null }): Dayjs =>
+	event.time_zone && !isAllDayEvent(event)
+		? dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
+		: dayjs(event.start)
+
 /** The moment an event stops, from its start and ISO-8601 duration. */
 const eventEnd = (start: Dayjs, duration?: string | null): Dayjs =>
 	start.add(dayjs.duration(duration || 'PT0S'))
@@ -100,15 +110,20 @@ export const eventLastDay = (
 const yearFormat = (day: Dayjs, now: Dayjs) => (day.year() === now.year() ? '' : ' YYYY')
 
 /**
- * A single day: `Today`, `Sun, 17 Aug`, or `Sat, 9 Jan 2027`. `compact` is for callers that
- * already print the month and day beside the label (the invite strip's date chip does), leaving
- * only the weekday to say — but a year no chip carries still spells itself out. Spans never
- * compact: `dayRangeLabel` pairs each weekday with its date, which is the whole point of it.
+ * A single day: `Today`, `Sun, 17 Aug`, `Sat, 9 Jan 2027`, or `Sun` compacted. `compact` is for
+ * callers that already print the month and day beside the label (the invite strip's date chip
+ * does, and so does a search result's), leaving only the weekday to say — but a year no chip
+ * carries still spells itself out. Spans never compact: `dayRangeLabel` pairs each weekday with
+ * its date, which is the whole point of it.
+ *
+ * Abbreviated rather than spelled out, in both places that compact. `Mon` beside a chip reading
+ * `AUG 17` is the weekday in the register the chip set, where `Monday` was the one long word on
+ * a line whose whole job is to be short.
  */
 const dayLabel = (day: Dayjs, now: Dayjs, compact = false) => {
 	if (day.isSame(now, 'day')) return __('Today')
 	if (day.year() !== now.year()) return day.format(`ddd, D MMM${yearFormat(day, now)}`)
-	return day.format(compact ? 'dddd' : 'ddd, D MMM')
+	return day.format(compact ? 'ddd' : 'ddd, D MMM')
 }
 
 /** A span of days: `Mon, 17 – Wed, 19 Aug`, dropping the month from the first end when shared. */
@@ -144,13 +159,29 @@ const lengthLabel = (start: Dayjs, end: Dayjs) => {
  * `Mon, 17 – Wed, 19 Aug · 3 days`, `Today · 3:00 – 4:00 pm`.
  *
  * `now` is injectable for tests; `compact` is passed through to {@link dayLabel}.
+ *
+ * `length` off drops the closing length from a timed event — `· 1 hr` — for a line that has
+ * no room to spend on what its own clock times already say. The rule below about a length
+ * that comes and goes holds within a surface, not across them: a caller that turns it off
+ * turns it off for every event it lists. The all-day branch keeps its label either way, since
+ * with no clock times on the line `All day` is the only thing saying there are none.
  */
 export const formatEventWhen = (
 	start: Dayjs,
 	duration?: string | null,
-	options: { allDay?: boolean; compact?: boolean; now?: Dayjs } = {},
+	options: {
+		allDay?: boolean
+		compact?: boolean
+		now?: Dayjs
+		length?: boolean
+	} = {},
 ): string => {
-	const { allDay = false, compact = false, now = dayjs() } = options
+	const {
+		allDay = false,
+		compact = false,
+		now = dayjs(),
+		length = true,
+	} = options
 
 	if (allDay) {
 		const last = eventLastDay(start, duration, true)
@@ -168,9 +199,11 @@ export const formatEventWhen = (
 	}
 
 	// An overnight stays one day's entry, with the second day named after the closing time.
-	// Never compacted: the inline `Tue` sets the register, and `Monday · … Tue` mixes two.
+	// Never compacted: the closing `Tue` already names a weekday, and a line opening on another
+	// bare one — `Mon · 11:00 pm – 1:00 am Tue` — reads as a span between the two.
 	if (isOvernight(start, end)) {
 		const times = `${start.format('h:mm a')} – ${end.format('h:mm a ddd')}`
+		if (!length) return `${dayLabel(start, now)} · ${times}`
 		return `${dayLabel(start, now)} · ${times} · ${lengthLabel(start, end)}`
 	}
 
@@ -178,6 +211,6 @@ export const formatEventWhen = (
 	// *could* subtract two clock times isn't a rule they can see, so a length that came and went
 	// between events would read as missing data rather than as inference.
 	const times = timeRangeLabel(start, end)
-	if (end.isSame(start)) return `${dayLabel(start, now, compact)} · ${times}`
+	if (end.isSame(start) || !length) return `${dayLabel(start, now, compact)} · ${times}`
 	return `${dayLabel(start, now, compact)} · ${times} · ${lengthLabel(start, end)}`
 }

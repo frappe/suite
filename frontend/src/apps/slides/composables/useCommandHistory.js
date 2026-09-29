@@ -43,11 +43,16 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 	const canCoalesce = (command, top, forceCoalesce) => {
 		// key-less commands would match on undefined === undefined
 		if (!command.coalesceKey || command.coalesceKey !== top?.coalesceKey) return false
+		// a batch folds pairwise into the one on top, so a box lost to a lock starts a new entry
+		if ((command.commands?.length ?? 0) !== (top.commands?.length ?? 0)) return false
 		// a zeroed clock marks the top as no continuation target, and a forced
 		// fold must not reach past that either
 		if (!lastRecordedAt) return false
 		return forceCoalesce || Date.now() - lastRecordedAt <= COALESCE_WINDOW
 	}
+
+	const isUnchanged = (command) =>
+		(command.commands ?? [command]).every((c) => c.oldValue === c.newValue)
 
 	// files a command whose change is already applied
 	const record = (command, { forceCoalesce } = {}) => {
@@ -55,7 +60,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
 		if (canCoalesce(command, top, forceCoalesce)) {
 			top.coalesceWith(command)
-			if (top.oldValue === top.newValue) {
+			if (isUnchanged(top)) {
 				prevCommands.value.pop()
 				// the entry now on top is an older burst the next keystroke must not join
 				lastRecordedAt = 0

@@ -106,6 +106,15 @@
 							@change="(val: string) => (identity.doc.html_signature = val)"
 						/>
 					</div>
+
+					<Button
+						v-if="identity.doc.may_delete"
+						:label="__('Delete')"
+						class="min-h-7 w-full"
+						variant="outline"
+						theme="red"
+						@click="showDeleteDialog = true"
+					/>
 				</template>
 			</div>
 
@@ -142,6 +151,16 @@
 			</Dialog>
 		</div>
 	</template>
+	<div v-else-if="!identities.loading" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
+		<p class="text-base font-medium">{{ __('No identities.') }}</p>
+		<p>
+			{{
+				__(
+					'Identities are the addresses you send mail as. Create one to get started.',
+				)
+			}}
+		</p>
+	</div>
 
 	<Dialog
 		v-model:open="showAddIdentityDialog"
@@ -175,6 +194,23 @@
 			/>
 		</template>
 	</Dialog>
+
+	<Dialog
+		v-model:open="showDeleteDialog"
+		v-bind="{
+			title: __('Delete Identity'),
+			message: __('Are you sure you want to delete this identity?'),
+			actions: [
+				{
+					label: __('Confirm'),
+					variant: 'solid',
+					theme: 'red',
+					loading: deleteIdentity.loading,
+					onClick: () => deleteIdentity.submit(),
+				},
+			],
+		}"
+	/>
 	</AppSettingsBody>
 </template>
 
@@ -227,7 +263,7 @@ const getIdentity = () =>
 // signature stay the same signature rather than one being a flattened trace of the other.
 const save = () => identity.value.save.submit()
 
-const identity = ref(getIdentity())
+const identity = ref(identityName.value ? getIdentity() : null)
 const savedSignature = ref('')
 
 const showDialog = ref(false)
@@ -275,7 +311,37 @@ const addIdentity = createResource({
 	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
 })
 
-watch(identityName, (val) => {
-	if (val) identity.value = getIdentity()
+const showDeleteDialog = ref(false)
+
+const deleteIdentity = createResource({
+	url: 'suite.mail.doctype.identity.identity.bulk_delete',
+	makeParams: () => ({ names: [identityName.value] }),
+	onSuccess: () => {
+		raiseToast(__('Identity deleted.'))
+		showDeleteDialog.value = false
+		identityName.value = ''
+		identities.reload()
+	},
+	onError: (error) => {
+		showDeleteDialog.value = false
+		raiseToast(error.messages?.[0] || error.message, 'error')
+	},
 })
+
+watch(identityName, (val) => {
+	identity.value = val ? getIdentity() : null
+})
+
+// Keep the selection valid as the list loads or changes (e.g. after create/delete
+// or an account switch): fall back to the first identity when the current one is gone.
+watch(
+	() => identities.data,
+	(data) => {
+		if (!data?.length) {
+			identityName.value = ''
+		} else if (!data.some((i: Identity) => i.name === identityName.value)) {
+			identityName.value = data[0].name
+		}
+	},
+)
 </script>
