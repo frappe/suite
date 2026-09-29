@@ -25,6 +25,7 @@ import LucideSun from "~icons/lucide/sun";
 import LucideMoon from "~icons/lucide/moon";
 import LucideMonitor from "~icons/lucide/monitor";
 import LucideCheck from "~icons/lucide/check";
+import LucideVideo from "~icons/lucide/video";
 
 const route = useRoute();
 const sessionStore = useSessionStore();
@@ -110,7 +111,14 @@ const showShortcutsDialog = inject(
 		v-model:collapsed="isCollapsed"
 		class="hidden sm:flex"
 	>
-		<SidebarHeader title="Meet" :menu-items="settingsItems" :show-logo="false" />
+		<!-- Collapsed, the title hides, so a Meet icon stays as the menu's trigger. -->
+		<SidebarHeader title="Meet" :menu-items="settingsItems" :show-logo="isCollapsed">
+			<template #prefix>
+				<span class="grid size-full place-items-center">
+					<LucideVideo class="size-4 text-ink-gray-7" :aria-label="__('Meet menu')" />
+				</span>
+			</template>
+		</SidebarHeader>
 		<div class="flex-1 px-2">
 			<SidebarSection>
 				<CommandPaletteSidebarItem />

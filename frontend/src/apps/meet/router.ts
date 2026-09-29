@@ -4,8 +4,8 @@ import { userResource } from "@/boot/session";
 import { isUnknownRecord } from "./types";
 
 /**
- * Meet-local guard on the shared suite router: the `requiresAdmin` role check
- * (audio-test, restricted to System Manager / Administrator). Early-returns
+ * Meet-local guard, attached as audio-test's `beforeEnter` in ./routes.ts:
+ * the `requiresAdmin` role check (System Manager / Administrator). Early-returns
  * for any route whose name doesn't start with `meet-`; auth itself is the
  * suite router's `beforeEach` (redirects guests unless `meta.allowGuest`,
  * which `meet-meeting` carries so guests can join).
