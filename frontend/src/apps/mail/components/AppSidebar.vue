@@ -22,10 +22,10 @@
 			     collapsed rail, in line with the icons of the px-2 body below. -->
 			<div class="flex h-full flex-col">
 				<SidebarHeader
-					:title="title"
+					:title="__('Mail')"
 					:subtitle="subtitle"
 					:menu-items="menuItems"
-					:logo="branding.data?.brand_html || MailLogo"
+					:show-logo="false"
 				/>
 
 				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
@@ -125,13 +125,12 @@ import {
 import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
+import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { canMoveToMailbox } from '@/apps/mail/utils/mailboxTargets'
 import { useAccountSwitch, useScreenSize, useSettings, useShortcuts, useSidebar } from '@/apps/mail/utils/composables'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
-import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
@@ -180,7 +179,7 @@ const setSectionCollapsed = (key: string | undefined, collapsed: boolean) => {
 }
 const isSectionCollapsed = (section: { key?: string }) =>
 	!!section.key && !!collapsedSections.value[section.key]
-const { logout, branding } = sessionStore()
+const { logout } = sessionStore()
 const store = userStore()
 const { mailboxes, allInboxesUnread } = store
 
@@ -222,25 +221,22 @@ const onFolderDrop = (e: DragEvent, item: { mailboxId?: string }) => {
 
 const user = inject('$user')
 
+// Standalone chrome: Apps, Settings and Log out show only while Mail renders
+// outside the shell (`suite_flip_shell` off). Inside, the rail and its account
+// menu replace them [T010, T018].
+const standalone = computed(() => route.meta.frame === 'none')
 const appsMenuOption = useAppSwitcher('mail')
 
-const { showSettings } = useSettings()
+const { openSettings } = useSettings()
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
 const showDeleteMailbox = ref(false)
 const { openShortcuts } = useShortcuts()
 
-const title = computed(() =>
-	branding.data?.brand_name && branding.data?.brand_name != 'Frappe'
-		? branding.data.brand_name
-		: 'Mail',
+// The header shows the active mail account, not the Suite account [T010].
+const subtitle = computed(
+	() => user.data.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
 )
-
-const subtitle = computed(() => {
-	const currentAccount = user.data.accounts.find((a) => a.id === store.accountId)
-	if (!currentAccount || currentAccount.is_personal) return toTitleCase(user.data.full_name)
-	return currentAccount._name
-})
 
 // Leave the dashboard for the active account's default mailbox (or the address
 // books when no mailbox exists yet). Shared by the header menu item and the
@@ -265,7 +261,7 @@ const menuItems = computed(() => [
 		options: [
 			{
 				...appsMenuOption.value,
-				condition: () => !isMobile.value,
+				condition: () => standalone.value && !isMobile.value,
 			},
 			{
 				icon: Mailbox,
@@ -284,7 +280,8 @@ const menuItems = computed(() => [
 			{
 				icon: Settings,
 				label: __('Settings'),
-				onClick: () => (showSettings.value = true),
+				onClick: () => openSettings('mail.credentials'),
+				condition: () => standalone.value,
 			},
 			{
 				icon: Keyboard,
@@ -307,6 +304,7 @@ const menuItems = computed(() => [
 				icon: LogOut,
 				label: __('Log Out'),
 				onClick: logout.submit,
+				condition: () => standalone.value,
 			},
 		],
 	},

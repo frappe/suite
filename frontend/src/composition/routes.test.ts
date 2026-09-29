@@ -46,14 +46,14 @@ describe("the shell flip", () => {
       ?.frame;
   }
 
-  it.each(["meet", "calendar"])(
+  it.each(["meet", "calendar", "mail"])(
     "keeps %s outside the shell while the boot leaves the flip off",
     async (area) => {
       expect(await frameOf(area)).toBe("none");
     },
   );
 
-  it.each(["meet", "calendar"])(
+  it.each(["meet", "calendar", "mail"])(
     "puts %s in the shell once the boot turns the flip on",
     async (area) => {
       window.suite_flip_shell = true;

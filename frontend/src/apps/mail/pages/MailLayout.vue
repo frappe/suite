@@ -6,7 +6,6 @@
 	<component :is="Layout" v-else class="mail-app mail-app-root">
 		<router-view />
 	</component>
-	<SettingsModal v-if="!mailServerUnavailable" v-model:open="showSettings" />
 	<ShortcutsModal v-model:open="showShortcuts" />
 </template>
 
@@ -28,7 +27,6 @@ import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
-import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
 import { useRootStore } from '@/stores/root'
 
 import type { NotificationPayload } from '@/apps/mail/types'
@@ -134,7 +132,7 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
-const { showSettings, openSettings } = useSettings()
+const { openSettings } = useSettings()
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layout', () =>
 	mailServerUnavailable.value
@@ -148,7 +146,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
 							shortcut: 'Mod+Shift+Comma',
 							enterHint: 'open settings',
 							icon: 'lucide-settings',
-							run: () => openSettings(),
+							run: () => openSettings('mail.credentials'),
 						},
 					],
 				},

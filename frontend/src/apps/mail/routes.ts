@@ -1,5 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router'
 
+// Installs Mail's guard on the suite router. The suite router loads this module once, when a
+// Mail route first opens, so the guard is in place before any Mail page resolves.
+import '@/apps/mail/runtime'
+
 /**
  * Mail route module — mounted by the suite router under the '/mail' prefix.
  * Paths are RELATIVE to '/mail' (no leading slash; the empty-path '' is the
@@ -10,11 +14,20 @@ import type { RouteRecordRaw } from 'vue-router'
  * global auth guard does not redirect guests to /login. They sit OUTSIDE the
  * MailLayout (which provides $user/$dayjs/$socket) because they don't need
  * those injects. All authed routes nest under MailLayout.
+ *
+ * The authed routes take their frame from the Mail area group: in the shell
+ * while `suite_flip_shell` is on. The public routes set `frame: 'none'`, so
+ * they stay outside the shell in both states [T010].
  */
 
 // Lightweight placeholder used by shortcut routes — the mail guard intercepts
 // them and redirects before any component ever mounts.
 const ShortcutRedirect = { render: () => null }
+
+// The MIME page and the Admin Dashboard need no mail account, so the suite router loads them
+// without the Mail capability. They carry no rail context (`area` unset), so the shell does not
+// answer them with "Mail is unavailable". The mail guard still decides who may see the dashboard.
+const dashboardMeta = { isDashboard: true, area: undefined }
 
 export const routes: RouteRecordRaw[] = [
 	// --- Public (pre-auth) routes -------------------------------------------
@@ -30,6 +43,7 @@ export const routes: RouteRecordRaw[] = [
 		// the inbox. Redirect exact matches to the shortcut; children
 		// ('/mail/login' etc.) are unaffected.
 		redirect: { name: 'mail-root-shortcut' },
+		meta: { frame: 'none' },
 		children: [
 			{
 				path: 'signup',
@@ -71,7 +85,7 @@ export const routes: RouteRecordRaw[] = [
 		name: 'mail-mime-message',
 		component: () => import('@/apps/mail/pages/MimeMessageView.vue'),
 		props: true,
-		meta: { noLayout: true, allowGuest: true },
+		meta: { noLayout: true, allowGuest: true, frame: 'none', area: undefined },
 	},
 
 	// --- Authed routes (nested under MailLayout) ----------------------------
@@ -120,7 +134,7 @@ export const routes: RouteRecordRaw[] = [
 			},
 			// Profile as a page rather than a bottom sheet, so the tab behaves like the other
 			// three — a route the bar keeps a selected state for. It holds the mobile settings
-			// list itself; PWASettings stays for the sidebar and in-thread entry points.
+			// list itself.
 			{
 				path: 'account/:accountId/profile',
 				name: 'mail-profile',
@@ -220,91 +234,91 @@ export const routes: RouteRecordRaw[] = [
 				path: 'dashboard',
 				name: 'mail-overview',
 				component: () => import('@/apps/mail/pages/dashboard/OverviewView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/domains',
 				name: 'mail-domains',
 				component: () => import('@/apps/mail/pages/dashboard/DomainsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/domains/:domainId',
 				name: 'mail-domain',
 				component: () => import('@/apps/mail/pages/dashboard/DomainView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/dmarc',
 				name: 'mail-dmarc-reports',
 				component: () => import('@/apps/mail/pages/dashboard/DmarcReportsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/dmarc/:reportId',
 				name: 'mail-dmarc-report',
 				component: () => import('@/apps/mail/pages/dashboard/DmarcReportView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/tls',
 				name: 'mail-tls-reports',
 				component: () => import('@/apps/mail/pages/dashboard/TlsReportsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/tls/:reportId',
 				name: 'mail-tls-report',
 				component: () => import('@/apps/mail/pages/dashboard/TlsReportView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/accounts',
 				name: 'mail-accounts',
 				component: () => import('@/apps/mail/pages/dashboard/AccountsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/invites',
 				name: 'mail-invites',
 				component: () => import('@/apps/mail/pages/dashboard/AccountsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/accounts/:accountId',
 				name: 'mail-account',
 				component: () => import('@/apps/mail/pages/dashboard/AccountView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/groups',
 				name: 'mail-groups',
 				component: () => import('@/apps/mail/pages/dashboard/GroupsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/groups/:groupId',
 				name: 'mail-group',
 				component: () => import('@/apps/mail/pages/dashboard/GroupView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/mailing-lists',
 				name: 'mail-mailing-lists',
 				component: () => import('@/apps/mail/pages/dashboard/MailingListsView.vue'),
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			{
 				path: 'dashboard/mailing-lists/:listId',
 				name: 'mail-mailing-list',
 				component: () => import('@/apps/mail/pages/dashboard/MailingListView.vue'),
 				props: true,
-				meta: { isDashboard: true },
+				meta: dashboardMeta,
 			},
 			// Shortcut routes: short paths that resolve to their full
 			// account-scoped equivalents once the active accountId is known

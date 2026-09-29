@@ -96,7 +96,10 @@ export const canonicalRoutes: RouteRecordRaw[] = [
   placeholder(
     "/mail/:pathMatch(.*)*",
     "area-placeholder-mail",
-    areaMeta("mail", "Mail", mailLogo, { frame: "none", scroll: "content" }),
+    areaMeta("mail", "Mail", mailLogo, {
+      frame: adoptedAppFrame,
+      scroll: "content",
+    }),
   ),
   placeholder(
     "/calendar/:pathMatch(.*)*",
