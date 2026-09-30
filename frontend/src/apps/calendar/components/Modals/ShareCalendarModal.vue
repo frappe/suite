@@ -114,44 +114,64 @@ watch(show, (open) => {
 	sharees.value = (sharing?.sharees ?? []).map((sharee) => ({ ...sharee }))
 	mayShare.value = !!sharing?.may_share
 	query.value = ''
+	// A change waiting on a save for the calendar this dialog has just left is not this one's.
+	queued = false
 })
 
 const save = createResource({
 	url: 'suite.calendar.api.set_calendar_sharing',
 	makeParams: () => ({
-		account: sharing!.account,
-		id: sharing!.id,
-		sharees: managedSharees(sharees.value),
+		account: pending!.account,
+		id: pending!.id,
+		sharees: managedSharees(pending!.sharees),
 	}),
 	// No toast on success: the row that appeared or went is the confirmation. What the server
 	// agreed to is the list that was sent, not the one shown — which may already hold the next
-	// change, waiting its turn.
+	// change, waiting its turn — and only if it was sent for the calendar on screen: the dialog
+	// may have closed and reopened for another while the request was out.
 	onSuccess: () => {
-		saved.value = sent
-		if (queued) {
-			queued = false
-			submitNow()
-		}
+		if (forThisCalendar(pending)) saved.value = pending!.sharees
+		flush()
 	},
 	// The server caps how many a calendar may be shared with and does not say the number, so
-	// its refusal is the only account of the limit there is to show — and the list goes back
-	// to what it last agreed to, a change waiting its turn included.
+	// its refusal is the only account of the limit there is to show. The list goes back to what
+	// it last agreed to, a change waiting its turn included — where the refusal was for this
+	// calendar. A refusal for one the dialog has since left is told, and nothing here is undone.
 	onError: (error) => {
-		queued = false
-		sharees.value = saved.value.map((sharee) => ({ ...sharee }))
+		if (forThisCalendar(pending)) {
+			queued = false
+			sharees.value = saved.value.map((sharee) => ({ ...sharee }))
+		} else {
+			flush()
+		}
 		toastError(error)
 	},
 })
 
 // Every save replaces the whole list, so two in flight at once could land in either order and
 // the older undo the newer. One goes at a time; a change made while one is out waits, and the
-// list as it stands then is sent when the first comes back.
-let sent: Sharee[] = []
+// list as it stands then is sent when the first comes back. Each carries the calendar it is
+// for, since the dialog can be closed and reopened for another before an answer arrives.
+type Pending = { account: string; id: string; sharees: Sharee[] }
+let pending: Pending | null = null
 let queued = false
 
+const forThisCalendar = (request: Pending | null) =>
+	!!request && request.account === sharing?.account && request.id === sharing?.id
+
 const submitNow = () => {
-	sent = sharees.value.map((sharee) => ({ ...sharee }))
+	pending = {
+		account: sharing!.account,
+		id: sharing!.id,
+		sharees: sharees.value.map((sharee) => ({ ...sharee })),
+	}
 	save.submit()
+}
+
+const flush = () => {
+	if (!queued) return
+	queued = false
+	submitNow()
 }
 
 const persist = () => {
