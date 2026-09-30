@@ -1466,6 +1466,24 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
 	});
 
+	it('treats closing an already-closed consumer as a successful no-op', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			userId: 'viewer-1',
+			roomId: 'room-1',
+		});
+		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
+			throw new Error('Consumer stale-consumer not found');
+		});
+		const callback = vi.fn();
+
+		socket.fire('close_consumer', { consumerId: 'stale-consumer' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(callback).toHaveBeenCalledWith({ success: true });
+		expect(harness.mediasoup.closeConsumer).not.toHaveBeenCalled();
+	});
+
 	it('treats a keyframe request for an already-closed consumer as a no-op', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {

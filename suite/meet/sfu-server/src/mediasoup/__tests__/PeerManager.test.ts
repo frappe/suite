@@ -11,8 +11,12 @@ import { PeerManager } from '../PeerManager';
 function makeRoom(): Room {
 	return {
 		id: 'r1',
-		router: {} as Room['router'],
+		router: { id: 'router-1' } as Room['router'],
+		webRtcServer: {} as Room['webRtcServer'],
 		audioLevelObserver: {} as Room['audioLevelObserver'],
+		routers: [],
+		peerRouterIds: new Map(),
+		pipeRepresentations: new Map(),
 		peers: new Map(),
 		created: new Date(),
 	};
@@ -36,9 +40,10 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const peer = mgr.addPeer(room, 'p1');
+			const peer = mgr.addPeer(room, 'p1', 'router-1');
 
 			expect(peer.id).toBe('p1');
+			expect(peer.homeRouterId).toBe('router-1');
 			expect(peer.info).toEqual({
 				name: '',
 				userId: 'p1',
@@ -61,7 +66,7 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const peer = mgr.addPeer(room, 'p1', {
+			const peer = mgr.addPeer(room, 'p1', 'router-1', {
 				name: 'Alice',
 				userId: 'u-1',
 				avatar: 'a.png',
@@ -86,7 +91,7 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const peer = mgr.addPeer(room, 'host-1', {
+			const peer = mgr.addPeer(room, 'host-1', 'router-1', {
 				name: 'Host',
 				userId: 'host-1',
 				senderId: 7,
@@ -101,8 +106,8 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const first = mgr.addPeer(room, 'p1', { name: 'Alice' });
-			const second = mgr.addPeer(room, 'p1', {
+			const first = mgr.addPeer(room, 'p1', 'router-1', { name: 'Alice' });
+			const second = mgr.addPeer(room, 'p1', 'router-1', {
 				name: 'Alice 2',
 				audio_enabled: true,
 			});
@@ -120,7 +125,7 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const peer: Peer = mgr.addPeer(room, 'p1', { name: 'X' });
+			const peer: Peer = mgr.addPeer(room, 'p1', 'router-1', { name: 'X' });
 			const t = makeTransport();
 			const p = makeProducer();
 			const c = makeConsumer();
@@ -149,7 +154,7 @@ describe('PeerManager', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
 
-			const peer = mgr.addPeer(room, 'p1');
+			const peer = mgr.addPeer(room, 'p1', 'router-1');
 			const good = makeTransport();
 			const bad = {
 				close: vi.fn(() => {
@@ -169,7 +174,10 @@ describe('PeerManager', () => {
 		it('merges partial updates into existing peer info', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
-			mgr.addPeer(room, 'p1', { name: 'A', audio_enabled: true });
+			mgr.addPeer(room, 'p1', 'router-1', {
+				name: 'A',
+				audio_enabled: true,
+			});
 
 			mgr.updatePeerInfo(room, 'p1', { name: 'A2', video_enabled: true });
 			expect(room.peers.get('p1')?.info).toEqual(
@@ -194,8 +202,8 @@ describe('PeerManager', () => {
 		it('clears all peers', () => {
 			const mgr = new PeerManager();
 			const room = makeRoom();
-			mgr.addPeer(room, 'p1');
-			mgr.addPeer(room, 'p2');
+			mgr.addPeer(room, 'p1', 'router-1');
+			mgr.addPeer(room, 'p2', 'router-1');
 			mgr.cleanup();
 			expect(mgr.getPeerCount()).toBe(0);
 		});

@@ -450,15 +450,37 @@ export interface ExistingProducer {
 // Mediasoup Manager types
 export interface Room {
 	id: string;
+	/** Primary router aliases retained for room-wide media functions. */
 	router: Router;
 	webRtcServer: WebRtcServer;
 	audioLevelObserver: AudioLevelObserver;
+	routers: RoomRouter[];
+	peerRouterIds: Map<string, string>;
+	pipeRepresentations: Map<string, PipeRepresentation>;
 	peers: Map<string, Peer>;
 	created: Date;
 }
 
+export interface RoomRouter {
+	id: string;
+	workerId: number;
+	router: Router;
+	webRtcServer: WebRtcServer;
+}
+
+export interface PipeRepresentation {
+	producerId: string;
+	sourceRouterId: string;
+	destinationRouterId: string;
+	pipeConsumer: Consumer;
+	pipeProducer: Producer;
+	persistent: boolean;
+	consumerCount: number;
+}
+
 export interface Peer {
 	id: string;
+	homeRouterId: string;
 	info: PeerInfo;
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, Producer>;
@@ -515,6 +537,8 @@ export interface RoomStats {
 // Configuration types
 export interface MediasoupConfig {
 	numWorkers: number;
+	routersPerRoom: number;
+	peersPerRouter: number;
 	worker: WorkerSettings;
 	router: RouterConfig;
 	webRtcTransport: WebRTCTransportOptions;

@@ -66,6 +66,14 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 
 				callback({ success: true });
 			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message.startsWith('Consumer ') &&
+					error.message.endsWith(' not found')
+				) {
+					callback({ success: true });
+					return;
+				}
 				loggers.socketHandler.error(
 					'Error closing consumer: %s',
 					(error as Error).message,

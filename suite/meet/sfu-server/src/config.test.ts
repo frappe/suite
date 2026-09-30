@@ -23,6 +23,8 @@ describe('loadConfig', () => {
 		});
 		expect(config.mediasoup).toMatchObject({
 			numWorkers: 4,
+			routersPerRoom: 1,
+			peersPerRouter: 13,
 			webRtcServer: {
 				listenIp: '10.0.0.8',
 				announcedAddress: '203.0.113.10',
@@ -141,6 +143,18 @@ describe('loadConfig', () => {
 				system,
 			),
 		).toThrow('exceed the available UDP port range');
+	});
+
+	it('rejects more room routers than workers', () => {
+		expect(() =>
+			loadConfig(
+				validEnv({
+					MEDIASOUP_NUM_WORKERS: '2',
+					MEDIASOUP_ROUTERS_PER_ROOM: '3',
+				}),
+				system,
+			),
+		).toThrow('cannot exceed MEDIASOUP_NUM_WORKERS');
 	});
 
 	it('rejects an invalid announced address', () => {

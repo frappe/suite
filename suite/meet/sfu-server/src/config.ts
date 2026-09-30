@@ -268,6 +268,13 @@ export function loadConfig(
 		Math.max(1, system.cpuCount),
 		issues,
 	);
+	const routersPerRoom = integer(env, 'MEDIASOUP_ROUTERS_PER_ROOM', 1, issues);
+	const peersPerRouter = integer(env, 'MEDIASOUP_PEERS_PER_ROUTER', 13, issues);
+	if (routersPerRoom > numWorkers) {
+		issues.push(
+			'MEDIASOUP_ROUTERS_PER_ROOM cannot exceed MEDIASOUP_NUM_WORKERS',
+		);
+	}
 	if (basePort + numWorkers + 1000 > 65535) {
 		issues.push(
 			'WEBRTC_SERVER_PORT and MEDIASOUP_NUM_WORKERS exceed the available UDP port range',
@@ -331,6 +338,8 @@ export function loadConfig(
 		socket: { pingTimeout, pingInterval },
 		mediasoup: {
 			numWorkers,
+			routersPerRoom,
+			peersPerRouter,
 			worker,
 			router: { mediaCodecs },
 			webRtcTransport,

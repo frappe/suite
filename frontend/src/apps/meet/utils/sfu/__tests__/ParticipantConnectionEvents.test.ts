@@ -22,7 +22,9 @@ function createManager({ e2eeRequired = false } = {}) {
 		cleanup: vi.fn(),
 		rebuildSendSide: vi.fn().mockResolvedValue({}),
 		repairLocalPublication: vi.fn().mockResolvedValue(undefined),
+		reattachRemoteProducer: vi.fn().mockResolvedValue(false),
 		subscribeToRemoteProducer: vi.fn().mockResolvedValue(undefined),
+		unsubscribeFromRemoteProducer: vi.fn().mockResolvedValue(undefined),
 		processedConsumers: new Set<string>(),
 		isScreenShareActive: false,
 		mediaHandler: { localStream: null },
@@ -92,6 +94,125 @@ describe("ParticipantConnection", () => {
 			producerId: "producer-1",
 			isScreen: false,
 		});
+	});
+
+	it("defers ordinary camera producers until their participant is visible", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		await manager.connect("token");
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce();
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			isScreen: false,
+		});
+	});
+
+	it("unsubscribes an ordinary camera when its participant becomes hidden", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		await manager.connect("token");
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+
+		await manager.setVisibleCameraParticipants([]);
+
+		expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "camera-1",
+		});
+	});
+
+	it("serializes a visibility restore behind an in-flight hidden unsubscribe", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		let finishUnsubscribe!: () => void;
+		mediaManager.unsubscribeFromRemoteProducer.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					finishUnsubscribe = resolve;
+				}),
+		);
+		await manager.connect("token");
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+
+		const hiding = manager.setVisibleCameraParticipants([]);
+		await vi.waitFor(() =>
+			expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalled(),
+		);
+		const showing = manager.setVisibleCameraParticipants(["remote-1"]);
+		expect(mediaManager.reattachRemoteProducer).not.toHaveBeenCalled();
+
+		finishUnsubscribe();
+		await Promise.all([hiding, showing]);
+
+		expect(mediaManager.reattachRemoteProducer).toHaveBeenCalledWith(
+			"remote-1",
+			"camera-1",
+		);
+	});
+
+	it("retries a visible camera after its in-flight subscription was cancelled", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		let finishSubscription!: () => void;
+		mediaManager.subscribeToRemoteProducer
+			.mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						finishSubscription = resolve;
+					}),
+			)
+			.mockResolvedValue(undefined);
+		await manager.connect("token");
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		const producerCreated = handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+		await vi.waitFor(() =>
+			expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce(),
+		);
+
+		await manager.setVisibleCameraParticipants([]);
+		const showing = manager.setVisibleCameraParticipants(["remote-1"]);
+		finishSubscription();
+		await Promise.all([producerCreated, showing]);
+
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not subscribe a deferred camera that closes before becoming visible", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+		handlers.get("producer_closed")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+		});
+
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
 	});
 
 	it("preserves remote progress while the subscription remains present", async () => {
@@ -263,6 +384,7 @@ describe("ParticipantConnection", () => {
 		});
 
 		await manager.connect("token");
+		await manager.setVisibleCameraParticipants(["remote-1"]);
 		const producerPromise = handlers.get("producer_created")?.({
 			participantId: "remote-1",
 			producerId: "producer-1",

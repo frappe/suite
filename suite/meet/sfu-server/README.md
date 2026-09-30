@@ -88,6 +88,8 @@ Set the required values in `.env`:
 | `WEBRTC_ANNOUNCED_IP` | Required in production; server's public IP (find: `curl -4 ifconfig.me`) | `203.0.113.10` |
 | `WEBRTC_SERVER_PORT` | First UDP port for WebRTC media | `40000` |
 | `MEDIASOUP_NUM_WORKERS` | Number of mediasoup workers; media uses one UDP port per worker | `4` |
+| `MEDIASOUP_ROUTERS_PER_ROOM` | Maximum workers a large room may use; `1` disables room sharding | `1` |
+| `MEDIASOUP_PEERS_PER_ROUTER` | Participant Connections placed on a room router before activating the next | `13` |
 | `SOCKET_PING_TIMEOUT` | Socket.IO timeout in milliseconds | `60000` |
 | `SOCKET_PING_INTERVAL` | Socket.IO ping interval in milliseconds | `25000` |
 | `DOMAIN` | Domain pointing to this server | `sfu.example.com` |
@@ -168,6 +170,6 @@ Set `METRICS_TOKEN` to enable Prometheus metrics. The endpoint returns `404` whe
 curl -H "Authorization: Bearer $METRICS_TOKEN" https://sfu.example.com/metrics
 ```
 
-Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.
+Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Shard capacity is exposed through `meet_sfu_resources` values for `routers`, `sharded_rooms`, `pipe_representations`, and `cross_router_video_consumers`; these are process-wide aggregates and do not add room or media identifiers. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.
 
 Set `SENTRY_DSN` to report unexpected process failures and mediasoup worker deaths. `SENTRY_ENVIRONMENT` defaults to `production`; set `SENTRY_RELEASE` to the deployed image or commit version. Expected authentication, client-state, and WebRTC operation failures remain in metrics and logs rather than being reported as Sentry issues.

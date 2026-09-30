@@ -3,7 +3,8 @@ import type { WebRTCServerOptions, WorkerSettings } from '../types';
 import { loggers } from '../utils/logger';
 import { captureException, flushSentry } from '../utils/sentry';
 
-interface WorkerEntry {
+export interface WorkerEntry {
+	id: number;
 	worker: mediasoup.types.Worker;
 	webRtcServer: mediasoup.types.WebRtcServer;
 }
@@ -58,7 +59,7 @@ export class WorkerManager {
 				],
 			});
 
-			this.workers.push({ worker, webRtcServer });
+			this.workers.push({ id: i + 1, worker, webRtcServer });
 			loggers.workerManager.info(
 				'Created worker %d/%d with WebRtcServer on UDP port %d',
 				i + 1,
@@ -71,9 +72,24 @@ export class WorkerManager {
 	}
 
 	getNextWorker(): WorkerEntry {
-		const worker = this.workers[this.nextWorkerIndex];
+		return this.getNextWorkers(1)[0];
+	}
+
+	getNextWorkers(count: number): WorkerEntry[] {
+		if (count < 1 || count > this.workers.length) {
+			throw new Error(
+				`Requested ${count} mediasoup workers, but ${this.workers.length} are available`,
+			);
+		}
+		const selected = Array.from(
+			{ length: count },
+			(_, index) =>
+				this.workers[(this.nextWorkerIndex + index) % this.workers.length],
+		);
+		// Rotate the primary worker for each room while preserving the remaining
+		// workers as that room's ordered spill candidates.
 		this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-		return worker;
+		return selected;
 	}
 
 	getAllWorkers(): WorkerEntry[] {

@@ -336,6 +336,15 @@ export class VideoElementManager {
 		});
 	}
 
+	detachVideoStream(participantId: string): void {
+		const element = this.videoElements.get(participantId);
+		if (element) element.srcObject = null;
+		this.lastVideoAttachAt.delete(participantId);
+		const deferred = this.deferredAttachments.get(participantId);
+		if (deferred?.timer) clearTimeout(deferred.timer);
+		this.deferredAttachments.delete(participantId);
+	}
+
 	cleanup(): void {
 		for (const element of this.playbackHandlers.keys()) {
 			this.clearPlaybackHandler(element);

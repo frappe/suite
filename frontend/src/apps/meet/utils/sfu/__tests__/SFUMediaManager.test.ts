@@ -6,6 +6,10 @@ type MockTransportManager = {
 	createProducer: ReturnType<typeof vi.fn>;
 	createSendTransport: ReturnType<typeof vi.fn>;
 	createConsumer: ReturnType<typeof vi.fn>;
+	sfuClient: {
+		closeConsumer: ReturnType<typeof vi.fn>;
+		isConnected: ReturnType<typeof vi.fn>;
+	};
 };
 type MockParticipantManager = {
 	hasParticipant: ReturnType<typeof vi.fn>;
@@ -59,7 +63,10 @@ function createManager(
 ): {
 	mediaManager: SFUMediaManager;
 	transportManager: MockTransportManager;
-	videoManager: { attachStream: ReturnType<typeof vi.fn> };
+	videoManager: {
+		attachStream: ReturnType<typeof vi.fn>;
+		detachVideoStream: ReturnType<typeof vi.fn>;
+	};
 	consumerManager: {
 		addConsumer: ReturnType<typeof vi.fn>;
 		getConsumersByParticipant: ReturnType<typeof vi.fn>;
@@ -79,10 +86,15 @@ function createManager(
 			appData: { type: "camera" },
 			close: vi.fn(),
 		}),
+		sfuClient: {
+			closeConsumer: vi.fn().mockResolvedValue(undefined),
+			isConnected: vi.fn(() => true),
+		},
 	};
 
 	const videoManager = {
 		attachStream: vi.fn(),
+		detachVideoStream: vi.fn(),
 	};
 
 	const consumerManager = {
@@ -122,6 +134,155 @@ function createManager(
 		participantManager,
 	};
 }
+
+describe("SFUMediaManager.unsubscribeFromRemoteProducer", () => {
+	it("closes the SFU consumer and detaches an ordinary camera", async () => {
+		const { mediaManager, transportManager, consumerManager, videoManager } =
+			createManager();
+		consumerManager.getConsumersByParticipant.mockReturnValue([
+			{
+				id: "consumer-1",
+				participantId: "remote-1",
+				producerId: "producer-1",
+				kind: "video",
+				isScreen: false,
+				consumer: { producerId: "producer-1" },
+			},
+		]);
+
+		await mediaManager.unsubscribeFromRemoteProducer({
+			participantId: "remote-1",
+			producerId: "producer-1",
+		});
+
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledWith(
+			"consumer-1",
+		);
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("consumer-1");
+		expect(videoManager.detachVideoStream).toHaveBeenCalledWith("remote-1");
+	});
+
+	it("retains retryable local state when the SFU close request fails", async () => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const { mediaManager, transportManager, consumerManager, videoManager } =
+			createManager();
+		const entry = {
+			id: "consumer-1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("camera-track", "video"),
+			consumer: { producerId: "producer-1" },
+		};
+		consumerManager.getConsumersByParticipant.mockReturnValue([entry]);
+		transportManager.sfuClient.closeConsumer.mockRejectedValue(
+			new Error("offline"),
+		);
+
+		await expect(
+			mediaManager.unsubscribeFromRemoteProducer({
+				participantId: "remote-1",
+				producerId: "producer-1",
+			}),
+		).rejects.toThrow("offline");
+
+		expect(consumerManager.removeConsumer).not.toHaveBeenCalled();
+		expect(videoManager.detachVideoStream).toHaveBeenCalledWith("remote-1");
+
+		transportManager.sfuClient.closeConsumer.mockResolvedValue(undefined);
+		await expect(
+			mediaManager.reattachRemoteProducer("remote-1", "producer-1"),
+		).resolves.toBe(true);
+		expect(videoManager.attachStream).toHaveBeenCalled();
+	});
+
+	it("retries a failed hidden-camera close", async () => {
+		vi.useFakeTimers();
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		const entry = {
+			id: "consumer-1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			consumer: { producerId: "producer-1" },
+		};
+		consumerManager.getConsumersByParticipant.mockReturnValue([entry]);
+		mediaManager.setRemoteSubscriptionPolicy(() => false);
+		transportManager.sfuClient.closeConsumer
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValueOnce(undefined);
+
+		await expect(
+			mediaManager.unsubscribeFromRemoteProducer({
+				participantId: "remote-1",
+				producerId: "producer-1",
+			}),
+		).rejects.toThrow("offline");
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledTimes(2);
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("consumer-1");
+		vi.useRealTimers();
+	});
+
+	it("resubscribes when a camera becomes visible during a close retry", async () => {
+		vi.useFakeTimers();
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		const retry = deferred<void>();
+		let desired = false;
+		const entry = {
+			id: "consumer-1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			consumer: { producerId: "producer-1" },
+		};
+		consumerManager.getConsumersByParticipant.mockReturnValue([entry]);
+		mediaManager.setRemoteSubscriptionPolicy(() => desired);
+		transportManager.sfuClient.closeConsumer
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockReturnValueOnce(retry.promise);
+
+		await expect(
+			mediaManager.unsubscribeFromRemoteProducer({
+				participantId: "remote-1",
+				producerId: "producer-1",
+			}),
+		).rejects.toThrow("offline");
+		await vi.advanceTimersByTimeAsync(1000);
+		desired = true;
+		retry.resolve();
+		await vi.advanceTimersByTimeAsync(250);
+
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("consumer-1");
+		expect(transportManager.createConsumer).toHaveBeenCalledWith("producer-1", {
+			isScreen: false,
+		});
+		vi.useRealTimers();
+	});
+
+	it("does not resubscribe a recovered consumer rejected by policy", async () => {
+		const { mediaManager, transportManager } = createManager();
+		mediaManager.setRemoteSubscriptionPolicy(() => false);
+
+		await mediaManager.recoverConsumer({
+			id: "consumer-1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			consumer: { producerId: "producer-1" },
+		} as never);
+
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledWith(
+			"consumer-1",
+		);
+		expect(transportManager.createConsumer).not.toHaveBeenCalled();
+	});
+});
 
 describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 	beforeEach(() => {
@@ -223,6 +384,9 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 
 		await rejected;
 		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stale-c1");
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledWith(
+			"stale-c1",
+		);
 	});
 
 	it("discards a subscription that finishes after receive teardown", async () => {
@@ -255,8 +419,45 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 
 		await expect(subscription).rejects.toThrow("cancelled");
 		await cancellation;
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledWith(
+			"stale-c1",
+		);
 		expect(consumer.close).toHaveBeenCalledTimes(1);
 		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
+	});
+
+	it("retries closing an unregistered consumer after a transient failure", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const request = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		transportManager.createConsumer.mockReturnValue(request.promise);
+		transportManager.sfuClient.closeConsumer
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValueOnce(undefined);
+		const consumer = {
+			id: "orphan-consumer",
+			producerId: "producer-1",
+			kind: "video",
+			close: vi.fn(),
+		};
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		void subscription.catch(() => undefined);
+		mediaManager.cancelPendingSubscriptions();
+		request.resolve(consumer);
+
+		await expect(subscription).rejects.toThrow("cancelled");
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(transportManager.sfuClient.closeConsumer).toHaveBeenCalledTimes(2);
+		expect(consumer.close).toHaveBeenCalledOnce();
 	});
 
 	it("does not hold terminal cleanup for a pending consumer", async () => {

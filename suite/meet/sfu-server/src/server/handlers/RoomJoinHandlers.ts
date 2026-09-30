@@ -85,7 +85,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					);
 					await deps.mediasoup.removePeer(scopedRoomId, peerId);
 				}
-				deps.mediasoup.addPeer(scopedRoomId, peerId, {
+				await deps.mediasoup.addPeer(scopedRoomId, peerId, {
 					...userData,
 					senderId: socket.senderId,
 					isHost: Boolean(socket.isHost),
@@ -198,7 +198,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				socket.roomId = roomId;
 				socket.participantId = peerId;
 				deps.registry.joinRecorder(socket, roomId, peerId);
-				deps.mediasoup.addPeer(roomId, peerId, {
+				await deps.mediasoup.addPeer(roomId, peerId, {
 					name: 'Recorder',
 					userId: peerId,
 					audio_enabled: false,

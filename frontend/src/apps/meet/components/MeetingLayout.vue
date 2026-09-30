@@ -100,7 +100,15 @@
 </template>
 
 <script setup lang="ts">
-import { type ComputedRef, computed, inject, ref, watch } from "vue";
+import {
+	type ComputedRef,
+	type Ref,
+	computed,
+	inject,
+	onBeforeUnmount,
+	ref,
+	watch,
+} from "vue";
 import { useLayout } from "../composables/useLayout";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import { usePinnedTileAnimation } from "../composables/usePinnedTileAnimation";
@@ -111,6 +119,7 @@ import {
 } from "../composables/useScreenShareTiles";
 import { useTileAdaptiveStreaming } from "../composables/useTileAdaptiveStreaming";
 import type { Participant } from "../utils/media/ParticipantManager";
+import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { getInitials } from "../utils/text";
 import FloatingReactions from "./FloatingReactions.vue";
 import GroupTile from "./GroupTile.vue";
@@ -131,6 +140,7 @@ const showLocalTile = computed(() => props.showLocalTile);
 const interactive = computed(() => props.interactive);
 
 const meetingCtx = useMeetingContext()!;
+const sfuManager = inject<Ref<SFUMeetingManager | null>>("sfuManager");
 const setLocalVideoRef =
 	inject<(el: unknown) => void>("setLocalVideoRef") || (() => {});
 const setRemoteVideoRef =
@@ -341,6 +351,24 @@ const {
 	extraTileCount,
 	{ localTileCount: props.showLocalTile ? 1 : 0 },
 );
+
+watch(
+	[
+		() => sfuManager?.value ?? null,
+		() => displayParticipants.value.list.map((participant) => participant.user_id),
+	],
+	([manager, participantIds]) => {
+		if (!manager) return;
+		void manager.setVisibleRemoteVideoParticipants(participantIds).catch((error) =>
+			console.warn("Failed to update visible video subscriptions:", error),
+		);
+	},
+	{ immediate: true },
+);
+
+onBeforeUnmount(() => {
+	void sfuManager?.value?.setVisibleRemoteVideoParticipants([]);
+});
 
 const tileStyle = computed(() => {
 	if (mode.value === "sidebar") {

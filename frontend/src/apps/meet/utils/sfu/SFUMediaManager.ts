@@ -108,6 +108,10 @@ export class SFUMediaManager {
 	private subscriptionGeneration = 0;
 	private producerSubscriptionGenerations = new Map<string, number>();
 	private receiveSubscriptionsClosed = false;
+	private isRemoteSubscriptionDesired = () => true;
+	private orphanCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private orphanCloseAttempts = new Map<string, number>();
+	private static readonly MAX_ORPHAN_CLOSE_ATTEMPTS = 5;
 	private sendMediaMutationQueue: Promise<unknown> = Promise.resolve();
 	private sendMediaMutationGeneration = 0;
 	private cleanupPromise: Promise<void> | null = null;
@@ -131,6 +135,17 @@ export class SFUMediaManager {
 
 	setEventHandlers(handlers: MediaEventHandlers): void {
 		this.eventHandlers = handlers;
+	}
+
+	setRemoteSubscriptionPolicy(
+		policy: (info: {
+			participantId: string;
+			producerId: string;
+			kind: string;
+			isScreen: boolean;
+		}) => boolean,
+	): void {
+		this.isRemoteSubscriptionDesired = policy;
 	}
 
 	setLocalTrack(
@@ -377,7 +392,17 @@ export class SFUMediaManager {
 				metadata,
 			);
 			if (generation !== this.subscriptionGeneration) {
-				consumer.close();
+				try {
+					await this.transportManager.sfuClient?.closeConsumer(consumer.id);
+				} catch (error) {
+					console.warn("Failed to close cancelled consumer on the SFU", {
+						consumerId: consumer.id,
+						error: (error as Error).message,
+					});
+					this.scheduleOrphanConsumerClose(consumer.id);
+				} finally {
+					consumer.close();
+				}
 				throw new Error("Consumer subscription was cancelled");
 			}
 
@@ -449,6 +474,138 @@ export class SFUMediaManager {
 		return subscription;
 	}
 
+	async unsubscribeFromRemoteProducer({
+		producerId,
+		participantId,
+	}: {
+		producerId: string;
+		participantId: string;
+	}): Promise<void> {
+		this.cancelProducerSubscription(participantId, producerId);
+		const consumers = this.consumerManager
+			.getConsumersByParticipant(participantId)
+			.filter(
+				(entry) =>
+					entry.producerId === producerId ||
+					entry.consumer.producerId === producerId,
+			);
+		try {
+			for (const entry of consumers) {
+				await this.closeRemoteConsumer(entry);
+			}
+		} finally {
+			this.videoManager.detachVideoStream(participantId);
+		}
+	}
+
+	private async closeRemoteConsumer(entry: ConsumerEntry): Promise<void> {
+		try {
+			await this.transportManager.sfuClient?.closeConsumer(entry.id);
+		} catch (error) {
+			this.scheduleRemoteConsumerClose(entry);
+			console.warn("Failed to close remote consumer on the SFU", {
+				consumerId: entry.id,
+				error: (error as Error).message,
+			});
+			throw error;
+		}
+		this.consumerManager.removeConsumer(entry.id);
+		this.processedConsumers.delete(entry.id);
+		if (entry.kind === "video" && !entry.isScreen) {
+			this.videoManager.detachVideoStream(entry.participantId);
+		}
+	}
+
+	private scheduleRemoteConsumerClose(entry: ConsumerEntry): void {
+		if (this.orphanCloseTimers.has(entry.id)) return;
+		const attempt = (this.orphanCloseAttempts.get(entry.id) ?? 0) + 1;
+		if (attempt > SFUMediaManager.MAX_ORPHAN_CLOSE_ATTEMPTS) {
+			console.warn("Giving up closing remote SFU consumer", {
+				consumerId: entry.id,
+			});
+			this.orphanCloseAttempts.delete(entry.id);
+			return;
+		}
+		this.orphanCloseAttempts.set(entry.id, attempt);
+		const info = {
+			consumerId: entry.id,
+			participantId: entry.participantId,
+			producerId: entry.producerId,
+			kind: entry.kind,
+			isScreen: entry.isScreen,
+		};
+		const timer = setTimeout(() => {
+			this.orphanCloseTimers.delete(entry.id);
+			if (this.isRemoteSubscriptionDesired(info)) {
+				this.orphanCloseAttempts.delete(entry.id);
+				return;
+			}
+			const client = this.transportManager.sfuClient;
+			if (!client?.isConnected?.()) {
+				this.orphanCloseAttempts.delete(entry.id);
+				return;
+			}
+			void client.closeConsumer(entry.id).then(
+				() => {
+					this.orphanCloseAttempts.delete(entry.id);
+					this.consumerManager.removeConsumer(entry.id);
+					this.processedConsumers.delete(entry.id);
+					if (entry.kind === "video" && !entry.isScreen) {
+						this.videoManager.detachVideoStream(entry.participantId);
+					}
+					if (this.isRemoteSubscriptionDesired(info)) {
+						void this.handleConsumerLost(info);
+					}
+				},
+				() => this.scheduleRemoteConsumerClose(entry),
+			);
+		}, 1000);
+		this.orphanCloseTimers.set(entry.id, timer);
+	}
+
+	private scheduleOrphanConsumerClose(consumerId: string): void {
+		if (this.orphanCloseTimers.has(consumerId)) return;
+		const attempt = (this.orphanCloseAttempts.get(consumerId) ?? 0) + 1;
+		if (attempt > SFUMediaManager.MAX_ORPHAN_CLOSE_ATTEMPTS) {
+			console.warn("Giving up closing orphaned SFU consumer", { consumerId });
+			this.orphanCloseAttempts.delete(consumerId);
+			return;
+		}
+		this.orphanCloseAttempts.set(consumerId, attempt);
+		const timer = setTimeout(() => {
+			this.orphanCloseTimers.delete(consumerId);
+			const client = this.transportManager.sfuClient;
+			if (!client?.isConnected?.()) {
+				this.orphanCloseAttempts.delete(consumerId);
+				return;
+			}
+			void client.closeConsumer(consumerId).then(
+				() => this.orphanCloseAttempts.delete(consumerId),
+				() => this.scheduleOrphanConsumerClose(consumerId),
+			);
+		}, 1000);
+		this.orphanCloseTimers.set(consumerId, timer);
+	}
+
+	async reattachRemoteProducer(
+		participantId: string,
+		producerId: string,
+	): Promise<boolean> {
+		const consumer = this.consumerManager
+			.getConsumersByParticipant(participantId)
+			.find(
+				(entry) =>
+					!entry.consumer.closed &&
+					!entry.isScreen &&
+					entry.kind === "video" &&
+					(entry.producerId === producerId ||
+						entry.consumer.producerId === producerId),
+			);
+		if (!consumer) return false;
+		await this.attachVideoConsumer(participantId, consumer);
+		return true;
+	}
+
 	async handleConsumerLost(info: {
 		consumerId: string;
 		participantId: string;
@@ -467,6 +624,7 @@ export class SFUMediaManager {
 		if (!this.participantManager.hasParticipant(info.participantId)) {
 			return;
 		}
+		if (!this.isRemoteSubscriptionDesired(info)) return;
 
 		void this.startSubscription(
 			{
@@ -485,7 +643,7 @@ export class SFUMediaManager {
 	}
 
 	async recoverConsumer(entry: ConsumerEntry): Promise<void> {
-		this.consumerManager.removeConsumer(entry.id);
+		await this.closeRemoteConsumer(entry);
 		await this.handleConsumerLost({
 			consumerId: entry.id,
 			participantId: entry.participantId,
@@ -558,7 +716,7 @@ export class SFUMediaManager {
 					producerGeneration !==
 					(this.producerSubscriptionGenerations.get(key) ?? 0)
 				) {
-					if (consumer) this.consumerManager.removeConsumer(consumer.id);
+					if (consumer) await this.closeRemoteConsumer(consumer);
 					throw new DOMException("Producer subscription was cancelled", "AbortError");
 				}
 				return consumer;
@@ -851,6 +1009,9 @@ export class SFUMediaManager {
 
 		this.sendMediaMutationGeneration++;
 		this.receiveSubscriptionsClosed = true;
+		for (const timer of this.orphanCloseTimers.values()) clearTimeout(timer);
+		this.orphanCloseTimers.clear();
+		this.orphanCloseAttempts.clear();
 		const receiveCancellation = this.cancelPendingSubscriptions();
 		void receiveCancellation.catch((error: unknown) => {
 			console.warn("Failed to cancel pending media subscriptions:", error);

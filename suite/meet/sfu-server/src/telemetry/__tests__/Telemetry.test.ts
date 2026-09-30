@@ -104,6 +104,28 @@ describe('Telemetry', () => {
 		expect(output).toContain('meet_sfu_worker_max_resident_memory_bytes 2048');
 	});
 
+	it('exports aggregate shard resources without room identifiers', async () => {
+		const telemetry = new Telemetry();
+		telemetry.setResources({
+			routers: 4,
+			sharded_rooms: 1,
+			pipe_representations: 17,
+			cross_router_video_consumers: 23,
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain('meet_sfu_resources{resource="routers"} 4');
+		expect(output).toContain('meet_sfu_resources{resource="sharded_rooms"} 1');
+		expect(output).toContain(
+			'meet_sfu_resources{resource="pipe_representations"} 17',
+		);
+		expect(output).toContain(
+			'meet_sfu_resources{resource="cross_router_video_consumers"} 23',
+		);
+		expect(output).not.toMatch(/roomId|routerId|producerId/);
+	});
+
 	it('bounds E2EE event names', async () => {
 		const telemetry = new Telemetry();
 		telemetry.recordE2EEEvent('arbitrary-event', 'received');

@@ -4,7 +4,12 @@ import { loggers } from '../utils/logger';
 export class PeerManager {
 	private peers = new Map<string, { roomId: string; peer: Peer }>();
 
-	addPeer(room: Room, peerId: string, peerInfo: Partial<PeerInfo> = {}): Peer {
+	addPeer(
+		room: Room,
+		peerId: string,
+		homeRouterId: string,
+		peerInfo: Partial<PeerInfo> = {},
+	): Peer {
 		loggers.peerManager.info('Adding peer %s to room %s', peerId, room.id);
 
 		if (room.peers.has(peerId)) {
@@ -39,6 +44,7 @@ export class PeerManager {
 
 		const peer: Peer = {
 			id: peerId,
+			homeRouterId,
 			info: normalizedInfo,
 			transports: new Map(),
 			producers: new Map(),

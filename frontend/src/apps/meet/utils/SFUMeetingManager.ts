@@ -161,6 +161,10 @@ export class SFUMeetingManager {
 		return this.connectionManager.reconcileExpectedMedia();
 	}
 
+	setVisibleRemoteVideoParticipants(participantIds: Iterable<string>): Promise<void> {
+		return this.connectionManager.setVisibleCameraParticipants(participantIds);
+	}
+
 	/** Restarts playback, then reconciles expected media after browser resume. */
 	async recoverBrowserLifecycle(): Promise<void> {
 		await this.videoManager.retryPlayback();
