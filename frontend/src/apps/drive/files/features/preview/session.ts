@@ -16,6 +16,8 @@ const copyNode = driveOperation<{ node: string; parent: string; title?: string }
 
 export interface FilePreviewSession extends DocumentSession {
   readonly mime: string | null;
+  /** The folder the file is in. A replace names it; `null` for a root. */
+  readonly parent: string | null;
   readonly preview: Readonly<Ref<DrivePreview | null>>;
   refreshPreview(): Promise<void>;
 }
@@ -75,6 +77,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     contentDoctype: "File",
     contentDocname: nodeId,
     mime: initial.mime,
+    parent: initial.parent,
     preview: readonly(preview),
     title: readonly(title),
     state: readonly(state),

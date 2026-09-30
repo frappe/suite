@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Realtime, Room, SocketLike } from '@/platform/realtime'
 import { TransportError, type Operation, type Transport } from '@/platform/transport'
-import { createServerState, infinite, mutation, query } from './index'
+import { createServerState, infinite, mutation, query, upload } from './index'
 
 type Node = { name: string; title: string; parent: string | null; modified: string; state?: string }
 type Page = { rows: Node[]; next_cursor: string | null }
@@ -229,6 +229,61 @@ describe('server state queries', () => {
     fails = false
     await result.refetch()
     expect(result).toMatchObject({ status: 'success', error: null })
+    state.dispose()
+  })
+})
+
+describe('server state uploads', () => {
+  const create: Operation<{ name: string }, { id: string }> = { id: 'upload_create', owner: 'drive', method: 'POST', path: 'uploads' }
+  const chunk: Operation<any, { received: number }> = {
+    id: 'upload_chunk', owner: 'drive', method: 'PUT', path: 'uploads/{id}/chunk', pathParams: ['id'], body: 'chunk',
+  }
+  const finish: Operation<any, { done: boolean }> = { id: 'upload_finish', owner: 'drive', method: 'POST', path: 'uploads/{id}/finish', pathParams: ['id'] }
+  const descriptor = upload(create, chunk, finish, {
+    chunkSize: 4,
+    chunkInput: (session, offset) => ({ id: session.id, offset }),
+    finishInput: (input, session) => ({ id: session.id, title: input.name }),
+  })
+
+  it('continues from a start offset without a new session, and reports progress from what the server holds', async () => {
+    const sent: Array<[string, unknown]> = []
+    const mock = mockTransport((operation, input) => {
+      sent.push([operation.id, operation.id === 'upload_chunk' ? { ...input, chunk: input.chunk.size } : input])
+      if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
+      return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
+    })
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const transfer = state.useMutation(descriptor)
+
+    const result = await transfer.run({
+      name: 'a.bin', file: new Blob([new Uint8Array(10)]), start: { session: { id: 'held' }, offset: 4 },
+    })
+
+    expect(result).toEqual({ done: true })
+    expect(transfer.progress).toBe(1)
+    expect(sent).toEqual([
+      ['upload_chunk', { id: 'held', offset: 4, chunk: 4 }],
+      ['upload_chunk', { id: 'held', offset: 8, chunk: 2 }],
+      ['upload_finish', { id: 'held', title: 'a.bin' }],
+    ])
+    state.dispose()
+  })
+
+  it('does not wait behind other writes', async () => {
+    let releaseRename!: () => void
+    const mock = mockTransport((operation, input) => {
+      if (operation.id === 'node_patch.rename') return new Promise((resolve) => (releaseRename = () => resolve(node())))
+      if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
+      return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
+    })
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const rename = state.useMutation(mutation(renameOperation))
+    const renaming = rename.run({ node: 'n1', title: 'Slow' })
+    await tick()
+
+    await expect(state.useMutation(descriptor).run({ name: 'b.bin', file: new Blob([new Uint8Array(3)]) })).resolves.toEqual({ done: true })
+    releaseRename()
+    await renaming
     state.dispose()
   })
 })

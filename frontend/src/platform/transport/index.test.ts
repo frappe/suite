@@ -21,6 +21,31 @@ afterEach(() => {
 })
 
 describe('transport', () => {
+  it('sends a Blob field as the raw body, with the other fields in the query', async () => {
+    const chunk: Operation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }> = {
+      id: 'upload_chunk',
+      owner: 'drive',
+      method: 'PUT',
+      path: 'uploads/{upload_id}/chunk',
+      pathParams: ['upload_id'],
+      body: 'chunk',
+    }
+    const fetcher = vi.fn<typeof fetch>(async () => response({ data: { received: 3 } }))
+    const client = createTransport({ fetch: fetcher })
+    const bytes = new Blob([new Uint8Array([1, 2, 3])])
+
+    await expect(client.request(chunk, { upload_id: 'u1', offset: 0, chunk: bytes })).resolves.toEqual({ received: 3 })
+    const [url, init] = fetcher.mock.calls[0]!
+    expect(url).toBe('/api/suite/drive/uploads/u1/chunk?offset=0')
+    expect(init?.body).toBe(bytes)
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream')
+
+    await expect(
+      client.request(chunk, { upload_id: 'u1', offset: 0, chunk: 'not bytes' as unknown as Blob }),
+    ).rejects.toThrow(TypeError)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it('builds Suite URLs, adds CSRF, and decodes v2 success', async () => {
     window.csrf_token = 'csrf'
     const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))

@@ -62,12 +62,31 @@ export interface MutationDescriptor<Input = any, Output = any, Entity = any> {
   options: MutationOptions<Input, Entity>
 }
 
-export interface UploadDescriptor<Input = any, Output = any> {
+export interface UploadDescriptor<Input = any, Output = any, Session = any> {
   kind: 'upload'
-  create: Operation<Input, unknown>
+  create: Operation<Input, Session>
   chunk: Operation<any, unknown>
   finish: Operation<any, Output>
-  options: MutationOptions<Input, any> & { chunkSize?: number }
+  options: UploadOptions<Input, Session>
+}
+
+export interface UploadOptions<Input = any, Session = any> extends MutationOptions<Input, any> {
+  /** Bytes per chunk request. Chunks of one file go one after another. */
+  chunkSize?: number
+  /** The chunk request's input without its bytes, which go in its `chunk` field. */
+  chunkInput?: (session: Session, offset: number) => Record<string, unknown>
+  /** The finish request's input. */
+  finishInput?: (input: Input, session: Session) => Record<string, unknown>
+}
+
+/**
+ * The input of one upload run: the create input plus the file. `start`
+ * continues a session that already exists at `offset`, so a resumed upload
+ * does not begin at byte 0 and makes no new session.
+ */
+export type UploadRun<Input, Session = unknown> = Input & {
+  file: Blob
+  start?: { session: Session; offset: number }
 }
 
 export type ReadDescriptor<Input = any, Output = any> =
@@ -131,9 +150,13 @@ export interface CreateServerStateOptions {
 export interface ServerState {
   useQuery<D extends ReadDescriptor>(source: DescriptorSource<D>): QueryResult<DescriptorData<D>>
   useMutation<Input, Output>(
-    descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+    descriptor: MutationDescriptor<Input, Output>,
     options?: { silent?: boolean | readonly string[] },
   ): MutationResult<Input, Output>
+  useMutation<Input, Output, Session>(
+    descriptor: UploadDescriptor<Input, Output, Session>,
+    options?: { silent?: boolean | readonly string[] },
+  ): MutationResult<UploadRun<Input, Session>, Output>
   invalidateAll(predicate?: (descriptor: ReadDescriptor) => boolean): void
   onChallenge(
     type: string,
@@ -216,12 +239,12 @@ export function mutation<Input, Output, Entity = any>(
   return { kind: 'mutation', operation, options }
 }
 
-export function upload<Input, Output>(
-  create: Operation<Input, unknown>,
+export function upload<Input, Output, Session = unknown>(
+  create: Operation<Input, Session>,
   chunk: Operation<any, unknown>,
   finish: Operation<any, Output>,
-  options: UploadDescriptor<Input, Output>['options'] = {},
-): UploadDescriptor<Input, Output> {
+  options: UploadOptions<Input, Session> = {},
+): UploadDescriptor<Input, Output, Session> {
   assertOperation(create)
   assertOperation(chunk)
   assertOperation(finish)
@@ -358,14 +381,20 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         return state.progress
       },
       run(input: Input) {
-        const operation = descriptor.kind === 'upload' ? descriptor.create : descriptor.operation
-        operation.validateInput?.(input)
+        if (descriptor.kind === 'upload') {
+          const run = input as UploadRun<Input>
+          if (!run.start) descriptor.create.validateInput?.(createInput(run))
+        } else {
+          descriptor.operation.validateInput?.(input)
+        }
         state.isPending = true
         state.error = null
         state.controller = new AbortController()
         const execute = () => executeMutation(descriptor, input, state.controller!.signal, state)
-        const pending = mutationTail.then(execute, execute)
-        mutationTail = pending.catch(() => undefined)
+        // An upload runs beside other writes. Queued behind the tail, one large
+        // file would hold back every rename until its last byte.
+        const pending = descriptor.kind === 'upload' ? execute() : mutationTail.then(execute, execute)
+        if (descriptor.kind !== 'upload') mutationTail = pending.catch(() => undefined)
         return pending
           .catch(async (cause) => {
             const error = platformError(cause)
@@ -413,7 +442,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     try {
       let output: Output
       if (descriptor.kind === 'upload') {
-        output = await executeUpload(descriptor, input, signal, state)
+        output = await executeUpload(descriptor, input as UploadRun<Input>, signal, state)
       } else {
         output = await options.transport.request(descriptor.operation, input, { signal })
       }
@@ -426,27 +455,37 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     }
   }
 
-  async function executeUpload<Input, Output>(
-    descriptor: UploadDescriptor<Input, Output>,
-    input: Input,
+  async function executeUpload<Input, Output, Session>(
+    descriptor: UploadDescriptor<Input, Output, Session>,
+    input: UploadRun<Input, Session>,
     signal: AbortSignal,
     state: { progress: number | null },
   ): Promise<Output> {
-    const created = await options.transport.request(descriptor.create, input, { signal })
-    const record = input as Record<string, any>
-    const file = record.file
-    if (typeof Blob !== 'undefined' && file instanceof Blob) {
-      const size = descriptor.options.chunkSize ?? 1024 * 1024
-      for (let offset = 0; offset < file.size; offset += size) {
-        await options.transport.request(
-          descriptor.chunk,
-          { ...record, upload: created, offset, chunk: file.slice(offset, offset + size) },
-          { signal },
-        )
-        state.progress = Math.min(1, (offset + size) / file.size)
-      }
+    const { file, start } = input
+    const session = start
+      ? start.session
+      : await options.transport.request(descriptor.create, createInput(input), { signal })
+    const size = descriptor.options.chunkSize ?? 1024 * 1024
+    const chunkInput = descriptor.options.chunkInput ?? ((created: Session, at: number) => ({ upload: created, offset: at }))
+    let offset = Math.max(0, start?.offset ?? 0)
+    state.progress = file.size ? Math.min(1, offset / file.size) : 0
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + size)
+      const reply = await options.transport.request(
+        descriptor.chunk,
+        { ...chunkInput(session, offset), chunk },
+        { signal },
+      )
+      // The server says how many bytes it holds. The next chunk starts there.
+      const received = isObject(reply) && typeof reply.received === 'number' ? reply.received : offset + chunk.size
+      if (received <= offset) throw new TypeError('The upload made no progress')
+      offset = received
+      state.progress = Math.min(1, offset / file.size)
     }
-    return options.transport.request(descriptor.finish, { ...record, upload: created }, { signal })
+    const finishInput = descriptor.options.finishInput
+      ? descriptor.options.finishInput(createInput(input), session)
+      : { ...createInput(input), upload: session }
+    return options.transport.request(descriptor.finish, finishInput, { signal })
   }
 
   function getQueryRecord(descriptor: ReadDescriptor): QueryRecord {
@@ -992,6 +1031,13 @@ function replaceReference(record: QueryRecord, oldKey: string, newKey: string): 
   }
   record.normalized = replace(record.normalized)
   record.pages = record.pages.map(replace)
+}
+
+/** An upload run's input without the file and the resume point: what `create` receives. */
+/** The caller's own input: an upload run minus the bytes and the start point. */
+function createInput<Input>(run: UploadRun<Input>): Input {
+  const { file: _file, start: _start, ...rest } = run
+  return rest as Input
 }
 
 function finalOperation(descriptor: MutationDescriptor | UploadDescriptor): Operation {

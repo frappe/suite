@@ -1,6 +1,7 @@
 <template>
-  <Dialog v-model:open="open" :title="mode === 'move' ? 'Move to' : 'Make a copy'" size="lg">
+  <Dialog v-model:open="open" :title="TITLES[mode]" size="lg">
     <div class="space-y-3">
+      <p v-if="description" class="text-p-base text-ink-gray-7">{{ description }}</p>
       <TabButtons v-if="rootOptions.length > 1" v-model="rootKind" :options="rootOptions" fluid />
       <Button
         v-if="trail.length > 1"
@@ -40,7 +41,7 @@
         <Button
           variant="solid"
           theme="gray"
-          :label="mode === 'move' ? 'Move' : 'Copy'"
+          :label="ACTIONS[mode]"
           :disabled="!canSelect"
           @click="choose"
         />
@@ -58,7 +59,14 @@ import { roots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, type DriveAccess } from '@/apps/drive/client/types'
 import { useQuery } from '@/platform/server-state'
 
-const props = defineProps<{ mode: 'move' | 'copy' }>()
+const props = defineProps<{
+  mode: 'move' | 'copy' | 'restore'
+  /** Keeps the picker inside one root: its node. A restore must stay in its root. */
+  root?: string
+  description?: string
+}>()
+const TITLES = { move: 'Move to', copy: 'Make a copy', restore: 'Restore to' } as const
+const ACTIONS = { move: 'Move', copy: 'Copy', restore: 'Restore' } as const
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ choose: [node: string] }>()
 const discovered = useQuery(roots())
@@ -67,7 +75,11 @@ const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>(
 const rootOptions = computed(() => [
   { value: 'personal', label: 'My files' },
   ...(discovered.data?.organization ? [{ value: 'organization', label: 'Organization files' }] : []),
-])
+].filter((option) => !props.root || discovered.data?.[option.value as 'personal' | 'organization']?.node === props.root))
+watch(rootOptions, (options) => {
+  const only = options.length === 1 ? options[0]!.value : null
+  if (only === 'personal' || only === 'organization') rootKind.value = only
+}, { immediate: true })
 const root = computed(() => discovered.data?.[rootKind.value] ?? null)
 
 watch([root, open], ([location, isOpen]) => {

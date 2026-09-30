@@ -58,6 +58,7 @@ const batchOperation = driveOperation<
   { nodes: string[]; patch: { parent?: string; state?: 'Active' | 'Trashed' } },
   DriveBatchResult
 >(api.node_batch)
+const purgeOperation = driveOperation<{ nodes: string[] }, DriveBatchResult>(api.node_batch_purge)
 const emptyOperation = <Input>(operation: any, entity = false) =>
   driveOperation<Input, Record<string, never>>(operation, { entity })
 
@@ -70,6 +71,25 @@ export function children(input: ChildrenInput) {
     cursorParam: 'cursor',
     member: (row: DriveNode) => row.parent === input.node && row.state === 'Active',
   })
+}
+
+/**
+ * The Active child of `parent` titled `title`, with its access, or `null`.
+ * A collision refusal names only the free title, so Replace looks the file up.
+ */
+export async function findChild(parent: string, title: string, signal?: AbortSignal): Promise<DriveNode | null> {
+  let cursor: string | undefined
+  do {
+    const page = await transport.request(
+      childrenOperation,
+      { node: parent, limit: 200, cursor, order_by: 'title', ascending: true, expand: 'access' },
+      { signal },
+    )
+    const match = page.rows.find((row) => row.title === title && row.state === 'Active')
+    if (match) return match
+    cursor = page.next_cursor ?? undefined
+  } while (cursor)
+  return null
 }
 
 export const createNode = () => mutation(createOperation, {
@@ -106,6 +126,12 @@ export const copyNode = () => mutation(copyOperation, {
 export const batchNodes = () => mutation(batchOperation, {
   touches: ({ nodes }) => nodes,
   invalidates: ['node_children', 'view_list'],
+})
+
+/** Deletes Trashed nodes forever, each under MANAGE. Answers `{ok, failed}`. */
+export const purgeNodes = () => mutation(purgeOperation, {
+  touches: ({ nodes }) => nodes,
+  invalidates: ['node_children', 'view_list', 'root_usage'],
 })
 
 export const visitNode = () => mutation(emptyOperation<{ node: string }>(api.node_visit))
