@@ -147,9 +147,9 @@ test("Move to trash removes the row from the folder listing", async ({ page }) =
 	expect((await getNode(api, sibling.name)).state).toBe("Trashed");
 });
 
-test("Share stays explicitly unavailable until ticket 008", async ({ page }) => {
+test("Share on a row opens the Drive share dialog", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Share" }).click();
-	await expect(page.getByText("Sharing is unavailable until ticket 008.")).toBeVisible();
+	await expect(page.getByRole("dialog", { name: `Share "${target.title}"` })).toBeVisible();
 });

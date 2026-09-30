@@ -53,20 +53,32 @@ const DriveDialogHost = defineComponent({
     ),
 })
 
-function mountHost(context: AppContext) {
-  if (hostContext === context) return
-  hostContext = context
+let mounted = false
+
+// One host for the page. The suite runs one Vue app, so its context is the
+// first one any caller gives.
+function mountHost(context: AppContext | undefined) {
+  if (mounted) return
+  mounted = true
+  hostContext = context ?? hostContext
   const vnode = h(DriveDialogHost)
-  vnode.appContext = context
+  vnode.appContext = hostContext
   render(vnode, document.createElement('div'))
+}
+
+/** Lets a later call without a component, such as `session.share()`, use this app. */
+export function rememberDialogContext(context: AppContext | undefined): void {
+  if (context && !hostContext) hostContext = context
 }
 
 /**
  * Shows the dialog `load` resolves to with `props`. Resolves when it closes,
  * with the last value its `resultEvent` carried, or `undefined`.
+ *
+ * Without a `context`, the dialog uses the app a caller last remembered.
  */
 export async function presentDialog<Result>(
-  context: AppContext,
+  context: AppContext | undefined,
   load: () => Promise<DialogModule>,
   props: Record<string, unknown>,
   resultEvent?: string,

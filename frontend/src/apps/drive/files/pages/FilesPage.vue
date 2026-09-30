@@ -131,6 +131,7 @@ import {
 } from 'frappe-ui'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
+import { useDriveDialogs } from '@/apps/drive'
 import {
   batchNodes,
   children as nodesChildren,
@@ -182,6 +183,7 @@ type Destination = 'personal' | 'organization' | 'folder' | 'shared' | 'recent' 
 const props = defineProps<{ destination: Destination }>()
 const route = useRoute()
 const router = useRouter()
+const dialogs = useDriveDialogs()
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
 const guestFrame = inject(GUEST_FRAME_KEY, null)
 const session = useSession()
@@ -505,7 +507,8 @@ function rowMenuOptions(row: DriveNode): ContextMenuOption[] {
     ] : []),
     { label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') },
     ...(linkAccess(row, signedIn.value).star ? [{ label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) }] : []),
-    ...(hasRole(row, DRIVE_ROLES.manage) ? [{ label: 'Share', icon: 'lucide-user-plus', onClick: unavailableShare }] : []),
+    // Share needs MANAGE (spec §7.2). A link gives at most EDIT, so guests and link-only readers never see it.
+    ...(hasRole(row, DRIVE_ROLES.manage) ? [{ label: 'Share', icon: 'lucide-user-plus', onClick: () => shareRow(row) }] : []),
     ...(editable ? [{ label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashMutation.run({ node: row.name, state: 'Trashed' }) }] : []),
     { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
   ]
@@ -546,7 +549,10 @@ async function toggleStar(row: DriveNode) {
     : await unstarMutation.run({ node: row.name })
   if (result) row.favourite = starred
 }
-async function unavailableShare() { toast.info('Sharing is unavailable until ticket 008.') }
+/** A share write can change the caller's own access, so the listing is read again. */
+async function shareRow(row: DriveNode) {
+  if (await dialogs.share(row.name)) void listing.refetch()
+}
 async function download(row: DriveNode) {
   if (row.kind === 'folder') {
     const status = await archiveMutation.run({ node: row.name })
