@@ -9,12 +9,13 @@
       </span>
       <div class="min-w-0 flex-1">
         <p class="flex items-center gap-1.5 truncate">
-          <span>{{ roleLabel(row.grant.role) }} link</span>
+          <span>{{ row.denied ? 'Share link' : `${roleLabel(row.grant.role)} link` }}</span>
           <span v-if="row.grant.has_password" class="lucide-lock size-3.5 text-ink-gray-5" aria-label="Password set" role="img" />
         </p>
         <p class="mt-1 truncate text-sm text-ink-gray-5">{{ meta }}</p>
       </div>
-      <template v-if="row.expired">
+      <Button v-if="row.denied" label="Allow again" :loading="busy" @click="state.allowAgain(row)" />
+      <template v-else-if="row.expired">
         <Button label="Delete link" theme="red" variant="ghost" :loading="busy" @click="state.remove(row)" />
       </template>
       <template v-else>
@@ -43,7 +44,7 @@
       />
       <DatePicker v-else v-model="day" class="min-w-0 flex-1" placeholder="Expiry date" aria-label="Link expiry date" />
       <Button type="submit" variant="solid" label="Save" :loading="busy" :disabled="!ready" />
-      <Button label="Cancel" @click="editing = null" />
+      <Button label="Cancel" @click="close" />
     </form>
     <ErrorMessage v-if="error" class="pb-2 pl-10" :message="error" />
   </li>
@@ -68,12 +69,14 @@ const password = ref('')
 const day = ref('')
 
 const principal = computed(() => props.row.grant.principal)
-const busy = computed(() => props.state.pending.value === principal.value)
+const busy = computed(() => props.state.isPending(principal.value))
 const error = computed(() => props.state.errors.get(principal.value))
 const ready = computed(() => (editing.value === 'password' ? password.value !== '' : day.value !== ''))
 
 const meta = computed(() => {
   const grant = props.row.grant
+  // A deny on an inherited link: this link does not reach this item.
+  if (props.row.denied) return 'Denied here'
   const parts: string[] = []
   if (props.row.expired && grant.expires_on) parts.push(`Expired ${formatDay(grant.expires_on)}`)
   else parts.push(grant.expires_on ? `Expires ${formatDay(grant.expires_on)}` : 'No expiry')
@@ -131,9 +134,21 @@ function edit(mode: 'password' | 'expiry') {
 }
 
 async function save() {
-  if (editing.value === 'password') await props.state.setPassword(props.row, password.value)
-  else await props.state.setExpiry(props.row, day.value)
-  if (!props.state.errors.get(principal.value)) editing.value = null
+  if (editing.value === 'password') {
+    const typed = password.value
+    // The typed password never outlives the save, whether it worked or not.
+    password.value = ''
+    await props.state.setPassword(props.row, typed)
+  } else {
+    await props.state.setExpiry(props.row, day.value)
+  }
+  if (!props.state.errors.get(principal.value)) close()
+}
+
+/** Closes the editor and drops what was typed in it. */
+function close() {
+  password.value = ''
+  editing.value = null
 }
 
 async function rotate() {

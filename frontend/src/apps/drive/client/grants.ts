@@ -56,6 +56,8 @@ export interface ExplainRow {
   principal: string
   role: number
   expires_on: string | null
+  /** 1: the subject's own principals (user, groups, org). 2: open ones (public, links). */
+  pass: number
   held: boolean
   winner: boolean
 }
@@ -150,7 +152,11 @@ export function parseStamp(stamp: string): Date {
   return new Date(stamp.replace(' ', 'T'))
 }
 
-/** Access ends at the end of the chosen day (unified spec §7.9). */
+/**
+ * Access ends at the end of the chosen day (unified spec §7.9). The stamp has
+ * no zone, so the server reads it in the site's timezone: the frontend is not
+ * told the site's zone, so it cannot convert from the sharer's.
+ */
 export function endOfDayStamp(date: string): string {
   return `${date.slice(0, 10)} 23:59:59`
 }

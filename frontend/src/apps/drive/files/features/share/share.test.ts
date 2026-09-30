@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { rolesFor, type DriveGrant, type GrantList } from '@/apps/drive/client/grants'
+import { rolesFor, type DriveGrant, type ExplainRow, type GrantList } from '@/apps/drive/client/grants'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { Transport } from '@/platform/transport'
 
@@ -60,6 +60,7 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
     inherited: [
       { grant: grant('$PUBLIC', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
       { grant: grant('$GROUP:Design team', 20, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
+      { grant: grant('$LINK:launchlinklaunchlink12', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
       { grant: { node: 'root', principal: '$LINK', role: 10, expires_on: null, has_password: false }, redacted: true, source_node: 'root', source_title: 'My files' },
       { grant: grant('$GENERAL', 30, { node: 'root' }), redacted: false, source_node: 'root', source_title: 'My files' },
     ],
@@ -78,11 +79,25 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
     expect(sections.links?.map((row) => row.grant.has_password)).toEqual([true])
   })
 
+  it('keeps an expired org-wide row greyed with Remove, and says what applies meanwhile', () => {
+    const sections = shareSections(
+      { grants: [grant('$GENERAL', 40, { expires_on: '2026-09-01 23:59:59' })], inherited: list.inherited },
+      'document',
+      NOW,
+    )
+
+    expect(sections.organization).toMatchObject({
+      state: 'expired',
+      row: { expired: true, grant: { principal: '$GENERAL' } },
+      entry: { source_title: 'My files' },
+    })
+  })
+
   it('folds inherited grants per ancestor, and offers Deny only where it can apply', () => {
     const sections = shareSections(list, 'document', NOW)
 
     expect(sections.inherited.map((part) => [part.title, part.rows.map((row) => [row.entry.grant.principal, row.deniable])])).toEqual([
-      ['Launch', [['$PUBLIC', true], ['$GROUP:Design team', false]]],
+      ['Launch', [['$PUBLIC', true], ['$GROUP:Design team', false], ['$LINK:launchlinklaunchlink12', true]]],
       ['My files', [['$LINK', false], ['$GENERAL', true]]],
     ])
   })
@@ -103,7 +118,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     const server = fakeServer((call) =>
       call.id === 'node_get' ? node('document') : call.id === 'node_grants' ? { grants: [link], inherited: [] } : { grant: link },
     )
-    const share = useShare('doc', server.transport)
+    const share = useShare('doc', { transport: server.transport })
     await share.load()
     const row = share.sections.value!.links![0]!
 
@@ -130,7 +145,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       }
       return { grants, inherited: [] }
     })
-    const share = useShare('doc', server.transport)
+    const share = useShare('doc', { transport: server.transport })
     share.rememberName('asha@example.com', 'Asha')
     await share.load()
 
@@ -148,7 +163,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       reads += 1
       return { grants: [grant('asha@example.com', 10)], inherited: [] }
     })
-    const share = useShare('doc', server.transport)
+    const share = useShare('doc', { transport: server.transport })
     await share.load()
 
     await share.setRole(share.sections.value!.people[0]!, 40)
@@ -161,7 +176,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     const server = fakeServer((call) =>
       call.id === 'node_get' ? node('folder') : call.id === 'node_grants' ? { grants: [], inherited: [] } : { grant: grant('x', 10) },
     )
-    const share = useShare('doc', server.transport)
+    const share = useShare('doc', { transport: server.transport })
     await share.load()
 
     await share.sendLink('guest@example.com', 20)
@@ -176,25 +191,136 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
   })
 })
 
-describe('document session share (spec §8.8)', () => {
-  it('opens the Drive dialog, then reads access again; Share is offered only with Manage', async () => {
+describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
+  const ME = 'asha@example.com'
+  const row = (node: string, depth: number, principal: string, role: number, held = true): ExplainRow => ({
+    node, depth, principal, role, expires_on: null, pass: principal === '$PUBLIC' || principal.startsWith('$LINK') ? 2 : 1, held, winner: false,
+  })
+
+  /** A node `doc` under `folder` under `root`, and a caller whose explanation is `rows`. */
+  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50) {
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_grants' && call.input.principal) return { explain: { role, source: 'grant', rows } }
+      if (call.id === 'node_grants') return { grants: local, inherited: [] }
+      if (call.id === 'node_delete_grant') return { result: 'revoked', rows: 3 }
+      return { grant: local[0] }
+    })
+    const asked: number[] = []
+    let answer = false
+    const share = useShare('doc', {
+      transport: server.transport,
+      me: ME,
+      confirmLoss: async () => {
+        asked.push(1)
+        return answer
+      },
+    })
+    const writes = () => server.calls.filter((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant')
+    return { share, asked, writes, agree: () => (answer = true) }
+  }
+
+  it('asks before removing the group that gives the caller Manage, and writes nothing if they decline', async () => {
+    const leads = grant('$GROUP:Leads', 50)
+    const { share, asked, writes, agree } = setup([leads], [row('root', 0, '$GENERAL', 40), row('doc', 2, '$GROUP:Leads', 50)])
+    await share.load()
+
+    await share.remove(share.sections.value!.people[0]!)
+    expect(asked).toHaveLength(1)
+    expect(writes()).toEqual([])
+
+    agree()
+    await share.remove(share.sections.value!.people[0]!)
+    expect(writes().map((call) => call.id)).toEqual(['node_delete_grant'])
+  })
+
+  it('asks before denying here an inherited grant the caller holds, but not one they do not hold', async () => {
+    const { share, asked, writes } = setup(
+      [],
+      [row('folder', 1, ME, 50), row('folder', 1, '$GROUP:Sales', 20, false)],
+    )
+    await share.load()
+
+    await share.deny('$GROUP:Sales')
+    expect(asked).toHaveLength(0)
+    await share.deny(ME)
+    expect(asked).toHaveLength(1)
+    expect(writes().map((call) => call.input.principal)).toEqual(['$GROUP:Sales'])
+  })
+
+  it('does not ask when the caller keeps Manage through their own row', async () => {
+    const { share, asked, writes } = setup(
+      [grant(ME, 50), grant('$GROUP:Leads', 50)],
+      [row('doc', 2, ME, 50), row('doc', 2, '$GROUP:Leads', 50)],
+    )
+    await share.load()
+
+    await share.setRole(share.sections.value!.people[1]!, 10)
+    expect(asked).toHaveLength(0)
+    expect(writes()).toHaveLength(1)
+  })
+
+  it('keeps the org-wide expiry on a role change, and counts only the items inside', async () => {
+    const general = grant('$GENERAL', 10, { expires_on: '2027-03-01 23:59:59' })
+    const { share, writes } = setup([general, grant('bo@example.com', 20)], [row('doc', 2, ME, 50)])
+    share.rememberName('bo@example.com', 'Bo')
+    await share.load()
+
+    await share.setGeneral('$GENERAL', 20)
+    await share.remove(share.sections.value!.people[0]!, true)
+
+    expect(writes()[0]!.input).toEqual({ node: 'doc', principal: '$GENERAL', role: 20, expires_on: '2027-03-01 23:59:59' })
+    expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
+  })
+
+  it('keeps the newest read when an older one answers last', async () => {
+    const answers: ((value: unknown) => void)[] = []
+    const transport: Transport = {
+      request: (operation) =>
+        operation.id === 'node_get'
+          ? (new Promise((resolve) => answers.push(resolve)) as never)
+          : (Promise.resolve({ grants: [], inherited: [] }) as never),
+    }
+    const share = useShare('doc', { transport })
+
+    const first = share.load()
+    const second = share.load()
+    answers[1]!({ ...node('document'), title: 'New' })
+    await second
+    answers[0]!({ ...node('document'), title: 'Old' })
+    await first
+
+    expect(share.node.value?.title).toBe('New')
+  })
+})
+
+describe('document session share (spec §8.6, §8.8)', () => {
+  it('reads access again after each write in the dialog, before it closes; Share is offered only with Manage', async () => {
     let role = 50
-    const server = fakeServer(() => node('document', role))
-    const opened: string[] = []
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document', role)
+      if (call.id === 'node_grants') return { grants: [grant('asha@example.com', 50)], inherited: [] }
+      if (call.id === 'node_put_grant') role = 40
+      return { grant: grant('asha@example.com', 40) }
+    })
+    let whileOpen: boolean | undefined
     const session = await openDriveDocumentSession('doc', {
       transport: server.transport,
       setInterval: vi.fn() as unknown as typeof setInterval,
       clearInterval: vi.fn() as unknown as typeof clearInterval,
       share: async (id) => {
-        opened.push(id)
-        role = 40
+        const share = useShare(id, { transport: server.transport })
+        await share.load()
+        await share.setRole(share.sections.value!.people[0]!, 40)
+        await Promise.resolve()
+        whileOpen = session.canShare.value
       },
     })
     expect(session.canShare.value).toBe(true)
 
     await session.share()
 
-    expect(opened).toEqual(['doc'])
+    expect(whileOpen).toBe(false)
     expect(session.canShare.value).toBe(false)
     session.dispose()
   })

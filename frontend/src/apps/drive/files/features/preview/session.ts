@@ -1,5 +1,6 @@
 import { computed, readonly, ref, type Ref } from "vue";
 
+import { onAccessChange } from "@/apps/drive/client/accessChanges";
 import { api } from "@/apps/drive/client/generated";
 import { driveOperation } from "@/apps/drive/client/operation";
 import {
@@ -71,6 +72,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const previewTimer = window.setInterval(() => void refresh(), 10 * 60_000);
   const onFocus = () => void refresh();
   window.addEventListener("focus", onFocus);
+  const stopAccessChanges = onAccessChange(nodeId, () => void refresh());
 
   return {
     nodeId,
@@ -119,6 +121,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       window.clearInterval(accessTimer);
       window.clearInterval(previewTimer);
       window.removeEventListener("focus", onFocus);
+      stopAccessChanges();
     },
   };
 }

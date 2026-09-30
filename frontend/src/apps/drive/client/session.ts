@@ -1,5 +1,6 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
+import { onAccessChange } from './accessChanges'
 import { api } from './generated'
 import { driveLinks } from './links'
 import { driveOperation } from './operation'
@@ -66,7 +67,10 @@ export interface DocumentSession {
   /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
   readonly canShare: Readonly<Ref<boolean>>
   rename(title: string): Promise<DriveNode>
-  /** Opens the Drive share dialog. Resolves when it closes, with access read again. */
+  /**
+   * Opens the Drive share dialog. Access is read again after each write in
+   * it, and once more when it closes.
+   */
   share(): Promise<void>
   copy(parent: string, title?: string): Promise<DriveNode>
   comments: {
@@ -226,6 +230,8 @@ export async function openDriveDocumentSession(
   }, MEDIA_REFRESH_MS)
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
+  // A share write can lower the caller's own access: react before the dialog closes.
+  const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
 
   return {
     nodeId,
@@ -283,6 +289,7 @@ export async function openDriveDocumentSession(
       clearEvery(accessTimer)
       clearEvery(mediaTimer)
       targetWindow?.removeEventListener('focus', onFocus)
+      stopAccessChanges()
     },
   }
 }

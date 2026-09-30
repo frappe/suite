@@ -96,7 +96,8 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 	await expect(page.getByRole("complementary", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
 
-	await expect(page.getByRole("button", { name: "Share" })).toBeDisabled();
+	// Share opens the Drive share dialog for a manager (stage 9).
+	await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(
 		seen.requests.some((line) => line.startsWith("POST") && line.includes(`${DRIVE}/nodes/${deck.name}/visit`)),

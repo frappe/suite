@@ -71,7 +71,9 @@ const options = computed(() => [
     // A share link gives at most Edit (Drive spec §5.9).
     disabled: role.value > DRIVE_ROLES.edit,
     description: role.value > DRIVE_ROLES.edit ? 'A link gives at most Edit' : undefined,
+    // A root holds no links (Drive spec §4.9).
     condition: ({ query: typed }: { query: string }) =>
+      props.nodeKind !== 'root' &&
       EMAIL.test(typed.trim()) && !rows.value.some((person) => person.kind === 'user' && person.email === typed.trim()),
     onClick: ({ query: typed }: { query: string }) => {
       emit('sendLink', typed.trim(), role.value)

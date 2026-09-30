@@ -14,7 +14,7 @@
       <div>
         <SharePicker
           :node-kind="node.kind"
-          :disabled="state.pending.value === PICKER"
+          :disabled="state.isPending(PICKER)"
           @add="add"
           @send-link="(email, role) => state.sendLink(email, role)"
         />
@@ -29,35 +29,7 @@
         <h3 id="share-people" class="mb-1 text-sm text-ink-gray-5">People</h3>
         <p v-if="!sections.people.length" class="py-2 text-p-sm text-ink-gray-5">No one is added here yet.</p>
         <ul>
-          <li v-for="row in sections.people" :key="row.grant.principal">
-            <div class="flex min-h-12 items-center gap-3" :class="{ 'opacity-60': row.expired }">
-              <span
-                class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-                aria-hidden="true"
-              >
-                <span :class="[row.kind === 'group' ? 'lucide-users' : 'lucide-user', 'size-4']" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate">{{ state.label(row.grant.principal) }}</p>
-                <p v-if="peopleMeta(row)" class="mt-1 truncate text-sm text-ink-gray-5">{{ peopleMeta(row) }}</p>
-              </div>
-              <Button
-                v-if="row.denied"
-                label="Allow again"
-                :loading="state.pending.value === row.grant.principal"
-                @click="state.allowAgain(row)"
-              />
-              <Dropdown v-else :options="personOptions(row)" align="end">
-                <Button
-                  :label="row.expired ? 'Expired' : roleLabel(row.grant.role)"
-                  icon-right="lucide-chevron-down"
-                  variant="ghost"
-                  :loading="state.pending.value === row.grant.principal"
-                />
-              </Dropdown>
-            </div>
-            <ErrorMessage v-if="state.errors.get(row.grant.principal)" class="pb-2" :message="state.errors.get(row.grant.principal)" />
-          </li>
+          <SharePersonRow v-for="row in sections.people" :key="row.grant.principal" :row="row" :state="state" :node-kind="node.kind" />
         </ul>
       </section>
 
@@ -65,7 +37,7 @@
         <h3 id="share-general" class="mb-1 text-sm text-ink-gray-5">General access</h3>
         <ul>
           <li v-for="general in generalRows" :key="general.principal">
-            <div class="flex min-h-12 items-center gap-3">
+            <div class="flex min-h-12 items-center gap-3" :class="{ 'opacity-60': general.access.state === 'expired' }">
               <span
                 class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
                 aria-hidden="true"
@@ -79,15 +51,23 @@
               <Button
                 v-if="general.access.state === 'denied'"
                 label="Allow again"
-                :loading="state.pending.value === general.principal"
+                :loading="state.isPending(general.principal)"
                 @click="state.allowAgain(general.access.row)"
+              />
+              <Button
+                v-else-if="general.access.state === 'expired'"
+                label="Remove"
+                theme="red"
+                variant="ghost"
+                :loading="state.isPending(general.principal)"
+                @click="state.remove(general.access.row)"
               />
               <Dropdown v-else :options="generalOptions(general)" align="end">
                 <Button
                   :label="generalValue(general)"
                   icon-right="lucide-chevron-down"
                   variant="ghost"
-                  :loading="state.pending.value === general.principal"
+                  :loading="state.isPending(general.principal)"
                 />
               </Dropdown>
             </div>
@@ -103,7 +83,7 @@
             label="New link"
             icon-left="lucide-plus"
             variant="ghost"
-            :loading="state.pending.value === NEW_LINK_ROW"
+            :loading="state.isPending(NEW_LINK_ROW)"
             @click="newLink"
           />
         </div>
@@ -145,7 +125,7 @@
                 v-if="inherited.deniable"
                 label="Deny access here"
                 variant="ghost"
-                :loading="state.pending.value === inherited.entry.grant.principal"
+                :loading="state.isPending(inherited.entry.grant.principal)"
                 @click="state.deny(inherited.entry.grant.principal)"
               />
             </div>
@@ -163,21 +143,19 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import { Button, Dropdown, ErrorMessage, Skeleton, type DropdownItem, type DropdownOption } from 'frappe-ui'
+import { Button, Dropdown, ErrorMessage, Skeleton, type DropdownItem } from 'frappe-ui'
 
 import { GENERAL, PUBLIC, roleLabel, rolesFor, type PrincipalKind } from '@/apps/drive/client/grants'
-import { confirm } from '@/platform/feedback'
-import { useSession } from '@/platform/session'
 
 import ShareLinkRow from './ShareLinkRow.vue'
+import SharePersonRow from './SharePersonRow.vue'
 import SharePicker from './SharePicker.vue'
-import { losesOwnManage, type GeneralAccess, type InheritedRow, type LocalRow } from './shareModel'
+import type { GeneralAccess, InheritedRow } from './shareModel'
 import { copyLink, formatDay } from './shareFormat'
 import { NEW_LINK_ROW, PICKER, type ShareState } from './useShare'
 
 const props = defineProps<{ state: ShareState }>()
 
-const session = useSession()
 const node = computed(() => props.state.node.value)
 const sections = computed(() => props.state.sections.value)
 const unfolded = reactive(new Set<string>())
@@ -209,58 +187,10 @@ function kindIcon(kind: PrincipalKind): string {
   return { user: 'lucide-user', group: 'lucide-users', general: 'lucide-building-2', public: 'lucide-globe', link: 'lucide-link' }[kind]
 }
 
-function peopleMeta(row: LocalRow): string {
-  if (row.expired && row.grant.expires_on) return `Expired ${formatDay(row.grant.expires_on)}`
-  if (row.denied) return 'Denied here'
-  if (row.grant.expires_on) return `Until ${formatDay(row.grant.expires_on)}`
-  return row.kind === 'group' ? 'Group' : ''
-}
-
-async function mayLoseManage(row: LocalRow, next: number | null): Promise<boolean> {
-  if (!losesOwnManage(row, session.user.value?.id, next)) return true
-  return confirm({
-    title: 'Change your own access?',
-    message: 'You will no longer be able to share this item.',
-    confirmLabel: next === null ? 'Remove' : 'Change',
-    destructive: true,
-  })
-}
-
-async function setRole(row: LocalRow, role: number) {
-  if (role === row.grant.role) return
-  if (await mayLoseManage(row, role)) await props.state.setRole(row, role)
-}
-
-async function remove(row: LocalRow, below = false) {
-  if (await mayLoseManage(row, null)) await props.state.remove(row, below)
-}
-
-function personOptions(row: LocalRow): DropdownItem[] {
-  const holdsItems = node.value?.kind === 'folder' || node.value?.kind === 'root'
-  const removal: DropdownOption[] = [
-    { label: 'Remove', icon: 'lucide-x', theme: 'red', onClick: () => void remove(row) },
-    ...(holdsItems
-      ? [{ label: 'Remove here and inside', icon: 'lucide-folder-x', theme: 'red' as const, onClick: () => void remove(row, true) }]
-      : []),
-  ]
-  if (row.expired) return removal
-  return [
-    {
-      group: 'Access',
-      hideLabel: true,
-      options: rolesFor(row.kind, node.value?.kind ?? 'document').map((role) => ({
-        label: role.label,
-        selected: role.value === row.grant.role,
-        onClick: () => void setRole(row, role.value),
-      })),
-    },
-    { group: 'Remove', hideLabel: true, options: removal },
-  ]
-}
-
 function generalValue(general: GeneralRow): string {
   const access = general.access
   if (access.state === 'off') return 'Off'
+  if (access.state === 'expired') return 'Expired'
   const role = access.state === 'local' ? access.row.grant.role : access.state === 'inherited' ? access.entry.grant.role : 0
   return general.kind === 'public' ? 'On' : roleLabel(role)
 }
@@ -268,6 +198,12 @@ function generalValue(general: GeneralRow): string {
 function generalMeta(general: GeneralRow): string {
   const access = general.access
   if (access.state === 'denied') return 'Denied here'
+  if (access.state === 'expired') {
+    const expired = `Expired ${formatDay(access.row.grant.expires_on ?? '')}`
+    if (!access.entry) return expired
+    const value = general.kind === 'public' ? 'On' : roleLabel(access.entry.grant.role)
+    return `${expired} · ${value} from "${access.entry.source_title}"`
+  }
   if (access.state === 'inherited') {
     const value = general.kind === 'public' ? 'On' : roleLabel(access.entry.grant.role)
     return `${value} · from "${access.entry.source_title}"`
@@ -282,6 +218,7 @@ function generalOptions(general: GeneralRow): DropdownItem[] {
     return [{ label: 'Deny access here', icon: 'lucide-ban', onClick: () => void props.state.deny(general.principal) }]
   }
   const current = access.state === 'local' ? access.row.grant.role : 0
+  // `expired` renders Remove instead of this menu.
   const roles = rolesFor(general.kind, node.value?.kind ?? 'document').map((role) => ({
     label: general.kind === 'public' ? 'On' : role.label,
     selected: role.value === current,

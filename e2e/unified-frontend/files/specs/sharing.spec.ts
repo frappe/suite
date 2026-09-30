@@ -81,6 +81,26 @@ test("a local grant: pick a person, give Edit, and the server holds it", async (
 	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(40);
 });
 
+test("a person's access ends on a chosen day, and a role change keeps it", async ({ page }) => {
+	await putGrant(file.name, PERSON, { role: 10 });
+	const dialog = await openShare(page, file.name);
+
+	const row = dialog.getByRole("region", { name: "People" }).getByRole("listitem").filter({ hasText: PERSON });
+	await row.getByRole("button", { name: /View/ }).click();
+	await page.getByRole("menuitem", { name: "Set expiry" }).click();
+	const day = row.getByPlaceholder("Expiry date");
+	await day.fill("2031-01-15");
+	await day.press("Tab");
+	await row.getByRole("button", { name: "Save" }).click();
+	await expect(row.getByText(/Until/)).toBeVisible();
+
+	await row.getByRole("button", { name: /View/ }).click();
+	await page.getByRole("menuitem", { name: "Comment" }).click();
+	await expect(row.getByRole("button", { name: /Comment/ })).toBeVisible();
+	const stored = (await grants(file.name)).find((grant) => grant.principal === PERSON)!;
+	expect(stored).toMatchObject({ role: 20, expires_on: "2031-01-15 23:59:59" });
+});
+
 test("an inherited grant: Deny access here, then Allow again", async ({ page }) => {
 	await putGrant(home.name, PERSON, { role: 20 });
 	const dialog = await openShare(page, file.name);

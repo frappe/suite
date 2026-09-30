@@ -4,14 +4,16 @@
   `session.share()`. On phone it opens as a bottom sheet with the same body.
 -->
 <template>
-  <BottomSheet v-if="isPhone" :open="open" @update:open="open = $event" @after-leave="$emit('after-leave')">
-    <div class="max-h-[80vh] overflow-y-auto px-4 pb-8">
-      <DialogTitle class="truncate pb-3 text-lg-semibold text-ink-gray-9">{{ heading }}</DialogTitle>
+  <BottomSheet v-if="isPhone" :open="open" :title="heading" @update:open="open = $event" @after-leave="$emit('after-leave')">
+    <div class="px-4 pb-8">
       <ShareBody :state="state" />
     </div>
   </BottomSheet>
   <Dialog v-else v-model:open="open" :title="heading" size="xl" @after-leave="$emit('after-leave')">
-    <ShareBody :state="state" />
+    <!-- One fixed height: loading and each re-read never move the controls. -->
+    <div class="-mx-1 h-96 overflow-y-auto px-1">
+      <ShareBody :state="state" />
+    </div>
   </Dialog>
 </template>
 
@@ -19,7 +21,9 @@
 import { computed, onMounted } from 'vue'
 import { BottomSheet, Dialog } from 'frappe-ui'
 import { useMediaQuery } from '@vueuse/core'
-import { DialogTitle } from 'reka-ui'
+
+import { confirm } from '@/platform/feedback'
+import { useSession } from '@/platform/session'
 
 import ShareBody from './ShareBody.vue'
 import { useShare } from './useShare'
@@ -29,7 +33,17 @@ const open = defineModel<boolean>('open', { required: true })
 defineEmits<{ 'after-leave': [] }>()
 
 const isPhone = useMediaQuery('(max-width: 767px)')
-const state = useShare(props.node)
+const session = useSession()
+const state = useShare(props.node, {
+  me: session.user.value?.id,
+  confirmLoss: () =>
+    confirm({
+      title: 'Change your own access?',
+      message: 'You will no longer be able to share this item.',
+      confirmLabel: 'Change',
+      destructive: true,
+    }),
+})
 const heading = computed(() => (state.node.value ? `Share "${state.node.value.title}"` : 'Share'))
 
 onMounted(() => void state.load())

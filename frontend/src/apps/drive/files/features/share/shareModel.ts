@@ -10,7 +10,6 @@ import {
   type InheritedGrant,
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
-import { DRIVE_ROLES } from '@/apps/drive/client/types'
 
 /**
  * What the share dialog shows, derived from one grants read (unified spec §7.3).
@@ -28,7 +27,10 @@ export interface LocalRow {
 export interface InheritedRow {
   entry: InheritedGrant
   kind: PrincipalKind
-  /** No local row for this principal yet, so "Deny access here" applies. */
+  /**
+   * "Deny access here" applies: the row gives access, no local row exists for
+   * its principal yet, and a redacted link names no principal to deny.
+   */
   deniable: boolean
 }
 
@@ -44,6 +46,8 @@ export type GeneralAccess =
   | { state: 'local'; row: LocalRow }
   | { state: 'denied'; row: LocalRow }
   | { state: 'inherited'; entry: InheritedGrant }
+  /** An expired local row stays listed, greyed, with Remove (§7.9). `entry` is what applies meanwhile. */
+  | { state: 'expired'; row: LocalRow; entry: InheritedGrant | null }
 
 export interface ShareSections {
   people: LocalRow[]
@@ -68,9 +72,13 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
   const parts = new Map<string, InheritedPart>()
   for (const entry of list.inherited) {
     const kind = principalKind(entry.grant.principal)
-    // A deny needs no deny. Links cannot be denied from here, and a root has no
-    // public access to deny.
-    const deniable = entry.grant.role > 0 && kind !== 'link' && !(isRoot && kind === 'public') && !localPrincipals.has(entry.grant.principal)
+    // A deny needs no deny. A redacted link hides its principal, and a root has
+    // no public access to deny.
+    const deniable =
+      entry.grant.role > 0 &&
+      !entry.redacted &&
+      !(isRoot && kind === 'public') &&
+      !localPrincipals.has(entry.grant.principal)
     const part = parts.get(entry.source_node) ?? { node: entry.source_node, title: entry.source_title, rows: [] }
     part.rows.push({ entry, kind, deniable })
     parts.set(entry.source_node, part)
@@ -86,20 +94,71 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
 }
 
 function generalAccess(principal: string, local: LocalRow[], inherited: InheritedGrant[]): GeneralAccess {
-  const row = local.find((candidate) => candidate.grant.principal === principal && !candidate.expired)
-  if (row?.denied) return { state: 'denied', row }
-  if (row) return { state: 'local', row }
+  const row = local.find((candidate) => candidate.grant.principal === principal)
   // `inherited` is nearest first, and the nearest live row decides.
   const nearest = inherited.find((entry) => entry.grant.principal === principal)
-  if (nearest && nearest.grant.role > 0) return { state: 'inherited', entry: nearest }
-  return { state: 'off' }
+  const applies = nearest && nearest.grant.role > 0 ? nearest : null
+  if (row?.expired) return { state: 'expired', row, entry: applies }
+  if (row?.denied) return { state: 'denied', row }
+  if (row) return { state: 'local', row }
+  return applies ? { state: 'inherited', entry: applies } : { state: 'off' }
 }
 
-/** Removing or lowering the caller's own MANAGE row asks first (§7.4). */
-export function losesOwnManage(row: LocalRow, me: string | undefined, nextRole: number | null): boolean {
-  if (!me || row.kind !== 'user' || row.grant.principal !== me) return false
-  if (row.grant.role < DRIVE_ROLES.manage) return false
-  return nextRole === null || nextRole < DRIVE_ROLES.manage
+/** One write to the node's own rows. `role: null` removes the principal's row. */
+export interface GrantChange {
+  principal: string
+  role: number | null
+}
+
+/**
+ * The role `me` would hold on `node` after `change`, worked out from the
+ * explanation of `me` (Drive spec §5.3, §5.8). The share dialog asks before a
+ * write that lowers the caller's own access (§7.4).
+ *
+ * The rules match the server's resolver. Own principals (the user, then
+ * groups, then everyone at the org) resolve nearest first. At one depth the
+ * user beats a group, and a group beats the org. Among equals a deny wins,
+ * else the highest role. Open principals (public, links) take the nearest
+ * row. An own deny wins outright, else the higher of the two.
+ *
+ * Group membership is known only for groups that already hold a row on the
+ * chain: the explanation marks those `held`.
+ */
+export function roleAfter(explanation: GrantExplanation, node: string, change: GrantChange, me: string): number {
+  if (explanation.source === 'site admin') return explanation.role
+  const rows = explanation.rows
+  const nodeDepth = rows.find((row) => row.node === node)?.depth ?? Math.max(-1, ...rows.map((row) => row.depth)) + 1
+  const held = (principal: string) =>
+    principal === me || principal === GENERAL || principal === PUBLIC || rows.some((row) => row.principal === principal && row.held)
+  const after = rows
+    .filter((row) => row.held && !(row.node === node && row.principal === change.principal))
+    .map(({ principal, role, depth }) => ({ principal, role, depth }))
+  if (change.role !== null && held(change.principal)) {
+    after.push({ principal: change.principal, role: change.role, depth: nodeDepth })
+  }
+  return resolveRole(after)
+}
+
+const OWN_TIER: Partial<Record<PrincipalKind, number>> = { user: 0, group: 1, general: 2 }
+
+function resolveRole(rows: { principal: string; role: number; depth: number }[]): number {
+  let own: number | null = null
+  let ownDepth = -1
+  let ownTier = 9
+  let open: number | null = null
+  let openDepth = -1
+  for (const { principal, role, depth } of rows) {
+    const tier = OWN_TIER[principalKind(principal)]
+    if (tier === undefined) {
+      if (depth > openDepth) [open, openDepth] = [role, depth]
+      else if (depth === openDepth && role > (open ?? 0)) open = role
+    } else if (depth > ownDepth || (depth === ownDepth && tier < ownTier)) {
+      ;[own, ownDepth, ownTier] = [role, depth, tier]
+    } else if (depth === ownDepth && tier === ownTier) {
+      own = own === 0 || role === 0 ? 0 : Math.max(own ?? 0, role)
+    }
+  }
+  return own === 0 ? 0 : Math.max(own ?? 0, open ?? 0)
 }
 
 /**
