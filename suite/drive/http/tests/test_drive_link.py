@@ -156,8 +156,11 @@ class TestDeadLinkPage(DriveHTTPCase):
         self.assertNotIn("Sign in", body)
 
     def test_a_signed_in_visitor_can_go_to_home(self):
+        # `/home` answers a signed-in user with the files flip on and off alike.
         sid = self.session_for(OWNER)
-        for path, status in ((self.UNKNOWN, 404), (self.expired_link(), 410)):
-            with self.subTest(status=status):
-                body = self.page(path, status, sid=sid)
-                self.assertIn('<a class="home" href="/">Go to Home</a>', body)
+        expired = self.expired_link()
+        for flipped in (True, False):
+            for path, status in ((self.UNKNOWN, 404), (expired, 410)):
+                with self.subTest(flipped=flipped, status=status), files_flipped(flipped):
+                    body = self.page(path, status, sid=sid)
+                    self.assertIn('<a class="home" href="/home">Go to Home</a>', body)

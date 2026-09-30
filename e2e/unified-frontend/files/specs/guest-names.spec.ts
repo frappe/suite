@@ -1,6 +1,6 @@
 import { type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-import { expect, test } from "../../helpers/flips";
+import { expect, requireSiteFilesFlip, test } from "../../helpers/flips";
 import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
 /**
@@ -67,6 +67,7 @@ async function openComments(page: Page): Promise<Locator> {
 
 test.describe("a guest with a comment link", () => {
 	test.use({ storageState: SIGNED_OUT });
+	test.beforeEach(() => requireSiteFilesFlip(true));
 
 	for (const product of PRODUCTS) {
 		test(`${product.label}: the guest signs a comment, and the name is there after a reload`, async ({ page }) => {

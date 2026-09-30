@@ -41,7 +41,9 @@
             >
               {{ __("Recent") }}
             </h2>
+            <!-- The old Drive pages have no `/drive/recent` (ledger Q31). -->
             <Button
+              v-if="driveAreaMounted"
               :label="__('View all')"
               route="/drive/recent"
               variant="ghost"
@@ -350,6 +352,7 @@ import {
 import { createRoom, scheduleMeeting } from "@/apps/meet";
 import { documentTypes } from "@/composition/documentRegistry";
 import HomePanel from "@/composition/home/HomePanel.vue";
+import { driveAreaMounted } from "@/composition/routes";
 import {
   formatEventTime,
   formatOpenedAt,
