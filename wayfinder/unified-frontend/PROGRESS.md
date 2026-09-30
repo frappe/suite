@@ -169,6 +169,9 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 35. **Upload questions in any area.** A name collision or a full quota
     now asks in whatever area the user is in, because uploads keep running
     after the user leaves Drive. Interim: accepted.
+36. **Signed-in comment author label.** The spec defines only the guest
+    label. Writer and Slides show "Someone" for members; Sheets shows the
+    user id (an email), which link guests also see. Interim: unchanged.
 
 ## Needs a manual check (cannot run on this devbox)
 
@@ -199,6 +202,8 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Guest "Your name" field in comment composers (plan stage 11) waits for stage 8's wiring | stage 8 | stage 11 follow-up after 8 |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 | With `suite_flip_files` off, `/drive/g/<id>` shows Not Found: the old `g/:entityName/` route has only `beforeEnter`. `node_url` sends `/l/` links there, so no `/l/` link opens with the flip off | stage 8 | stage 12 client half |
+| Home journey sets an event 26 hours ahead; Home's window ends at the end of tomorrow, so the test fails when run after about 22:00 | stage 12 client | not assigned (test bug) |
+| PWA journey `patchAccount` route handler races the next navigation ("Response has been disposed") | stage 12 client | not assigned (test bug) |
 
 ## Backend asks raised during the run
 
