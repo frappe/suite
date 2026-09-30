@@ -1,6 +1,10 @@
 <template>
   <!-- Absolute over the item's icon, so the item never changes size. -->
-  <span class="pointer-events-none absolute inset-0" aria-hidden="true">
+  <span class="pointer-events-none absolute inset-0">
+    <!-- The item's link carries its own aria-label, so the state is a live
+         region: screen readers hear it when it changes. Always rendered, as a
+         live region must exist before its text changes. -->
+    <span data-slot="area-progress-status" role="status" class="sr-only">{{ status }}</span>
     <Transition
       enter-from-class="opacity-0"
       leave-active-class="transition-opacity duration-500"
@@ -12,6 +16,7 @@
         :data-tone="progress.tone"
         :class="ringClass"
         class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90"
+        aria-hidden="true"
         viewBox="0 0 24 24"
         fill="none"
       >
@@ -33,6 +38,7 @@
     <span
       v-if="progress?.attention"
       data-slot="area-progress-attention"
+      aria-hidden="true"
       class="absolute -right-0.5 -top-0.5 block size-2 rounded-full border border-[var(--surface-base)] bg-surface-red-6"
     />
   </span>
@@ -41,17 +47,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import type { AreaProgress } from "@/shell/areaProgress";
+import { progressState, type AreaProgress } from "@/shell/areaProgress";
 
 const props = defineProps<{
   progress: AreaProgress | null;
   /** `rail`: around a 16 px icon. `nav`: around the 24 px bottom-nav icon. */
   size: "rail" | "nav";
+  /** The area's name, spoken before the state: "Files: Paused". */
+  label: string;
 }>();
 
 const RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+const status = computed(() => {
+  const state = progressState(props.progress);
+  return state ? `${props.label}: ${state}` : "";
+});
 const clamped = computed(() =>
   Math.min(1, Math.max(0, props.progress?.fraction ?? 0)),
 );

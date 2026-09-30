@@ -3,8 +3,17 @@ import { computed, reactive, shallowReactive, watch } from 'vue'
 import { createNode, findChild } from '@/apps/drive/client/nodes'
 import { readRootUsage } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
-import { openUpload, uploadTransfer, type UploadSession } from '@/apps/drive/client/uploads'
+import {
+  finishUpload,
+  isSessionGone,
+  openUpload,
+  probeUpload,
+  sendDirect,
+  uploadTransfer,
+  type UploadSession,
+} from '@/apps/drive/client/uploads'
 import { serverState } from '@/platform/server-state'
+import { useSession } from '@/platform/session'
 import { TransportError, type PlatformError } from '@/platform/transport'
 
 import { sha256 } from './checksum'
@@ -20,6 +29,9 @@ import type { FolderUpload, PickedFile } from './sources'
 export const PARALLEL_FILES = 3
 /** How long the full ring stays after the last upload finishes. */
 export const DONE_RING_MS = 3000
+
+const EXPIRED_NOTE = 'The earlier upload expired. This file starts again.'
+const DIRECT_NOTE = 'This upload cannot continue where it stopped. It starts again.'
 
 export type UploadState =
   | 'queued'
@@ -47,6 +59,8 @@ export interface UploadEntry {
   error: string | null
   /** A failed entry that Retry can continue. */
   retryable: boolean
+  /** Why the upload started again from the first byte. */
+  note: string | null
   /** The created or replaced node, once done. */
   node: string | null
 }
@@ -101,6 +115,10 @@ interface Job {
   session: UploadSession | null
   /** Resumed after a reload: finish sends a sha256. */
   resumed: boolean
+  /** A direct session whose bytes reached storage. Finish can run again without them. */
+  directSent: boolean
+  /** The record of a session this job gave up. It goes once a new session opens. */
+  staleRecord: string | null
   batch: Batch
   run: number
   createdAt: number
@@ -115,7 +133,7 @@ export interface UploadQueueOptions {
 const ACTIVE: readonly UploadState[] = ['queued', 'checking', 'uploading', 'held']
 
 export function createUploadQueue(options: UploadQueueOptions = {}) {
-  const records = options.records ?? createUploadRecords(options.now)
+  const records = options.records ?? createUploadRecords({ now: options.now })
   const now = options.now ?? Date.now
   const parallel = options.parallel ?? PARALLEL_FILES
   const jobs = shallowReactive(new Map<string, Job>())
@@ -193,6 +211,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       sent: 0,
       error: null,
       retryable: true,
+      note: null,
       node: null,
     }) as UploadEntry
     jobs.set(entry.id, {
@@ -203,6 +222,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       lastModified: picked.file.lastModified,
       session: null,
       resumed: false,
+      directSent: false,
+      staleRecord: null,
       batch,
       run,
       createdAt: now(),
@@ -327,11 +348,46 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   async function execute(job: Job) {
     try {
+      if (job.session && !(await continueSession(job))) return
       if (!job.session && !(await open(job))) return
       await transfer(job)
     } catch (cause) {
       fail(job, platformError(cause).message)
     }
+  }
+
+  /**
+   * Before a session goes on, learn what the server holds: the stored count
+   * can be behind or ahead of it. A session the server lost, or a direct one
+   * whose bytes did not all arrive, starts again with a note.
+   */
+  async function continueSession(job: Job): Promise<boolean> {
+    const session = job.session!
+    if (session.mode === 'direct') {
+      if (!job.directSent) restart(job, DIRECT_NOTE)
+      return true
+    }
+    try {
+      job.entry.sent = await probeUpload(session.upload_id, job.entry.parent)
+      return true
+    } catch (cause) {
+      const error = platformError(cause)
+      if (!isSessionGone(error)) {
+        fail(job, error.message)
+        return false
+      }
+      restart(job, EXPIRED_NOTE)
+      return true
+    }
+  }
+
+  function restart(job: Job, note: string) {
+    if (job.session) job.staleRecord = job.session.upload_id
+    job.session = null
+    job.resumed = false
+    job.directSent = false
+    job.entry.sent = 0
+    job.entry.note = note
   }
 
   /** Opens the session. A taken title asks the user before any byte moves (spec §6.4). */
@@ -347,6 +403,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           ...(entry.replaces ? { replaces: entry.replaces } : {}),
         })
         entry.sent = 0
+        if (job.staleRecord) await records.remove(job.staleRecord)
+        job.staleRecord = null
         await persist(job)
         return true
       } catch (cause) {
@@ -360,10 +418,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   async function transfer(job: Job) {
     const { entry } = job
     if (!job.file || !job.session) return
-    if (job.session.mode !== 'chunked') {
-      fail(job, 'This site stores uploads in a way the browser uploader does not support yet.')
-      return
-    }
+    if (job.session.mode === 'direct') return transferDirect(job, job.file, job.session)
     let checksum: string | undefined
     if (job.resumed) {
       entry.state = 'checking'
@@ -391,18 +446,50 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         start: { session: job.session, offset: entry.sent },
       })
       stop()
-      if (node) {
-        entry.state = 'done'
-        entry.sent = entry.size
-        entry.node = node.name
-        await records.remove(job.session.upload_id)
-        return
-      }
+      if (node) return complete(job, node)
       const error = mutation.error ?? { type: 'RequestError', message: 'The upload failed.', status: 0 }
       // The title was taken while the bytes travelled. The session stays; finish again.
       if (!(await settleRefusal(job, error))) return
       entry.state = 'uploading'
     }
+  }
+
+  /**
+   * A direct session: the bytes go to storage in one request, then Drive
+   * finishes the session. A refused finish keeps the stored bytes, so only
+   * the finish runs again.
+   */
+  async function transferDirect(job: Job, file: File, session: Extract<UploadSession, { mode: 'direct' }>) {
+    const { entry } = job
+    entry.state = 'uploading'
+    entry.error = null
+    if (!job.directSent) {
+      await sendDirect(session, file, (sent) => {
+        entry.sent = sent
+      })
+      job.directSent = true
+      entry.sent = entry.size
+      await persist(job)
+    }
+    while (true) {
+      const mutation = serverState.useMutation(finishUpload(entry.parent), { silent: true })
+      const node = await mutation.run({
+        upload_id: session.upload_id,
+        ...(entry.replaces ? { replaces: entry.replaces } : { parent: entry.parent, title: entry.title }),
+      })
+      if (node) return complete(job, node)
+      const error = mutation.error ?? { type: 'RequestError', message: 'The upload failed.', status: 0 }
+      if (!(await settleRefusal(job, error))) return
+      entry.state = 'uploading'
+    }
+  }
+
+  async function complete(job: Job, node: DriveNode) {
+    job.entry.state = 'done'
+    job.entry.sent = job.entry.size
+    job.entry.note = null
+    job.entry.node = node.name
+    if (job.session) await records.remove(job.session.upload_id)
   }
 
   /**
@@ -456,13 +543,15 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     job.entry.state = 'failed'
     job.entry.error = message
     job.entry.retryable = retryable && !!job.file
-    state.seen = false
+    // An open tracker shows the failure as it happens.
+    if (!state.trackerOpen) state.seen = false
   }
 
   async function persist(job: Job) {
     if (!job.session) return
-    const record: UploadRecord = {
+    const record: Omit<UploadRecord, 'owner'> = {
       upload_id: job.session.upload_id,
+      mode: job.session.mode,
       parent: job.entry.parent,
       name: job.fileName,
       title: job.entry.title,
@@ -470,6 +559,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       lastModified: job.lastModified,
       bytesSent: job.entry.sent,
       createdAt: job.createdAt,
+      touchedAt: now(),
       ...(job.handle ? { handle: job.handle } : {}),
       ...(job.entry.replaces ? { replaces: job.entry.replaces } : {}),
     }
@@ -481,6 +571,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     const job = jobs.get(id)
     if (!job || (job.entry.state !== 'failed' && job.entry.state !== 'held')) return
     if (!job.file || !job.entry.retryable) return
+    // Retrying is the user saying the queue may start again.
+    state.halted = null
     job.entry.state = 'queued'
     job.entry.error = null
     job.run = run
@@ -534,7 +626,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     restored ??= (async () => {
       const found = await records.load().catch(() => [] as UploadRecord[])
       for (const record of found) {
-        if ([...jobs.values()].some((job) => job.session?.upload_id === record.upload_id)) continue
+        if ([...jobs.values()].some((job) => (job.session?.upload_id ?? job.staleRecord) === record.upload_id)) continue
         const entry = reactive<UploadEntry>({
           id: `upload-${nextId++}`,
           title: record.title ?? record.name,
@@ -542,19 +634,24 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           parent: record.parent,
           replaces: record.replaces ?? null,
           state: 'interrupted',
-          sent: record.bytesSent,
+          sent: record.mode === 'direct' ? 0 : record.bytesSent,
           error: null,
           retryable: true,
+          // A direct target lasts minutes and takes the whole file at once.
+          note: record.mode === 'direct' ? DIRECT_NOTE : null,
           node: null,
         }) as UploadEntry
+        const direct = record.mode === 'direct'
         jobs.set(entry.id, {
           entry,
           file: null,
           handle: record.handle,
           fileName: record.name,
           lastModified: record.lastModified,
-          session: { upload_id: record.upload_id, mode: 'chunked' },
-          resumed: true,
+          session: direct ? null : { upload_id: record.upload_id, mode: 'chunked' },
+          resumed: !direct,
+          directSent: false,
+          staleRecord: direct ? record.upload_id : null,
           batch: { size: 1, applied: null },
           run,
           createdAt: record.createdAt,
@@ -589,6 +686,17 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     state.seen = true
   }
 
+  /** Drops every entry and record. The next user of this tab starts clean. */
+  async function forget() {
+    jobs.clear()
+    state.halted = null
+    state.seen = true
+    state.trackerOpen = false
+    state.showDone = false
+    restored = null
+    await records.clear().catch(() => undefined)
+  }
+
   function closeTracker() {
     state.trackerOpen = false
     clearFinished()
@@ -609,6 +717,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     dismiss,
     openTracker,
     closeTracker,
+    forget,
     markSeen: () => {
       state.seen = true
     },
@@ -647,11 +756,16 @@ function platformError(cause: unknown): PlatformError {
 
 let queue: UploadQueue | null = null
 
-/** The tab's one queue. Interrupted uploads from an earlier load appear on first use. */
+/**
+ * The tab's one queue. Interrupted uploads of the current user appear on
+ * first use. Sign out forgets them, so the next user never sees them.
+ */
 export function uploadQueue(): UploadQueue {
   if (!queue) {
-    queue = createUploadQueue()
-    void queue.restore()
+    const created = createUploadQueue()
+    useSession().onLogout(() => created.forget())
+    queue = created
   }
+  void queue.restore()
   return queue
 }

@@ -137,5 +137,20 @@ describe("area progress on the bottom nav", () => {
 
     item("Files").click();
     expect(opened).toEqual(["files"]);
+    expect(item("Files").querySelector("[role='status']")?.textContent).toBe("Files: Needs attention");
+  });
+
+  it("opens only the tracker from the active area's item, never the sidebar too", async () => {
+    const opened: string[] = [];
+    const { router, item } = await mountAt("/files/starred", {
+      progress: (area) => (area === "files" ? { fraction: 0.5, tone: "running", attention: false } : null),
+      open: (area) => opened.push(area),
+    });
+
+    item("Files").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/files"));
+    expect(opened).toEqual(["files"]);
+    expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).toBeNull();
+    expect(item("Files").querySelector("[role='status']")?.textContent).toBe("Files: In progress");
   });
 });

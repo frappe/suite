@@ -62,21 +62,29 @@ export interface MutationDescriptor<Input = any, Output = any, Entity = any> {
   options: MutationOptions<Input, Entity>
 }
 
-export interface UploadDescriptor<Input = any, Output = any, Session = any> {
+export interface UploadDescriptor<Input = unknown, Output = unknown, Session = unknown> {
   kind: 'upload'
   create: Operation<Input, Session>
-  chunk: Operation<any, unknown>
-  finish: Operation<any, Output>
+  chunk: Operation<UploadChunkInput, UploadChunkReply>
+  finish: Operation<Record<string, unknown>, Output>
   options: UploadOptions<Input, Session>
 }
 
-export interface UploadOptions<Input = any, Session = any> extends MutationOptions<Input, any> {
+/** One chunk request: the fields `chunkInput` returns, plus the bytes. */
+export type UploadChunkInput = Record<string, unknown> & { chunk: Blob }
+
+/** A chunk reply. `received` is how many bytes the server holds. */
+export interface UploadChunkReply {
+  received?: number
+}
+
+export interface UploadOptions<Input = unknown, Session = unknown> extends MutationOptions<Input, unknown> {
   /** Bytes per chunk request. Chunks of one file go one after another. */
   chunkSize?: number
   /** The chunk request's input without its bytes, which go in its `chunk` field. */
-  chunkInput?: (session: Session, offset: number) => Record<string, unknown>
+  chunkInput?(session: Session, offset: number): Record<string, unknown>
   /** The finish request's input. */
-  finishInput?: (input: Input, session: Session) => Record<string, unknown>
+  finishInput?(input: Input, session: Session): Record<string, unknown>
 }
 
 /**
@@ -241,8 +249,8 @@ export function mutation<Input, Output, Entity = any>(
 
 export function upload<Input, Output, Session = unknown>(
   create: Operation<Input, Session>,
-  chunk: Operation<any, unknown>,
-  finish: Operation<any, Output>,
+  chunk: Operation<UploadChunkInput, UploadChunkReply>,
+  finish: Operation<Record<string, unknown>, Output>,
   options: UploadOptions<Input, Session> = {},
 ): UploadDescriptor<Input, Output, Session> {
   assertOperation(create)
@@ -1040,7 +1048,9 @@ function createInput<Input>(run: UploadRun<Input>): Input {
   return rest as Input
 }
 
-function finalOperation(descriptor: MutationDescriptor | UploadDescriptor): Operation {
+function finalOperation<Input, Output>(
+  descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+): Operation {
   return descriptor.kind === 'upload' ? descriptor.finish : descriptor.operation
 }
 
@@ -1088,7 +1098,9 @@ function assertDescriptor(descriptor: ReadDescriptor): void {
   assertOperation(descriptor.operation)
 }
 
-function assertMutationDescriptor(descriptor: MutationDescriptor | UploadDescriptor): void {
+function assertMutationDescriptor<Input, Output>(
+  descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+): void {
   if (descriptor.kind === 'mutation') assertOperation(descriptor.operation)
   else if (descriptor.kind === 'upload') {
     assertOperation(descriptor.create)

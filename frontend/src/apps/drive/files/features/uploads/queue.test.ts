@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // An in-memory Drive server behind `fetch`, installed before any import so the
 // platform transport sends every request here. It follows the upload contract
-// of Drive §8.4: sessions, chunks at the offset the server holds, and finish.
+// of Drive §8.4 and the framework's chunk rules: sessions, chunks at an offset
+// no later than what the server holds, and finish. With `direct` on, create
+// answers an S3 presigned POST and a fake XHR plays the bucket.
 const drive = vi.hoisted(() => {
   const MiB = 1024 * 1024
   type Node = { name: string; title: string; kind: string; parent: string | null; size: number }
-  type Session = { parent: string; filename: string; size: number; replaces?: string; received: number }
+  type Session = { parent: string; filename: string; size: number; replaces?: string; received: number; direct?: boolean }
   const state = {
     nodes: new Map<string, Node>(),
     sessions: new Map<string, Session>(),
@@ -16,6 +18,13 @@ const drive = vi.hoisted(() => {
     createLimit: Infinity,
     chunkOffsets: [] as number[],
     finished: [] as Array<Record<string, unknown>>,
+    /** Create answers a direct target instead of a chunked session. */
+    direct: false,
+    /** Each form the bucket received: its field names in order, and the file size. */
+    posts: [] as Array<{ url: string; fields: string[]; size: number }>,
+    creates: 0,
+    /** Runs before the server answers, as time passing between requests. */
+    before: null as ((method: string, path: string) => Promise<void> | void) | null,
     nextId: 0,
   }
   const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data }), { status })
@@ -48,6 +57,7 @@ const drive = vi.hoisted(() => {
     const parsed = new URL(String(url), 'http://drive.test')
     const path = parsed.pathname.replace('/api/suite/drive/', '')
     const method = init.method ?? 'GET'
+    await state.before?.(method, path)
     const json = () => JSON.parse(String(init.body ?? '{}')) as Record<string, string & number>
     let match: RegExpMatchArray | null
     if (method === 'GET' && (match = path.match(/^roots\/([^/]+)\/usage$/))) {
@@ -70,24 +80,32 @@ const drive = vi.hoisted(() => {
         return refuse(413, { type: 'DriveOverQuota', message: 'This Drive is full.' })
       }
       const id = `u${state.nextId++}`
-      state.sessions.set(id, { parent: body.parent, filename: body.filename, size: body.size, replaces: body.replaces, received: 0 })
+      state.creates += 1
+      state.sessions.set(id, {
+        parent: body.parent, filename: body.filename, size: body.size, replaces: body.replaces, received: 0, direct: state.direct,
+      })
+      if (state.direct) {
+        return ok({ mode: 'direct', upload_id: id, url: 'https://bucket.test/', fields: { key: `uploads/${id}`, policy: 'p' } })
+      }
       return ok({ mode: 'chunked', upload_id: id })
     }
     if (method === 'PUT' && (match = path.match(/^uploads\/([^/]+)\/chunk$/))) {
-      const session = state.sessions.get(match[1]!)!
+      const session = state.sessions.get(match[1]!)
+      if (!session) return refuse(404, { type: 'DriveNotFound', message: 'Drive upload session was not found or has expired' })
       const offset = Number(parsed.searchParams.get('offset'))
       if (offset > session.received) return refuse(409, { type: 'DriveConflict', message: 'Offset ahead' })
       if (!(init.body instanceof Blob) || new Headers(init.headers).get('Content-Type') !== 'application/octet-stream') {
         return refuse(400, { type: 'ValidationError', message: 'A chunk is a raw body' })
       }
       if (init.body.size > 16 * MiB) return refuse(413, { type: 'ValidationError', message: 'Chunk too large' })
-      state.chunkOffsets.push(offset)
-      session.received = offset + init.body.size
+      if (init.body.size) state.chunkOffsets.push(offset)
+      session.received = Math.max(session.received, offset + init.body.size)
       return ok({ upload_id: match[1], received: session.received })
     }
     if (method === 'POST' && (match = path.match(/^uploads\/([^/]+)\/finish$/))) {
       const session = state.sessions.get(match[1]!)!
       const body = json()
+      if (!session.size) return refuse(417, { type: 'ValidationError', message: 'Upload session has no data' })
       if (session.received !== session.size) return refuse(409, { type: 'DriveConflict', message: 'Bytes missing' })
       if (body.replaces) {
         const node = state.nodes.get(body.replaces)!
@@ -105,6 +123,36 @@ const drive = vi.hoisted(() => {
     return refuse(404, { type: 'NotFound', message: `${method} ${path}` })
   }
 
+  // The bucket: a presigned POST with the policy fields first and the file last.
+  class FakeXHR {
+    status = 0
+    responseText = ''
+    upload: { onprogress: ((event: { loaded: number }) => void) | null } = { onprogress: null }
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    onabort: (() => void) | null = null
+    private url = ''
+    open(_method: string, url: string) {
+      this.url = url
+    }
+    abort() {}
+    send(form: FormData) {
+      const names = [...form.keys()]
+      const bytes = form.get('file') as Blob
+      const id = String(form.get('key')).replace('uploads/', '')
+      setTimeout(() => {
+        state.posts.push({ url: this.url, fields: names, size: bytes.size })
+        this.upload.onprogress?.({ loaded: Math.floor(bytes.size / 2) })
+        this.upload.onprogress?.({ loaded: bytes.size })
+        const session = state.sessions.get(id)
+        if (session) session.received = bytes.size
+        this.status = 204
+        this.onload?.()
+      }, 0)
+    }
+  }
+  globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest
+
   return {
     state,
     MiB,
@@ -115,6 +163,10 @@ const drive = vi.hoisted(() => {
       state.createLimit = Infinity
       state.chunkOffsets = []
       state.finished = []
+      state.direct = false
+      state.posts = []
+      state.creates = 0
+      state.before = null
       state.nodes.set('folder', { name: 'folder', title: 'Folder', kind: 'folder', parent: 'root', size: 0 })
     },
     add,
@@ -124,22 +176,31 @@ const drive = vi.hoisted(() => {
   }
 })
 
-import { createUploadRecords, RECORD_LIFETIME_MS, type UploadRecord, type UploadRecords } from './records'
+import { createUploadRecords, RECORD_LIFETIME_MS, type UploadOwner, type UploadRecord, type UploadRecords } from './records'
 import { createUploadQueue, type UploadPrompts, type UploadQueue } from './queue'
 
 const target = { parent: 'folder', root: 'root' }
 const file = (name: string, size: number, lastModified = 1000) =>
   new File([new Uint8Array(size).map((_, index) => index % 251)], name, { lastModified })
 
+const ME: UploadOwner = { user: 'me@example.com', link: null }
+
 function memoryRecords(): UploadRecords & { all: Map<string, UploadRecord> } {
   const all = new Map<string, UploadRecord>()
   return {
     all,
     load: async () => [...all.values()],
-    save: async (record) => void all.set(record.upload_id, { ...record }),
+    save: async (record) => void all.set(record.upload_id, { ...record, owner: ME }),
     remove: async (id) => void all.delete(id),
+    clear: async () => all.clear(),
   }
 }
+
+/** A record as a reload left it. */
+const stored = (upload_id: string, size: number, fields: Partial<UploadRecord> = {}) => ({
+  upload_id, mode: 'chunked' as const, parent: 'folder', name: 'draft.bin', size, lastModified: 4242,
+  bytesSent: 0, createdAt: Date.now(), touchedAt: Date.now(), ...fields,
+})
 
 function prompts(overrides: Partial<UploadPrompts> = {}): UploadPrompts & { asked: string[] } {
   const asked: string[] = []
@@ -259,10 +320,7 @@ describe('Drive upload queue', () => {
     const records = memoryRecords()
     const picked = file('draft.bin', 16 * drive.MiB + 100, 4242)
     drive.state.sessions.set('u-old', { parent: 'folder', filename: 'draft.bin', size: picked.size, received: 16 * drive.MiB })
-    await records.save({
-      upload_id: 'u-old', parent: 'folder', name: 'draft.bin', size: picked.size, lastModified: 4242,
-      bytesSent: 16 * drive.MiB, createdAt: Date.now(),
-    })
+    await records.save(stored('u-old', picked.size, { bytesSent: 16 * drive.MiB }))
 
     const queue = createUploadQueue({ records })
     queue.setPrompts(prompts({ pickFile: async () => picked }))
@@ -282,9 +340,7 @@ describe('Drive upload queue', () => {
 
   it('starts a new upload when the picked file is not the interrupted one', async () => {
     const records = memoryRecords()
-    await records.save({
-      upload_id: 'u-old', parent: 'folder', name: 'draft.bin', size: 10, lastModified: 1, bytesSent: 4, createdAt: Date.now(),
-    })
+    await records.save(stored('u-old', 10, { lastModified: 1, bytesSent: 4 }))
     drive.state.sessions.set('u-old', { parent: 'folder', filename: 'draft.bin', size: 10, received: 4 })
     const queue = createUploadQueue({ records })
     queue.setPrompts(prompts({ pickFile: async () => file('draft.bin', 10, 99) }))
@@ -296,6 +352,150 @@ describe('Drive upload queue', () => {
     expect(queue.entries.value.map((entry) => entry.state)).toEqual(['interrupted', 'done'])
     expect(drive.state.sessions.get('u-old')?.received).toBe(4)
     expect(drive.state.finished).toEqual([expect.not.objectContaining({ checksum: expect.anything() })])
+  })
+
+  it('asks the server where to go on: a record ahead of the server does not send a stale offset', async () => {
+    const records = memoryRecords()
+    const picked = file('draft.bin', 16 * drive.MiB + 100, 4242)
+    drive.state.sessions.set('u-old', { parent: 'folder', filename: 'draft.bin', size: picked.size, received: 0 })
+    await records.save(stored('u-old', picked.size, { bytesSent: 16 * drive.MiB }))
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts({ pickFile: async () => picked }))
+    await queue.restore()
+
+    await queue.resume(queue.entries.value[0]!.id)
+    await settled(queue)
+
+    expect(queue.entries.value.map((entry) => entry.state)).toEqual(['done'])
+    expect(drive.state.chunkOffsets).toEqual([0, 16 * drive.MiB])
+  })
+
+  it('starts again, and says so, when the server lost the session', async () => {
+    const records = memoryRecords()
+    const picked = file('draft.bin', 50, 4242)
+    await records.save(stored('u-gone', picked.size, { bytesSent: 20 }))
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts({ pickFile: async () => picked }))
+    await queue.restore()
+
+    await queue.resume(queue.entries.value[0]!.id)
+    await settled(queue)
+
+    const [entry] = queue.entries.value
+    expect(entry).toMatchObject({ state: 'done', note: null })
+    expect(drive.state.creates).toBe(1)
+    expect(drive.state.chunkOffsets).toEqual([0])
+    expect(drive.state.finished).toEqual([expect.not.objectContaining({ checksum: expect.anything() })])
+    expect(records.all.has('u-gone')).toBe(false)
+    expect(records.all.size).toBe(0)
+  })
+
+  it('shows the restart note while a lost session uploads again', async () => {
+    const records = memoryRecords()
+    await records.save(stored('u-gone', 5, { bytesSent: 2 }))
+    const queue = createUploadQueue({ records })
+    let release!: () => void
+    queue.setPrompts(prompts({ pickFile: async () => file('draft.bin', 5, 4242) }))
+    drive.state.createLimit = Infinity
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    drive.state.before = (method, path) => (method === 'POST' && path === 'uploads' ? gate : undefined)
+    await queue.restore()
+    void queue.resume(queue.entries.value[0]!.id)
+    await until(() => queue.entries.value[0]!.note !== null, 'the note')
+    expect(queue.entries.value[0]!.note).toBe('The earlier upload expired. This file starts again.')
+    release()
+    await settled(queue)
+  })
+
+  it('a row Retry after a 413 starts the queue again', async () => {
+    drive.state.createLimit = 50
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
+    queue.setPrompts(prompts())
+    await queue.uploadFiles([{ file: file('one.bin', 80) }], target)
+    await until(() => queue.state.halted !== null, 'the halt')
+
+    drive.state.createLimit = Infinity
+    queue.retry(queue.entries.value[0]!.id)
+    await settled(queue)
+
+    expect(queue.state.halted).toBeNull()
+    expect(drive.titlesIn('folder')).toEqual(['one.bin'])
+  })
+
+  it('raises the red dot for a failure only while the tracker is closed', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    queue.setPrompts(prompts())
+    // An empty file fails at finish; it does not halt the queue.
+    queue.openTracker()
+    await queue.uploadFiles([{ file: new File([], '') }], target)
+    await settled(queue)
+    expect(queue.entries.value[0]!.state).toBe('failed')
+    expect(queue.indicator.value?.attention ?? false).toBe(false)
+
+    queue.closeTracker()
+    queue.retry(queue.entries.value[0]!.id)
+    await settled(queue)
+    expect(queue.entries.value[0]!.state).toBe('failed')
+    expect(queue.indicator.value?.attention).toBe(true)
+  })
+
+  it('sends a direct upload to the storage target in one form, with progress, then finishes', async () => {
+    drive.state.direct = true
+    const records = memoryRecords()
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts())
+    const seen: number[] = []
+
+    await queue.uploadFiles([{ file: file('photo.jpg', 40) }], target)
+    const stop = setInterval(() => seen.push(queue.entries.value[0]!.sent), 0)
+    await settled(queue)
+    clearInterval(stop)
+
+    expect(drive.state.posts).toEqual([{ url: 'https://bucket.test/', fields: ['key', 'policy', 'file'], size: 40 }])
+    expect(drive.state.chunkOffsets).toEqual([])
+    expect(drive.state.finished).toEqual([expect.objectContaining({ parent: 'folder', title: 'photo.jpg' })])
+    expect(drive.titlesIn('folder')).toEqual(['photo.jpg'])
+    expect(queue.entries.value[0]!.state).toBe('done')
+    expect(records.all.size).toBe(0)
+  })
+
+  it('finishes a direct upload again under a free title without sending the bytes twice', async () => {
+    drive.state.direct = true
+    const queue = createUploadQueue({ records: memoryRecords() })
+    queue.setPrompts(prompts())
+    // The title is free at create and taken by the time the bytes arrive.
+    drive.state.before = (_method, path) => {
+      if (path.endsWith('/finish') && !drive.titlesIn('folder').includes('late.txt')) {
+        drive.add({ title: 'late.txt', kind: 'file', parent: 'folder', size: 1 })
+      }
+    }
+    await queue.uploadFiles([{ file: file('late.txt', 9) }], target)
+    await settled(queue)
+
+    expect(drive.state.posts).toHaveLength(1)
+    expect(drive.titlesIn('folder')).toEqual(['late (1).txt', 'late.txt'])
+  })
+
+  it('starts an interrupted direct upload again, and says so', async () => {
+    drive.state.direct = true
+    const records = memoryRecords()
+    await records.save(stored('u-direct', 12, { mode: 'direct', bytesSent: 6 }))
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts({ pickFile: async () => file('draft.bin', 12, 4242) }))
+    await queue.restore()
+
+    expect(queue.entries.value[0]).toMatchObject({
+      state: 'interrupted',
+      sent: 0,
+      note: 'This upload cannot continue where it stopped. It starts again.',
+    })
+    await queue.resume(queue.entries.value[0]!.id)
+    await settled(queue)
+
+    expect(drive.state.creates).toBe(1)
+    expect(drive.state.posts).toHaveLength(1)
+    expect(queue.entries.value[0]!.state).toBe('done')
+    expect(records.all.size).toBe(0)
   })
 
   it('creates a folder tree top-down, and keeps both when the top folder exists', async () => {
@@ -328,17 +528,58 @@ describe('Drive upload queue', () => {
 })
 
 describe('Upload records', () => {
-  it('keeps a record for 24 hours, then drops it', async () => {
+  const record = (upload_id: string, at: number, parent = 'folder') => ({
+    upload_id, mode: 'chunked' as const, parent, name: 'a.bin', size: 1, lastModified: 1, bytesSent: 0,
+    createdAt: at, touchedAt: at,
+  })
+
+  beforeEach(() => createUploadRecords({ owner: () => ME }).clear())
+
+  it('keeps a record for 24 hours after its last write, then drops it', async () => {
     let now = 1_000_000
-    const records = createUploadRecords(() => now)
-    const record = {
-      upload_id: 'u1', parent: 'folder', name: 'a.bin', size: 1, lastModified: 1, bytesSent: 0, createdAt: now,
-    }
-    await records.save(record)
+    const records = createUploadRecords({ now: () => now, owner: () => ME })
+    await records.save(record('u1', now))
 
     now += RECORD_LIFETIME_MS - 1
-    expect(await records.load()).toEqual([record])
+    await records.save({ ...record('u1', 1_000_000), touchedAt: now })
+    now += RECORD_LIFETIME_MS - 1
+    expect((await records.load()).map((found) => found.upload_id)).toEqual(['u1'])
     now += 1
+    expect(await records.load()).toEqual([])
+  })
+
+  it("never shows one user's records to another, and deletes them", async () => {
+    let owner: UploadOwner = { user: 'alice@example.com', link: null }
+    const records = createUploadRecords({ owner: () => owner })
+    await records.save(record('alice-upload', Date.now()))
+
+    owner = { user: 'bob@example.com', link: null }
+    expect(await records.load()).toEqual([])
+    owner = { user: 'alice@example.com', link: null }
+    expect(await records.load()).toEqual([])
+  })
+
+  it("shows a guest's record only through the link that reached its folder", async () => {
+    let owner: UploadOwner = { user: 'Guest', link: 'LINKA' }
+    const records = createUploadRecords({ owner: () => owner })
+    await records.save(record('guest-upload', Date.now()))
+
+    owner = { user: 'Guest', link: 'LINKB' }
+    expect(await records.load()).toEqual([])
+    owner = { user: 'Guest', link: 'LINKA' }
+    expect((await records.load()).map((found) => found.upload_id)).toEqual(['guest-upload'])
+  })
+
+  it('sign out forgets every entry and record of the queue', async () => {
+    const records = createUploadRecords({ owner: () => ME })
+    await records.save(record('mine', Date.now()))
+    const queue = createUploadQueue({ records })
+    await queue.restore()
+    expect(queue.entries.value).toHaveLength(1)
+
+    await queue.forget()
+
+    expect(queue.entries.value).toEqual([])
     expect(await records.load()).toEqual([])
   })
 })

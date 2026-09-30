@@ -112,6 +112,7 @@ function dismissible(entry: UploadEntry) {
 }
 
 function status(entry: UploadEntry): string {
+  if (entry.note && ['queued', 'checking', 'uploading', 'interrupted'].includes(entry.state)) return entry.note
   switch (entry.state) {
     case 'queued':
       return 'Waiting'
