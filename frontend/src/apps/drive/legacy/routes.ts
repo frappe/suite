@@ -1,7 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
+import { node } from '@/apps/drive/client/nodes'
 import { useSessionStore } from '@/boot/session'
+import { transport } from '@/platform/transport'
 import { appDocumentTitle } from '@/utils/documentTitle'
 import { setupTheme } from '@/utils/setupTheme'
 
@@ -21,17 +23,6 @@ import { setupTheme } from '@/utils/setupTheme'
  * the route is `meta.allowGuest` (publicly-shared files/folders).
  * Drive-specific guard behaviour (clearing active entity) lives in router.ts.
  */
-
-/** One read of an entity's kind, shared by the `/g/` and `/f/` routes. */
-const entityType = async (entityName: unknown): Promise<{ type: string; name: string }> => {
-  const entity = createResource({
-    url: '/api/method/suite.drive.api.files.get_entity_type',
-    method: 'GET',
-    params: { entity_name: entityName },
-  })
-  await entity.fetch()
-  return entity.data
-}
 
 const setPageTitle = (to: any) => {
   if (useSessionStore().isLoggedIn) {
@@ -121,15 +112,22 @@ export const routes: RouteRecordRaw[] = [
         path: 'g/:entityName/',
         meta: { allowGuest: true },
         beforeEnter: async (to) => {
-          const entity = await entityType(to.params.entityName)
+          const entity = createResource({
+            url: '/api/method/suite.drive.api.files.get_entity_type',
+            method: 'GET',
+            params: {
+              entity_name: to.params.entityName,
+            },
+          })
+          await entity.fetch()
           const letter = (
             {
               folder: 'd',
               file: 'f',
             } as Record<string, string>
-          )[entity.type]
+          )[entity.data.type]
           return {
-            path: `/drive/${letter}/${entity.name}`,
+            path: `/drive/${letter}/${entity.data.name}`,
           }
         },
       },
@@ -141,11 +139,13 @@ export const routes: RouteRecordRaw[] = [
         props: true,
         // The server writes folder links as `/drive/f/<id>` once the files flip
         // is on. With the flip off again those links still open the folder.
-        // A failed lookup leaves the file page to show its own error.
+        // A failed read opens the file page, whose error page sends a guest to
+        // log in.
         beforeEnter: async (to) => {
-          const entity = await entityType(to.params.entityName).catch(() => null)
-          if (entity?.type !== 'folder') return true
-          return { path: `/drive/d/${entity.name}`, query: to.query, replace: true }
+          const id = String(to.params.entityName)
+          const entity = await transport.request(node(id).operation, { node: id }).catch(() => null)
+          if (entity?.kind !== 'folder') return true
+          return { path: `/drive/d/${entity.name}`, query: to.query, hash: to.hash, replace: true }
         },
       },
       {

@@ -5,12 +5,14 @@
 
   Between the flips an Apps row drills in to the old pages the rail cannot
   reach [T018]. Both views share one grid cell, so the sheet keeps its height.
+  Focus moves with the view: into the Apps view, then back to the Apps row.
 -->
 <template>
   <BottomSheet :open="open" @update:open="$emit('update:open', $event)">
     <div class="grid px-4 pb-8">
       <DialogTitle class="sr-only">{{ __("Account") }}</DialogTitle>
       <div
+        ref="accountView"
         class="col-start-1 row-start-1"
         :class="{ invisible: appsOpen }"
         :inert="appsOpen || undefined"
@@ -28,7 +30,8 @@
             v-if="legacyApps"
             :label="__('Apps')"
             icon="lucide-layout-grid"
-            @click="appsOpen = true"
+            data-apps-row
+            @click="showApps(true)"
           >
             <template #suffix>
               <span class="lucide-chevron-right mr-2 size-4 text-ink-gray-5" aria-hidden="true" />
@@ -53,6 +56,7 @@
 
       <div
         v-if="legacyApps"
+        ref="appsView"
         class="col-start-1 row-start-1"
         :class="{ invisible: !appsOpen }"
         :inert="!appsOpen || undefined"
@@ -62,7 +66,7 @@
             variant="ghost"
             icon="lucide-chevron-left"
             :aria-label="__('Back')"
-            @click="appsOpen = false"
+            @click="showApps(false)"
           />
           <span class="truncate text-lg font-semibold text-ink-gray-9">{{ __("Apps") }}</span>
         </div>
@@ -81,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, useTemplateRef, watch } from "vue";
 import { Avatar, BottomSheet, Button, SidebarItem, TabButtons } from "frappe-ui";
 import { DialogTitle } from "reka-ui";
 import { useRouter } from "vue-router";
@@ -100,6 +104,8 @@ const theme = useTheme();
 const router = useRouter();
 const legacyApps = showsLegacyApps();
 const appsOpen = ref(false);
+const accountView = useTemplateRef<HTMLElement>("accountView");
+const appsView = useTemplateRef<HTMLElement>("appsView");
 
 // Each open starts on the account view.
 watch(
@@ -126,6 +132,16 @@ function setTheme(value: string | number) {
 function showSettings() {
   emit("update:open", false);
   openSettings();
+}
+
+// A view is inert until it shows, so focus moves after the render.
+async function showApps(open: boolean) {
+  appsOpen.value = open;
+  await nextTick();
+  const target = open
+    ? appsView.value?.querySelector<HTMLElement>("button")
+    : accountView.value?.querySelector<HTMLElement>("[data-apps-row] button");
+  target?.focus();
 }
 
 function openApp(to: string) {

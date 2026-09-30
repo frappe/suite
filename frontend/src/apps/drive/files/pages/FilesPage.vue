@@ -334,7 +334,7 @@ watch(() => detail.data, (folder) => {
   if (!folder || props.destination !== 'folder' || rootPath(folder.name)) return
   // The old Drive pages used `/drive/f/<id>` for a file. A non-folder id opens as a document [T020].
   if (folder.kind !== 'folder' && folder.kind !== 'root') {
-    void router.replace({ path: `/d/${encodeURIComponent(folder.name)}`, query: route.query })
+    void router.replace({ path: `/d/${encodeURIComponent(folder.name)}`, query: route.query, hash: route.hash })
     return
   }
   const expected = slugify(folder.title)

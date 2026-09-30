@@ -1,4 +1,4 @@
-import { type APIRequestContext, type Page } from "@playwright/test";
+import { type APIRequestContext, type Frame, type Page } from "@playwright/test";
 
 import { expect, test } from "../../helpers/flips";
 
@@ -17,6 +17,8 @@ const MAIL_ACCOUNT = {
 	capabilities: { jmap: true, systemManager: true },
 };
 const OLD_APPS = ["Drive", "Slides", "Writer", "Sheets"];
+// A share-link fragment, as a copied link carries it. It must survive each kind redirect.
+const LINK = "#link=AbCdEfGhIjKlMnOpQrStUv";
 
 let api: APIRequestContext;
 let folder: DriveNode;
@@ -36,6 +38,7 @@ test.afterAll(async () => {
 
 const rail = (page: Page) => page.getByRole("navigation", { name: "Areas" });
 const driveArea = (page: Page) => page.getByRole("navigation", { name: "File locations" });
+const homeDriveGroup = (page: Page) => page.getByRole("navigation", { name: "Drive", exact: true });
 
 async function railLabels(page: Page): Promise<string[]> {
 	// An empty rail list has no size, so wait for the shell's avatar instead.
@@ -57,6 +60,24 @@ async function settingsTabs(page: Page) {
 	const settings = page.getByRole("dialog", { name: "Settings" });
 	await expect(settings.getByRole("tab", { name: "Profile" })).toBeVisible();
 	return settings;
+}
+
+/**
+ * Every URL the page shows while it runs `open`, history updates included.
+ * A target page may rewrite its own URL later, so a redirect is checked here.
+ */
+async function urlsDuring(page: Page, open: () => Promise<unknown>): Promise<string[]> {
+	const urls: string[] = [];
+	const record = (frame: Frame) => {
+		if (frame === page.mainFrame()) urls.push(frame.url());
+	};
+	page.on("framenavigated", record);
+	try {
+		await open();
+	} finally {
+		page.off("framenavigated", record);
+	}
+	return urls;
 }
 
 /** The old Drive pages: outside the shell, with no Drive area panel. */
@@ -106,11 +127,21 @@ test.describe("both flips off", () => {
 	});
 
 	test("the old /drive/f/ route opens a folder id as a folder and keeps a file id", async ({ page }) => {
-		await page.goto(`/drive/f/${folder.name}`);
-		await expectOldDrivePage(page, new RegExp(`/drive/d/${folder.name}(/[^/]+)?$`));
+		const urls = await urlsDuring(page, async () => {
+			await page.goto(`/drive/f/${folder.name}?view=list${LINK}`);
+			await expectOldDrivePage(page, new RegExp(`/drive/d/${folder.name}(/[^/?#]+)?`));
+		});
+		// The old folder page then adds its slug and drops the rest, as it always has.
+		expect(urls.some((url) => url.endsWith(`/drive/d/${folder.name}?view=list${LINK}`))).toBe(true);
 
-		await page.goto(`/drive/f/${file.name}`);
-		await expectOldDrivePage(page, new RegExp(`/drive/f/${file.name}(/[^/]+)?$`));
+		await page.goto(`/drive/f/${file.name}${LINK}`);
+		await expectOldDrivePage(page, new RegExp(`/drive/f/${file.name}(/[^/#]+)?${LINK}$`));
+	});
+
+	test("/home shows no Drive group", async ({ page }) => {
+		await page.goto("/home");
+		await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+		await expect(homeDriveGroup(page)).toHaveCount(0);
 	});
 
 	test("the account menu has no Apps submenu and Settings has no Drive group", async ({ page }) => {
@@ -142,6 +173,12 @@ test.describe("the shell flip on, the files flip off", () => {
 		await expect(rail(page).locator("[aria-current='page']")).toHaveCount(0);
 	});
 
+	test("/home shows no Drive group", async ({ page }) => {
+		await page.goto("/home");
+		expect(await railLabels(page)).toEqual(["Mail", "Calendar", "Meet"]);
+		await expect(homeDriveGroup(page)).toHaveCount(0);
+	});
+
 	test("/drive still mounts the old Drive pages", async ({ page }) => {
 		await page.goto("/drive");
 		await expectOldDrivePage(page, /\/drive$/);
@@ -164,16 +201,77 @@ test.describe("the shell flip on, the files flip off", () => {
 		await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Account" }).click();
 		const sheet = page.getByRole("dialog", { name: "Account" });
 		const before = await sheet.boundingBox();
-		await sheet.getByRole("button", { name: "Apps" }).click();
+		const appsRow = sheet.getByRole("button", { name: "Apps" });
+		await appsRow.click();
 
 		const apps = sheet.getByRole("navigation", { name: "Apps" });
 		for (const app of OLD_APPS) await expect(apps.getByRole("button", { name: app, exact: true })).toBeVisible();
 		// Both views share one grid cell, so the sheet keeps its height.
 		expect((await sheet.boundingBox())?.height).toBe(before?.height);
 
+		// Focus follows the view: into the Apps view, then back to the Apps row.
+		const back = sheet.getByRole("button", { name: "Back" });
+		await expect(back).toBeFocused();
+		await page.keyboard.press("Enter");
+		await expect(apps).toBeHidden();
+		await expect(appsRow).toBeFocused();
+		await page.keyboard.press("Enter");
+		await expect(back).toBeFocused();
+
 		await apps.getByRole("button", { name: "Drive", exact: true }).click();
 		await expect(sheet).toHaveCount(0);
 		await expectOldDrivePage(page, /\/drive$/);
+	});
+});
+
+test.describe("the shell flip off, the files flip on", () => {
+	test.use({ flips: { suite_flip_shell: false, suite_flip_files: true } });
+
+	test.beforeEach(async ({ page }) => {
+		await patchAccount(page, MAIL_ACCOUNT);
+	});
+
+	test("/ and the PWA start land on Home", async ({ page }) => {
+		for (const path of ["/", "/suite/start"]) {
+			await page.goto(path);
+			await expect(page).toHaveURL(/\/home$/);
+		}
+	});
+
+	test("the rail lists Home and Drive, and /drive mounts the Drive area", async ({ page }) => {
+		await page.goto("/drive");
+		expect(await railLabels(page)).toEqual(["Home", "Drive"]);
+		await expect(rail(page).getByRole("link", { name: "Drive" })).toHaveAttribute("aria-current", "page");
+		await expect(driveArea(page)).toBeVisible();
+	});
+
+	test("Mail, Calendar and Meet stay outside the shell", async ({ page }) => {
+		for (const path of ["/mail", "/calendar", "/meet"]) {
+			await page.goto(path);
+			await expect(page).toHaveURL(new RegExp(path));
+			await expect(page.locator("#app")).not.toBeEmpty();
+			await expect(rail(page)).toHaveCount(0);
+		}
+	});
+
+	test("the folder route sends a file id to /d/ with its link", async ({ page }) => {
+		const urls = await urlsDuring(page, async () => {
+			await page.goto(`/drive/f/${file.name}${LINK}`);
+			await expect(page).toHaveURL(new RegExp(`/d/${file.name}/`));
+		});
+		expect(urls.some((url) => url.endsWith(`/d/${file.name}${LINK}`))).toBe(true);
+	});
+
+	test("/home shows the Drive group, the menu has no Apps submenu, and Settings shows the Drive group", async ({ page }) => {
+		await page.goto("/home");
+		await expect(homeDriveGroup(page).getByRole("link", { name: "Starred" })).toBeVisible();
+
+		await openAccountMenu(page);
+		await expect(page.getByRole("menuitem", { name: "Apps" })).toHaveCount(0);
+		await page.keyboard.press("Escape");
+
+		const settings = await settingsTabs(page);
+		await expect(settings.getByRole("tab", { name: "Statistics" })).toBeVisible();
 	});
 });
 
@@ -203,10 +301,20 @@ test.describe("both flips on", () => {
 		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}/`));
 		await expect(page.getByText(file.title, { exact: true })).toBeVisible();
 
-		await page.goto(`/drive/f/${file.name}?view=list`);
-		await expect(page).toHaveURL(new RegExp(`/d/${file.name}(/[^?]*)?\\?view=list$`));
+		const urls = await urlsDuring(page, async () => {
+			await page.goto(`/drive/f/${file.name}?view=list${LINK}`);
+			await expect(page).toHaveURL(new RegExp(`/d/${file.name}(/[^?#]*)?\\?view=list`));
+		});
+		expect(urls.some((url) => url.endsWith(`/d/${file.name}?view=list${LINK}`))).toBe(true);
 		await page.goBack();
 		await expect(page).not.toHaveURL(new RegExp(`/drive/f/${file.name}`));
+		// Back reloads the folder page. Let it finish before the test ends.
+		await expect(page.getByText(file.title, { exact: true })).toBeVisible();
+	});
+
+	test("/home shows the Drive group", async ({ page }) => {
+		await page.goto("/home");
+		await expect(homeDriveGroup(page).getByRole("link", { name: "Starred" })).toBeVisible();
 	});
 
 	test("an old Drive path finds no page in the area's table", async ({ page }) => {
