@@ -39,6 +39,7 @@ vi.mock("frappe-ui", async () => {
 import { AreaSidebar } from "@/platform/area-sidebar";
 import type { AreaDefinition } from "@/platform/contracts";
 import MobileNav from "@/shell/MobileNav.vue";
+import { AREA_PROGRESS_KEY, type AreaProgressSource } from "@/shell/areaProgress";
 
 const icon = defineComponent({ setup: () => () => h("span") });
 const area = (id: string, label: string, to = `/${id}`): AreaDefinition => ({
@@ -61,7 +62,7 @@ const DocumentPage = defineComponent({ setup: () => () => h("div", "Document") }
 let cleanup: (() => void) | undefined;
 afterEach(() => cleanup?.());
 
-async function mountAt(path: string) {
+async function mountAt(path: string, progress?: AreaProgressSource) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -83,6 +84,7 @@ async function mountAt(path: string) {
     ],
   });
   app.use(router);
+  if (progress) app.provide(AREA_PROGRESS_KEY, progress);
   app.mount(root);
   await router.isReady();
   await nextTick();
@@ -116,5 +118,39 @@ describe("phone bottom nav", () => {
     const { router, item } = await mountAt("/d/node-1");
     item("Drive").click();
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/drive"));
+  });
+});
+
+describe("area progress on the bottom nav", () => {
+  it("draws the ring on the area that runs work, and opens its view on click", async () => {
+    const opened: string[] = [];
+    const { root, item } = await mountAt("/home", {
+      progress: (area) => (area === "files" ? { fraction: 0.4, tone: "paused", attention: true } : null),
+      open: (area) => opened.push(area),
+    });
+
+    const ring = item("Drive").querySelector("[data-slot='area-progress-ring']");
+    expect(ring?.getAttribute("data-tone")).toBe("paused");
+    expect(item("Drive").querySelector("[data-slot='area-progress-attention']")).not.toBeNull();
+    expect(item("Home").querySelector("[data-slot='area-progress-ring']")).toBeNull();
+    expect(root.querySelectorAll("[data-slot='area-progress-ring']")).toHaveLength(1);
+
+    item("Drive").click();
+    expect(opened).toEqual(["files"]);
+    expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: Needs attention");
+  });
+
+  it("opens only the tracker from the active area's item, never the sidebar too", async () => {
+    const opened: string[] = [];
+    const { router, item } = await mountAt("/drive/starred", {
+      progress: (area) => (area === "files" ? { fraction: 0.5, tone: "running", attention: false } : null),
+      open: (area) => opened.push(area),
+    });
+
+    item("Drive").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/drive"));
+    expect(opened).toEqual(["files"]);
+    expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).toBeNull();
+    expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: In progress");
   });
 });

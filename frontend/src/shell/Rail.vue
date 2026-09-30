@@ -15,6 +15,8 @@
             :icon="area.icon"
             :to="area.to"
             :badge="badges[area.id] ?? 0"
+            :progress="areaProgress?.progress(area.id) ?? null"
+            @click="openProgress(area.id)"
           />
         </nav>
       </ScrollArea>
@@ -52,6 +54,7 @@ import { SidebarRail as FrappeRail, ScrollArea } from "frappe-ui";
 import type { AreaDefinition } from "@/platform/contracts";
 import AccountMenu from "@/shell/AccountMenu.vue";
 import RailItem from "@/shell/RailItem.vue";
+import { useAreaProgress } from "@/shell/areaProgress";
 import { openSettings } from "@/shell/settings/useSettingsDialog";
 
 defineProps<{
@@ -60,6 +63,13 @@ defineProps<{
 }>();
 
 defineSlots<{ bell?: () => unknown }>();
+
+const areaProgress = useAreaProgress();
+
+// The item still navigates to its area. The source opens its own view there.
+function openProgress(area: string) {
+  if (areaProgress?.progress(area)) areaProgress.open(area);
+}
 
 type ScrollAreaInstance = ComponentPublicInstance & {
   viewportElement?: HTMLElement | null;

@@ -76,13 +76,13 @@ test("saved views hide New because they have no destination", async ({ page }) =
 	await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
 });
 
-test("the trash bulk bar offers only the ticket 007 placeholders", async ({ page }) => {
+test("the trash bulk bar offers Restore and Delete forever only", async ({ page }) => {
 	await page.goto("/drive/trash");
 	const row = page.getByText(trashed.title, { exact: true });
 	await expect(row).toBeVisible();
 	await row.click({ modifiers: ["ControlOrMeta"] });
 
-	await expect(page.getByRole("button", { name: "Restore" })).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Delete forever" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Restore" })).toBeEnabled();
+	await expect(page.getByRole("button", { name: "Delete forever" })).toBeEnabled();
 	await expect(page.getByRole("button", { name: "Move to trash" })).toHaveCount(0);
 });

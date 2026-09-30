@@ -1,17 +1,31 @@
 <script setup lang="ts">
 import { Button } from "frappe-ui";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 import type { DocumentSession } from "@/apps/drive/client/session";
+import { DRIVE_ROLES } from "@/apps/drive/client/types";
 import type { FilePreviewSession } from "./session";
+import UploadNewVersion from "./UploadNewVersion.vue";
 
 const props = defineProps<{ session: DocumentSession }>();
 const file = computed(() => props.session as FilePreviewSession);
 const mime = computed(() => file.value.mime ?? "");
 const previewUrl = computed(() => file.value.preview.value?.url ?? "");
+/** Bumped after a new version, so the browser fetches the new bytes. */
+const revision = ref(0);
 const contentUrl = computed(
-  () => `/api/suite/drive/nodes/${encodeURIComponent(props.session.nodeId)}/content`,
+  () =>
+    `/api/suite/drive/nodes/${encodeURIComponent(props.session.nodeId)}/content` +
+    (revision.value ? `?v=${revision.value}` : ""),
 );
+const canReplace = computed(
+  () => !!file.value.parent && (props.session.access.value.role ?? 0) >= DRIVE_ROLES.edit,
+);
+
+async function replaced() {
+  await file.value.refreshPreview();
+  revision.value += 1;
+}
 const canPreview = computed(
   () =>
     !!previewUrl.value ||
@@ -29,6 +43,13 @@ const source = computed(() => previewUrl.value || contentUrl.value);
     <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
       <span class="lucide-file size-5 text-ink-gray-6" aria-hidden="true" />
       <h1 class="min-w-0 flex-1 truncate text-lg-semibold">{{ session.title.value }}</h1>
+      <UploadNewVersion
+        v-if="canReplace"
+        :node="session.nodeId"
+        :parent="file.parent!"
+        :title="session.title.value"
+        @replaced="replaced"
+      />
       <Button label="Download" icon-left="lucide-download" :href="contentUrl" />
       <Button v-if="session.canShare.value" label="Share" icon-left="lucide-share-2" variant="solid" @click="session.share()" />
     </header>

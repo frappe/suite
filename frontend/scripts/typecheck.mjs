@@ -23,10 +23,15 @@ const scope = config.include.map((pattern) => {
   return new RegExp(`^${source}${pattern.includes("/**") ? "/" : "$"}`);
 });
 
+// The whole program no longer fits in Node's default 2 GB heap.
 const run = spawnSync("yarn", ["--silent", "vue-tsc", "-p", configName, "--pretty", "false"], {
   cwd: frontendRoot,
   encoding: "utf8",
   maxBuffer: 256 * 1024 * 1024,
+  env: {
+    ...process.env,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=4096`.trim(),
+  },
 });
 if (run.error) throw run.error;
 
