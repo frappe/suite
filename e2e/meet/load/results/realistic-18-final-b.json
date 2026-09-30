@@ -1,0 +1,173 @@
+{
+  "startedAt": "2026-09-04T14:12:51.180Z",
+  "finishedAt": "2026-09-04T14:14:29.054Z",
+  "target": "https://mum-1.sfu.frappe.cloud",
+  "config": {
+    "meetingId": "realistic-max-20260904-2",
+    "site": "load.test",
+    "count": 9,
+    "expectedTotalParticipants": 18,
+    "expectedConsumersPerClient": null,
+    "rampMs": 1500,
+    "durationSeconds": 60,
+    "media": "both",
+    "consume": "all",
+    "renderMedia": false,
+    "maxVisibleVideos": 14,
+    "browserPerClient": false,
+    "requireIdle": false,
+    "slo": {
+      "maxJoinP95Ms": 2000,
+      "maxFirstRemoteMediaP95Ms": 3000,
+      "maxPacketLossRatio": 0.03
+    }
+  },
+  "summary": {
+    "passed": false,
+    "joinP50Ms": 21.599999999976717,
+    "joinP95Ms": 77.59999999997672,
+    "firstRemoteMediaP95Ms": 4708.900000000023,
+    "totalProducers": 18,
+    "totalConsumers": 306,
+    "totalBytesSent": 19251471,
+    "totalBytesReceived": 209719634,
+    "totalPacketsLost": 10411,
+    "totalPacketsReceived": 779882,
+    "packetLossRatio": 0.01317359510966186,
+    "failures": [
+      "first remote media P95 4708.9 ms exceeds 3000 ms"
+    ]
+  },
+  "participants": [
+    {
+      "phase": "running",
+      "joinMs": 19.099999999976717,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 3164171,
+      "bytesReceived": 25836086,
+      "packetsLost": 1211,
+      "packetsReceived": 95298,
+      "firstRemoteMediaMs": 1006.7000000000698,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 18.400000000023283,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 2089430,
+      "bytesReceived": 25682531,
+      "packetsLost": 1117,
+      "packetsReceived": 94759,
+      "firstRemoteMediaMs": 449.19999999995343,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 19,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 2795672,
+      "bytesReceived": 25275889,
+      "packetsLost": 1060,
+      "packetsReceived": 93722,
+      "firstRemoteMediaMs": 463.0999999999767,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 21.599999999976717,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 2012243,
+      "bytesReceived": 24787780,
+      "packetsLost": 1199,
+      "packetsReceived": 92097,
+      "firstRemoteMediaMs": 698,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 21.599999999976717,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 1906436,
+      "bytesReceived": 24342136,
+      "packetsLost": 1022,
+      "packetsReceived": 90468,
+      "firstRemoteMediaMs": 804.3000000000466,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 19.599999999976717,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 1856073,
+      "bytesReceived": 23331283,
+      "packetsLost": 1364,
+      "packetsReceived": 87216,
+      "firstRemoteMediaMs": 1833.1999999999534,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 77.59999999997672,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 1687819,
+      "bytesReceived": 22167988,
+      "packetsLost": 1021,
+      "packetsReceived": 82706,
+      "firstRemoteMediaMs": 2746.4000000000233,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 36.5,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 1648687,
+      "bytesReceived": 20613677,
+      "packetsLost": 1244,
+      "packetsReceived": 76860,
+      "firstRemoteMediaMs": 3048.5999999999767,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 34.59999999997672,
+      "producerCount": 2,
+      "consumerCount": 34,
+      "bytesSent": 2090940,
+      "bytesReceived": 17682264,
+      "packetsLost": 1173,
+      "packetsReceived": 66756,
+      "firstRemoteMediaMs": 4708.900000000023,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    }
+  ],
+  "metrics": {
+    "before": null,
+    "after": null
+  }
+}

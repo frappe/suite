@@ -10,11 +10,18 @@
     "test:debug": "yarn test:drive-backed-apps --debug",
     "test:ui": "yarn test:drive-backed-apps --ui",
     "test:report": "playwright show-report drive-backed-apps/playwright-report",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "load:meet": "node meet/load/run.mjs",
+    "test:meet-load": "node --test meet/load/*.test.mjs"
+  },
+  "dependencies": {
+    "mediasoup-client": "^3.18.8",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/node": "^24.10.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }

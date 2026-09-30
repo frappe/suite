@@ -1,0 +1,206 @@
+{
+  "startedAt": "2026-09-04T14:33:24.465Z",
+  "finishedAt": "2026-09-04T14:36:40.294Z",
+  "target": "https://mum-1.sfu.frappe.cloud",
+  "config": {
+    "meetingId": "realistic-hold20-20260904",
+    "site": "load.test",
+    "count": 10,
+    "expectedTotalParticipants": 20,
+    "expectedConsumersPerClient": null,
+    "rampMs": 1000,
+    "durationSeconds": 130,
+    "media": "both",
+    "consume": "all",
+    "renderMedia": false,
+    "maxVisibleVideos": 14,
+    "browserPerClient": false,
+    "requireIdle": false,
+    "slo": {
+      "maxJoinP95Ms": 2000,
+      "maxFirstRemoteMediaP95Ms": 3000,
+      "maxPacketLossRatio": 0.03
+    }
+  },
+  "summary": {
+    "passed": false,
+    "joinP50Ms": 23.5,
+    "joinP95Ms": 378,
+    "firstRemoteMediaP95Ms": 7115.899999999907,
+    "totalProducers": 20,
+    "totalConsumers": 374,
+    "totalBytesSent": 55257585,
+    "totalBytesReceived": 467747626,
+    "totalPacketsLost": 138501,
+    "totalPacketsReceived": 1838191,
+    "packetLossRatio": 0.07006706153513041,
+    "failures": [
+      "participant 4 consumers=36, expected=38",
+      "participant 4: consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+      "participant 4: consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out",
+      "participant 5 consumers=36, expected=38",
+      "participant 5: consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+      "participant 5: consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out",
+      "participant 7 consumers=36, expected=38",
+      "participant 7: consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+      "participant 7: consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out",
+      "first remote media P95 7115.9 ms exceeds 3000 ms",
+      "packet loss 7.01% exceeds 3.00%"
+    ]
+  },
+  "participants": [
+    {
+      "phase": "running",
+      "joinMs": 18.699999999953434,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 6304929,
+      "bytesReceived": 50886545,
+      "packetsLost": 14628,
+      "packetsReceived": 200286,
+      "firstRemoteMediaMs": 1004.5,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 20.800000000046566,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 4948788,
+      "bytesReceived": 50786329,
+      "packetsLost": 14853,
+      "packetsReceived": 200068,
+      "firstRemoteMediaMs": 446.5,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 23,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 5562389,
+      "bytesReceived": 50524309,
+      "packetsLost": 14228,
+      "packetsReceived": 199400,
+      "firstRemoteMediaMs": 786.8000000000466,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 21.200000000186265,
+      "producerCount": 2,
+      "consumerCount": 36,
+      "bytesSent": 7673795,
+      "bytesReceived": 50165862,
+      "packetsLost": 12085,
+      "packetsReceived": 192897,
+      "firstRemoteMediaMs": 782.6999999999534,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": [
+        "consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+        "consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out"
+      ]
+    },
+    {
+      "phase": "running",
+      "joinMs": 29.0999999998603,
+      "producerCount": 2,
+      "consumerCount": 36,
+      "bytesSent": 7073171,
+      "bytesReceived": 49545254,
+      "packetsLost": 11350,
+      "packetsReceived": 190671,
+      "firstRemoteMediaMs": 1163,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": [
+        "consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+        "consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out"
+      ]
+    },
+    {
+      "phase": "running",
+      "joinMs": 23.5,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 4396290,
+      "bytesReceived": 48636519,
+      "packetsLost": 14232,
+      "packetsReceived": 192865,
+      "firstRemoteMediaMs": 1442.0999999998603,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 27.5,
+      "producerCount": 2,
+      "consumerCount": 36,
+      "bytesSent": 5669150,
+      "bytesReceived": 47555787,
+      "packetsLost": 14043,
+      "packetsReceived": 183553,
+      "firstRemoteMediaMs": 3117.5,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": [
+        "consumer 31399400-8ced-4d5e-b135-c97285844613: create_consumer: operation has timed out",
+        "consumer c2770f4b-3c7a-4729-b992-2068af974335: create_consumer: operation has timed out"
+      ]
+    },
+    {
+      "phase": "running",
+      "joinMs": 45.39999999990687,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 5775357,
+      "bytesReceived": 46189410,
+      "packetsLost": 14473,
+      "packetsReceived": 182795,
+      "firstRemoteMediaMs": 3780.899999999907,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 169.5,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 4099734,
+      "bytesReceived": 39274890,
+      "packetsLost": 14360,
+      "packetsReceived": 157691,
+      "firstRemoteMediaMs": 7115.899999999907,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    },
+    {
+      "phase": "running",
+      "joinMs": 378,
+      "producerCount": 2,
+      "consumerCount": 38,
+      "bytesSent": 3753982,
+      "bytesReceived": 34182721,
+      "packetsLost": 14249,
+      "packetsReceived": 137965,
+      "firstRemoteMediaMs": 7036,
+      "sendState": "connected",
+      "recvState": "connected",
+      "errors": []
+    }
+  ],
+  "metrics": {
+    "before": null,
+    "after": null
+  }
+}
