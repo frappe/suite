@@ -43,7 +43,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Drive 45 legacy-call counter | `forge/drive-45-legacy-call-counter` | done | `4d879dff0` | codex review: durable Redis hand-off, flush lock, 50 user agents per name then `(other)`, verb-aware File methods, controller refuses hand edits. Desk list checked in a browser as a non-Administrator System Manager |
 | Drive 47 recents content doctype filter | `forge/drive-47-recents-doctype-filter` | done | `15721d624` | codex review: stable order, windows past unreadable rows, Active only, STRAIGHT_JOIN from the user's recents. These also change unfiltered recents |
 | Suite S1, S2 (server) | `forge/uf-suite-asks-s1-s3` | done | `9852ca10b` | codex review: bounded people cursor. S3 moves to stage 8; S4 shipped with stage 11 Writer |
-| Flip rehearsal | | waiting on all | | |
+| Flip rehearsal | `forge/uf-rehearsal` (no commits) | done | at `b981ca253` | 2026-10-01 on slides.localhost with a production build served from the worktree. All plan stage 7 checks pass in state 1 (both keys off, 14 checks), state 2 (shell key on, 13), state 3 (both on, 3 plus `test_redirects` 9 and the redirect journeys) and state 4 (a tab across a flip keeps its state until reload). Slides service worker serves no stale shell (a real old-worker upgrade not verified). Journeys: shell 93/93/95, files 116/116/122, home 12/12/12 across states 1/2/3; only failure `mail-shared-page:123` (no Socket.IO). Both keys end at 0. Report and screenshots: orchestrator folder `uf-run/rehearsal/` |
 
 ## Open questions for Faris
 
