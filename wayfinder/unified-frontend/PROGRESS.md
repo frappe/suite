@@ -29,10 +29,10 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
 | Stage 5 adoption | `forge/uf-5-adoption` | done | `431d97980` | Four sub-lanes (Meet, Mail, Calendar, PWA and shell), each codex-reviewed. Gates after merging drive-layer: 195 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.08 KiB, architecture and boot OK. Shell journeys on the PWA sub-lane: 64 passed, 1 known socket failure. PWA review: logout drops the push token, one notification per message across tabs, click handler for every browser, one top inset. Manifest `id` is `/suite` (question 21) |
-| Stage 6 flip plumbing | `forge/uf-6-shell-flip-plumbing` | in progress | | Based on `8cfd957f8`. Adds the `^/(drive/)?l/` Vite proxy for stage 8 |
-| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | first half committed `8e2616e47`; codex fixes in progress; wiring in `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` waits for stage 6 | | Server needed no change (Drive 43 and S2 meet the gate). Guest name field belongs to stage 11 after this wiring |
-| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | committed `32ec36583`; codex review running; the `FilesPage.vue` row Share waits for stage 8 | | Share opens through `session.share()` and `useDriveDialogs().share()`. Journeys 7 of 7. S1 reservation test passes |
-| Stage 10 upload, restore, batch | | waiting on 8 | | |
+| Stage 6 flip plumbing | `forge/uf-6-shell-flip-plumbing` | committed `3f83038b2`; codex review running | | Gates: 197 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.42 KiB, boot and redirect tests OK. Journeys: flips 15, shell 83 plus the known socket failure, files 81 (2 skipped), home 10. The Vite proxy now also covers `^/(drive/)?l/` for stage 8 |
+| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | first half and review fixes committed `52ccd4376`; wiring in `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` waits for stage 6 | | Server needed no change (Drive 43 and S2 meet the gate). Guest name field belongs to stage 11 after this wiring |
+| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | committed with review fixes `72ee41df4`; the `FilesPage.vue` row Share waits for stage 8 | | codex review: self-demotion confirm based on the outcome (groups, inherited Deny, overwrites); session access re-read after each write; per-row pending; expiry on people and groups; expired General and Public rows stay. Journeys: sharing 8, document-surfaces and slides-document 11 |
+| Stage 10 upload, restore, batch | `forge/uf-10-upload-restore-batch` | part 1 committed `76b741ed1`, codex review running; `FilesPage.vue`, `apps/drive/index.ts` and composition wiring wait for stages 6, 8, 9 | | `hash-wasm` 4.12.0 placed by hand (no install); not in the initial graph. S3 direct upload mode is not built yet (part 2) |
 | Stage 11 document surfaces | `forge/uf-11-document-surfaces` | done | `a15886a7a` | Four sub-lanes, each codex-reviewed. Gates after merging drive-layer: 177 unified, legacy manifest, boundaries 333/71 plus 2 legacy Drive calls (SuiteCommandPalette, stage 15), typecheck 0, bundle 116.25 KiB, architecture OK. Files journeys 81 passed, 2 skipped. Legacy-call rule is a substring scan over `frontend/src` and `suite/public/js`, comments included. Drive dialogs cross the seam as `useDriveDialogs()`. Desk picker attach checked by hand (a repo journey needs `bench build`) |
 | Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half merged `8cfd957f8`; client half waits on 6 | | codex review: redirect only when the caller can READ the target, encoded separators fall through. Only while `suite_flip_files` is on (spec §14.3 over the brief). `flip_is_on` moved to `suite/suite_core/flips.py`. Edits `hooks.py` ahead of 6 and 8 in the shared-files order |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
@@ -145,6 +145,12 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 25. **Share picker default role** is View. Interim: accepted.
 26. **Dead-link "Go to Home"** links to `/`, which lands on `/mail` before
     flip 2. Interim: unchanged.
+27. **Home panel Drive links before flip 2.** With the files flip off,
+    `/home` links to `/drive/shared-with-me` and `/drive/starred`, which
+    the old Drive router does not have. Interim: stage 6 review decides.
+28. **Upload picker.** Plain file input, not `showOpenFilePicker`, so only
+    dropped files resume without a re-pick. Interim: accepted.
+29. **Tracker Cancel.** No Cancel for a running upload. Interim: none.
 
 ## Needs a manual check (cannot run on this devbox)
 
@@ -184,6 +190,10 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Server-side "attach a Drive node to a document" route, so the Desk picker does not move bytes through the browser (now capped at the framework's `max_file_size`) | stage 11 Drive | nothing (cap in place) |
 | User full names on grant rows (`users_get` is System Manager only; the dialog shows emails for people the picker has not seen) | stage 9 | nothing (emails shown) |
 | Creation date on link grant rows, for the "made on" text | stage 9 | nothing (text left out) |
+| `DriveConflict` names the existing node, so Replace needs no `findChild` lookup | stage 10 | nothing (lookup works) |
+| Explain answer lists the subject's own groups, or `PUT grants` gets a dry run, so the self-demotion confirm sees a new group row | stage 9 | nothing (confirm covers existing rows) |
+| `own_role` or "has own access" in the Drive `access` expansion, so a member who opens a higher link keeps Star and Recent | stage 8 | nothing (link-only rule is stricter) |
+| Site timezone in boot or session, so share expiry means the sharer's end of day | stage 9 | nothing (site time used) |
 | `recordDriveVisit(node)` root export in `apps/drive/index.ts` | stage 11 Sheets | nothing (a local operation works) |
 
 ## Baselines
