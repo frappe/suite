@@ -10,7 +10,13 @@ import {
   watch,
 } from "vue";
 
-import type { CredentialGrouper, DocumentSession } from "@/apps/drive";
+import {
+  DriveCommentAuthor,
+  GUEST_NAME_LIMIT,
+  useDriveGuestName,
+  type CredentialGrouper,
+  type DocumentSession,
+} from "@/apps/drive";
 import NavigationPanel from "@/apps/slides/components/NavigationPanel.vue";
 import PropertiesPanel from "@/apps/slides/components/PropertiesPanel.vue";
 import SlideContainer from "@/apps/slides/components/SlideContainer.vue";
@@ -71,7 +77,7 @@ type Panel = "comments" | "versions";
 interface CommentThread {
   name: string;
   resolved: boolean;
-  comments: { name: string; content: string; author_name: string | null; creation: string | null }[];
+  comments: { name: string; content: string; author: string | null; author_name: string | null; creation: string | null }[];
 }
 
 const props = defineProps<{ session: DocumentSession }>();
@@ -86,6 +92,14 @@ const panel = ref<Panel | null>(null);
 const threads = ref<CommentThread[]>([]);
 const panelLoading = ref(false);
 const commentText = ref("");
+// Guests may sign their comments. Signed-in users never see the field (spec §10.5).
+const {
+  shown: showGuestName,
+  text: guestName,
+  atLimit: guestNameAtLimit,
+  maxLength: guestNameMaxLength,
+  take: takeGuestName,
+} = useDriveGuestName();
 const exporting = ref(false);
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null);
 const isSlideInteractionActive = ref(false);
@@ -204,7 +218,7 @@ async function addComment() {
   const text = commentText.value.trim();
   if (!text || !access.canComment.value) return;
   try {
-    await props.session.comments.create("document", text);
+    await props.session.comments.create("document", text, takeGuestName());
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Could not add the comment.");
     return;
@@ -461,9 +475,21 @@ onBeforeUnmount(() => {
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
         <template v-else>
-          <form v-if="access.canComment.value" class="flex gap-2" @submit.prevent="addComment">
-            <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" @keydown.stop />
-            <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+          <form v-if="access.canComment.value" class="space-y-2" @submit.prevent="addComment">
+            <TextInput
+              v-if="showGuestName"
+              v-model="guestName"
+              label="Your name"
+              placeholder="Guest"
+              autocomplete="name"
+              :maxlength="guestNameMaxLength"
+              :description="guestNameAtLimit ? `Names can have up to ${GUEST_NAME_LIMIT} characters.` : 'Optional. Shown with your comments.'"
+              @keydown.stop
+            />
+            <div class="flex gap-2">
+              <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" @keydown.stop />
+              <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+            </div>
           </form>
           <article
             v-for="thread in threads"
@@ -472,7 +498,9 @@ onBeforeUnmount(() => {
             :class="thread.resolved && 'opacity-60'"
           >
             <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">{{ comment.author_name || "Someone" }}</p>
+              <p class="text-sm-medium text-ink-gray-8">
+                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{ comment.author_name || "Someone" }}</DriveCommentAuthor>
+              </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>
           </article>

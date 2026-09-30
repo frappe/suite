@@ -9,8 +9,10 @@
 export interface SheetComment {
   name: string;
   content: string;
-  /** The display name: a guest's typed name, else the author's user id. */
-  author: string;
+  /** The user id, or "Guest" for a visitor without a session. */
+  author: string | null;
+  /** The name a guest typed. `null` for a user. */
+  author_name: string | null;
   creation: string | null;
 }
 
@@ -94,7 +96,8 @@ function readComment(row: unknown): SheetComment[] {
   return [{
     name,
     content,
-    author: text(field(row, "author_name")) || text(field(row, "author")) || "Someone",
+    author: text(field(row, "author")),
+    author_name: text(field(row, "author_name")),
     creation: text(field(row, "creation")),
   }];
 }
