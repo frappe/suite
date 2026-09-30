@@ -14,7 +14,7 @@ import {
 
 import type { Editor } from "@tiptap/core";
 
-import type { DocumentSession } from "@/apps/drive";
+import { DriveCommentAuthor, GUEST_NAME_LIMIT, useDriveGuestName, type DocumentSession } from "@/apps/drive";
 import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
 import emitter from "@/apps/writer/emitter";
@@ -46,7 +46,7 @@ interface WriterDocumentResource {
 interface CommentThread {
   name: string;
   resolved: boolean;
-  comments: { name: string; content: string; author_name: string | null; creation: string | null }[];
+  comments: { name: string; content: string; author: string | null; author_name: string | null; creation: string | null }[];
 }
 
 /** One row of `GET nodes/<id>/versions` */
@@ -76,6 +76,14 @@ const threads = ref<CommentThread[]>([]);
 const versions = ref<VersionRow[]>([]);
 const panelLoading = ref(false);
 const commentText = ref("");
+// Guests may sign their comments. Signed-in users never see the field (spec §10.5).
+const {
+  shown: showGuestName,
+  text: guestName,
+  atLimit: guestNameAtLimit,
+  maxLength: guestNameMaxLength,
+  take: takeGuestName,
+} = useDriveGuestName();
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null);
 
 const writes = createWriteGate(props.session, () => {
@@ -196,7 +204,7 @@ async function addComment() {
   const text = commentText.value.trim();
   if (!text || !canComment.value) return;
   try {
-    await props.session.comments.create("document", text);
+    await props.session.comments.create("document", text, takeGuestName());
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Could not add the comment.");
     return;
@@ -296,7 +304,7 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <aside v-if="showComments || showVersions" class="absolute inset-y-0 right-0 z-20 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
+    <aside v-if="showComments || showVersions" :aria-label="showComments ? 'Comments' : 'Versions'" class="absolute inset-y-0 right-0 z-20 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
       <div class="flex min-h-12 items-center justify-between border-b px-4">
         <h2 class="text-lg-semibold">{{ showComments ? "Comments" : "Versions" }}</h2>
         <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="showComments = showVersions = false" />
@@ -304,9 +312,20 @@ onBeforeUnmount(() => {
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
         <template v-else-if="showComments">
-          <form v-if="canComment" class="flex gap-2" @submit.prevent="addComment">
-            <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" />
-            <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+          <form v-if="canComment" class="space-y-2" @submit.prevent="addComment">
+            <TextInput
+              v-if="showGuestName"
+              v-model="guestName"
+              label="Your name"
+              placeholder="Guest"
+              autocomplete="name"
+              :maxlength="guestNameMaxLength"
+              :description="guestNameAtLimit ? `Names can have up to ${GUEST_NAME_LIMIT} characters.` : 'Optional. Shown with your comments.'"
+            />
+            <div class="flex gap-2">
+              <TextInput v-model="commentText" class="flex-1" placeholder="Add a comment" aria-label="New comment" />
+              <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+            </div>
           </form>
           <article
             v-for="thread in threads"
@@ -315,7 +334,9 @@ onBeforeUnmount(() => {
             :class="thread.resolved && 'opacity-60'"
           >
             <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">{{ comment.author_name || "Someone" }}</p>
+              <p class="text-sm-medium text-ink-gray-8">
+                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{ comment.author_name || "Someone" }}</DriveCommentAuthor>
+              </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>
           </article>

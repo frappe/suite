@@ -1,6 +1,7 @@
 import { defineAsyncComponent, defineComponent, getCurrentInstance, h, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
+import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { roots } from '@/apps/drive/client/roots'
@@ -11,6 +12,7 @@ import { presentDialog, rememberDialogContext } from '@/apps/drive/files/feature
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { useMutation, useQuery } from '@/platform/server-state'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 export type {
@@ -28,14 +30,15 @@ export function rememberDriveLink(token: string, node: string): void {
   driveLinks.seed(token, node)
 }
 
-/** The name a guest typed for comments. `null` while signed in. */
-export function driveGuestName(): string | null {
-  return driveLinks.guestName()
+/** The "Your name" field of a comment composer. Call it in a component's setup (spec §10.5). */
+export function useDriveGuestName(): GuestCommentName {
+  return createGuestCommentName(driveLinks, useSession())
 }
 
-export function setDriveGuestName(name: string): void {
-  driveLinks.setGuestName(name)
-}
+export { GUEST_NAME_LIMIT, type GuestCommentName } from '@/apps/drive/client/guestName'
+
+/** A comment's author: a guest's name and the Guest marker, or the product's own label in the slot. */
+export { default as DriveCommentAuthor } from '@/apps/drive/files/features/CommentAuthor.vue'
 
 export type DriveNodeSummary = Pick<
   DriveNode,
@@ -126,6 +129,12 @@ export function openDocumentSession(nodeId: string) {
 }
 
 export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
+
+/** The upload queue for the app root: the ring's indicator, the tracker's state and the queue's questions (spec §6.3). */
+export { driveUploadProgress, type DriveUploadProgress } from '@/apps/drive/files/features/uploads/progress'
+
+/** The upload tracker. The app root mounts it while the queue has work, so it outlives the page. */
+export const DriveUploadTracker = defineAsyncComponent(() => import('@/apps/drive/files/features/uploads/UploadTracker.vue'))
 
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
 export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))

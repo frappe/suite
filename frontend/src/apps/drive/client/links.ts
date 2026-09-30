@@ -73,6 +73,8 @@ export interface LinkStore {
    * also carries the codes of the `always` nodes, such as a document's own.
    */
   group(nodeIds: readonly string[], always?: readonly string[]): LinkGroup[]
+  /** The code that reaches `node` today, or `null`. It reads and changes nothing. */
+  linkFor(node: string): string | null
   /** The name a guest typed for comments. `null` while signed in. */
   guestName(): string | null
   setGuestName(name: string): void
@@ -350,6 +352,10 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         nodeIds: group.nodeIds,
         scope: scopeFor({ sent: group.sent, options: {}, generation }),
       }))
+    },
+
+    linkFor(node) {
+      return codeFor(current(), node) ?? null
     },
 
     guestName() {

@@ -41,6 +41,11 @@ export interface Operation<Input = unknown, Output = unknown, ErrorType extends 
   pathParams?: readonly string[]
   nodeParams?: readonly string[]
   entity?: EntityDeclaration | null
+  /**
+   * Names the input field whose `Blob` is the raw request body, such as an
+   * upload chunk. The other fields then go in the query string.
+   */
+  body?: string
   errors?: readonly ErrorType[]
   validateInput?: (input: unknown) => asserts input is Input
   validateOutput?: (output: unknown) => asserts output is Output
@@ -104,6 +109,10 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
       operation.validateInput?.(input)
 
       const pathInput = asRecord(input)
+      const rawBody = operation.body ? pathInput[operation.body] : undefined
+      if (operation.body && !(rawBody instanceof Blob)) {
+        throw new TypeError(`Operation input field ${operation.body} must be a Blob`)
+      }
       const url = buildUrl(operation, pathInput)
       const scope = operation.scope?.(input)
       const headers = new Headers(scope?.headers)
@@ -118,7 +127,10 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         credentials: 'same-origin',
         signal: requestOptions.signal,
       }
-      if (operation.method !== 'GET') {
+      if (rawBody instanceof Blob) {
+        headers.set('Content-Type', 'application/octet-stream')
+        init.body = rawBody
+      } else if (operation.method !== 'GET') {
         headers.set('Content-Type', 'application/json; charset=utf-8')
         init.body = JSON.stringify(withoutPathParams(pathInput, operation.pathParams ?? []))
       }
@@ -188,10 +200,10 @@ function buildUrl(operation: Operation, input: Record<string, unknown>): string 
     return encodeURIComponent(String(value))
   })
   if (!path.startsWith('/')) path = `${operation.prefix ?? `/api/suite/${operation.owner}/`}${path}`
-  if (operation.method === 'GET') {
+  if (operation.method === 'GET' || operation.body) {
     const query = new URLSearchParams()
-    const pathParams = new Set(operation.pathParams ?? [])
-    for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, pathParams)
+    const omitted = new Set([...(operation.pathParams ?? []), ...(operation.body ? [operation.body] : [])])
+    for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, omitted)
     const encoded = query.toString()
     if (encoded) path += `${path.includes('?') ? '&' : '?'}${encoded}`
   }
@@ -202,9 +214,9 @@ function appendQuery(
   query: URLSearchParams,
   key: string,
   value: unknown,
-  pathParams: ReadonlySet<string>,
+  omitted: ReadonlySet<string>,
 ): void {
-  if (pathParams.has(key) || value === undefined || value === null) return
+  if (omitted.has(key) || value === undefined || value === null) return
   if (Array.isArray(value)) {
     query.append(key, JSON.stringify(value))
     return

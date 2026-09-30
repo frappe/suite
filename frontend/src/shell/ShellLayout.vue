@@ -2,6 +2,24 @@
   <!-- A visitor without a session sees the same page in the guest frame (spec §10.3). -->
   <GuestSurface v-if="showGuestSurface" :scroll="scrollOwner">
     <slot />
+    <!-- The guest's ring: the area's background work, opening its own view (spec §10.6).
+         The slot stays while the ring comes and goes, so Sign in never moves. -->
+    <template v-if="guestRingSlot" #uploads>
+      <Button
+        v-if="guestProgress"
+        variant="ghost"
+        :label="__('Uploads')"
+        :tooltip="progressDetail(guestProgress)"
+        @click="openGuestProgress"
+      >
+        <template #icon>
+          <span class="relative grid size-4 place-items-center">
+            <span class="lucide-upload size-4" aria-hidden="true" />
+            <AreaProgressRing :progress="guestProgress" :label="__('Uploads')" size="rail" />
+          </span>
+        </template>
+      </Button>
+    </template>
   </GuestSurface>
 
   <template v-else-if="resolvedFrame === 'shell'">
@@ -61,7 +79,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from "vue";
-import { DesktopShell, MobileShell } from "frappe-ui";
+import { Button, DesktopShell, MobileShell } from "frappe-ui";
 import { useRoute } from "vue-router";
 
 import { AreaSidebarTarget } from "@/platform/area-sidebar";
@@ -75,6 +93,8 @@ import { shellPhoneChromeRequested } from "@/platform/phone-chrome";
 import { missingCapabilities, useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
 import AccountSheet from "@/shell/AccountSheet.vue";
+import AreaProgressRing from "@/shell/AreaProgressRing.vue";
+import { progressDetail, useAreaProgress } from "@/shell/areaProgress";
 import ContentPane from "@/shell/ContentPane.vue";
 import GuestSurface from "@/shell/GuestSurface.vue";
 import MobileNav from "@/shell/MobileNav.vue";
@@ -112,6 +132,22 @@ const showGuestSurface = computed(
     route.meta.frame !== "none" &&
     typeof route.meta.area === "string",
 );
+const areaProgress = useAreaProgress();
+// A document route's guest header holds only the Suite mark and Sign in
+// (spec §10.3). No route meta names the route kind; a document route is the
+// guest route that scrolls its content, a folder route scrolls the shell.
+const guestRingSlot = computed(
+  () => showGuestSurface.value && route.meta.scroll !== "content",
+);
+const guestProgress = computed(() => {
+  const area = route.meta.area;
+  if (!guestRingSlot.value || !area) return null;
+  return areaProgress?.progress(area) ?? null;
+});
+function openGuestProgress() {
+  const area = route.meta.area;
+  if (area) areaProgress?.open(area);
+}
 const resolvedFrame = computed<ShellFrame | null>(() => {
   if (showGuestSurface.value) return null;
   if (unavailable.value) return "shell";

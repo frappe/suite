@@ -46,8 +46,8 @@ describe("Drive records for Sheets", () => {
         anchor: { sheet: "Sheet1", cell: "C4" },
         resolved: false,
         comments: [
-          { name: "c1", content: "Check this total", author: "ann@example.com", creation: "2026-09-29 10:00:00" },
-          { name: "c2", content: "Fixed", author: "Visitor", creation: "2026-09-29 10:05:00" },
+          { name: "c1", content: "Check this total", author: "ann@example.com", author_name: null, creation: "2026-09-29 10:00:00" },
+          { name: "c2", content: "Fixed", author: "Guest", author_name: "Visitor", creation: "2026-09-29 10:05:00" },
         ],
       },
       { name: "t2", anchor: null, resolved: true, comments: [] },

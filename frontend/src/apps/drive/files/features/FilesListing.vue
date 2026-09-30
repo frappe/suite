@@ -39,6 +39,7 @@
             :value="row.name"
             tabindex="0"
             :data-node="row.name"
+            v-bind="rowDrop?.(row) ?? {}"
             @click.capture="onRangeClick($event, row)"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
@@ -78,6 +79,7 @@
             v-for="row in section.rows"
             :key="row.name"
             role="listitem"
+            v-bind="rowDrop?.(row) ?? {}"
             class="relative select-none rounded-5 border transition-colors"
             :class="selection.includes(row.name)
               ? 'border-outline-gray-3 bg-surface-gray-2'
@@ -138,6 +140,7 @@ import type { QueryResult } from '@/platform/server-state'
 import { groupContiguous } from './grouping'
 import { loadUntilVisible } from './listingWindows'
 import type { FilesSort, PresentationState } from './presentation'
+import type { DropHandlers } from './uploads/drop'
 
 const props = defineProps<{
   query: QueryResult<any>
@@ -148,6 +151,8 @@ const props = defineProps<{
   emptyDescription: string
   showBreadcrumbs?: boolean
   menuOptions: (node: DriveNode) => any[]
+  /** Drop handlers for a row that takes dropped files. `null` leaves the drop to the pane. */
+  rowDrop?: (node: DriveNode) => DropHandlers | null
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]

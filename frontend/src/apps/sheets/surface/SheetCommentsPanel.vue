@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Button, Skeleton, Textarea, toast } from "frappe-ui";
+import { Button, Skeleton, Textarea, TextInput, toast } from "frappe-ui";
 import { computed, onMounted, ref } from "vue";
 
-import type { DocumentSession } from "@/apps/drive";
+import { DriveCommentAuthor, GUEST_NAME_LIMIT, useDriveGuestName, type DocumentSession } from "@/apps/drive";
 import { cellAnchor, readThreads, stampLabel, type CellAnchor, type SheetThread } from "./records";
 
 const props = defineProps<{
@@ -19,6 +19,14 @@ const loadError = ref("");
 const draft = ref("");
 const replies = ref<Record<string, string>>({});
 const busy = ref(false);
+// Guests may sign their comments and replies. Signed-in users never see the field (spec §10.5).
+const {
+  shown: showGuestName,
+  text: guestName,
+  atLimit: guestNameAtLimit,
+  maxLength: guestNameMaxLength,
+  take: takeGuestName,
+} = useDriveGuestName();
 
 const openThreads = computed(() => threads.value.filter((thread) => !thread.resolved));
 const resolvedThreads = computed(() => threads.value.filter((thread) => thread.resolved));
@@ -57,7 +65,7 @@ async function create() {
   const text = draft.value.trim();
   if (!text || !props.cursor) return;
   const anchor = cellAnchor(props.cursor);
-  if (await run(() => props.session.comments.create(anchor, text), "Could not add the comment.")) {
+  if (await run(() => props.session.comments.create(anchor, text, takeGuestName()), "Could not add the comment.")) {
     draft.value = "";
   }
 }
@@ -65,7 +73,7 @@ async function create() {
 async function reply(thread: string) {
   const text = replies.value[thread]?.trim();
   if (!text) return;
-  if (await run(() => props.session.comments.reply(thread, text), "Could not add the reply.")) {
+  if (await run(() => props.session.comments.reply(thread, text, takeGuestName()), "Could not add the reply.")) {
     replies.value[thread] = "";
   }
 }
@@ -97,6 +105,15 @@ onMounted(load);
     </header>
 
     <form v-if="canComment" class="shrink-0 space-y-2 border-b border-outline-gray-1 p-4" @submit.prevent="create">
+      <TextInput
+        v-if="showGuestName"
+        v-model="guestName"
+        label="Your name"
+        placeholder="Guest"
+        autocomplete="name"
+        :maxlength="guestNameMaxLength"
+        :description="guestNameAtLimit ? `Names can have up to ${GUEST_NAME_LIMIT} characters.` : 'Optional. Shown with your comments.'"
+      />
       <Textarea
         v-model="draft"
         :rows="2"
@@ -149,7 +166,11 @@ onMounted(load);
             </div>
             <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
               <div class="flex items-baseline justify-between gap-2">
-                <span class="truncate text-sm-medium text-ink-gray-8">{{ comment.author }}</span>
+                <span class="min-w-0 text-sm-medium text-ink-gray-8">
+                  <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
+                    comment.author_name || comment.author || "Someone"
+                  }}</DriveCommentAuthor>
+                </span>
                 <span class="shrink-0 text-xs text-ink-gray-5">{{ stampLabel(comment.creation) }}</span>
               </div>
               <p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7">{{ comment.content }}</p>
