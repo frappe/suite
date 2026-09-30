@@ -39,7 +39,7 @@ vi.mock("@/composition/documentRegistry", () => ({
 
 import DocumentHost, { selectDocumentSurface } from "./DocumentHost.vue";
 import { TransportError } from "@/platform/transport";
-import { GUEST_FRAME_KEY } from "@/shell/guestFrame";
+import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
 async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
   const router = createRouter({
@@ -154,6 +154,22 @@ describe("DocumentHost", () => {
     expect(testState.nodeLocked).toHaveBeenCalledOnce();
     expect(testState.open).toHaveBeenCalledOnce();
     expect(root.querySelector("[data-unlock]")).toBeNull();
+    app.unmount();
+  });
+
+  it("shows a guest the Sign-in screen when a link stops working while the document is open", async () => {
+    const open = session();
+    testState.open.mockResolvedValue(open);
+    testState.nodeLocked.mockResolvedValue(false);
+    const requireSignIn = vi.fn();
+    const { app } = await mountHost((host) => host.provide(GUEST_FRAME_KEY, { requireSignIn }));
+    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
+
+    open.state.value = "Refused";
+    await vi.waitFor(() => expect(requireSignIn).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(testState.open).toHaveBeenCalledOnce();
     app.unmount();
   });
 

@@ -1,7 +1,7 @@
 import { api } from './generated'
 import { driveLinks, type LinkStore } from './links'
 import { driveOperation } from './operation'
-import { TransportError, transport as defaultTransport, type Transport } from '@/platform/transport'
+import { TransportError, transport as defaultTransport, type PlatformError, type Transport } from '@/platform/transport'
 
 /**
  * Opens a password link for one node (spec §10.2, Drive §6.3).
@@ -68,7 +68,13 @@ export async function isDriveNodeLocked(node: string, transport: Transport = def
   }
 }
 
-/** Whether a refusal asks for the link password: the node route shows the unlock screen in place. */
+/**
+ * Whether a refusal asks for the link password: the node route shows the
+ * unlock screen in place. It reads a thrown `TransportError` and a query's
+ * stored `PlatformError` alike.
+ */
 export function isDriveLocked(error: unknown): boolean {
-  return error instanceof TransportError && error.status === 401 && error.type === 'DriveLocked'
+  if (typeof error !== 'object' || error === null) return false
+  const { status, type } = error as Partial<PlatformError>
+  return status === 401 && type === 'DriveLocked'
 }

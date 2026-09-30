@@ -44,9 +44,9 @@ import { computed, provide, ref, useSlots, watch } from "vue";
 import { Button, DesktopShell } from "frappe-ui";
 import { useRoute } from "vue-router";
 
-import type { ScrollOwner } from "@/platform/contracts";
 import { translate as __ } from "@/platform/translation";
-import { GUEST_FRAME_KEY, signInUrl } from "@/shell/guestFrame";
+import { GUEST_FRAME_KEY, type ScrollOwner } from "@/platform/contracts";
+import { signInUrl } from "@/shell/guestFrame";
 
 const suiteLogo = "/assets/suite/frontend/logo.svg";
 

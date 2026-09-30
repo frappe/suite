@@ -3,7 +3,7 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import GuestSurface from "@/shell/GuestSurface.vue";
-import { GUEST_FRAME_KEY } from "@/shell/guestFrame";
+import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
 vi.mock("frappe-ui", async () => {
   const { defineComponent: define, h: render } = await import("vue");

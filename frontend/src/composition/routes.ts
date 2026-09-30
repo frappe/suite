@@ -145,16 +145,6 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     }),
     defineAsyncRoute(() => import("@/composition/DocumentHost.vue")),
   ),
-  placeholder(
-    "/l/:token",
-    "link-unavailable",
-    areaMeta("files", "Shared link", driveLogo, { allowGuest: true }),
-    defineAsyncRoute(() => import("@/shell/UnavailableSurface.vue"), {
-      reason: "Shared-link credentials are not available yet.",
-      nextStep:
-        "Ask the sender for access another way. Ticket 011 owns this flow.",
-    }),
-  ),
 ];
 
 export const routes: RouteRecordRaw[] = [
@@ -209,11 +199,10 @@ export function areaPlaceholderNames(areaId: string): string[] {
 
 function defineAsyncRoute(
   loader: () => Promise<{ default: Component }>,
-  props?: Record<string, unknown>,
 ): Component {
   const AsyncComponent = defineAsyncComponent(loader);
   return defineComponent({
     name: "AsyncRoute",
-    setup: () => () => h(AsyncComponent, props),
+    setup: () => () => h(AsyncComponent),
   });
 }

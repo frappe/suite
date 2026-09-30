@@ -1,4 +1,5 @@
 import {
+  START_LOCATION,
   createRouter,
   createWebHistory,
   type RouteLocationNormalizedLoaded,
@@ -19,6 +20,7 @@ import {
   driveAreaMounted,
   routes,
 } from '@/composition/routes'
+import { takeLinkFragment } from '@/composition/linkFragment'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa } from '@/platform/pwa'
 import { useSession } from '@/platform/session'
@@ -183,7 +185,19 @@ async function ensureLegacyRoutesLoaded(appId: string): Promise<void> {
   registeredLegacyApps.add(appId)
 }
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  // A share link's token rides the fragment. It seeds the link store and
+  // leaves the URL before any page asks for the node (spec §10.1).
+  const withoutLink = takeLinkFragment(to)
+  if (withoutLink) return withoutLink
+
+  // `/l/<token>` is a server page, so a click on one loads it from the server
+  // [T014, T015]. A first load that still reaches the SPA falls to Not Found.
+  if (isServerLinkPath(to.path) && from !== START_LOCATION) {
+    window.location.assign(to.fullPath)
+    return false
+  }
+
   const legacyAppId = legacyPlaceholderApp(to)
   if (legacyAppId) {
     await ensureLegacyRoutesLoaded(legacyAppId)
@@ -214,18 +228,30 @@ router.beforeEach(async (to) => {
     return to.fullPath
   }
 
+  // A guest may open a shared folder. Load the area's routes first, so the
+  // page's own metadata decides who may enter.
+  const guestAreaId = areaPlaceholderId(to)
+  if (session.status.value === 'guest' && to.meta.allowGuest && guestAreaId) {
+    await ensureAreaRoutesLoaded(guestAreaId)
+    return to.fullPath
+  }
+
   if (session.status.value === 'guest') {
     if (to.meta.allowGuest) return true
     window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
     return false
   }
 
-  const onboarding = await ensureOnboardingState()
-  const onSetupPage = to.path === '/suite/setup'
-  if (onboarding.canOnboard && !onboarding.isOnboarded) {
-    if (!onSetupPage) return '/suite/setup'
-  } else if (onSetupPage) {
-    return '/suite'
+  // A shared item opens on a site that is not set up yet. Area routes still
+  // go to setup (spec §10.10, ask S3).
+  if (!to.meta.allowGuest) {
+    const onboarding = await ensureOnboardingState()
+    const onSetupPage = to.path === '/suite/setup'
+    if (onboarding.canOnboard && !onboarding.isOnboarded) {
+      if (!onSetupPage) return '/suite/setup'
+    } else if (onSetupPage) {
+      return '/suite'
+    }
   }
 
   const areaId = areaPlaceholderId(to)
@@ -270,6 +296,10 @@ function legacyPlaceholderApp(
   return matched && typeof matched.meta.appId === 'string'
     ? matched.meta.appId
     : null
+}
+
+function isServerLinkPath(path: string): boolean {
+  return /^\/(?:drive\/)?l\//.test(path)
 }
 
 function isLegacyMailGuestPath(path: string): boolean {

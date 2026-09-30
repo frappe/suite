@@ -17,7 +17,9 @@ const MAIL_ACCOUNT = {
 	capabilities: { jmap: true, systemManager: true },
 };
 const OLD_APPS = ["Drive", "Slides", "Writer", "Sheets"];
-// A share-link fragment, as a copied link carries it. It must survive each kind redirect.
+// A share-link fragment, as a copied link carries it. The router takes it into
+// the link store and drops it before any redirect (spec §10.1), so no later
+// address carries the token.
 const LINK = "#link=AbCdEfGhIjKlMnOpQrStUv";
 
 let api: APIRequestContext;
@@ -132,10 +134,10 @@ test.describe("both flips off", () => {
 			await expectOldDrivePage(page, new RegExp(`/drive/d/${folder.name}(/[^/?#]+)?`));
 		});
 		// The old folder page then adds its slug and drops the rest, as it always has.
-		expect(urls.some((url) => url.endsWith(`/drive/d/${folder.name}?view=list${LINK}`))).toBe(true);
+		expect(urls.some((url) => url.endsWith(`/drive/d/${folder.name}?view=list`))).toBe(true);
 
 		await page.goto(`/drive/f/${file.name}${LINK}`);
-		await expectOldDrivePage(page, new RegExp(`/drive/f/${file.name}(/[^/#]+)?${LINK}$`));
+		await expectOldDrivePage(page, new RegExp(`/drive/f/${file.name}(/[^/#]+)?$`));
 	});
 
 	test("/home shows no Drive group", async ({ page }) => {
@@ -254,12 +256,12 @@ test.describe("the shell flip off, the files flip on", () => {
 		}
 	});
 
-	test("the folder route sends a file id to /d/ with its link", async ({ page }) => {
+	test("the folder route sends a file id to /d/ without its link", async ({ page }) => {
 		const urls = await urlsDuring(page, async () => {
 			await page.goto(`/drive/f/${file.name}${LINK}`);
-			await expect(page).toHaveURL(new RegExp(`/d/${file.name}/`));
+			await expect(page).toHaveURL(new RegExp(`/d/${file.name}/[^#]*$`));
 		});
-		expect(urls.some((url) => url.endsWith(`/d/${file.name}${LINK}`))).toBe(true);
+		expect(urls.some((url) => url.endsWith(`/d/${file.name}`))).toBe(true);
 	});
 
 	test("/home shows the Drive group, the menu has no Apps submenu, and Settings shows the Drive group", async ({ page }) => {
@@ -305,7 +307,7 @@ test.describe("both flips on", () => {
 			await page.goto(`/drive/f/${file.name}?view=list${LINK}`);
 			await expect(page).toHaveURL(new RegExp(`/d/${file.name}(/[^?#]*)?\\?view=list`));
 		});
-		expect(urls.some((url) => url.endsWith(`/d/${file.name}?view=list${LINK}`))).toBe(true);
+		expect(urls.some((url) => url.endsWith(`/d/${file.name}?view=list`))).toBe(true);
 		await page.goBack();
 		await expect(page).not.toHaveURL(new RegExp(`/drive/f/${file.name}`));
 		// Back reloads the folder page. Let it finish before the test ends.

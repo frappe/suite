@@ -40,7 +40,7 @@ import {
 import { documentTypes } from "@/composition/documentRegistry";
 import { usePageTitle } from "@/platform/page-meta";
 import { TransportError } from "@/platform/transport";
-import { GUEST_FRAME_KEY } from "@/shell/guestFrame";
+import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
 const route = useRoute();
 const router = useRouter();
@@ -120,15 +120,21 @@ watch(
 
 // An open document the server stops answering is asked once why. A `401 DriveLocked`
 // means the unlock ticket expired: the unlock screen shows, and only a new password opens
-// the document again. Any other refusal keeps the refusal surface. Nothing reopens by itself,
-// so a server that keeps refusing cannot cause a loop.
+// the document again. Any other refusal shows a guest the Sign-in screen, which never says
+// whether the item exists, and shows a signed-in user the refusal surface. Nothing reopens
+// by itself, so a server that keeps refusing cannot cause a loop.
 watch(
   () => session.value?.state.value,
   async (state, before) => {
     if (state !== "Refused" || before !== "Active" || !session.value) return;
     const request = opening;
     const lapsed = session.value;
-    if (!(await isDriveNodeLocked(lapsed.nodeId)) || request !== opening) return;
+    const lockedAgain = await isDriveNodeLocked(lapsed.nodeId);
+    if (request !== opening) return;
+    if (!lockedAgain) {
+      guestFrame?.requireSignIn();
+      return;
+    }
     opening += 1;
     session.value = null;
     surface.value = null;

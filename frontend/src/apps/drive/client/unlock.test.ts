@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { createLinkStore } from './links'
-import { unlockNode } from './unlock'
+import { isDriveLocked, unlockNode } from './unlock'
 import { createSession } from '@/platform/session'
-import { createTransport, type Transport } from '@/platform/transport'
+import { TransportError, createTransport, type Transport } from '@/platform/transport'
 
 const CODE = 'L000000000000000000001'
 const TICKET = `${Math.floor(Date.now() / 1000) + 3600}.${'b'.repeat(64)}`
@@ -77,5 +77,16 @@ describe('unlocking a password link', () => {
 
     expect(outcome.status).toBe('failed')
     expect(sent).toHaveLength(0)
+  })
+
+  it('reads a locked node from a thrown error and from a query\'s stored error alike', () => {
+    const locked = { type: 'DriveLocked', message: 'Locked', status: 401 }
+    expect([
+      isDriveLocked(new TransportError(locked)),
+      isDriveLocked({ ...locked }),
+      isDriveLocked({ ...locked, type: 'DriveNotFound' }),
+      isDriveLocked({ ...locked, status: 403 }),
+      isDriveLocked(null),
+    ]).toEqual([true, true, false, false, false])
   })
 })
