@@ -114,8 +114,6 @@ watch(show, (open) => {
 	sharees.value = (sharing?.sharees ?? []).map((sharee) => ({ ...sharee }))
 	mayShare.value = !!sharing?.may_share
 	query.value = ''
-	// A change waiting on a save for the calendar this dialog has just left is not this one's.
-	queued = false
 })
 
 const save = createResource({
@@ -135,52 +133,59 @@ const save = createResource({
 	},
 	// The server caps how many a calendar may be shared with and does not say the number, so
 	// its refusal is the only account of the limit there is to show. The list goes back to what
-	// it last agreed to, a change waiting its turn included — where the refusal was for this
-	// calendar. A refusal for one the dialog has since left is told, and nothing here is undone.
+	// it last agreed to, and a change of that calendar's waiting its turn goes with it, since it
+	// was made on a list the server never held. A refusal for a calendar the dialog has since
+	// left is told, and nothing on screen is undone. Whatever else is waiting still goes.
 	onError: (error) => {
-		if (forThisCalendar(pending)) {
-			queued = false
+		if (pending && forThisCalendar(pending)) {
+			waiting.delete(keyOf(pending))
 			sharees.value = saved.value.map((sharee) => ({ ...sharee }))
-		} else {
-			flush()
 		}
 		toastError(error)
+		flush()
 	},
 })
 
 // Every save replaces the whole list, so two in flight at once could land in either order and
-// the older undo the newer. One goes at a time; a change made while one is out waits, and the
-// list as it stands then is sent when the first comes back. Each carries the calendar it is
-// for, since the dialog can be closed and reopened for another before an answer arrives.
+// the older undo the newer. One goes at a time; a change made while one is out waits, and is
+// sent when the first comes back. Each carries the calendar it is for and the list as it stood,
+// since the dialog can be closed and reopened — for the same calendar or another — before an
+// answer arrives: what waits is never lost to that, and never sent to the wrong calendar.
 type Pending = { account: string; id: string; sharees: Sharee[] }
 let pending: Pending | null = null
-let queued = false
+const waiting = new Map<string, Pending>()
 
-const forThisCalendar = (request: Pending | null) =>
-	!!request && request.account === sharing?.account && request.id === sharing?.id
+const keyOf = (request: Pending) => `${request.account}|${request.id}`
 
-const submitNow = () => {
-	pending = {
-		account: sharing!.account,
-		id: sharing!.id,
-		sharees: sharees.value.map((sharee) => ({ ...sharee })),
-	}
+const forThisCalendar = (request: Pending) =>
+	request.account === sharing?.account && request.id === sharing?.id
+
+const snapshot = (): Pending => ({
+	account: sharing!.account,
+	id: sharing!.id,
+	sharees: sharees.value.map((sharee) => ({ ...sharee })),
+})
+
+const submit = (request: Pending) => {
+	pending = request
 	save.submit()
 }
 
-const flush = () => {
-	if (!queued) return
-	queued = false
-	submitNow()
+// A later change to the same calendar replaces an earlier one still waiting: each is the whole
+// list, so the latest is the only one worth sending.
+const persist = () => {
+	const request = snapshot()
+	if (save.loading) waiting.set(keyOf(request), request)
+	else submit(request)
 }
 
-const persist = () => {
-	if (save.loading) {
-		queued = true
-		return
-	}
-	submitNow()
+const flush = () => {
+	const next = waiting.values().next().value
+	if (!next) return
+	waiting.delete(keyOf(next))
+	submit(next)
 }
+
 
 const {
 	query,
