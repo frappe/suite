@@ -1,8 +1,8 @@
 import { ref } from 'vue'
-import { Pencil, Pin, Trash2 } from 'lucide-vue-next'
+import { Pencil, Pin, Share2, Trash2 } from 'lucide-vue-next'
 import { createResource } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/calendar/utils'
+import { raiseToast, toastError } from '@/apps/calendar/utils'
 import { userStore } from '@/apps/calendar/stores/user'
 
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
@@ -19,6 +19,7 @@ export const useCalendarActions = () => {
 	const selected = ref<CalendarRow>()
 	const showEdit = ref(false)
 	const showDelete = ref(false)
+	const showShare = ref(false)
 
 	const makeDefault = createResource({
 		url: 'suite.calendar.api.edit_calendar',
@@ -31,7 +32,7 @@ export const useCalendarActions = () => {
 			raiseToast(__('Default calendar changed.'))
 			store.calendars.reload()
 		},
-		onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
+		onError: toastError,
 	})
 
 	// Shown at once and saved behind: a toggle that waited on the server would feel broken,
@@ -51,9 +52,24 @@ export const useCalendarActions = () => {
 			auto: true,
 			onError: (error) => {
 				calendar.visible = visible ? 0 : 1
-				raiseToast(error.messages?.[0] || error.message, 'error')
+				toastError(error)
 			},
 		})
+	}
+
+	// Who a calendar is shared with is asked for on the way to the dialog, which opens once the
+	// answer is in: a dialog that opened at once and filled in a moment later moved under the
+	// reader's eyes, and there is nothing in it to look at before then.
+	const sharing = createResource({
+		url: 'suite.calendar.api.get_calendar_sharing',
+		makeParams: (calendar: CalendarRow) => ({ account: calendar.account, id: calendar.id }),
+		onSuccess: () => (showShare.value = true),
+		onError: toastError,
+	})
+
+	const share = (calendar: CalendarRow) => {
+		selected.value = calendar
+		sharing.submit(calendar)
 	}
 
 	const create = () => edit(undefined)
@@ -80,6 +96,14 @@ export const useCalendarActions = () => {
 			condition: () => canEdit(calendar) && !calendar.default,
 			onClick: () => makeDefault.submit(calendar),
 		},
+		// Who else sees it is the mail server's to say, so the option follows the right it reports
+		// rather than whether the calendar is the user's to edit.
+		{
+			label: __('Share'),
+			icon: Share2,
+			condition: () => !!calendar.may_share,
+			onClick: () => share(calendar),
+		},
 		// The default is where new events and invitations land, so it stays until another takes over.
 		{
 			label: __('Delete'),
@@ -101,6 +125,8 @@ export const useCalendarActions = () => {
 		selected,
 		showEdit,
 		showDelete,
+		showShare,
+		sharing,
 		create,
 		edit,
 		canEdit,
