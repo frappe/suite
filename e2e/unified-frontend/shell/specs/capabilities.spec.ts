@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../helpers/flips";
 
 import { patchAccount } from "../../helpers/shell";
 
@@ -15,7 +15,7 @@ test("an account without jmap sees no Mail or Calendar rail item", async ({ page
 	await page.goto("/home");
 	const rail = page.getByRole("navigation", { name: "Areas" });
 	await expect(rail.getByRole("link", { name: "Home" })).toBeVisible();
-	await expect(rail.getByRole("link", { name: "Files" })).toBeVisible();
+	await expect(rail.getByRole("link", { name: "Drive" })).toBeVisible();
 	await expect(rail.getByRole("link", { name: "Mail" })).toHaveCount(0);
 	await expect(rail.getByRole("link", { name: "Calendar" })).toHaveCount(0);
 });

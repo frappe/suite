@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { type APIRequestContext, type Page } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	adminApi,
@@ -142,7 +144,7 @@ test("a toolbar-only change asks before leaving the document", async ({ page }) 
 		asked = dialog.message();
 		await dialog.dismiss();
 	});
-	await page.getByRole("navigation", { name: "Areas" }).getByRole("link", { name: "Files" }).click();
+	await page.getByRole("navigation", { name: "Areas" }).getByRole("link", { name: "Drive" }).click();
 
 	await expect.poll(() => asked).toContain("recovery copy");
 	await expect(page).toHaveURL(new RegExp(`/d/${doc.name}`));

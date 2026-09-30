@@ -96,3 +96,44 @@ describe('pinned media', () => {
 		await expect(respond(MEDIA_URL)).rejects.toThrow()
 	})
 })
+
+// The shell document is the whole suite's. A stored copy would keep serving old
+// code after a flip or a deploy (unified frontend spec §14.9).
+describe('the shell document', () => {
+	const dispatch = (request: Pick<Request, 'url' | 'method' | 'mode' | 'headers' | 'referrer'>) => {
+		let answered = false
+		listeners.get('fetch')!({
+			request,
+			clientId: 'c1',
+			respondWith: () => {
+				answered = true
+			},
+			waitUntil: () => {},
+		})
+		return answered
+	}
+
+	it('leaves a slides navigation and a shell pin to the network', () => {
+		const url = `${location.origin}/slides/presentation/p1`
+		const navigation = { url, method: 'GET', mode: 'navigate' as const, headers: new Headers(), referrer: '' }
+		const pin = { ...navigation, mode: 'cors' as const, headers: new Headers({ 'x-slides-pin': 'shell' }) }
+
+		expect(dispatch(navigation)).toBe(false)
+		expect(dispatch(pin)).toBe(false)
+	})
+
+	it('drops the shell copy an older worker stored when it activates', async () => {
+		const deleted: string[] = []
+		vi.stubGlobal('caches', {
+			open: async () => ({ keys: async () => [], match: async () => undefined, delete: async () => true }),
+			delete: async (name: string) => deleted.push(name) > 0,
+		})
+		vi.stubGlobal('clients', { claim: async () => {}, matchAll: async () => [] })
+		let activation: Promise<unknown> = Promise.resolve()
+
+		listeners.get('activate')!({ waitUntil: (work: Promise<unknown>) => (activation = work) })
+		await activation
+
+		expect(deleted).toEqual(['slides-shell'])
+	})
+})

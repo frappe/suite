@@ -19,13 +19,13 @@ import { SidebarItem, SidebarLabel } from "frappe-ui";
 import { translate as __ } from "@/platform/translation";
 
 const destinations = [
-  { label: __("My files"), to: "/files", icon: "lucide-folder" },
+  { label: __("My files"), to: "/drive", icon: "lucide-folder" },
   {
     label: __("Shared with me"),
-    to: "/files/shared-with-me",
+    to: "/drive/shared-with-me",
     icon: "lucide-users",
   },
-  { label: __("Starred"), to: "/files/starred", icon: "lucide-star" },
-  { label: __("Trash"), to: "/files/trash", icon: "lucide-trash-2" },
+  { label: __("Starred"), to: "/drive/starred", icon: "lucide-star" },
+  { label: __("Trash"), to: "/drive/trash", icon: "lucide-trash-2" },
 ];
 </script>

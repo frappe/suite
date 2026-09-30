@@ -22,6 +22,17 @@ import { setupTheme } from '@/utils/setupTheme'
  * Drive-specific guard behaviour (clearing active entity) lives in router.ts.
  */
 
+/** One read of an entity's kind, shared by the `/g/` and `/f/` routes. */
+const entityType = async (entityName: unknown): Promise<{ type: string; name: string }> => {
+  const entity = createResource({
+    url: '/api/method/suite.drive.api.files.get_entity_type',
+    method: 'GET',
+    params: { entity_name: entityName },
+  })
+  await entity.fetch()
+  return entity.data
+}
+
 const setPageTitle = (to: any) => {
   if (useSessionStore().isLoggedIn) {
     document.title = appDocumentTitle(__(String(to.name).replace(/^drive-/, '')), 'Drive')
@@ -110,22 +121,15 @@ export const routes: RouteRecordRaw[] = [
         path: 'g/:entityName/',
         meta: { allowGuest: true },
         beforeEnter: async (to) => {
-          const entity = createResource({
-            url: '/api/method/suite.drive.api.files.get_entity_type',
-            method: 'GET',
-            params: {
-              entity_name: to.params.entityName,
-            },
-          })
-          await entity.fetch()
+          const entity = await entityType(to.params.entityName)
           const letter = (
             {
               folder: 'd',
               file: 'f',
             } as Record<string, string>
-          )[entity.data.type]
+          )[entity.type]
           return {
-            path: `/drive/${letter}/${entity.data.name}`,
+            path: `/drive/${letter}/${entity.name}`,
           }
         },
       },
@@ -135,6 +139,14 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/apps/drive/legacy/pages/File.vue'),
         meta: { allowGuest: true, filePage: true, shellScroll: false },
         props: true,
+        // The server writes folder links as `/drive/f/<id>` once the files flip
+        // is on. With the flip off again those links still open the folder.
+        // A failed lookup leaves the file page to show its own error.
+        beforeEnter: async (to) => {
+          const entity = await entityType(to.params.entityName).catch(() => null)
+          if (entity?.type !== 'folder') return true
+          return { path: `/drive/d/${entity.name}`, query: to.query, replace: true }
+        },
       },
       {
         path: 'd/:entityName/:slug?',

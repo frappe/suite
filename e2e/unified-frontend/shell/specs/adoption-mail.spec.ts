@@ -14,7 +14,8 @@ import { MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
 async function bootShellFlip(page: Page, on: boolean) {
 	await page.addInitScript((value) => {
-		Object.assign(window, { suite_flip_shell: value });
+		// The files flip stays on, so Home and Drive keep their rail items.
+		Object.assign(window, { suite_flip_shell: value, suite_flip_files: true });
 	}, on);
 }
 

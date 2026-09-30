@@ -38,6 +38,7 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["push_relay_server_url"], "")
         self.assertIs(boot["disable_slides_service_worker"], False)
         self.assertIs(boot["suite_flip_shell"], False)
+        self.assertIs(boot["suite_flip_files"], False)
 
     def test_kill_switch_reaches_the_boot(self):
         self.frappe.conf.get.side_effect = lambda key, default=None: (
@@ -70,6 +71,14 @@ class SuiteBoot(unittest.TestCase):
                     value if key == "suite_flip_shell" else default
                 )
                 self.assertIs(www.get_boot()["suite_flip_shell"], expected)
+
+    def test_each_flip_reaches_the_boot_from_its_own_key(self):
+        for key, other in (("suite_flip_shell", "suite_flip_files"), ("suite_flip_files", "suite_flip_shell")):
+            with self.subTest(key=key):
+                self.frappe.conf.get.side_effect = lambda k, default=None, key=key: 1 if k == key else default
+                boot = www.get_boot()
+                self.assertIs(boot[key], True)
+                self.assertIs(boot[other], False)
 
     def test_guest_boot_is_redacted(self):
         self.frappe.session.user = "Guest"

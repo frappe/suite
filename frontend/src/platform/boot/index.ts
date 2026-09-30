@@ -3,7 +3,7 @@
  * site config key. The client reads them from boot only, so a key change
  * applies on the next page load [T014, T018].
  */
-export type BootFlag = 'suite_flip_shell'
+export type BootFlag = 'suite_flip_shell' | 'suite_flip_files'
 
 /** Whether the boot carries `flag` as on. A missing boot reads as off. */
 export function readBootFlag(flag: BootFlag): boolean {

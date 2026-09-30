@@ -50,9 +50,9 @@ const FilesIcon = defineComponent({
 
 export const filesArea: AreaDefinition = {
   id: 'files',
-  label: () => __('Files'),
+  label: () => __('Drive'),
   icon: FilesIcon,
-  to: '/files',
+  to: '/drive',
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
 }
 
@@ -112,7 +112,7 @@ export function driveNodeRoute(
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind
   const slug = slugify(label)
-  const base = nodeKind === 'folder' ? `/files/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
+  const base = nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
   return { path: `${base}${slug ? `/${slug}` : ''}` }
 }
 

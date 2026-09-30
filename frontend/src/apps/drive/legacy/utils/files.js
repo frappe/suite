@@ -305,7 +305,7 @@ export function getEntityIconUrl(entity) {
 function getPresentationThumbnailUrl(entity) {
   let thumbnail = entity?.thumbnail
   if (!thumbnail) return ''
-  if (thumbnail.startsWith('/files')) thumbnail = `/private${thumbnail}`
+  if (thumbnail.startsWith('/files/')) thumbnail = `/private${thumbnail}`
   if (!thumbnail.startsWith('/private') || entity.owner === getSessionUser()) return thumbnail
   return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(thumbnail)}&presentation=${encodeURIComponent(entity.content_docname)}`
 }

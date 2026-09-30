@@ -1,6 +1,6 @@
 <template>
   <div class="min-w-0 text-ink-gray-8">
-    <AreaSidebar area="files" title="Files" :loading="discovered.status === 'pending' && !discovered.data">
+    <AreaSidebar area="files" title="Drive" :loading="discovered.status === 'pending' && !discovered.data">
       <FilesPanel />
     </AreaSidebar>
     <PageHeader class="hidden md:flex">
@@ -228,7 +228,7 @@ const breadcrumbs = computed(() => {
   const items = detail.data?.breadcrumbs?.map((crumb) => ({
     label: crumb.title,
     route: {
-      path: rootPath(crumb.name) ?? `/files/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
+      path: rootPath(crumb.name) ?? `/drive/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
       query: presentationQuery.value,
     },
   })) ?? []
@@ -332,9 +332,14 @@ watch(() => [props.destination, String(route.params.node ?? ''), discovered.data
 }, { immediate: true })
 watch(() => detail.data, (folder) => {
   if (!folder || props.destination !== 'folder' || rootPath(folder.name)) return
+  // The old Drive pages used `/drive/f/<id>` for a file. A non-folder id opens as a document [T020].
+  if (folder.kind !== 'folder' && folder.kind !== 'root') {
+    void router.replace({ path: `/d/${encodeURIComponent(folder.name)}`, query: route.query })
+    return
+  }
   const expected = slugify(folder.title)
   if (String(route.params.slug ?? '') !== expected) {
-    void router.replace({ path: `/files/f/${encodeURIComponent(folder.name)}${expected ? `/${expected}` : ''}`, query: route.query })
+    void router.replace({ path: `/drive/f/${encodeURIComponent(folder.name)}${expected ? `/${expected}` : ''}`, query: route.query })
   }
   if (visitedFolder !== folder.name) {
     visitedFolder = folder.name
@@ -423,8 +428,8 @@ function requestPanel() {
 }
 function rootPath(id: string): string | null {
   if (!id) return null
-  if (id === discovered.data?.personal.node) return '/files'
-  if (id === discovered.data?.organization?.node) return '/files/organization'
+  if (id === discovered.data?.personal.node) return '/drive'
+  if (id === discovered.data?.organization?.node) return '/drive/organization'
   return null
 }
 function clearRecentType() {
@@ -456,7 +461,7 @@ async function openNode(row: DriveNode, newTab = false) {
     return
   }
   const path = row.kind === 'folder'
-    ? `/files/f/${encodeURIComponent(row.name)}${slugify(row.title) ? `/${slugify(row.title)}` : ''}`
+    ? `/drive/f/${encodeURIComponent(row.name)}${slugify(row.title) ? `/${slugify(row.title)}` : ''}`
     : `/d/${encodeURIComponent(row.name)}${slugify(row.title) ? `/${slugify(row.title)}` : ''}`
   const href = router.resolve({ path, query: row.kind === 'folder' ? presentationQuery.value : undefined }).href
   if (newTab) window.open(href, '_blank', 'noopener,noreferrer')
@@ -542,7 +547,7 @@ async function create(kind: 'folder' | 'document' | 'link', contentDoctype?: str
 }
 function replaceSlug(row: DriveNode) {
   if (props.destination === 'folder' && row.name === route.params.node) {
-    void router.replace({ path: `/files/f/${encodeURIComponent(row.name)}/${slugify(row.title)}`, query: route.query })
+    void router.replace({ path: `/drive/f/${encodeURIComponent(row.name)}/${slugify(row.title)}`, query: route.query })
   }
 }
 function syncSavedViewQuery() {
