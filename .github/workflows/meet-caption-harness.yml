@@ -1,0 +1,34 @@
+name: Test Meet Caption Harness
+
+on:
+  pull_request:
+    paths:
+      - "e2e/meet/captions/**"
+      - "e2e/meet/fixtures/**"
+      - "e2e/meet/helpers/**"
+      - "e2e/shared/**"
+      - "e2e/package.json"
+      - "e2e/yarn.lock"
+      - "frontend/src/apps/meet/components/CaptionOverlay.vue"
+      - ".github/workflows/meet-caption-harness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: corepack enable && corepack prepare yarn@1.22.22 --activate
+      - run: yarn install --frozen-lockfile --non-interactive
+      - run: yarn playwright install --with-deps chromium
+      - run: yarn test:meet-captions-unit
+      - run: yarn test:meet-captions-smoke

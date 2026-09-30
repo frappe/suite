@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "clips": [
+    {
+      "id": "english-001",
+      "audio": "audio/english-001.wav",
+      "accent": "indian-english",
+      "scenario": "english-only",
+      "language": "en-US",
+      "consented": false,
+      "reference": "Siobhan, please send the report to Aarav.",
+      "names": ["Siobhan", "Aarav", "Zubair"],
+      "speech_end_seconds": 3.2
+    },
+    {
+      "id": "switching-001",
+      "audio": "audio/switching-001.wav",
+      "accent": "indian-english",
+      "scenario": "english-hindi-switching",
+      "language": "auto",
+      "consented": false,
+      "reference": "Aarav, रिपोर्ट भेजो before the meeting.",
+      "names": ["Aarav", "Siobhan"],
+      "speech_end_seconds": 3.6
+    }
+  ]
+}
