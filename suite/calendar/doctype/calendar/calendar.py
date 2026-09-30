@@ -9,6 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
 
+from suite.calendar.sharing import may_share
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_service
 from suite.mail.utils import log_mail_error
@@ -378,7 +379,7 @@ def format_calendar(account: str, calendar: dict) -> dict:
                 "may_write_own": cint(bool(r.get("mayWriteOwn", False))),
                 "may_update_private": cint(bool(r.get("mayUpdatePrivate", False))),
                 "may_rsvp": cint(bool(r.get("mayRSVP", False))),
-                "may_admin": cint(bool(r.get("mayAdmin", False))),
+                "may_admin": cint(may_share(r)),
                 "may_delete": cint(bool(r.get("mayDelete", False))),
             }
         )
@@ -405,7 +406,10 @@ def format_calendar(account: str, calendar: dict) -> dict:
         "may_write_own": cint(bool(rights.get("mayWriteOwn", False))),
         "may_update_private": cint(bool(rights.get("mayUpdatePrivate", False))),
         "may_rsvp": cint(bool(rights.get("mayRSVP", False))),
-        "may_admin": cint(bool(rights.get("mayAdmin", False))),
+        "may_admin": cint(may_share(rights)),
+        # The same right under the name the app and the spec use. The field keeps the JMAP
+        # draft's name, as Address Book's does; the app talks about sharing.
+        "may_share": cint(may_share(rights)),
         "may_delete": cint(bool(rights.get("mayDelete", False))),
         "creation": today(),
         "modified": today(),
