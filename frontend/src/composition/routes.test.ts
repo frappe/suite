@@ -21,7 +21,6 @@ describe("canonical route metadata", () => {
       "/calendar/:pathMatch(.*)*",
       "/meet/:pathMatch(.*)*",
       "/d/:node/:slug?",
-      "/l/:token",
     ]);
   });
 });
@@ -49,7 +48,6 @@ describe("the files flip", () => {
       "/calendar/:pathMatch(.*)*",
       "/meet/:pathMatch(.*)*",
       "/d/:node/:slug?",
-      "/l/:token",
     ]);
   });
 });

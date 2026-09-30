@@ -6,7 +6,10 @@ import type { RouteLocationNormalized } from 'vue-router'
 const state = vi.hoisted(() => {
   window.suite_is_onboarded = true
   window.suite_can_onboard = false
-  return { status: 'authenticated' as 'guest' | 'authenticated' }
+  return {
+    status: 'authenticated' as 'guest' | 'authenticated',
+    remembered: [] as [token: string, node: string][],
+  }
 })
 
 vi.mock('@/platform/session', async (importOriginal) => {
@@ -30,6 +33,11 @@ vi.mock('@/platform/session', async (importOriginal) => {
 // Writer's route module warms the legacy Drive user list. The list is data,
 // not routing, and its module pulls in UI this test environment cannot build.
 vi.mock('@/apps/drive/legacy/sdk', () => ({ allUsers: { fetch: () => {} } }))
+
+vi.mock('@/apps/drive', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/apps/drive')>()),
+  rememberDriveLink: (token: string, node: string) => state.remembered.push([token, node]),
+}))
 
 const { default: router } = await import('./index')
 
@@ -110,6 +118,47 @@ describe('suite route table', () => {
   )
 })
 
+describe('share links and shared items', () => {
+  const TOKEN = 'L000000000000000000001'
+
+  afterEach(() => {
+    state.status = 'authenticated'
+    state.remembered = []
+    window.suite_is_onboarded = true
+    window.suite_can_onboard = false
+    vi.restoreAllMocks()
+  })
+
+  it.each(['guest', 'authenticated'] as const)(
+    'seeds the link store and keeps no token in the URL for a %s',
+    async (status) => {
+      state.status = status
+      const settled = await settle(`/d/doc-1?view=comments#link=${TOKEN}&x=1`)
+      expect(settled?.fullPath).toBe('/d/doc-1?view=comments#x=1')
+      expect(state.remembered).toEqual([[TOKEN, 'doc-1']])
+    },
+  )
+
+  it('loads /l/<token> and /drive/l/<token> from the server on a click', async () => {
+    await router.push('/d/doc-1')
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+
+    await router.push(`/l/${TOKEN}`)
+    await router.push(`/drive/l/${TOKEN}`)
+
+    expect(assign.mock.calls).toEqual([[`/l/${TOKEN}`], [`/drive/l/${TOKEN}`]])
+    expect(router.currentRoute.value.path).toBe('/d/doc-1')
+  })
+
+  it('opens a shared item on a site that is not set up, but sends area routes to setup', async () => {
+    window.suite_is_onboarded = false
+    window.suite_can_onboard = true
+    expect((await settle('/d/doc-2'))?.path).toBe('/d/doc-2')
+    expect((await settle('/home'))?.path).toBe('/suite/setup')
+  })
+})
+
 describe('the files flip', () => {
   afterEach(() => {
     delete window.suite_flip_files
@@ -130,6 +179,29 @@ describe('the files flip', () => {
     expect(redirectOf(flipped, 'suite-start')).toBe('/home')
     expect(redirectOf(flipped, 'suite-root')).toBe('/home')
     localStorage.removeItem('suite:last-app')
+  })
+
+  it('lets a guest open a shared folder, and nothing else in the Drive area', async () => {
+    window.suite_flip_files = true
+    vi.resetModules()
+    const { default: flipped } = await import('./index')
+    state.status = 'guest'
+    const settledAt = async (path: string) => {
+      let settled: RouteLocationNormalized | undefined
+      const remove = flipped.beforeEach((to) => {
+        settled = to
+        return false
+      })
+      await flipped.push(path).finally(remove)
+      return settled
+    }
+
+    const folder = await settledAt('/drive/f/node-1/plans')
+    const home = await settledAt('/drive')
+
+    expect([folder?.name, folder?.meta.allowGuest]).toEqual(['files-folder', true])
+    expect(home).toBeUndefined()
+    state.status = 'authenticated'
   })
 })
 

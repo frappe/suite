@@ -124,6 +124,11 @@ export function openDocumentSession(nodeId: string) {
   })
 }
 
+export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
+
+/** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
+export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))
+
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
 )

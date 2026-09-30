@@ -1,6 +1,6 @@
 <template>
   <div class="min-w-0 text-ink-gray-8">
-    <AreaSidebar area="files" title="Drive" :loading="discovered.status === 'pending' && !discovered.data">
+    <AreaSidebar v-if="signedIn" area="files" title="Drive" :loading="discovered.status === 'pending' && !discovered.data">
       <FilesPanel />
     </AreaSidebar>
     <PageHeader class="hidden md:flex">
@@ -16,12 +16,14 @@
         <PageHeaderBackButton v-if="folderParent" :route="folderParent" />
       </template>
       <Button
+        v-if="signedIn"
         variant="ghost"
         :label="destinationLabel"
         icon-right="lucide-chevron-down"
         class="min-w-0 text-lg font-medium"
         @click="requestPanel"
       />
+      <span v-else class="truncate text-lg font-medium text-ink-gray-9">{{ destinationLabel }}</span>
       <template #suffix>
         <Dropdown v-if="canCreate" :options="newOptions" align="end">
           <Button variant="subtle" label="New" icon-right="lucide-chevrons-up-down" />
@@ -29,7 +31,8 @@
       </template>
     </PageHeaderMobile>
 
-    <div class="px-5 py-4">
+    <UnlockScreen v-if="locked" :node="parentId" @unlocked="reload" />
+    <div v-else class="px-5 py-4">
       <div class="flex h-7 items-center justify-between gap-2">
         <template v-if="selectionMode">
           <div class="flex min-w-0 items-center gap-2">
@@ -47,6 +50,7 @@
         </template>
         <template v-else>
           <TextInput
+            v-if="signedIn"
             v-model="searchText"
             type="search"
             :debounce="250"
@@ -57,7 +61,7 @@
           >
             <template #prefix><span class="lucide-search size-4" aria-hidden="true" /></template>
           </TextInput>
-          <div class="flex items-center gap-2">
+          <div class="ml-auto flex items-center gap-2">
             <Button
               v-if="recentType"
               :label="`Type: ${recentType.newLabel()}`"
@@ -143,16 +147,20 @@ import { archiveDownloadUrl, startArchive } from '@/apps/drive/client/archives'
 import { observeDriveChanges } from '@/apps/drive/client/realtime'
 import { roots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveBatchResult, type DriveNode } from '@/apps/drive/client/types'
+import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { view } from '@/apps/drive/client/views'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
-import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
+import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
 import { confirm, prompt, toast } from '@/platform/feedback'
 import { useMutation, useQuery } from '@/platform/server-state'
+import { useSession } from '@/platform/session'
 import BatchOutcome from '../features/BatchOutcome.vue'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import TemplatePicker from '../features/TemplatePicker.vue'
+import UnlockScreen from '../features/UnlockScreen.vue'
+import { linkAccess } from '../features/linkAccess'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import {
   clearSelection,
@@ -175,7 +183,12 @@ const props = defineProps<{ destination: Destination }>()
 const route = useRoute()
 const router = useRouter()
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
-const discovered = useQuery(roots())
+const guestFrame = inject(GUEST_FRAME_KEY, null)
+const session = useSession()
+// A visitor without a session gets no sidebar, search or Star (spec §10.3).
+const signedIn = computed(() => session.status.value === 'authenticated')
+// Roots need a session (spec §10.13). A guest only ever opens a shared folder.
+const discovered = useQuery(() => signedIn.value ? roots() : false)
 const presentationVersion = ref(0)
 const selectionState = ref<SelectionState>(clearSelection())
 const searchText = ref(String(route.query.q ?? ''))
@@ -216,6 +229,9 @@ const parentId = computed(() => props.destination === 'folder' ? String(route.pa
 const detail = useQuery(() => parentId.value && concreteDestination.value
   ? node(parentId.value, 'access,breadcrumbs')
   : false)
+// A password link shows the unlock screen in place of the folder (spec §10.2),
+// also when its ticket expires and the next listing refresh is refused.
+const locked = computed(() => isDriveLocked(detail.error) || (concreteDestination.value && isDriveLocked(listing.error)))
 const destinationLabel = computed(() => {
   if (props.destination === 'folder') return detail.data?.title ?? 'Folder'
   return ({
@@ -276,8 +292,7 @@ const listing = useQuery(() => {
   return view({ view: name, root, content_doctype: recentType.value?.contentDoctype, expand: expansion.value })
 })
 const canCreate = computed(() => concreteDestination.value && !isSearching.value && hasRole(detail.data, DRIVE_ROLES.upload))
-// Through a link below EDIT, New offers no document kinds and no templates (spec §10.14).
-const canCreateDocuments = computed(() => !detail.data?.access?.via_link || hasRole(detail.data, DRIVE_ROLES.edit))
+const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value).documentKinds)
 const selectedRows = computed(() => (listing.rows as DriveNode[]).filter((row) => selection.value.includes(row.name)))
 const canBulkEdit = computed(() => !!selectedRows.value.length && selectedRows.value.every((row) => hasRole(row, DRIVE_ROLES.edit)))
 const emptyTitle = computed(() => isSearching.value ? 'No files match this search' : `${destinationLabel.value} is empty`)
@@ -341,10 +356,16 @@ watch(() => detail.data, (folder) => {
   if (String(route.params.slug ?? '') !== expected) {
     void router.replace({ path: `/drive/f/${encodeURIComponent(folder.name)}${expected ? `/${expected}` : ''}`, query: route.query })
   }
-  if (visitedFolder !== folder.name) {
+  if (visitedFolder !== folder.name && linkAccess(folder, signedIn.value).visit) {
     visitedFolder = folder.name
     void visitMutation.run({ node: folder.name })
   }
+})
+
+// A guest is never told whether the folder exists (spec §10.8).
+watch(() => [detail.error, listing.error] as const, (errors) => {
+  const refused = errors.some((error) => error && !isDriveLocked(error) && [401, 403, 404, 410].includes(error.status))
+  if (guestFrame && refused) guestFrame.requireSignIn()
 })
 
 const viewSettings = computed<DropdownItem[]>(() => [
@@ -449,6 +470,10 @@ function startPreviewObservation() {
   })
 }
 function refreshPreviews() { void listing.refetch() }
+function reload() {
+  void detail.refetch()
+  void listing.refetch()
+}
 
 async function openNode(row: DriveNode, newTab = false) {
   if (row.kind === 'link') {
@@ -456,7 +481,7 @@ async function openNode(row: DriveNode, newTab = false) {
     const origin = new URL(row.url, window.location.href).origin
     const allowed = await confirm({ title: 'Open external link?', message: `This link opens ${origin} in a new tab.`, confirmLabel: 'Open' })
     if (!allowed) return
-    await visitMutation.run({ node: row.name })
+    if (linkAccess(row, signedIn.value).visit) await visitMutation.run({ node: row.name })
     window.open(row.url, '_blank', 'noopener,noreferrer')
     return
   }
@@ -479,7 +504,7 @@ function rowMenuOptions(row: DriveNode): ContextMenuOption[] {
       { label: 'Move', icon: 'lucide-folder-input', onClick: () => beginPicker(row, 'move') },
     ] : []),
     { label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') },
-    { label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) },
+    ...(linkAccess(row, signedIn.value).star ? [{ label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) }] : []),
     ...(hasRole(row, DRIVE_ROLES.manage) ? [{ label: 'Share', icon: 'lucide-user-plus', onClick: unavailableShare }] : []),
     ...(editable ? [{ label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashMutation.run({ node: row.name, state: 'Trashed' }) }] : []),
     { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
