@@ -30,7 +30,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
 | Stage 5 adoption | `forge/uf-5-adoption` | done | `431d97980` | Four sub-lanes (Meet, Mail, Calendar, PWA and shell), each codex-reviewed. Gates after merging drive-layer: 195 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.08 KiB, architecture and boot OK. Shell journeys on the PWA sub-lane: 64 passed, 1 known socket failure. PWA review: logout drops the push token, one notification per message across tabs, click handler for every browser, one top inset. Manifest `id` is `/suite` (question 21) |
 | Stage 6 flip plumbing | `forge/uf-6-shell-flip-plumbing` | done | `e1f75678e` | codex review: kind redirects keep the hash (`#link=`), old `/drive/f/` kind check reads the node through the Drive client (no new legacy call), Apps drill-in focus, shell-off files-on journeys, Home Drive group hidden while `suite_flip_files` is off. Gates: 197 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.43 KiB. Journeys: shell 91 plus the known socket failure, files 81 (2 skipped), home 10. Exit-gate grep has one hit, `legacy/utils/files.js:308` (stage 15 deletes it) |
-| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | first half and review fixes committed `52ccd4376`; wiring in `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` waits for stage 6 | | Server needed no change (Drive 43 and S2 meet the gate). Guest name field belongs to stage 11 after this wiring |
+| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | done | `f9431d75b` | Two codex reviews. Wiring review: unlock on a locked listing too, no roots request for guests, a guest refused mid-document gets the Sign-in screen. Router takes `#link=` first, even with the files flip off (no old page reads it). S3 setup gate skips `allowGuest` routes. Gates: 224 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 117.34 KiB, architecture OK. Journeys: guest-links 10 (flip on) and 6 (flip off), files 91 (flip on) and 81 (flip off), 2 skipped each. The `session.ts` visit skip for link-only access goes to stage 9 |
 | Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | committed with review fixes `72ee41df4`; the `FilesPage.vue` row Share waits for stage 8 | | codex review: self-demotion confirm based on the outcome (groups, inherited Deny, overwrites); session access re-read after each write; per-row pending; expiry on people and groups; expired General and Public rows stay. Journeys: sharing 8, document-surfaces and slides-document 11 |
 | Stage 10 upload, restore, batch | `forge/uf-10-upload-restore-batch` | part 1 and review fixes committed `9c6ecd7cc`; `FilesPage.vue`, `apps/drive/index.ts` and composition wiring wait for stages 8 and 9 | | codex review: resume probes the server offset, records keyed by user or guest link, row Retry clears the halt, trash Retry, one tap one action on the ring. S3 direct mode built (presigned POST, restarts after reload); unit tests only, no S3 here. `hash-wasm` 4.12.0 placed by hand; not in the initial graph |
 | Stage 11 document surfaces | `forge/uf-11-document-surfaces` | done | `a15886a7a` | Four sub-lanes, each codex-reviewed. Gates after merging drive-layer: 177 unified, legacy manifest, boundaries 333/71 plus 2 legacy Drive calls (SuiteCommandPalette, stage 15), typecheck 0, bundle 116.25 KiB, architecture OK. Files journeys 81 passed, 2 skipped. Legacy-call rule is a substring scan over `frontend/src` and `suite/public/js`, comments included. Drive dialogs cross the seam as `useDriveDialogs()`. Desk picker attach checked by hand (a repo journey needs `bench build`) |
@@ -161,6 +161,11 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 32. **Hash on slug replaces.** `DocumentHost.vue`, `FilesPage.vue` and the
     old Folder page drop the hash when they add a slug. Interim: accepted,
     because stage 8 reads `#link=` on the first navigation.
+33. **Go to Home** on the Sign-in screen goes to `/`, which lands on
+    `/mail` until flip 2. Interim: stage 12 client half decides.
+34. **`#link=` with the files flip off.** The router removes it on the old
+    `/drive/g/` pages too. No old page reads it, so no link breaks.
+    Interim: accepted.
 
 ## Needs a manual check (cannot run on this devbox)
 
@@ -190,6 +195,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Mail shows a blank page when `get_user_info` fails: its route guard waits with no error handler. Before stage 5 | stage 5 PWA | not assigned |
 | Guest "Your name" field in comment composers (plan stage 11) waits for stage 8's wiring | stage 8 | stage 11 follow-up after 8 |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
+| With `suite_flip_files` off, `/drive/g/<id>` shows Not Found: the old `g/:entityName/` route has only `beforeEnter`. `node_url` sends `/l/` links there, so no `/l/` link opens with the flip off | stage 8 | stage 12 client half |
 
 ## Backend asks raised during the run
 
