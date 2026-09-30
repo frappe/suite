@@ -50,9 +50,9 @@ const FilesIcon = defineComponent({
 
 export const filesArea: AreaDefinition = {
   id: 'files',
-  label: () => __('Files'),
+  label: () => __('Drive'),
   icon: FilesIcon,
-  to: '/files',
+  to: '/drive',
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
 }
 
@@ -112,7 +112,7 @@ export function driveNodeRoute(
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind
   const slug = slugify(label)
-  const base = nodeKind === 'folder' ? `/files/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
+  const base = nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
   return { path: `${base}${slug ? `/${slug}` : ''}` }
 }
 
@@ -123,6 +123,11 @@ export function openDocumentSession(nodeId: string) {
     return openFilePreviewSession(nodeId)
   })
 }
+
+export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
+
+/** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
+export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),

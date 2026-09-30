@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	adminApi,
@@ -39,7 +41,7 @@ test("the initial presentation is list, no grouping, Name ascending", async ({ p
 		if (/\/children\?/.test(request.url())) requests.push(request.url());
 	});
 	await page.addInitScript(() => window.localStorage.clear());
-	await page.goto(`/files/f/${folder.name}`);
+	await page.goto(`/drive/f/${folder.name}`);
 
 	await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
 	await expect(page.getByRole("columnheader", { name: "Owner" })).toBeVisible();
@@ -58,7 +60,7 @@ test("grid view asks for the preview expansion and paints tiles", async ({ page 
 	page.on("request", (request) => {
 		if (/\/children\?/.test(request.url())) requests.push(request.url());
 	});
-	await page.goto(`/files/f/${folder.name}?view=grid`);
+	await page.goto(`/drive/f/${folder.name}?view=grid`);
 
 	await expect(page.getByRole("listitem")).toHaveCount(3);
 	await expect(page.getByRole("columnheader", { name: "Name" })).toHaveCount(0);
@@ -66,7 +68,7 @@ test("grid view asks for the preview expansion and paints tiles", async ({ page 
 });
 
 test("the view settings menu switches between list and grid", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list`);
+	await page.goto(`/drive/f/${folder.name}?view=list`);
 	await page.getByRole("button", { name: "View settings" }).click();
 	await page.getByRole("menuitem", { name: "Grid" }).click();
 	await expect(page).toHaveURL(/view=grid/);
@@ -79,7 +81,7 @@ test("the view settings menu switches between list and grid", async ({ page }) =
 });
 
 test("group by Type renders contiguous server-ordered sections", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list&group=type`);
+	await page.goto(`/drive/f/${folder.name}?view=list&group=type`);
 	await expect(page.getByText("Folders", { exact: true })).toBeVisible();
 	await expect(page.getByText("Writer Documents", { exact: true })).toBeVisible();
 	await expect(page.getByText("Links", { exact: true })).toBeVisible();
@@ -94,7 +96,7 @@ test("group by Type renders contiguous server-ordered sections", async ({ page }
 const SIZE_SWITCH = 3;
 
 test("optional columns are a saved preference, not URL state", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list`);
+	await page.goto(`/drive/f/${folder.name}?view=list`);
 	await page.getByRole("button", { name: "View settings" }).click();
 	await page.getByRole("menu", { name: "View settings" }).getByRole("switch").nth(SIZE_SWITCH).click();
 	await page.keyboard.press("Escape");
@@ -112,7 +114,7 @@ test("optional columns are a saved preference, not URL state", async ({ page }) 
 });
 
 test("a document row opens the canonical /d/ route", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list`);
+	await page.goto(`/drive/f/${folder.name}?view=list`);
 	await page.getByText("bbb-document", { exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`/d/${document.name}/bbb-document`));
 });

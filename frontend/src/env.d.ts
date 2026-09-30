@@ -24,6 +24,8 @@ declare global {
     disable_slides_service_worker?: boolean
     /** Shell flip for Mail, Calendar and Meet (site config, served by www/suite.py). Read through `@/platform/boot`. */
     suite_flip_shell?: boolean
+    /** Files flip for Home, Drive and documents (site config, served by www/suite.py). Read through `@/platform/boot`. */
+    suite_flip_files?: boolean
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */

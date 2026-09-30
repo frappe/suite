@@ -1,4 +1,6 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 /**
  * Spec §9.5, stage 3: Mail leaves the shared page as it found it.
@@ -109,7 +111,7 @@ async function shellOverlayStacking(page: Page) {
 const shortcutsDialog = (page: Page) => page.getByRole("dialog", { name: "Keyboard Shortcuts" });
 
 async function openDriveArea(page: Page) {
-	await expect(page).toHaveURL(/\/files$/);
+	await expect(page).toHaveURL(/\/drive$/);
 	await expect(page.getByRole("navigation", { name: "Areas" })).toBeVisible();
 }
 
@@ -122,7 +124,7 @@ test("Mail, then the Drive area, then Mail again leaves the page as it was", asy
 	const sockets = trackSockets(page);
 
 	// The Drive area before Mail ever loads: the reference for every check.
-	await page.goto("/files");
+	await page.goto("/drive");
 	await openDriveArea(page);
 	expect(await settledSockets(sockets)).toEqual({ platform: 1, site: 0 });
 	const overflowBefore = await documentOverflow(page);

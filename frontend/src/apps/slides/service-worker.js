@@ -12,9 +12,6 @@ import {
 	PIN_HEADER,
 } from './utils/slidesCaches'
 
-// one document serves every slides url, so the entry has a fixed key
-const SHELL_CACHE_KEY = '/slides'
-
 const DAY = 24 * 60 * 60 * 1000
 
 // membership is what makes a cache expiring; the sweep reads straight off this
@@ -63,23 +60,23 @@ const handleSWActivate = async () => {
 	// this takes control of all client pages that are already open
 	await self.clients.claim()
 	// a failed sweep must not block activation
-	await Promise.all(
-		Object.entries(CACHE_MAX_AGE).map(([name, maxAge]) =>
+	await Promise.all([
+		...Object.entries(CACHE_MAX_AGE).map(([name, maxAge]) =>
 			cleanupOldCacheEntries(name, maxAge).catch(() => {}),
 		),
-	)
+		// the shell copy an older worker stored; see the fetch listener
+		caches.delete(SHELL_CACHE_NAME).catch(() => {}),
+	])
 }
 
 self.addEventListener('activate', (event) => {
 	event.waitUntil(handleSWActivate())
 })
 
-const getModifiedResponse = (response, type) => {
+const getModifiedResponse = (response) => {
 	const responseToCache = response.clone()
 	const headers = new Headers(responseToCache.headers)
 	headers.set('x-cached-time', Date.now().toString())
-	// matched by a fixed key, so nothing may make the hit conditional
-	if (type === 'shell') headers.delete('Vary')
 
 	return new Response(responseToCache.body, {
 		status: responseToCache.status,
@@ -113,9 +110,8 @@ const addCacheEntry = async (type, cache, request, response) => {
 	if (!isCacheable(type, response)) return
 
 	// clone response and add cache timestamp header
-	const modifiedResponse = getModifiedResponse(response, type)
-	const key = type === 'shell' ? SHELL_CACHE_KEY : request
-	await cache.put(key, modifiedResponse)
+	const modifiedResponse = getModifiedResponse(response)
+	await cache.put(request, modifiedResponse)
 }
 
 const fetchAndCache = async (event, type, cache) => {
@@ -132,13 +128,13 @@ const fetchAndCache = async (event, type, cache) => {
 
 // network-first: serve the live response (preserving its real headers) and fall
 // back to cache only when the network fails; with nothing stored the error surfaces
-const networkFirst = async (event, type, cache, key = event.request) => {
+const networkFirst = async (event, type, cache) => {
 	const network = fetchAndCache(event, type, cache)
 	try {
 		return await network
 	} catch {}
 
-	const cached = await matchCache(cache, key)
+	const cached = await matchCache(cache, event.request)
 	if (!cached) return network
 
 	return cached
@@ -205,17 +201,9 @@ const getAssetResponse = async (event, url) => {
 	return staleWhileRevalidate(event, cache)
 }
 
-const getShellResponse = async (event) => {
-	const cache = await openCache(SHELL_CACHE_NAME)
-	if (!cache) return fetch(event.request)
-
-	return networkFirst(event, 'shell', cache, SHELL_CACHE_KEY)
-}
-
 const getResponseForRequest = async (event, type, url) => {
 	if (type === 'media') return getMediaResponse(event)
 	if (type === 'asset') return getAssetResponse(event, url)
-	if (type === 'shell') return getShellResponse(event)
 
 	const cache = await openCache(API_CACHE_NAME)
 	if (!cache) return fetch(event.request)
@@ -231,7 +219,10 @@ self.addEventListener('fetch', (event) => {
 	if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
 	const requestType = getRequestType(request, slidesClientState.get(event.clientId))
-	if (requestType === 'other') return
+	// the shell document is the whole suite's, not slides': a stored copy would
+	// keep serving old code after a flip or a deploy, so it always comes from
+	// the network (unified frontend spec §14.9)
+	if (requestType === 'other' || requestType === 'shell') return
 
 	event.respondWith(getResponseForRequest(event, requestType, url))
 })

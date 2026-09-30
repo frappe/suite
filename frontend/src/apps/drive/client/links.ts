@@ -48,6 +48,8 @@ export interface LinkStore {
   seed(code: string, target: string): void
   /** Stores the unlock ticket that a password link returned. */
   unlock(code: string, ticket: string): void
+  /** The code a request for this node would send. `undefined` when no held link reaches it. */
+  codeFor(node: string): string | undefined
   /**
    * Credentials for one request that touches these nodes. Throws
    * `CredentialOverflowError` when they need more than 20 codes.
@@ -302,6 +304,10 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
       update((state) => {
         if (state.links.has(code)) useLink(state, code).ticket = ticket
       })
+    },
+
+    codeFor(node) {
+      return codeFor(current(), node)
     },
 
     scope(nodeIds, scopeOptions = {}) {

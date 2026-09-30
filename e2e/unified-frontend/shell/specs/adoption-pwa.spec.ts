@@ -11,7 +11,8 @@ import { MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
 async function bootShellFlip(page: Page, on: boolean) {
 	await page.addInitScript((value) => {
-		Object.assign(window, { suite_flip_shell: value });
+		// The files flip stays on, so Home and Drive keep their rail items.
+		Object.assign(window, { suite_flip_shell: value, suite_flip_files: true });
 	}, on);
 }
 
@@ -52,7 +53,7 @@ for (const flip of [true, false]) {
 		});
 
 		test("every area links the Suite manifest", async ({ page }) => {
-			for (const path of ["/home", "/files", "/mail", "/calendar", "/meet"]) {
+			for (const path of ["/home", "/drive", "/mail", "/calendar", "/meet"]) {
 				await page.goto(path);
 				await expect(manifestLinks(page)).toHaveCount(1);
 				await expect(manifestLinks(page)).toHaveAttribute("href", "/pwa/suite/manifest.webmanifest");

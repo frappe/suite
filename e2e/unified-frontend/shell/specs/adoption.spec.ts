@@ -14,7 +14,8 @@ import { MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
 async function bootShellFlip(page: Page, on: boolean) {
 	await page.addInitScript((value) => {
-		Object.assign(window, { suite_flip_shell: value });
+		// The files flip stays on, so Home and Drive keep their rail items.
+		Object.assign(window, { suite_flip_shell: value, suite_flip_files: true });
 	}, on);
 }
 
@@ -39,7 +40,7 @@ test.describe("Meet in the shell", () => {
 		const items = rail(page).getByRole("link");
 		await expect(items).toHaveCount(5);
 		const labels = await items.evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")?.split(",")[0]));
-		expect(labels).toEqual(["Home", "Files", "Mail", "Calendar", "Meet"]);
+		expect(labels).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet"]);
 		await expect(rail(page).getByRole("link", { name: "Meet" })).toHaveAttribute("aria-current", "page");
 		await expect(meetHeader(page)).toHaveCount(0);
 	});

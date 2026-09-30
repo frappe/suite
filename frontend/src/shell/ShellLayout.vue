@@ -1,5 +1,8 @@
 <template>
-  <GuestSurface v-if="showGuestSurface" />
+  <!-- A visitor without a session sees the same page in the guest frame (spec §10.3). -->
+  <GuestSurface v-if="showGuestSurface" :scroll="scrollOwner">
+    <slot />
+  </GuestSurface>
 
   <template v-else-if="resolvedFrame === 'shell'">
     <DesktopShell

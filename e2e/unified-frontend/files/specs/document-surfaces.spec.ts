@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { type APIRequestContext, type Page } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	DRIVE,
@@ -48,7 +50,7 @@ test("From template copies a template and lands on its /d/ route", async ({ page
 	});
 	expect(response.ok(), await response.text()).toBe(true);
 
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
 	const entries = page.getByRole("menuitem");
 	await expect(entries.last()).toHaveText(/From template/);
@@ -72,7 +74,7 @@ test("Recent filters by document type and the filter clears", async ({ page }) =
 	await visit(api, writer.name);
 	await visit(api, sheet.name);
 
-	await page.goto("/files/recent?type=sheets&view=list");
+	await page.goto("/drive/recent?type=sheets&view=list");
 	// Button names itself from its label; the x icon and the tooltip say it clears.
 	const filter = page.getByRole("button", { name: "Type: Spreadsheet" });
 	await expect(filter).toBeVisible();
@@ -87,7 +89,7 @@ test("Recent filters by document type and the filter clears", async ({ page }) =
 });
 
 test("an unknown Recent type drops out of the URL", async ({ page }) => {
-	await page.goto("/files/recent?type=nope&view=list");
+	await page.goto("/drive/recent?type=nope&view=list");
 	await expect(page).not.toHaveURL(/type=/);
 	await expect(page.getByRole("button", { name: /^Type: / })).toHaveCount(0);
 });
