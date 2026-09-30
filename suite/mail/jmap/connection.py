@@ -127,6 +127,16 @@ class JMAPConnection:
         if self.__session_manager:
             self.__session_manager.set_session(self.session)
 
+    def refresh_session(self) -> None:
+        """Asks the server for the session again, rather than trusting the kept one.
+
+        The kept session is refreshed when a response reports a changed state — which is after
+        a request has been made against it. Whoever needs to know what the session lists
+        *before* making one, such as which accounts a calendar list should look in, asks here.
+        """
+
+        self._session_discovery()
+
     @property
     def capabilities(self) -> dict:
         """Returns the capabilities of the JMAP server."""
