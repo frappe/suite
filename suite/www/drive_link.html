@@ -63,8 +63,9 @@
 			<p class="sub">{{ _("This link doesn't work. It may be mistyped, or its owner turned it off.") }}</p>
 			{% endif %}
 			{# The page offers no Sign in (ticket 011). #}
+			{# `/home` answers a signed-in user with either files flip state (unified frontend §14.1). #}
 			{% if frappe.session.user != "Guest" %}
-			<a class="home" href="/">{{ _("Go to Home") }}</a>
+			<a class="home" href="/home">{{ _("Go to Home") }}</a>
 			{% endif %}
 		</main>
 	</div>

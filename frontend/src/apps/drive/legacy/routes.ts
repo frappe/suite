@@ -3,7 +3,7 @@ import { createResource } from 'frappe-ui'
 
 import { node } from '@/apps/drive/client/nodes'
 import { useSessionStore } from '@/boot/session'
-import { transport } from '@/platform/transport'
+import { TransportError, transport } from '@/platform/transport'
 import { appDocumentTitle } from '@/utils/documentTitle'
 import { setupTheme } from '@/utils/setupTheme'
 
@@ -37,6 +37,17 @@ const redirectLegacyEntity = async (to: any, name: string) => {
     name,
     params: { entityName: translate.data || to.params.entityName },
   }
+}
+
+// The last failed `/drive/g/<id>` read, in the shape the old error page reads.
+let nodeReadError: { exc_type: string; messages: string[] } | null = null
+
+function asOldDriveError(error: unknown): { exc_type: string; messages: string[] } {
+  const status = error instanceof TransportError ? error.status : 0
+  const message = error instanceof Error ? error.message : String(error)
+  // The old page sends a guest to log in on a PermissionError.
+  const refused = status === 401 || status === 403
+  return { exc_type: refused ? 'PermissionError' : 'DoesNotExistError', messages: [message] }
 }
 
 export const routes: RouteRecordRaw[] = [
@@ -109,26 +120,35 @@ export const routes: RouteRecordRaw[] = [
         beforeEnter: [setPageTitle],
       },
       {
+        // vue-router skips a record with no name, no component and no
+        // redirect, so without a name this address showed Not Found.
+        // `node_url` writes it for every kind while the files flip is off.
+        // It opens each kind on the page the old Drive list opens it on. A
+        // failed read guesses nothing: the old error page shows it here.
         path: 'g/:entityName/',
+        name: 'drive-Node',
         meta: { allowGuest: true },
+        component: () => import('@/apps/drive/legacy/components/ErrorPage.vue'),
+        props: () => ({ error: nodeReadError }),
         beforeEnter: async (to) => {
-          const entity = createResource({
-            url: '/api/method/suite.drive.api.files.get_entity_type',
-            method: 'GET',
-            params: {
-              entity_name: to.params.entityName,
-            },
-          })
-          await entity.fetch()
-          const letter = (
-            {
-              folder: 'd',
-              file: 'f',
-            } as Record<string, string>
-          )[entity.data.type]
-          return {
-            path: `/drive/${letter}/${entity.data.name}`,
+          const id = String(to.params.entityName)
+          let entity
+          try {
+            entity = await transport.request(node(id).operation, { node: id })
+          } catch (error) {
+            nodeReadError = asOldDriveError(error)
+            return true
           }
+          const keep = { query: to.query, hash: to.hash, replace: true }
+          if (entity.kind === 'folder' || entity.kind === 'root')
+            return { path: `/drive/d/${entity.name}`, ...keep }
+          if (entity.content_doctype === 'Writer Document')
+            return { path: `/writer/w/${entity.name}`, ...keep }
+          if (entity.content_doctype === 'Sheet' && entity.content_docname)
+            return { path: `/sheets/${entity.content_docname}`, ...keep }
+          if (entity.content_doctype === 'Presentation' && entity.content_docname)
+            return { path: `/slides/presentation/${entity.content_docname}`, ...keep }
+          return { path: `/drive/f/${entity.name}`, ...keep }
         },
       },
       {

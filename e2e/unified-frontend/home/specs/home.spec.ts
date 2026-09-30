@@ -12,6 +12,7 @@ import {
 	type DriveNode,
 } from "../../helpers/drive";
 import { failRequest } from "../../helpers/shell";
+import { test as withFlips } from "../../helpers/flips";
 
 /** Tickets 004 and 005: the Home surface, its two sections and the bell. */
 
@@ -78,6 +79,28 @@ test("Recent lists the documents the account opened", async ({ page }) => {
 
 	await tiles.getByText("home-recent-doc").click();
 	await expect(page).toHaveURL(new RegExp(`/d/${recent.name}/home-recent-doc`));
+});
+
+withFlips.describe("Recent's View all", () => {
+	// The old Drive pages have no `/drive/recent`, so View all shows only with the files flip on.
+	withFlips("opens the Recent view with the files flip on", async ({ page }) => {
+		await page.goto("/home");
+		await page.locator('section[aria-labelledby="home-recent-heading"]').getByText("View all").click();
+		await expect(page).toHaveURL(/\/drive\/recent$/);
+	});
+
+	withFlips.describe("with the files flip off", () => {
+		withFlips.use({ flips: { suite_flip_shell: false, suite_flip_files: false } });
+
+		withFlips("is hidden, and Upcoming keeps its own", async ({ page }) => {
+			await page.goto("/home");
+			await expect(page.getByTestId("recent-rows").getByText("home-recent-doc")).toBeVisible();
+			const recent = page.locator('section[aria-labelledby="home-recent-heading"]');
+			await expect(recent.getByText("View all")).toHaveCount(0);
+			const upcoming = page.locator('section[aria-labelledby="home-upcoming-heading"]');
+			await expect(upcoming.getByText("View all")).toHaveCount(1);
+		});
+	});
 });
 
 test("Upcoming groups the events and offers Join for a conferencing one", async ({ page }) => {

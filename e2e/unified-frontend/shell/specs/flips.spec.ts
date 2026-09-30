@@ -319,8 +319,13 @@ test.describe("both flips on", () => {
 		await expect(homeDriveGroup(page).getByRole("link", { name: "Starred" })).toBeVisible();
 	});
 
-	test("an old Drive path finds no page in the area's table", async ({ page }) => {
+	test("an old Drive path with a redirect row lands on its new page, and one without finds no page", async ({ page }) => {
+		// The redirect table sends `/drive/favourites` to `/drive/starred` (spec §14.3).
 		await page.goto("/drive/favourites");
+		await expect(page).toHaveURL(/\/drive\/starred$/);
+
+		// `/drive/signup` has no row and no page in the area's table.
+		await page.goto("/drive/signup");
 		await expect(driveArea(page)).toHaveCount(0);
 		await expect(page.getByText(/not found/i).first()).toBeVisible();
 	});

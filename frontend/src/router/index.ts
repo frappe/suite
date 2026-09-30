@@ -21,6 +21,7 @@ import {
   routes,
 } from '@/composition/routes'
 import { takeLinkFragment } from '@/composition/linkFragment'
+import { redirectOldPath } from '@/composition/redirects'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa } from '@/platform/pwa'
 import { useSession } from '@/platform/session'
@@ -190,6 +191,11 @@ router.beforeEach(async (to, from) => {
   // leaves the URL before any page asks for the node (spec §10.1).
   const withoutLink = takeLinkFragment(to)
   if (withoutLink) return withoutLink
+
+  // Old page URLs go to the flip-2 routes while the files flip is on
+  // (spec §14.3). A row the server must answer loads the page from it.
+  const moved = redirectOldPath(to, from)
+  if (moved !== null) return moved
 
   // `/l/<token>` is a server page, so a click on one loads it from the server
   // [T014, T015]. A first load that still reaches the SPA falls to Not Found.
