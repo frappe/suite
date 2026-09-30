@@ -87,6 +87,26 @@ describe('document session credentials', () => {
   })
 })
 
+describe('document session visits', () => {
+  it("records a visit for the caller's own access, and none when a share link decides it", async () => {
+    const visits: string[] = []
+    const open = (viaLink: string | null) =>
+      openDriveDocumentSession(viaLink ? 'linked' : 'own', {
+        transport: transport((id, input) => {
+          if (id === 'node_visit') visits.push(input.node)
+          return id === 'node_get' ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } } : {}
+        }),
+      })
+
+    const own = await open(null)
+    const linked = await open(`$LINK:${code(1)}`)
+
+    expect(visits).toEqual(['own'])
+    own.dispose()
+    linked.dispose()
+  })
+})
+
 describe('document session media', () => {
   it('refreshes signed media at ten minutes and keeps a signature-free cache key', async () => {
     vi.useFakeTimers()

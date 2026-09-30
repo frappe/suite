@@ -51,6 +51,7 @@ const source = computed(() => previewUrl.value || contentUrl.value);
         @replaced="replaced"
       />
       <Button label="Download" icon-left="lucide-download" :href="contentUrl" />
+      <Button v-if="session.canShare.value" label="Share" icon-left="lucide-share-2" variant="solid" @click="session.share()" />
     </header>
     <div v-if="!canPreview" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-file-question mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />

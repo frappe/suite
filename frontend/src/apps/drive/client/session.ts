@@ -1,9 +1,10 @@
-import { readonly, ref, type Ref } from 'vue'
+import { computed, readonly, ref, type Ref } from 'vue'
 
+import { onAccessChange } from './accessChanges'
 import { api } from './generated'
 import { driveLinks } from './links'
 import { driveOperation } from './operation'
-import type { DriveAccess, DriveNode } from './types'
+import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
 import {
   TransportError,
   transport as defaultTransport,
@@ -56,12 +57,6 @@ export interface CredentialGrouper {
   fetchHeld: CredentialFetch
 }
 
-export interface UnavailableShare {
-  available: false
-  title: string
-  reason: string
-}
-
 export interface DocumentSession {
   readonly nodeId: string
   readonly contentDoctype: string
@@ -69,8 +64,14 @@ export interface DocumentSession {
   readonly title: Readonly<Ref<string>>
   readonly state: Readonly<Ref<SessionState>>
   readonly access: Readonly<Ref<DriveAccess>>
+  /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
+  readonly canShare: Readonly<Ref<boolean>>
   rename(title: string): Promise<DriveNode>
-  share(): Promise<UnavailableShare>
+  /**
+   * Opens the Drive share dialog. Access is read again after each write in
+   * it, and once more when it closes.
+   */
+  share(): Promise<void>
   copy(parent: string, title?: string): Promise<DriveNode>
   comments: {
     list(resolved?: boolean): Promise<unknown>
@@ -94,8 +95,17 @@ export interface DocumentSession {
   dispose(): void
 }
 
+/** Opens the share dialog for a node. Resolves when it closes. */
+export type ShareOpener = (node: string) => Promise<void>
+
+const openShareDialog: ShareOpener = async (node) => {
+  const { presentShareDialog } = await import('@/apps/drive/files/features/share/present')
+  await presentShareDialog(node)
+}
+
 interface SessionDependencies {
   transport?: Transport
+  share?: ShareOpener
   window?: Window
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
@@ -120,13 +130,18 @@ export async function openDriveDocumentSession(
   if (!node.content_doctype || !node.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a content document`)
   }
-  void requester
-    .request(
-      driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
-      { node: nodeId },
-      { signal: controller.signal },
-    )
-    .catch(() => {})
+  // A node reached through a share link records no visit: Recent sends no link
+  // codes, so it could never show it (spec §10.13). The same rule as
+  // `isLinkOnly` in `files/features/linkAccess.ts`.
+  if (!node.access?.via_link) {
+    void requester
+      .request(
+        driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
+        { node: nodeId },
+        { signal: controller.signal },
+      )
+      .catch(() => {})
+  }
 
   const title = ref(node.title)
   const state = ref<SessionState>(toSessionState(node))
@@ -222,6 +237,8 @@ export async function openDriveDocumentSession(
   }, MEDIA_REFRESH_MS)
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
+  // A share write can lower the caller's own access: react before the dialog closes.
+  const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
 
   return {
     nodeId,
@@ -230,6 +247,7 @@ export async function openDriveDocumentSession(
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
+    canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const updated = await requester.request(
         renameNode,
@@ -240,12 +258,9 @@ export async function openDriveDocumentSession(
       return updated
     },
     async share() {
+      await (dependencies.share ?? openShareDialog)(nodeId)
+      // A share write can change the caller's own access (spec §8.6).
       await refreshAccess()
-      return {
-        available: false,
-        title: 'Sharing is unavailable',
-        reason: 'The Drive sharing workflow is coming in ticket 008.',
-      }
     },
     copy: (parent, nextTitle) => requester.request(
       copyNode,
@@ -281,6 +296,7 @@ export async function openDriveDocumentSession(
       clearEvery(accessTimer)
       clearEvery(mediaTimer)
       targetWindow?.removeEventListener('focus', onFocus)
+      stopAccessChanges()
     },
   }
 }
@@ -322,6 +338,10 @@ interface InternalMediaHandle {
   cacheKey: Ref<string>
   status: Ref<MediaStatus>
   public: MediaHandle
+}
+
+export function canShare(state: SessionState, access: DriveAccess): boolean {
+  return state !== 'Refused' && (access.role ?? 0) >= DRIVE_ROLES.manage
 }
 
 function toSessionState(node: DriveNode): SessionState {

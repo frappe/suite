@@ -168,11 +168,6 @@ async function rename() {
   }
 }
 
-async function share() {
-  const result = await props.session.share();
-  if (!result.available) toast.info(result.title, { description: result.reason });
-}
-
 function togglePanel(kind: "comments" | "versions") {
   const open = kind === "comments" ? !showComments.value : !showVersions.value;
   showComments.value = open && kind === "comments";
@@ -270,7 +265,7 @@ onBeforeUnmount(() => {
       <div v-if="collaborators.length" class="text-sm text-ink-gray-5">{{ collaborators.length }} present</div>
       <Button icon="lucide-message-square" tooltip="Comments" aria-label="Comments" variant="ghost" @click="togglePanel('comments')" />
       <Button icon="lucide-history" tooltip="Versions" aria-label="Versions" variant="ghost" @click="togglePanel('versions')" />
-      <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
+      <Button v-if="session.canShare.value" label="Share" icon-left="lucide-share-2" variant="solid" @click="session.share()" />
     </header>
 
     <div v-if="!readable" class="m-auto text-center">

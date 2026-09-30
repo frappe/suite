@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput, Tooltip, toast } from "frappe-ui";
+import { Badge, Button, TextInput, toast } from "frappe-ui";
 import {
   computed,
   nextTick,
@@ -410,13 +410,13 @@ onBeforeUnmount(() => {
         :aria-pressed="panel === 'versions'"
         @click="togglePanel('versions')"
       />
-      <!-- Stage 9 wires this to session.share. A disabled button fires no
-           hover event, so the tooltip sits on a wrapper. -->
-      <Tooltip text="Sharing arrives with the new share dialog">
-        <span class="inline-flex" tabindex="0">
-          <Button label="Share" icon-left="lucide-share-2" variant="solid" disabled />
-        </span>
-      </Tooltip>
+      <Button
+        v-if="session.canShare.value"
+        label="Share"
+        icon-left="lucide-share-2"
+        variant="solid"
+        @click="session.share()"
+      />
     </header>
 
     <div v-if="!access.readable.value" class="m-auto max-w-md px-6 text-center">

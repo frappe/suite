@@ -141,14 +141,13 @@ test("a link row confirms its origin before opening a tab", async ({ page }) => 
 	await expect(page).toHaveURL(new RegExp(`/drive/f/${home.name}`));
 });
 
-// BUG: the Sheets surface mounts the legacy editor, which keeps its own header
-// with a Share button, a ShareDialog and an avatar stack
-// (apps/sheets/components/SheetEditor/index.vue:134,152-162,848). Ticket 008
-// owns the one Drive share dialog, so this second control is a duplicate and it
-// opens a dialog the new Files surface refuses to open.
-test.fixme("a Sheets document carries no second share control", async ({ page }) => {
+// On /d/ the legacy Sheets editor drops its own Share and ShareDialog
+// (`embedded`), so the one Drive share control is the only one (ticket 008).
+test("a Sheets document carries one share control, the Drive one", async ({ page }) => {
 	const sheet = await createDocument(api, home.name, "header-sheet", "Sheet");
 	await page.goto(`/d/${sheet.name}`);
 	await expect(page.getByRole("button", { name: "File" })).toBeVisible({ timeout: 20_000 });
-	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(1);
+	await page.getByRole("button", { name: /Share/ }).click();
+	await expect(page.getByRole("dialog", { name: /^Share "/ })).toBeVisible();
 });

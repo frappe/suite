@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput, Tooltip, toast } from "frappe-ui";
+import { Badge, Button, TextInput, toast } from "frappe-ui";
 import { computed, ref, watch } from "vue";
 
 import type { DocumentSession } from "@/apps/drive";
@@ -214,18 +214,14 @@ useDocumentLeaveGuard({
           :aria-pressed="panel === 'versions'"
           @click="togglePanel('versions')"
         />
-        <!-- Stage 9 wires this to session.share. A disabled button fires no
-             hover event, so the tooltip sits on a wrapper. -->
-        <Tooltip text="Sharing arrives with the new share dialog">
-          <span class="inline-flex" tabindex="0">
-            <span class="sheets-wide-only">
-              <Button size="sm" variant="ghost" icon-left="lucide-share-2" label="Share" disabled />
-            </span>
-            <span class="sheets-compact-only">
-              <Button size="sm" variant="ghost" icon="lucide-share-2" aria-label="Share" disabled />
-            </span>
+        <template v-if="session.canShare.value">
+          <span class="sheets-wide-only">
+            <Button size="sm" variant="ghost" icon-left="lucide-share-2" label="Share" @click="session.share()" />
           </span>
-        </Tooltip>
+          <span class="sheets-compact-only">
+            <Button size="sm" variant="ghost" icon="lucide-share-2" aria-label="Share" @click="session.share()" />
+          </span>
+        </template>
       </template>
 
       <template #side-panel>
