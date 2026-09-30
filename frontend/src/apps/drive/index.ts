@@ -126,6 +126,12 @@ export function openDocumentSession(nodeId: string) {
 
 export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
 
+/** The upload queue for the app root: the ring's indicator, the tracker's state and the queue's questions (spec §6.3). */
+export { driveUploadProgress, type DriveUploadProgress } from '@/apps/drive/files/features/uploads/progress'
+
+/** The upload tracker. The app root mounts it while the queue has work, so it outlives the page. */
+export const DriveUploadTracker = defineAsyncComponent(() => import('@/apps/drive/files/features/uploads/UploadTracker.vue'))
+
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
 export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))
 

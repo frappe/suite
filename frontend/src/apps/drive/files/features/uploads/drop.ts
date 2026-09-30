@@ -1,6 +1,8 @@
 import { readonly, ref } from 'vue'
 
-import type { UploadTarget } from './queue'
+import type { DriveNode } from '@/apps/drive/client/types'
+
+import { uploadTargetOf, type UploadTarget } from './queue'
 import { captureDrop, dragHasFiles, type UploadSelection } from './sources'
 
 /** A place that takes dropped files, and the name the overlay shows for it. */
@@ -59,4 +61,21 @@ export function useUploadDrop(upload: (selection: UploadSelection, target: Uploa
   }
 
   return { over: readonly(over), zone }
+}
+
+export type UploadDrop = ReturnType<typeof useUploadDrop>
+
+/**
+ * A row's drop handlers. A folder row decides by its own access: with UPLOAD
+ * it takes the drop into itself, without it refuses the drop, so nothing lands
+ * beside it in the pane. Other rows get none and leave the drop to the pane.
+ */
+export function rowDropHandlers(
+  drop: UploadDrop,
+  row: Pick<DriveNode, 'name' | 'title' | 'root' | 'kind' | 'state' | 'access'>,
+): DropHandlers | null {
+  if (row.kind !== 'folder') return null
+  const target = uploadTargetOf(row)
+  const zone: DropZone | null = target && { key: row.name, label: row.title, target }
+  return drop.zone(() => zone)
 }

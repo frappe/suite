@@ -129,28 +129,28 @@ describe("area progress on the bottom nav", () => {
       open: (area) => opened.push(area),
     });
 
-    const ring = item("Files").querySelector("[data-slot='area-progress-ring']");
+    const ring = item("Drive").querySelector("[data-slot='area-progress-ring']");
     expect(ring?.getAttribute("data-tone")).toBe("paused");
-    expect(item("Files").querySelector("[data-slot='area-progress-attention']")).not.toBeNull();
+    expect(item("Drive").querySelector("[data-slot='area-progress-attention']")).not.toBeNull();
     expect(item("Home").querySelector("[data-slot='area-progress-ring']")).toBeNull();
     expect(root.querySelectorAll("[data-slot='area-progress-ring']")).toHaveLength(1);
 
-    item("Files").click();
+    item("Drive").click();
     expect(opened).toEqual(["files"]);
-    expect(item("Files").querySelector("[role='status']")?.textContent).toBe("Files: Needs attention");
+    expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: Needs attention");
   });
 
   it("opens only the tracker from the active area's item, never the sidebar too", async () => {
     const opened: string[] = [];
-    const { router, item } = await mountAt("/files/starred", {
+    const { router, item } = await mountAt("/drive/starred", {
       progress: (area) => (area === "files" ? { fraction: 0.5, tone: "running", attention: false } : null),
       open: (area) => opened.push(area),
     });
 
-    item("Files").click();
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/files"));
+    item("Drive").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/drive"));
     expect(opened).toEqual(["files"]);
     expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).toBeNull();
-    expect(item("Files").querySelector("[role='status']")?.textContent).toBe("Files: In progress");
+    expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: In progress");
   });
 });

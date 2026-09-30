@@ -177,7 +177,7 @@ const drive = vi.hoisted(() => {
 })
 
 import { createUploadRecords, RECORD_LIFETIME_MS, type UploadOwner, type UploadRecord, type UploadRecords } from './records'
-import { createUploadQueue, type UploadPrompts, type UploadQueue } from './queue'
+import { createUploadQueue, uploadTargetOf, type UploadPrompts, type UploadQueue } from './queue'
 
 const target = { parent: 'folder', root: 'root' }
 const file = (name: string, size: number, lastModified = 1000) =>
@@ -581,5 +581,20 @@ describe('Upload records', () => {
 
     expect(queue.entries.value).toEqual([])
     expect(await records.load()).toEqual([])
+  })
+})
+
+describe('Upload targets', () => {
+  const folder = (kind: string, role: number, state = 'Active') => ({ name: 'f1', root: 'r1', kind, state, access: { role } })
+
+  it('takes uploads only into an Active folder or root where the caller has UPLOAD', () => {
+    expect(uploadTargetOf(folder('folder', 30))).toEqual({ parent: 'f1', root: 'r1' })
+    expect(uploadTargetOf(folder('root', 50))).toEqual({ parent: 'f1', root: 'r1' })
+    // A comment-only link reader, a file row, and a folder not loaded yet take none.
+    expect(uploadTargetOf(folder('folder', 20))).toBeNull()
+    expect(uploadTargetOf(folder('file', 50))).toBeNull()
+    expect(uploadTargetOf(undefined)).toBeNull()
+    // The server creates files only below an Active container.
+    expect(uploadTargetOf(folder('folder', 50, 'Trashed'))).toBeNull()
   })
 })

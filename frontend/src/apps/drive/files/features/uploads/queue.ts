@@ -71,6 +71,18 @@ export interface UploadTarget {
   root: string
 }
 
+/**
+ * Where uploads into `node` land: an Active folder or root where the caller
+ * has UPLOAD (spec §6.7, §10.13), as `create_upload` requires. `null` refuses
+ * uploads there.
+ */
+export function uploadTargetOf(
+  node: Pick<DriveNode, 'name' | 'root' | 'kind' | 'state' | 'access'> | null | undefined,
+): UploadTarget | null {
+  if (!node || (node.kind !== 'folder' && node.kind !== 'root') || node.state !== 'Active') return null
+  return hasRole(node, DRIVE_ROLES.upload) ? { parent: node.name, root: node.root } : null
+}
+
 export type CollisionChoice =
   | { action: 'replace' }
   | { action: 'keep-both' }

@@ -32,13 +32,13 @@
     </PageHeaderMobile>
 
     <UnlockScreen v-if="locked" :node="parentId" @unlocked="reload" />
-    <div v-else class="px-5 py-4">
+    <div v-else class="relative px-5 py-4" v-bind="paneDrop">
       <div class="flex h-7 items-center justify-between gap-2">
         <template v-if="selectionMode">
           <div class="flex min-w-0 items-center gap-2">
-            <template v-if="props.destination === 'trash'">
-              <Button label="Restore" icon-left="lucide-undo-2" disabled tooltip="Restore is coming in ticket 007" />
-              <Button label="Delete forever" icon-left="lucide-trash-2" disabled tooltip="Permanent deletion is coming in ticket 007" />
+            <template v-if="trashActions">
+              <Button label="Restore" icon-left="lucide-undo-2" :disabled="trash.pending.value" @click="runRestore" />
+              <Button label="Delete forever" icon-left="lucide-trash-2" :disabled="trash.pending.value" @click="runPurge" />
             </template>
             <template v-else>
               <Button label="Move" icon-left="lucide-folder-input" :disabled="!canBulkEdit" @click="beginBulkMove" />
@@ -62,6 +62,13 @@
             <template #prefix><span class="lucide-search size-4" aria-hidden="true" /></template>
           </TextInput>
           <div class="ml-auto flex items-center gap-2">
+            <Button
+              v-if="trashActions && trash.canEmptyTrash.value"
+              label="Empty trash"
+              icon-left="lucide-trash-2"
+              :disabled="!listing.rows.length || trash.pending.value"
+              @click="trash.emptyTrash()"
+            />
             <Button
               v-if="recentType"
               :label="`Type: ${recentType.newLabel()}`"
@@ -87,7 +94,12 @@
         @update:model-value="switchTrashRoot"
       />
 
-      <BatchOutcome :result="batchOutcome" :verb="batchVerb" class="mt-3" @dismiss="batchOutcome = null" />
+      <BatchOutcome
+        :result="trash.outcome.value ?? batchOutcome"
+        :verb="trash.outcome.value ? trash.verb.value : batchVerb"
+        class="mt-3"
+        @dismiss="trash.dismissOutcome(); batchOutcome = null"
+      />
       <ContextMenu :options="activeNode ? rowMenuOptions(activeNode) : []">
         <FilesListing
           :query="listing"
@@ -98,6 +110,7 @@
           :empty-description="emptyDescription"
           :show-breadcrumbs="isSearching"
           :menu-options="rowMenuOptions"
+          :row-drop="rowDrop"
           @update:selection="selection = $event"
           @sort="changeSort"
           @open="openNode"
@@ -106,11 +119,13 @@
           @preview-error="refreshPreviews"
         />
       </ContextMenu>
+      <DropOverlay :zone="drop.over.value" />
     </div>
 
     <RenameDialog v-model:open="renameOpen" :node="activeNode" @renamed="replaceSlug" />
     <FolderPicker v-model:open="pickerOpen" :mode="pickerMode" @choose="applyPicker" />
     <TemplatePicker v-if="parentId" v-model:open="templatesOpen" :parent="parentId" @created="openNode" />
+    <DriveUploads ref="uploads" />
   </div>
 </template>
 
@@ -160,6 +175,11 @@ import FolderPicker from '../features/FolderPicker.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import UnlockScreen from '../features/UnlockScreen.vue'
+import { useTrashActions } from '../features/trash/useTrashActions'
+import DriveUploads from '../features/uploads/DriveUploads.vue'
+import DropOverlay from '../features/uploads/DropOverlay.vue'
+import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
+import { uploadTargetOf } from '../features/uploads/queue'
 import { linkAccess } from '../features/linkAccess'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import {
@@ -270,6 +290,11 @@ const expansion = computed(() => {
 const recentType = computed(() => props.destination === 'recent' && !isSearching.value
   ? documentTypes.find((definition) => definition.key === route.query.type)
   : undefined)
+// The root whose Trash shows, from its tab.
+const trashRoot = computed(() => {
+  if (props.destination !== 'trash') return null
+  return (route.query.root === 'organization' ? discovered.data?.organization?.node : discovered.data?.personal.node) ?? null
+})
 const listing = useQuery(() => {
   if (isSearching.value) return view({ view: 'search', term: String(route.query.q), expand: expansion.value })
   if (concreteDestination.value) {
@@ -285,12 +310,18 @@ const listing = useQuery(() => {
   const name = props.destination === 'shared' ? 'shared'
     : props.destination === 'recent' ? 'recents'
       : props.destination === 'starred' ? 'favourites' : 'trash'
-  const root = props.destination === 'trash'
-    ? (route.query.root === 'organization' ? discovered.data?.organization?.node : discovered.data?.personal.node)
-    : undefined
+  const root = trashRoot.value ?? undefined
   if (props.destination === 'trash' && !root) return false
   return view({ view: name, root, content_doctype: recentType.value?.contentDoctype, expand: expansion.value })
 })
+const trash = useTrashActions(() => trashRoot.value)
+// Search replaces the Trash listing, so its rows get no Trash actions.
+const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
+const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)
+// Uploads follow the server's UPLOAD role on the open folder (spec §6.7, §10.13). Saved views and search take none.
+const uploadTarget = computed(() => concreteDestination.value && !isSearching.value ? uploadTargetOf(detail.data) : null)
+const drop = useUploadDrop((selection, target) => uploads.value?.upload(selection, target))
+const paneDrop = drop.zone(() => uploadTarget.value && { key: uploadTarget.value.parent, label: destinationLabel.value, target: uploadTarget.value })
 const canCreate = computed(() => concreteDestination.value && !isSearching.value && hasRole(detail.data, DRIVE_ROLES.upload))
 const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value).documentKinds)
 const selectedRows = computed(() => (listing.rows as DriveNode[]).filter((row) => selection.value.includes(row.name)))
@@ -362,6 +393,11 @@ watch(() => detail.data, (folder) => {
   }
 })
 
+// Failed items stay selected after each Trash outcome, also one a Retry settles (spec §6.11).
+watch(() => trash.outcome.value, (outcome) => {
+  if (outcome) selectionState.value = { selected: outcome.failed.map((failure) => failure.node), anchor: null }
+})
+
 // A guest is never told whether the folder exists (spec §10.8).
 watch(() => [detail.error, listing.error] as const, (errors) => {
   const refused = errors.some((error) => error && !isDriveLocked(error) && [401, 403, 404, 410].includes(error.status))
@@ -392,7 +428,11 @@ const moreOptions = computed(() => [
 ])
 const newOptions = computed(() => [
   { label: 'Folder', icon: 'lucide-folder-plus', onClick: () => create('folder') },
-  { label: 'Upload files', icon: 'lucide-upload', disabled: true, description: 'Available after ticket 007' },
+  ...(uploadTarget.value ? [
+    { label: 'Upload files', icon: 'lucide-upload', onClick: () => pickUpload('files') },
+    // Phone pickers offer no folders (spec §5.12).
+    ...(narrow.value ? [] : [{ label: 'Upload folder', icon: 'lucide-folder-up', onClick: () => pickUpload('folder') }]),
+  ] : []),
   ...(canCreateDocuments.value ? documentTypes.map((definition) => ({
     label: definition.newLabel(),
     icon: definition.icon,
@@ -510,6 +550,17 @@ function rowMenuOptions(row: DriveNode): ContextMenuOption[] {
     { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
   ]
 }
+function pickUpload(source: 'files' | 'folder') {
+  if (!uploadTarget.value) return
+  if (source === 'files') uploads.value?.pickFiles(uploadTarget.value)
+  else uploads.value?.pickFolder(uploadTarget.value)
+}
+/** Folder rows decide drops by their own access. Saved views and search take none (spec §6.7). */
+function rowDrop(row: DriveNode) {
+  return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
+}
+async function runRestore() { await trash.restore(selection.value) }
+async function runPurge() { await trash.purge(selection.value) }
 function beginRename(row: DriveNode) { activeNode.value = row; renameOpen.value = true }
 function beginPicker(row: DriveNode, mode: 'move' | 'copy') {
   activeNode.value = row; pickerMode.value = mode; pickerBulk.value = false; pickerOpen.value = true

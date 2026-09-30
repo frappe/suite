@@ -35,7 +35,7 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item }).click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
@@ -92,12 +92,13 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	expect(created?.content_doctype).toBe("Presentation");
 });
 
-test("Upload files stays disabled until ticket 007", async ({ page }) => {
+test("New offers Upload files and then Upload folder", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	const upload = page.getByRole("menuitem", { name: "Upload files" });
-	await expect(upload).toBeVisible();
-	await expect(upload).toBeDisabled();
+	const items = page.getByRole("menuitem");
+	await expect(page.getByRole("menuitem", { name: "Upload files" })).toBeEnabled();
+	const labels = await items.allInnerTexts();
+	expect(labels.slice(0, 3).map((label) => label.trim())).toEqual(["Folder", "Upload files", "Upload folder"]);
 });
 
 test("each registered document type opens its own surface", async ({ page }) => {
