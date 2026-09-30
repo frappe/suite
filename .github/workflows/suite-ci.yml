@@ -268,6 +268,8 @@ jobs:
       - name: Run Meet SFU Server Tests
         if: always() && steps.node-server-changes.outputs.run_meet == '1'
         working-directory: suite/meet/sfu-server
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
         run: |
           yarn install --frozen-lockfile
           mkdir -p test-results

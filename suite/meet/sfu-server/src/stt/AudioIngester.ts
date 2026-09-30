@@ -13,12 +13,20 @@ import type {
 } from 'mediasoup/types';
 import { loggers } from '../utils/logger';
 import {
+	createSpeechDetector,
+	SILERO_REVISION,
+	SILERO_SHA256,
+	type SpeechDetector,
+} from './SpeechDetector';
+import {
 	type ISttClient,
 	type ISttStream,
 	MAX_STT_UTTERANCE_MS,
 } from './SttClient';
+import { SttDiagnostics } from './SttDiagnostics';
 
 interface AudioIngesterOptions {
+	speechDetector?: SpeechDetector;
 	roomId: string;
 	participantId: string;
 	producer: Producer;
@@ -35,18 +43,12 @@ const SAMPLE_RATE = 24000;
 const BYTES_PER_SAMPLE = 2; // s16le
 const OUTPUT_CHANNELS = 1; // ASR input is mono; Meet still publishes stereo Opus.
 
-/** How often we check audio energy (ms) */
+/** Duration of each decoded-audio speech check (ms) */
 const VAD_CHECK_MS = 100;
 /** Bytes of audio per VAD check */
 const BYTES_PER_CHECK = (SAMPLE_RATE * BYTES_PER_SAMPLE * VAD_CHECK_MS) / 1000;
 const MAX_UTTERANCE_BYTES =
 	(SAMPLE_RATE * BYTES_PER_SAMPLE * MAX_STT_UTTERANCE_MS) / 1000;
-const PRE_ROLL_CHECKS = Math.max(
-	0,
-	Math.ceil(
-		Number.parseInt(process.env.STT_PRE_ROLL_MS || '300', 10) / VAD_CHECK_MS,
-	),
-);
 const SILENCE_CHECKS_TO_FLUSH = Math.max(
 	1,
 	Math.ceil(
@@ -71,9 +73,6 @@ const SHORT_UTTERANCE_SILENCE_CHECKS = Math.max(
 		Number.parseInt(process.env.STT_SHORT_UTTERANCE_SILENCE_MS || '700', 10) /
 			VAD_CHECK_MS,
 	),
-);
-const SPEECH_RMS_THRESHOLD = Number.parseFloat(
-	process.env.STT_VAD_THRESHOLD || '0.012',
 );
 
 /** Captures one producer, decodes its audio, and streams VAD-delimited speech to STT. */
@@ -111,8 +110,29 @@ export class AudioIngester {
 	private streamedBytes = 0;
 	private preRollFrames: Buffer[] = [];
 	private failureNotified = false;
+	private diagnostics: SttDiagnostics | undefined;
+	private diagnosticsTimer: NodeJS.Timeout | null = null;
+	private lastDecodedAudioAt: number | null = null;
+	private speechDetector: SpeechDetector | undefined;
+	private vadGeneration = 0;
+	private closingTranscriptGeneration: number | null = null;
+	private stopping: Promise<void> | null = null;
+	private readonly configuredPreRollChecks: number | undefined;
 
 	constructor(options: AudioIngesterOptions) {
+		this.speechDetector = options.speechDetector;
+		const configuredPreRoll = process.env.STT_PRE_ROLL_MS;
+		if (configuredPreRoll !== undefined) {
+			const milliseconds = Number(configuredPreRoll);
+			if (
+				!configuredPreRoll.trim() ||
+				!Number.isFinite(milliseconds) ||
+				milliseconds < 0 ||
+				milliseconds > MAX_STT_UTTERANCE_MS - VAD_CHECK_MS
+			)
+				throw new Error('STT_PRE_ROLL_MS must be between 0 and 14900');
+			this.configuredPreRollChecks = Math.ceil(milliseconds / VAD_CHECK_MS);
+		}
 		this.roomId = options.roomId;
 		this.participantId = options.participantId;
 		this.producer = options.producer;
@@ -124,6 +144,11 @@ export class AudioIngester {
 		this.onTranscript = options.onTranscript;
 	}
 
+	private get preRollChecks(): number {
+		// Preserve real soft onsets while the learned detector accumulates context.
+		return this.configuredPreRollChecks ?? 20;
+	}
+
 	/** Whether an ingester currently holds a stream; false between closure and recovery. */
 	hasRealtimeStream(): boolean {
 		return this.sttStream !== null;
@@ -131,31 +156,57 @@ export class AudioIngester {
 
 	async start(): Promise<void> {
 		if (this.running) return;
+		if (this.stopping) await this.stopping;
+		if (this.running) return;
+		const generation = ++this.vadGeneration;
 		this.running = true;
 		this.failureNotified = false;
+		this.lastDecodedAudioAt = null;
+		this.diagnostics = SttDiagnostics.create({
+			roomId: this.roomId,
+			participantId: this.participantId,
+			producerId: this.producer.id,
+			sessionId: this.sessionId,
+		});
 
 		try {
-			await this.setupPlainTransport();
-			if (!this.running) {
-				await this.stop();
+			const detector = this.speechDetector ?? (await createSpeechDetector());
+			if (generation !== this.vadGeneration || !this.running) return;
+			this.speechDetector = detector;
+			detector.reset();
+			this.diagnostics?.event('vad.configuration', {
+				mode: this.speechDetector.mode,
+				preRollMs: this.preRollChecks * VAD_CHECK_MS,
+				revision:
+					this.speechDetector.mode === 'silero' ? SILERO_REVISION : undefined,
+				sha256:
+					this.speechDetector.mode === 'silero' ? SILERO_SHA256 : undefined,
+			});
+			if (!this.running || generation !== this.vadGeneration) {
+				if (!this.running) await this.stop();
 				return;
 			}
-			await this.createConsumer();
-			if (!this.running) {
-				await this.stop();
+			await this.setupPlainTransport(generation);
+			if (!this.running || generation !== this.vadGeneration) {
+				if (!this.running) await this.stop();
 				return;
 			}
-			await this.startFfmpeg();
-			if (!this.running) {
-				await this.stop();
+			await this.createConsumer(generation);
+			if (!this.running || generation !== this.vadGeneration) {
+				if (!this.running) await this.stop();
+				return;
+			}
+			await this.startFfmpeg(generation);
+			if (!this.running || generation !== this.vadGeneration) {
+				if (!this.running) await this.stop();
 				return;
 			}
 			await this.plainTransport!.connect({
 				ip: '127.0.0.1',
 				port: this.ffmpegPort,
 			});
-			if (!this.running) {
-				await this.stop();
+			if (!this.running || generation !== this.vadGeneration) {
+				if (!this.running) await this.stop();
 				return;
 			}
 			const stream = await this.sttClient.createStream(
@@ -164,14 +215,19 @@ export class AudioIngester {
 					sampleRate: SAMPLE_RATE,
 					language: process.env.NEMOTRON_LANGUAGE || 'en-US',
 					getNames: this.getNames,
+					diagnostics: this.diagnostics,
 				},
 				(event) => {
-					this.onTranscript(event.text, event.isFinal, event.durationMs);
+					if (
+						generation === this.vadGeneration ||
+						generation === this.closingTranscriptGeneration
+					)
+						this.onTranscript(event.text, event.isFinal, event.durationMs);
 				},
 			);
-			if (!this.running) {
+			if (!this.running || generation !== this.vadGeneration) {
 				await stream.close();
-				await this.stop();
+				if (!this.running) await this.stop();
 				return;
 			}
 			this.sttStream = stream;
@@ -181,17 +237,20 @@ export class AudioIngester {
 			});
 			if (!this.running || this.sttStream !== stream) return;
 			this.startVadLoop();
+			this.startDiagnosticStats();
 
 			loggers.stt.info(
-				'AudioIngester started for %s in room %s (producer %s, session %s, ffmpeg port %d, vadThreshold=%.4f)',
+				'AudioIngester started for %s in room %s (producer %s, session %s, ffmpeg port %d, vad=%s, preRollMs=%d)',
 				this.participantId,
 				this.roomId,
 				this.producer.id,
 				this.sessionId,
 				this.ffmpegPort,
-				SPEECH_RMS_THRESHOLD,
+				this.speechDetector.mode,
+				this.preRollChecks * VAD_CHECK_MS,
 			);
 		} catch (error) {
+			if (generation !== this.vadGeneration) return;
 			await this.stop();
 			loggers.stt.error(
 				'Failed to start AudioIngester for %s: %s',
@@ -203,7 +262,26 @@ export class AudioIngester {
 	}
 
 	async stop(): Promise<void> {
+		if (this.stopping) return this.stopping;
+		const stopping = this.stopResources();
+		this.stopping = stopping;
+		try {
+			await stopping;
+		} finally {
+			if (this.stopping === stopping) this.stopping = null;
+		}
+	}
+
+	private async stopResources(): Promise<void> {
+		this.closingTranscriptGeneration = this.sttStream
+			? this.vadGeneration
+			: null;
 		this.running = false;
+		this.vadGeneration++;
+		this.speechDetector?.reset();
+		if (this.diagnosticsTimer) clearTimeout(this.diagnosticsTimer);
+		this.diagnosticsTimer = null;
+		this.lastDecodedAudioAt = null;
 
 		if (this.vadTimer) {
 			clearTimeout(this.vadTimer);
@@ -214,9 +292,17 @@ export class AudioIngester {
 			this.markFinal();
 		}
 
+		this.resetVadState();
+		this.vadQueue = [];
+		this.vadQueueBytes = 0;
 		const stream = this.sttStream;
 		this.sttStream = null;
-		if (stream) await stream.close();
+		try {
+			if (stream) await stream.close();
+		} finally {
+			this.closingTranscriptGeneration = null;
+		}
+		void this.diagnostics?.close();
 
 		const consumer = this.consumer;
 		this.consumer = null;
@@ -261,15 +347,20 @@ export class AudioIngester {
 
 	// ── Mediasoup plumbing ─────────────────────────────────────────────────────
 
-	private async setupPlainTransport(): Promise<void> {
-		this.plainTransport = await this.router.createPlainTransport({
+	private async setupPlainTransport(generation: number): Promise<void> {
+		const transport = await this.router.createPlainTransport({
 			listenInfo: { protocol: 'udp', ip: '127.0.0.1' },
 			rtcpMux: true,
 			comedia: false,
 		});
+		if (!this.running || generation !== this.vadGeneration) {
+			transport.close();
+			return;
+		}
+		this.plainTransport = transport;
 	}
 
-	private async createConsumer(): Promise<void> {
+	private async createConsumer(generation: number): Promise<void> {
 		const rtpCapabilities: RtpCapabilities = {
 			codecs: [
 				{
@@ -285,14 +376,21 @@ export class AudioIngester {
 			headerExtensions: [],
 		};
 
-		this.consumer = await this.plainTransport!.consume({
+		const consumer = await this.plainTransport!.consume({
 			producerId: this.producer.id,
 			rtpCapabilities,
 		});
+		if (!this.running || generation !== this.vadGeneration) {
+			consumer.close();
+			return;
+		}
+		this.consumer = consumer;
 	}
 
-	private async startFfmpeg(): Promise<void> {
-		this.ffmpegPort = await this.findAvailablePort();
+	private async startFfmpeg(generation: number): Promise<void> {
+		const port = await this.findAvailablePort();
+		if (!this.running || generation !== this.vadGeneration) return;
+		this.ffmpegPort = port;
 		const payloadType =
 			this.consumer?.rtpParameters?.codecs?.[0]?.payloadType ?? 111;
 
@@ -316,23 +414,40 @@ export class AudioIngester {
 			'pipe:1',
 		];
 
-		this.ffmpeg = spawn('ffmpeg', args, {
+		const ffmpeg = spawn('ffmpeg', args, {
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
 
-		this.ffmpeg.stdout!.on('data', (data: Buffer) => {
-			this.vadQueue.push(data);
-			this.vadQueueBytes += data.length;
+		this.ffmpeg = ffmpeg;
+		ffmpeg.stdout!.on('data', (data: Buffer) => {
+			if (
+				this.running &&
+				this.ffmpeg === ffmpeg &&
+				generation === this.vadGeneration
+			)
+				this.handleDecodedAudio(data);
 		});
 
-		this.ffmpeg.stderr!.on('data', (data: Buffer) => {
+		ffmpeg.stderr!.on('data', (data: Buffer) => {
 			const msg = data.toString().trim();
 			if (msg && process.env.SFU_LOG_LEVEL === 'debug') {
 				loggers.stt.debug('ffmpeg: %s', msg.slice(0, 200));
 			}
 		});
 
-		this.watchFfmpeg(this.ffmpeg);
+		this.watchFfmpeg(ffmpeg);
+	}
+
+	private handleDecodedAudio(data: Buffer): void {
+		if (!data.length) return;
+		this.lastDecodedAudioAt = performance.now();
+		this.diagnostics?.pcm('before-vad', data);
+		if (this.vadQueueBytes + data.length > MAX_UTTERANCE_BYTES) {
+			this.notifyFailure();
+			return;
+		}
+		this.vadQueue.push(data);
+		this.vadQueueBytes += data.length;
 	}
 
 	private watchFfmpeg(ffmpeg: ChildProcess): void {
@@ -358,34 +473,58 @@ export class AudioIngester {
 		});
 	}
 
+	private startDiagnosticStats(): void {
+		const capture = this.diagnostics;
+		if (!capture) return;
+		const sample = async () => {
+			if (!this.running || !capture.isCapturing()) return;
+			await capture.rtpStats(this.producer, this.consumer).catch(() => {});
+			if (this.running && capture.isCapturing()) {
+				this.diagnosticsTimer = setTimeout(() => {
+					void sample();
+				}, 2000);
+				this.diagnosticsTimer.unref();
+			}
+		};
+		void sample();
+	}
+
 	// ── VAD loop ───────────────────────────────────────────────────────────────
 
 	private startVadLoop(): void {
+		const generation = this.vadGeneration;
 		const run = () => {
-			if (!this.running) return;
+			if (!this.running || generation !== this.vadGeneration) return;
 			this.runVadCheck()
 				.then(() => {
-					if (this.running) {
+					if (this.running && generation === this.vadGeneration) {
 						this.vadTimer = setTimeout(run, VAD_CHECK_MS);
 					}
 				})
 				.catch((error) => {
+					if (!this.running || generation !== this.vadGeneration) return;
 					loggers.stt.error('VAD check error: %s', (error as Error).message);
-					if (this.running) {
-						this.vadTimer = setTimeout(run, VAD_CHECK_MS);
-					}
+					this.notifyFailure();
 				});
 		};
 		run();
 	}
 
 	private async runVadCheck(): Promise<void> {
+		const generation = this.vadGeneration;
+		const stream = this.sttStream;
+		if (!this.speechDetector)
+			throw new Error('Speech detector is not initialized');
 		while (this.vadQueueBytes >= BYTES_PER_CHECK) {
 			const frame = this.dequeueBytes(BYTES_PER_CHECK);
-			const frameSumSq = this.calculateSumSq(frame);
-			const rms =
-				Math.sqrt(frameSumSq / (BYTES_PER_CHECK / BYTES_PER_SAMPLE)) / 32768;
-			const isSpeech = rms > SPEECH_RMS_THRESHOLD;
+			const decision = await this.speechDetector.detect(frame);
+			if (generation !== this.vadGeneration || stream !== this.sttStream)
+				return;
+			const isSpeech = decision.speech;
+			this.diagnostics?.event('vad.decision', {
+				speech: isSpeech,
+				probability: decision.probability,
+			});
 
 			if (isSpeech) {
 				if (!this.isInSpeech) {
@@ -402,9 +541,9 @@ export class AudioIngester {
 				this.silenceCheckCount++;
 				if (this.isInSpeech) {
 					this.sendFrame(frame);
-				} else if (PRE_ROLL_CHECKS > 0) {
+				} else if (this.preRollChecks > 0) {
 					this.preRollFrames.push(frame);
-					if (this.preRollFrames.length > PRE_ROLL_CHECKS) {
+					if (this.preRollFrames.length > this.preRollChecks) {
 						this.preRollFrames.shift();
 					}
 				}
@@ -415,6 +554,66 @@ export class AudioIngester {
 			}
 			if (this.streamedBytes >= MAX_UTTERANCE_BYTES) this.markFinal();
 		}
+		await this.flushIdleUtterance(generation, stream);
+	}
+
+	private async flushIdleUtterance(
+		generation: number,
+		stream: ISttStream | null,
+	): Promise<void> {
+		// DTX can stop PCM entirely: expire context and endpoint real buffered audio
+		// by elapsed inactivity, without synthesizing samples or leaking a server buffer.
+		if (
+			this.lastDecodedAudioAt === null ||
+			this.vadQueueBytes % BYTES_PER_SAMPLE !== 0
+		)
+			return;
+		const silenceChecks =
+			this.isInSpeech && this.speechCheckCount >= MIN_SPEECH_CHECKS
+				? SILENCE_CHECKS_TO_FLUSH
+				: SHORT_UTTERANCE_SILENCE_CHECKS;
+		if (
+			performance.now() - this.lastDecodedAudioAt <
+			silenceChecks * VAD_CHECK_MS
+		)
+			return;
+		if (!this.isInSpeech) {
+			this.resetVadState();
+			this.vadQueue = [];
+			this.vadQueueBytes = 0;
+			this.lastDecodedAudioAt = null;
+			this.speechDetector?.reset();
+			return;
+		}
+		if (this.vadQueueBytes > 0) {
+			const tail = this.dequeueBytes(this.vadQueueBytes);
+			await this.speechDetector!.detect(tail);
+			if (generation !== this.vadGeneration || stream !== this.sttStream)
+				return;
+			this.sendFrame(tail);
+		}
+		if (
+			this.lastDecodedAudioAt === null ||
+			this.vadQueueBytes > 0 ||
+			performance.now() - this.lastDecodedAudioAt < silenceChecks * VAD_CHECK_MS
+		)
+			return;
+		if (this.streamedBytes < BYTES_PER_CHECK * MIN_TAIL_CHECKS) {
+			// No protocol clear exists. Close the stream so a subminimum fragment
+			// cannot survive in the server buffer and prefix an unrelated utterance.
+			this.diagnostics?.event('vad.idle-discard', {
+				bytes: this.streamedBytes,
+			});
+			this.notifyFailure();
+			await this.stop();
+			return;
+		}
+		this.diagnostics?.event('vad.idle-final', {
+			idleMs: performance.now() - this.lastDecodedAudioAt,
+		});
+		this.markFinal();
+		this.lastDecodedAudioAt = null;
+		this.speechDetector?.reset();
 	}
 
 	private shouldFlush(): boolean {
@@ -482,15 +681,6 @@ export class AudioIngester {
 	}
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
-
-	private calculateSumSq(buffer: Buffer): number {
-		let sum = 0;
-		for (let i = 0; i < buffer.length; i += BYTES_PER_SAMPLE) {
-			const sample = buffer.readInt16LE(i);
-			sum += sample * sample;
-		}
-		return sum;
-	}
 
 	/**
 	 * Read exactly `n` bytes from the front of the vad queue.
