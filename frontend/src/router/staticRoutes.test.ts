@@ -99,13 +99,43 @@ describe('suite route table', () => {
     },
   )
 
-  it('starts the installed suite in the app it was last in', () => {
-    // resolve() reports the record, not where its redirect leads; ask the redirect.
-    const start = router.getRoutes().find((route) => route.name === 'suite-start')!
-    const redirect = start.redirect as (to: unknown) => string
+  it.each(['suite-start', 'suite-root'])(
+    'sends %s to the app it was last in before the files flip',
+    (name) => {
+      localStorage.setItem('suite:last-app', 'calendar')
+      expect(redirectOf(router, name)).toBe('/calendar')
+      localStorage.removeItem('suite:last-app')
+      expect(redirectOf(router, name)).toBe('/mail')
+    },
+  )
+})
+
+describe('the files flip', () => {
+  afterEach(() => {
+    delete window.suite_flip_files
+    vi.resetModules()
+  })
+
+  it('mounts the Drive area under /drive and starts the suite at Home', async () => {
+    window.suite_flip_files = true
+    vi.resetModules()
+    const { default: flipped } = await import('./index')
+
+    expect(flipped.resolve('/drive').name).toBe('area-placeholder-files-root')
+    expect(flipped.resolve('/drive/f/node-1/slug').name).toBe('area-placeholder-files-folder')
+    // The old Drive pages do not mount, so an old path finds no page.
+    expect(flipped.resolve('/drive/favourites').name).toBe('not-found')
+    expect(flipped.resolve('/slides').meta.appId).toBe('slides')
     localStorage.setItem('suite:last-app', 'calendar')
-    expect(redirect(router.resolve('/suite/start'))).toBe('/calendar')
+    expect(redirectOf(flipped, 'suite-start')).toBe('/home')
+    expect(redirectOf(flipped, 'suite-root')).toBe('/home')
     localStorage.removeItem('suite:last-app')
-    expect(redirect(router.resolve('/suite/start'))).toBe('/mail')
   })
 })
+
+// resolve() reports the record, not where its redirect leads; ask the redirect.
+function redirectOf(target: typeof router, name: string): unknown {
+  const record = target.getRoutes().find((route) => route.name === name)!
+  const redirect = record.redirect as (to: unknown) => unknown
+  return redirect(target.resolve(record.path))
+}

@@ -5,24 +5,43 @@ import { filesArea } from "@/apps/drive";
 import { mailArea, useInboxSummary } from "@/apps/mail";
 import { meetArea } from "@/apps/meet";
 import { homeArea } from "@/composition/home";
+import { type BootFlag, readBootFlag } from "@/platform/boot";
 import type { AreaDefinition, PlatformCapability } from "@/platform/contracts";
 import { hasCapabilities, type Session, useSession } from "@/platform/session";
 
-export const areaDefinitions: readonly AreaDefinition[] = [
-  homeArea,
-  filesArea,
-  mailArea,
-  calendarArea,
-  meetArea,
+/** Each area in rail order, with the flip that puts it on the rail [T014, T018]. */
+const areaRollout: readonly (readonly [AreaDefinition, BootFlag])[] = [
+  [homeArea, "suite_flip_files"],
+  [filesArea, "suite_flip_files"],
+  [mailArea, "suite_flip_shell"],
+  [calendarArea, "suite_flip_shell"],
+  [meetArea, "suite_flip_shell"],
 ];
 
+const areaFlip = new Map(areaRollout);
+
+export const areaDefinitions: readonly AreaDefinition[] = areaRollout.map(
+  ([area]) => area,
+);
+
+export type FlipState = Readonly<Record<BootFlag, boolean>>;
+
+/**
+ * The areas the rail and the phone nav list: those whose flip is on and whose
+ * capabilities the session has. Keeps rail order.
+ */
 export function filterAreas(
   areas: readonly AreaDefinition[],
   capabilities: Record<PlatformCapability, boolean>,
+  flips: FlipState,
 ): AreaDefinition[] {
-  return areas.filter((area) =>
-    (area.requires ?? []).every((capability) => capabilities[capability]),
-  );
+  return areas.filter((area) => {
+    const flip = areaFlip.get(area);
+    return (
+      (!flip || flips[flip]) &&
+      (area.requires ?? []).every((capability) => capabilities[capability])
+    );
+  });
 }
 
 export function findArea(id: string): AreaDefinition | undefined {
@@ -37,11 +56,16 @@ export interface AppRegistry {
 
 export function useAppRegistry(session: Session = useSession()): AppRegistry {
   const inbox = useInboxSummary(() => session.capabilities.value.jmap);
+  // Read from boot once: a key change applies on the next page load [T014].
+  const flips: FlipState = {
+    suite_flip_shell: readBootFlag("suite_flip_shell"),
+    suite_flip_files: readBootFlag("suite_flip_files"),
+  };
 
   return {
     allAreas: areaDefinitions,
     areas: computed(() =>
-      filterAreas(areaDefinitions, session.capabilities.value),
+      filterAreas(areaDefinitions, session.capabilities.value, flips),
     ),
     badges: computed(() => deriveAreaBadges(inbox.data)),
   };

@@ -54,47 +54,58 @@ function placeholder(
   return { path, name, component, meta };
 }
 
+/**
+ * `suite_flip_files` selects which route table mounts under `/drive`: on, the
+ * Drive area; off, the old Drive pages (the router's legacy group). Home and
+ * `/d/` answer in both states [T013, T020].
+ */
+export const driveAreaMounted = readBootFlag("suite_flip_files");
+
+const driveAreaRoutes: RouteRecordRaw[] = [
+  placeholder(
+    "/drive",
+    "area-placeholder-files-root",
+    areaMeta("files", "My files", driveLogo),
+  ),
+  placeholder(
+    "/drive/organization",
+    "area-placeholder-files-organization",
+    areaMeta("files", "Organization files", driveLogo),
+  ),
+  placeholder(
+    "/drive/f/:node/:slug?",
+    "area-placeholder-files-folder",
+    areaMeta("files", "Folder", driveLogo, { allowGuest: true }),
+  ),
+  placeholder(
+    "/drive/recent",
+    "area-placeholder-files-recent",
+    areaMeta("files", "Recent", driveLogo),
+  ),
+  placeholder(
+    "/drive/starred",
+    "area-placeholder-files-starred",
+    areaMeta("files", "Starred", driveLogo),
+  ),
+  placeholder(
+    "/drive/shared-with-me",
+    "area-placeholder-files-shared-with-me",
+    areaMeta("files", "Shared with me", driveLogo),
+  ),
+  placeholder(
+    "/drive/trash",
+    "area-placeholder-files-trash",
+    areaMeta("files", "Trash", driveLogo),
+  ),
+];
+
 export const canonicalRoutes: RouteRecordRaw[] = [
   placeholder(
     "/home",
     "area-placeholder-home",
     areaMeta("home", "Home", suiteLogo),
   ),
-  placeholder(
-    "/files",
-    "area-placeholder-files-root",
-    areaMeta("files", "My files", driveLogo),
-  ),
-  placeholder(
-    "/files/organization",
-    "area-placeholder-files-organization",
-    areaMeta("files", "Organization files", driveLogo),
-  ),
-  placeholder(
-    "/files/f/:node/:slug?",
-    "area-placeholder-files-folder",
-    areaMeta("files", "Folder", driveLogo, { allowGuest: true }),
-  ),
-  placeholder(
-    "/files/recent",
-    "area-placeholder-files-recent",
-    areaMeta("files", "Recent", driveLogo),
-  ),
-  placeholder(
-    "/files/starred",
-    "area-placeholder-files-starred",
-    areaMeta("files", "Starred", driveLogo),
-  ),
-  placeholder(
-    "/files/shared-with-me",
-    "area-placeholder-files-shared-with-me",
-    areaMeta("files", "Shared with me", driveLogo),
-  ),
-  placeholder(
-    "/files/trash",
-    "area-placeholder-files-trash",
-    areaMeta("files", "Trash", driveLogo),
-  ),
+  ...(driveAreaMounted ? driveAreaRoutes : []),
   // Mail and Calendar keep their own phone chrome: inset and tab bar [T010]. The area group
   // copies this metadata, so every Mail and Calendar page inherits it.
   placeholder(
@@ -147,7 +158,6 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 ];
 
 export const routes: RouteRecordRaw[] = [
-  { path: "/", redirect: "/home" },
   ...canonicalRoutes,
   {
     path: "/suite",

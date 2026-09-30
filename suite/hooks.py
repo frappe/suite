@@ -47,12 +47,10 @@ sqlite_search = ["suite.writer.search.WriterSearch"]
 website_route_rules = [
     {"from_route": "/suite/<path:app_path>", "to_route": "suite"},
     # unified frontend — canonical area and document routes (ticket 001).
-    # Additive during grow-beside; ticket 014 owns the legacy redirects.
-    # In production nginx serves a real public upload under /files/ first
-    # and falls through to these rules for everything else.
+    # The Drive area shares `/drive` with the old Drive pages: `suite_flip_files`
+    # selects which route table the SPA mounts there (ticket 020). `/files/`
+    # stays Frappe's public upload path.
     {"from_route": "/home", "to_route": "suite"},
-    {"from_route": "/files", "to_route": "suite"},
-    {"from_route": "/files/<path:app_path>", "to_route": "suite"},
     {"from_route": "/d/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
     # drive — the share-link landing page (§11.2, unified frontend §10.1).

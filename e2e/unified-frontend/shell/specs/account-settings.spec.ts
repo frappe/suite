@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../helpers/flips";
 
 test("account menu opens and closes settings in the unified shell", async ({ page }) => {
-	await page.goto("/files");
+	await page.goto("/drive");
 	await page.getByRole("button", { name: "Account" }).click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
 

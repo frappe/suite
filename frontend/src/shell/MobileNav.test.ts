@@ -41,18 +41,18 @@ import type { AreaDefinition } from "@/platform/contracts";
 import MobileNav from "@/shell/MobileNav.vue";
 
 const icon = defineComponent({ setup: () => () => h("span") });
-const area = (id: string, label: string): AreaDefinition => ({
+const area = (id: string, label: string, to = `/${id}`): AreaDefinition => ({
   id,
   label: () => label,
   icon,
-  to: `/${id}`,
+  to,
   loadRoutes: vi.fn(),
 });
-const areas = [area("home", "Home"), area("files", "Files")];
+const areas = [area("home", "Home"), area("files", "Drive", "/drive")];
 
 const FilesPage = defineComponent({
   setup: () => () =>
-    h(AreaSidebar, { area: "files", title: "Files" }, () =>
+    h(AreaSidebar, { area: "files", title: "Drive" }, () =>
       h("a", { "data-files-panel": "" }, "Starred"),
     ),
 });
@@ -66,7 +66,7 @@ async function mountAt(path: string) {
     history: createMemoryHistory(),
     routes: [
       { path: "/home", component: { render: () => h("div", "Home") }, meta: { area: "home" } },
-      { path: "/files/:view?", component: FilesPage, meta: { area: "files" } },
+      { path: "/drive/:view?", component: FilesPage, meta: { area: "files" } },
       { path: "/d/:node", component: DocumentPage, meta: { area: "files" } },
     ],
   });
@@ -97,16 +97,16 @@ async function mountAt(path: string) {
 
 describe("phone bottom nav", () => {
   it("moves to another area, and opens the active area's sidebar sheet", async () => {
-    const { router, item } = await mountAt("/files/starred");
+    const { router, item } = await mountAt("/drive/starred");
 
     expect(item("Home").getAttribute("href")).toBe("/home");
     expect(item("Account")).not.toBeNull();
 
-    item("Files").click();
+    item("Drive").click();
     await vi.waitFor(() =>
       expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).not.toBeNull(),
     );
-    expect(router.currentRoute.value.fullPath).toBe("/files/starred");
+    expect(router.currentRoute.value.fullPath).toBe("/drive/starred");
 
     item("Home").click();
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/home"));
@@ -114,7 +114,7 @@ describe("phone bottom nav", () => {
 
   it("navigates to the area when the active page draws no sidebar", async () => {
     const { router, item } = await mountAt("/d/node-1");
-    item("Files").click();
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/files"));
+    item("Drive").click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/drive"));
   });
 });

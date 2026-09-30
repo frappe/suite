@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
 
@@ -16,23 +16,23 @@ test("each area route sets its title and favicon", async ({ page }) => {
 	await expect(page).toHaveTitle("Home");
 	await expect(favicon(page)).toHaveAttribute("href", SUITE_FAVICON);
 
-	await page.goto("/files");
+	await page.goto("/drive");
 	await expect(page).toHaveTitle("My files");
 	await expect(favicon(page)).toHaveAttribute("href", DRIVE_FAVICON);
 
-	await page.goto("/files/starred");
+	await page.goto("/drive/starred");
 	await expect(page).toHaveTitle("Starred");
 	await expect(favicon(page)).toHaveAttribute("href", DRIVE_FAVICON);
 
-	await page.goto("/files/trash");
+	await page.goto("/drive/trash");
 	await expect(page).toHaveTitle("Trash");
 });
 
 test("client-side navigation updates the title", async ({ page }) => {
-	await page.goto("/files");
+	await page.goto("/drive");
 	await expect(page).toHaveTitle("My files");
 	await page.getByRole("navigation", { name: "File views" }).getByRole("link", { name: "Recent" }).click();
-	await expect(page).toHaveURL(/\/files\/recent$/);
+	await expect(page).toHaveURL(/\/drive\/recent$/);
 	await expect(page).toHaveTitle("Recent");
 });
 

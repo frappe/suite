@@ -16,6 +16,7 @@ import {
 import {
   areaPlaceholderNames,
   canonicalRoutes,
+  driveAreaMounted,
   routes,
 } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
@@ -39,7 +40,12 @@ const legacyRouteLoaders: Record<
   writer: () => import('@/apps/writer/routes'),
   sheets: () => import('@/apps/sheets/routes'),
 }
-const legacyApps = SUITE_APPS.filter((app) => app.id in legacyRouteLoaders).map(
+// With the files flip on, the Drive area owns `/drive`, so the old Drive pages
+// do not mount [T020].
+const legacyApps = SUITE_APPS.filter(
+  (app) =>
+    app.id in legacyRouteLoaders && !(app.id === 'drive' && driveAreaMounted),
+).map(
   (app) => ({
     ...app,
     loadRoutes: legacyRouteLoaders[app.id]!,
@@ -57,13 +63,17 @@ const legacyPlaceholderGroups: RouteRecordRaw[] = legacyApps.map((app) => ({
     favicon: app.logo,
   },
 }))
+// `/` and the PWA start go to Home once the files flip is on. Before it they
+// go to the last app, Mail by default [T014].
+const startPath = () => (driveAreaMounted ? '/home' : lastAppPrefix())
 const notFoundRoute = routes.at(-1)!
 const routerRoutes = [
+  { path: '/', name: 'suite-root', redirect: startPath },
   ...routes.slice(0, -1),
   {
     path: '/suite/start',
     name: 'suite-start',
-    redirect: () => lastAppPrefix(),
+    redirect: startPath,
   },
   ...legacyPlaceholderGroups,
   notFoundRoute,
