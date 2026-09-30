@@ -363,12 +363,17 @@ def _forget_shared_calendars(account: str, principal_ids: set[str]) -> None:
     minutes. A principal is a login on the mail server, and a user's login is in their settings;
     a group has no user of its own, and its members find out when the answer next expires."""
 
-    people = _principals(account, list(principal_ids)).values()
-    emails = [person["email"] for person in people if person.get("email")]
-    if not emails:
-        return
-    for user in frappe.get_all("User Settings", {"username": ("in", emails)}, pluck="user"):
-        frappe.cache.delete_value(_shared_calendars_cache_key(user))
+    # Best effort, after the server has already agreed to the change: a lookup that fails here
+    # must not report a share that happened as one that did not, and put the dialog back to a
+    # list the server no longer holds. Whoever it missed finds out when their answer expires.
+    try:
+        people = _principals(account, list(principal_ids)).values()
+        emails = [person["email"] for person in people if person.get("email")]
+        users = frappe.get_all("User Settings", {"username": ("in", emails)}, pluck="user") if emails else []
+        for user in users:
+            frappe.cache.delete_value(_shared_calendars_cache_key(user))
+    except Exception:
+        frappe.log_error(title="Calendar could not tell the sharees their list changed")
 
 
 @frappe.whitelist()
