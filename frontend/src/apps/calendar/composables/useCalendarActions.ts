@@ -63,7 +63,14 @@ export const useCalendarActions = () => {
 	const sharing = createResource({
 		url: 'suite.calendar.api.get_calendar_sharing',
 		makeParams: (calendar: CalendarRow) => ({ account: calendar.account, id: calendar.id }),
-		onSuccess: () => (showShare.value = true),
+		// Only the answer for the calendar last asked about opens the dialog: with Share clicked
+		// on one calendar and then another before the first has answered, the first's audience
+		// would otherwise open under the second's name — and be saved to it.
+		onSuccess: (data: { account: string; id: string }) => {
+			if (data.account === selected.value?.account && data.id === selected.value?.id) {
+				showShare.value = true
+			}
+		},
 		onError: toastError,
 	})
 

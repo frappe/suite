@@ -87,10 +87,14 @@ type PrincipalOption = Principal & { label: string; value: string }
 
 const show = defineModel<boolean>()
 
-/** The calendar whose audience this is, and the audience as it was loaded on the way here. */
+/**
+ * The calendar whose audience this is, and the audience as it was loaded on the way here. The
+ * loaded audience names its calendar, and that — not the row the dialog was opened from — is
+ * what a save goes to: what is shown and where it is saved can never be two calendars.
+ */
 const { calendar, sharing } = defineProps<{
 	calendar?: CalendarRow
-	sharing?: { may_share: boolean; sharees: Sharee[] }
+	sharing?: { account: string; id: string; may_share: boolean; sharees: Sharee[] }
 }>()
 
 // What the server last agreed to, and what the dialog shows. Adding or removing somebody shows
@@ -115,22 +119,48 @@ watch(show, (open) => {
 const save = createResource({
 	url: 'suite.calendar.api.set_calendar_sharing',
 	makeParams: () => ({
-		account: calendar!.account,
-		id: calendar!.id,
+		account: sharing!.account,
+		id: sharing!.id,
 		sharees: managedSharees(sharees.value),
 	}),
-	// No toast on success: the row that appeared or went is the confirmation.
+	// No toast on success: the row that appeared or went is the confirmation. What the server
+	// agreed to is the list that was sent, not the one shown — which may already hold the next
+	// change, waiting its turn.
 	onSuccess: () => {
-		saved.value = sharees.value.map((sharee) => ({ ...sharee }))
+		saved.value = sent
+		if (queued) {
+			queued = false
+			submitNow()
+		}
 	},
 	// The server caps how many a calendar may be shared with and does not say the number, so
 	// its refusal is the only account of the limit there is to show — and the list goes back
-	// to what it last agreed to.
+	// to what it last agreed to, a change waiting its turn included.
 	onError: (error) => {
+		queued = false
 		sharees.value = saved.value.map((sharee) => ({ ...sharee }))
 		toastError(error)
 	},
 })
+
+// Every save replaces the whole list, so two in flight at once could land in either order and
+// the older undo the newer. One goes at a time; a change made while one is out waits, and the
+// list as it stands then is sent when the first comes back.
+let sent: Sharee[] = []
+let queued = false
+
+const submitNow = () => {
+	sent = sharees.value.map((sharee) => ({ ...sharee }))
+	save.submit()
+}
+
+const persist = () => {
+	if (save.loading) {
+		queued = true
+		return
+	}
+	submitNow()
+}
 
 const {
 	query,
@@ -159,13 +189,13 @@ const add = async (principalId: string | null) => {
 	if (person && !isShared(sharees.value, principalId)) {
 		const { label, value, ...principal } = person
 		sharees.value = [...sharees.value, { ...principal, role: 'view' }]
-		save.submit()
+		persist()
 	}
 	await clear()
 }
 
 const remove = (principalId: string) => {
 	sharees.value = sharees.value.filter((sharee) => sharee.principal_id !== principalId)
-	save.submit()
+	persist()
 }
 </script>

@@ -402,7 +402,14 @@ def get_calendar_sharing(account: str, id: str) -> dict:
     ]
     sharees.sort(key=lambda sharee: (sharee["email"] or sharee["principal_id"]).lower())
 
-    return {"may_share": may_share(calendar.get("myRights")), "sharees": sharees}
+    # Named, so a dialog that asked about two calendars in quick succession can tell whose
+    # answer this is, and saves what it shows to the calendar it was loaded for.
+    return {
+        "account": account,
+        "id": id,
+        "may_share": may_share(calendar.get("myRights")),
+        "sharees": sharees,
+    }
 
 
 @frappe.whitelist()
