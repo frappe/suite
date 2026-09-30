@@ -12,9 +12,10 @@ and every other kind at `/d/<id>`; with it off, at `/drive/g/<id>`. No slug is
 sent: the router adds it. Rotating a link mints a new token, which changes this
 URL and leaves the old one resolving to nothing.
 
-`GET /drive/l/<token>` is the old address of the same page. It answers here,
-through the same resolver, until the composition redirect table sends it to
-`/l/<token>` (unified frontend spec §14.3).
+`GET /drive/l/<token>` is the old address of the same page. With
+`suite_flip_files` on, the composition redirect table sends it to `/l/<token>`
+(unified frontend spec §14.3); with the key off it answers here, through the
+same resolver.
 
 No role is checked here. Resolution answers *which* node, never *whether*: a
 password link's holder needs the node id in order to be told, by the ordinary

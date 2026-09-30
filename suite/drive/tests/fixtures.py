@@ -50,6 +50,20 @@ def drop_node_rows(nodes) -> None:
     frappe.db.delete("Drive Node", {"name": ["in", nodes]})
 
 
+def add_legacy_route(old_id: str, node: str) -> None:
+    """Record that a pre-migration Drive Team id became `node`.
+
+    Build writes these rows; nothing at runtime does. A leftover row from a
+    killed run is replaced, and `drop_legacy_route` removes it.
+    """
+    drop_legacy_route(old_id)
+    frappe.get_doc({"doctype": "Drive Legacy Route", "name": old_id, "old_id": old_id, "entity": node}).db_insert()
+
+
+def drop_legacy_route(old_id: str) -> None:
+    frappe.db.delete("Drive Legacy Route", {"name": old_id})
+
+
 def drop_record_rows(nodes) -> None:
     """Delete the personal and comment rows `drop_node_rows` leaves behind."""
     nodes = [node for node in nodes if node]

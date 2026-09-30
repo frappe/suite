@@ -100,7 +100,9 @@ class TestShareLinkRoute(DriveHTTPCase):
 
     def test_the_old_address_still_resolves_the_same_link(self):
         _created, token = self.link(self.file)
-        self.assertRedirect(self.open(f"/drive/l/{token}", flipped=True), f"/d/{self.file}#link={token}")
+        # With the key on, the composition redirect table sends it to the new address first.
+        self.assertRedirect(self.open(f"/drive/l/{token}", flipped=True), f"/l/{token}")
+        self.assertRedirect(self.open(f"/drive/l/{token}", flipped=False), f"/drive/g/{self.file}#link={token}")
 
     def assertRefused(self, response, status: int) -> None:
         # The page answers, not Frappe's own not-found page for an unrouted path.

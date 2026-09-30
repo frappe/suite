@@ -23,6 +23,7 @@ export async function selectDocumentSurface(
 import { Button, Spinner } from "frappe-ui";
 import {
   computed,
+  inject,
   onBeforeUnmount,
   shallowRef,
   watch,
@@ -30,11 +31,16 @@ import {
 import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 
 import {
+  DriveUnlockScreen,
   driveNodeRoute,
+  isDriveLocked,
+  isDriveNodeLocked,
   openDocumentSession,
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
 import { usePageTitle } from "@/platform/page-meta";
+import { TransportError } from "@/platform/transport";
+import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
 const route = useRoute();
 const router = useRouter();
@@ -42,6 +48,11 @@ const session = shallowRef<DocumentSession | null>(null);
 const surface = shallowRef<Component | null>(null);
 const loading = shallowRef(true);
 const error = shallowRef("");
+// A password link answered `401 DriveLocked`: the unlock screen shows in place (spec §10.2).
+const locked = shallowRef(false);
+// Present only in the guest frame, where a refused node shows the Sign-in screen (spec §10.8).
+const guestFrame = inject(GUEST_FRAME_KEY, null);
+const reopen = shallowRef(0);
 let opening = 0;
 
 const nodeId = computed(() => String(route.params.node ?? ""));
@@ -56,13 +67,14 @@ const refused = computed(
 );
 
 watch(
-  nodeId,
-  async (node) => {
+  [nodeId, reopen],
+  async ([node]) => {
     const request = ++opening;
     const previous = session.value;
     session.value = null;
     surface.value = null;
     error.value = "";
+    locked.value = false;
     loading.value = true;
     previous?.dispose();
 
@@ -89,12 +101,47 @@ watch(
       await replaceDecorativeSlug(opened);
     } catch (reason) {
       if (request !== opening) return;
+      if (isDriveLocked(reason)) {
+        locked.value = true;
+        return;
+      }
+      // A guest is never told whether the item exists.
+      if (guestFrame && reason instanceof TransportError && [401, 403, 404, 410].includes(reason.status)) {
+        guestFrame.requireSignIn();
+        return;
+      }
       error.value = reason instanceof Error ? reason.message : "This document could not be opened.";
     } finally {
       if (request === opening) loading.value = false;
     }
   },
   { immediate: true },
+);
+
+// An open document the server stops answering is asked once why. A `401 DriveLocked`
+// means the unlock ticket expired: the unlock screen shows, and only a new password opens
+// the document again. Any other refusal shows a guest the Sign-in screen, which never says
+// whether the item exists, and shows a signed-in user the refusal surface. Nothing reopens
+// by itself, so a server that keeps refusing cannot cause a loop.
+watch(
+  () => session.value?.state.value,
+  async (state, before) => {
+    if (state !== "Refused" || before !== "Active" || !session.value) return;
+    const request = opening;
+    const lapsed = session.value;
+    const lockedAgain = await isDriveNodeLocked(lapsed.nodeId);
+    if (request !== opening) return;
+    if (!lockedAgain) {
+      guestFrame?.requireSignIn();
+      return;
+    }
+    opening += 1;
+    session.value = null;
+    surface.value = null;
+    lapsed.dispose();
+    loading.value = false;
+    locked.value = true;
+  },
 );
 
 watch(
@@ -121,6 +168,8 @@ onBeforeUnmount(() => {
     <div v-if="loading" class="flex flex-1 items-center justify-center" aria-label="Opening document">
       <Spinner class="size-5 text-ink-gray-5" />
     </div>
+
+    <DriveUnlockScreen v-else-if="locked" :node="nodeId" @unlocked="reopen += 1" />
 
     <div v-else-if="error" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-circle-alert mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />

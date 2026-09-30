@@ -10,7 +10,7 @@ vi.mock("@/apps/drive", () => ({
     id: "files",
     label: () => "files",
     icon: {},
-    to: "/files",
+    to: "/drive",
     loadRoutes: vi.fn(),
   },
 }));
@@ -38,6 +38,16 @@ vi.mock("@/apps/calendar", () => ({
   },
 }));
 
+vi.mock("@/apps/meet", () => ({
+  meetArea: {
+    id: "meet",
+    label: () => "meet",
+    icon: {},
+    to: "/meet",
+    loadRoutes: vi.fn(),
+  },
+}));
+
 import {
   areaDefinitions,
   deriveAreaBadges,
@@ -53,20 +63,37 @@ describe("app registry", () => {
       "files",
       "mail",
       "calendar",
+      "meet",
+    ]);
+  });
+
+  it("lists only the areas whose flip is on, in rail order", () => {
+    const capabilities = { jmap: true, systemManager: false };
+    const ids = (flips: { suite_flip_shell: boolean; suite_flip_files: boolean }) =>
+      filterAreas(areaDefinitions, capabilities, flips).map((area) => area.id);
+
+    expect(ids({ suite_flip_shell: false, suite_flip_files: false })).toEqual([]);
+    expect(ids({ suite_flip_shell: true, suite_flip_files: false })).toEqual([
+      "mail",
+      "calendar",
+      "meet",
+    ]);
+    expect(ids({ suite_flip_shell: true, suite_flip_files: true })).toEqual([
+      "home",
+      "files",
+      "mail",
+      "calendar",
+      "meet",
     ]);
   });
 
   it("filters capability-gated areas without reordering the rest", () => {
+    const flips = { suite_flip_shell: true, suite_flip_files: true };
     expect(
-      filterAreas(areaDefinitions, { jmap: false, systemManager: false }).map(
+      filterAreas(areaDefinitions, { jmap: false, systemManager: false }, flips).map(
         (area) => area.id,
       ),
-    ).toEqual(["home", "files"]);
-    expect(
-      filterAreas(areaDefinitions, { jmap: true, systemManager: false }).map(
-        (area) => area.id,
-      ),
-    ).toEqual(["home", "files", "mail", "calendar"]);
+    ).toEqual(["home", "files", "meet"]);
   });
 
   it("derives the Mail badge from the inbox unread summary", () => {

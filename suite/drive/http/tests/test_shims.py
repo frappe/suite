@@ -2670,8 +2670,10 @@ class TestFileForwarders(ShimCase):
         self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row(kind="document", mime=None)
+        nodes.node_url.return_value = "/d/n1"
         shims.get_file_content("n1")
-        self.assertEqual(frappe.local.response["location"], "/drive/w/n1")
+        nodes.node_url.assert_called_once_with("n1")
+        self.assertEqual(frappe.local.response["location"], "/d/n1")
 
     def test_streaming_is_the_same_redirect(self):
         self.stub_unadopted_row()

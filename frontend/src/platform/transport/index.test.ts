@@ -86,6 +86,18 @@ describe('transport', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
+  it('tells a refused write how long Retry-After asks it to wait', async () => {
+    const unlock: Operation<{ password: string }, unknown> = {
+      id: 'link_unlock', owner: 'drive', method: 'POST', path: 'links/t/unlock',
+    }
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, { 'Retry-After': '872' }),
+    )
+    const failure = await createTransport({ fetch: fetcher }).request(unlock, { password: 'x' }).catch((error) => error)
+    expect(failure).toMatchObject({ status: 429, retryAfterMs: 872_000 })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it('does not retry ordinary 4xx errors', async () => {
     const fetcher = vi.fn<typeof fetch>(async () =>
       response({ errors: [{ type: 'DriveForbidden', message: 'No access' }] }, 403),

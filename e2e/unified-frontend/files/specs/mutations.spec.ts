@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	adminApi,
@@ -41,7 +43,7 @@ async function openRowMenu(page: import("@playwright/test").Page, title: string)
 }
 
 test("a rename conflict keeps the dialog open with the server message", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Rename" }).click();
 
@@ -58,7 +60,7 @@ test("a rename conflict keeps the dialog open with the server message", async ({
 });
 
 test("a rename that succeeds updates the row and the server", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Rename" }).click();
 
@@ -72,7 +74,7 @@ test("a rename that succeeds updates the row and the server", async ({ page }) =
 });
 
 test("Move uses the Drive folder picker and rewrites the parent", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Move", exact: true }).click();
 
@@ -87,7 +89,7 @@ test("Move uses the Drive folder picker and rewrites the parent", async ({ page 
 });
 
 test("Star from the row menu reaches the Starred view", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Star", exact: true }).click();
 
@@ -95,7 +97,7 @@ test("Star from the row menu reaches the Starred view", async ({ page }) => {
 		.poll(async () => (await listView(api, "favourites")).rows.some((row) => row.name === target.name))
 		.toBe(true);
 
-	await page.goto("/files/starred");
+	await page.goto("/drive/starred");
 	await expect(page.getByText(target.title, { exact: true })).toBeVisible();
 });
 
@@ -104,7 +106,7 @@ test("Star from the row menu reaches the Starred view", async ({ page }) => {
 // toggleStar() disappears on the next refetch: the row never paints its star and
 // the menu never offers Unstar.
 test.fixme("a starred row shows its star and offers Unstar", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Star", exact: true }).click();
 
@@ -122,7 +124,7 @@ test.fixme("a starred row shows its star and offers Unstar", async ({ page }) =>
 });
 
 test("Make a copy accepts the title the server returns", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Make a copy" }).click();
 
@@ -137,7 +139,7 @@ test("Make a copy accepts the title the server returns", async ({ page }) => {
 });
 
 test("Move to trash removes the row from the folder listing", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, sibling.title);
 	await page.getByRole("menuitem", { name: "Move to trash" }).click();
 
@@ -146,7 +148,7 @@ test("Move to trash removes the row from the folder listing", async ({ page }) =
 });
 
 test("Share stays explicitly unavailable until ticket 008", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await openRowMenu(page, target.title);
 	await page.getByRole("menuitem", { name: "Share" }).click();
 	await expect(page.getByText("Sharing is unavailable until ticket 008.")).toBeVisible();

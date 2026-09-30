@@ -1797,7 +1797,7 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
     row = node_core.get(principals, entity_name)
     if row.kind == "document":
         frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = "/drive/w/" + row.name
+        frappe.local.response["location"] = node_core.node_url(row.name)
         return None
     signed = node_core.signed_content_url(row)
     frappe.local.response["type"] = "redirect"
@@ -2385,7 +2385,7 @@ def redirect_to_original(file_id: str):
     if row.content_doctype != "File":
         frappe.throw(_("This is not an attachment"), frappe.ValidationError)
     frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = "/drive/g/" + row.content_docname
+    frappe.local.response["location"] = node_core.node_url(row.content_docname)
     return None
 
 

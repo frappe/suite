@@ -231,9 +231,15 @@ class TestWebDAVContent(IntegrationTestCase):
             drop_nodes([empty])
 
     def test_collection_get_redirects_to_the_drive_ui(self):
-        response = self._get(f"/dav/{self.folder_name}")
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], f"/drive/d/{self.folder}")
+        # the folder's address follows the route table `suite_flip_files` selects
+        for flipped, location in ((0, f"/drive/g/{self.folder}"), (1, f"/drive/f/{self.folder}")):
+            with (
+                self.subTest(suite_flip_files=flipped),
+                patch.dict(frappe.conf, {"suite_flip_files": flipped}),
+            ):
+                response = self._get(f"/dav/{self.folder_name}")
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], location)
 
         # the mount is the Personal Root itself, so it lands on the root view
         response = self._get("/dav")

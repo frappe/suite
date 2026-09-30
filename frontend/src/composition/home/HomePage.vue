@@ -43,7 +43,7 @@
             </h2>
             <Button
               :label="__('View all')"
-              route="/files/recent"
+              route="/drive/recent"
               variant="ghost"
             />
           </div>

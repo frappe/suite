@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	adminApi,
@@ -37,7 +39,7 @@ async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Folder");
 
 	const dialog = page.getByRole("dialog", { name: "New folder" });
@@ -49,7 +51,7 @@ test("New Folder creates a folder in the open destination", async ({ page }) => 
 });
 
 test("New Writer document creates the node and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Document");
 
 	const dialog = page.getByRole("dialog");
@@ -65,7 +67,7 @@ test("New Writer document creates the node and lands on /d/", async ({ page }) =
 // The menu label stays "Spreadsheet" and the registry sends the "Sheet"
 // content doctype. Both were checked after commit d54f91803.
 test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Spreadsheet");
 
 	const dialog = page.getByRole("dialog");
@@ -78,7 +80,7 @@ test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
 });
 
 test("New Presentation creates the node and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Presentation");
 
 	const dialog = page.getByRole("dialog");
@@ -91,7 +93,7 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 });
 
 test("Upload files stays disabled until ticket 007", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
 	const upload = page.getByRole("menuitem", { name: "Upload files" });
 	await expect(upload).toBeVisible();
@@ -128,14 +130,14 @@ test("an unsupported file keeps the /d/ route and offers Download", async ({ pag
 
 test("a link row confirms its origin before opening a tab", async ({ page }) => {
 	await createLink(api, home.name, "outside-link", "https://frappe.io/about");
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByText("outside-link", { exact: true }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Open external link?" });
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByText("https://frappe.io")).toBeVisible();
 	await dialog.getByRole("button", { name: "Cancel" }).click();
-	await expect(page).toHaveURL(new RegExp(`/files/f/${home.name}`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${home.name}`));
 });
 
 // BUG: the Sheets surface mounts the legacy editor, which keeps its own header

@@ -602,8 +602,17 @@ def _recording_email_content(recording) -> tuple[str, dict]:
             "The recording of {0} from {1} could not be processed. No recording was added to Drive."
         ).format(room_title, recorded_at)
 
-    link = frappe.utils.get_url(f"/drive/f/{recording.artifact}") if recording.artifact else None
-    return subject, {"description": description, "link": link}
+    args = {"description": description, "link": None}
+    if recording.artifact:
+        try:
+            args["link"] = frappe.utils.get_url(drive.node_url(recording.artifact))
+        except drive.DriveNotFound:
+            # The artifact is a legacy `File` row with no node yet, so it has no
+            # address in the new Drive area. Point at the meeting instead, and
+            # send the email rather than retry a link that will never exist.
+            args["link"] = frappe.utils.get_url(f"/meet/{recording.meet_room}")
+            args["link_label"] = _("Open meeting")
+    return subject, args
 
 
 def _meet_logo_inline_images():

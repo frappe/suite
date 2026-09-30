@@ -6,9 +6,5 @@ export {}
 
 declare global {
 	interface Window {
-		/** FCM push-notification client, set up by the mail module's SW registration. */
-		frappePushNotification?: import('@/apps/mail/utils/frappe-push-notification').default
-		/** Notification relay server base URL (Frappe push notifications). */
-		push_relay_server_url: string
 	}
 }

@@ -1,12 +1,22 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
-import type { ShellFrame } from "@/platform/contracts";
+import { readBootFlag } from "@/platform/boot";
+import type { PhoneChromeOwner, ShellFrame } from "@/platform/contracts";
 
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
 const driveLogo = "/assets/suite/drive/images/logo.svg";
 const mailLogo = "/assets/suite/mail/images/logo.svg";
+const meetLogo = "/assets/suite/meet/images/meet.png";
 const suiteLogo = "/assets/suite/frontend/logo.svg";
+
+/**
+ * Mail, Calendar and Meet render in the shell while `suite_flip_shell` is on.
+ * Off, they stay outside it and draw their standalone chrome [T018].
+ */
+export const adoptedAppFrame: ShellFrame = readBootFlag("suite_flip_shell")
+  ? "shell"
+  : "none";
 
 const RouteLoading = defineComponent({
   name: "RouteLoading",
@@ -20,6 +30,7 @@ function areaMeta(
   options: {
     frame?: ShellFrame;
     scroll?: "shell" | "content";
+    phoneChrome?: PhoneChromeOwner;
     allowGuest?: boolean;
   } = {},
 ): RouteMeta {
@@ -27,6 +38,7 @@ function areaMeta(
     area,
     frame: options.frame ?? "shell",
     scroll: options.scroll ?? "shell",
+    phoneChrome: options.phoneChrome,
     allowGuest: options.allowGuest,
     title,
     favicon,
@@ -42,57 +54,85 @@ function placeholder(
   return { path, name, component, meta };
 }
 
+/**
+ * `suite_flip_files` selects which route table mounts under `/drive`: on, the
+ * Drive area; off, the old Drive pages (the router's legacy group). Home and
+ * `/d/` answer in both states [T013, T020].
+ */
+export const driveAreaMounted = readBootFlag("suite_flip_files");
+
+const driveAreaRoutes: RouteRecordRaw[] = [
+  placeholder(
+    "/drive",
+    "area-placeholder-files-root",
+    areaMeta("files", "My files", driveLogo),
+  ),
+  placeholder(
+    "/drive/organization",
+    "area-placeholder-files-organization",
+    areaMeta("files", "Organization files", driveLogo),
+  ),
+  placeholder(
+    "/drive/f/:node/:slug?",
+    "area-placeholder-files-folder",
+    areaMeta("files", "Folder", driveLogo, { allowGuest: true }),
+  ),
+  placeholder(
+    "/drive/recent",
+    "area-placeholder-files-recent",
+    areaMeta("files", "Recent", driveLogo),
+  ),
+  placeholder(
+    "/drive/starred",
+    "area-placeholder-files-starred",
+    areaMeta("files", "Starred", driveLogo),
+  ),
+  placeholder(
+    "/drive/shared-with-me",
+    "area-placeholder-files-shared-with-me",
+    areaMeta("files", "Shared with me", driveLogo),
+  ),
+  placeholder(
+    "/drive/trash",
+    "area-placeholder-files-trash",
+    areaMeta("files", "Trash", driveLogo),
+  ),
+];
+
 export const canonicalRoutes: RouteRecordRaw[] = [
   placeholder(
     "/home",
     "area-placeholder-home",
     areaMeta("home", "Home", suiteLogo),
   ),
-  placeholder(
-    "/files",
-    "area-placeholder-files-root",
-    areaMeta("files", "My files", driveLogo),
-  ),
-  placeholder(
-    "/files/organization",
-    "area-placeholder-files-organization",
-    areaMeta("files", "Organization files", driveLogo),
-  ),
-  placeholder(
-    "/files/f/:node/:slug?",
-    "area-placeholder-files-folder",
-    areaMeta("files", "Folder", driveLogo, { allowGuest: true }),
-  ),
-  placeholder(
-    "/files/recent",
-    "area-placeholder-files-recent",
-    areaMeta("files", "Recent", driveLogo),
-  ),
-  placeholder(
-    "/files/starred",
-    "area-placeholder-files-starred",
-    areaMeta("files", "Starred", driveLogo),
-  ),
-  placeholder(
-    "/files/shared-with-me",
-    "area-placeholder-files-shared-with-me",
-    areaMeta("files", "Shared with me", driveLogo),
-  ),
-  placeholder(
-    "/files/trash",
-    "area-placeholder-files-trash",
-    areaMeta("files", "Trash", driveLogo),
-  ),
+  ...(driveAreaMounted ? driveAreaRoutes : []),
+  // Mail and Calendar keep their own phone chrome: inset and tab bar [T010]. The area group
+  // copies this metadata, so every Mail and Calendar page inherits it.
   placeholder(
     "/mail/:pathMatch(.*)*",
     "area-placeholder-mail",
-    areaMeta("mail", "Mail", mailLogo, { frame: "none", scroll: "content" }),
+    areaMeta("mail", "Mail", mailLogo, {
+      frame: adoptedAppFrame,
+      scroll: "content",
+      phoneChrome: "page",
+    }),
   ),
   placeholder(
     "/calendar/:pathMatch(.*)*",
     "area-placeholder-calendar",
     areaMeta("calendar", "Calendar", calendarLogo, {
-      frame: "none",
+      frame: adoptedAppFrame,
+      scroll: "content",
+      phoneChrome: "page",
+    }),
+  ),
+  // One placeholder holds the whole prefix. A call (`/meet/:meetingId`) sets
+  // its own frame `none` and admits guests in Meet's route module.
+  placeholder(
+    "/meet/:pathMatch(.*)*",
+    "area-placeholder-meet",
+    areaMeta("meet", "Meet", meetLogo, {
+      frame: adoptedAppFrame,
       scroll: "content",
     }),
   ),
@@ -105,20 +145,9 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     }),
     defineAsyncRoute(() => import("@/composition/DocumentHost.vue")),
   ),
-  placeholder(
-    "/l/:token",
-    "link-unavailable",
-    areaMeta("files", "Shared link", driveLogo, { allowGuest: true }),
-    defineAsyncRoute(() => import("@/shell/UnavailableSurface.vue"), {
-      reason: "Shared-link credentials are not available yet.",
-      nextStep:
-        "Ask the sender for access another way. Ticket 011 owns this flow.",
-    }),
-  ),
 ];
 
 export const routes: RouteRecordRaw[] = [
-  { path: "/", redirect: "/home" },
   ...canonicalRoutes,
   {
     path: "/suite",
@@ -170,11 +199,10 @@ export function areaPlaceholderNames(areaId: string): string[] {
 
 function defineAsyncRoute(
   loader: () => Promise<{ default: Component }>,
-  props?: Record<string, unknown>,
 ): Component {
   const AsyncComponent = defineAsyncComponent(loader);
   return defineComponent({
     name: "AsyncRoute",
-    setup: () => () => h(AsyncComponent, props),
+    setup: () => () => h(AsyncComponent),
   });
 }

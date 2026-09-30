@@ -84,19 +84,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, SettingsRow, Switch, createResource } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
+import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 
 const store = userStore()
 const { accountId } = store
 
 const user = inject('$user')
-const socket = inject('$socket')
+const socket = useCalendarSocket()
 
 const calendarExport = reactive({
 	format: 'jmap',
@@ -157,11 +158,11 @@ const ongoingExport = createResource({
 	}),
 })
 
-onMounted(() =>
-	socket.on('calendar_exchange_completed', (payload: { action: 'Import' | 'Export' }) => {
-		if (payload.action === 'Export') ongoingExport.reload()
-	}),
-)
+const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
+	if (payload.action === 'Export') ongoingExport.reload()
+}
+socket.on('calendar_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
 
 const exportSubtitle = computed(() => {
 	if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")

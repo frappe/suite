@@ -16,6 +16,13 @@ export type PlatformCapability = 'jmap' | 'systemManager'
  */
 export type ShellFrame = 'shell' | 'none'
 export type ScrollOwner = 'shell' | 'content'
+/**
+ * Who draws the phone chrome: the top safe-area inset and the bottom bar.
+ * `shell`: the shell pads its header target and draws its bottom nav.
+ * `page`: the page applies the inset and draws its own tab bar, so the shell
+ * does neither (Mail and Calendar, spec section 9.3).
+ */
+export type PhoneChromeOwner = 'shell' | 'page'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -23,6 +30,8 @@ declare module 'vue-router' {
     area?: string
     frame?: ShellFrame
     scroll?: ScrollOwner
+    /** Absent reads as `shell`. */
+    phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
     favicon?: string
@@ -60,3 +69,17 @@ export interface DocumentTypeDefinition {
  * Products inject it for their New menus without importing composition.
  */
 export const DOCUMENT_TYPES_KEY: InjectionKey<readonly DocumentTypeDefinition[]> = Symbol('suite:document-types')
+
+/**
+ * What the guest frame offers the page inside it (spec §10.3, §10.8).
+ *
+ * A page that a visitor without a session cannot read asks the frame for the
+ * Sign-in screen. The screen never says whether the item exists. The frame
+ * shows the page again on the next navigation. Outside the guest frame
+ * nothing provides it.
+ */
+export interface GuestFrame {
+  requireSignIn(): void
+}
+
+export const GUEST_FRAME_KEY: InjectionKey<GuestFrame> = Symbol('suite:guest-frame')
