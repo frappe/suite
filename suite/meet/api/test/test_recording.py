@@ -714,6 +714,46 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         finally:
             frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
 
+    def test_an_artifact_with_no_node_links_the_meeting_and_is_not_retried(self):
+        self.room.db_set("title", "Weekly planning")
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        artifact = create_drive_file(
+            "Weekly planning recording.mp4",
+            recording.drive_home_folder,
+            "Video",
+            "/weekly-planning-recording.mp4",
+            mime_type="video/mp4",
+            owner=self.owner,
+        )
+        self.assertFalse(frappe.db.exists("Drive Node", artifact.name))
+        recording.db_set(
+            {
+                "status": "Ready",
+                "artifact": artifact.name,
+                "artifact_size": 1,
+                "artifact_duration": 1,
+                "artifact_sha256": "a" * 64,
+                "notification_pending": 1,
+                "notification_next_retry_at": now_datetime(),
+            },
+            update_modified=False,
+        )
+        try:
+            with (
+                patch.dict(frappe.conf, {"suite_flip_files": 1}),
+                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
+            ):
+                deliver_recording_notification(recording.name)
+
+            args = sendmail.call_args.kwargs["args"]
+            self.assertEqual(args["link"], frappe.utils.get_url(f"/meet/{self.room.name}"))
+            self.assertEqual(args["link_label"], "Open meeting")
+            self.assertEqual(frappe.db.get_value("Meet Recording", recording.name, "notification_pending"), 0)
+        finally:
+            frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
+
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)

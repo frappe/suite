@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 import { MOBILE_VIEWPORT } from "../../helpers/shell";
@@ -34,32 +36,32 @@ async function longPress(locator: import("@playwright/test").Locator) {
 }
 
 test("the bottom-nav item and the header button open the same sheet", async ({ page }) => {
-	await page.goto("/files");
-	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Files" }).click();
-	const sheet = page.getByRole("dialog", { name: "Files" });
+	await page.goto("/drive");
+	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Drive" }).click();
+	const sheet = page.getByRole("dialog", { name: "Drive" });
 	await expect(sheet).toBeVisible();
 	await sheet.getByRole("link", { name: "Recent" }).click();
-	await expect(page).toHaveURL(/\/files\/recent$/);
+	await expect(page).toHaveURL(/\/drive\/recent$/);
 
 	await page.keyboard.press("Escape");
 	await expect(sheet).toBeHidden();
 	await page.getByRole("button", { name: "Recent" }).click();
-	await expect(page.getByRole("dialog", { name: "Files" })).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Drive" })).toBeVisible();
 });
 
 // ShellLayout closes the sheet on every route change (fixed here).
 test("the sheet closes after a destination is chosen", async ({ page }) => {
-	await page.goto("/files");
-	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Files" }).click();
-	const sheet = page.getByRole("dialog", { name: "Files" });
+	await page.goto("/drive");
+	await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Drive" }).click();
+	const sheet = page.getByRole("dialog", { name: "Drive" });
 	await sheet.getByRole("link", { name: "Recent" }).click();
-	await expect(page).toHaveURL(/\/files\/recent$/);
+	await expect(page).toHaveURL(/\/drive\/recent$/);
 	await expect(sheet).toBeHidden();
 });
 
 test("the mobile header shows the destination and a back control inside a folder", async ({ page }) => {
-	await page.goto("/files");
-	await page.goto(`/files/f/${home.name}`);
+	await page.goto("/drive");
+	await page.goto(`/drive/f/${home.name}`);
 	await expect(page.getByRole("button", { name: home.title })).toBeVisible();
 	await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 
@@ -67,13 +69,13 @@ test("the mobile header shows the destination and a back control inside a folder
 	// PageHeaderBackButton, whose own prop is `to`; the component still runs its
 	// own history back on click.
 	await page.getByRole("link", { name: "Back" }).click();
-	await expect(page).toHaveURL(/\/files/);
+	await expect(page).toHaveURL(/\/drive/);
 	await expect(page.getByRole("button", { name: "My files" })).toBeVisible();
 });
 
 // The trailing click is swallowed after the press answers (fixed here).
 test("a long press on a grid tile enters selection mode", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=grid`);
+	await page.goto(`/drive/f/${home.name}?view=grid`);
 	const tile = page.getByRole("listitem").first();
 	await expect(tile).toBeVisible();
 
@@ -86,7 +88,7 @@ test("a long press on a grid tile enters selection mode", async ({ page }) => {
 
 // List rows bind the same pointer handlers as grid tiles (fixed here).
 test("a long press on a list row enters selection mode", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	const row = page.locator("[data-node]").first();
 	await expect(row).toBeVisible();
 
@@ -95,7 +97,7 @@ test("a long press on a list row enters selection mode", async ({ page }) => {
 });
 
 test("the row menu Select enters selection mode on mobile", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "Actions for row-a" }).click();
 	await page.getByRole("menuitem", { name: "Select" }).click();
 	await expect(page.getByText("1 selected")).toBeVisible();
@@ -105,7 +107,7 @@ test("the row menu Select enters selection mode on mobile", async ({ page }) => 
 });
 
 test("browser Back leaves selection mode instead of the folder", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "Actions for row-a" }).click();
 	await page.getByRole("menuitem", { name: "Select" }).click();
 	await expect(page.getByText("1 selected")).toBeVisible();

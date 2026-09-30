@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
@@ -34,43 +36,43 @@ function slugOf(title: string): string {
 }
 
 test("opening a folder row navigates to its canonical route", async ({ page }) => {
-	await page.goto("/files");
+	await page.goto("/drive");
 	await page.getByText(parent.title, { exact: true }).click();
 
-	await expect(page).toHaveURL(new RegExp(`/files/f/${parent.name}/${encodeURI(slugOf(parent.title))}`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${parent.name}/${encodeURI(slugOf(parent.title))}`));
 	await expect(page.getByText(CHILD_TITLE, { exact: true })).toBeVisible();
 	expect(slugOf(parent.title)).toContain(PARENT_SLUG);
 });
 
 test("a missing slug is replaced without a new history entry", async ({ page }) => {
-	await page.goto("/files");
-	await page.goto(`/files/f/${parent.name}`);
-	await expect(page).toHaveURL(new RegExp(`/files/f/${parent.name}/`));
+	await page.goto("/drive");
+	await page.goto(`/drive/f/${parent.name}`);
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${parent.name}/`));
 
 	await page.goBack();
-	await expect(page).toHaveURL(/\/files$/);
+	await expect(page).toHaveURL(/\/drive$/);
 });
 
 test("a stale slug is corrected to the current title", async ({ page }) => {
-	await page.goto(`/files/f/${parent.name}/an-old-title`);
-	await expect(page).toHaveURL(new RegExp(`/files/f/${parent.name}/${encodeURI(slugOf(parent.title))}$`));
+	await page.goto(`/drive/f/${parent.name}/an-old-title`);
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${parent.name}/${encodeURI(slugOf(parent.title))}$`));
 });
 
 test("breadcrumbs describe the open folder and navigate back", async ({ page }) => {
-	await page.goto(`/files/f/${child.name}`);
+	await page.goto(`/drive/f/${child.name}`);
 	const crumbs = page.locator("header").first();
 	await expect(crumbs.getByText("Administrator", { exact: true })).toBeVisible();
 	await expect(crumbs.getByText(parent.title, { exact: true })).toBeVisible();
 	await expect(crumbs.getByText(CHILD_TITLE, { exact: true })).toBeVisible();
 
 	await crumbs.getByText(parent.title, { exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(`/files/f/${parent.name}/`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${parent.name}/`));
 });
 
 test("folder navigation carries the presentation query forward", async ({ page }) => {
-	await page.goto(`/files/f/${parent.name}?view=list&sort=modified&dir=desc`);
+	await page.goto(`/drive/f/${parent.name}?view=list&sort=modified&dir=desc`);
 	await page.getByText(CHILD_TITLE, { exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(`/files/f/${child.name}`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${child.name}`));
 	await expect(page).toHaveURL(/sort=modified/);
 	await expect(page).toHaveURL(/dir=desc/);
 });

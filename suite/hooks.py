@@ -47,20 +47,19 @@ sqlite_search = ["suite.writer.search.WriterSearch"]
 website_route_rules = [
     {"from_route": "/suite/<path:app_path>", "to_route": "suite"},
     # unified frontend — canonical area and document routes (ticket 001).
-    # Additive during grow-beside; ticket 014 owns the legacy redirects.
-    # In production nginx serves a real public upload under /files/ first
-    # and falls through to these rules for everything else.
+    # The Drive area shares `/drive` with the old Drive pages: `suite_flip_files`
+    # selects which route table the SPA mounts there (ticket 020). `/files/`
+    # stays Frappe's public upload path.
     {"from_route": "/home", "to_route": "suite"},
-    {"from_route": "/files", "to_route": "suite"},
-    {"from_route": "/files/<path:app_path>", "to_route": "suite"},
     {"from_route": "/d/<path:app_path>", "to_route": "suite"},
     {"from_route": "/drive", "to_route": "suite"},
     # drive — the share-link landing page (§11.2, unified frontend §10.1).
     {"from_route": "/l/<token>", "to_route": "drive_link"},
-    # Its old address, kept until the composition redirect table sends it to
-    # `/l/<token>` (unified frontend §14.3). It must be declared before the
-    # catch-all below is read, although werkzeug would rank it first anyway:
-    # a `<path:>` converter is the least specific rule in a Map.
+    # Its old address. With `suite_flip_files` on, the composition redirect
+    # table sends it to `/l/<token>` first (unified frontend §14.3); with the
+    # key off it answers here. It must be declared before the catch-all below
+    # is read, although werkzeug would rank it first anyway: a `<path:>`
+    # converter is the least specific rule in a Map.
     {"from_route": "/drive/l/<token>", "to_route": "drive_link"},
     {"from_route": "/drive/<path:app_path>", "to_route": "suite"},
     {"from_route": "/slides", "to_route": "suite"},
@@ -449,11 +448,13 @@ after_request = "suite.drive.api.product.after_request"
 # The legacy-call counter first: it only buffers, and it must see every legacy
 # call before a dispatcher can answer it. Then the WebDAV protocol dispatcher
 # and the Suite resource dispatcher, which own disjoint prefixes. WebDAV's
-# entry predates the framework-adapter rule.
+# entry predates the framework-adapter rule. The old-page redirect table goes
+# last: it answers page paths only, which no entry above claims.
 before_request = [
     "suite.drive.framework.count_legacy_call",
     "suite.drive.webdav.dispatch.handle_before_request",
     "suite.composition.http.handle_before_request",
+    "suite.composition.redirects.handle_before_request",
 ]
 
 # drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the

@@ -53,8 +53,14 @@ describe('who reaches the Admin Dashboard', () => {
 
 	it('an admin without a mailbox has nothing in Mail when it is not', async () => {
 		state.user = { is_jmap_configured: false, is_suite_admin: true, is_suite_cloud_configured: false }
-		expect(await mailGuard(dashboard)).toBe(false)
-		expect(replace).toHaveBeenCalledWith('/desk')
+		expect(await mailGuard(dashboard)).toEqual({ name: 'mail-root-shortcut' })
+		expect(await mailGuard(to('mail-root-shortcut', { shortcut: true }))).toBeUndefined()
+		expect(replace).not.toHaveBeenCalled()
+	})
+
+	it('anyone without a mailbox opens a MIME page', async () => {
+		state.user = { is_jmap_configured: false, is_suite_admin: false, is_suite_cloud_configured: false }
+		expect(await mailGuard(to('mail-mime-message', { allowGuest: true }, { id: 'm1' }))).toBeUndefined()
 	})
 })
 

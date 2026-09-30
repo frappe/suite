@@ -645,6 +645,7 @@ class TestArchitecture(unittest.TestCase):
                 "get_storage_usage",
                 "grow_storage_reservation",
                 "import_document",
+                "legacy_node",
                 "list_versions",
                 "node_url",
                 "personal_root_for",

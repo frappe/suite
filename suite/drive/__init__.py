@@ -125,6 +125,7 @@ which is what an offboarded user looks like.
 | `get_storage_reservation` | one primary-key read, no lock |
 | `create` / `grow` / `reduce` / `release` | two locking row reads and one counter UPDATE; no table scan |
 | `bind_legacy_storage_reservation` | the same, plus one read to detect an already-bound row |
+| `legacy_node` | one primary-key read of `Drive Legacy Route` |
 | `node_url` | no read with `suite_flip_files` off; one primary-key read of the node's kind with it on |
 
 No workflow scans `Drive Node`. Every one is bounded work per call, so a
@@ -312,6 +313,20 @@ def node_url(node: str) -> str:
     return _node_url(node)
 
 
+def legacy_node(old_id: str) -> str:
+    """Answer the node id a pre-migration Drive id names now.
+
+    An old Drive Team id answers the folder the team became, through `Drive
+    Legacy Route`; every other old id is returned unchanged, because Build kept
+    each `File` name as its node id. The answer may name no node: pass it to
+    `node_url`, which raises `DriveNotFound` for one with `suite_flip_files`
+    on. No role is checked.
+    """
+    from suite.drive._core.nodes import legacy_node as _legacy_node
+
+    return _legacy_node(old_id)
+
+
 def read_file(node: str) -> tuple[IO[bytes], str]:
     """Answer one readable file node's bytes as a stream, with its mime type."""
     from suite.drive._core.nodes import read_file as _read_file
@@ -408,6 +423,7 @@ __all__ = (
     "get_storage_usage",
     "grow_storage_reservation",
     "import_document",
+    "legacy_node",
     "list_versions",
     "node_url",
     "personal_root_for",

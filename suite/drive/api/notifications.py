@@ -2,14 +2,13 @@ import frappe
 from frappe.model.document import Document
 from pypika import Order
 
+from suite.drive._core.nodes import node_url
 from suite.drive.http import shims
 
 
 def get_link(entity):
-    if entity.file_type == "Document":
-        return "/writer/w/" + entity.name
-    type_ = {True: "f", bool(entity.is_folder): "d"}
-    return entity.file_url if entity.file_type == "Link" else f"/drive/{type_.get(True)}/{entity.name}/"
+    """The address a notification opens: a link's own URL, else the node's."""
+    return entity.file_url if entity.file_type == "Link" else node_url(entity.name)
 
 
 @frappe.whitelist()

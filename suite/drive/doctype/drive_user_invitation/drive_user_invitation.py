@@ -5,7 +5,12 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, get_datetime, now, validate_email_address
 
+from suite.suite_core.flips import flip_is_on
+
 EXPIRY_DAYS = 1
+# Where an accepted Suite invitation lands (`suite.api.account.invite_users`).
+# The composition redirect table sends it on to `/home`.
+SUITE_LANDING = "/suite"
 
 
 class DriveUserInvitation(Document):
@@ -63,6 +68,9 @@ class DriveUserInvitation(Document):
             frappe.db.commit()
             frappe.throw("Invalid or expired key")
 
+        if flip_is_on("suite_flip_files"):
+            return self._accept_as_suite_invitation(redirect)
+
         exists = frappe.db.exists(
             "Account Request",
             {
@@ -104,3 +112,56 @@ class DriveUserInvitation(Document):
 
         frappe.local.response["location"] = "/drive/"
         return "/drive/"
+
+    def _accept_as_suite_invitation(self, redirect=True) -> str:
+        """Accept the way a Suite invitation is accepted (unified frontend §14.6).
+
+        With `suite_flip_files` on, the new Drive area has no `/drive/signup`,
+        so a legacy invitation takes the framework's `User Invitation` accept
+        path instead: a System User with the roles a Suite invitation grants,
+        a password set through `/update-password`, and a landing on `/suite`.
+        A `redirect` target from an old share email is not honoured; the
+        landing is the Suite one.
+        """
+        user = self._upsert_suite_user()
+        self.status = "Accepted"
+        self.accepted_at = frappe.utils.now()
+        self.save(ignore_permissions=True)
+
+        should_update_password = not user.last_password_reset_date and not bool(
+            frappe.get_system_settings("disable_user_pass_login")
+        )
+        location = frappe.utils.get_url(SUITE_LANDING)
+        if should_update_password:
+            location = f"{user._reset_password()}&redirect_to={SUITE_LANDING}"
+        # GET requests do not commit on their own
+        frappe.db.commit()
+        if not should_update_password:
+            frappe.local.login_manager.login_as(self.email)
+
+        if redirect:
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = location
+        return location
+
+    def _upsert_suite_user(self):
+        """The invitee as `User Invitation._upsert_user` leaves them."""
+        if frappe.db.exists("User", self.email):
+            user = frappe.get_doc("User", self.email)
+        else:
+            user = frappe.new_doc("User")
+            user.user_type = "System User"
+            user.email = self.email
+            user.first_name = self.email.split("@")[0].title()
+            user.send_welcome_email = False
+            user.insert(ignore_permissions=True)
+        user.append_roles(*suite_invitation_roles())
+        user.save(ignore_permissions=True)
+        return user
+
+
+def suite_invitation_roles() -> list[str]:
+    """Every role the `user_invitation` hook lets a Suite invitation grant."""
+    hook = frappe.get_hooks("user_invitation", app_name="suite")
+    allowed = (hook if isinstance(hook, dict) else {}).get("allowed_roles") or {}
+    return sorted({role for granted in allowed.values() for role in granted})

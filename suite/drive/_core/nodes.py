@@ -16,7 +16,7 @@ from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.url import signed_url_for_blob
-from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime, now, now_datetime
+from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
@@ -47,6 +47,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import personal_root_for, reject_illegal_root_operation, validate_root_pair
+from suite.suite_core.flips import flip_is_on
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 200
@@ -362,12 +363,24 @@ def node_url(node: str) -> str:
     opens asks for the node and is refused there. No slug is added: the router
     adds one.
     """
-    if not cint(frappe.conf.get("suite_flip_files")):
+    if not flip_is_on("suite_flip_files"):
         return f"/drive/g/{node}"
     kind = frappe.db.get_value("Drive Node", node, "kind")
     if kind is None:
         raise DriveNotFound(_("Drive node {0} was not found").format(node))
     return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
+
+
+def legacy_node(old_id: str) -> str:
+    """Answer the node id a pre-migration Drive id names now (Drive spec §3.15).
+
+    A Drive Team became a folder, and `Drive Legacy Route` maps the team's id
+    to that folder. Every other old id is already a node id: Build gave each
+    node the id its `File` row had (§14.3). The answer may name no node; the
+    caller learns that from the node read it makes next. One primary-key read,
+    no role check, for the same reason `node_url` has none.
+    """
+    return frappe.db.get_value("Drive Legacy Route", old_id, "entity") or old_id
 
 
 def stored(node: str) -> frappe._dict:

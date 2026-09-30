@@ -69,8 +69,6 @@ const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
   ? JSON.parse(fs.readFileSync(commonSiteConfigPath, 'utf-8'))
   : {}
 const defaultSite = commonSiteConfig.default_site || 'localhost'
-const webserverPort = commonSiteConfig.webserver_port || 8000
-const frappeBackendUrl = `http://${defaultSite}:${webserverPort}`
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -91,10 +89,9 @@ export default defineConfig(({ mode }) => ({
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
-      // `/files` is left out of its proxy source: the Files area owns that
-      // prefix in the SPA (ticket 001), while Frappe serves public uploads
-      // there. The dedicated `/files` proxy rule below keeps both working.
-      frappeProxy: { source: '^/(desk|app|login|api|assets|private)' },
+      // `/files` is Frappe's public upload path. `/l/<token>` and its old
+      // address `/drive/l/<token>` are server pages, not SPA routes (ticket 011).
+      frappeProxy: { source: '^/(desk|app|login|api|assets|files|private|(drive/)?l/)' },
       lucideIcons: true,
       jinjaBootData: true,
       buildConfig: {
@@ -109,15 +106,12 @@ export default defineConfig(({ mode }) => ({
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which
-    // MailLayout.registerServiceWorker() registers. Scoped to FCM only: precaching
+    // the platform (src/platform/pwa) registers. Scoped to FCM only: precaching
     // is disabled (injectionPoint: undefined). Registration is manual
     // (injectRegister: null).
-    // `manifest: false`: the webmanifest is NOT generated here. All seven apps
-    // share one HTML shell, so a <link rel="manifest"> injected into <head> at
-    // build time would offer the install from every app, phone layout or not.
-    // It lives at public/pwa/suite/ instead and is linked at runtime only
-    // while the route is inside an installable app (see router/index.ts
-    // setPwaTags).
+    // `manifest: false`: the webmanifest is NOT generated here. It lives at
+    // public/pwa/suite/ and the platform links it on every route at runtime
+    // (see src/platform/pwa setPwaTags).
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/apps/mail',
@@ -185,19 +179,6 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     port: 8085,
-    proxy: {
-      // Public uploads live at /files/<name> on the bench. A browser
-      // navigation (Accept: text/html) to /files, /files/recent or
-      // /files/f/<node> is a Files-area route and gets the SPA instead.
-      '^/files(/|$)': {
-        target: frappeBackendUrl,
-        changeOrigin: false,
-        bypass(req) {
-          if ((req.headers.accept || '').includes('text/html')) return req.url
-          return undefined
-        },
-      },
-    },
     allowedHosts: [defaultSite, 'suite.localhost', ...(process.env.VITE_ALLOWED_HOSTS || '').split(',').map((host) => host.trim()).filter(Boolean)],
     fs: {
       // Allow the bench + frappe-ui source paths used by the dev proxy/build.

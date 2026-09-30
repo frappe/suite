@@ -1,6 +1,7 @@
 import { computed, h, type ComputedRef } from "vue";
 import { ItemListRow, Tooltip, type DropdownOptions } from "frappe-ui";
 
+import { readBootFlag } from "@/platform/boot";
 import { useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
 import { openSettings } from "@/shell/settings/useSettingsDialog";
@@ -17,12 +18,40 @@ function icon(name: string, disabled = false) {
   });
 }
 
+/** An old page that is not an area yet. */
+export interface LegacyAppLink {
+  readonly label: () => string;
+  readonly icon: string;
+  readonly to: string;
+}
+
 /**
- * The desktop account menu [T021]: who is signed in, Settings, Open Desk and
- * Upgrade plan for system managers, then Log out.
+ * The temporary Apps rows: the old pages the rail cannot reach between the
+ * flips. Deleted with the old pages in stage 15 [T018].
+ */
+export const legacyAppLinks: readonly LegacyAppLink[] = [
+  { label: () => __("Drive"), icon: "lucide-folder", to: "/drive" },
+  { label: () => __("Slides"), icon: "lucide-presentation", to: "/slides" },
+  { label: () => __("Writer"), icon: "lucide-file-text", to: "/writer" },
+  { label: () => __("Sheets"), icon: "lucide-table-2", to: "/sheets" },
+];
+
+/**
+ * Whether the account menus show the Apps rows: while the shell flip is on
+ * and the files flip is off. Read from boot, so it holds until reload [T018].
+ */
+export function showsLegacyApps(): boolean {
+  return readBootFlag("suite_flip_shell") && !readBootFlag("suite_flip_files");
+}
+
+/**
+ * The desktop account menu [T021]: who is signed in, the temporary Apps
+ * submenu between the flips, Settings, Open Desk and Upgrade plan for system
+ * managers, then Log out.
  */
 export function useAccountMenu(): ComputedRef<DropdownOptions> {
   const session = useSession();
+  const legacyApps = showsLegacyApps();
 
   return computed(() => {
     const user = session.user.value;
@@ -54,6 +83,16 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
         group: __("Actions"),
         hideLabel: true,
         options: [
+          {
+            label: __("Apps"),
+            icon: "lucide-layout-grid",
+            condition: () => legacyApps,
+            submenu: legacyAppLinks.map((app) => ({
+              label: app.label(),
+              icon: app.icon,
+              route: app.to,
+            })),
+          },
           {
             label: __("Settings"),
             icon: "lucide-settings",

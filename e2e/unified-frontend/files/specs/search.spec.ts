@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
@@ -27,7 +29,7 @@ test.afterAll(async () => {
 });
 
 test("the search field finds nodes across the tree and shows their path", async ({ page }) => {
-	await page.goto("/files");
+	await page.goto("/drive");
 	await page.getByRole("searchbox", { name: "Search files" }).fill(`${term}-report`);
 
 	await expect(page).toHaveURL(new RegExp(`q=${term}-report`));
@@ -41,7 +43,7 @@ test("search asks for the breadcrumb expansion", async ({ page }) => {
 	page.on("request", (request) => {
 		if (/\/views\/search/.test(request.url())) requests.push(request.url());
 	});
-	await page.goto(`/files?q=${term}-report`);
+	await page.goto(`/drive?q=${term}-report`);
 	await expect(page.getByText(`${term}-report`, { exact: true }).first()).toBeVisible();
 
 	expect(requests.length).toBeGreaterThan(0);
@@ -49,7 +51,7 @@ test("search asks for the breadcrumb expansion", async ({ page }) => {
 });
 
 test("clearing the term restores the listing at the current route", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?q=${term}-report`);
+	await page.goto(`/drive/f/${home.name}?q=${term}-report`);
 	await expect(page.getByText(`${term}-report`, { exact: true })).toHaveCount(2);
 
 	await page.getByRole("searchbox", { name: "Search files" }).fill("");
@@ -58,7 +60,7 @@ test("clearing the term restores the listing at the current route", async ({ pag
 });
 
 test("search hides New because it has no destination", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}`);
+	await page.goto(`/drive/f/${home.name}`);
 	await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
 
 	await page.getByRole("searchbox", { name: "Search files" }).fill(`${term}-report`);

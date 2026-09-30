@@ -18,6 +18,12 @@
 import { CloudOff } from 'lucide-vue-next'
 import { Button } from 'frappe-ui'
 
+import { useShellPhoneChrome } from '@/platform/phone-chrome'
+
+// This view replaces Mail's tab bar. In the shell on a phone, the shell's bottom nav
+// comes back, so the user can still switch areas during an outage.
+useShellPhoneChrome()
+
 // A reload re-runs the boot fetches from scratch — if the server is back, the app
 // comes up normally; if not, the failing fetches land right back on this view.
 const reloadPage = () => window.location.reload()

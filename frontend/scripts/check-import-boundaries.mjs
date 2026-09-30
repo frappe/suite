@@ -56,6 +56,7 @@ const moduleGraphDebtGroups = [
       "calendar/components/AppSidebar.vue|@/composables/accountSubmenu",
       "calendar/components/AppSidebar.vue|@/composables/useAppSwitcher",
       "calendar/components/AppSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
+      "calendar/components/AppSidebar.vue|@/shell/settings/useSettingsDialog",
       "calendar/components/CommandPalette/CalendarFilterPanel.vue|@/apps/mail/components/Controls/ContactCombobox.vue",
       "calendar/components/CommandPalette/CalendarSearchResult.vue|@/components/HighlightedText.vue",
       "calendar/components/EventAlertList.vue|@/utils/calendarAlert",
@@ -65,7 +66,6 @@ const moduleGraphDebtGroups = [
       "calendar/components/Modals/EventModal.vue|@/assets/app-logos/meet.png",
       "calendar/components/Modals/EventModal.vue|@/composables/useScreenSize",
       "calendar/components/Modals/EventRepeatSettingsModal.vue|@/composables/useScreenSize",
-      "calendar/components/Modals/SettingsModal.vue|@/shell/settings/SuiteSettingsDialog.vue",
       "calendar/components/Settings/AdvancedSettings.vue|@/components/CopyControl.vue",
       "calendar/components/Settings/AdvancedSettings.vue|@/components/settings/AppSettingsBody.vue",
       "calendar/components/Settings/AdvancedSettings.vue|@/components/settings/AppSettingsHeader.vue",
@@ -88,7 +88,6 @@ const moduleGraphDebtGroups = [
       "calendar/components/mobile/MobileEventForm.vue|@/utils/calendarAlert",
       "calendar/components/mobile/MobileViewSheet.vue|@/components/mobile/mobileClasses",
       "calendar/pages/CalendarLayout.vue|@/composables/useScreenSize",
-      "calendar/pages/CalendarLayout.vue|@/stores/root",
       "calendar/pages/CalendarView.vue|@/composables/useScreenSize",
       "calendar/pages/CalendarView.vue|@/stores/root",
       "calendar/pages/CalendarView.vue|@/utils/documentTitle",
@@ -159,7 +158,6 @@ const moduleGraphDebtGroups = [
       "mail/components/MailActions.vue|@/components/AdaptiveDropdown.vue",
       "mail/components/MailListItem.vue|@/components/HighlightedText.vue",
       "mail/components/MailListToolbar.vue|@/components/AdaptiveDropdown.vue",
-      "mail/components/Modals/SettingsModal.vue|@/shell/settings/SuiteSettingsDialog.vue",
       "mail/components/PlainTextBody.vue|@/components/LinkifiedText.vue",
       "mail/components/QuotaBar.vue|@/components/SidebarStorage.vue",
       "mail/components/SearchResultsHeader.vue|@/stores/root",
@@ -243,6 +241,7 @@ const moduleGraphDebtGroups = [
       "mail/stores/session.ts|@/boot/session",
       "mail/utils/composables.ts|@/composables/useScreenSize",
       "mail/utils/composables.ts|@/composables/useTheme",
+      "mail/utils/composables.ts|@/shell/settings/useSettingsDialog",
       "mail/utils/composables.ts|@/stores/root"
     ]
   },
@@ -252,7 +251,7 @@ const moduleGraphDebtGroups = [
     "entries": [
       "meet/components/MeetSidebar.vue|../../../boot/session",
       "meet/components/MeetSidebar.vue|@/composables/useAppSwitcher",
-      "meet/components/MeetSidebar.vue|@/composables/useSettingsMenuOption",
+      "meet/components/MeetSidebar.vue|@/shell/settings/useSettingsDialog",
       "meet/components/MeetSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
       "meet/components/MeetSidebar.vue|@/utils/setupTheme",
       "meet/components/MeetingPreview.vue|@/boot/session",

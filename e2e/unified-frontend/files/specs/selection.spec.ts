@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createFolder, getNode, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
@@ -28,7 +30,7 @@ test.afterEach(async () => {
 });
 
 test("Space selects, Shift+Space extends the range and Escape clears", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 
@@ -46,7 +48,7 @@ test("Space selects, Shift+Space extends the range and Escape clears", async ({ 
 });
 
 test("Ctrl-click enters selection and the bulk bar carries two actions", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 
@@ -64,7 +66,7 @@ test("Ctrl-click enters selection and the bulk bar carries two actions", async (
 // frappe-ui's ListRow answers the click itself while the list is selectable,
 // so FilesListing takes shift-clicks in the capture phase (fixed here).
 test("Shift-click takes the loaded visible range", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 
@@ -75,21 +77,21 @@ test("Shift-click takes the loaded visible range", async ({ page }) => {
 });
 
 test("Enter on a focused row opens it", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 	await listRows.first().focus();
 	await page.keyboard.press("Enter");
-	await expect(page).toHaveURL(new RegExp(`/files/f/${rows[0]!.name}`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${rows[0]!.name}`));
 });
 
 test("changing the destination clears the selection", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	await page.locator("[data-node]").first().click({ modifiers: ["ControlOrMeta"] });
 	await expect(page.getByText("1 selected")).toBeVisible();
 
 	await page.getByRole("navigation", { name: "File views" }).getByRole("link", { name: "Starred" }).click();
-	await expect(page).toHaveURL(/\/files\/starred$/);
+	await expect(page).toHaveURL(/\/drive\/starred$/);
 	await expect(page.getByText("selected")).toHaveCount(0);
 });
 
@@ -98,7 +100,7 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	// while row-b moves cleanly.
 	const clash = await createFolder(api, destination.name, "row-a");
 
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 	await listRows.first().click({ modifiers: ["ControlOrMeta"] });
@@ -124,7 +126,7 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 });
 
 test("a clean bulk move to trash empties the selection", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	const listRows = page.locator("[data-node]");
 	await expect(listRows).toHaveCount(5);
 	await listRows.first().click({ modifiers: ["ControlOrMeta"] });
@@ -137,7 +139,7 @@ test("a clean bulk move to trash empties the selection", async ({ page }) => {
 });
 
 test("Select all loaded selects only the loaded rows", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	await expect(page.locator("[data-node]")).toHaveCount(5);
 	await page.getByRole("button", { name: "More file actions" }).click();
 	await page.getByRole("menuitem", { name: "Select all loaded" }).click();

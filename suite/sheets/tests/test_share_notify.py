@@ -8,7 +8,7 @@ generic share path, which rendered as "Asif shared a document Sheet
 view of the Sheet doctype (a raw JSON blob, not the SPA). These tests
 pin the new behaviour: pass notify=False to frappe.share.add so the
 generic one doesn't fire, then dispatch our own Notification Log + an
-email body whose link routes to /sheets?id=…
+email body whose link opens the sheet at /sheets/<name>.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ class CustomShareNotification(unittest.TestCase):
             return mock.Mock()
 
         self.frappe.get_doc.side_effect = _get_doc_dispatch
-        self.frappe.utils.get_url.return_value = "https://test.example"
+        self.frappe.utils.get_url.side_effect = lambda path="": f"https://test.example{path}"
         self.frappe.utils.escape_html.side_effect = lambda s: s
 
     def test_share_uses_notify_false_so_frappe_default_does_not_fire(self):
@@ -94,7 +94,7 @@ class CustomShareNotification(unittest.TestCase):
         kwargs = self.frappe.sendmail.call_args.kwargs
         message = kwargs.get("message", "")
         # The link must go to the SPA route, not /app/sheet/<hash>.
-        self.assertIn("/sheets?id=SH-1", message)
+        self.assertIn("href='https://test.example/sheets/SH-1'", message)
         self.assertNotIn("/app/sheet/", message)
         # Recipient and queue posture
         self.assertEqual(kwargs.get("recipients"), ["bob@example.com"])

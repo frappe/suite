@@ -28,13 +28,13 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Stage 2 link credentials | `forge/uf-2-link-credentials` | done | `ec448fa23` | codex review: 7 link-store fixes; composite reference codes are pre-existing (stage 11) |
 | Stage 3 four fixes | `forge/uf-3-shell-fixes` | done | `5b6443d87` | codex review: journey asserts exact socket counts |
 | Stage 4 settings | `forge/uf-4-settings` | done | `1ef0e0504` | codex review: 10 fixes (phone profile lists read the Suite list, typed Mail openSettings, Admin row in Mail's sidebar, drill-in history ids, focus trap, failed-group Retry row). Settings journeys 10 of 10; `mail-shared-page` socket journey needs socket.io on 9000 (none on this devbox) |
-| Stage 5 adoption | `forge/uf-5-adoption` | Meet, Mail, Calendar merged into the stage branch (`4e69793ff`), each codex-reviewed; PWA and shell sub-lane in progress | | Stage branch gates: 141 unified, boundaries 349/71, typecheck 0, bundle 152.85 KiB. `/mail` blank bug and Calendar socket and `recurrence_rule` bugs fixed. The shell router had stopped loading app `runtime.ts`; Mail and Meet guards restored |
-| Stage 6 flip plumbing | | waiting on 5 | | |
-| Stage 8 guest and link routes | | waiting on 1, 2, 6, Drive 43, S2, S3 | | |
-| Stage 9 sharing dialog | | waiting on 8, Drive 43, 44, S1 | | |
-| Stage 10 upload, restore, batch | | waiting on 8 | | |
-| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | Writer, Sheets, Slides merged into the stage branch (`84ac247fb`); Drive sub-lane in progress | | Stage branch gates: 172 unified, boundaries 334/71, typecheck 0, bundle 142.56 KiB. Slides manifest names a referenced deck only when readable |
-| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half in progress; client half waits on 6 | | |
+| Stage 5 adoption | `forge/uf-5-adoption` | done | `431d97980` | Four sub-lanes (Meet, Mail, Calendar, PWA and shell), each codex-reviewed. Gates after merging drive-layer: 195 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.08 KiB, architecture and boot OK. Shell journeys on the PWA sub-lane: 64 passed, 1 known socket failure. PWA review: logout drops the push token, one notification per message across tabs, click handler for every browser, one top inset. Manifest `id` is `/suite` (question 21) |
+| Stage 6 flip plumbing | `forge/uf-6-shell-flip-plumbing` | done | `e1f75678e` | codex review: kind redirects keep the hash (`#link=`), old `/drive/f/` kind check reads the node through the Drive client (no new legacy call), Apps drill-in focus, shell-off files-on journeys, Home Drive group hidden while `suite_flip_files` is off. Gates: 197 unified, legacy manifest, boundaries 332/71/2, typecheck 0, bundle 116.43 KiB. Journeys: shell 91 plus the known socket failure, files 81 (2 skipped), home 10. Exit-gate grep has one hit, `legacy/utils/files.js:308` (stage 15 deletes it) |
+| Stage 8 guest and link routes | `forge/uf-8-guest-routes` | first half and review fixes committed `52ccd4376`; wiring in `ShellLayout.vue`, `routes.ts`, `router/index.ts`, `FilesPage.vue` waits for stage 6 | | Server needed no change (Drive 43 and S2 meet the gate). Guest name field belongs to stage 11 after this wiring |
+| Stage 9 sharing dialog | `forge/uf-9-sharing-dialog` | committed with review fixes `72ee41df4`; the `FilesPage.vue` row Share waits for stage 8 | | codex review: self-demotion confirm based on the outcome (groups, inherited Deny, overwrites); session access re-read after each write; per-row pending; expiry on people and groups; expired General and Public rows stay. Journeys: sharing 8, document-surfaces and slides-document 11 |
+| Stage 10 upload, restore, batch | `forge/uf-10-upload-restore-batch` | part 1 and review fixes committed `9c6ecd7cc`; `FilesPage.vue`, `apps/drive/index.ts` and composition wiring wait for stages 8 and 9 | | codex review: resume probes the server offset, records keyed by user or guest link, row Retry clears the halt, trash Retry, one tap one action on the ring. S3 direct mode built (presigned POST, restarts after reload); unit tests only, no S3 here. `hash-wasm` 4.12.0 placed by hand; not in the initial graph |
+| Stage 11 document surfaces | `forge/uf-11-document-surfaces` | done | `a15886a7a` | Four sub-lanes, each codex-reviewed. Gates after merging drive-layer: 177 unified, legacy manifest, boundaries 333/71 plus 2 legacy Drive calls (SuiteCommandPalette, stage 15), typecheck 0, bundle 116.25 KiB, architecture OK. Files journeys 81 passed, 2 skipped. Legacy-call rule is a substring scan over `frontend/src` and `suite/public/js`, comments included. Drive dialogs cross the seam as `useDriveDialogs()`. Desk picker attach checked by hand (a repo journey needs `bench build`) |
+| Stage 12 drive flip plumbing | `forge/uf-12-drive-flip-plumbing` | server half merged `8cfd957f8`; client half waits on 6 | | codex review: redirect only when the caller can READ the target, encoded separators fall through. Only while `suite_flip_files` is on (spec §14.3 over the brief). `flip_is_on` moved to `suite/suite_core/flips.py`. Edits `hooks.py` ahead of 6 and 8 in the shared-files order |
 | Drive 39 settings and webdav routes | `forge/drive-39-settings-webdav-routes` | done | `bcb7bb1d1` | codex review: 3 fixes (int quotas, closed WebDAV shapes, insert race) |
 | Drive 41 storage breakdown | `forge/drive-41-storage-breakdown` | done | `817900a18` | codex review: breakdown only for the root owner or a Suite Admin; legacy rows carry `mime_type`; fixed-height lists. `test_quota` 12 errors from Administrator's old Personal root `4b15fe1948`, same on base |
 | Drive 42 upload, restore, purge routes | `forge/drive-42-upload-restore-purge` | done | `116dfa952` | codex review: replace preflight credits the old head; title check before the session is claimed; batch purge shallowest first |
@@ -125,6 +125,42 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
     `File` rows, not Drive nodes, so `node_url` has no address for them.
     Interim: the email goes without the file link. Meet does not adopt
     nodes in this run.
+19. **Search is dead with both keys off.** Sidebar Search and Ctrl+K open
+    nothing, the phone install offer is gone, and Cmd+Shift+K and
+    Cmd+Shift+Comma have no binding: `App.vue` stopped mounting
+    `SuiteLayout.vue` in `61b6401e4` (before this run). The ledger assigns
+    it to stage 15. Recommendation: fix it before stage 7.
+20. **Mail on a phone lost its Push Notifications switch** in stage 4. No
+    Settings row replaces it; existing subscriptions still deliver.
+21. **Manifest `id`.** Stage 5 changed it from `/mail` to `/suite`. Mail
+    installs become a second installed app. Please confirm; another change
+    makes a third.
+22. **Invitation redirect target.** With the key on, a legacy invitation
+    lands on `/suite` and drops the old share email's `redirect`.
+23. **Drive seam naming.** Spec §5.15 lists `createDriveDocument()` as a
+    descriptor; the seam exports `useDriveDocumentCreation()` because
+    creation first finds the Personal root.
+24. **Share expiry timezone.** The dialog sends `YYYY-MM-DD 23:59:59`; the
+    server reads it in site time. Interim: end of that day in site time.
+25. **Share picker default role** is View. Interim: accepted.
+26. **Dead-link "Go to Home"** links to `/`, which lands on `/mail` before
+    flip 2. Interim: unchanged.
+27. **Home panel Drive links before flip 2.** With the files flip off,
+    `/home` links to `/drive/shared-with-me` and `/drive/starred`, which
+    the old Drive router does not have. Interim: stage 6 review decides.
+28. **Upload picker.** Plain file input, not `showOpenFilePicker`, so only
+    dropped files resume without a re-pick. Interim: accepted.
+29. **Tracker Cancel.** No Cancel for a running upload. Interim: none.
+30. **S3 direct uploads.** The Drive spec says the browser PUTs the bytes;
+    the framework S3 driver gives a presigned POST form, so the client
+    POSTs. Deployment: the bucket needs a CORS rule allowing POST from the
+    site origin. Real S3 is not verified.
+31. **Home "View all"** links to `/drive/recent`, which the old Drive
+    router lacks (`recents`). Interim: stage 12 client half hides it while
+    the files flip is off.
+32. **Hash on slug replaces.** `DocumentHost.vue`, `FilesPage.vue` and the
+    old Folder page drop the hash when they add a slug. Interim: accepted,
+    because stage 8 reads `#link=` on the first navigation.
 
 ## Needs a manual check (cannot run on this devbox)
 
@@ -151,6 +187,8 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |
 | `views/favourites` has no tie-breaker, reads one window, and lists trashed nodes (Drive 47 fixed the same in recents); `_view_eligible` can still return short pages | Drive 47 review | Drive program |
 | `meet.api.test.test_recording`: `test_reprovision_during_recording_keeps_reservation_bound_to_archived_root` errors with "Unsupported recording callback protocol version". Same error on `forge/drive-layer` | stage 12 server | Meet (not in this run) |
+| Mail shows a blank page when `get_user_info` fails: its route guard waits with no error handler. Before stage 5 | stage 5 PWA | not assigned |
+| Guest "Your name" field in comment composers (plan stage 11) waits for stage 8's wiring | stage 8 | stage 11 follow-up after 8 |
 | `suite/calendar/http/routes.py` types `recurrence_rule` as a string, route returns an object; Home Upcoming errors for any account with events | stage 0 | stage 5 (Calendar sub-lane) |
 
 ## Backend asks raised during the run
@@ -159,6 +197,15 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 |---|---|---|
 | Socket room join that checks Drive link credentials, so link-only readers get live Sheets updates | stage 11 Sheets | nothing at launch (they can open and save) |
 | Link codes in the collaboration v2 (Hocuspocus) token, e.g. a `driveLinkCodes(node)` root export | stage 11 Sheets | nothing while `collab_v2` is off |
+| Server-side "attach a Drive node to a document" route, so the Desk picker does not move bytes through the browser (now capped at the framework's `max_file_size`) | stage 11 Drive | nothing (cap in place) |
+| User full names on grant rows (`users_get` is System Manager only; the dialog shows emails for people the picker has not seen) | stage 9 | nothing (emails shown) |
+| Creation date on link grant rows, for the "made on" text | stage 9 | nothing (text left out) |
+| `DriveConflict` names the existing node, so Replace needs no `findChild` lookup | stage 10 | nothing (lookup works) |
+| Explain answer lists the subject's own groups, or `PUT grants` gets a dry run, so the self-demotion confirm sees a new group row | stage 9 | nothing (confirm covers existing rows) |
+| `own_role` or "has own access" in the Drive `access` expansion, so a member who opens a higher link keeps Star and Recent | stage 8 | nothing (link-only rule is stricter) |
+| Site timezone in boot or session, so share expiry means the sharer's end of day | stage 9 | nothing (site time used) |
+| Upload status route (`GET /uploads/<id>` with `received`) and a stable "session gone" error type; the client probes with an empty chunk and matches message text | stage 10 | nothing (probe works) |
+| Multipart presigned uploads, so direct (S3) uploads can resume | stage 10 | nothing (direct uploads restart) |
 | `recordDriveVisit(node)` root export in `apps/drive/index.ts` | stage 11 Sheets | nothing (a local operation works) |
 
 ## Baselines

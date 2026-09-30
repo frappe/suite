@@ -1,7 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
+import { node } from '@/apps/drive/client/nodes'
 import { useSessionStore } from '@/boot/session'
+import { transport } from '@/platform/transport'
 import { appDocumentTitle } from '@/utils/documentTitle'
 import { setupTheme } from '@/utils/setupTheme'
 
@@ -135,6 +137,16 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/apps/drive/legacy/pages/File.vue'),
         meta: { allowGuest: true, filePage: true, shellScroll: false },
         props: true,
+        // The server writes folder links as `/drive/f/<id>` once the files flip
+        // is on. With the flip off again those links still open the folder.
+        // A failed read opens the file page, whose error page sends a guest to
+        // log in.
+        beforeEnter: async (to) => {
+          const id = String(to.params.entityName)
+          const entity = await transport.request(node(id).operation, { node: id }).catch(() => null)
+          if (entity?.kind !== 'folder') return true
+          return { path: `/drive/d/${entity.name}`, query: to.query, hash: to.hash, replace: true }
+        },
       },
       {
         path: 'd/:entityName/:slug?',
