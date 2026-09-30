@@ -1,4 +1,4 @@
-import { computed, reactive, ref, shallowRef } from 'vue'
+import { computed, reactive, readonly, ref, shallowRef } from 'vue'
 
 import {
   NEW_LINK,
@@ -56,6 +56,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const errors = reactive(new Map<RowKey, string>())
   const pending = reactive(new Set<RowKey>())
   const notice = ref('')
+  /** A write went through since the dialog opened. */
+  const changed = ref(false)
   /** Names the picker has seen, by email. The grant rows carry emails only. */
   const names = reactive(new Map<string, string>())
 
@@ -86,7 +88,9 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     errors.delete(key)
     notice.value = ''
     try {
-      return await run()
+      const answer = await run()
+      changed.value = true
+      return answer
     } catch (error) {
       errors.set(key, messageOf(error, 'Could not save this change.'))
       return undefined
@@ -135,6 +139,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     loadError,
     errors,
     notice,
+    changed: readonly(changed),
     canManage,
     load,
     label,

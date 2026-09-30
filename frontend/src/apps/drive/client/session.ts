@@ -98,8 +98,10 @@ export interface DocumentSession {
 /** Opens the share dialog for a node. Resolves when it closes. */
 export type ShareOpener = (node: string) => Promise<void>
 
-const openShareDialog: ShareOpener = (node) =>
-  import('@/apps/drive/files/features/share/present').then(({ presentShareDialog }) => presentShareDialog(node))
+const openShareDialog: ShareOpener = async (node) => {
+  const { presentShareDialog } = await import('@/apps/drive/files/features/share/present')
+  await presentShareDialog(node)
+}
 
 interface SessionDependencies {
   transport?: Transport
@@ -128,13 +130,18 @@ export async function openDriveDocumentSession(
   if (!node.content_doctype || !node.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a content document`)
   }
-  void requester
-    .request(
-      driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
-      { node: nodeId },
-      { signal: controller.signal },
-    )
-    .catch(() => {})
+  // A node reached through a share link records no visit: Recent sends no link
+  // codes, so it could never show it (spec §10.13). The same rule as
+  // `isLinkOnly` in `files/features/linkAccess.ts`.
+  if (!node.access?.via_link) {
+    void requester
+      .request(
+        driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
+        { node: nodeId },
+        { signal: controller.signal },
+      )
+      .catch(() => {})
+  }
 
   const title = ref(node.title)
   const state = ref<SessionState>(toSessionState(node))

@@ -4,12 +4,12 @@
   `session.share()`. On phone it opens as a bottom sheet with the same body.
 -->
 <template>
-  <BottomSheet v-if="isPhone" :open="open" :title="heading" @update:open="open = $event" @after-leave="$emit('after-leave')">
+  <BottomSheet v-if="isPhone" :open="open" :title="heading" @update:open="open = $event" @after-leave="emit('after-leave')">
     <div class="px-4 pb-8">
       <ShareBody :state="state" />
     </div>
   </BottomSheet>
-  <Dialog v-else v-model:open="open" :title="heading" size="xl" @after-leave="$emit('after-leave')">
+  <Dialog v-else v-model:open="open" :title="heading" size="xl" @after-leave="emit('after-leave')">
     <!-- One fixed height: loading and each re-read never move the controls. -->
     <div class="-mx-1 h-96 overflow-y-auto px-1">
       <ShareBody :state="state" />
@@ -18,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { BottomSheet, Dialog } from 'frappe-ui'
 import { useMediaQuery } from '@vueuse/core'
 
@@ -30,7 +30,7 @@ import { useShare } from './useShare'
 
 const props = defineProps<{ node: string }>()
 const open = defineModel<boolean>('open', { required: true })
-defineEmits<{ 'after-leave': [] }>()
+const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 
 const isPhone = useMediaQuery('(max-width: 767px)')
 const session = useSession()
@@ -47,4 +47,6 @@ const state = useShare(props.node, {
 const heading = computed(() => (state.node.value ? `Share "${state.node.value.title}"` : 'Share'))
 
 onMounted(() => void state.load())
+// The opener refreshes what it shows when a write went through.
+watch(state.changed, (value) => value && emit('changed', true))
 </script>

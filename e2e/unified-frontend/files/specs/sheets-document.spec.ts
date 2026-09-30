@@ -105,7 +105,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await expect(versions.getByText("Automatic version")).toBeVisible();
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
-	await expect(page.getByRole("button", { name: "Share" })).toBeDisabled();
+	// Share opens the Drive share dialog for a manager (stage 9).
+	await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(seen.requests.some((line) => line.includes(`POST`) && line.includes(`/api/suite/drive/nodes/${sheet.name}/visit`))).toBe(true);
 	expect(seen.errors).toEqual([]);

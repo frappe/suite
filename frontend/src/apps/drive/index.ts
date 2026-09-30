@@ -139,8 +139,8 @@ export interface DriveDialogs {
   move(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
-  /** Opens the share dialog for `node`. Resolves when it closes. */
-  share(node: string): Promise<void>
+  /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
+  share(node: string): Promise<boolean>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */

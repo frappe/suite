@@ -36,7 +36,9 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const preview = ref<DrivePreview | null>(initial.preview ?? null);
   let disposed = false;
 
-  void request<Record<string, never>>(api.node_visit, { node: nodeId }).catch(() => {});
+  // A file reached through a share link records no visit (spec §10.13): the
+  // same rule as the document session and `isLinkOnly`.
+  if (!initial.access?.via_link) void request<Record<string, never>>(api.node_visit, { node: nodeId }).catch(() => {});
 
   async function refresh() {
     if (disposed) return;

@@ -128,6 +128,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     const puts = server.calls.filter((call) => call.id === 'node_put_grant').map((call) => call.input)
     expect(puts[0]).toEqual({ node: 'doc', principal: link.principal, role: 20, expires_on: '2027-01-15 23:59:59' })
     expect(puts[1]).toEqual({ node: 'doc', principal: link.principal, role: 40, expires_on: '2026-12-31 23:59:59' })
+    expect(share.changed.value).toBe(true)
   })
 
   it('after Remove, reads access again and says why the person still has access', async () => {
@@ -170,6 +171,8 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
 
     expect(share.errors.get('asha@example.com')).toBe('That user does not exist')
     expect(reads).toBe(2)
+    // Nothing changed, so the opener has nothing to refresh.
+    expect(share.changed.value).toBe(false)
   })
 
   it('sends a link to an outsider and notifies only users', async () => {
