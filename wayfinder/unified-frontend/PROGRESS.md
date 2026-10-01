@@ -207,6 +207,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Old Drive route records `folder/`, `document/`, `file/`, `t/:team/:letter/`, `t/:team/` have only `beforeEnter`, so vue-router never matches them; with `suite_flip_files` off those old links show Not Found. The redirect table covers them with the flip on | stage 12 client | stage 15 (deletes them) |
 | `roots.spec.ts:36` "Trash is empty" failed once in a full files run with the flip on, passed alone; likely trash left by earlier journeys in the same run (not verified) | stage 12 client | not assigned (test order) |
 | `notifications.spec.ts:45` badge count fails in full Home runs with the flip off, passes alone | stage 12 client | not assigned (test order) |
+| Under Vite dev the flip flags were never set (frappe-ui injects boot only in production builds), so the rail was empty for every user on suite.netchamp.dev. The rehearsal used a production build and journeys set the flags, so neither caught it | Faris on the dev site, 2026-10-02 | fixed `58551f480` (dev-only Vite plugin reads the site config) |
 
 ## Backend asks raised during the run
 
