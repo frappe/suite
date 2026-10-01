@@ -31,7 +31,6 @@ class UserAccount(OwnerFromUser, Document):
         self.name = str(uuid7())
 
 
-@request_cache
 def get_user_for_jmap_account(
     account: str,
     allow_system_manager: bool = True,
@@ -43,39 +42,84 @@ def get_user_for_jmap_account(
     Pass ignore_permissions=True to resolve a linked user regardless of the session user's
     role — for background jobs and unauthenticated flows (e.g. Guest RSVP requests) that
     act on an account they don't own.
+
+    The answer depends on who is asking — a user linked to the account is resolved to
+    themselves — so the request cache is keyed on them too: a job or a test that switches user
+    partway through a request would otherwise be handed the previous user's answer.
     """
 
-    if frappe.db.exists("JMAP Account", account):
-        account_users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
-
-        if account_users:
-            user = frappe.session.user
-
-            if user in account_users:
-                return user
-
-            elif (
-                ignore_permissions
-                or is_administrator(user)
-                or (allow_system_manager and is_system_manager(user))
-            ):
-                return _account_owner(account, account_users)
-
-            elif raise_exception:
-                frappe.throw(
-                    _("JMAP account {0} does not belong to the user {1}.").format(
-                        frappe.bold(account), frappe.bold(user)
-                    )
-                )
-
-        elif raise_exception:
-            frappe.throw(_("JMAP account {0} does not belong to any user.").format(frappe.bold(account)))
-
-    elif raise_exception:
-        frappe.throw(_("JMAP account {0} does not exist.").format(frappe.bold(account)))
+    return _get_user_for_jmap_account(
+        account, frappe.session.user, allow_system_manager, raise_exception, ignore_permissions
+    )
 
 
 @request_cache
+def _get_user_for_jmap_account(
+    account: str,
+    user: str,
+    allow_system_manager: bool,
+    raise_exception: bool,
+    ignore_permissions: bool,
+) -> str | None:
+    known = frappe.db.exists("JMAP Account", account)
+    account_users = frappe.db.get_all("User Account", {"account": account}, pluck="user") if known else []
+
+    if user in account_users:
+        return user
+
+    if account_users and (
+        ignore_permissions or is_administrator(user) or (allow_system_manager and is_system_manager(user))
+    ):
+        return _account_owner(account, account_users)
+
+    # An account the mail server offers the user that this site never linked them to: one with
+    # a calendar or a mailbox shared into it. The server is the authority on what a user may
+    # reach, and they reach it as themselves — with the rights it gave them, and without a row
+    # here that would make them look like a member of it to everything that reads those rows.
+    if account in get_session_accounts(user):
+        return user
+
+    if raise_exception:
+        if not known:
+            frappe.throw(_("JMAP account {0} does not exist.").format(frappe.bold(account)))
+        if not account_users:
+            frappe.throw(_("JMAP account {0} does not belong to any user.").format(frappe.bold(account)))
+        frappe.throw(
+            _("JMAP account {0} does not belong to the user {1}.").format(
+                frappe.bold(account), frappe.bold(user)
+            )
+        )
+
+
+@request_cache
+def get_session_accounts(user: str) -> dict[str, dict]:
+    """The accounts the mail server lists for the user right now, keyed by id, as it describes
+    them (`name`, `isPersonal`, `isReadOnly`).
+
+    Asked of the server, not read from the kept session: that is refreshed only when a response
+    reports a changed state, which is after a request has been made against it — and a calendar
+    somebody just shared is in an account the kept session does not list yet. Once per user per
+    request; the kept session is updated by the asking.
+
+    None for a user with no mail settings, quietly: a site user without a mailbox opening the
+    calendar is not an error. None, logged, where the server cannot be reached — settings say
+    it should be.
+    """
+
+    if not frappe.db.exists("User Settings", {"user": user, "username": ["!=", None]}):
+        return {}
+
+    from suite.mail.jmap import get_jmap_connection  # circular at module level
+
+    try:
+        connection = get_jmap_connection(user)
+        connection.refresh_session()
+        return connection.accounts or {}
+    except Exception:
+        frappe.log_error(title="Mail server session could not be read")
+        return {}
+
+
 def get_user_jmap_accounts(user: str | None = None, raise_exception: bool = False) -> list[str]:
     """Returns the list of JMAP accounts for the given user. If no user is provided, it defaults to the current session user.
 

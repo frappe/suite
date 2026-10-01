@@ -313,8 +313,14 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
         # ever linked to ``user``, so an admin setting up a member's account (or any other user
         # saving someone else's settings) would otherwise resolve the account to nobody and fail
         # with "JMAP account <id> does not belong to the user <admin>".
+        # Provisioned only where the account is the user's own. A new account that is not — a
+        # team account, or one somebody shared a calendar or a mailbox from, on this site or
+        # another — is recorded so its settings have a home, and left as its owner arranged it:
+        # an archive folder, renamed defaults and a sieve script are not this user's to put there.
         with user_context(user):
             for account in new_accounts:
+                if not (accounts.get(account) or {}).get("isPersonal"):
+                    continue
                 create_archive_mailbox(account)
                 rename_default_mailboxes(account)
                 build_automation_sieve(account, activate=True)
