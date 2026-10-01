@@ -26,6 +26,7 @@ function read(bytes: Uint8Array) {
   return doc.getText('t').toString()
 }
 
+const session = (sid: string) => ({ doc: 'D', sid, lineage: 'L', cid: 5, bound: true })
 const entry = (sid: string, seq: number, bytes: Uint8Array) => ({ doc: 'D', sid, seq, bytes, sha: String(seq) })
 
 describe('device store', () => {
@@ -34,7 +35,7 @@ describe('device store', () => {
     const one = typed('one ')
     const two = typed('two', 4, one.doc)
     await store.commit('D', { lineage: 'L', rev: 0, canWrite: true }, null)
-    await store.capture([entry('s', 1, one.update), entry('s', 2, two.update)])
+    await store.capture(session('s'), [entry('s', 1, one.update), entry('s', 2, two.update)])
 
     await store.ack('D', 's', 1, one.update)
 
@@ -65,7 +66,7 @@ describe('device store', () => {
   it('moves a session’s unsent work to a recovery record and forgets the session', async () => {
     const store = await fresh()
     await store.saveSession({ doc: 'D', sid: 's', lineage: 'L', cid: 5, bound: true })
-    await store.capture([entry('s', 1, typed('a').update)])
+    await store.capture(session('s'), [entry('s', 1, typed('a').update)])
 
     await store.recover('D', 's', 'id_clash', [entry('s', 2, typed('b').update)])
 

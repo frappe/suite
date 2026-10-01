@@ -42,7 +42,8 @@ export interface DeviceStore {
   entries(doc: string, sid: string): Promise<StoredEntry[]>
   // Rejects if another session of the document already holds the clientID
   saveSession(session: StoredSession): Promise<void>
-  capture(entries: StoredEntry[]): Promise<void>
+  // Puts the session back too, in case another tab forgot it while this one was idle
+  capture(session: StoredSession, entries: StoredEntry[]): Promise<void>
   // Drops entries up to `through` and keeps their bytes in the device copy, in one transaction
   ack(doc: string, sid: string, through: number, bytes: Uint8Array): Promise<void>
   // Adds rows up to `rev` to the device copy; a new lineage replaces it
@@ -123,8 +124,9 @@ class IndexedDeviceStore implements DeviceStore {
     return this.write(['sessions'], (tx) => tx.objectStore('sessions').put(session))
   }
 
-  capture(entries: StoredEntry[]) {
-    return this.write(['entries'], (tx) => {
+  capture(session: StoredSession, entries: StoredEntry[]) {
+    return this.write(['sessions', 'entries'], (tx) => {
+      tx.objectStore('sessions').put(session)
       for (const entry of entries) tx.objectStore('entries').put(entry)
     })
   }

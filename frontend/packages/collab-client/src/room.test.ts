@@ -510,6 +510,24 @@ describe('collab room on a device', () => {
     expect(text(await join(server.endpoints()))).toBe('offline work')
   })
 
+  it('a tab still open when another tab tidied the device keeps what it types offline next', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    const first = await join(server.endpoints(), { device: kept })
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+
+    first.doc.getText('t').insert(0, 'typed in first')
+    await vi.advanceTimersByTimeAsync(0)
+    await first.close()
+    server.access.online = true
+    const next = await join(server.endpoints(), { device: kept })
+    await next.flush()
+
+    expect([text(next), server.rows.length]).toEqual(['typed in first', 1])
+  })
+
   it('a tab opened without the network edits its device copy, then claims, sends, and only then shows others', async () => {
     fakeTime()
     const server = fakeServer()
@@ -525,6 +543,7 @@ describe('collab room on a device', () => {
 
     const offline = await join(server.endpoints(), { device: kept, pollMs: 1000 })
     offline.doc.getText('t').insert(0, 'mine ')
+    await vi.advanceTimersByTimeAsync(0)
     expect([text(offline), offline.canWrite, offline.unsent]).toEqual(['mine base', true, 1])
     expect(offline.doc.clientID).toBeGreaterThanOrEqual(2 ** 30)
     server.calls.length = 0
@@ -577,8 +596,8 @@ describe('collab room on a device', () => {
     let bytes: Uint8Array = new Uint8Array()
     stale.on('update', (update: Uint8Array) => (bytes = update))
     stale.getText('t').insert(0, 'old')
-    await kept.store.saveSession({ doc: 'D', sid: 'old', lineage: 'GONE', cid: 99, bound: true })
-    await kept.store.capture([{ doc: 'D', sid: 'old', seq: 1, bytes, sha: 'x' }])
+    const old = { doc: 'D', sid: 'old', lineage: 'GONE', cid: 99, bound: true }
+    await kept.store.capture(old, [{ doc: 'D', sid: 'old', seq: 1, bytes, sha: 'x' }])
 
     const room = await join(server.endpoints(), { device: kept })
 

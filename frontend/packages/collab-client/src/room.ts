@@ -182,9 +182,7 @@ class Room implements CollabRoom {
   async start(rows: Row[]) {
     this.doc.on('update', this.capture)
     if (this.device && this.writable && this.bound) {
-      await this.device.store
-        .saveSession({ doc: this.device.doc, sid: this.own.sid, lineage: this.lineage, cid: this.own.cid, bound: true })
-        .catch(() => this.lostStore())
+      await this.device.store.saveSession(this.session()).catch(() => this.lostStore())
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
     this.apply(rows, true)
@@ -365,7 +363,7 @@ class Room implements CollabRoom {
       const stored = { doc: this.device.doc, sid: this.own.sid, ...entry }
       const write = this.dead
         ? this.device.store.recover(this.device.doc, this.own.sid, this.dead, [stored])
-        : this.device.store.capture([stored])
+        : this.device.store.capture(this.session(), [stored])
       void write.catch(() => this.lostStore())
     }
     if (this.saveState !== 'failed') this.saveState = this.inFlight ? 'saving' : 'unsaved'
@@ -565,6 +563,10 @@ class Room implements CollabRoom {
     if (!unsent) this.unsentSince = 0
     else if (!this.unsentSince) this.unsentSince = Date.now()
     this.changed()
+  }
+
+  private session(): StoredSession {
+    return { doc: this.device!.doc, sid: this.own.sid, lineage: this.lineage, cid: this.own.cid, bound: this.bound }
   }
 
   private outboxes() {
