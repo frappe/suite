@@ -391,4 +391,20 @@ describe('drafts', () => {
 		sessionUser = 'me@example.com'
 		expect(await getPresentationFromLocalDB('p-user')).toBeNull()
 	})
+
+	it('offers a draft with no known owner only to someone who can edit', async () => {
+		const { openDrafts } = await import('@/apps/slides/utils/drafts')
+		const { setEditorAccess } = await import('@/apps/slides/routerState')
+		const legacy = await openDrafts('slides-db')
+		const tx = legacy.transaction('presentations', 'readwrite')
+		tx.objectStore('presentations').put({ id: 'p-shared', content: [], dirty: true })
+		await new Promise((resolve) => (tx.oncomplete = resolve))
+		legacy.close()
+
+		setEditorAccess('view')
+		expect(await getPresentationFromLocalDB('p-shared')).toBeNull()
+
+		setEditorAccess('edit')
+		expect(await getPresentationFromLocalDB('p-shared')).toMatchObject({ id: 'p-shared' })
+	})
 })

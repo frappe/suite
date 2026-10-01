@@ -1,4 +1,5 @@
-import { DRAFTS_DB_NAME, RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
+import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
+import { adoptLegacyDrafts } from '@/apps/slides/utils/drafts'
 
 // a broken worker must not hold up navigation
 const ACK_TIMEOUT = 500
@@ -31,12 +32,17 @@ export const clearSlidesUserData = async () => {
   await Promise.all(USER_CACHE_NAMES.map((name) => caches.delete(name)))
 }
 
-// the caches are per origin, the data in them is per user
+let draftsAdopted = false
+
+// the caches are per origin, the data in them is per user; drafts are kept per
+// user, so another user arriving never touches them
 export const claimSlidesCachesFor = async (user: string) => {
   const previous = localStorage.getItem(CACHES_USER_KEY)
+  if (!draftsAdopted) {
+    draftsAdopted = true
+    await adoptLegacyDrafts(previous).catch(() => {})
+  }
   if (previous === user) return
-  // the drafts survive a logout, so only another user arriving may drop them
-  if (previous) indexedDB.deleteDatabase(DRAFTS_DB_NAME)
   await clearSlidesUserData()
   localStorage.setItem(CACHES_USER_KEY, user)
 }
