@@ -10,7 +10,10 @@ import {
   watch,
 } from "vue";
 
+import type { CollabRoom } from "@suite/collab-client";
 import type { DocumentSession } from "@/apps/drive";
+import { openWriterRoom } from "@/apps/writer/collab";
+import CollabTextEditor from "@/apps/writer/components/CollabTextEditor.vue";
 import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
 import emitter from "@/apps/writer/emitter";
@@ -28,6 +31,10 @@ const comments = ref<unknown[]>([]);
 const versions = ref<unknown[]>([]);
 const panelLoading = ref(false);
 const commentText = ref("");
+const collab = shallowRef<"opening" | "legacy" | "live" | "failed">("opening");
+const room = shallowRef<CollabRoom | null>(null);
+const roomSaveState = ref<DocumentSaveState>("clean");
+let stopWatchingRoom = () => {};
 
 const documentResource = useDoc({
   doctype: "Writer Document",
@@ -48,7 +55,11 @@ const documentResource = useDoc({
 const role = computed(() => props.session.access.value.role ?? 0);
 const readable = computed(() => props.session.state.value !== "Refused" && role.value >= 10);
 const editable = computed(
-  () => readable.value && props.session.state.value === "Active" && role.value >= 40,
+  () =>
+    readable.value &&
+    props.session.state.value === "Active" &&
+    role.value >= 40 &&
+    (collab.value !== "live" || !!room.value?.canWrite),
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -57,7 +68,12 @@ const saveFailed = computed(
   () => !!documentResource.saveDoc?.error || !!documentResource.saveHtml?.error,
 );
 const saveState = computed<DocumentSaveState>(() =>
-  saving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean",
+  collab.value === "live"
+    ? roomSaveState.value
+    : saving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean",
+);
+const saveLabel = computed(
+  () => ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
 );
 const settings = computed(() => documentResource.doc?.settings ?? {});
 const fakeFileResource = computed(() => ({
@@ -85,7 +101,25 @@ watch(saving, (next, previous) => {
 });
 
 function markDirty(event: Event) {
-  if (editable.value && event.isTrusted) dirty.value = true;
+  if (editable.value && event.isTrusted && collab.value !== "live") dirty.value = true;
+}
+
+async function openCollab() {
+  collab.value = "opening";
+  try {
+    const opened = await openWriterRoom(props.session);
+    if (opened.state !== "live") {
+      collab.value = "legacy";
+      return;
+    }
+    room.value = opened.room;
+    const sync = () => (roomSaveState.value = opened.room.saveState);
+    stopWatchingRoom = opened.room.onChange(sync);
+    sync();
+    collab.value = "live";
+  } catch {
+    collab.value = "failed";
+  }
 }
 
 async function rename() {
@@ -145,6 +179,7 @@ function retainRecovery() {
 }
 
 function flush(): Promise<void> {
+  if (room.value) return room.value.flush();
   if (!dirty.value && !saving.value) return Promise.resolve();
   return new Promise((resolve) => {
     const timeout = window.setTimeout(resolve, 10_000);
@@ -163,10 +198,13 @@ function setOffline() { online.value = false; }
 onMounted(() => {
   window.addEventListener("online", setOnline);
   window.addEventListener("offline", setOffline);
+  void openCollab();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("online", setOnline);
   window.removeEventListener("offline", setOffline);
+  stopWatchingRoom();
+  void room.value?.close();
 });
 </script>
 
@@ -184,7 +222,7 @@ onBeforeUnmount(() => {
         @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
       />
       <span class="ml-auto text-sm text-ink-gray-5">
-        {{ saving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}
+        {{ saveLabel }}
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
       <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
@@ -198,12 +236,25 @@ onBeforeUnmount(() => {
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">You no longer have permission to read this document.</p>
     </div>
-    <div v-else-if="!documentResource.doc" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
+    <div v-else-if="collab === 'failed'" class="m-auto text-center">
+      <p class="text-p-sm text-ink-gray-6">This document couldn't be opened.</p>
+      <Button class="mt-3" label="Try again" @click="openCollab" />
+    </div>
+    <div v-else-if="!documentResource.doc || collab === 'opening'" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
       <Skeleton v-for="width in ['70%', '92%', '84%', '60%', '88%']" :key="width" class="h-3.5 rounded-4" :style="{ width }" />
     </div>
     <div v-else class="flex min-h-0 flex-1 overflow-hidden">
+      <CollabTextEditor
+        v-if="collab === 'live' && room"
+        ref="editorSurface"
+        :room="room"
+        :file="fakeFileResource"
+        :document="documentResource"
+        :settings="settings"
+        :editable="editable"
+      />
       <NonCollabEditor
-        v-if="documentResource.doc.collab === 0"
+        v-else-if="documentResource.doc.collab === 0"
         ref="editorSurface"
         :file="fakeFileResource.doc"
         :document="documentResource"
