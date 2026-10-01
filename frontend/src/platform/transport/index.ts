@@ -52,12 +52,26 @@ export interface TransportOptions {
   headers?: HeadersInit
 }
 
+export interface BytesOptions extends TransportOptions {
+  body?: Uint8Array
+  keepalive?: boolean
+}
+
+export interface BytesResponse {
+  status: number
+  headers: Headers
+  bytes: Uint8Array
+}
+
 export interface Transport {
   request<Input, Output, ErrorType extends string = string>(
     operation: Operation<Input, Output, ErrorType>,
     input: Input,
     options?: TransportOptions,
   ): Promise<Output>
+  // Answers every status as it came: the caller reads its own verdicts. Only a
+  // network failure throws, and nothing is retried
+  requestBytes(operation: Operation, input: Record<string, unknown>, options?: BytesOptions): Promise<BytesResponse>
 }
 
 export interface CreateTransportOptions {
@@ -91,19 +105,9 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
 
       const pathInput = asRecord(input)
       const url = buildUrl(operation, pathInput)
-      const headers = new Headers(requestOptions.headers)
-      headers.set('Accept', 'application/json')
-      const csrf = readCsrfToken()
-      if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
-
-      const nodeIds = (operation.nodeParams ?? [])
-        .map((name) => pathInput[name])
-        .filter((value): value is string => typeof value === 'string')
-      if (nodeIds.length && options.linkStore) {
-        const codes = await options.linkStore.codesFor(nodeIds)
-        const selected = [...new Set(codes)].slice(0, LINK_HEADER_CAP)
-        if (selected.length) headers.set('X-Drive-Links', selected.join(','))
-      }
+      const headers = requestHeaders(requestOptions, 'application/json')
+      const links = linkCodes(operation, pathInput)
+      if (links) setLinkCodes(headers, await links)
 
       const init: RequestInit = {
         method: operation.method,
@@ -154,7 +158,54 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         attempt += 1
       }
     },
+
+    async requestBytes(operation, input, requestOptions = {}) {
+      validateOperation(operation)
+      const url = buildUrl(operation, input)
+      const headers = requestHeaders(requestOptions, 'application/octet-stream, application/json')
+      const links = linkCodes(operation, input)
+      if (links) setLinkCodes(headers, await links)
+      const init: RequestInit = {
+        method: operation.method,
+        headers,
+        credentials: 'same-origin',
+        signal: requestOptions.signal,
+        keepalive: requestOptions.keepalive,
+      }
+      if (requestOptions.body) {
+        headers.set('Content-Type', 'application/octet-stream')
+        init.body = requestOptions.body
+      }
+      let response: Response
+      try {
+        response = await fetcher(url, init)
+      } catch (cause) {
+        if (isAbort(cause)) throw cause
+        throw new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
+      }
+      return { status: response.status, headers: response.headers, bytes: new Uint8Array(await response.arrayBuffer()) }
+    },
   }
+
+  function linkCodes(operation: Operation, input: Record<string, unknown>) {
+    const nodeIds = (operation.nodeParams ?? [])
+      .map((name) => input[name])
+      .filter((value): value is string => typeof value === 'string')
+    return nodeIds.length && options.linkStore ? options.linkStore.codesFor(nodeIds) : null
+  }
+}
+
+function setLinkCodes(headers: Headers, codes: readonly string[]): void {
+  const selected = [...new Set(codes)].slice(0, LINK_HEADER_CAP)
+  if (selected.length) headers.set('X-Drive-Links', selected.join(','))
+}
+
+function requestHeaders(requestOptions: TransportOptions, accept: string): Headers {
+  const headers = new Headers(requestOptions.headers)
+  headers.set('Accept', accept)
+  const csrf = readCsrfToken()
+  if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
+  return headers
 }
 
 export const transport = createTransport()
