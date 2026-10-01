@@ -366,15 +366,20 @@ class Room implements CollabRoom {
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {
-    if (origin === REMOTE || origin === ADOPT || !this.writable || this.closed) return
+    if (origin === REMOTE || origin === ADOPT || this.closed) return
+    // The editor turns read-only a moment after the verdict, so typing can still arrive
+    if (this.dead) {
+      if (!this.device) return
+      const entry = { doc: this.device.doc, sid: this.own.sid, seq: this.own.nextSeq++, bytes: update, sha: '' }
+      void this.device.store.recover(this.device.doc, this.own.sid, this.dead, [entry]).catch(() => {})
+      return
+    }
+    if (!this.writable) return
     const entry = { seq: this.own.nextSeq++, bytes: update, sha: hex(digest(update)) }
     this.own.pending.push(entry)
     if (this.device) {
       const stored = { doc: this.device.doc, sid: this.own.sid, ...entry }
-      const write = this.dead
-        ? this.device.store.recover(this.device.doc, this.own.sid, this.dead, [stored])
-        : this.device.store.capture(this.session(), [stored])
-      void write.catch(() => this.lostStore())
+      void this.device.store.capture(this.session(), [stored]).catch(() => this.lostStore())
     }
     if (this.saveState !== 'failed') this.saveState = this.inFlight ? 'saving' : 'unsaved'
     this.counted()

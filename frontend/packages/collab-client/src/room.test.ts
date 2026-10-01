@@ -690,6 +690,23 @@ describe('collab room on a device', () => {
     expect(records.map((record) => record.reason)).toEqual(['session_owner'])
   })
 
+  it('typing that lands after the server refused a change is kept aside too', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const room = await join(server.endpoints(), { device: kept })
+    server.access.refuse = reply(409, { collab: 'seq_conflict' })
+    room.doc.getText('t').insert(0, 'refused')
+    await room.flush()
+
+    room.doc.getText('t').insert(7, ' late')
+    await idle()
+
+    const entries = (await kept.store.recovery('D')).flatMap((record) => record.entries)
+    const aside = new Y.Doc()
+    for (const entry of entries) Y.applyUpdate(aside, entry.bytes)
+    expect(aside.getText('t').toString()).toBe('refused late')
+  })
+
   it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {
     const server = fakeServer()
     const kept = await device()
