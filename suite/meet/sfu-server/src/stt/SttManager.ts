@@ -30,10 +30,15 @@ type EmitSttToSubscribers = (
 
 export class SttManager {
 	private static readonly STREAM_RECOVERY_DELAYS_MS = [0, 1000, 5000, 10_000];
+	private static readonly STREAM_RECOVERY_RESET_MS = 60_000;
 	private sttClient: ISttClient;
 	private activeSessions = new Map<string, AudioIngester>();
 	private roomSubscribers = new Map<string, Set<string>>();
 	private sessionRecoveries = new Map<string, symbol>();
+	private sessionRecoveryHistory = new Map<
+		string,
+		{ attempt: number; startedAt: number }
+	>();
 	private stoppingRooms = new Map<string, number>();
 	private emitToSubscribers: EmitSttToSubscribers | undefined;
 	private getRouter: ((roomId: string) => Router | undefined) | undefined;
@@ -162,6 +167,7 @@ export class SttManager {
 		transcriptParticipantId = participantId,
 		retryOnCapacity = true,
 	): Promise<void> {
+		if (producer.closed) return;
 		if ((this.stoppingRooms.get(roomId) ?? 0) > 0) return;
 		if (!this.hasSubscribers(roomId)) {
 			loggers.stt.debug('STT has no subscribers for room %s, skipping', roomId);
@@ -225,6 +231,12 @@ export class SttManager {
 		this.activeSessions.set(sessionKey, ingester);
 		try {
 			await ingester.start();
+			if (this.activeSessions.get(sessionKey) === ingester) {
+				this.sessionRecoveryHistory.set(sessionKey, {
+					attempt: this.sessionRecoveryHistory.get(sessionKey)?.attempt ?? 0,
+					startedAt: Date.now(),
+				});
+			}
 		} catch (error) {
 			if (this.activeSessions.get(sessionKey) === ingester) {
 				if (error instanceof SttCapacityError && retryOnCapacity) {
@@ -259,6 +271,7 @@ export class SttManager {
 		if (producerId) {
 			const sessionKey = this.getSessionKey(roomId, participantId, producerId);
 			this.sessionRecoveries.delete(sessionKey);
+			this.sessionRecoveryHistory.delete(sessionKey);
 			const ingester = this.activeSessions.get(sessionKey);
 			if (!ingester) return;
 
@@ -267,6 +280,16 @@ export class SttManager {
 			return;
 		}
 
+		// A failed replacement may leave a retry without an active ingester.
+		for (const key of new Set([
+			...this.sessionRecoveries.keys(),
+			...this.sessionRecoveryHistory.keys(),
+		])) {
+			if (key.startsWith(`${roomId}:${participantId}:`)) {
+				this.sessionRecoveries.delete(key);
+				this.sessionRecoveryHistory.delete(key);
+			}
+		}
 		const stops: Promise<void>[] = [];
 		for (const [key, ingester] of this.activeSessions) {
 			if (key.startsWith(`${roomId}:${participantId}:`)) {
@@ -301,9 +324,13 @@ export class SttManager {
 	}
 
 	private async stopRoomTranscriptions(roomId: string): Promise<void> {
-		for (const sessionKey of this.sessionRecoveries.keys()) {
+		for (const sessionKey of new Set([
+			...this.sessionRecoveries.keys(),
+			...this.sessionRecoveryHistory.keys(),
+		])) {
 			if (sessionKey.startsWith(`${roomId}:`)) {
 				this.sessionRecoveries.delete(sessionKey);
+				this.sessionRecoveryHistory.delete(sessionKey);
 			}
 		}
 		const stops: Promise<void>[] = [];
@@ -387,16 +414,26 @@ export class SttManager {
 		if (this.activeSessions.get(sessionKey) !== failedIngester) return;
 		const recovery = Symbol(sessionKey);
 		this.sessionRecoveries.set(sessionKey, recovery);
+		const history = this.sessionRecoveryHistory.get(sessionKey);
+		// A successful start alone does not prove recovery: rapid runtime exits
+		// retain their backoff until a replacement has stayed alive for a minute.
+		let attempt =
+			history &&
+			Date.now() - history.startedAt < SttManager.STREAM_RECOVERY_RESET_MS
+				? history.attempt
+				: 0;
 
 		try {
 			await failedIngester.stop();
-			let attempt = 0;
 			while (this.sessionRecoveries.get(sessionKey) === recovery) {
 				const delayMs =
 					SttManager.STREAM_RECOVERY_DELAYS_MS[
 						Math.min(attempt, SttManager.STREAM_RECOVERY_DELAYS_MS.length - 1)
 					];
-				attempt++;
+				attempt = Math.min(
+					attempt + 1,
+					SttManager.STREAM_RECOVERY_DELAYS_MS.length - 1,
+				);
 				if (this.sessionRecoveries.get(sessionKey) !== recovery) return;
 				const activeIngester = this.activeSessions.get(sessionKey);
 				if (activeIngester && activeIngester !== failedIngester) return;
@@ -406,6 +443,7 @@ export class SttManager {
 					!this.isAvailable()
 				) {
 					this.activeSessions.delete(sessionKey);
+					this.sessionRecoveryHistory.delete(sessionKey);
 					return;
 				}
 				if (delayMs > 0)
@@ -413,8 +451,21 @@ export class SttManager {
 				if (this.sessionRecoveries.get(sessionKey) !== recovery) return;
 				const replacement = this.activeSessions.get(sessionKey);
 				if (replacement && replacement !== failedIngester) return;
+				if (
+					!this.hasSubscribers(roomId) ||
+					producer.closed ||
+					!this.isAvailable()
+				) {
+					this.activeSessions.delete(sessionKey);
+					this.sessionRecoveryHistory.delete(sessionKey);
+					return;
+				}
 
 				this.activeSessions.delete(sessionKey);
+				this.sessionRecoveryHistory.set(sessionKey, {
+					attempt,
+					startedAt: history?.startedAt ?? Date.now(),
+				});
 				try {
 					await this.startTranscription(
 						roomId,

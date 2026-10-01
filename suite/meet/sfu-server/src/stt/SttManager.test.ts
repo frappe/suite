@@ -293,4 +293,103 @@ describe('SttManager', () => {
 		await Promise.all([firstStop, secondStop]);
 		expect(manager.beginSession('room-1', 'socket-2')).toBe(true);
 	});
+	async function recoveryFixture() {
+		vi.useFakeTimers();
+		const start = vi
+			.spyOn(AudioIngester.prototype, 'start')
+			.mockResolvedValue();
+		const stop = vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
+		const manager = new SttManager({ sttClient: createSttClient().client });
+		manager.setGetRouter(() => ({}) as Router);
+		manager.beginSession('room-1', 'socket-1');
+		const producer = { id: 'producer-a', closed: false } as Producer;
+		await manager.startTranscription(
+			'room-1',
+			'participant-a',
+			'Alice',
+			producer,
+		);
+		const sessions = (
+			manager as unknown as { activeSessions: Map<string, AudioIngester> }
+		).activeSessions;
+		const key = 'room-1:participant-a:producer-a';
+		const fail = async () => {
+			const current = sessions.get(key);
+			expect(current).toBeDefined();
+			(
+				current as unknown as { onUnexpectedStreamClose(): void }
+			).onUnexpectedStreamClose();
+			await vi.advanceTimersByTimeAsync(0);
+		};
+		return { manager, producer, start, stop, sessions, key, fail };
+	}
+
+	it('backs off repeated runtime failures across successful replacements and caps the delay', async () => {
+		const fixture = await recoveryFixture();
+		const { manager, start, stop, sessions, fail } = fixture;
+		await manager.startTranscription('room-1', 'participant-b', 'Bob', {
+			id: 'producer-b',
+			closed: false,
+		} as Producer);
+		const healthy = sessions.get('room-1:participant-b:producer-b');
+		for (const expectedDelay of [0, 1000, 5000, 10_000, 10_000]) {
+			const startsBeforeFailure = start.mock.calls.length;
+			await fail();
+			if (expectedDelay > 0) {
+				expect(start).toHaveBeenCalledTimes(startsBeforeFailure);
+				await vi.advanceTimersByTimeAsync(expectedDelay - 1);
+				expect(start).toHaveBeenCalledTimes(startsBeforeFailure);
+				await vi.advanceTimersByTimeAsync(1);
+			}
+			expect(start).toHaveBeenCalledTimes(startsBeforeFailure + 1);
+			expect(sessions.get('room-1:participant-b:producer-b')).toBe(healthy);
+			expect(stop.mock.contexts).not.toContain(healthy);
+		}
+		await manager.stopRoom('room-1');
+	});
+
+	it('resets runtime failure backoff only after a replacement lives for sixty seconds', async () => {
+		const { manager, start, fail } = await recoveryFixture();
+		await fail(); // immediate first replacement
+		await fail();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(start).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(59_999);
+		await fail();
+		expect(start).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(4999);
+		expect(start).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(start).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(60_000);
+		await fail();
+		expect(start).toHaveBeenCalledTimes(5); // stable capture earns immediate retry
+		await manager.stopRoom('room-1');
+	});
+
+	it('cancels participant retries even when a rejected replacement left no active ingester', async () => {
+		const { manager, start, sessions, key, fail } = await recoveryFixture();
+		start.mockRejectedValueOnce(new Error('replacement failed'));
+		await fail();
+		expect(start).toHaveBeenCalledTimes(2);
+		expect(sessions.has(key)).toBe(false);
+		await manager.stopTranscription('room-1', 'participant-a');
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(start).toHaveBeenCalledTimes(2);
+		expect(sessions.has(key)).toBe(false);
+		await manager.stopRoom('room-1');
+	});
+
+	it('does not restart a producer that closes during its recovery delay', async () => {
+		const { manager, producer, start, sessions, key, fail } =
+			await recoveryFixture();
+		await fail();
+		await fail();
+		expect(start).toHaveBeenCalledTimes(2);
+		(producer as unknown as { closed: boolean }).closed = true;
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(start).toHaveBeenCalledTimes(2);
+		expect(sessions.has(key)).toBe(false);
+		await manager.stopRoom('room-1');
+	});
 });
