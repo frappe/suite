@@ -5,7 +5,7 @@ export type DocumentSaveState = "clean" | "saving" | "unsaved" | "failed";
 export interface LeaveGuardOptions {
   state: () => DocumentSaveState;
   flush: () => Promise<void>;
-  retainRecovery: () => void | Promise<void>;
+  retainRecovery: () => unknown;
   confirmLeave?: () => boolean;
 }
 
@@ -23,8 +23,8 @@ export function resolveDocumentUnload(
   event: Event,
 ): void {
   if (options.state() === "clean") return;
-  void options.retainRecovery();
   event.preventDefault();
+  void options.retainRecovery();
 }
 
 export function useDocumentLeaveGuard(options: LeaveGuardOptions): void {

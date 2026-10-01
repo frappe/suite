@@ -48,6 +48,13 @@ describe("closing the tab", () => {
     }
   });
 
+  it("still asks when the recovery copy can't be written", () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    const retainRecovery = () => { throw new DOMException("full", "QuotaExceededError"); };
+    expect(() => resolveDocumentUnload({ state: () => "unsaved", retainRecovery }, event)).toThrow();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it("closes a clean document without asking", () => {
     const retainRecovery = vi.fn();
     const event = new Event("beforeunload", { cancelable: true });

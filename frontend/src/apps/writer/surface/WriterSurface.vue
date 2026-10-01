@@ -149,10 +149,7 @@ async function openCollab() {
     const sync = () => {
       const live = opened.room;
       const stopped = live.saveState === "failed" || (live.blocked && !recoverable(live.blocked));
-      if (stopped && live.unsent && !recoveryKept.value) {
-        retainRecovery();
-        recoveryKept.value = true;
-      }
+      if (stopped && live.unsent && !recoveryKept.value) recoveryKept.value = retainRecovery();
       roomSaveState.value = live.saveState;
       roomCanWrite.value = live.canWrite;
       roomBlocked.value = live.blocked;
@@ -215,13 +212,18 @@ async function addComment() {
   showComments.value = true;
 }
 
-function retainRecovery() {
+function retainRecovery(): boolean {
   const html = editorSurface.value?.editor?.getHTML?.();
-  if (!html) return;
-  localStorage.setItem(
-    `suite:writer-recovery:${props.session.nodeId}`,
-    JSON.stringify({ savedAt: new Date().toISOString(), html }),
-  );
+  if (!html) return false;
+  try {
+    localStorage.setItem(
+      `suite:writer-recovery:${props.session.nodeId}`,
+      JSON.stringify({ savedAt: new Date().toISOString(), html }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function flush(): Promise<void> {
