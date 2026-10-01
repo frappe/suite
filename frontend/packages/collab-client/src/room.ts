@@ -265,6 +265,9 @@ class Room implements CollabRoom {
       .then(async (answer) => {
         if (answer === null) return
         if (answer !== 'ok') {
+          // Other tabs' work never used this clientID, so a later tab can still send it
+          for (const box of this.adopted) box.release()
+          this.adopted = []
           await this.die(answer === 'lineage' ? 'lineage' : 'id_clash')
           return
         }

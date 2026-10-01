@@ -575,6 +575,31 @@ describe('collab room on a device', () => {
     expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
   })
 
+  it('a clash keeps only the clashing tab’s work aside; another tab’s unsent work is still committed', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    const earlier = await join(server.endpoints(), { device: kept })
+    server.access.online = false
+    earlier.doc.getText('t').insert(0, 'earlier')
+    await vi.advanceTimersByTimeAsync(0)
+    await earlier.close()
+    const offline = await join(server.endpoints(), { device: kept, pollMs: 1000 })
+    offline.doc.getText('t').insert(0, 'mine ')
+    await vi.advanceTimersByTimeAsync(0)
+    server.sessions.set('taken', { cid: offline.doc.clientID, acked: 0, shas: [] })
+
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(1000)
+    await offline.close()
+    const next = await join(server.endpoints(), { device: kept })
+    await next.flush()
+
+    const records = await kept.store.recovery('D')
+    expect(records.map((record) => [record.reason, record.entries.length])).toEqual([['id_clash', 1]])
+    expect([text(next), server.rows.length]).toEqual(['earlier', 1])
+  })
+
   it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {
     const server = fakeServer()
     const kept = await device()
