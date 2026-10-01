@@ -1,3 +1,4 @@
+import { digest } from 'lib0/hash/sha256'
 import * as Y from 'yjs'
 import { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
 
@@ -65,7 +66,8 @@ const MAX_PUSH_BYTES = 256 * 1024
 // Browsers refuse keepalive bodies over 64 KiB
 const MAX_KEEPALIVE_BYTES = 60 * 1024
 
-type Entry = { seq: number; bytes: Uint8Array }
+// `sha` lets the server tell a resent seq from a different one under the same number
+type Entry = { seq: number; bytes: Uint8Array; sha: string }
 
 export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   const { endpoints } = options
@@ -186,7 +188,7 @@ class Room implements CollabRoom {
 
   private capture = (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE || !this.writable || this.closed) return
-    this.pending.push({ seq: this.nextSeq++, bytes: update })
+    this.pending.push({ seq: this.nextSeq++, bytes: update, sha: hex(digest(update)) })
     if (this.saveState !== 'failed') this.setSaveState(this.inFlight ? 'saving' : 'unsaved')
     this.scheduleSend()
   }
@@ -223,6 +225,7 @@ class Room implements CollabRoom {
       to: batch[batch.length - 1].seq,
       cid: this.doc.clientID,
       seen_rev: this.appliedThrough,
+      shas: batch.map((entry) => entry.sha),
     }
     const body = encodePush(header, Y.mergeUpdates(batch.map((entry) => entry.bytes)))
     this.setSaveState('saving')
@@ -370,5 +373,9 @@ function staleSession(answer: Answer) {
 }
 
 function randomHex(bytes: number) {
-  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return hex(crypto.getRandomValues(new Uint8Array(bytes)))
+}
+
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }

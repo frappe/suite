@@ -32,7 +32,7 @@ function frame(header: object, rows: { rev: number; bytes: Uint8Array }[] = []):
 // `refuse` answers every request the way the server would for a tab it no longer hears
 function fakeServer(state = 'live') {
   const rows: { rev: number; bytes: Uint8Array }[] = []
-  const sessions = new Map<string, { cid: number; acked: number }>()
+  const sessions = new Map<string, { cid: number; acked: number; shas: string[] }>()
   const access = { refuse: null as Answer | null, canWrite: true }
   let nextClient = 1
   const endpoints = (): CollabEndpoints => ({
@@ -44,7 +44,7 @@ function fakeServer(state = 'live') {
       return frame({ state, proto: 1 }, rows.filter((row) => row.rev > since))
     },
     async session(sid) {
-      if (!sessions.has(sid)) sessions.set(sid, { cid: nextClient++, acked: 0 })
+      if (!sessions.has(sid)) sessions.set(sid, { cid: nextClient++, acked: 0, shas: [] })
       return reply(200, { client_id: sessions.get(sid)!.cid })
     },
     async push(body) {
@@ -53,14 +53,21 @@ function fakeServer(state = 'live') {
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
       const session = sessions.get(header.sid)!
-      if (header.to <= session.acked) return reply(200, { dup: true, acked: session.acked, head: rows.length })
+      if (header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
+      if (header.from <= session.acked) {
+        for (let seq = header.from; seq <= Math.min(header.to, session.acked); seq++) {
+          if (session.shas[seq] !== header.shas[seq - header.from]) return reply(409, { collab: 'seq_conflict' })
+        }
+        return reply(200, { dup: true, acked: session.acked, head: rows.length })
+      }
       if (header.from !== session.acked + 1) return reply(409, { collab: 'seq', acked: session.acked })
+      header.shas.forEach((sha: string, index: number) => (session.shas[header.from + index] = sha))
       rows.push({ rev: rows.length + 1, bytes: body.slice(4 + length) })
       session.acked = header.to
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
   })
-  return { rows, endpoints, access }
+  return { rows, sessions, endpoints, access }
 }
 
 const rooms: CollabRoom[] = []
@@ -134,6 +141,29 @@ describe('collab room', () => {
 
     expect(server.rows).toHaveLength(1)
     expect([room.saveState, room.unsent]).toEqual(['clean', 0])
+  })
+
+  it('a resend that differs from what the server committed stops saving instead of overwriting', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let drop = true
+    endpoints.push = async (body, options) => {
+      const answer = await push(body, options)
+      if (drop) {
+        drop = false
+        for (const session of server.sessions.values()) session.shas[1] = 'f'.repeat(64)
+        throw new TypeError('connection reset')
+      }
+      return answer
+    }
+    const room = await join(endpoints)
+
+    room.doc.getText('t').insert(0, 'once')
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect([server.rows.length, room.saveState, room.unsent]).toEqual([1, 'failed', 1])
   })
 
   it('a busy document is pushed to again only after the delay it asks for', async () => {

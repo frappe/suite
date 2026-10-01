@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "peerDependencies": {
+    "lib0": "^0.2.99",
     "yjs": "^13.6.30"
   }
 }
