@@ -237,8 +237,6 @@ jobs:
 
       - name: Build SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
-        env:
-          ONNXRUNTIME_NODE_INSTALL: skip
         run: |
           yarn install --frozen-lockfile
           yarn build

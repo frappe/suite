@@ -51,8 +51,8 @@ idle time finalizes buffered audio; fragments shorter than `STT_MIN_TAIL_MS`
 are discarded locally without restarting capture. Quiet gaps clear old detector context.
 
 The MIT model, license and pinned revision/checksum are in `assets/silero-vad/`.
-Startup verifies the checksum. Install with `ONNXRUNTIME_NODE_INSTALL=skip`
-to use the bundled CPU runtime without optional GPU-provider downloads.
+Startup verifies the checksum. The SFU `.npmrc` selects the bundled CPU
+runtime without optional GPU-provider downloads.
 Model or runtime failures surface through startup/recovery; there is no fallback.
 
 ### Private caption diagnostics
