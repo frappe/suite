@@ -19,10 +19,10 @@ WRITER = "writer-collab-writer@example.com"
 OUTSIDER = "writer-collab-outsider@example.com"
 
 
-def call(handler, node: str, *, body: bytes = b"", form: dict | None = None):
+def call(handler, node: str, *, body: bytes = b""):
     """Run one route handler as the current user, the way the dispatcher would."""
     frappe.local.request = Request(EnvironBuilder(method="POST", data=body).get_environ())
-    frappe.local.form_dict = frappe._dict(form or {})
+    frappe.local.form_dict = frappe._dict()
     try:
         return handler(node)
     finally:
@@ -112,7 +112,9 @@ class TestWriterCollab(IntegrationTestCase):
 
     def session(self, node: str) -> tuple[str, int]:
         sid = uuid.uuid4().hex
-        return sid, answer(call(routes.collab_sessions_post, node, form={"sid": sid}))["client_id"]
+        return sid, answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+            "client_id"
+        ]
 
     def push(self, node: str, sid: str, cid: int, seq: int, payload: bytes = b"\x00"):
         header, rows = self.open(node)
@@ -137,7 +139,7 @@ class TestWriterCollab(IntegrationTestCase):
         header, rows = self.open(node)
         self.assertEqual((header["state"], rows), ("disabled", []))
         for handler in (routes.collab_sessions_post, routes.collab_updates_post, routes.collab_updates_get):
-            response = call(handler, node, form={"sid": uuid.uuid4().hex})
+            response = call(handler, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
             self.assertEqual((response.status_code, answer(response)), (409, {"collab": "disabled"}))
         self.assertEqual({kind: self.count(kind) for kind in before}, before)
 
