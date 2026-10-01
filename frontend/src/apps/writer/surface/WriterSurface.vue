@@ -66,7 +66,8 @@ const editable = computed(
     readable.value &&
     props.session.state.value === "Active" &&
     role.value >= 40 &&
-    (collab.value !== "live" || (roomCanWrite.value && roomSaveState.value !== "failed")),
+    (collab.value !== "live" ||
+      (roomCanWrite.value && roomSaveState.value !== "failed" && roomBlocked.value !== "offline")),
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -89,6 +90,7 @@ const blockedMessage = computed(() => {
   return {
     signed_out: "You're signed out. Sign in again to keep saving; your changes stay in this tab.",
     locked: "This document is locked again. Unlock it to keep saving; your changes stay in this tab.",
+    offline: "You're offline, and this browser isn't keeping changes for this site, so editing is paused until the connection is back.",
     stale_session: `You signed in again in another tab.${kept} Reload to keep saving.`,
     other_user: `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
     lost_edit: `You can no longer edit this document.${kept}`,

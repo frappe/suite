@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import { CollabOpenError, openCollabRoom, type Answer, type CollabEndpoints, type CollabRoom } from './room'
+import { CollabOpenError, openCollabRoom, type Answer, type CollabEndpoints, type CollabRoom, type OpenOptions } from './room'
+import { openDeviceStore, type DeviceStore } from './store'
 
 const reply = (status: number, body: unknown): Answer => ({
   status,
@@ -33,27 +34,44 @@ function frame(header: object, rows: { rev: number; bytes: Uint8Array }[] = []):
 function fakeServer(state = 'live') {
   const rows: { rev: number; bytes: Uint8Array }[] = []
   const sessions = new Map<string, { cid: number; acked: number; shas: string[] }>()
-  const access = { refuse: null as Answer | null, canWrite: true }
+  const access = { refuse: null as Answer | null, canWrite: true, online: true }
+  const calls: string[] = []
   let nextClient = 1
+  const reach = (call: string) => {
+    if (!access.online) throw new TypeError('Failed to fetch')
+    calls.push(call)
+  }
   const endpoints = (): CollabEndpoints => ({
     async open() {
+      reach('open')
       return frame({ state, proto: 1, lineage: 'L', can_write: access.canWrite }, state === 'live' ? rows : [])
     },
     async pull(since) {
+      reach('pull')
       if (access.refuse) return access.refuse
       return frame({ state, proto: 1 }, rows.filter((row) => row.rev > since))
     },
-    async session(sid) {
+    async session(sid, claim) {
+      reach(claim ? 'claim' : 'session')
+      if (claim) {
+        if (claim.lineage !== 'L') return reply(200, { claim: 'lineage' })
+        const taken = [...sessions.entries()].some(([other, session]) => other !== sid && session.cid === claim.cid)
+        if (taken || (sessions.has(sid) && sessions.get(sid)!.cid !== claim.cid)) return reply(200, { claim: 'clash' })
+        if (!sessions.has(sid)) sessions.set(sid, { cid: claim.cid, acked: 0, shas: [] })
+        return reply(200, { claim: 'ok' })
+      }
       if (!sessions.has(sid)) sessions.set(sid, { cid: nextClient++, acked: 0, shas: [] })
       return reply(200, { client_id: sessions.get(sid)!.cid })
     },
     async push(body) {
+      reach('push')
       if (access.refuse) return access.refuse
       const view = new DataView(body.buffer, body.byteOffset)
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
-      const session = sessions.get(header.sid)!
+      const session = sessions.get(header.sid)
       if (length > 4096 || header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
+      if (!session || session.cid !== header.cid) return reply(409, { collab: 'client_conflict' })
       if (header.from <= session.acked) {
         for (let seq = header.from; seq <= Math.min(header.to, session.acked); seq++) {
           if (session.shas[seq] !== header.shas[seq - header.from]) return reply(409, { collab: 'seq_conflict' })
@@ -67,7 +85,7 @@ function fakeServer(state = 'live') {
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
   })
-  return { rows, sessions, endpoints, access }
+  return { rows, sessions, endpoints, access, calls }
 }
 
 const rooms: CollabRoom[] = []
@@ -79,13 +97,14 @@ afterEach(async () => {
 
 let signedIn = 'a@x.com'
 
-async function join(endpoints: CollabEndpoints) {
+async function join(endpoints: CollabEndpoints, extra: Partial<OpenOptions> = {}) {
   const opened = await openCollabRoom({
     endpoints,
     principal: 'a@x.com',
     signedIn: () => signedIn,
     pollMs: 60_000,
     sendDelayMs: 0,
+    ...extra,
   })
   if (opened.state !== 'live') throw new Error(opened.state)
   rooms.push(opened.room)
@@ -93,6 +112,15 @@ async function join(endpoints: CollabEndpoints) {
 }
 
 const text = (room: CollabRoom) => room.doc.getText('t').toString()
+
+const stores: DeviceStore[] = []
+afterEach(() => stores.splice(0).forEach((store) => store.close()))
+let devices = 0
+async function device() {
+  const store = (await openDeviceStore(`room-test-${devices++}`))!
+  stores.push(store)
+  return { store, doc: 'D' }
+}
 
 describe('collab room', () => {
   it('two writers converge on the server order after a poll', async () => {
@@ -455,6 +483,140 @@ describe('collab room', () => {
       await expect(opened).resolves.toEqual({
         state,
       })
+    }
+  })
+})
+
+// IndexedDB answers through setImmediate, which must keep running
+const fakeTime = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+
+describe('collab room on a device', () => {
+  it('work not yet sent when the tab closed shows in the next tab and is committed once', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    const first = await join(server.endpoints(), { device: kept })
+    server.access.online = false
+
+    first.doc.getText('t').insert(0, 'offline work')
+    await vi.advanceTimersByTimeAsync(0)
+    await first.close()
+    server.access.online = true
+    const next = await join(server.endpoints(), { device: kept })
+    expect(text(next)).toBe('offline work')
+    await next.flush()
+
+    expect([server.rows.length, next.saveState, next.unsent]).toEqual([1, 'clean', 0])
+    expect(text(await join(server.endpoints()))).toBe('offline work')
+  })
+
+  it('a tab opened without the network edits its device copy, then claims, sends, and only then shows others', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    const before = await join(server.endpoints(), { device: kept })
+    before.doc.getText('t').insert(0, 'base')
+    await before.flush()
+    await before.close()
+    const other = await join(server.endpoints())
+    other.doc.getText('t').insert(4, ' other')
+    await other.flush()
+    server.access.online = false
+
+    const offline = await join(server.endpoints(), { device: kept, pollMs: 1000 })
+    offline.doc.getText('t').insert(0, 'mine ')
+    expect([text(offline), offline.canWrite, offline.unsent]).toEqual(['mine base', true, 1])
+    expect(offline.doc.clientID).toBeGreaterThanOrEqual(2 ** 30)
+    server.calls.length = 0
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(server.calls.slice(0, 3)).toEqual(['claim', 'push', 'pull'])
+    expect([text(offline), offline.saveState, server.rows.length]).toEqual(['mine base other', 'clean', 3])
+  })
+
+  it('a claim that clashes keeps the offline work as a recovery copy and sends none of it', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+    const offline = await join(server.endpoints(), { device: kept, pollMs: 1000 })
+    offline.doc.getText('t').insert(0, 'mine')
+    await vi.advanceTimersByTimeAsync(0)
+    server.sessions.set('taken', { cid: offline.doc.clientID, acked: 0, shas: [] })
+
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(1000)
+
+    const [record] = await kept.store.recovery('D')
+    expect([offline.saveState, offline.canWrite, server.rows.length]).toEqual(['failed', false, 0])
+    expect([record.reason, record.entries.length]).toEqual(['id_clash', 1])
+    expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
+  })
+
+  it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const room = await join(server.endpoints(), { device: kept })
+    server.access.refuse = reply(409, { collab: 'seq_conflict' })
+
+    room.doc.getText('t').insert(0, 'refused')
+    await room.flush()
+    server.access.refuse = null
+
+    expect([room.saveState, (await kept.store.recovery('D'))[0]?.reason]).toEqual(['failed', 'seq_conflict'])
+    expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
+  })
+
+  it('work left from before the document was replaced is kept as a recovery copy, not applied', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const stale = new Y.Doc()
+    let bytes: Uint8Array = new Uint8Array()
+    stale.on('update', (update: Uint8Array) => (bytes = update))
+    stale.getText('t').insert(0, 'old')
+    await kept.store.saveSession({ doc: 'D', sid: 'old', lineage: 'GONE', cid: 99, bound: true })
+    await kept.store.capture([{ doc: 'D', sid: 'old', seq: 1, bytes, sha: 'x' }])
+
+    const room = await join(server.endpoints(), { device: kept })
+
+    expect([text(room), room.unsent, (await kept.store.recovery('D'))[0]?.reason]).toEqual(['', 0, 'lineage'])
+  })
+
+  it('without a device store the tab stops editing while offline and resumes once back', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const room = await join(server.endpoints(), { pollMs: 1000 })
+    room.doc.getText('t').insert(0, 'held')
+    server.access.online = false
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect([room.blocked, room.unsent]).toEqual(['offline', 1])
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect([room.blocked, room.saveState, server.rows.length]).toEqual([null, 'clean', 1])
+  })
+
+  it('asks the browser to keep this site’s data once unsent work is held offline', async () => {
+    fakeTime()
+    const persist = vi.fn(async () => true)
+    vi.stubGlobal('navigator', { ...navigator, storage: { persist } })
+    try {
+      const server = fakeServer()
+      const room = await join(server.endpoints(), { device: await device() })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(persist).not.toHaveBeenCalled()
+      server.access.online = false
+
+      room.doc.getText('t').insert(0, 'held')
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect([persist.mock.calls.length, room.blocked]).toEqual([1, null])
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 })

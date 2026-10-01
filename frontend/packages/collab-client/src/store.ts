@@ -180,8 +180,13 @@ class IndexedDeviceStore implements DeviceStore {
   }
 
   private write(stores: string[], work: (tx: IDBTransaction) => unknown): Promise<void> {
-    const tx = this.db.transaction(stores, 'readwrite', { durability: 'strict' })
-    work(tx)
+    let tx: IDBTransaction
+    try {
+      tx = this.db.transaction(stores, 'readwrite', { durability: 'strict' })
+      work(tx)
+    } catch (error) {
+      return Promise.reject(error)
+    }
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve()
       tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted'))
