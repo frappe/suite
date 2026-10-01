@@ -70,6 +70,8 @@ const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
 const defaultSite = commonSiteConfig.default_site || 'localhost'
 const webserverPort = commonSiteConfig.webserver_port || 8000
 const frappeBackendUrl = `http://${defaultSite}:${webserverPort}`
+// Ordered, so a product can name the oldest build that may still edit it
+const suiteBuild = String(Date.now())
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -77,6 +79,7 @@ export default defineConfig(({ mode }) => ({
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
     __SITE_NAME__: JSON.stringify(defaultSite),
     __SOCKETIO_PORT__: JSON.stringify(commonSiteConfig.socketio_port || 9000),
+    __SUITE_BUILD__: JSON.stringify(suiteBuild),
   },
   // Served by Frappe at /assets/suite/frontend/ (build output lands in
   // ../suite/public/frontend -> exposed as /assets/suite/frontend).
@@ -105,6 +108,11 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     vue(),
+    {
+      name: 'suite-build-stamp',
+      transformIndexHtml: (html) =>
+        html.replace('</head>', `<meta name="suite-build" content="${suiteBuild}">\n</head>`),
+    },
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which

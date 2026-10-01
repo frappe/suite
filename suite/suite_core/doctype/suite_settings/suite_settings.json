@@ -6,7 +6,8 @@
  "field_order": [
   "workspace_name",
   "workspace_logo",
-  "is_onboarded"
+  "is_onboarded",
+  "min_builds"
  ],
  "fields": [
   {
@@ -25,11 +26,17 @@
    "fieldtype": "Check",
    "label": "Onboarded",
    "read_only": 1
+  },
+  {
+   "description": "Per product, the oldest frontend build that may still edit it, e.g. {\"writer\": \"1759300000000\"}",
+   "fieldname": "min_builds",
+   "fieldtype": "JSON",
+   "label": "Minimum Builds"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-06-26 18:26:27.000000",
+ "modified": "2026-10-01 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",

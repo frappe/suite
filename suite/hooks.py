@@ -437,7 +437,7 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — custom upload + after_request middleware (single definers)
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
-after_request = "suite.drive.api.product.after_request"
+after_request = ["suite.drive.api.product.after_request", "suite.suite_core.build.after_request"]
 
 # WebDAV protocol dispatcher, then the Suite resource dispatcher. The two own
 # disjoint prefixes. WebDAV's entry predates the framework-adapter rule.

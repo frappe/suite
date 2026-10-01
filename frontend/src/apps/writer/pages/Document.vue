@@ -94,6 +94,7 @@ import LucideLock from '~icons/lucide/lock'
 import LucideLockOpen from '~icons/lucide/lock-open'
 import TextEditor from '@/apps/writer/components/TextEditor.vue'
 import NonCollabEditor from '@/apps/writer/components/NonCollabEditor.vue'
+import { belowMinBuild } from '@/boot/build'
 const MarkdownEditor = defineAsyncComponent(
   () => import('@/apps/writer/components/MarkdownEditor.vue'),
 )
@@ -136,7 +137,8 @@ const editable = computed(() => {
     !!file.doc?.write &&
     !document.value?.doc?.settings?.lock &&
     editor.value &&
-    !isOldSchema.value
+    !isOldSchema.value &&
+    !belowMinBuild('writer')
     ? true
     : false
 })
