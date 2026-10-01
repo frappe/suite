@@ -4,7 +4,7 @@ Bodies and answers are binary frames, so these handlers answer with their own
 responses instead of the JSON envelope. Every request names the principal the
 tab expects, and that is checked before Drive is asked, so an expired sign-in
 answers `signed_out` rather than a permission verdict. Guests are heard for
-the same reason; Drive still decides what they may do.
+the same reason, but only to read: guest editing waits for stage G.
 """
 
 import json
@@ -76,7 +76,7 @@ def _open(node: str) -> Response:
     doc = collab.find(ADAPTER, node)
     if doc is None:
         return _frame({"state": "unconverted", "proto": collab.PROTO})
-    header = collab.open_header(doc, can_write=_can(node, drive.EDIT))
+    header = collab.open_header(doc, can_write=frappe.session.user != "Guest" and _can(node, drive.EDIT))
     return _frame(header, collab.rows_after(ADAPTER, doc.id, 0))
 
 
@@ -96,6 +96,7 @@ def _push(node: str) -> Response:
     collab.require_enabled()
     header, payload = collab.parse_push(frappe.request.get_data())
     _require_principal(header.get("principal"))
+    _require_signed_in()
     _check(node, drive.EDIT)
     doc = _doc(node)
     return _json(200, collab.push(ADAPTER, doc.id, header, payload, frappe.session.user))
@@ -104,6 +105,7 @@ def _push(node: str) -> Response:
 def _session(node: str) -> Response:
     collab.require_enabled()
     _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
+    _require_signed_in()
     _check(node, drive.EDIT)
     doc = _doc(node)
     try:
@@ -147,6 +149,11 @@ def _require_principal(principal) -> None:
     if frappe.session.user == "Guest":
         raise collab.Refusal(401, "signed_out")
     raise collab.Refusal(409, "principal_changed")
+
+
+def _require_signed_in() -> None:
+    if frappe.session.user == "Guest":
+        raise collab.Refusal(401, "signed_out")
 
 
 def _answer(handle) -> Response:

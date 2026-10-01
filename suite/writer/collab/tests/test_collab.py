@@ -314,6 +314,26 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.set_user(WRITER)
         self.assertEqual(self.open(node)[1], [])
 
+    def test_a_guest_reads_but_cannot_write_even_where_drive_would_let_them(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+
+        frappe.set_user("Guest")
+        with patch.object(routes.drive, "check"):
+            header, _rows = self.open(node)
+            session = call(
+                routes.collab_sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode()
+            )
+            push = call(routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
+
+        self.assertEqual((header["state"], header["can_write"]), ("live", False))
+        for response in (session, push):
+            self.assertEqual((response.status_code, answer(response)["collab"]), (401, "signed_out"))
+        frappe.set_user(WRITER)
+        self.assertEqual(self.open(node)[1], [])
+
     def test_many_writers_at_once_get_gap_free_revs(self):
         self.set_mode("on")
         node = self.new_document()
