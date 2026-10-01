@@ -11,4 +11,5 @@ HTTP_OWNERS = {
     "mail": "suite.mail.http.framework.HTTP",
     "calendar": "suite.calendar.http.framework.HTTP",
     "meet": "suite.meet.http.framework.HTTP",
+    "writer": "suite.writer.collab.routes.HTTP",
 }

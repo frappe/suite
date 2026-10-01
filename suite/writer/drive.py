@@ -75,6 +75,7 @@ import pycrdt
 from frappe import _
 
 from suite import drive
+from suite.writer.collab import start_log
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -133,6 +134,7 @@ def create_empty(node: str) -> str:
     document.settings = DEFAULT_SETTINGS
     document.collab = 1
     document.insert(ignore_permissions=True)
+    start_log(node)
     return document.name
 
 
