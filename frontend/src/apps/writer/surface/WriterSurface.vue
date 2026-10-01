@@ -35,6 +35,7 @@ const collab = shallowRef<"opening" | "legacy" | "live" | "failed">("opening");
 const room = shallowRef<CollabRoom | null>(null);
 const roomSaveState = ref<DocumentSaveState>("clean");
 let stopWatchingRoom = () => {};
+let unmounted = false;
 
 const documentResource = useDoc({
   doctype: "Writer Document",
@@ -108,6 +109,10 @@ async function openCollab() {
   collab.value = "opening";
   try {
     const opened = await openWriterRoom(props.session);
+    if (unmounted) {
+      if (opened.state === "live") void opened.room.close();
+      return;
+    }
     if (opened.state !== "live") {
       collab.value = "legacy";
       return;
@@ -179,16 +184,18 @@ function retainRecovery() {
 }
 
 function flush(): Promise<void> {
-  if (room.value) return room.value.flush();
+  if (room.value) return withinTenSeconds(room.value.flush());
   if (!dirty.value && !saving.value) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timeout = window.setTimeout(resolve, 10_000);
+  return withinTenSeconds(new Promise((resolve) => {
     emitter.emit("manual-save", () => {
-      window.clearTimeout(timeout);
       if (!saveFailed.value) dirty.value = false;
       resolve();
     });
-  });
+  }));
+}
+
+function withinTenSeconds(work: Promise<void>): Promise<void> {
+  return Promise.race([work, new Promise<void>((resolve) => window.setTimeout(resolve, 10_000))]);
 }
 
 useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery });
@@ -201,6 +208,7 @@ onMounted(() => {
   void openCollab();
 });
 onBeforeUnmount(() => {
+  unmounted = true;
   window.removeEventListener("online", setOnline);
   window.removeEventListener("offline", setOffline);
   stopWatchingRoom();
