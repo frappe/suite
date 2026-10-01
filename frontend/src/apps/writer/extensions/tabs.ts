@@ -24,6 +24,8 @@ export const findTab = (doc: PMNode, id: string): TabMatch | null =>
 // Content outside any tab node shows as the first tab, so creating a tab only
 // appends one and never moves content someone else may be typing in
 export const FIRST_TAB_ID = 'main'
+// HTML is read back as real tabs, so the copy must not claim the first tab's id
+const FIRST_TAB_HTML_ID = 'first-tab'
 const FIRST_TAB_LABEL = 'firstTabLabel'
 
 const firstTabBlocks = (doc: PMNode): TabMatch[] => {
@@ -63,7 +65,7 @@ const orderedHTML = (doc: PMNode, firstTabLabel: string | null): string => {
   let children: PMNode[] = ordered.map(({ node }) => node)
   if (blocks.length && (ordered.length || firstTabLabel)) {
     const label = firstTabLabel ?? 'Untitled'
-    children.unshift(doc.type.schema.nodes.tab.create({ id: FIRST_TAB_ID, label }, blocks))
+    children.unshift(doc.type.schema.nodes.tab.create({ id: FIRST_TAB_HTML_ID, label }, blocks))
   } else {
     children = [...blocks, ...children]
   }
@@ -358,11 +360,12 @@ export const TabsExtension = Node.create({
 
         const { state, view } = this.editor
         if (activeTabId === FIRST_TAB_ID) {
-          const [first] = tabsIn(state.doc)
-          if (!first) return false
-          view.dispatch(
-            state.tr.setSelection(TextSelection.create(state.doc, 1, first.pos - 1)),
-          )
+          const blocks = firstTabBlocks(state.doc)
+          if (!tabsIn(state.doc).length || !blocks.length) return false
+          const last = blocks[blocks.length - 1]
+          const from = state.doc.resolve(blocks[0].pos)
+          const to = state.doc.resolve(last.pos + last.node.nodeSize)
+          view.dispatch(state.tr.setSelection(TextSelection.between(from, to)))
           return true
         }
         const tab = findTab(state.doc, activeTabId)

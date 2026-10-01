@@ -193,8 +193,14 @@ describe('the first tab', () => {
     editor.commands.createTab({ id: 'second', label: 'Second' })
 
     const html = editor.getHTML()
-    expect(html).toMatch(/^<div data-tab-id="main" data-tab-label="Notes"><p>Hello<\/p><\/div>/)
+    expect(html).toMatch(/^<div data-tab-id="first-tab" data-tab-label="Notes"><p>Hello<\/p><\/div>/)
     expect(html).toContain('data-tab-id="second"')
+
+    const reloaded = makeEditor([])
+    reloaded.commands.setContent(html)
+    expect(listTabs(reloaded).map((tab) => tab.label)).toEqual(['Notes', 'Second'])
+    expect(reloaded.commands.deleteTab(listTabs(reloaded)[0].id)).toBe(true)
+    expect(listTabs(reloaded).map((tab) => tab.label)).toEqual(['Second'])
   })
 
   it('stays first when other tabs are reordered', () => {
