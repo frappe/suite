@@ -5,26 +5,26 @@ import { translate } from '@/boot/translation'
 
 const BUILD = Number(__SUITE_BUILD__)
 
-/** True once the server runs a newer build than this tab, or a chunk failed to load. */
-export const staleBuild = ref(false)
-
 const minBuilds = ref<Record<string, string>>({})
 
 /** A product turns read-only in tabs older than its minimum build. */
 export const belowMinBuild = (product: string) =>
   BUILD < Number(minBuilds.value[product] ?? 0)
 
-let shown: 'newer' | 'paused' | null = null
+let shown: string | null = null
 
 // Reload stays the person's choice, so a page still served stale can't loop
-function showBanner(state: 'newer' | 'paused') {
-  staleBuild.value = true
-  if (shown === state || shown === 'paused') return
+function showBanner(paused: string[] = []) {
+  const state = paused.join()
+  if (shown !== null && shown.length >= state.length) return
   shown = state
+  const products = paused.map((product) => product[0].toUpperCase() + product.slice(1))
   toast.info(translate('A newer version is available'), {
     id: 'suite-newer-build',
     duration: Infinity,
-    description: state === 'paused' ? translate('Reload to keep editing.') : undefined,
+    description: products.length
+      ? translate('Reload to keep editing in {0}.', [products.join(', ')])
+      : undefined,
     action: { label: translate('Reload'), onClick: () => window.location.reload() },
   })
 }
@@ -32,8 +32,9 @@ function showBanner(state: 'newer' | 'paused') {
 function readHeaders(headers: Headers) {
   const min = headers.get('X-Suite-Min-Builds')
   if (min) minBuilds.value = JSON.parse(min)
-  if (Object.keys(minBuilds.value).some(belowMinBuild)) showBanner('paused')
-  else if (Number(headers.get('X-Suite-Build')) > BUILD) showBanner('newer')
+  const paused = Object.keys(minBuilds.value).filter(belowMinBuild)
+  if (paused.length) showBanner(paused)
+  else if (Number(headers.get('X-Suite-Build')) > BUILD) showBanner()
 }
 
 export function watchBuild() {
@@ -46,6 +47,6 @@ export function watchBuild() {
   }
   window.addEventListener('vite:preloadError', (event) => {
     event.preventDefault()
-    showBanner('newer')
+    showBanner()
   })
 }

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const info = vi.fn()
 vi.mock('frappe-ui', () => ({ toast: { info } }))
-vi.mock('@/boot/translation', () => ({ translate: (text: string) => text }))
+vi.mock('@/boot/translation', () => ({
+  translate: (text: string, replace: string[] = []) => text.replace('{0}', replace[0]),
+}))
 
 const respond = (headers: Record<string, string>) =>
   vi.fn(async () => new Response('{}', { headers }))
@@ -22,12 +24,11 @@ describe('build watcher', () => {
   beforeEach(() => info.mockClear())
 
   it('offers a reload once when the server runs a newer build', async () => {
-    const older = await tabOnBuild('200', { 'X-Suite-Build': '100' })
-    expect(older.staleBuild.value).toBe(false)
+    await tabOnBuild('200', { 'X-Suite-Build': '100' })
+    expect(info).not.toHaveBeenCalled()
 
-    const stale = await tabOnBuild('100', { 'X-Suite-Build': '200' })
+    await tabOnBuild('100', { 'X-Suite-Build': '200' })
     await window.fetch('/api/method/ping')
-    expect(stale.staleBuild.value).toBe(true)
     expect(info).toHaveBeenCalledOnce()
     expect(info.mock.calls[0][1].action.label).toBe('Reload')
   })
@@ -40,6 +41,6 @@ describe('build watcher', () => {
 
     expect(tab.belowMinBuild('writer')).toBe(true)
     expect(tab.belowMinBuild('slides')).toBe(false)
-    expect(info.mock.calls.at(-1)[1].description).toBe('Reload to keep editing.')
+    expect(info.mock.calls.at(-1)[1].description).toBe('Reload to keep editing in Writer.')
   })
 })
