@@ -172,11 +172,11 @@ test("actual connected silence publishes packets while disabled tracks fail the 
       Object.assign(window,{__silenceTrack:stream.getAudioTracks()[0]});
       await (window as unknown as {__captionAudio:{play():Promise<unknown>}}).__captionAudio.play();
     });
-    const snapshot = () => page.evaluate(() => (window as unknown as {__captionAudio:{diagnostics():Promise<Record<string,unknown>>}}).__captionAudio.diagnostics());
+    const snapshot = () => page.evaluate(() => window.__captionAudio.diagnostics());
     const before = await snapshot();
     await expect.poll(async()=>verifyAudioPublication(before,await snapshot()),{timeout:8000}).toBe(true);
     const connected = await snapshot();
-    expect(connected.peakSourceAmplitude).toBe(0);
+    expect(connected?.peakSourceAmplitude).toBe(0);
     await page.evaluate(() => (window as unknown as {__silenceTrack:MediaStreamTrack}).__silenceTrack.enabled=false);
     const disabled = await snapshot();
     expect(verifyAudioPublication(before,disabled)).toBe(false);

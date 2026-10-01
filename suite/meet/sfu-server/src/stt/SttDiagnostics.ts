@@ -13,6 +13,14 @@ const HARD_MAX_SESSIONS = 20;
 let captureAttempts = 0;
 
 type Boundary = 'before-vad' | 'stt-sent';
+type DiagnosticValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| DiagnosticValue[]
+	| { [field: string]: DiagnosticValue };
 interface CaptureIdentity {
 	roomId: string;
 	participantId: string;
@@ -138,7 +146,7 @@ export class SttDiagnostics {
 		this.event('pcm', { boundary, offset, bytes: audio.length });
 	}
 
-	event(type: string, fields: Record<string, unknown> = {}): void {
+	event(type: string, fields: Record<string, DiagnosticValue> = {}): void {
 		if (this.ended) return;
 		const line = `${JSON.stringify({
 			type,

@@ -21,6 +21,40 @@ export interface CaptionObservation {
   observedAt: number;
 }
 
+interface AudioTrackState {
+  enabled: boolean; muted: boolean; readyState: MediaStreamTrackState;
+}
+interface AudioRtpCounters {
+  type: string; timestamp?: number; bytesSent?: number; packetsSent?: number;
+  totalAudioEnergy?: number; totalSamplesDuration?: number; audioLevel?: number;
+  packetsLost?: number; roundTripTime?: number;
+}
+export interface AudioCaptureDiagnostics {
+  observedAt: number; audioContextState: AudioContextState; peakSourceAmplitude: number;
+  destinationTrack: AudioTrackState; issuedTracks: AudioTrackState[];
+  connections: {
+    connectionState: RTCPeerConnectionState; iceConnectionState: RTCIceConnectionState;
+    senders: AudioTrackState[]; reports: AudioRtpCounters[];
+  }[];
+}
+interface AudioCaptureSettings {
+  decodedSampleRate: number; decodedChannels: number; audioContextSampleRate: number;
+  trackSettings: MediaTrackSettings;
+}
+interface AudioPlayback {
+  startedAt: number; durationSeconds: number; captureSettings: AudioCaptureSettings;
+}
+declare global {
+  interface Window {
+    __captionAudio: {
+      duration(): Promise<number>;
+      diagnostics(): Promise<AudioCaptureDiagnostics | undefined>;
+      play(): Promise<AudioPlayback>;
+    };
+    __captionObservations: CaptionObservation[];
+  }
+}
+
 export type CaptionPhase = "observer-login" | "audio-input" | "observer-join" | "speaker-join" | "captions-enable" | "audio-play" | "collection";
 export class CaptionCaseError extends Error {
   readonly category: "invalid-speech-bounds" | "audio-input" | "audio-publication" | "browser-or-service";
@@ -84,12 +118,12 @@ export async function installAudioCapture(page: Page, audioPath: string, diagnos
         const prepared = await prepare();
         const trackState = (track: MediaStreamTrack) => ({ enabled: track.enabled, muted: track.muted, readyState: track.readyState });
         const connections = await Promise.all(peers.map(async peer => {
-          const reports: Record<string, unknown>[] = [];
+          const reports: AudioRtpCounters[] = [];
           try {
             (await peer.getStats()).forEach(report => {
               if (!['outbound-rtp', 'media-source', 'remote-inbound-rtp'].includes(report.type) || (report.kind !== 'audio' && report.mediaType !== 'audio')) return;
-              const safe: Record<string, unknown> = { type: report.type };
-              for (const field of ['timestamp','bytesSent','packetsSent','totalAudioEnergy','totalSamplesDuration','audioLevel','packetsLost','roundTripTime']) {
+              const safe: AudioRtpCounters = { type: report.type };
+              for (const field of ['timestamp','bytesSent','packetsSent','totalAudioEnergy','totalSamplesDuration','audioLevel','packetsLost','roundTripTime'] as const) {
                 if (typeof report[field] === 'number') safe[field] = report[field];
               }
               reports.push(safe);
@@ -164,7 +198,7 @@ export async function runCaptionCase(options: {
   speakerName: string; diagnostics?: boolean; requirePublication?: boolean; onPhase?: (phase: CaptionPhase) => void; timeoutMs?: number; speechStartSeconds?: number; speechEndSeconds?: number; maxDurationSeconds?: number;
 }): Promise<{ playbackStartedAt: number; observations: CaptionObservation[];
   unfinishedCaptionIds: string[]; sourceAudioSha256: string; durationSeconds: number;
-  captureSettings: Record<string, unknown>; browserDiagnostics?: Record<string, unknown>; publicationVerified?: boolean }> {
+  captureSettings: AudioCaptureSettings; browserDiagnostics?: { beforePlayback?: AudioCaptureDiagnostics; afterPlayback?: AudioCaptureDiagnostics }; publicationVerified?: boolean }> {
   const { browser, baseURL, meetingId, audioPath, speakerName } = options;
   const observerContext = await browser.newContext({ baseURL, permissions: ["microphone", "camera"] });
   const speakerContext = await browser.newContext({ baseURL, permissions: ["microphone", "camera"] });
@@ -187,7 +221,7 @@ export async function runCaptionCase(options: {
     await speaker.getByPlaceholder("John Doe").fill(speakerName);
     await joinFromPreview(speaker);
     setPhase("audio-input");
-    const duration = await speaker.evaluate(() => (window as unknown as { __captionAudio: { duration(): Promise<number> } }).__captionAudio.duration());
+    const duration = await speaker.evaluate(() => window.__captionAudio.duration());
     if (options.maxDurationSeconds !== undefined && duration > options.maxDurationSeconds) throw new Error("Audio exceeds duration limit");
     validateAudioTiming(duration, options);
     const timeoutMs = options.timeoutMs ?? 15_000;
@@ -202,11 +236,11 @@ export async function runCaptionCase(options: {
     // Subscription acknowledgement precedes async FFmpeg/stream setup. This
     // settling period keeps the fixture's first words out of startup races.
     await speaker.waitForTimeout(3000);
-    const snapshot = () => speaker.evaluate(() => (window as unknown as { __captionAudio: { diagnostics(): Promise<Record<string, unknown> | undefined> } }).__captionAudio.diagnostics());
+    const snapshot = () => speaker.evaluate(() => window.__captionAudio.diagnostics());
     const beforePlayback = await snapshot();
     setPhase("audio-play");
     const playback = await speaker.evaluate(async () => {
-      const controller = (window as unknown as { __captionAudio: { play(): Promise<{ startedAt: number; durationSeconds: number; captureSettings: Record<string, unknown> }> } }).__captionAudio;
+      const controller = window.__captionAudio;
       return controller.play();
     });
     // Observe the complete bounded tail to include every utterance's final.
@@ -215,7 +249,7 @@ export async function runCaptionCase(options: {
     const afterPlayback = await snapshot();
     const publicationVerified = options.requirePublication ? verifyAudioPublication(beforePlayback, afterPlayback) : undefined;
     if (publicationVerified === false) throw new Error("Audio publication was not observed");
-    const observations = await observer.evaluate(() => (window as unknown as { __captionObservations: CaptionObservation[] }).__captionObservations);
+    const observations = await observer.evaluate(() => window.__captionObservations);
     const unfinishedCaptionIds = await observer.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-testid="caption-line"]')]
       .filter(line => line.checkVisibility() && line.dataset.isFinal !== "true")
       .map(line => line.dataset.captionId ?? ""));
