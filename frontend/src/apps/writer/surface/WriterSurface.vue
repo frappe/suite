@@ -10,7 +10,7 @@ import {
   watch,
 } from "vue";
 
-import { CollabOpenError, type Blocked, type CollabRoom } from "@suite/collab-client";
+import { CollabOpenError, recoverable, type Blocked, type CollabRoom } from "@suite/collab-client";
 import type { DocumentSession } from "@/apps/drive";
 import { openWriterRoom } from "@/apps/writer/collab";
 import CollabTextEditor from "@/apps/writer/components/CollabTextEditor.vue";
@@ -84,6 +84,8 @@ const blockedMessage = computed(() => {
   const kept = recoveryKept.value ? " Your unsent changes were kept as a recovery copy." : "";
   return {
     signed_out: "You're signed out. Sign in again to keep saving; your changes stay in this tab.",
+    locked: "This document is locked again. Unlock it to keep saving; your changes stay in this tab.",
+    stale_session: `You signed in again in another tab.${kept} Reload to keep saving.`,
     other_user: `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
     lost_edit: `You can no longer edit this document.${kept}`,
     lost_read: `You can no longer open this document.${kept}`,
@@ -92,6 +94,8 @@ const blockedMessage = computed(() => {
 const openFailure = computed(() =>
   ({
     signed_out: "You're signed out. Sign in again to open this document.",
+    locked: "This document is locked. Unlock it to open it.",
+    stale_session: "You signed in again in another tab. Reload to open this document.",
     principal_changed: "This browser is now signed in as someone else. Reload to open this document as them.",
   })[openRefusal.value ?? ""] ?? "This document couldn't be opened.",
 );
@@ -140,7 +144,7 @@ async function openCollab() {
     room.value = opened.room;
     const sync = () => {
       const live = opened.room;
-      if (live.blocked && live.blocked !== "signed_out" && live.unsent && !recoveryKept.value) {
+      if (live.blocked && !recoverable(live.blocked) && live.unsent && !recoveryKept.value) {
         retainRecovery();
         recoveryKept.value = true;
       }
