@@ -63,7 +63,8 @@ export class CollabOpenError extends Error {
 // Updates applied from the server; everything else in the doc is this tab's own work
 export const REMOTE = Symbol('collab-remote')
 
-const MAX_ENTRIES = 128
+// Each sha adds 67 bytes to the push header, which the server caps at 4 KiB
+const MAX_ENTRIES = 48
 const MAX_PUSH_BYTES = 256 * 1024
 // Browsers refuse keepalive bodies over 64 KiB
 const MAX_KEEPALIVE_BYTES = 60 * 1024
@@ -238,15 +239,17 @@ class Room implements CollabRoom {
       .then((answer) => this.settle(answer, header.to), () => this.retryAfter(backoff()))
       .finally(() => {
         this.inFlight = null
-        if (this.saveState !== 'failed') this.setSaveState(this.pending.length ? 'unsaved' : 'clean')
+        if (this.saveState !== 'failed' || (this.blocked && !this.pending.length)) {
+          this.setSaveState(this.pending.length ? 'unsaved' : 'clean')
+        }
       })
     return this.inFlight
   }
 
   private settle(answer: Answer, to: number) {
     const body = json(answer)
+    if (answer.status !== 423) this.pause(null)
     if (answer.status === 200) {
-      this.pause(null)
       this.heard()
       this.ack(body?.dup ? body.acked : to)
       if (body?.head > this.appliedThrough) void this.pull()
@@ -254,6 +257,8 @@ class Room implements CollabRoom {
       return
     }
     if (answer.status === 409 && body?.collab === 'seq' && typeof body.acked === 'number') {
+      // The server lost seqs it already acknowledged, so resending can't restore them
+      if (body.acked < this.acked) return this.setSaveState('failed')
       this.ack(body.acked)
       if (this.pending.length && this.pending[0].seq !== this.acked + 1) this.setSaveState('failed')
       else this.retryAfter(0)

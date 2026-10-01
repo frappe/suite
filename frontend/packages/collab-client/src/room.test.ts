@@ -53,7 +53,7 @@ function fakeServer(state = 'live') {
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
       const session = sessions.get(header.sid)!
-      if (header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
+      if (length > 4096 || header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
       if (header.from <= session.acked) {
         for (let seq = header.from; seq <= Math.min(header.to, session.acked); seq++) {
           if (session.shas[seq] !== header.shas[seq - header.from]) return reply(409, { collab: 'seq_conflict' })
@@ -178,6 +178,80 @@ describe('collab room', () => {
     await room.flush()
 
     expect([seen.slice(0, 3), seen.at(-1)]).toEqual([[1, 2, 3], 0])
+  })
+
+  it('a long queue of typing behind a busy document is still saved', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let busy = 5
+    endpoints.push = async (body, options) => (busy-- > 0 ? reply(423, { collab: 'busy', retry_ms: 1000 }) : push(body, options))
+    const room = await join(endpoints)
+
+    for (let at = 0; at < 130; at++) room.doc.getText('t').insert(at, 'x')
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    expect([room.saveState, room.unsent, text(await join(server.endpoints())).length]).toEqual(['clean', 0, 130])
+  })
+
+  it('a server that forgot what it acknowledged stops saving instead of resending in a loop', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let calls = 0
+    endpoints.push = async (body, options) => {
+      calls++
+      for (const session of server.sessions.values()) session.acked = 0
+      return push(body, options)
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'one')
+    await vi.advanceTimersByTimeAsync(0)
+    for (const session of server.sessions.values()) session.acked = 1
+    room.doc.getText('t').insert(3, 'two')
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect([room.saveState, calls < 5]).toEqual(['failed', true])
+  })
+
+  it('work committed after access was lost is not reported as unsaved', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    endpoints.push = async (body, options) => {
+      const answer = await push(body, options)
+      await held
+      return answer
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'kept')
+    const flushed = room.flush()
+    await Promise.resolve()
+    server.access.refuse = reply(403, { collab: 'forbidden' })
+    await room.pull()
+    release()
+    await flushed
+
+    expect([room.blocked, room.unsent, room.saveState]).toEqual(['lost_read', 0, 'clean'])
+  })
+
+  it('a pause ends when the server answers with anything else', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    let answers = [reply(423, { collab: 'busy', retry_ms: 1000 }), reply(401, { collab: 'signed_out' })]
+    endpoints.push = async () => answers.shift() ?? reply(401, { collab: 'signed_out' })
+    const room = await join(endpoints)
+    signedIn = 'Guest'
+
+    room.doc.getText('t').insert(0, 'x')
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect([room.blocked, room.paused]).toEqual(['signed_out', null])
   })
 
   it('a busy document is pushed to again only after the delay it asks for', async () => {
