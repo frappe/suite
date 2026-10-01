@@ -30,6 +30,10 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 )
 from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields, Lower
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
+from suite.calendar.external import NAMESPACE as EXTERNAL
+from suite.calendar.external import calendar_rows as external_calendar_rows
+from suite.calendar.external import events_in_window as external_events
+from suite.calendar.external import search_events as external_search
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -135,12 +139,15 @@ def get_calendars_with_shared(account: str) -> list[dict]:
     # Reminders are seeded on the account's own calendars only: a shared one isn't the user's to
     # change, and its account's seeded mark is shared by everyone who can see it.
     ensure_default_alerts(account)
-    return _with_shared(
+    rows = _with_shared(
         account,
         lambda each, calendar_ids: [
             row for row in _calendar_rows(each) if calendar_ids is None or row["id"] in calendar_ids
         ],
     )
+    # And the calendars this site keeps for the user on another system's behalf — HR's holidays
+    # and celebrations — which are read-only and belong to no mail account.
+    return rows + external_calendar_rows(frappe.session.user)
 
 
 @frappe.whitelist()
@@ -294,7 +301,13 @@ def _events_in_window(
 
 @frappe.whitelist()
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
-    """Fetches calendar events between from_date and to_date for the specified account."""
+    """Fetches calendar events between from_date and to_date for the specified account.
+
+    One account's own events. What mail and meet draw as what is coming up, where a holiday or
+    somebody's birthday is not the question being asked — the calendar app asks the `_with_shared`
+    endpoints below, which add the calendars shared with the user and the ones this site keeps
+    for them.
+    """
 
     return _calendar_events(account, from_date, to_date, time_zone)
 
@@ -313,12 +326,14 @@ def _calendar_events(
 
 @frappe.whitelist()
 def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
-    """`get_calendar_events` for the account and the calendars shared with the user."""
+    """`get_calendar_events` for the account, the calendars shared with the user, and the ones
+    this site keeps for them."""
 
-    return _with_shared(
+    events = _with_shared(
         account,
         lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
     )
+    return events + external_events(frappe.session.user, from_date, to_date)
 
 
 @frappe.whitelist()
@@ -350,17 +365,25 @@ def search_calendar_events_with_shared(
 
     # A named calendar answers for itself: it says which account to ask and which calendar in
     # it, so the fan-out has nothing left to widen. Named as `account|id`, the way every other
-    # calendar-shaped argument in this app is.
-    if filters.calendar:
-        calendar_account, _sep, calendar_id = filters.calendar.partition("|")
-        events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
+    # calendar-shaped argument in this app is. One this site keeps — HR's holidays, say — is
+    # nobody's mail account, and is asked here alone.
+    calendar_account, _sep, calendar_id = filters.calendar.partition("|")
+    if calendar_account == EXTERNAL:
+        events = []
+        external = _external_search(text, limit, filters, time_zone, [calendar_id])
     else:
-        events = _with_shared(
-            account,
-            lambda each, calendar_ids: _search_calendar_events(
-                each, text, limit, time_zone, calendar_ids, filters
-            ),
-        )
+        if filters.calendar:
+            events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
+        else:
+            events = _with_shared(
+                account,
+                lambda each, calendar_ids: _search_calendar_events(
+                    each, text, limit, time_zone, calendar_ids, filters
+                ),
+            )
+        # The calendars this site keeps for the reader are drawn beside the mail server's, and
+        # a search of what the reader can see on the grid answers for those too.
+        external = [] if filters.calendar else _external_search(text, limit, filters, time_zone)
 
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
@@ -368,6 +391,9 @@ def search_calendar_events_with_shared(
     # rank on than it is to show, and cutting on it keeps the series that *began* earliest.
     if not (filters.after and filters.before):
         events = _expanded_upcoming(events, limit, time_zone)
+    # The site's own arrive expanded already: a yearly event answers as its nearest occurrences,
+    # named the way the server's are, so the sort and the cut below read them alike.
+    events += external
 
     # Each account answers in its own order, so the concatenation is in none: the merged list
     # has to be put back in order before it is cut down to the asked-for count, or which
@@ -379,6 +405,52 @@ def search_calendar_events_with_shared(
     events.sort(key=lambda event: _distance(event, now))
 
     return _first_events(events, limit)
+
+
+def _external_search(
+    text: str | None,
+    limit: int,
+    filters: EventSearchFilters,
+    time_zone: str | None,
+    calendars: list[str] | None = None,
+) -> list[dict]:
+    """The matches among the calendars this site keeps for the reader, in the rows the mail
+    server's answers come in.
+
+    Nobody is on these events — a holiday has no organizer and a birthday no attendees — so a
+    search for either has no answer here. The words, the scope and the range mean what they mean
+    for the mail server's: every word, in the title or (unless the title alone is asked) the
+    notes, within the range where one is given.
+
+    The range arrives as UTC instants — the reader's day, widened to its ends in their zone —
+    and these events are calendar days with no time of day. So each end is read back as the
+    reader's wall clock before the store compares it with a day: measured as an instant, a
+    reader east of UTC asking for one day would also be answered the day before it.
+    """
+
+    if filters.attendee.strip() or filters.organizer.strip():
+        return []
+
+    try:
+        zone = ZoneInfo(time_zone or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = UTC
+
+    def wall_clock(value: str) -> datetime | None:
+        if not value:
+            return None
+        instant = datetime.fromisoformat(normalize_utc_z(value).replace("Z", "+00:00"))
+        return instant.astimezone(zone).replace(tzinfo=None)
+
+    return external_search(
+        frappe.session.user,
+        (text or "").split(),
+        limit,
+        title_only=filters.scope == "title",
+        calendars=calendars,
+        start=wall_clock(filters.after),
+        end=wall_clock(filters.before),
+    )
 
 
 def _utc_start(event: dict) -> str:
@@ -732,38 +804,46 @@ def _event_density(
     own_emails: set[str],
     calendar_ids: list[str] | None = None,
 ) -> list[dict]:
-    # A decline gives the time back, so a declined event is not density.
     events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
 
-    return [
-        {
-            "start": event.get("start"),
-            "duration": event.get("duration"),
-            "time_zone": event.get("time_zone"),
-            "show_without_time": event.get("show_without_time"),
-            "calendars": [
-                cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")
-            ],
-            "is_declined": _declined_by_viewer(event, own_emails),
-        }
-        for event in events
-    ]
+    return [_density_row(event, own_emails) for event in events]
+
+
+def _density_row(event: dict, own_emails: set[str]) -> dict:
+    """What a tick on the mini month is made of, wherever the event came from.
+
+    A decline gives the time back, so a declined event is not density; an event with nobody on
+    it — a holiday, a birthday — is nobody's to decline.
+    """
+
+    return {
+        "start": event.get("start"),
+        "duration": event.get("duration"),
+        "time_zone": event.get("time_zone"),
+        "show_without_time": event.get("show_without_time"),
+        "calendars": [cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")],
+        "is_declined": _declined_by_viewer(event, own_emails),
+    }
 
 
 @frappe.whitelist()
 def get_calendar_event_density_with_shared(
     account: str, from_date: str, to_date: str, time_zone: str
 ) -> list[dict]:
-    """`get_calendar_event_density` for the account and the calendars shared with the user."""
+    """`get_calendar_event_density` for the account, the calendars shared with the user, and the
+    ones this site keeps for them."""
 
     # Declines are the viewer's, so their own addresses are read once, from their account.
     own_emails = _own_emails(account)
-    return _with_shared(
+    rows = _with_shared(
         account,
         lambda each, calendar_ids: _event_density(
             each, from_date, to_date, time_zone, own_emails, calendar_ids
         ),
     )
+    # A holiday marks a day as much as a meeting does: the mini month ticks it too.
+    external = external_events(frappe.session.user, from_date, to_date)
+    return rows + [_density_row(event, own_emails) for event in external]
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:

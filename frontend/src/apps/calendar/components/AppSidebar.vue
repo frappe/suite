@@ -14,6 +14,7 @@ import {
 } from 'frappe-ui'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { useNow, useStorage } from '@vueuse/core'
+import { storeToRefs } from 'pinia'
 
 import { useSessionStore } from '@/boot/session'
 import { accountSubmenu } from '@/composables/accountSubmenu'
@@ -30,6 +31,7 @@ import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalenda
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
+import { calendarLabel } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const { events, selectedEvent } = defineProps<{
@@ -54,18 +56,6 @@ const emit = defineEmits<{
 
 const dotStyle = (color: string) => ({ background: eventColor(color) })
 
-// The account's own calendars, then those shared with the user from other accounts. The shared
-// section is only there when something is shared.
-const calendarGroups = computed(() => {
-	const calendars = store.calendars.data ?? []
-	const mine = calendars.filter((calendar) => calendar.account === store.accountId)
-	const shared = calendars.filter((calendar) => calendar.account !== store.accountId)
-	return [
-		{ key: 'mine', label: __('My Calendars'), calendars: mine },
-		...(shared.length ? [{ key: 'shared', label: __('Shared Calendars'), calendars: shared }] : []),
-	]
-})
-
 // Which sections are folded, remembered in this browser.
 const collapsedSections = useStorage<string[]>('calendar-collapsed-sections', [])
 const setSectionCollapsed = (key: string, collapsed: boolean) =>
@@ -78,14 +68,6 @@ const ownerName = (calendar: CalendarRow) =>
 	calendar.account === store.accountId
 		? ''
 		: (user.data.all_accounts.find((a) => a.id === calendar.account)?._name ?? '')
-
-// A JMAP calendar is often named after its account — "Frappe Calendar
-// (akash@frappe.io)" — which never fits a sidebar row. The email moves to a
-// tooltip; once there are several accounts the colour dot tells them apart.
-const calendarLabel = (calendar: any) => {
-	const match = /^(.*?)\s*\(([^()]*@[^()]*)\)$/.exec(calendar._name || '')
-	return match ? { label: match[1], email: match[2] } : { label: calendar._name, email: '' }
-}
 
 // --- Upcoming events: what is left of today, like mail's sidebar shows ---
 // The events handed over are today's already; this drops what is over, cancelled
@@ -121,6 +103,8 @@ const router = useRouter()
 const { branding } = brandingStore()
 const { logout } = useSessionStore()
 const store = userStore()
+// The groups the store lists the calendars in, which the phone's view sheet shows too.
+const { calendarGroups } = storeToRefs(store)
 
 const user = inject('$user')
 
@@ -262,12 +246,15 @@ const menuItems = computed(() => [
 								/>
 							</span>
 						</template>
-						<Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
+						<Tooltip
+							:text="calendarLabel(calendar._name).email || ownerName(calendar)"
+							side="right"
+						>
 							<span
 								class="truncate text-sm"
 								:class="!calendar.visible && 'text-ink-gray-4'"
 							>
-								{{ calendarLabel(calendar).label }}
+								{{ calendarLabel(calendar._name).label }}
 							</span>
 						</Tooltip>
 						<template #suffix>
