@@ -18,7 +18,7 @@ import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
 import emitter from "@/apps/writer/emitter";
 import { freezesEdits } from "./access";
-import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
+import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
 
 const props = defineProps<{ session: DocumentSession }>();
 const titleDraft = ref(props.session.title.value);
@@ -241,17 +241,23 @@ function withinTenSeconds(work: Promise<void>): Promise<void> {
 
 useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery });
 
+function warnBeforeUnload(event: Event) {
+  resolveDocumentUnload({ state: () => (collab.value === "live" ? saveState.value : "clean"), retainRecovery }, event);
+}
+
 function setOnline() { online.value = true; }
 function setOffline() { online.value = false; }
 onMounted(() => {
   window.addEventListener("online", setOnline);
   window.addEventListener("offline", setOffline);
+  window.addEventListener("beforeunload", warnBeforeUnload);
   void openCollab();
 });
 onBeforeUnmount(() => {
   unmounted = true;
   window.removeEventListener("online", setOnline);
   window.removeEventListener("offline", setOffline);
+  window.removeEventListener("beforeunload", warnBeforeUnload);
   stopWatchingRoom();
   void room.value?.close();
 });

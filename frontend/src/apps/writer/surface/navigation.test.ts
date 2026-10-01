@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { resolveDocumentLeave, type DocumentSaveState } from "./navigation";
+import { resolveDocumentLeave, resolveDocumentUnload, type DocumentSaveState } from "./navigation";
 
 describe("document leave decisions", () => {
   it("leaves a clean document without prompting", async () => {
@@ -35,5 +35,23 @@ describe("document leave decisions", () => {
       confirmLeave: () => false,
     })).toBe(false);
     expect(retainRecovery).toHaveBeenCalledOnce();
+  });
+});
+
+describe("closing the tab", () => {
+  it("asks the browser to confirm and keeps a recovery copy while work is unsaved", () => {
+    for (const state of ["unsaved", "saving", "failed"] as const) {
+      const retainRecovery = vi.fn();
+      const event = new Event("beforeunload", { cancelable: true });
+      resolveDocumentUnload({ state: () => state, retainRecovery }, event);
+      expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([true, 1]);
+    }
+  });
+
+  it("closes a clean document without asking", () => {
+    const retainRecovery = vi.fn();
+    const event = new Event("beforeunload", { cancelable: true });
+    resolveDocumentUnload({ state: () => "clean", retainRecovery }, event);
+    expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([false, 0]);
   });
 });

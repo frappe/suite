@@ -17,6 +17,16 @@ export async function resolveDocumentLeave(options: LeaveGuardOptions): Promise<
   return (options.confirmLeave ?? defaultConfirmation)();
 }
 
+// A closing tab can't wait for a save, so it keeps a recovery copy and asks the browser to confirm
+export function resolveDocumentUnload(
+  options: Pick<LeaveGuardOptions, "state" | "retainRecovery">,
+  event: Event,
+): void {
+  if (options.state() === "clean") return;
+  void options.retainRecovery();
+  event.preventDefault();
+}
+
 export function useDocumentLeaveGuard(options: LeaveGuardOptions): void {
   const guard = () => resolveDocumentLeave(options);
   onBeforeRouteLeave(guard);
