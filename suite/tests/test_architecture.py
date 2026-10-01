@@ -158,6 +158,9 @@ BASELINE_DEBT = {
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.nodes",
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.principals",
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.roles",
+            # The collab reader case needs a READ grant, which has no public call yet.
+            "suite/writer/collab/tests/test_collab.py|import|suite.drive._core.access",
+            "suite/writer/collab/tests/test_collab.py|import|suite.drive._core.principals",
             # An embedded picture is a media node below the document (§9.4),
             # so the fixture builds roots and nodes and reads Drive's own
             # upload path. The dotted string patches the realtime publish that

@@ -11,12 +11,15 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.drive._core.access import grant
+from suite.drive._core.principals import Principals
 from suite.suite_core.collab.log import chain_next, chain_seed
 from suite.tests.utils import ensure_user
 from suite.writer.collab import routes
 
 WRITER = "writer-collab-writer@example.com"
 OUTSIDER = "writer-collab-outsider@example.com"
+READER = "writer-collab-reader@example.com"
 
 
 def call(handler, node: str, *, body: bytes = b""):
@@ -68,6 +71,7 @@ class TestWriterCollab(IntegrationTestCase):
         super().setUpClass()
         ensure_user(WRITER)
         ensure_user(OUTSIDER)
+        ensure_user(READER)
         routes.collab.ensure_tables(routes.ADAPTER)
         frappe.db.commit()
 
@@ -178,6 +182,25 @@ class TestWriterCollab(IntegrationTestCase):
         response = call(routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
 
         self.assertIn(response.status_code, (403, 404))
+        frappe.set_user(WRITER)
+        self.assertEqual(self.open(node)[1], [])
+
+    def test_a_reader_follows_but_cannot_write(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+
+        frappe.set_user(READER)
+        header, _rows = self.open(node)
+        own_session = call(
+            routes.collab_sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode()
+        )
+        push = call(routes.collab_updates_post, node, body=push_body(header["lineage"], sid, cid, 1, 0, b"x"))
+
+        self.assertEqual((header["state"], header["can_write"]), ("live", False))
+        self.assertEqual((own_session.status_code, push.status_code), (403, 403))
         frappe.set_user(WRITER)
         self.assertEqual(self.open(node)[1], [])
 
