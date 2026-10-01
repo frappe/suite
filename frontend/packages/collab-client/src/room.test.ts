@@ -123,6 +123,81 @@ describe('collab room', () => {
     expect([room.saveState, room.unsent]).toEqual(['clean', 0])
   })
 
+  it('a busy document is pushed to again only after the delay it asks for', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let busy = 2
+    let calls = 0
+    endpoints.push = async (body, options) => {
+      calls++
+      if (busy-- > 0) return reply(423, { collab: 'busy', retry_ms: 1000 })
+      return push(body, options)
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'later')
+
+    const flushed = room.flush()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(calls).toBe(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushed
+
+    expect([calls, server.rows.length, room.saveState]).toEqual([3, 1, 'clean'])
+  })
+
+  it('typing after a lost answer is sent from where the server stopped', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let drop = true
+    endpoints.push = async (body, options) => {
+      const answer = await push(body, options)
+      if (drop) {
+        drop = false
+        throw new TypeError('connection reset')
+      }
+      return answer
+    }
+    const room = await join(endpoints)
+
+    room.doc.getText('t').insert(0, 'one ')
+    await vi.advanceTimersByTimeAsync(0)
+    room.doc.getText('t').insert(4, 'two')
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect([server.rows.length, room.saveState, room.unsent]).toEqual([2, 'clean', 0])
+    expect(text(await join(server.endpoints()))).toBe('one two')
+  })
+
+  it('closing while a push is in flight still sends what was typed meanwhile', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let first = true
+    endpoints.push = async (body, options) => {
+      if (first) {
+        first = false
+        await held
+      }
+      return push(body, options)
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'first ')
+    const sending = room.flush()
+    room.doc.getText('t').insert(6, 'second')
+
+    const closing = room.close()
+    release()
+    await Promise.all([sending, closing])
+
+    expect(text(await join(server.endpoints()))).toBe('first second')
+  })
+
   it('opens nothing while collaboration is off or the document is not collaborative', async () => {
     for (const state of ['disabled', 'unconverted']) {
       await expect(openCollabRoom({ endpoints: fakeServer(state).endpoints(), principal: 'a@x.com' })).resolves.toEqual({

@@ -54,6 +54,8 @@ export const REMOTE = Symbol('collab-remote')
 
 const MAX_ENTRIES = 128
 const MAX_PUSH_BYTES = 256 * 1024
+// Browsers refuse keepalive bodies over 64 KiB
+const MAX_KEEPALIVE_BYTES = 60 * 1024
 
 type Entry = { seq: number; bytes: Uint8Array }
 
@@ -86,6 +88,8 @@ class Room implements CollabRoom {
   private sendTimer: ReturnType<typeof setTimeout> | null = null
   private firstUnsentAt = 0
   private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retrying: Promise<void> | null = null
+  private endRetry: (() => void) | null = null
   private pollTimer: ReturnType<typeof setInterval>
   private listeners = new Set<() => void>()
   private closed = false
@@ -126,15 +130,20 @@ class Room implements CollabRoom {
     return this.pulling
   }
 
+  // Waits out each retry delay rather than pushing again at once
   async flush() {
     while (!this.closed && (this.inFlight || this.pending.length) && this.saveState !== 'failed') {
-      await (this.inFlight ?? this.send())
+      await (this.inFlight ?? this.retrying ?? this.send())
     }
   }
 
   async close() {
     if (this.closed) return
-    if (this.pending.length && !this.inFlight && this.saveState !== 'failed') await this.send({ keepalive: true })
+    if (this.inFlight) await this.inFlight
+    if (this.pending.length && this.saveState !== 'failed') {
+      this.clearTimers()
+      await this.send({ keepalive: true })
+    }
     this.closed = true
     clearInterval(this.pollTimer)
     this.clearTimers()
@@ -175,13 +184,14 @@ class Room implements CollabRoom {
   }
 
   private send(request: { keepalive?: boolean } = {}): Promise<void> {
-    if (this.inFlight || !this.pending.length || this.closed || this.saveState === 'failed') {
-      return this.inFlight ?? Promise.resolve()
+    if (this.inFlight || this.retrying || !this.pending.length || this.closed || this.saveState === 'failed') {
+      return this.inFlight ?? this.retrying ?? Promise.resolve()
     }
     const batch: Entry[] = []
     let size = 0
+    const maxBytes = request.keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES
     for (const entry of this.pending) {
-      if (batch.length && (batch.length >= MAX_ENTRIES || size + entry.bytes.byteLength > MAX_PUSH_BYTES)) break
+      if (batch.length && (batch.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes)) break
       batch.push(entry)
       size += entry.bytes.byteLength
     }
@@ -197,8 +207,8 @@ class Room implements CollabRoom {
     }
     const body = encodePush(header, Y.mergeUpdates(batch.map((entry) => entry.bytes)))
     this.setSaveState('saving')
-    this.inFlight = this.options.endpoints
-      .push(body, request)
+    this.inFlight = Promise.resolve()
+      .then(() => this.options.endpoints.push(body, request))
       .then((answer) => this.settle(answer, header.to), () => this.retryAfter(backoff()))
       .finally(() => {
         this.inFlight = null
@@ -233,16 +243,24 @@ class Room implements CollabRoom {
 
   private retryAfter(ms: number) {
     if (this.closed) return
-    if (this.retryTimer) clearTimeout(this.retryTimer)
-    this.retryTimer = setTimeout(() => {
-      this.retryTimer = null
-      void this.send()
-    }, ms)
+    this.endRetry?.()
+    this.retrying = new Promise((resolve) => {
+      this.endRetry = () => {
+        if (this.retryTimer) clearTimeout(this.retryTimer)
+        this.retryTimer = this.retrying = this.endRetry = null
+        resolve()
+      }
+      this.retryTimer = setTimeout(() => {
+        this.endRetry?.()
+        void this.send()
+      }, ms)
+    })
   }
 
   private clearTimers() {
-    for (const timer of [this.sendTimer, this.retryTimer]) if (timer) clearTimeout(timer)
-    this.sendTimer = this.retryTimer = null
+    if (this.sendTimer) clearTimeout(this.sendTimer)
+    this.sendTimer = null
+    this.endRetry?.()
   }
 
   private setSaveState(state: SaveState) {
