@@ -192,7 +192,8 @@ class Room implements CollabRoom {
   private capture = (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE || !this.writable || this.closed) return
     this.pending.push({ seq: this.nextSeq++, bytes: update, sha: hex(digest(update)) })
-    if (this.saveState !== 'failed') this.setSaveState(this.inFlight ? 'saving' : 'unsaved')
+    if (this.saveState !== 'failed') this.saveState = this.inFlight ? 'saving' : 'unsaved'
+    this.changed()
     this.scheduleSend()
   }
 
@@ -315,7 +316,9 @@ class Room implements CollabRoom {
 
   private ack(through: number) {
     this.acked = Math.max(this.acked, through)
+    const before = this.pending.length
     this.pending = this.pending.filter((entry) => entry.seq > this.acked)
+    if (this.pending.length !== before) this.changed()
   }
 
   private retryAfter(ms: number) {

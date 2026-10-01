@@ -166,6 +166,20 @@ describe('collab room', () => {
     expect([server.rows.length, room.saveState, room.unsent]).toEqual([1, 'failed', 1])
   })
 
+  it('the unsent count each listener sees follows typing and drops to zero once committed', async () => {
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    const seen: number[] = []
+    room.onChange(() => seen.push(room.unsent))
+
+    room.doc.getText('t').insert(0, 'a')
+    room.doc.getText('t').insert(1, 'b')
+    room.doc.getText('t').insert(2, 'c')
+    await room.flush()
+
+    expect([seen.slice(0, 3), seen.at(-1)]).toEqual([[1, 2, 3], 0])
+  })
+
   it('a busy document is pushed to again only after the delay it asks for', async () => {
     vi.useFakeTimers()
     const server = fakeServer()
