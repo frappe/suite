@@ -1,0 +1,50 @@
+export interface FrameHeader {
+  state: 'live' | 'disabled' | 'unconverted' | string
+  proto: number
+  lineage?: string
+  can_write?: boolean
+  pace_ms?: number
+}
+
+export interface Row {
+  rev: number
+  bytes: Uint8Array
+}
+
+// `u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`
+export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; rows: Row[] } {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let at = 0
+  const need = (length: number) => {
+    if (at + length > bytes.byteLength) throw new RangeError('Truncated collab frame')
+  }
+  const u32 = () => {
+    need(4)
+    at += 4
+    return view.getUint32(at - 4)
+  }
+  const take = (length: number) => {
+    need(length)
+    at += length
+    return bytes.slice(at - length, at)
+  }
+  const header = JSON.parse(new TextDecoder().decode(take(u32()))) as FrameHeader
+  take(u32())
+  const rows: Row[] = []
+  for (let count = u32(); count > 0; count--) {
+    need(8)
+    const rev = Number(view.getBigUint64(at))
+    at += 8
+    rows.push({ rev, bytes: take(u32()) })
+  }
+  return { header, rows }
+}
+
+export function encodePush(header: Record<string, unknown>, update: Uint8Array): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(header))
+  const body = new Uint8Array(4 + json.byteLength + update.byteLength)
+  new DataView(body.buffer).setUint32(0, json.byteLength)
+  body.set(json, 4)
+  body.set(update, 4 + json.byteLength)
+  return body
+}

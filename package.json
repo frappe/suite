@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "workspaces": [
-    "frontend"
+    "frontend",
+    "frontend/packages/collab-client"
   ],
   "scripts": {
     "build": "yarn workspace @suite/frontend build",

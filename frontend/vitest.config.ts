@@ -48,6 +48,7 @@ export default defineConfig({
 						"src/{shell,platform,composition}/**/*.test.{js,ts}",
 						"src/apps/drive/{files,client}/**/*.test.{js,ts}",
 						"src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}",
+						"packages/collab-client/src/**/*.test.ts",
 					],
 				},
 			},
