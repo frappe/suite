@@ -18,6 +18,8 @@ export interface CollabEndpoints {
 export interface OpenOptions {
   endpoints: CollabEndpoints
   principal: string
+  // Who the browser is signed in as now, or 'Guest'
+  signedIn: () => string
   pollMs?: number
   sendDelayMs?: number
   sendMaxDelayMs?: number
@@ -25,9 +27,13 @@ export interface OpenOptions {
 
 export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
+// Why the server stopped hearing this tab. Only `signed_out` clears, once the same person signs back in
+export type Blocked = 'signed_out' | 'other_user' | 'lost_edit' | 'lost_read'
+
 export interface CollabRoom {
   readonly doc: Y.Doc
   readonly canWrite: boolean
+  readonly blocked: Blocked | null
   readonly saveState: SaveState
   readonly unsent: number
   readonly appliedThrough: number
@@ -62,7 +68,7 @@ type Entry = { seq: number; bytes: Uint8Array }
 export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   const { endpoints } = options
   const opened = await endpoints.open()
-  if (opened.status !== 200) throw new CollabOpenError(opened.status, reasonOf(opened))
+  if (opened.status !== 200) throw openError(opened, options)
   const { header, rows } = decodeFrame(opened.bytes)
   if (header.state !== 'live') return { state: header.state }
 
@@ -72,13 +78,15 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   if (canWrite) {
     const answer = await endpoints.session(sid)
     if (answer.status === 200) doc.clientID = json(answer).client_id
-    else canWrite = false
+    else if (answer.status === 403 || answer.status === 404) canWrite = false
+    else throw openError(answer, options)
   }
   return { state: 'live', room: new Room(doc, header, rows, canWrite, sid, options) }
 }
 
 class Room implements CollabRoom {
   saveState: SaveState = 'clean'
+  blocked: Blocked | null = null
   appliedThrough = 0
   private pending: Entry[] = []
   private nextSeq = 1
@@ -99,7 +107,7 @@ class Room implements CollabRoom {
     readonly doc: Y.Doc,
     header: FrameHeader,
     rows: Row[],
-    readonly canWrite: boolean,
+    private writable: boolean,
     private readonly sid: string,
     private readonly options: OpenOptions,
   ) {
@@ -107,6 +115,10 @@ class Room implements CollabRoom {
     doc.on('update', this.capture)
     this.apply(rows)
     this.pollTimer = setInterval(() => void this.pull(), options.pollMs ?? 2000)
+  }
+
+  get canWrite() {
+    return this.writable
   }
 
   get unsent() {
@@ -119,11 +131,16 @@ class Room implements CollabRoom {
   }
 
   pull(): Promise<void> {
-    if (this.closed) return Promise.resolve()
+    if (this.closed || this.blocked === 'other_user' || this.blocked === 'lost_read') return Promise.resolve()
     this.pulling ??= this.options.endpoints
       .pull(this.appliedThrough)
       .then((answer) => {
-        if (answer.status === 200) this.apply(decodeFrame(answer.bytes).rows)
+        if (answer.status !== 200) {
+          this.refused(answer, 'lost_read')
+          return
+        }
+        this.apply(decodeFrame(answer.bytes).rows)
+        this.heard()
       })
       .catch(() => {})
       .finally(() => (this.pulling = null))
@@ -166,7 +183,7 @@ class Room implements CollabRoom {
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {
-    if (origin === REMOTE || !this.canWrite || this.closed) return
+    if (origin === REMOTE || !this.writable || this.closed) return
     this.pending.push({ seq: this.nextSeq++, bytes: update })
     if (this.saveState !== 'failed') this.setSaveState(this.inFlight ? 'saving' : 'unsaved')
     this.scheduleSend()
@@ -220,6 +237,7 @@ class Room implements CollabRoom {
   private settle(answer: Answer, to: number) {
     const body = json(answer)
     if (answer.status === 200) {
+      this.heard()
       this.ack(body?.dup ? body.acked : to)
       if (body?.head > this.appliedThrough) void this.pull()
       if (this.pending.length) this.scheduleSend()
@@ -232,8 +250,48 @@ class Room implements CollabRoom {
       return
     }
     if (answer.status === 423) return this.retryAfter(body?.retry_ms ?? 1000)
+    const blocked = this.refused(answer, 'lost_edit')
+    if (blocked === 'signed_out') return this.retryAfter(backoff())
+    if (blocked) return
     if (!body?.collab) return this.retryAfter(backoff())
     this.setSaveState('failed')
+  }
+
+  // A refusal about who is asking, or a lost right once the signed-in person is confirmed unchanged
+  private refused(answer: Answer, lost: 'lost_edit' | 'lost_read'): Blocked | null {
+    const reason = reasonOf(answer)
+    let blocked: Blocked | null = null
+    if (answer.status === 401) blocked = 'signed_out'
+    else if (answer.status === 409 && reason === 'principal_changed') blocked = 'other_user'
+    else if (answer.status === 403 || answer.status === 404) blocked = this.reconcile(lost)
+    if (blocked) this.block(blocked)
+    return blocked
+  }
+
+  private reconcile(lost: Blocked): Blocked {
+    const now = this.options.signedIn()
+    if (now === 'Guest') return 'signed_out'
+    return now === this.options.principal ? lost : 'other_user'
+  }
+
+  private block(reason: Blocked) {
+    if (this.blocked === reason || (this.blocked && this.blocked !== 'signed_out')) return
+    if (reason !== 'signed_out') {
+      this.writable = false
+      if (this.pending.length) this.saveState = 'failed'
+    }
+    this.blocked = reason
+    this.changed()
+  }
+
+  private heard() {
+    if (this.blocked !== 'signed_out') return
+    this.blocked = null
+    this.changed()
+    if (this.retrying) {
+      this.endRetry?.()
+      void this.send()
+    }
   }
 
   private ack(through: number) {
@@ -282,6 +340,14 @@ function json(answer: Answer): any {
   } catch {
     return null
   }
+}
+
+function openError(answer: Answer, options: OpenOptions) {
+  const reason = reasonOf(answer)
+  if (answer.status !== 403 && answer.status !== 404) return new CollabOpenError(answer.status, reason)
+  const now = options.signedIn()
+  if (now === 'Guest') return new CollabOpenError(401, 'signed_out')
+  return new CollabOpenError(answer.status, now === options.principal ? reason : 'principal_changed')
 }
 
 function reasonOf(answer: Answer): string | null {

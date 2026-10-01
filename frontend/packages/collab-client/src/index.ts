@@ -4,6 +4,7 @@ export {
   openCollabRoom,
   REMOTE,
   type Answer,
+  type Blocked,
   type CollabEndpoints,
   type CollabRoom,
   type Opened,
