@@ -405,7 +405,7 @@ const meetMenuItems = [
   {
     label: __("Start instant meeting"),
     icon: "lucide-zap",
-    onClick: () => startMeeting("instant"),
+    onClick: () => startMeeting("open"),
   },
   {
     label: __("Start restricted meeting"),
@@ -445,7 +445,7 @@ async function createDocument(contentDoctype: string) {
   if (node) await router.push(driveNodeRoute(node));
 }
 
-async function startMeeting(type: "instant" | "restricted") {
+async function startMeeting(type: "open" | "restricted") {
   const room = await createRoomMutation.run({ type });
   if (room) await router.push(meetRoute(room.code));
 }

@@ -10,8 +10,8 @@ type MeetingType = "open" | "restricted";
 export const useStartMeeting = () => {
 	const router = useRouter();
 	const connectionState = useConnectionState();
-	const createMeeting = useCall<string, { meeting_type: MeetingType }>({
-		url: "/api/v2/method/suite.meet.api.meeting.create",
+	const createMeeting = useCall<{ code: string; url: string }, { type: MeetingType }>({
+		url: "/api/suite/meet/rooms",
 		method: "POST",
 		immediate: false,
 	});
@@ -28,7 +28,7 @@ export const useStartMeeting = () => {
 		const creatingToastId = toast.loading("Creating meeting...");
 		let meetingCode: string;
 		try {
-			meetingCode = await submit(createMeeting, { meeting_type: meetingType });
+			({ code: meetingCode } = await submit(createMeeting, { type: meetingType }));
 		} catch (error) {
 			toast.dismiss(creatingToastId);
 			console.error("Error creating meeting:", error);

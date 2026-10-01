@@ -274,12 +274,12 @@ export function useSFUConnection(deps: {
 	};
 
 	const joinMeetingAPI = useCall<JoinPayload, { meeting_id: string }>({
-		url: "/api/v2/method/suite.meet.api.meeting.join_meeting",
+		url: "/api/suite/meet/rooms/joins",
 		method: "POST",
 		immediate: false,
 	});
 	const getSFUConnectionDetails = useCall<JoinPayload, { meeting_id: string }>({
-		url: "/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+		url: "/api/suite/meet/rooms/connections",
 		method: "POST",
 		immediate: false,
 	});

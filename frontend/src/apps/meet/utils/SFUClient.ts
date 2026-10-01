@@ -457,7 +457,7 @@ export class SFUClient {
 
 			try {
 				const response = requireJoinPayload(await request(
-					"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+					"/api/suite/meet/rooms/guest-tokens",
 					{
 						meeting_id: meetingId,
 						guest_id: guestId,
@@ -498,7 +498,7 @@ export class SFUClient {
 		}
 
 		const response = requireJoinPayload(await request(
-			"/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+			"/api/suite/meet/rooms/connections",
 			{ meeting_id: meetingId },
 		), "SFU connection details");
 		const authToken = requireString(
@@ -667,8 +667,8 @@ export class SFUClient {
 					const response = requireJoinPayload(
 						await request(
 							isGuest
-								? "/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token"
-								: "/api/v2/method/suite.meet.api.meeting.refresh_sfu_token",
+								? "/api/suite/meet/rooms/guest-tokens"
+								: "/api/suite/meet/rooms/tokens",
 							isGuest
 								? {
 										meeting_id: this.connectionDetails.meetingId,

@@ -12,7 +12,7 @@
         "properties": {
           "type": {
             "enum": [
-              "instant",
+              "open",
               "restricted"
             ],
             "title": "Type",
@@ -145,6 +145,632 @@
       "errors": [
         "BadRequest"
       ],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_preview",
+      "method": "GET",
+      "path": "rooms/preview",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_access",
+      "method": "GET",
+      "path": "rooms/access",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_connection",
+      "method": "POST",
+      "path": "rooms/connections",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_presence_token",
+      "method": "GET",
+      "path": "rooms/presence-tokens",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_join",
+      "method": "POST",
+      "path": "rooms/joins",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "guest_room_join",
+      "method": "POST",
+      "path": "rooms/guest-joins",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "guest_name": {
+            "title": "Guest Name",
+            "type": "string"
+          },
+          "guest_id": {
+            "title": "Guest Id",
+            "type": "string"
+          },
+          "guest_session_token": {
+            "title": "Guest Session Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "guest_name"
+        ],
+        "title": "GuestJoin",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "guest_room_connection",
+      "method": "POST",
+      "path": "rooms/guest-connections",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "guest_id": {
+            "title": "Guest Id",
+            "type": "string"
+          },
+          "guest_session_token": {
+            "title": "Guest Session Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "guest_id",
+          "guest_session_token"
+        ],
+        "title": "GuestRoomRef",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "guest_room_token",
+      "method": "POST",
+      "path": "rooms/guest-tokens",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "guest_id": {
+            "title": "Guest Id",
+            "type": "string"
+          },
+          "guest_session_token": {
+            "title": "Guest Session Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "guest_id",
+          "guest_session_token"
+        ],
+        "title": "GuestRoomRef",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_token",
+      "method": "POST",
+      "path": "rooms/tokens",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "e2ee_device",
+      "method": "POST",
+      "path": "e2ee-devices",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "ed25519_public_key": {
+            "title": "Ed25519 Public Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "ed25519_public_key"
+        ],
+        "title": "E2EEDevice",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "recording_state",
+      "method": "GET",
+      "path": "recordings/state",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "recording_preflight",
+      "method": "GET",
+      "path": "recordings/preflight",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "recording_start",
+      "method": "POST",
+      "path": "recordings/starts",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "request_id"
+        ],
+        "title": "RecordingStart",
+        "type": "object"
+      },
+      "output": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "recording_stop",
+      "method": "POST",
+      "path": "recordings/stops",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ],
+        "title": "RoomRef",
+        "type": "object"
+      },
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "calendar_meeting",
+      "method": "POST",
+      "path": "calendar-meetings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "calendar_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Calendar Ids",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "draft": {
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "recurrence_rule": {
+            "additionalProperties": true,
+            "title": "Recurrence Rule",
+            "type": "object"
+          },
+          "show_without_time": {
+            "title": "Show Without Time",
+            "type": "boolean"
+          },
+          "participants": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "locations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "alerts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "free_busy_status": {
+            "title": "Free Busy Status",
+            "type": "string"
+          },
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "use_default_alerts": {
+            "title": "Use Default Alerts",
+            "type": "boolean"
+          },
+          "send_scheduling_messages": {
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          },
+          "meeting_type": {
+            "title": "Meeting Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "title": "CalendarMeeting",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "meeting_url": {
+            "title": "Meeting Url",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "meeting_url",
+          "event_id"
+        ],
+        "title": "CalendarMeetingResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": []
+    },
+    {
+      "id": "room_link",
+      "method": "POST",
+      "path": "room-links",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "meeting_type": {
+            "title": "Meeting Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "title": "RoomLink",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "meeting_url": {
+            "title": "Meeting Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "meeting_url"
+        ],
+        "title": "RoomLinkResult",
+        "type": "object"
+      },
+      "errors": [],
       "entity": null,
       "nodeParams": []
     }

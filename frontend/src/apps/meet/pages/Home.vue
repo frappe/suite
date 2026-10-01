@@ -259,7 +259,7 @@ const scheduledParticipants = computed(() => {
 });
 
 const scheduleMeeting = useCall({
-	url: "/api/v2/method/suite.meet.api.schedule.create_scheduled_meeting",
+	url: "/api/suite/meet/calendar-meetings",
 	method: "POST",
 	params: () => ({
 		account: calendarStore.accountId,

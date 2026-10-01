@@ -15,11 +15,11 @@ describe("request", () => {
 			}),
 		);
 
-		await expect(request("/api/v2/method/example.run", { value: 1 })).resolves.toEqual({
+		await expect(request("/api/suite/meet/rooms/joins", { value: 1 })).resolves.toEqual({
 			ok: true,
 		});
 		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/v2/method/example.run",
+			"/api/suite/meet/rooms/joins",
 			expect.objectContaining({
 				method: "POST",
 				body: JSON.stringify({ value: 1 }),
@@ -43,7 +43,7 @@ describe("request", () => {
 			),
 		);
 
-		const error = await request("/api/v2/method/example.run").catch((value) => value);
+		const error = await request("/api/suite/meet/rooms/joins").catch((value) => value);
 		expect(error).toBeInstanceOf(MeetRequestError);
 		expect(error).toMatchObject({
 			status: 403,
@@ -54,8 +54,8 @@ describe("request", () => {
 	it("rejects unsupported paths before sending a request", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch");
 		await expect(
-			request(("/api/" + "method/example.run") as `/api/v2/${string}`),
-		).rejects.toThrow("absolute /api/v2/ path");
+			request(("/api/" + "method/example.run") as `/api/suite/meet/${string}`),
+		).rejects.toThrow("absolute /api/suite/meet/ path");
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 

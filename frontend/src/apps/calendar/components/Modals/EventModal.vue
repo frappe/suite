@@ -559,7 +559,7 @@ const createEvent = createResource({
 })
 
 const createMeetEventCall = useCall({
-	url: '/api/v2/method/suite.meet.api.schedule.create_scheduled_meeting',
+	url: '/api/suite/meet/calendar-meetings',
 	method: 'POST',
 	immediate: false,
 	onSuccess: handleSuccess,
@@ -639,7 +639,7 @@ const editEvent = createResource({
 })
 
 const createMeetLink = useCall<{ meeting_url: string }>({
-	url: '/api/v2/method/suite.meet.api.schedule.create_meet_link',
+	url: '/api/suite/meet/room-links',
 	method: 'POST',
 	immediate: false,
 })

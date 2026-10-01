@@ -71,7 +71,7 @@ export async function getApprovedGuestConnectionDetails(
 ): Promise<JoinPayload> {
 	const response = normalizeJoinPayload(
 		await request(
-			"/api/v2/method/suite.meet.api.meeting.get_approved_guest_connection_details",
+			"/api/suite/meet/rooms/guest-connections",
 			{
 				meeting_id: session.meetingId,
 				guest_id: session.guestId,

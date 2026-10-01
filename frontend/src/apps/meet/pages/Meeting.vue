@@ -516,12 +516,12 @@ async function confirmRecordingStart() {
 	}
 }
 const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
-	url: "/api/v2/method/suite.meet.api.meeting.get_public_meeting_preview",
+	url: "/api/suite/meet/rooms/preview",
 	params: { meeting_id: meetingId.value },
 	immediate: !session.isLoggedIn,
 });
 const checkMeetingAccess = useCall<AccessData, { meeting_id: string }>({
-	url: "/api/v2/method/suite.meet.api.meeting.check_meeting_access",
+	url: "/api/suite/meet/rooms/access",
 	immediate: false,
 });
 const previewTitle = computed(
