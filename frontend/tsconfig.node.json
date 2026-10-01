@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "postcss.config.js", "tailwind.config.js"]
+  "include": ["vite.config.ts", "src/platform/boot/devFlips.ts", "postcss.config.js", "tailwind.config.js"]
 }

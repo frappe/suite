@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks'
 import fs from 'fs'
 import path from 'path'
 
@@ -5,6 +6,8 @@ import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+import { devBootFlags } from './src/platform/boot/devFlips'
 
 // Local frappe-ui work: when the submodule is checked out, public component
 // imports resolve to its source instead of the pinned package, so edits show up
@@ -62,6 +65,42 @@ const serveNoiseSuppressionAssets = () => {
   }
 }
 
+/**
+ * frappe-ui injects the server boot only into the production build, so under
+ * Vite dev the flip flags are missing and the rail is empty. This sets the two
+ * flip flags from the site config on every HTML request, so a `bench
+ * set-config` applies on reload. It sets nothing else: the dev page must still
+ * read as having no server boot.
+ */
+const serveDevBootFlags = () => {
+  // The site is the request host, as in Frappe and the frappe-ui proxy.
+  // transformIndexHtml gets no request, so a middleware carries the host to it.
+  const requestHost = new AsyncLocalStorage<string>()
+  const readConfig = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : {})
+  // The bench is the nearest folder above with `sites` and `apps` (a worktree sits deeper than the app).
+  let bench = __dirname
+  while (!(fs.existsSync(path.join(bench, 'sites')) && fs.existsSync(path.join(bench, 'apps'))) && bench !== path.dirname(bench)) {
+    bench = path.dirname(bench)
+  }
+  return {
+    name: 'suite-dev-boot-flags',
+    apply: 'serve' as const,
+    configureServer(server: { middlewares: { use: (fn: (req: { headers: { host?: string } }, res: unknown, next: () => void) => void) => void } }) {
+      server.middlewares.use((req, _res, next) => requestHost.run(req.headers.host?.split(':')[0] ?? '', next))
+    },
+    transformIndexHtml() {
+      const site = requestHost.getStore()
+      if (!site || site.includes('/') || site.startsWith('.')) return
+      const flags = devBootFlags(
+        readConfig(path.join(bench, 'sites/common_site_config.json')),
+        readConfig(path.join(bench, 'sites', site, 'site_config.json')),
+      )
+      const script = Object.entries(flags).map(([flag, on]) => `window[${JSON.stringify(flag)}] = ${on};`).join(' ')
+      return [{ tag: 'script', children: script, injectTo: 'head-prepend' as const }]
+    },
+  }
+}
+
 const benchRoot = path.resolve(__dirname, '../../..')
 const commonSiteConfigPath = path.join(benchRoot, 'sites/common_site_config.json')
 // Allow static tooling to load this config in a standalone checkout/worktree.
@@ -86,6 +125,7 @@ export default defineConfig(({ mode }) => ({
     // Do not reintroduce @workadventure/noise-suppression/vite — that path
     // re-pulls the processor into the Rollup graph via import.meta.url.
     serveNoiseSuppressionAssets(),
+    serveDevBootFlags(),
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
