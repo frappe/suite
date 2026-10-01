@@ -130,6 +130,47 @@ def issue_session(adapter: str, doc_id: str, sid: str, principal: str) -> int:
     raise busy()
 
 
+def claim_session(adapter: str, doc: dict, sid: str, claim, principal: str) -> str:
+    """Bind the clientID a tab opened offline chose itself: `ok`, `clash` or `lineage`. Mints nothing."""
+    cid = claim.get("cid") if isinstance(claim, dict) else None
+    lineage = claim.get("lineage") if isinstance(claim, dict) else None
+    if not isinstance(cid, int) or isinstance(cid, bool) or not isinstance(lineage, str):
+        raise Refusal(400, "malformed")
+    if not CLIENT_ID_MAX <= cid < 2 * CLIENT_ID_MAX:
+        raise Refusal(400, "malformed")
+    if lineage != doc["lineage"]:
+        return "lineage"
+    sessions = table(adapter, "session")
+
+    def bound() -> str | None:
+        rows = frappe.db.sql(
+            f"SELECT `client_id`, `principal` FROM `{sessions}` WHERE `doc_id` = %s AND `sid` = %s",
+            (doc["id"], sid),
+            as_dict=True,
+        )
+        if not rows:
+            return None
+        if rows[0].principal != principal:
+            raise Refusal(409, "session_owner")
+        return "ok" if int(rows[0].client_id) == cid else "clash"
+
+    answer = bound()
+    if answer:
+        return answer
+    try:
+        frappe.db.sql(
+            f"""INSERT INTO `{sessions}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `created`)
+            VALUES (%s, %s, %s, %s, 0, %s)""",
+            (doc["id"], sid, cid, principal, now_datetime()),
+        )
+    except Exception as error:
+        if frappe.db.is_duplicate_entry(error):
+            return bound() or "clash"
+        raise
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    return "ok"
+
+
 def parse_push(body: bytes) -> tuple[dict, bytes]:
     """Split `u32 hlen | header JSON | Yjs update`."""
     if len(body) < 4:

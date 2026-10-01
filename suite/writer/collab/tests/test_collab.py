@@ -334,6 +334,44 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.set_user(WRITER)
         self.assertEqual(self.open(node)[1], [])
 
+    def claim(self, node: str, sid: str, cid: int, lineage: str):
+        body = json.dumps({"sid": sid, "claim": {"cid": cid, "lineage": lineage}}).encode()
+        response = call(routes.collab_sessions_post, node, body=body)
+        return response.status_code, answer(response)
+
+    def test_an_offline_tab_claims_its_own_client_id_and_then_pushes(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        sid, cid = uuid.uuid4().hex, 2**30 + 7
+
+        self.assertEqual(self.claim(node, sid, cid, lineage), (200, {"claim": "ok"}))
+        self.assertEqual(self.claim(node, sid, cid, lineage), (200, {"claim": "ok"}))
+        self.assertEqual(self.push(node, sid, cid, 1, b"offline")[0], 200)
+        self.assertEqual([payload for _, payload in self.open(node)[1]], [b"offline"])
+
+    def test_a_claim_on_a_taken_id_or_another_lineage_binds_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        cid = 2**30 + 9
+        self.assertEqual(self.claim(node, uuid.uuid4().hex, cid, lineage)[1], {"claim": "ok"})
+        sessions = self.count("session")
+
+        clash = self.claim(node, uuid.uuid4().hex, cid, lineage)
+        other_lineage = self.claim(node, uuid.uuid4().hex, cid + 1, "0" * 32)
+
+        self.assertEqual((clash, other_lineage), ((200, {"claim": "clash"}), (200, {"claim": "lineage"})))
+        self.assertEqual(self.count("session"), sessions)
+
+    def test_a_claim_outside_the_device_range_is_refused(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+
+        for cid in (5, 2**31, "x"):
+            self.assertEqual(self.claim(node, uuid.uuid4().hex, cid, lineage), (400, {"collab": "malformed"}))
+
     def test_many_writers_at_once_get_gap_free_revs(self):
         self.set_mode("on")
         node = self.new_document()

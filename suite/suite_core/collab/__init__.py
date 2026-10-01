@@ -9,6 +9,7 @@ itself, because `suite_core` never imports Drive or a product.
 from suite.suite_core.collab.log import (
     PROTO,
     Refusal,
+    claim_session,
     create,
     enabled,
     find,
@@ -25,6 +26,7 @@ from suite.suite_core.collab.tables import ensure_tables
 __all__ = [
     "PROTO",
     "Refusal",
+    "claim_session",
     "create",
     "enabled",
     "ensure_tables",

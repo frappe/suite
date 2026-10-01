@@ -109,11 +109,14 @@ def _session(node: str) -> Response:
     _check(node, drive.EDIT)
     doc = _doc(node)
     try:
-        sid = json.loads(frappe.request.get_data() or b"{}").get("sid")
+        body = json.loads(frappe.request.get_data() or b"{}")
+        sid, claim = body.get("sid"), body.get("claim")
     except (ValueError, AttributeError):
-        sid = None
+        sid = claim = None
     if not isinstance(sid, str) or len(sid) != 32 or not sid.isalnum():
         raise collab.Refusal(400, "malformed")
+    if claim is not None:
+        return _json(200, {"claim": collab.claim_session(ADAPTER, doc, sid, claim, frappe.session.user)})
     client_id = collab.issue_session(ADAPTER, doc.id, sid, frappe.session.user)
     return _json(200, {"client_id": client_id})
 
