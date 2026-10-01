@@ -40,11 +40,16 @@ def ensure_tables(adapter: str) -> None:
             `client_id` int unsigned NOT NULL,
             `payload` longblob NOT NULL,
             `sha256` binary(32) NOT NULL,
+            `seq_shas` longblob NOT NULL,
             `chain` binary(32) NOT NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `rev`),
             UNIQUE KEY `session_seq` (`doc_id`, `sid`, `seq_to`)
         ) {options}"""
+    )
+    # Tables made before per-seq shas were kept
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `seq_shas` longblob NOT NULL AFTER `sha256`"
     )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "session")}` (

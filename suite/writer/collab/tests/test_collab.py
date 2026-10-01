@@ -4,6 +4,7 @@ import struct
 import threading
 import time
 import uuid
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -52,17 +53,28 @@ def read_frame(data: bytes) -> tuple[dict, list[tuple[int, bytes]]]:
 
 
 def push_body(
-    lineage: str, sid: str, cid: int, seq: int, seen_rev: int, payload: bytes, principal: str | None = None
+    lineage: str,
+    sid: str,
+    cid: int,
+    seq: int,
+    seen_rev: int,
+    payload: bytes,
+    principal: str | None = None,
+    *,
+    entries: list[bytes] | None = None,
 ) -> bytes:
+    """One push of `entries` (or `payload` alone) as seqs from `seq`; the body sent is `payload`."""
+    entries = entries or [payload]
     header = json.dumps(
         {
             "lineage": lineage,
             "principal": principal or frappe.session.user,
             "sid": sid,
             "from": seq,
-            "to": seq,
+            "to": seq + len(entries) - 1,
             "cid": cid,
             "seen_rev": seen_rev,
+            "shas": [hashlib.sha256(entry).hexdigest() for entry in entries],
         }
     ).encode()
     return struct.pack(">I", len(header)) + header + payload
@@ -123,9 +135,11 @@ class TestWriterCollab(IntegrationTestCase):
             "client_id"
         ]
 
-    def push(self, node: str, sid: str, cid: int, seq: int, payload: bytes = b"\x00"):
+    def push(self, node: str, sid: str, cid: int, seq: int, payload: bytes = b"\x00", entries=None):
         header, rows = self.open(node)
-        body = push_body(header["lineage"], sid, cid, seq, rows[-1][0] if rows else 0, payload)
+        body = push_body(
+            header["lineage"], sid, cid, seq, rows[-1][0] if rows else 0, payload, entries=entries
+        )
         response = call(routes.collab_updates_post, node, body=body)
         return response.status_code, answer(response)
 
@@ -169,11 +183,81 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
 
-        self.assertEqual(self.push(node, sid, cid, 1)[0], 200)
+        first = self.push(node, sid, cid, 1)
         status, body = self.push(node, sid, cid, 1)
 
+        self.assertEqual(first[0], 200)
         self.assertEqual((status, body["dup"], body["acked"]), (200, True, 1))
+        self.assertEqual((body["rev"], body["chain"]), (first[1]["rev"], first[1]["chain"]))
         self.assert_one_order(node, 1)
+
+    def test_a_resend_grown_by_more_typing_gets_the_original_answer(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+
+        first = self.push(node, sid, cid, 1, b"a")
+        status, body = self.push(node, sid, cid, 1, b"ab", entries=[b"a", b"b"])
+        rest = self.push(node, sid, cid, 2, b"b")
+
+        self.assertEqual((status, body["dup"], body["acked"], body["rev"]), (200, True, 1, first[1]["rev"]))
+        self.assertEqual((rest[0], rest[1]["rev"], rest[1]["acked"]), (200, 2, 2))
+        self.assert_one_order(node, 2)
+
+    def test_a_resend_with_different_bytes_is_refused(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+
+        self.push(node, sid, cid, 1, b"a")
+        status, body = self.push(node, sid, cid, 1, b"c")
+
+        self.assertEqual((status, body), (409, {"collab": "seq_conflict"}))
+        self.assertEqual([payload for _, payload in self.open(node)[1]], [b"a"])
+
+    def test_a_worker_killed_at_any_step_loses_and_duplicates_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        sql, commit = frappe.db.sql, frappe.db.commit
+        calls = []
+
+        def counted(real, *, after: bool):
+            def step(*args, **kwargs):
+                calls.append(real)
+                if len(calls) == kill_at and not after:
+                    raise RuntimeError("worker killed")
+                result = real(*args, **kwargs)
+                if len(calls) == kill_at and after:
+                    raise RuntimeError("worker killed")
+                return result
+
+            return step
+
+        def push_counted(seq: int):
+            calls.clear()
+            with (
+                patch.object(frappe.db, "sql", counted(sql, after=False)),
+                patch.object(frappe.db, "commit", counted(commit, after=True)),
+            ):
+                return self.push(node, sid, cid, seq, b"%d" % seq)
+
+        kill_at = 0
+        self.assertEqual(push_counted(1)[0], 200)
+        steps = len(calls)
+        for kill_at in range(1, steps + 1):
+            seq = kill_at + 1
+            with self.subTest(step=kill_at):
+                try:
+                    push_counted(seq)
+                except RuntimeError:
+                    frappe.db.rollback()
+                self.assertEqual(self.push(node, sid, cid, seq, b"%d" % seq)[0], 200)
+
+        self.assert_one_order(node, steps + 1)
+        self.assertEqual(
+            [payload for _, payload in self.open(node)[1]], [b"%d" % seq for seq in range(1, steps + 2)]
+        )
 
     def test_a_user_without_edit_access_cannot_push(self):
         self.set_mode("on")
