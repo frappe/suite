@@ -37,7 +37,7 @@ describe('device store', () => {
     await store.commit('D', { lineage: 'L', rev: 0, canWrite: true }, null)
     await store.capture(session('s'), [entry('s', 1, one.update), entry('s', 2, two.update)])
 
-    await store.ack('D', 's', 1, one.update)
+    await store.ack('D', 's', 1, one.update, 'L')
 
     expect((await store.entries('D', 's')).map((stored) => stored.seq)).toEqual([2])
     expect(read((await store.copy('D'))!.bytes)).toBe('one ')
@@ -51,6 +51,16 @@ describe('device store', () => {
 
     const copy = (await store.copy('D'))!
     expect([copy.lineage, copy.canWrite, read(copy.bytes)]).toEqual(['M', false, 'new'])
+  })
+
+  it('work acknowledged under a replaced lineage stays out of the newer device copy', async () => {
+    const store = await fresh()
+    await store.commit('D', { lineage: 'M', rev: 1, canWrite: true }, typed('new').update)
+    await store.capture(session('s'), [entry('s', 1, typed('old').update)])
+
+    await store.ack('D', 's', 1, typed('old').update, 'L')
+
+    expect([read((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual(['new', []])
   })
 
   it('a long-lived device copy is merged into fewer pieces without losing text', async () => {

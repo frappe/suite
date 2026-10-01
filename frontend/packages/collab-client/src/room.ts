@@ -563,7 +563,7 @@ class Room implements CollabRoom {
     box.pending = box.pending.filter((entry) => entry.seq > box.acked)
     if (this.device) {
       const bytes = Y.mergeUpdates(committed.map((entry) => entry.bytes))
-      void this.device.store.ack(this.device.doc, box.sid, box.acked, bytes).catch(() => {})
+      void this.device.store.ack(this.device.doc, box.sid, box.acked, bytes, this.lineage).catch(() => {})
       if (box !== this.own && !box.pending.length) {
         void this.device.store.forget(this.device.doc, box.sid).catch(() => {})
         box.release()

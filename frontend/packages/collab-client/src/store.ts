@@ -44,8 +44,9 @@ export interface DeviceStore {
   saveSession(session: StoredSession): Promise<void>
   // Puts the session back too, in case another tab forgot it while this one was idle
   capture(session: StoredSession, entries: StoredEntry[]): Promise<void>
-  // Drops entries up to `through` and keeps their bytes in the device copy, in one transaction
-  ack(doc: string, sid: string, through: number, bytes: Uint8Array): Promise<void>
+  // Drops entries up to `through` and keeps their bytes in the device copy, in one transaction,
+  // unless the copy has moved to another lineage
+  ack(doc: string, sid: string, through: number, bytes: Uint8Array, lineage: string): Promise<void>
   // Adds rows up to `rev` to the device copy; a new lineage replaces it
   commit(doc: string, copy: Omit<DeviceCopy, 'bytes'>, bytes: Uint8Array | null): Promise<void>
   copy(doc: string): Promise<DeviceCopy | null>
@@ -131,10 +132,12 @@ class IndexedDeviceStore implements DeviceStore {
     })
   }
 
-  ack(doc: string, sid: string, through: number, bytes: Uint8Array) {
-    return this.write(['entries', 'copies'], (tx) => {
+  ack(doc: string, sid: string, through: number, bytes: Uint8Array, lineage: string) {
+    return this.write(['entries', 'meta', 'copies'], (tx) => {
       tx.objectStore('entries').delete(IDBKeyRange.bound([doc, sid, 0], [doc, sid, through]))
-      if (bytes.byteLength) addPiece(tx, doc, bytes)
+      tx.objectStore('meta').get(doc).onsuccess = (event) => {
+        if (bytes.byteLength && (event.target as IDBRequest).result?.lineage === lineage) addPiece(tx, doc, bytes)
+      }
     })
   }
 
