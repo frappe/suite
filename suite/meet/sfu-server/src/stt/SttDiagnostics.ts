@@ -44,8 +44,8 @@ export class SttDiagnostics {
 	static create(identity: CaptureIdentity): SttDiagnostics | undefined {
 		const directory = process.env.STT_DIAGNOSTICS_DIR;
 		const roomIds = (
-			process.env.STT_DIAGNOSTICS_ROOM_IDS ??
-			process.env.STT_DIAGNOSTICS_ROOM_ID ??
+			process.env.STT_DIAGNOSTICS_ROOM_IDS ||
+			process.env.STT_DIAGNOSTICS_ROOM_ID ||
 			''
 		)
 			.split(',')

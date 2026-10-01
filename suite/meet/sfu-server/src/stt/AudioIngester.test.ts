@@ -134,7 +134,7 @@ describe('AudioIngester', () => {
 			return frame;
 		});
 		const positiveFrame = speechFrame();
-		internals.handleDecodedAudio(Buffer.concat([...softPrefix, positiveFrame]));
+		internals.handleDecodedAudio(Buffer.concat([...softPrefix, positiveFrame, positiveFrame]));
 		await internals.runVadCheck();
 		const expectedPrefix =
 			override === undefined
@@ -146,7 +146,7 @@ describe('AudioIngester', () => {
 						: [];
 		expect(
 			Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
-		).toEqual(Buffer.concat([...expectedPrefix, positiveFrame]));
+		).toEqual(Buffer.concat([...expectedPrefix, positiveFrame, positiveFrame]));
 		expect(stream.markFinal).not.toHaveBeenCalled();
 	});
 
@@ -389,7 +389,7 @@ describe('AudioIngester', () => {
 	it.each([
 		false,
 		true,
-	])('endpoints a single positive block after DTX with pre-roll=%s', async (withPreRoll) => {
+	])('handles a single positive block after DTX without interrupting capture, pre-roll=%s', async (withPreRoll) => {
 		vi.useFakeTimers();
 		const stream = testStream();
 		const onFailure = vi.fn();
@@ -425,10 +425,23 @@ describe('AudioIngester', () => {
 			await ingester.stop();
 		} else {
 			expect(stream.markFinal).not.toHaveBeenCalled();
-			expect(stream.close).toHaveBeenCalledOnce();
-			expect(onFailure).toHaveBeenCalledOnce();
+			expect(stream.sendAudio).not.toHaveBeenCalled();
+			expect(stream.close).not.toHaveBeenCalled();
+			expect(onFailure).not.toHaveBeenCalled();
+			// Subsequent speech uses the same stream and contains no old fragment.
+			const nextSpeech = Buffer.from(speechFrame());
+			nextSpeech.writeInt16LE(123, 2);
+			internals.handleDecodedAudio(Buffer.concat([nextSpeech, nextSpeech]));
 			await internals.runVadCheck();
-			expect(stream.close).toHaveBeenCalledOnce();
+			vi.advanceTimersByTime(700);
+			await internals.runVadCheck();
+			expect(
+				Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
+			).toEqual(Buffer.concat([nextSpeech, nextSpeech]));
+			expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(200);
+			expect(stream.close).not.toHaveBeenCalled();
+			expect(onFailure).not.toHaveBeenCalled();
+			await ingester.stop();
 		}
 	});
 

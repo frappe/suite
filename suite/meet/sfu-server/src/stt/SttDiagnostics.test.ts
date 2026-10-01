@@ -72,6 +72,7 @@ describe('private STT diagnostic captures', () => {
 
 	it('preserves independent PCM boundaries and commit offsets in private artifacts', async () => {
 		const root = directory();
+		vi.stubEnv('STT_DIAGNOSTICS_ROOM_IDS', ''); // Compose's unset plural value.
 		const capture = SttDiagnostics.create(identity)!;
 		const raw = Buffer.from([1, 0, 2, 0, 3, 0]);
 		const speech = Buffer.from([2, 0, 3, 0]);

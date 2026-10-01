@@ -108,6 +108,8 @@ export class AudioIngester {
 	private isInSpeech = false;
 	private vadTimer: NodeJS.Timeout | null = null;
 	private streamedBytes = 0;
+	private pendingSpeechFrames: Buffer[] = [];
+	private pendingSpeechBytes = 0;
 	private preRollFrames: Buffer[] = [];
 	private failureNotified = false;
 	private diagnostics: SttDiagnostics | undefined;
@@ -599,13 +601,14 @@ export class AudioIngester {
 		)
 			return;
 		if (this.streamedBytes < BYTES_PER_CHECK * MIN_TAIL_CHECKS) {
-			// No protocol clear exists. Close the stream so a subminimum fragment
-			// cannot survive in the server buffer and prefix an unrelated utterance.
+			// Subminimum audio stays local, so discarding it leaves capture and
+			// the server stream intact for the next utterance.
 			this.diagnostics?.event('vad.idle-discard', {
-				bytes: this.streamedBytes,
+				bytes: this.pendingSpeechBytes,
 			});
-			this.notifyFailure();
-			await this.stop();
+			this.resetVadState();
+			this.lastDecodedAudioAt = null;
+			this.speechDetector?.reset();
 			return;
 		}
 		this.diagnostics?.event('vad.idle-final', {
@@ -642,10 +645,23 @@ export class AudioIngester {
 		// before its first update. Each producer already has its own VAD stream.
 		const stream = this.sttStream;
 		if (!stream) return;
-		if (stream.sendAudio(frame)) {
-			this.onAudioSent?.(frame.length / BYTES_PER_SAMPLE / SAMPLE_RATE);
-			this.streamedBytes += frame.length;
+		// Keep a candidate locally until it can be finalized. A tiny DTX fragment
+		// must not leave stale server audio or force a new transport/decoder.
+		this.pendingSpeechFrames.push(frame);
+		this.pendingSpeechBytes += frame.length;
+		if (
+			this.streamedBytes === 0 &&
+			this.pendingSpeechBytes < BYTES_PER_CHECK * MIN_TAIL_CHECKS
+		)
+			return;
+		for (const pending of this.pendingSpeechFrames) {
+			if (stream.sendAudio(pending)) {
+				this.onAudioSent?.(pending.length / BYTES_PER_SAMPLE / SAMPLE_RATE);
+				this.streamedBytes += pending.length;
+			}
 		}
+		this.pendingSpeechFrames = [];
+		this.pendingSpeechBytes = 0;
 	}
 
 	private markFinal(): void {
@@ -671,6 +687,8 @@ export class AudioIngester {
 		this.silenceCheckCount = 0;
 		this.isInSpeech = false;
 		this.streamedBytes = 0;
+		this.pendingSpeechFrames = [];
+		this.pendingSpeechBytes = 0;
 		this.preRollFrames = [];
 	}
 

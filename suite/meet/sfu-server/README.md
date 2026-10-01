@@ -48,7 +48,7 @@ Startup caches the model; audio is processed only for rooms with captions enable
 Only detector audio is resampled to 16 kHz; Nemotron receives the original
 24 kHz PCM. Two seconds of pre-roll preserve soft onsets. During Opus DTX,
 idle time finalizes buffered audio; fragments shorter than `STT_MIN_TAIL_MS`
-close and recover the stream instead. Quiet gaps clear old detector context.
+are discarded locally without restarting capture. Quiet gaps clear old detector context.
 
 The MIT model, license and pinned revision/checksum are in `assets/silero-vad/`.
 Startup verifies the checksum. Install with `ONNXRUNTIME_NODE_INSTALL=skip`
@@ -60,7 +60,10 @@ Model or runtime failures surface through startup/recovery; there is no fallback
 Capture is off by default. Set `STT_DIAGNOSTICS_DIR` to an absolute private
 path and `STT_DIAGNOSTICS_ROOM_ID` to the exact internal `<site>::<meetingId>`.
 `STT_DIAGNOSTICS_ROOM_IDS` accepts up to 20 comma-separated IDs and takes
-precedence; wildcards and malformed IDs disable capture.
+precedence when nonempty; wildcards and malformed IDs disable capture.
+
+For Compose, use `STT_DIAGNOSTICS_DIR=/data/stt-diagnostics` to retain captures
+in the existing private data volume. Copy them out with `docker cp`.
 
 Each capture directory (`0700`) contains files (`0600`): `metadata.json`,
 `before-vad.pcm`, `stt-sent.pcm`, and `events.jsonl`. PCM is mono s16le at 24 kHz.
