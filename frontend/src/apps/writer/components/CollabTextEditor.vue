@@ -41,7 +41,7 @@ const comments = new Y.Doc().getMap('comments')
 const extensions = [Collaboration.configure({ document: props.room.doc, field: FIELD })]
 
 async function save(_manual, _html, done) {
-  await props.room.flush()
+  await Promise.race([props.room.flush(), new Promise((resolve) => setTimeout(resolve, 10_000))])
   if (props.room.saveState === 'clean') done?.()
   else if (done) toast.warning('Not saved yet. Your changes are kept in this tab.')
 }
