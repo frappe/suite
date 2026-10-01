@@ -67,14 +67,31 @@ describe('received content guard', () => {
     expect(blocks(viewer.editor)).toEqual(['bulletList', 'bulletList', 'paragraph'])
   })
 
-  it("the user's own edit still normalizes the document", async () => {
-    const viewer = open(stored(ul('one'), ul('two'), h('End')))
+  it("the user's own edit still tidies what it touched", async () => {
+    const viewer = open(stored(ul('one'), p('gap'), ul('two'), p('end')))
     await settle()
 
-    viewer.editor.commands.insertContentAt(3, 'Z')
+    const gap = viewer.editor.state.doc.child(0).nodeSize
+    viewer.editor.commands.deleteRange({ from: gap, to: gap + viewer.editor.state.doc.child(1).nodeSize })
 
-    expect(viewer.writes()).toBeGreaterThan(0)
-    expect(blocks(viewer.editor)).toEqual(['bulletList', 'heading', 'paragraph'])
-    expect(viewer.ydoc.getXmlFragment('default').length).toBe(3)
+    expect(blocks(viewer.editor)).toEqual(['bulletList', 'paragraph'])
+    expect(viewer.ydoc.getXmlFragment('default').length).toBe(2)
+  })
+
+  it('two people editing elsewhere tidy nothing twice', async () => {
+    const base = stored(ul('abc'), ul('def'), p('end'))
+    const a = open(base)
+    const b = open(base)
+    await settle()
+
+    a.editor.commands.insertContentAt(a.editor.state.doc.content.size - 1, '1')
+    b.editor.commands.insertContentAt(b.editor.state.doc.content.size - 1, '2')
+    Y.applyUpdate(a.ydoc, Y.encodeStateAsUpdate(b.ydoc), 'remote')
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc), 'remote')
+
+    for (const { editor } of [a, b]) {
+      expect(editor.state.doc.textContent.match(/abc|def/g)).toEqual(['abc', 'def'])
+    }
+    expect(a.editor.getJSON()).toEqual(b.editor.getJSON())
   })
 })
