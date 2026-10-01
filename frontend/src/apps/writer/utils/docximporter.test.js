@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
+import { TabsExtension, listTabs, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const uploadMock = vi.fn()
 const callMock = vi.fn()
@@ -219,7 +219,7 @@ describe('importDocx', () => {
 
     await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
-    expect(tabsIn(editor.state.doc)).toHaveLength(2)
+    expect(listTabs(editor)).toHaveLength(2)
     expect(editor.getText()).toContain('Original text')
     expect(editor.getText()).toContain('Imported text')
   })

@@ -75,26 +75,10 @@
         <div v-if="dragState.isDragging && dragState.dropIndex === tabs.length" @dragover.prevent
           class="h-8 my-0.5 border border-dashed rounded-1 mx-2" />
       </div>
-      <div v-else-if="anchors.length > 1" class="table-of-contents flex flex-col gap-0.5 mb-2 px-0.5 pr-2.5">
-        <div v-for="anchor in anchors" class="flex">
-          <Tooltip :text="anchor.textContent" class="min-w-0 grow">
-            <a :href="'#' + anchor.id"
-              class="link block truncate text-sm text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
-              :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id"
-              :class="anchor.isActive && 'text-ink-gray-8'" :style="{ '--level': anchor.level - maxLevel }">
-              {{ anchor.textContent }}
-            </a>
-          </Tooltip>
-        </div>
-      </div>
       <div v-if="editor.isEditable" class="flex items-center gap-1 pr-1">
         <Button class="grow !justify-start text-xs opacity-50 hover:opacity-100"
-          :icon-left="h(LucidePlus, { class: 'size-4' })" :label="tabs.length ? 'Add tab' : 'Create tab'"
-          variant="ghost" @click="
-            tabs.length
-              ? editor.commands.createTab({ label: 'Untitled' })
-              : editor.commands.wrapInTab()
-            " />
+          :icon-left="h(LucidePlus, { class: 'size-4' })" label="Add tab"
+          variant="ghost" @click="editor.commands.createTab({ label: 'Untitled' })" />
         <Button v-if="!hasContent" :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
       </div>
     </div>
@@ -118,7 +102,7 @@ import LucideEllipsisVertical from '~icons/lucide/ellipsis-vertical'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, Tooltip, vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/legacy/sdk'
-import { orderedTabs, findTab } from '@/apps/writer/extensions/tabs'
+import { FIRST_TAB_ID, listTabs, tabIdAt } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -140,10 +124,7 @@ const showHeadings = ref(true)
 const tabs = ref([])
 
 const updateTabs = () => {
-  tabs.value = orderedTabs(props.editor.state.doc).map(({ node }) => ({
-    id: node.attrs.id,
-    label: node.attrs.label,
-  }))
+  tabs.value = listTabs(props.editor)
 }
 
 // Get active tab ID
@@ -158,9 +139,11 @@ onMounted(() => {
   }
 
   props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  props.editor.view.dom.addEventListener('tab-renamed', updateTabs)
   onBeforeUnmount(() => {
     props.editor.off('update', updateTabs)
     props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+    props.editor.view.dom.removeEventListener('tab-renamed', updateTabs)
   })
 })
 
@@ -169,12 +152,6 @@ const currentTabAnchors = computed(() => {
   if (tabs.value.length === 0) return props.anchors
   if (!activeTabId.value) return props.anchors
 
-  const tab = findTab(props.editor.state.doc, activeTabId.value)
-  if (!tab) return []
-  const tabStart = tab.pos
-  const tabEnd = tab.pos + tab.node.nodeSize
-
-  // Filter anchors that are within the active tab's position range
   return props.anchors.filter((anchor) => {
     const element = props.editor.view.dom.querySelector(
       `[data-toc-id="${anchor.id}"]`,
@@ -182,7 +159,7 @@ const currentTabAnchors = computed(() => {
     if (!element) return false
 
     const pos = props.editor.view.posAtDOM(element, 0)
-    return pos >= tabStart && pos < tabEnd
+    return tabIdAt(props.editor.state.doc, pos) === activeTabId.value
   })
 })
 
@@ -350,8 +327,8 @@ const activeAnchorId = computed(() => {
   return activeId
 })
 
-const tabActions = [
-  {
+const tabActions = computed(() => [
+  props.editor.can().renameTab(activeTabId.value, '') && {
     label: 'Rename',
     icon: LucidePencil,
     onClick: () => startRenaming(activeTabId.value),
@@ -364,7 +341,7 @@ const tabActions = [
         window.location.href.split('#')[0] + '#' + activeTabId.value,
       ),
   },
-  {
+  !(activeTabId.value === FIRST_TAB_ID && tabs.value.length === 1) && {
     group: '',
     hideLabel: true,
     options: [
@@ -376,7 +353,7 @@ const tabActions = [
       },
     ],
   },
-]
+].filter(Boolean))
 </script>
 
 <style scoped>

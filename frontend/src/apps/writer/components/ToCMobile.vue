@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="editor && tabs.length > 0 && activeTabId"
+    v-if="editor && tabs.length > 1 && activeTabId"
     ref="bar"
     class="md:hidden fixed bottom-0 w-screen z-10 border-t border-outline-gray-2 bg-surface-base"
   >
@@ -16,7 +16,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watchEffect } from 'vue'
 import { TabButtons } from 'frappe-ui'
-import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { listTabs } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -45,10 +45,7 @@ watchEffect(() => {
 // doc isn't reactive, so re-derive on every update
 const tabs = ref([])
 const updateTabs = () => {
-  tabs.value = orderedTabs(props.editor.state.doc).map(({ node }) => ({
-    id: node.attrs.id,
-    label: node.attrs.label,
-  }))
+  tabs.value = listTabs(props.editor)
 }
 
 const activeTabId = ref(props.editor.storage.tab?.activeTabId ?? null)
@@ -66,6 +63,7 @@ onMounted(() => {
   props.editor.on('update', updateTabs)
   editorDom = props.editor.view.dom
   editorDom.addEventListener('tab-changed', handleTabChange)
+  editorDom.addEventListener('tab-renamed', updateTabs)
 })
 
 onBeforeUnmount(() => {
@@ -73,5 +71,6 @@ onBeforeUnmount(() => {
   setBarHeight(0)
   props.editor.off('update', updateTabs)
   editorDom?.removeEventListener('tab-changed', handleTabChange)
+  editorDom?.removeEventListener('tab-renamed', updateTabs)
 })
 </script>

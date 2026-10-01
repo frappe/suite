@@ -124,7 +124,7 @@ import { dynamicList } from '@/apps/writer/utils/'
 import { downloadZippedHTML, downloadMD } from '@/apps/writer/utils'
 import { downloadDocxFromHtml } from '../utils/docxexporter'
 import { importDocx } from '../utils/docximporter'
-import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { listTabs } from '@/apps/writer/extensions/tabs'
 import { createDialog } from '@/apps/writer/utils/dialogs'
 
 import LucideUsers from '~icons/lucide/users'
@@ -189,7 +189,7 @@ const exportDocx = () => {
   if (!editor.value) return
   const filename = `${props.file.doc.file_name}.docx`
   const settings = props.document?.doc?.settings
-  const tabs = orderedTabs(editor.value.state.doc)
+  const tabs = listTabs(editor.value)
 
   if (tabs.length <= 1) {
     downloadDocxFromHtml(editor.value.getHTML(), filename, settings)

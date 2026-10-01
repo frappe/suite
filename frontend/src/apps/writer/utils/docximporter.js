@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { call, useFileUpload, toast as nToast } from 'frappe-ui'
-import { tabsIn, findTab } from '@/apps/writer/extensions/tabs'
+import { findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
   'image/png': 'png',
@@ -132,11 +132,9 @@ function _insertAtEnd(editor, html) {
   editor.chain().focus().insertContentAt(editor.state.doc.content.size, html).run()
 }
 
-// Put the imported content in a new tab. If the document has no tabs yet, its
-// current content is moved into one first so nothing already written is lost.
-// createTab() focuses the new tab by itself.
+// Put the imported content in a new tab; the current content stays as the
+// first tab. createTab() focuses the new tab by itself.
 function _insertInNewTab(editor, html, label) {
-  if (!tabsIn(editor.state.doc).length) editor.commands.wrapInTab()
   const id = uuidv4()
   editor.commands.createTab({ id, label })
   const tab = findTab(editor.state.doc, id)
