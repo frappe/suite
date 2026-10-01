@@ -997,12 +997,13 @@ const createTypeFromElementNode = (node, meta) => {
       type.setAttribute(key, val);
     }
   }
-  type.insert(
-    0,
-    normalizePNodeContent(node).map((n) =>
-      createTypeFromTextOrElementNode(n, meta)
-    )
+  const kids = normalizePNodeContent(node).map((n) =>
+    createTypeFromTextOrElementNode(n, meta)
   );
+  if (node.isTextblock && kids.length === 0) {
+    kids.push(new Y.XmlText());
+  }
+  type.insert(0, kids);
   meta.mapping.set(type, node);
   return type
 };
@@ -2345,4 +2346,3 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins = 
 });
 
 export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, initProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
-//# sourceMappingURL=y-tiptap.js.map
