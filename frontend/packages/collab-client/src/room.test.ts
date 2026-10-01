@@ -490,6 +490,10 @@ describe('collab room', () => {
 
 // IndexedDB answers through setImmediate, which must keep running
 const fakeTime = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+declare const setImmediate: (callback: () => void) => void
+const idle = async () => {
+  for (let turn = 0; turn < 20; turn++) await new Promise<void>((resolve) => setImmediate(resolve))
+}
 
 describe('collab room on a device', () => {
   it('work not yet sent when the tab closed shows in the next tab and is committed once', async () => {
@@ -629,6 +633,35 @@ describe('collab room on a device', () => {
     full.saveSession = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))
 
     await expect(join(server.endpoints(), { device: { store: full, doc: 'D' } })).rejects.toThrow('Failed to fetch')
+  })
+
+  it('a tab closed while its claim is answered takes on no other tab’s work', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+    const left = await join(server.endpoints(), { device: kept })
+    left.doc.getText('t').insert(0, 'left')
+    await vi.advanceTimersByTimeAsync(0)
+    await left.close()
+    let answer = () => {}
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    const endpoints = server.endpoints()
+    const slow: CollabEndpoints = {
+      ...endpoints,
+      session: (sid, claim) => answered.then(() => endpoints.session(sid, claim)),
+    }
+    const room = await join(slow, { device: kept, pollMs: 1000 })
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(1000)
+
+    server.calls.length = 0
+    await room.close()
+    answer()
+    await idle()
+
+    expect(server.calls).toEqual(['claim'])
   })
 
   it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {

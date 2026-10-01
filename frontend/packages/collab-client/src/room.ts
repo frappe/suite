@@ -219,6 +219,7 @@ class Room implements CollabRoom {
   }
 
   private fetch(): Promise<void> {
+    if (this.closed) return Promise.resolve()
     this.pulling ??= this.options.endpoints
       .pull(this.appliedThrough)
       .then((answer) => {
@@ -268,7 +269,7 @@ class Room implements CollabRoom {
   private connect(): Promise<void> {
     this.connecting ??= this.claim(this.own)
       .then(async (answer) => {
-        if (answer === null) return
+        if (answer === null || this.closed) return
         if (answer !== 'ok') {
           // Other tabs' work never used this clientID, so a later tab can still send it
           for (const box of this.adopted) box.release()
@@ -317,6 +318,7 @@ class Room implements CollabRoom {
       if (!session.bound && !this.bound) continue
       const release = await holdLock(this.lockName(session.sid))
       if (!release) continue
+      if (this.closed) return release()
       const entries = await store.entries(key, session.sid).catch(() => [] as StoredEntry[])
       if (!entries.length) {
         await store.forget(key, session.sid).catch(() => {})
@@ -332,6 +334,7 @@ class Room implements CollabRoom {
         release,
       }
       const verdict = session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
+      if (this.closed) return release()
       if (verdict !== 'ok') {
         if (verdict) await store.recover(key, session.sid, verdict === 'lineage' ? 'lineage' : 'id_clash').catch(() => {})
         release()
