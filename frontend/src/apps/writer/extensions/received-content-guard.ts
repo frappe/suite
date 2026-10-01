@@ -80,7 +80,7 @@ export const ReceivedContentGuard = Extension.create<object, { root: Transaction
   addProseMirrorPlugins() {
     const storage = this.storage
     return [
-      new Plugin({
+      new Plugin<Range[] | null>({
         key,
         state: {
           init: () => null,

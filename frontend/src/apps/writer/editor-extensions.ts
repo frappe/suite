@@ -1,7 +1,7 @@
 import type { AnyExtension } from '@tiptap/core'
 import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import { CharacterCount, Selection } from '@tiptap/extensions'
-import { Heading, RichTextKit } from 'frappe-ui/editor'
+import { Heading, RichTextKit, type MentionSuggestionItem } from 'frappe-ui/editor'
 import type { Ref } from 'vue'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { CommentExtension } from '@/apps/writer/extensions/comments'
@@ -23,10 +23,10 @@ import { WRITER_STARTER_KIT } from '@/apps/writer/schema'
 
 export type WriterEditorOptions = {
   collaborative: boolean
-  mentionItems: () => unknown[]
+  mentionItems: () => MentionSuggestionItem[]
   onCommentActivated: (id: string) => void
   onAnchors: (anchors: unknown[]) => void
-  scrollParent: () => Element | null
+  scrollParent: () => HTMLElement | Window
   comments: unknown
   ydoc: unknown
   activeComment: Ref<unknown>
