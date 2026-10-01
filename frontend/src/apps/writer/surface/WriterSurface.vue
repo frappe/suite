@@ -10,7 +10,7 @@ import {
   watch,
 } from "vue";
 
-import type { CollabRoom } from "@suite/collab-client";
+import { CollabOpenError, type Blocked, type CollabRoom } from "@suite/collab-client";
 import type { DocumentSession } from "@/apps/drive";
 import { openWriterRoom } from "@/apps/writer/collab";
 import CollabTextEditor from "@/apps/writer/components/CollabTextEditor.vue";
@@ -34,6 +34,10 @@ const commentText = ref("");
 const collab = shallowRef<"opening" | "legacy" | "live" | "failed">("opening");
 const room = shallowRef<CollabRoom | null>(null);
 const roomSaveState = ref<DocumentSaveState>("clean");
+const roomCanWrite = ref(false);
+const roomBlocked = ref<Blocked | null>(null);
+const openRefusal = ref<string | null>(null);
+const recoveryKept = ref(false);
 let stopWatchingRoom = () => {};
 let unmounted = false;
 
@@ -60,7 +64,7 @@ const editable = computed(
     readable.value &&
     props.session.state.value === "Active" &&
     role.value >= 40 &&
-    (collab.value !== "live" || !!room.value?.canWrite),
+    (collab.value !== "live" || roomCanWrite.value),
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -75,6 +79,21 @@ const saveState = computed<DocumentSaveState>(() =>
 );
 const saveLabel = computed(
   () => ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
+);
+const blockedMessage = computed(() => {
+  const kept = recoveryKept.value ? " Your unsent changes were kept as a recovery copy." : "";
+  return {
+    signed_out: "You're signed out. Sign in again to keep saving; your changes stay in this tab.",
+    other_user: `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
+    lost_edit: `You can no longer edit this document.${kept}`,
+    lost_read: `You can no longer open this document.${kept}`,
+  }[roomBlocked.value ?? "signed_out"];
+});
+const openFailure = computed(() =>
+  ({
+    signed_out: "You're signed out. Sign in again to open this document.",
+    principal_changed: "This browser is now signed in as someone else. Reload to open this document as them.",
+  })[openRefusal.value ?? ""] ?? "This document couldn't be opened.",
 );
 const settings = computed(() => documentResource.doc?.settings ?? {});
 const fakeFileResource = computed(() => ({
@@ -107,6 +126,7 @@ function markDirty(event: Event) {
 
 async function openCollab() {
   collab.value = "opening";
+  openRefusal.value = null;
   try {
     const opened = await openWriterRoom(props.session);
     if (unmounted) {
@@ -118,11 +138,21 @@ async function openCollab() {
       return;
     }
     room.value = opened.room;
-    const sync = () => (roomSaveState.value = opened.room.saveState);
+    const sync = () => {
+      const live = opened.room;
+      if (live.blocked && live.blocked !== "signed_out" && live.unsent && !recoveryKept.value) {
+        retainRecovery();
+        recoveryKept.value = true;
+      }
+      roomSaveState.value = live.saveState;
+      roomCanWrite.value = live.canWrite;
+      roomBlocked.value = live.blocked;
+    };
     stopWatchingRoom = opened.room.onChange(sync);
     sync();
     collab.value = "live";
-  } catch {
+  } catch (error) {
+    openRefusal.value = error instanceof CollabOpenError ? error.reason : null;
     collab.value = "failed";
   }
 }
@@ -240,12 +270,16 @@ onBeforeUnmount(() => {
       <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
     </header>
 
+    <div v-if="collab === 'live' && roomBlocked" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
+      {{ blockedMessage }}
+    </div>
+
     <div v-if="!readable" class="m-auto text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">You no longer have permission to read this document.</p>
     </div>
     <div v-else-if="collab === 'failed'" class="m-auto text-center">
-      <p class="text-p-sm text-ink-gray-6">This document couldn't be opened.</p>
+      <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
       <Button class="mt-3" label="Try again" @click="openCollab" />
     </div>
     <div v-else-if="!documentResource.doc || collab === 'opening'" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
