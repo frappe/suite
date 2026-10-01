@@ -36,6 +36,8 @@ const room = shallowRef<CollabRoom | null>(null);
 const roomSaveState = ref<DocumentSaveState>("clean");
 const roomCanWrite = ref(false);
 const roomBlocked = ref<Blocked | null>(null);
+const roomPaused = ref<string | null>(null);
+const roomUnsent = ref(0);
 const openRefusal = ref<string | null>(null);
 const recoveryKept = ref(false);
 let stopWatchingRoom = () => {};
@@ -64,7 +66,7 @@ const editable = computed(
     readable.value &&
     props.session.state.value === "Active" &&
     role.value >= 40 &&
-    (collab.value !== "live" || roomCanWrite.value),
+    (collab.value !== "live" || (roomCanWrite.value && roomSaveState.value !== "failed")),
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -77,8 +79,10 @@ const saveState = computed<DocumentSaveState>(() =>
     ? roomSaveState.value
     : saving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean",
 );
-const saveLabel = computed(
-  () => ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
+const saveLabel = computed(() =>
+  collab.value === "live" && roomPaused.value && saveState.value !== "failed"
+    ? "Saving paused"
+    : ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
 );
 const blockedMessage = computed(() => {
   const kept = recoveryKept.value ? " Your unsent changes were kept as a recovery copy." : "";
@@ -89,7 +93,7 @@ const blockedMessage = computed(() => {
     other_user: `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
     lost_edit: `You can no longer edit this document.${kept}`,
     lost_read: `You can no longer open this document.${kept}`,
-  }[roomBlocked.value ?? "signed_out"];
+  }[roomBlocked.value!] ?? `Saving stopped in this tab.${kept} Reload to keep editing.`;
 });
 const openFailure = computed(() =>
   ({
@@ -144,13 +148,16 @@ async function openCollab() {
     room.value = opened.room;
     const sync = () => {
       const live = opened.room;
-      if (live.blocked && !recoverable(live.blocked) && live.unsent && !recoveryKept.value) {
+      const stopped = live.saveState === "failed" || (live.blocked && !recoverable(live.blocked));
+      if (stopped && live.unsent && !recoveryKept.value) {
         retainRecovery();
         recoveryKept.value = true;
       }
       roomSaveState.value = live.saveState;
       roomCanWrite.value = live.canWrite;
       roomBlocked.value = live.blocked;
+      roomPaused.value = live.paused;
+      roomUnsent.value = live.unsent;
     };
     stopWatchingRoom = opened.room.onChange(sync);
     sync();
@@ -264,7 +271,7 @@ onBeforeUnmount(() => {
         @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
       />
       <span class="ml-auto text-sm text-ink-gray-5">
-        {{ saveLabel }}
+        {{ saveLabel }}<template v-if="collab === 'live' && roomUnsent"> · {{ roomUnsent }} unsent</template>
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
       <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
@@ -274,7 +281,7 @@ onBeforeUnmount(() => {
       <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
     </header>
 
-    <div v-if="collab === 'live' && roomBlocked" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
+    <div v-if="collab === 'live' && (roomBlocked || roomSaveState === 'failed')" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
       {{ blockedMessage }}
     </div>
 
