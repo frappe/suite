@@ -405,6 +405,10 @@ export class AudioIngester {
 		const args = [
 			'-protocol_whitelist',
 			'file,crypto,udp,rtp',
+			// Muted/DTX producers can stop sending RTP indefinitely. Keep the
+			// decoder ready for resumed audio instead of restarting the ingester.
+			'-listen_timeout',
+			'-1',
 			'-i',
 			this.sdpPath,
 			'-f',
@@ -465,9 +469,13 @@ export class AudioIngester {
 		ffmpeg.on('exit', (code, signal) => {
 			if (this.ffmpeg === ffmpeg && this.running) {
 				loggers.stt.warn(
-					'ffmpeg exited unexpectedly (code=%s, signal=%s) for %s',
+					'ffmpeg exited unexpectedly (code=%s, signal=%s, producerPaused=%s, decodedAudioIdleMs=%s) for %s',
 					code,
 					signal,
+					this.producer.paused,
+					this.lastDecodedAudioAt === null
+						? null
+						: Math.round(performance.now() - this.lastDecodedAudioAt),
 					this.participantId,
 				);
 				this.notifyFailure();
