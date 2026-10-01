@@ -56,10 +56,7 @@ import {
 } from 'vue'
 import { TextSelection } from '@tiptap/pm/state'
 import { CharacterCount, Selection } from '@tiptap/extensions'
-import {
-  default as TableOfContents,
-  getHierarchicalIndexes,
-} from '@tiptap/extension-table-of-contents'
+import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import {
   Editor as FTextEditor,
   EditorFixedMenu as TextEditorFixedMenu,
@@ -68,6 +65,7 @@ import {
   EditorDropZone,
   EditorContent,
   RichTextKit,
+  Heading,
 } from 'frappe-ui/editor'
 import { Button, toast, useFileUpload, Dropdown } from 'frappe-ui'
 import { rename, allUsers } from '@/apps/drive/legacy/sdk'
@@ -89,6 +87,7 @@ import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { TabsExtension } from '@/apps/writer/extensions/tabs'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
+import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
 import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
 
 
@@ -218,8 +217,10 @@ const editorExtensions = [
       gapcursor: false,
       ...(hasCollaboration && { undoRedo: false }),
     },
+    heading: false,
     mention: { items: () => allUsers.data ?? [] },
   }),
+  Heading,
   ...COMMON_EXTENSIONS,
   CoreEditorExtension,
   PageBreakExtension,
@@ -236,7 +237,7 @@ const editorExtensions = [
   TabTrailingNode,
   JoinAdjacentLists,
   OldCommentExtension.configure({ onCommentActivated }),
-  TableOfContents.configure({
+  HeadingAnchors.configure({
     onUpdate: (val) => (anchors.value = val),
     getIndex: getHierarchicalIndexes,
     scrollParent: () => scrollParent.value,
