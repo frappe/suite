@@ -97,15 +97,15 @@ class IndexedDeviceStore implements DeviceStore {
   constructor(private readonly db: IDBDatabase) {}
 
   sessions(doc: string) {
-    return this.read('sessions', (tx) => tx.objectStore('sessions').getAll(docRange(doc)))
+    return this.read<StoredSession[]>('sessions', (tx) => tx.objectStore('sessions').getAll(docRange(doc)))
   }
 
   entries(doc: string, sid: string) {
-    return this.read('entries', (tx) => tx.objectStore('entries').getAll(sessionRange(doc, sid)))
+    return this.read<StoredEntry[]>('entries', (tx) => tx.objectStore('entries').getAll(sessionRange(doc, sid)))
   }
 
   recovery(doc: string) {
-    return this.read('recovery', (tx) => tx.objectStore('recovery').index('doc').getAll(doc))
+    return this.read<RecoveryRecord[]>('recovery', (tx) => tx.objectStore('recovery').index('doc').getAll(doc))
   }
 
   async copy(doc: string): Promise<DeviceCopy | null> {

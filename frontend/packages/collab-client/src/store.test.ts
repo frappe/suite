@@ -14,7 +14,7 @@ async function fresh() {
 
 function typed(text: string, at = 0, base?: Y.Doc) {
   const doc = base ?? new Y.Doc()
-  let update = new Uint8Array()
+  let update: Uint8Array = new Uint8Array()
   doc.on('update', (bytes: Uint8Array) => (update = bytes))
   doc.getText('t').insert(at, text)
   return { doc, update }
