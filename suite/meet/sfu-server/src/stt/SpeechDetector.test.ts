@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
 	createSpeechDetector,
+	preloadSpeechDetector,
 	SileroSpeechDetector,
 	VadResampler,
 } from './SpeechDetector';
@@ -43,7 +44,8 @@ describe('VAD-only streaming resampling', () => {
 });
 
 describe('packaged CPU speech detector', () => {
-	it('rejects digital silence with separate producer state and repeatable reset', async () => {
+	it('rejects digital silence after preload with separate producer state and repeatable reset', async () => {
+		await preloadSpeechDetector();
 		const first = await createSpeechDetector();
 		expect(first.mode).toBe('silero');
 		const second = await SileroSpeechDetector.create();

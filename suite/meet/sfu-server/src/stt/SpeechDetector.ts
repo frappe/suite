@@ -95,6 +95,11 @@ async function session(): Promise<ort.InferenceSession> {
 	return sharedSession;
 }
 
+/** Load the shared CPU model without creating a producer or processing audio. */
+export async function preloadSpeechDetector(): Promise<void> {
+	await session();
+}
+
 /** Model/session are shared; all streaming state belongs to this producer. */
 export class SileroSpeechDetector implements SpeechDetector {
 	readonly mode = 'silero';

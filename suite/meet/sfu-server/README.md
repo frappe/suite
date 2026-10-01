@@ -43,77 +43,37 @@ captioned rooms, subscribers, producer ingesters, and Realtime streams. These
 metrics have no room or participant labels and help compare browser-visible
 caption delay with SFU audio delivery and isolated STT load measurements.
 
-Caption segmentation uses the packaged Silero speech detector on the SFU CPU.
-Each producer has its own recurrent state and ordered inference; the immutable
-ONNX session is shared with one inference thread. A causal anti-alias FIR
-resamples a separate copy from 24 kHz to 16 kHz for 32 ms detector windows.
-Speech begins at probability 0.5 and continues at 0.35. A 100 ms ingest block
-is voiced if any detector window in it is voiced. Silero retains up to two
-seconds (96 KB) of real pre-roll to protect soft onsets while its speech
-confidence builds. An explicit `STT_PRE_ROLL_MS` overrides this default.
-Silence intervals remain, and the original mono 24 kHz PCM sent to Nemotron
-is unchanged: no recognition-audio gain or model changes are involved.
+Captions use Silero VAD on the SFU CPU, with separate state per producer.
+Startup caches the model; audio is processed only for rooms with captions enabled.
+Only detector audio is resampled to 16 kHz; Nemotron receives the original
+24 kHz PCM. Two seconds of pre-roll preserve soft onsets. During Opus DTX,
+idle time finalizes buffered audio; fragments shorter than `STT_MIN_TAIL_MS`
+close and recover the stream instead. Quiet gaps clear old detector context.
 
-The MIT-licensed ONNX model and license are included under `assets/silero-vad/`.
-`SOURCE.json` pins official revision
-`1e261b036686cd0017d500ee96acd1c4ba572a9d` and SHA-256
-`1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`;
-startup verifies that digest before loading. Docker explicitly copies these
-assets. CPU-only `onnxruntime-node` is pinned to 1.30.0; installation sets
-`ONNXRUNTIME_NODE_INSTALL=skip` to avoid additional GPU-provider downloads.
-Model/runtime failures surface through ingester startup or recovery instead of
-silently falling back to amplitude gating. Silero is the sole production speech
-detector.
+The MIT model, license and pinned revision/checksum are in `assets/silero-vad/`.
+Startup verifies the checksum. Install with `ONNXRUNTIME_NODE_INSTALL=skip`
+to use the bundled CPU runtime without optional GPU-provider downloads.
+Model or runtime failures surface through startup/recovery; there is no fallback.
 
-When Opus DTX stops decoded PCM during silence, the ingester also checks
-elapsed inactivity using a monotonic clock. It finalizes after the configured
-normal or short-utterance silence interval, even if no new PCM frames arrive.
-An idle pending utterance needs at least `STT_MIN_TAIL_MS` (default 200 ms)
-of actually sent audio, including real pre-roll and tails, to commit. A smaller fragment closes and recovers the stream
-to discard its server-side buffer; a lone 100 ms block is not committed. Quiet-only
-idle gaps clear pre-roll and detector context. Active audio resets the idle clock.
-Complete real PCM samples remaining in a partial frame are sent before commit;
-no synthetic audio is inserted.
+### Private caption diagnostics
 
-### Private caption diagnostic slices
+Capture is off by default. Set `STT_DIAGNOSTICS_DIR` to an absolute private
+path and `STT_DIAGNOSTICS_ROOM_ID` to the exact internal `<site>::<meetingId>`.
+`STT_DIAGNOSTICS_ROOM_IDS` accepts up to 20 comma-separated IDs and takes
+precedence; wildcards and malformed IDs disable capture.
 
-For an isolated caption benchmark, set `STT_DIAGNOSTICS_DIR` to an absolute
-private artifact directory and `STT_DIAGNOSTICS_ROOM_ID` to one exact internal
-SFU room ID, including its site namespace: `<site>::<meetingId>` (for example
-`suite.localhost::bdac-oiuq-cvuk`). A bare meeting ID will not match.
-Alternatively, `STT_DIAGNOSTICS_ROOM_IDS` accepts up to 20 comma-separated exact
-IDs and takes precedence over the singular variable. Wildcards, empty entries,
-and IDs longer than 140 characters disable capture. Capture is off by default;
-caption subscribers cannot enable it.
+Each capture directory (`0700`) contains files (`0600`): `metadata.json`,
+`before-vad.pcm`, `stt-sent.pcm`, and `events.jsonl`. PCM is mono s16le at 24 kHz.
+Events include timestamps, byte offsets, queued commits/session settings,
+transcripts and safe RTP counters. STT sends mean queued, not acknowledged.
+Artifacts include private audio, names and transcripts; keep them out of git.
+Authentication headers and server error messages are excluded.
 
-Each ingester creates a random directory with mode `0700` and these `0600` files:
-
-- `metadata.json`: room, participant, producer and stream IDs, creation time,
-  PCM format and capture limits.
-- `before-vad.pcm`: FFmpeg output before speech segmentation.
-- `stt-sent.pcm`: audio queued on the STT websocket, not server acknowledgement.
-- `events.jsonl`: monotonic `elapsedMs`, PCM byte offsets, queued commits,
-  queued session configuration (`stt.session.update.sent` with model, language,
-  sample rate and names), received transcription events, emitted Meet
-  transcripts, safe RTP producer/consumer counters (`rtp.stats`, sampled every
-  two seconds while capture is active), and `capture.end` with final offsets and termination reason.
-
-Both PCM files contain mono signed little-endian 16-bit samples at 24 kHz.
-`stt.commit.sent.audioOffset` identifies the end of each committed utterance in
-`stt-sent.pcm`; received item IDs link commit acknowledgements and transcripts.
-Correlate browser exports using the room and participant IDs in metadata.
-Authentication headers and server error messages are excluded. Audio, names and
-transcripts remain private benchmark data; do not put these artifacts in git.
-
-A slice ends after 60 seconds, 2,880,000 bytes per PCM boundary, 1 MiB of events,
-or 256 KiB of queued writes. A limit, I/O failure or normal shutdown closes the
-slice without changing transcription. Wait for `capture.end` and closed files
-before analysis; a limit or error means the slice may omit later audio/events.
-A missing termination event means the capture is incomplete.
-There are at most 10 capture attempts per process by default. Set
-`STT_DIAGNOSTICS_MAX_SESSIONS=20` for a larger isolated run; the hard maximum is
-20 and invalid values disable capture. Restart the test SFU for a fresh budget.
-Capture shutdown does not wait for filesystem writes on the audio path.
+Captures are bounded to 60 seconds, 2.88 MB per PCM file, 1 MiB of events and
+256 KiB of pending writes. There are 10 attempts per process;
+`STT_DIAGNOSTICS_MAX_SESSIONS` may raise this to 20. Limits and I/O failures
+end capture without interrupting captions. Wait for closed files and
+`capture.end` before analysis; missing termination indicates an incomplete slice.
 
 ## Development Setup
 

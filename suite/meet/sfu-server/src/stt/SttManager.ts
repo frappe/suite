@@ -2,6 +2,7 @@ import type { Producer, Router } from 'mediasoup/types';
 import type { ServerToClientEvents, TranscriptSegment } from '../types';
 import { loggers } from '../utils/logger';
 import { AudioIngester } from './AudioIngester';
+import { preloadSpeechDetector } from './SpeechDetector';
 import {
 	type ISttClient,
 	MockSttClient,
@@ -64,6 +65,18 @@ export class SttManager {
 			this.sttClient = new MockSttClient();
 		}
 		this.sttClient.onAvailable(() => this.restartSubscribedRooms());
+	}
+
+	async prepareSpeechDetection(): Promise<void> {
+		if (!this.configured) return;
+		try {
+			await preloadSpeechDetector();
+		} catch (error) {
+			loggers.stt.error(
+				'Speech detector preload failed: %s',
+				(error as Error).message,
+			);
+		}
 	}
 
 	setEmitToSubscribers(fn: EmitSttToSubscribers): void {

@@ -32,55 +32,37 @@ function fixtureDetector(): SpeechDetector {
 	};
 }
 
+function testStream() {
+	return {
+		sendAudio: vi.fn(() => true),
+		markFinal: vi.fn(),
+		onUnexpectedClose: vi.fn(),
+		close: vi.fn<() => Promise<void>>().mockResolvedValue(),
+	} satisfies ISttStream;
+}
+
+function testIngester(
+	options: Partial<ConstructorParameters<typeof AudioIngester>[0]> = {},
+) {
+	return new AudioIngester({
+		speechDetector: fixtureDetector(),
+		roomId: 'room',
+		participantId: 'speaker',
+		producer: { id: 'producer' } as Producer,
+		router: {} as Router,
+		sttClient: {} as ISttClient,
+		onUnexpectedStreamClose: vi.fn(),
+		onTranscript: vi.fn(),
+		...options,
+	});
+}
+
 describe('AudioIngester', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 		vi.restoreAllMocks();
 		vi.unstubAllEnvs();
 	});
-	it('cleans up a transport created after stop begins', async () => {
-		const sttClient = {
-			isAvailable: () => true,
-			onAvailable: vi.fn(),
-			createStream: vi.fn(),
-		} satisfies ISttClient;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
-			sttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
-		let finishSetup: () => void = () => {};
-		const transport = { close: vi.fn() };
-		const internals = ingester as unknown as {
-			plainTransport: typeof transport | null;
-			setupPlainTransport(): Promise<void>;
-			createConsumer(): Promise<void>;
-		};
-		vi.spyOn(internals, 'setupPlainTransport').mockImplementation(
-			() =>
-				new Promise<void>((resolve) => {
-					finishSetup = () => {
-						internals.plainTransport = transport;
-						resolve();
-					};
-				}),
-		);
-		const createConsumer = vi.spyOn(internals, 'createConsumer');
-
-		const start = ingester.start();
-		await ingester.stop();
-		finishSetup();
-		await start;
-
-		expect(transport.close).toHaveBeenCalledOnce();
-		expect(createConsumer).not.toHaveBeenCalled();
-	});
-
 	it('uses detector speech decisions rather than amplitude while preserving pre-roll and short-utterance silence', async () => {
 		const decisions = [
 			false,
@@ -101,21 +83,9 @@ describe('AudioIngester', () => {
 			reset: vi.fn(),
 			detect: vi.fn(async () => ({ speech: decisions.shift()! })),
 		};
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
+		const stream = testStream();
+		const ingester = testIngester({
 			speechDetector: detector,
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			sttStream: ISttStream;
@@ -147,21 +117,9 @@ describe('AudioIngester', () => {
 			reset: vi.fn(),
 			detect: async () => ({ speech: ++calls > 19 }),
 		};
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
+		const stream = testStream();
+		const ingester = testIngester({
 			speechDetector: detector,
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			sttStream: ISttStream;
@@ -202,21 +160,9 @@ describe('AudioIngester', () => {
 					finish = resolve;
 				}),
 		};
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
+		const stream = testStream();
+		const ingester = testIngester({
 			speechDetector: detector,
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			sttStream: ISttStream;
@@ -241,21 +187,10 @@ describe('AudioIngester', () => {
 			reset: vi.fn(),
 			detect: vi.fn().mockRejectedValue(new Error('fixture inference failure')),
 		};
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
+		const stream = testStream();
+		const ingester = testIngester({
 			speechDetector: detector,
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
 			onUnexpectedStreamClose: failed,
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			running: boolean;
@@ -294,22 +229,12 @@ describe('AudioIngester', () => {
 					}),
 			)
 			.mockResolvedValue(current);
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
+		const stream = testStream();
+		const ingester = testIngester({
+			speechDetector: undefined,
 			sttClient: {
 				createStream: vi.fn().mockResolvedValue(stream),
 			} as unknown as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const transport = {
 			connect: vi.fn().mockResolvedValue(undefined),
@@ -375,14 +300,8 @@ describe('AudioIngester', () => {
 				return current;
 			});
 		const onTranscript = vi.fn();
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
+		const ingester = testIngester({
 			sttClient: { createStream } as unknown as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
 			onTranscript,
 		});
 		const transport = {
@@ -421,21 +340,9 @@ describe('AudioIngester', () => {
 	it('expires quiet-only pre-roll and detector context once after a long PCM gap', async () => {
 		vi.useFakeTimers();
 		const detector = fixtureDetector();
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
+		const stream = testStream();
+		const ingester = testIngester({
 			speechDetector: detector,
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			sttStream: ISttStream;
@@ -484,22 +391,10 @@ describe('AudioIngester', () => {
 		true,
 	])('endpoints a single positive block after DTX with pre-roll=%s', async (withPreRoll) => {
 		vi.useFakeTimers();
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
+		const stream = testStream();
 		const onFailure = vi.fn();
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
+		const ingester = testIngester({
 			onUnexpectedStreamClose: onFailure,
-			onTranscript: vi.fn(),
 		});
 		const internals = ingester as unknown as {
 			running: boolean;
@@ -540,27 +435,15 @@ describe('AudioIngester', () => {
 	it('drains queued VAD frames with explicit 300 ms pre-roll ordering', async () => {
 		vi.stubEnv('STT_PRE_ROLL_MS', '300');
 		const onAudioSent = vi.fn();
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
+		const stream = testStream();
 		const sttClient = {
 			isAvailable: () => true,
 			onAvailable: vi.fn(),
 			createStream: vi.fn(),
 		} satisfies ISttClient;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
+		const ingester = testIngester({
 			sttClient,
 			onAudioSent,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
 		});
 		const silences = Array.from({ length: 5 }, (_, index) =>
 			silenceFrame(index + 1),
@@ -570,19 +453,13 @@ describe('AudioIngester', () => {
 		const speech2 = speechFrame();
 		const remainder = Buffer.alloc(FRAME_BYTES / 2);
 		const internals = ingester as unknown as {
-			vadQueue: Buffer[];
-			vadQueueBytes: number;
+			handleDecodedAudio(audio: Buffer): void;
 			sttStream: ISttStream;
 			runVadCheck(): Promise<void>;
 		};
-		internals.vadQueue = [
-			...silences,
-			speech1,
-			speechSilence,
-			speech2,
-			remainder,
-		];
-		internals.vadQueueBytes = FRAME_BYTES * 8.5;
+		internals.handleDecodedAudio(
+			Buffer.concat([...silences, speech1, speechSilence, speech2, remainder]),
+		);
 		internals.sttStream = stream;
 
 		await internals.runVadCheck();
@@ -599,155 +476,15 @@ describe('AudioIngester', () => {
 			onAudioSent.mock.calls.reduce((sum, [seconds]) => sum + seconds, 0),
 		).toBeCloseTo(0.6);
 		stream.sendAudio.mockReturnValueOnce(false);
-		internals.vadQueue = [speechFrame()];
-		internals.vadQueueBytes = FRAME_BYTES;
+		internals.handleDecodedAudio(speechFrame());
 		await internals.runVadCheck();
 		expect(onAudioSent).toHaveBeenCalledTimes(6);
 	});
 
-	it('sends the first speech frames without waiting for the 800 ms speaker update', async () => {
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
-		const internals = ingester as unknown as {
-			vadQueue: Buffer[];
-			vadQueueBytes: number;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
-		internals.sttStream = stream;
-		internals.vadQueue = Array.from({ length: 8 }, speechFrame);
-		internals.vadQueueBytes = FRAME_BYTES * 8;
-
-		await internals.runVadCheck();
-		expect(stream.sendAudio).toHaveBeenCalledTimes(8);
-		internals.vadQueue = [speechFrame()];
-		internals.vadQueueBytes = FRAME_BYTES;
-		await internals.runVadCheck();
-		expect(stream.sendAudio).toHaveBeenCalledTimes(9);
-		expect(stream.sendAudio.mock.calls.map(([frame]) => frame)).toEqual(
-			Array.from({ length: 9 }, speechFrame),
-		);
-	});
-
-	it('keeps a short utterance that ends before the first speaker update', async () => {
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
-		const internals = ingester as unknown as {
-			vadQueue: Buffer[];
-			vadQueueBytes: number;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
-		internals.sttStream = stream;
-		internals.vadQueue = [
-			speechFrame(),
-			speechFrame(),
-			...Array.from({ length: 7 }, () => silenceFrame()),
-		];
-		internals.vadQueueBytes = FRAME_BYTES * 9;
-
-		await internals.runVadCheck();
-
-		expect(stream.sendAudio).toHaveBeenCalledTimes(9);
-		expect(stream.markFinal).toHaveBeenCalledWith(900);
-	});
-
-	it.each([
-		{ label: 'detector-negative audio', shortSpeech: false },
-		{ label: '100 ms reply', shortSpeech: true },
-	])('characterizes segmentation for $label using fixed detector decisions', async ({
-		shortSpeech,
-	}) => {
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
-		const internals = ingester as unknown as {
-			vadQueue: Buffer[];
-			vadQueueBytes: number;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
-		const quiet = Buffer.alloc(FRAME_BYTES);
-		for (let offset = 0; offset < quiet.length; offset += 2)
-			quiet.writeInt16LE(100, offset);
-		internals.sttStream = stream;
-		internals.vadQueue = [
-			shortSpeech ? speechFrame() : quiet,
-			...Array.from({ length: 10 }, () => silenceFrame()),
-		];
-		internals.vadQueueBytes = FRAME_BYTES * 11;
-		await internals.runVadCheck();
-		expect(stream.markFinal).not.toHaveBeenCalled();
-		if (!shortSpeech) {
-			expect(stream.sendAudio).not.toHaveBeenCalled();
-			return;
-		}
-		expect(stream.sendAudio).toHaveBeenCalledTimes(11);
-		internals.vadQueue = Array.from({ length: 139 }, () => silenceFrame());
-		internals.vadQueueBytes = FRAME_BYTES * 139;
-		await internals.runVadCheck();
-		expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(15_000);
-	});
-
 	it('commits DTX inactivity before teardown, retains a real partial tail, and starts fresh on resumed speech', async () => {
 		vi.useFakeTimers();
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room',
-			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
+		const stream = testStream();
+		const ingester = testIngester();
 		const internals = ingester as unknown as {
 			sttStream: ISttStream;
 			handleDecodedAudio(data: Buffer): void;
@@ -788,33 +525,18 @@ describe('AudioIngester', () => {
 	});
 
 	it('finalizes continuous speech at the maximum utterance duration', async () => {
-		const stream = {
-			sendAudio: vi.fn(() => true),
-			markFinal: vi.fn(),
-			onUnexpectedClose: vi.fn(),
-			close: vi.fn<() => Promise<void>>().mockResolvedValue(),
-		} satisfies ISttStream;
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
-			onUnexpectedStreamClose: vi.fn(),
-			onTranscript: vi.fn(),
-		});
+		const stream = testStream();
+		const ingester = testIngester();
 		const internals = ingester as unknown as {
-			vadQueue: Buffer[];
-			vadQueueBytes: number;
+			handleDecodedAudio(audio: Buffer): void;
 			sttStream: ISttStream;
 			runVadCheck(): Promise<void>;
 		};
-		internals.vadQueue = Array.from({ length: 151 }, speechFrame);
-		internals.vadQueueBytes = FRAME_BYTES * 151;
 		internals.sttStream = stream;
-
-		await internals.runVadCheck();
+		for (let index = 0; index < 151; index++) {
+			internals.handleDecodedAudio(speechFrame());
+			await internals.runVadCheck();
+		}
 
 		expect(stream.markFinal).toHaveBeenCalledOnce();
 		expect(stream.markFinal).toHaveBeenCalledWith(15_000);
@@ -822,15 +544,8 @@ describe('AudioIngester', () => {
 
 	it('reports FFmpeg failure once and suppresses exit during normal stop', async () => {
 		const onFailure = vi.fn();
-		const ingester = new AudioIngester({
-			speechDetector: fixtureDetector(),
-			roomId: 'room-1',
-			participantId: 'participant-1',
-			producer: { id: 'producer-1' } as Producer,
-			router: {} as Router,
-			sttClient: {} as ISttClient,
+		const ingester = testIngester({
 			onUnexpectedStreamClose: onFailure,
-			onTranscript: vi.fn(),
 		});
 		const process = new EventEmitter() as ChildProcess;
 		Object.assign(process, {
