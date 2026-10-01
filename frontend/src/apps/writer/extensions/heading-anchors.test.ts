@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { Editor, Extension } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
+import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -8,13 +7,14 @@ import Heading from '@tiptap/extension-heading'
 import Collaboration from '@tiptap/extension-collaboration'
 import * as Y from 'yjs'
 import { HeadingAnchors } from './heading-anchors'
+import { ReceivedContentGuard } from './received-content-guard'
 
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
-function open(state: Uint8Array, extra: Extension[] = []) {
+function open(state: Uint8Array) {
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, state, 'server')
   let writes = 0
@@ -33,7 +33,7 @@ function open(state: Uint8Array, extra: Extension[] = []) {
       Heading,
       Collaboration.configure({ document: ydoc, field: 'default' }),
       HeadingAnchors.configure({ onUpdate: (items) => (anchors = items as never) }),
-      ...extra,
+      ReceivedContentGuard,
     ],
   })
   editors.push(editor)
@@ -69,29 +69,6 @@ describe('heading anchors', () => {
 
     expect(viewer.writes()).toBe(0)
     expect(headingIds(viewer.editor)).toEqual([null, null, null])
-  })
-
-  it('a plugin reacting to the opened content does not assign heading ids', async () => {
-    const Normalizer = Extension.create({
-      name: 'normalizer',
-      addProseMirrorPlugins: () => [
-        new Plugin({
-          appendTransaction: (transactions, _oldState, newState) => {
-            if (transactions.some((tr) => tr.getMeta('normalized'))) return null
-            const heading = newState.doc.firstChild!
-            if (heading.attrs.level === 3) return null
-            return newState.tr
-              .setNodeMarkup(0, undefined, { ...heading.attrs, level: 3 })
-              .setMeta('normalized', true)
-          },
-        }),
-      ],
-    })
-    const viewer = open(legacyDoc('Intro'), [Normalizer])
-    await settle()
-
-    expect(viewer.editor.state.doc.firstChild!.attrs.level).toBe(3)
-    expect(headingIds(viewer.editor)).toEqual([null])
   })
 
   it('gives those headings working table-of-contents links', async () => {

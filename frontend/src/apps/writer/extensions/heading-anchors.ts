@@ -1,7 +1,6 @@
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import type { Node } from '@tiptap/pm/model'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import TableOfContents from '@tiptap/extension-table-of-contents'
 
 // Opening or watching a document must never write to it. Ids are assigned
@@ -88,18 +87,6 @@ export const HeadingAnchors = TableOfContents.extend({
   },
 
   addProseMirrorPlugins() {
-    const [stock] = this.parent!()
-    const assignIds = new Plugin({
-      key: new PluginKey('headingAnchorIds'),
-      appendTransaction(transactions, oldState, newState) {
-        const local = transactions.filter((tr) => {
-          const root = tr.getMeta('appendedTransaction') ?? tr
-          return !root.getMeta(ySyncPluginKey)?.isChangeOrigin
-        })
-        if (!local.length) return null
-        return stock.spec.appendTransaction!.call(stock, local, oldState, newState)
-      },
-    })
-    return [assignIds, anchorDecorations()]
+    return [...this.parent!(), anchorDecorations()]
   },
 })

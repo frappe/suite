@@ -88,6 +88,8 @@ import { TabsExtension } from '@/apps/writer/extensions/tabs'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
+import { ListJoin } from '@/apps/writer/extensions/list-join'
+import { ReceivedContentGuard } from '@/apps/writer/extensions/received-content-guard'
 import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
 
 
@@ -215,12 +217,15 @@ const editorExtensions = [
       trailingNode: { node: 'paragraph', notAfter: 'tab' },
       paragraph: false,
       gapcursor: false,
+      listJoin: false,
       ...(hasCollaboration && { undoRedo: false }),
     },
     heading: false,
     mention: { items: () => allUsers.data ?? [] },
   }),
   Heading,
+  ListJoin,
+  ReceivedContentGuard,
   ...COMMON_EXTENSIONS,
   CoreEditorExtension,
   PageBreakExtension,
