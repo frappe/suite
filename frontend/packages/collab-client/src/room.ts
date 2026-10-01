@@ -27,8 +27,10 @@ export interface OpenOptions {
 
 export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
-// Why the server stopped hearing this tab. Only `signed_out` clears, once the same person signs back in
-export type Blocked = 'signed_out' | 'other_user' | 'lost_edit' | 'lost_read'
+// Why the server stopped hearing this tab. Only `signed_out` and `locked` clear, once the server hears it again
+export type Blocked = 'signed_out' | 'locked' | 'stale_session' | 'other_user' | 'lost_edit' | 'lost_read'
+
+export const recoverable = (blocked: Blocked) => blocked === 'signed_out' || blocked === 'locked'
 
 export interface CollabRoom {
   readonly doc: Y.Doc
@@ -251,7 +253,7 @@ class Room implements CollabRoom {
     }
     if (answer.status === 423) return this.retryAfter(body?.retry_ms ?? 1000)
     const blocked = this.refused(answer, 'lost_edit')
-    if (blocked === 'signed_out') return this.retryAfter(backoff())
+    if (blocked && recoverable(blocked)) return this.retryAfter(backoff())
     if (blocked) return
     if (!body?.collab) return this.retryAfter(backoff())
     this.setSaveState('failed')
@@ -261,7 +263,8 @@ class Room implements CollabRoom {
   private refused(answer: Answer, lost: 'lost_edit' | 'lost_read'): Blocked | null {
     const reason = reasonOf(answer)
     let blocked: Blocked | null = null
-    if (answer.status === 401) blocked = 'signed_out'
+    if (answer.status === 401 && (reason === 'signed_out' || reason === 'locked')) blocked = reason
+    else if (staleSession(answer)) blocked = 'stale_session'
     else if (answer.status === 409 && reason === 'principal_changed') blocked = 'other_user'
     else if (answer.status === 403 || answer.status === 404) blocked = this.reconcile(lost)
     if (blocked) this.block(blocked)
@@ -275,8 +278,8 @@ class Room implements CollabRoom {
   }
 
   private block(reason: Blocked) {
-    if (this.blocked === reason || (this.blocked && this.blocked !== 'signed_out')) return
-    if (reason !== 'signed_out') {
+    if (this.blocked === reason || (this.blocked && !replaces(reason, this.blocked))) return
+    if (!recoverable(reason)) {
       this.writable = false
       if (this.pending.length) this.saveState = 'failed'
     }
@@ -285,7 +288,7 @@ class Room implements CollabRoom {
   }
 
   private heard() {
-    if (this.blocked !== 'signed_out') return
+    if (!this.blocked || !recoverable(this.blocked)) return
     this.blocked = null
     this.changed()
     if (this.retrying) {
@@ -332,6 +335,11 @@ class Room implements CollabRoom {
   }
 }
 
+// Losing edit access can still turn out to be losing read access or a switched account
+function replaces(next: Blocked, current: Blocked) {
+  return recoverable(current) || (current === 'lost_edit' && (next === 'lost_read' || next === 'other_user'))
+}
+
 const backoff = () => 1000 + Math.random() * 29_000
 
 function json(answer: Answer): any {
@@ -343,6 +351,7 @@ function json(answer: Answer): any {
 }
 
 function openError(answer: Answer, options: OpenOptions) {
+  if (staleSession(answer)) return new CollabOpenError(answer.status, 'stale_session')
   const reason = reasonOf(answer)
   if (answer.status !== 403 && answer.status !== 404) return new CollabOpenError(answer.status, reason)
   const now = options.signedIn()
@@ -353,6 +362,11 @@ function openError(answer: Answer, options: OpenOptions) {
 function reasonOf(answer: Answer): string | null {
   const body = json(answer)
   return typeof body?.collab === 'string' ? body.collab : null
+}
+
+// Frappe refuses a token from before the browser signed in again; only a reload brings the new one
+function staleSession(answer: Answer) {
+  return answer.status === 400 && json(answer)?.exc_type === 'CSRFTokenError'
 }
 
 function randomHex(bytes: number) {
