@@ -12,3 +12,4 @@ export {
   type OpenOptions,
   type SaveState,
 } from './room'
+export { openDeviceStore, type DeviceCopy, type DeviceStore, type RecoveryRecord, type StoredEntry, type StoredSession } from './store'
