@@ -959,8 +959,7 @@ def _legacy_inbox(principals, *, only_unread: bool = False, limit: int | None = 
     `activity_core._visible_notifications` reads that pointer and drops any row
     without one. Rows without one exist and are still written: every row a site
     held before Build, and every row
-    `api.notifications.create_notification` writes today - the legacy Writer
-    comment path still calls it through `writer_document.notify_comments`.
+    `api.notifications.create_notification` writes today.
 
     The old bodies read `tabDrive Notification` directly and never asked, so
     forwarding alone empties a legacy inbox: the page goes blank, the badge
@@ -2675,7 +2674,7 @@ def _whole_view(page_call, file_kinds, search) -> tuple[list, bool]:
     """
     rows: list = []
     cursor = None
-    for window in range(MAX_VIEW_WINDOWS):
+    for _window in range(MAX_VIEW_WINDOWS):
         page = page_call(cursor, node_core.MAX_PAGE_SIZE)
         rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
         cursor = page["next_cursor"]

@@ -1,16 +1,13 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import base64
 from datetime import datetime, timedelta
 
 import frappe
-import pycrdt
 from frappe import _
 from frappe.model.document import Document
 
 from suite import drive
-from suite.drive.api.notifications import create_notification, get_link
 
 COLLISION_ERRORS = (
     frappe.exceptions.QueryDeadlockError,
@@ -174,7 +171,7 @@ class WriterDocument(drive.DriveContent, Document):
         doc.save(ignore_permissions=True)
 
     def save_comments(self, data, file):
-        """Store the comment blob of a legacy document and notify mentions.
+        """Store the comment blob of a legacy document.
 
         Legacy only. Comments on a linked document are `Drive Node Comment`
         rows (§8.11), and §14.6 migrates this blob into them.
@@ -182,24 +179,6 @@ class WriterDocument(drive.DriveContent, Document):
         self._require_legacy("Drive comments")
         try:
             frappe.db.set_value("Writer Document", self.name, "ycomments", data)
-
-            # Go over every comment in the YJS data and check replies for mentions
-            comments_doc = pycrdt.Doc()
-            comments_doc.apply_update(base64.b64decode(data))
-            comments_map = comments_doc.get("comments", type=pycrdt.Map)
-            for comment_id, comment_data in comments_map.items():
-                mentions = [{**k, "owner": comment_data["owner"]} for k in comment_data.get("mentions", [])]
-                for reply in comment_data["replies"]:
-                    mentions.extend([{**k, "owner": reply["owner"]} for k in reply.get("mentions", [])])
-                if mentions:
-                    frappe.enqueue(
-                        notify_comments,
-                        job_id=f"doc_comments_{self.name}_{comment_id}",
-                        now=True,
-                        deduplicate=True,
-                        mentions=mentions,
-                        file=file,
-                    )
         except COLLISION_ERRORS:
             pass
 
@@ -228,30 +207,3 @@ class WriterDocument(drive.DriveContent, Document):
                 _("Drive owns this document. Use {0} instead.").format(instead),
                 frappe.ValidationError,
             )
-
-
-def notify_comments(file, mentions):
-    for mention in mentions:
-        from_owner = frappe.get_cached_value("User", mention["owner"], "full_name")
-        new_notification = create_notification(
-            mention["owner"],
-            mention["id"],
-            "Mention",
-            file,
-            f'{from_owner} mentioned you in a comment in "{file.file_name}".',
-        )
-        if new_notification:
-            try:
-                frappe.sendmail(
-                    recipients=[mention["id"]],
-                    subject=f"Frappe Drive - Mention in {file.file_name}",
-                    template="drive_comment",
-                    args={
-                        "message": f"{from_owner} mentioned you in a comment.",
-                        "doc": file.file_name,
-                        "link": get_link(file),
-                    },
-                    now=True,
-                )
-            except Exception:
-                frappe.log_error(frappe.get_traceback())
