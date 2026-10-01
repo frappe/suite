@@ -50,7 +50,6 @@ const {
   save,
   cleanup,
   provider,
-  permanentUserData,
   loaded,
   users,
   ...commentsDetail
@@ -62,9 +61,6 @@ const extensions = [
   Collaboration.configure({
     document: doc,
     field: 'default',
-    ySyncOptions: {
-      permanentUserData,
-    },
   }),
   CollaborationCaret.configure({
     provider,

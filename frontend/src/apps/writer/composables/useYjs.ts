@@ -12,8 +12,6 @@ import { inject, ref } from 'vue'
 import { updateComments } from '@/apps/writer/resources'
 import { useCollaborationUsers } from './useCollaborationUsers'
 
-import { useSessionStore } from '@/boot/session'
-
 const REALTIME_CONFIG = {
   signaling: ['wss://signal.frappe.cloud'],
   peerOpts: {
@@ -149,14 +147,6 @@ export function useYjs(id, document, editor, edited) {
   const { users, cleanup: cleanupUsers } = useCollaborationUsers(
     provider.awareness,
   )
-  const permanentUserData = new Y.PermanentUserData(doc)
-  // null (guest) as a user key crashes yjs' PermanentUserData map observer
-  permanentUserData.setUserMapping(
-    doc,
-    doc.clientID,
-    useSessionStore().user || 'Guest',
-  )
-
   // Comments
   const { cleanup: cleanupComments, ...commentsData } = useComments(
     document,
@@ -173,7 +163,6 @@ export function useYjs(id, document, editor, edited) {
     save,
     provider,
     users,
-    permanentUserData,
     loaded,
     ...commentsData,
   }
