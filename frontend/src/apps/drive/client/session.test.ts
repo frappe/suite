@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CREDENTIAL_CAP, CredentialOverflowError, MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
-import type { Transport } from '@/platform/transport'
+import { ACCESS_REFRESH_MS, CREDENTIAL_CAP, CredentialOverflowError, MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+import { TransportError, type Transport } from '@/platform/transport'
 
 const documentNode = (name: string, code?: string) => ({
   name, title: name, kind: 'document', parent: 'p', root: 'r', state: 'Active', size: 0, mime: null,
@@ -47,6 +47,47 @@ describe('document session media', () => {
     await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
     expect(mediaCalls).toBeGreaterThanOrEqual(2)
     expect(handle.cacheKey.value).not.toContain('?')
+    session.dispose()
+  })
+})
+
+describe('document session access refresh', () => {
+  const failure = (type: string, status: number) => new TransportError({ type, message: type, status })
+
+  it('keeps access through network and server errors and refuses on a real answer', async () => {
+    vi.useFakeTimers()
+    let answer: TransportError | null = null
+    const requester: Transport = {
+      request: (operation, input: any) =>
+        operation.id === 'node_get' && answer ? Promise.reject(answer) : Promise.resolve(documentNode(input.node) as never),
+    }
+    const session = await openDriveDocumentSession('root', { transport: requester })
+
+    for (const error of [failure('NetworkError', 0), failure('ServerError', 500), failure('Timeout', 408)]) {
+      answer = error
+      await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
+      expect(session.state.value).toBe('Active')
+      expect(session.access.value.role).toBe(40)
+    }
+
+    answer = failure('DriveNotFound', 404)
+    await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
+    expect(session.state.value).toBe('Refused')
+    expect(session.access.value).toEqual({})
+    session.dispose()
+  })
+
+  it('refuses when signed out elsewhere', async () => {
+    let answer: TransportError | null = null
+    const target = new EventTarget()
+    const requester: Transport = {
+      request: (operation, input: any) =>
+        operation.id === 'node_get' && answer ? Promise.reject(answer) : Promise.resolve(documentNode(input.node) as never),
+    }
+    const session = await openDriveDocumentSession('root', { transport: requester, window: target as Window })
+    answer = failure('SessionExpired', 401)
+    target.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(session.state.value).toBe('Refused'))
     session.dispose()
   })
 })

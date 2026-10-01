@@ -3,7 +3,7 @@ import { readonly, ref, type Ref } from 'vue'
 import { api } from './generated'
 import { driveOperation } from './operation'
 import type { DriveAccess, DriveNode } from './types'
-import { transport as defaultTransport, type Transport } from '@/platform/transport'
+import { transport as defaultTransport, TransportError, type Transport } from '@/platform/transport'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -133,7 +133,9 @@ export async function openDriveDocumentSession(
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
       rememberCredential(fresh)
-    } catch {
+    } catch (error) {
+      const status = error instanceof TransportError ? error.status : 0
+      if (status < 400 || status >= 500 || status === 408 || status === 429) return
       state.value = 'Refused'
       access.value = {}
     }
