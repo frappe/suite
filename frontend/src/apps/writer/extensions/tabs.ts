@@ -1,4 +1,4 @@
-import { Node, type Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import TabView from './components/TabView.vue'
 import { EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
@@ -6,6 +6,7 @@ import { DOMSerializer, Fragment, Node as PMNode } from '@tiptap/pm/model'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { v4 } from 'uuid'
+import { TabNode } from '@/apps/writer/schema'
 
 type TabMatch = { node: PMNode; pos: number }
 
@@ -81,13 +82,7 @@ const duplicateTabIds = (doc: PMNode): string[] => {
   return ids.filter((id, index) => !id || ids.indexOf(id) < index)
 }
 
-export const TabsExtension = Node.create({
-  name: 'tab',
-  group: 'block',
-  content: 'block+',
-  defining: true,
-  isolating: true,
-
+export const TabsExtension = TabNode.extend({
   addStorage() {
     return {
       activeTabId: null,
@@ -98,38 +93,6 @@ export const TabsExtension = Node.create({
     return {
       ydoc: null,
     }
-  },
-
-  addAttributes() {
-    return {
-      id: {
-        default: null,
-        parseHTML: (el) => el.getAttribute('data-tab-id'),
-        renderHTML: (attrs) => (attrs.id ? { 'data-tab-id': attrs.id } : {}),
-      },
-      label: {
-        default: 'Untitled',
-        parseHTML: (el) => el.getAttribute('data-tab-label'),
-        renderHTML: (attrs) => ({ 'data-tab-label': attrs.label }),
-      },
-      order: {
-        default: null,
-        parseHTML: (el) => {
-          const order = el.getAttribute('data-tab-order')
-          return order === null ? null : Number(order)
-        },
-        renderHTML: (attrs) =>
-          attrs.order === null ? {} : { 'data-tab-order': attrs.order },
-      },
-    }
-  },
-
-  parseHTML() {
-    return [{ tag: 'div[data-tab-id]' }]
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return ['div', HTMLAttributes, 0]
   },
 
   addNodeView() {

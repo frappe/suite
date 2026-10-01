@@ -55,8 +55,6 @@ import {
   watch,
 } from 'vue'
 import { TextSelection } from '@tiptap/pm/state'
-import { CharacterCount, Selection } from '@tiptap/extensions'
-import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import {
   Editor as FTextEditor,
   EditorFixedMenu as TextEditorFixedMenu,
@@ -64,8 +62,6 @@ import {
   EditorTableMenu,
   EditorDropZone,
   EditorContent,
-  RichTextKit,
-  Heading,
 } from 'frappe-ui/editor'
 import { Button, toast, useFileUpload, Dropdown } from 'frappe-ui'
 import { rename, allUsers } from '@/apps/drive/legacy/sdk'
@@ -78,25 +74,14 @@ import ToCMobile from './ToCMobile.vue'
 import { buildMenuButtons } from './core-editor/menu-buttons'
 import { bubbleMenuOptions } from './core-editor/bubble-menu'
 
-import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
-import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
-import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { cssLineHeight } from '@/apps/writer/utils/typography'
-import MediaDownload from '@/apps/writer/extensions/media-download'
-import OldCommentExtension from '@/apps/writer/extensions/old-comment'
-import { TabsExtension } from '@/apps/writer/extensions/tabs'
-import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
-import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
-import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
-import { ListJoin } from '@/apps/writer/extensions/list-join'
-import { ReceivedContentGuard } from '@/apps/writer/extensions/received-content-guard'
-import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
+import { rebuild } from '@/apps/writer/extensions/comments'
+import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 
 
 import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
 import {
-  COMMON_EXTENSIONS,
   isModKey,
   printDoc,
   updateURLSlug,
@@ -212,51 +197,19 @@ const onCommentActivated = (id) => {
 const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collaboration')
 
 const editorExtensions = [
-  RichTextKit.configure({
-    starterKit: {
-      trailingNode: { node: 'paragraph', notAfter: 'tab' },
-      paragraph: false,
-      gapcursor: false,
-      listJoin: false,
-      ...(hasCollaboration && { undoRedo: false }),
-    },
-    heading: false,
-    mention: { items: () => allUsers.data ?? [] },
-  }),
-  Heading,
-  ListJoin,
-  ReceivedContentGuard,
-  ...COMMON_EXTENSIONS,
-  CoreEditorExtension,
-  PageBreakExtension,
-  CharacterCount,
-  Selection,
-  CleanStyles.configure({
-    allowProperty: (_prop, value) => value !== '',
-    validators: {
-      lineHeight: (value) => !value.endsWith('%'),
-      fontFamily: (value) => value.trim() !== '""',
-    },
-  }),
-  TabsExtension,
-  TabTrailingNode,
-  JoinAdjacentLists,
-  OldCommentExtension.configure({ onCommentActivated }),
-  HeadingAnchors.configure({
-    onUpdate: (val) => (anchors.value = val),
-    getIndex: getHierarchicalIndexes,
+  ...writerEditorExtensions({
+    collaborative: hasCollaboration,
+    mentionItems: () => allUsers.data ?? [],
+    onCommentActivated,
+    onAnchors: (val) => (anchors.value = val),
     scrollParent: () => scrollParent.value,
-  }),
-  MediaDownload,
-  CommentExtension.configure({
     comments: props.comments,
-    doc: props.yjsDoc,
+    ydoc: props.yjsDoc,
     activeComment,
     showComments,
     showResolved,
     edited,
-    onActivated: onCommentActivated,
-    onDecorationsPainted: () => (commentsPainted.value = true),
+    onCommentsPainted: () => (commentsPainted.value = true),
   }),
   ...props.extensions,
 ]

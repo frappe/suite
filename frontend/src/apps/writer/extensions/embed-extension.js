@@ -1,13 +1,12 @@
-import { Node } from '@tiptap/core'
 import { Plugin } from '@tiptap/pm/state'
 import DocumentList from '../components/DocumentList.vue'
 import tippy from 'tippy.js'
 
 import { watch, ref, computed } from 'vue'
 import { VueRenderer } from '@tiptap/vue-3'
+import { EmbedNode } from '@/apps/writer/schema'
 
-const EmbedExtension = Node.create({
-  name: 'embed',
+const EmbedExtension = EmbedNode.extend({
   addCommands() {
     return {
       embedDocument:
