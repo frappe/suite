@@ -100,7 +100,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   } catch (error) {
     const copy = device ? await device.store.copy(device.doc).catch(() => null) : null
     if (!copy) throw error
-    return { state: 'live', room: await openOffline(copy, options) }
+    return { state: 'live', room: await openOffline(copy, options, error) }
   }
   if (opened.status !== 200) throw openError(opened, options)
   const { header, rows } = decodeFrame(opened.bytes)
@@ -121,23 +121,28 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
 }
 
 // The device copy, with a clientID no session of this document has used, bound only once the server accepts the claim
-async function openOffline(copy: DeviceCopy, options: OpenOptions) {
+async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: unknown) {
   const { store, doc: key } = options.device!
   const doc = new Y.Doc()
   Y.applyUpdate(doc, copy.bytes, REMOTE)
   const sid = randomHex(16)
-  for (;;) {
+  // Another tab took the same clientID between reading the sessions and saving this one
+  for (let attempt = 0; copy.canWrite; attempt++) {
     const used = new Set([...Y.decodeStateVector(Y.encodeStateVector(doc)).keys()])
     for (const session of await store.sessions(key)) used.add(session.cid)
     let cid = 0
     while (!cid || used.has(cid)) cid = DEVICE_IDS + Math.floor(Math.random() * DEVICE_IDS)
     const session: StoredSession = { doc: key, sid, lineage: copy.lineage, cid, bound: false }
-    if (await store.saveSession(session).then(() => true, () => false)) {
+    try {
+      await store.saveSession(session)
       doc.clientID = cid
       break
+    } catch (error) {
+      if ((error as Error)?.name !== 'ConstraintError' || attempt === 2) throw unreachable
     }
   }
-  const room = new Room(doc, copy.lineage, copy.canWrite, sid, options, false)
+  // A viewer has nothing to claim
+  const room = new Room(doc, copy.lineage, copy.canWrite, sid, options, !copy.canWrite)
   room.appliedThrough = copy.rev
   await room.start([])
   return room

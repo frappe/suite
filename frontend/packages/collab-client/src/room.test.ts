@@ -53,6 +53,7 @@ function fakeServer(state = 'live') {
     },
     async session(sid, claim) {
       reach(claim ? 'claim' : 'session')
+      if (!access.canWrite) return reply(403, { collab: 'forbidden' })
       if (claim) {
         if (claim.lineage !== 'L') return reply(200, { claim: 'lineage' })
         const taken = [...sessions.entries()].some(([other, session]) => other !== sid && session.cid === claim.cid)
@@ -598,6 +599,36 @@ describe('collab room on a device', () => {
     const records = await kept.store.recovery('D')
     expect(records.map((record) => [record.reason, record.entries.length])).toEqual([['id_clash', 1]])
     expect([text(next), server.rows.length]).toEqual(['earlier', 1])
+  })
+
+  it('a viewer opened without the network catches up once back', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    server.access.canWrite = false
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+    const viewer = await join(server.endpoints(), { device: kept, pollMs: 1000 })
+    server.access.online = true
+    server.access.canWrite = true
+    const writer = await join(server.endpoints())
+
+    writer.doc.getText('t').insert(0, 'new')
+    await writer.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect([text(viewer), viewer.blocked, viewer.canWrite]).toEqual(['new', null, false])
+  })
+
+  it('a device that cannot keep a session opens nothing offline rather than retrying forever', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+    const full = Object.create(kept.store)
+    full.saveSession = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))
+
+    await expect(join(server.endpoints(), { device: { store: full, doc: 'D' } })).rejects.toThrow('Failed to fetch')
   })
 
   it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {
