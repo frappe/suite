@@ -9,12 +9,13 @@
     :editable
     :comments
     :extensions
-    @save="(_manual, _html, done) => room.flush().then(done)"
+    @save="save"
   />
 </template>
 
 <script setup>
 import { computed, provide, ref } from 'vue'
+import { toast } from 'frappe-ui'
 import Collaboration from '@tiptap/extension-collaboration'
 import * as Y from 'yjs'
 import { FIELD } from '@/apps/writer/collab'
@@ -38,4 +39,10 @@ defineExpose({ editor, users: [] })
 // Collaborative documents carry no comments yet
 const comments = new Y.Doc().getMap('comments')
 const extensions = [Collaboration.configure({ document: props.room.doc, field: FIELD })]
+
+async function save(_manual, _html, done) {
+  await props.room.flush()
+  if (props.room.saveState === 'clean') done?.()
+  else if (done) toast.warning('Not saved yet. Your changes are kept in this tab.')
+}
 </script>
