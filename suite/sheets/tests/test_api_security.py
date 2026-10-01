@@ -34,17 +34,18 @@ class _PermCheckBase(unittest.TestCase):
 
 
 class BroadcastsRequireWrite(_PermCheckBase):
-    def test_broadcast_op_requires_write(self):
-        from suite.sheets import api
-
-        api.broadcast_op("SH-1", '{"op_type":"edit"}')
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="write", throw=True)
-
     def test_yjs_update_requires_write(self):
         from suite.sheets import api
 
         api.yjs_relay("SH-1", "yjs_update", "<opaque>")
         self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="write", throw=True)
+
+    def test_relay_reaches_only_the_sheet_room(self):
+        from suite.sheets import api
+
+        api.yjs_relay("SH-1", "yjs_update", "<opaque>")
+        _, kwargs = self.frappe.publish_realtime.call_args
+        self.assertEqual((kwargs["doctype"], kwargs["docname"]), ("Sheet", "SH-1"))
 
     def test_yjs_state_requires_write(self):
         from suite.sheets import api
@@ -54,19 +55,6 @@ class BroadcastsRequireWrite(_PermCheckBase):
 
 
 class PresenceStaysRead(_PermCheckBase):
-    def test_ping_presence_is_read(self):
-        from suite.sheets import api
-
-        # user_identity does a db lookup; stub the fields out.
-        self.frappe.db.get_value.return_value = ""
-        api.ping_presence("SH-1")
-        # Only the read-shape call matters here.
-        args, kwargs = self.frappe.has_permission.call_args
-        self.assertEqual(kwargs.get("doc"), "SH-1")
-        self.assertEqual(kwargs.get("throw"), True)
-        # No ptype kwarg ⇒ defaults to read.
-        self.assertNotIn("ptype", kwargs)
-
     def test_yjs_awareness_is_read(self):
         from suite.sheets import api
 

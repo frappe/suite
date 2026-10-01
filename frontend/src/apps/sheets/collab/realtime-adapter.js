@@ -30,6 +30,18 @@ export function createRealtimeAdapter({
 	// remove the exact wrapped callback we registered on the socket.
 	const wrapped = new Map()
 
+	// The server relays into the sheet's document room and checks read
+	// permission on join. A reconnect starts outside every room, so join on
+	// each connect.
+	const join = () => realtime?.emit?.('doc_subscribe', 'Sheet', sheetId)
+	join()
+	realtime?.on?.('connect', join)
+
+	function close() {
+		realtime?.off?.('connect', join)
+		realtime?.emit?.('doc_unsubscribe', 'Sheet', sheetId)
+	}
+
 	function publish(event, payload) {
 		// Fire-and-forget; the relay errors land in the console but never
 		// block typing.
@@ -65,5 +77,5 @@ export function createRealtimeAdapter({
 		}
 	}
 
-	return { publish, on, off }
+	return { publish, on, off, close }
 }

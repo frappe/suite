@@ -12,72 +12,12 @@ from suite.sheets.versioning import save as save_mod
 MAX_TITLE_LEN = 280
 
 
-# ── Presence ──────────────────────────────────────────────────────────────────
-
-
-@frappe.whitelist()
-def ping_presence(name: str) -> None:
-    """Broadcast caller's identity to all clients watching this sheet."""
-    # Refuse presence for sheets the caller can't read — keeps random
-    # logged-in users from spoofing presence in private sheets they
-    # shouldn't even know exist.
-    frappe.has_permission("Sheet", doc=name, throw=True)
-    user = frappe.session.user
-    identity = _user_identity(user)
-    frappe.publish_realtime(
-        "sheet_presence",
-        {"sheet": name, "user": user, **identity},
-        after_commit=False,
-    )
-
-
-# ── Real-time collaboration ───────────────────────────────────────────────────
-#
-# Broadcasts split by whether the event represents a mutation or pure presence:
-#
-#   * mutation-shaped events (`broadcast_op`, `yjs_update`, `yjs_state`) require
-#     *write* permission on the sheet — a read-only sharee must not be able to
-#     push ops or full-state dumps that other clients' tabs will apply locally
-#     to their Yjs document, even though those changes can't be persisted
-#     server-side.
-#
-#   * presence-shaped events (`ping_presence`, `broadcast_cursor`,
-#     `yjs_awareness*`, `yjs_state_request`) require only *read* permission
-#     — viewers showing their avatar / cursor is an intended Google-Docs-style
-#     affordance and forging another user's position is bounded griefing, not
-#     state corruption.
-
-
-@frappe.whitelist()
-def broadcast_op(name: str, op: str) -> None:
-    """Broadcast a cell-op JSON string to all clients watching this sheet."""
-    frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
-    frappe.publish_realtime(
-        "sheet_op",
-        {"sheet": name, "user": frappe.session.user, "op": op},
-        after_commit=False,
-    )
-
-
-@frappe.whitelist()
-def broadcast_cursor(name: str, r: int, c: int, sub_sheet: str) -> None:
-    """Broadcast cursor position to all clients watching this sheet."""
-    frappe.has_permission("Sheet", doc=name, throw=True)
-    user = frappe.session.user
-    identity = _user_identity(user)
-    frappe.publish_realtime(
-        "sheet_cursor",
-        {"sheet": name, "user": user, **identity, "r": int(r), "c": int(c), "sub_sheet": sub_sheet},
-        after_commit=False,
-    )
-
-
 # ── Yjs realtime relay ────────────────────────────────────────────────────────
 #
 # The frontend ships a Yjs document for CRDT-safe multiplayer editing.
 # These endpoints are pure relays: the server validates permission and
 # republishes the (already-base64-encoded) Y.Doc updates to every client
-# subscribed to the sheet's room. The server never decodes the binary
+# in the sheet's document room. The server never decodes the binary
 # updates — it only sees opaque base64 blobs.
 #
 # Three events sit on the same channel:
@@ -110,6 +50,8 @@ def yjs_relay(name: str, event: str, payload: str) -> None:
     frappe.publish_realtime(
         event,
         {"sheet": name, "user": frappe.session.user, "payload": payload},
+        doctype="Sheet",
+        docname=name,
         after_commit=False,
     )
 

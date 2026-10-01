@@ -109,6 +109,8 @@ def create(
     frappe.publish_realtime(
         "sheet_snapshot_created",
         {"sheet": sheet, "snapshot": snap.name, "kind": kind, "seq": head_seq},
+        doctype="Sheet",
+        docname=sheet,
         after_commit=True,
     )
     return snap.name

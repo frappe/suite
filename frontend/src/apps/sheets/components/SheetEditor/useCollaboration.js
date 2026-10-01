@@ -92,8 +92,7 @@ function _throttle(fn, wait) {
  *   * Presence and cursor positions live in Yjs awareness — one volatile
  *     channel shared with the same transport.
  *   * The previous bespoke `broadcast_op` / `sheet_cursor` / `ping_presence`
- *     flow is retired; the backend endpoints still exist but are no longer
- *     called from the editor.
+ *     flow is retired, and its backend endpoints are gone.
  *
  * The external API (`presentUsers`, `remoteCursors`, `broadcastCellChange`,
  * `broadcastBatchChange`, `broadcastCursor`) is preserved so index.vue
@@ -128,6 +127,7 @@ export function useCollaboration({
 
   let _doc       = null
   let _provider  = null
+  let _adapter   = null
   let _awareness = null
   let _binding   = null
   let _sheetId   = null
@@ -269,15 +269,15 @@ export function useCollaboration({
       if (!_realtime || typeof _realtime.on !== 'function') {
         _realtime = ensureFrappeRealtime() || _realtime
       }
-      const adapter = createRealtimeAdapter({
+      _adapter = createRealtimeAdapter({
         sheetId:  _sheetId,
         realtime: _realtime,
         callFn:   _callFn,
       })
-      _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
+      _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: _adapter })
       _awareness = createAwareness({
         sheetId:  _sheetId,
-        realtime: adapter,
+        realtime: _adapter,
         clientId: _provider.tag,
         initial:  { user: identity, cursor: null },
       })
@@ -317,8 +317,9 @@ export function useCollaboration({
     _binding?.dispose()
     _awareness?.destroy()
     _provider?.destroy()
+    _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _doc = null
+    _binding = _awareness = _provider = _adapter = _doc = null
     _sheetId = null
     presentUsers.value  = []
     remoteCursors.value = new Map()
