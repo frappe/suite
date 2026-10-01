@@ -2934,11 +2934,12 @@
     "@tiptap/extension-floating-menu" "^3.26.0"
 
 "@tiptap/y-tiptap@^3.0.1":
-  version "3.0.5"
-  resolved "https://registry.yarnpkg.com/@tiptap/y-tiptap/-/y-tiptap-3.0.5.tgz#771644c5b058f58bf27bf864cb18be85a8923564"
-  integrity sha512-WoK5z3jMW+9nzumcWAxEDRCSC7yQmdq4NN0157MaxQBl9dGWwjxJx3+11mb+WAqR37oDeAMKMmSNy+/hm2XGlA==
-  dependencies:
-    lib0 "^0.2.100"
+  version "0.0.0"
+  uid ""
+
+"@tiptap/y-tiptap@link:./frontend/packages/collab-prosemirror":
+  version "0.0.0"
+  uid ""
 
 "@trickfilm400/rollup-plugin-off-main-thread@^3.0.0-pre1":
   version "3.0.0-pre1"

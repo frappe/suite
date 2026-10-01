@@ -34,6 +34,9 @@ export default defineConfig({
 		environment: "jsdom",
 		passWithNoTests: true,
 		setupFiles: ["fake-indexeddb/auto"],
+		// The binding is linked in from frontend/packages, so Vite loads it; its
+		// importers must load through Vite too or they get a second copy
+		server: { deps: { inline: [/@tiptap\/extension-collaboration/] } },
 		retry: process.env.CI ? 2 : 0,
 		silent: true,
 		projects: [
