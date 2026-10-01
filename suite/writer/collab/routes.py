@@ -1,7 +1,10 @@
 """HTTP routes for Writer's collaborative documents.
 
 Bodies and answers are binary frames, so these handlers answer with their own
-responses instead of the JSON envelope.
+responses instead of the JSON envelope. Every request names the principal the
+tab expects, and that is checked before Drive is asked, so an expired sign-in
+answers `signed_out` rather than a permission verdict. Guests are heard for
+the same reason; Drive still decides what they may do.
 """
 
 import json
@@ -16,10 +19,10 @@ from suite.suite_core import collab
 from suite.writer.collab import ADAPTER
 
 ROUTES = (
-    Route("GET", "documents/{node}/collab", "collab_get"),
-    Route("GET", "documents/{node}/collab/updates", "collab_updates_get"),
-    Route("POST", "documents/{node}/collab/updates", "collab_updates_post"),
-    Route("POST", "documents/{node}/collab/sessions", "collab_sessions_post"),
+    Route("GET", "documents/{node}/collab", "collab_get", allow_guest=True),
+    Route("GET", "documents/{node}/collab/updates", "collab_updates_get", allow_guest=True),
+    Route("POST", "documents/{node}/collab/updates", "collab_updates_post", allow_guest=True),
+    Route("POST", "documents/{node}/collab/sessions", "collab_sessions_post", allow_guest=True),
 )
 
 HTTP = HttpOwner(
@@ -30,6 +33,8 @@ HTTP = HttpOwner(
     strip_owner=False,
 )
 
+PRINCIPAL_HEADER = "X-Collab-Principal"
+
 DRIVE_REFUSALS = (
     (drive.DriveNotFound, 404, "not_found"),
     (drive.DriveForbidden, 403, "forbidden"),
@@ -38,22 +43,22 @@ DRIVE_REFUSALS = (
 )
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def collab_get(node: str):
     return _answer(lambda: _open(node))
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def collab_updates_get(node: str, since: str | None = None):
     return _answer(lambda: _pull(node, since))
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def collab_updates_post(node: str):
     return _answer(lambda: _push(node))
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def collab_sessions_post(node: str):
     return _answer(lambda: _session(node))
 
@@ -66,6 +71,7 @@ def unknown() -> None:
 def _open(node: str) -> Response:
     if not collab.enabled():
         return _frame({"state": "disabled", "proto": collab.PROTO})
+    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
     _check(node, drive.READ)
     doc = collab.find(ADAPTER, node)
     if doc is None:
@@ -76,6 +82,7 @@ def _open(node: str) -> Response:
 
 def _pull(node: str, since: str | None) -> Response:
     collab.require_enabled()
+    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
     _check(node, drive.READ)
     doc = _doc(node)
     try:
@@ -87,15 +94,16 @@ def _pull(node: str, since: str | None) -> Response:
 
 def _push(node: str) -> Response:
     collab.require_enabled()
+    header, payload = collab.parse_push(frappe.request.get_data())
+    _require_principal(header.get("principal"))
     _check(node, drive.EDIT)
     doc = _doc(node)
-    header, payload = collab.parse_push(frappe.request.get_data())
-    _require_principal(header)
     return _json(200, collab.push(ADAPTER, doc.id, header, payload, frappe.session.user))
 
 
 def _session(node: str) -> Response:
     collab.require_enabled()
+    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
     _check(node, drive.EDIT)
     doc = _doc(node)
     try:
@@ -133,8 +141,8 @@ def _can(node: str, role: int) -> bool:
     return True
 
 
-def _require_principal(header: dict) -> None:
-    if header.get("principal") == frappe.session.user:
+def _require_principal(principal) -> None:
+    if principal == frappe.session.user:
         return
     if frappe.session.user == "Guest":
         raise collab.Refusal(401, "signed_out")

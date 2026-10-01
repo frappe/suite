@@ -22,9 +22,10 @@ OUTSIDER = "writer-collab-outsider@example.com"
 READER = "writer-collab-reader@example.com"
 
 
-def call(handler, node: str, *, body: bytes = b""):
+def call(handler, node: str, *, body: bytes = b"", principal: str | None = None):
     """Run one route handler as the current user, the way the dispatcher would."""
-    frappe.local.request = Request(EnvironBuilder(method="POST", data=body).get_environ())
+    headers = {routes.PRINCIPAL_HEADER: principal or frappe.session.user}
+    frappe.local.request = Request(EnvironBuilder(method="POST", data=body, headers=headers).get_environ())
     frappe.local.form_dict = frappe._dict()
     try:
         return handler(node)
@@ -50,11 +51,13 @@ def read_frame(data: bytes) -> tuple[dict, list[tuple[int, bytes]]]:
     return header, rows
 
 
-def push_body(lineage: str, sid: str, cid: int, seq: int, seen_rev: int, payload: bytes) -> bytes:
+def push_body(
+    lineage: str, sid: str, cid: int, seq: int, seen_rev: int, payload: bytes, principal: str | None = None
+) -> bytes:
     header = json.dumps(
         {
             "lineage": lineage,
-            "principal": frappe.session.user,
+            "principal": principal or frappe.session.user,
             "sid": sid,
             "from": seq,
             "to": seq,
@@ -201,6 +204,29 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual((header["state"], header["can_write"]), ("live", False))
         self.assertEqual((own_session.status_code, push.status_code), (403, 403))
+        frappe.set_user(WRITER)
+        self.assertEqual(self.open(node)[1], [])
+
+    def test_a_tab_signed_out_or_switched_is_told_why_before_any_access_check(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+        body = push_body(lineage, sid, cid, 1, 0, b"x", principal=WRITER)
+        session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()
+        handlers = (
+            (routes.collab_get, b""),
+            (routes.collab_updates_get, b""),
+            (routes.collab_sessions_post, session_body),
+            (routes.collab_updates_post, body),
+        )
+
+        for user, expected in (("Guest", (401, "signed_out")), (OUTSIDER, (409, "principal_changed"))):
+            frappe.set_user(user)
+            for handler, data in handlers:
+                response = call(handler, node, body=data, principal=WRITER)
+                self.assertEqual((response.status_code, answer(response)["collab"]), expected)
+
         frappe.set_user(WRITER)
         self.assertEqual(self.open(node)[1], [])
 
