@@ -503,7 +503,7 @@ describe('collab room on a device', () => {
     await first.close()
     server.access.online = true
     const next = await join(server.endpoints(), { device: kept })
-    expect(text(next)).toBe('offline work')
+    expect([text(next), next.onDevice]).toEqual(['offline work', true])
     await next.flush()
 
     expect([server.rows.length, next.saveState, next.unsent]).toEqual([1, 'clean', 0])
@@ -593,7 +593,7 @@ describe('collab room on a device', () => {
     server.access.online = false
 
     await vi.advanceTimersByTimeAsync(1000)
-    expect([room.blocked, room.unsent]).toEqual(['offline', 1])
+    expect([room.blocked, room.unsent, room.onDevice]).toEqual(['offline', 1, false])
     server.access.online = true
     await vi.advanceTimersByTimeAsync(31_000)
 

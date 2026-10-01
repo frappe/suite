@@ -1,4 +1,4 @@
-import { openCollabRoom, type CollabEndpoints, type Opened } from '@suite/collab-client'
+import { openCollabRoom, openDeviceStore, type CollabEndpoints, type DeviceStore, type Opened } from '@suite/collab-client'
 import type { DocumentSession } from '@/apps/drive'
 import { getCookieSessionUser } from '@/platform/session'
 import { createTransport, type HttpMethod, type Operation } from '@/platform/transport'
@@ -30,14 +30,32 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
     pull: (since) => transport.requestBytes(PULL, { node, since }, { headers }),
     push: (body, options) =>
       transport.requestBytes(PUSH, { node }, { body, keepalive: options?.keepalive, headers }),
-    session: (sid) =>
-      transport.requestBytes(SESSION, { node }, { body: new TextEncoder().encode(JSON.stringify({ sid })), headers }),
+    session: (sid, claim) =>
+      transport.requestBytes(SESSION, { node }, {
+        body: new TextEncoder().encode(JSON.stringify(claim ? { sid, claim } : { sid })),
+        headers,
+      }),
   }
 }
 
 const signedIn = () => getCookieSessionUser() ?? 'Guest'
 
-export function openWriterRoom(session: DocumentSession): Promise<Opened> {
+// One store per person on this site; another person's stays untouched on the device
+const stores = new Map<string, Promise<DeviceStore | null>>()
+
+function deviceStore(principal: string) {
+  const key = principal === 'Guest' ? 'guest' : principal
+  if (!stores.has(key)) stores.set(key, openDeviceStore(`suite-writer-collab:${location.host}:${key}`))
+  return stores.get(key)!
+}
+
+export async function openWriterRoom(session: DocumentSession): Promise<Opened> {
   const principal = signedIn()
-  return openCollabRoom({ endpoints: writerEndpoints(session, principal), principal, signedIn })
+  const store = await deviceStore(principal)
+  return openCollabRoom({
+    endpoints: writerEndpoints(session, principal),
+    principal,
+    signedIn,
+    device: store && { store, doc: session.nodeId },
+  })
 }

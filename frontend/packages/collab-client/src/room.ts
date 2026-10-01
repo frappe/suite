@@ -51,6 +51,8 @@ export interface CollabRoom {
   readonly paused: string | null
   readonly saveState: SaveState
   readonly unsent: number
+  // Whether unsent work outlives this tab
+  readonly onDevice: boolean
   readonly appliedThrough: number
   onChange(listener: () => void): () => void
   pull(): Promise<void>
@@ -192,6 +194,10 @@ class Room implements CollabRoom {
 
   get canWrite() {
     return this.writable
+  }
+
+  get onDevice() {
+    return !!this.device
   }
 
   get unsent() {

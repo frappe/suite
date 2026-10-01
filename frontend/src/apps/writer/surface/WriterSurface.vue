@@ -40,6 +40,7 @@ const roomPaused = ref<string | null>(null);
 const roomUnsent = ref(0);
 const openRefusal = ref<string | null>(null);
 const recoveryKept = ref(false);
+const roomOnDevice = ref(false);
 let stopWatchingRoom = () => {};
 let unmounted = false;
 
@@ -91,8 +92,12 @@ const blockedMessage = computed(() => {
     signed_out: "You're signed out. Sign in again to keep saving; your changes stay in this tab.",
     locked: "This document is locked again. Unlock it to keep saving; your changes stay in this tab.",
     offline: "You're offline, and this browser isn't keeping changes for this site, so editing is paused until the connection is back.",
-    stale_session: `You signed in again in another tab.${kept} Reload to keep saving.`,
-    other_user: `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
+    stale_session: roomOnDevice.value
+      ? "You signed in again in another tab. Reload to keep saving; your unsent changes come back with the reload."
+      : `You signed in again in another tab.${kept} Reload to keep saving.`,
+    other_user: roomOnDevice.value
+      ? "This browser is now signed in as someone else. Your unsent changes stay on this device until you sign back in. Reload to continue as them."
+      : `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
     lost_edit: `You can no longer edit this document.${kept}`,
     lost_read: `You can no longer open this document.${kept}`,
   }[roomBlocked.value!] ?? `Saving stopped in this tab.${kept} Reload to keep editing.`;
@@ -157,6 +162,7 @@ async function openCollab() {
       roomBlocked.value = live.blocked;
       roomPaused.value = live.paused;
       roomUnsent.value = live.unsent;
+      roomOnDevice.value = live.onDevice;
     };
     stopWatchingRoom = opened.room.onChange(sync);
     sync();
@@ -249,8 +255,14 @@ function warnBeforeUnload(event: Event) {
   resolveDocumentUnload({ state: () => (collab.value === "live" ? saveState.value : "clean"), retainRecovery }, event);
 }
 
-function setOnline() { online.value = true; }
-function setOffline() { online.value = false; }
+function setOnline() {
+  online.value = true;
+  void room.value?.pull();
+}
+function setOffline() {
+  online.value = false;
+  void room.value?.pull();
+}
 onMounted(() => {
   window.addEventListener("online", setOnline);
   window.addEventListener("offline", setOffline);
