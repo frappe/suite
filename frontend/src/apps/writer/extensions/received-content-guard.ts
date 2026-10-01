@@ -29,6 +29,14 @@ function touched(tr: Transaction) {
 const mapRanges = (ranges: Range[], mapping: Mappable) =>
   ranges.map(([from, to]): Range => [mapping.map(from, -1), mapping.map(to, 1)])
 
+// Where `transactions` changed the document, in the last one's positions.
+// Normalizers fix only there, or the guard refuses their whole transaction
+export const changedRanges = (transactions: readonly Transaction[], ranges: Range[] = []) =>
+  transactions.reduce((all, tr) => [...mapRanges(all, tr.mapping), ...touched(tr)], ranges)
+
+export const touches = (ranges: Range[], from: number, to = from) =>
+  ranges.some(([start, end]) => from <= end && start <= to)
+
 // Attributes and marks settle to one value in Yjs, so these may follow up anywhere
 function settlesToOneValue(step: Step, doc: Node) {
   if (
@@ -80,7 +88,7 @@ export const ReceivedContentGuard = Extension.create<object, { root: Transaction
             const { root } = storage
             if (tr === root) return root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin ? touched(tr) : null
             if (!root || !ranges) return null
-            return [...mapRanges(ranges, tr.mapping), ...touched(tr)]
+            return changedRanges([tr], ranges)
           },
         },
         filterTransaction: (tr, state) => {
@@ -93,7 +101,7 @@ export const ReceivedContentGuard = Extension.create<object, { root: Transaction
             const allowed = mapRanges(ranges, tr.mapping.slice(0, i))
             let inside = true
             step.getMap().forEach((from, to) => {
-              inside &&= allowed.some(([start, end]) => from <= end && start <= to)
+              inside &&= touches(allowed, from, to)
             })
             return inside
           })

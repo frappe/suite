@@ -9,6 +9,7 @@ import { TrailingNode } from '@tiptap/extensions'
 import Collaboration from '@tiptap/extension-collaboration'
 import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
+import { JoinAdjacentLists } from './join-adjacent-lists'
 import { ListJoin } from './list-join'
 import { ReceivedContentGuard } from './received-content-guard'
 
@@ -17,7 +18,7 @@ afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
-const extensions = [Document, Paragraph, Text, Heading, BulletList, ListItem, TrailingNode, ListJoin]
+const extensions = [Document, Paragraph, Text, Heading, BulletList, ListItem, TrailingNode, ListJoin, JoinAdjacentLists]
 
 const schema = new Editor({ extensions }).schema
 const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
@@ -76,6 +77,20 @@ describe('received content guard', () => {
 
     expect(blocks(viewer.editor)).toEqual(['bulletList', 'paragraph'])
     expect(viewer.ydoc.getXmlFragment('default').length).toBe(2)
+  })
+
+  it('an untidy spot elsewhere still lets the user\'s own edit tidy up', async () => {
+    const viewer = open(stored(ul('a'), ul('b'), p('x'), ul('c'), p('gap'), ul('d'), p('end')))
+    await settle()
+
+    const { doc } = viewer.editor.state
+    let gap = 0
+    doc.forEach((node, offset) => {
+      if (node.textContent === 'gap') gap = offset
+    })
+    viewer.editor.commands.deleteRange({ from: gap, to: gap + doc.nodeAt(gap)!.nodeSize })
+
+    expect(blocks(viewer.editor)).toEqual(['bulletList', 'bulletList', 'paragraph', 'bulletList', 'paragraph'])
   })
 
   it('two people editing elsewhere tidy nothing twice', async () => {
