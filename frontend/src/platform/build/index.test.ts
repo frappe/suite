@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const info = vi.fn()
 vi.mock('frappe-ui', () => ({ toast: { info } }))
-vi.mock('@/boot/translation', () => ({
+vi.mock('@/platform/translation', () => ({
   translate: (text: string, replace: string[] = []) => text.replace('{0}', replace[0]),
 }))
 
@@ -14,7 +14,7 @@ async function tabOnBuild(build: string, server: Record<string, string>) {
   vi.stubGlobal('__SUITE_BUILD__', build)
   vi.stubEnv('DEV', false)
   vi.stubGlobal('fetch', respond(server))
-  const module = await import('./build')
+  const module = await import('./index')
   module.watchBuild()
   await window.fetch('/api/method/ping')
   return module

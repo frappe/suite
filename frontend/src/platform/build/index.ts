@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { toast } from 'frappe-ui'
 
-import { translate } from '@/boot/translation'
+import { translate } from '@/platform/translation'
 
 const BUILD = Number(__SUITE_BUILD__)
 

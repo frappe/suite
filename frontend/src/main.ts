@@ -6,7 +6,7 @@ import { createPinia } from "pinia";
 import App from "@/App.vue";
 import router from "@/router";
 import { initSentry } from "@/boot/sentry";
-import { watchBuild } from "@/boot/build";
+import { watchBuild } from "@/platform/build";
 import { initializeTheme } from "@/platform/theme";
 import {
   ready as translationsReady,
