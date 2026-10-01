@@ -183,11 +183,11 @@ describe('collab room', () => {
 
     const flushed = room.flush()
     await vi.advanceTimersByTimeAsync(500)
-    expect(calls).toBe(1)
+    expect([calls, room.paused]).toEqual([1, 'busy'])
     await vi.advanceTimersByTimeAsync(2000)
     await flushed
 
-    expect([calls, server.rows.length, room.saveState]).toEqual([3, 1, 'clean'])
+    expect([calls, server.rows.length, room.saveState, room.paused]).toEqual([3, 1, 'clean', null])
   })
 
   it('typing after a lost answer is sent from where the server stopped', async () => {

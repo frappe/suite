@@ -37,6 +37,8 @@ export interface CollabRoom {
   readonly doc: Y.Doc
   readonly canWrite: boolean
   readonly blocked: Blocked | null
+  // Why the server asked this tab to wait before saving again, until a push is committed
+  readonly paused: string | null
   readonly saveState: SaveState
   readonly unsent: number
   readonly appliedThrough: number
@@ -91,6 +93,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
 class Room implements CollabRoom {
   saveState: SaveState = 'clean'
   blocked: Blocked | null = null
+  paused: string | null = null
   appliedThrough = 0
   private pending: Entry[] = []
   private nextSeq = 1
@@ -242,6 +245,7 @@ class Room implements CollabRoom {
   private settle(answer: Answer, to: number) {
     const body = json(answer)
     if (answer.status === 200) {
+      this.pause(null)
       this.heard()
       this.ack(body?.dup ? body.acked : to)
       if (body?.head > this.appliedThrough) void this.pull()
@@ -254,7 +258,10 @@ class Room implements CollabRoom {
       else this.retryAfter(0)
       return
     }
-    if (answer.status === 423) return this.retryAfter(body?.retry_ms ?? 1000)
+    if (answer.status === 423) {
+      this.pause(body?.reason ?? body?.collab ?? 'busy')
+      return this.retryAfter(body?.retry_ms ?? 1000)
+    }
     const blocked = this.refused(answer, 'lost_edit')
     if (blocked && recoverable(blocked)) return this.retryAfter(backoff())
     if (blocked) return
@@ -287,6 +294,12 @@ class Room implements CollabRoom {
       if (this.pending.length) this.saveState = 'failed'
     }
     this.blocked = reason
+    this.changed()
+  }
+
+  private pause(reason: string | null) {
+    if (this.paused === reason) return
+    this.paused = reason
     this.changed()
   }
 
