@@ -214,7 +214,7 @@ class Room implements CollabRoom {
 
   pull(): Promise<void> {
     if (this.closed || this.blocked === 'other_user' || this.blocked === 'lost_read') return Promise.resolve()
-    if (!this.bound) return this.connect()
+    if (!this.bound) return this.dead ? Promise.resolve() : this.connect()
     return this.connecting ?? this.fetch()
   }
 
@@ -274,7 +274,7 @@ class Room implements CollabRoom {
           // Other tabs' work never used this clientID, so a later tab can still send it
           for (const box of this.adopted) box.release()
           this.adopted = []
-          await this.die(answer === 'lineage' ? 'lineage' : 'id_clash')
+          await this.die(lost(answer))
           return
         }
         this.bound = true
@@ -287,7 +287,7 @@ class Room implements CollabRoom {
     return this.connecting
   }
 
-  // `null` when the claim got no verdict this time
+  // `null` when the claim got no verdict this time; a refusal with a reason is final
   private async claim(box: Outbox): Promise<string | null> {
     let answer: Answer
     try {
@@ -304,8 +304,7 @@ class Room implements CollabRoom {
       }
       return verdict
     }
-    this.refused(answer, 'lost_edit')
-    return null
+    return this.refused(answer, 'lost_edit') ? null : reasonOf(answer)
   }
 
   // Unsent work other tabs of this document left on the device, once no live tab holds it
@@ -336,7 +335,7 @@ class Room implements CollabRoom {
       const verdict = session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
       if (this.closed) return release()
       if (verdict !== 'ok') {
-        if (verdict) await store.recover(key, session.sid, verdict === 'lineage' ? 'lineage' : 'id_clash').catch(() => {})
+        if (verdict) await store.recover(key, session.sid, lost(verdict)).catch(() => {})
         release()
         continue
       }
@@ -639,6 +638,8 @@ function holdLock(name: string): Promise<(() => void) | null> {
       .catch(() => resolve(() => {}))
   })
 }
+
+const lost = (verdict: string) => (verdict === 'clash' ? 'id_clash' : verdict)
 
 const backoff = () => 1000 + Math.random() * 29_000
 

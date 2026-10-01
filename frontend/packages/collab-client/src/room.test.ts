@@ -664,6 +664,32 @@ describe('collab room on a device', () => {
     expect(server.calls).toEqual(['claim'])
   })
 
+  it('a claim the server refuses for good keeps the offline work aside instead of asking again', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const kept = await device()
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+    const endpoints = server.endpoints()
+    const refusing: CollabEndpoints = {
+      ...endpoints,
+      session: async (sid, claim) => (await endpoints.session(sid, claim), reply(409, { collab: 'session_owner' })),
+    }
+    const room = await join(refusing, { device: kept, pollMs: 1000 })
+    room.doc.getText('t').insert(0, 'mine')
+    await vi.advanceTimersByTimeAsync(0)
+    server.calls.length = 0
+
+    server.access.online = true
+    await vi.advanceTimersByTimeAsync(1000)
+    await idle()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    const records = await kept.store.recovery('D')
+    expect([room.saveState, server.calls.filter((call) => call === 'claim').length]).toEqual(['failed', 1])
+    expect(records.map((record) => record.reason)).toEqual(['session_owner'])
+  })
+
   it('a refused change goes to the device’s recovery copies, not back into the next tab', async () => {
     const server = fakeServer()
     const kept = await device()
