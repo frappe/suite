@@ -53,7 +53,7 @@ export interface TransportOptions {
 }
 
 export interface BytesOptions extends TransportOptions {
-  body?: Uint8Array
+  body?: Uint8Array<ArrayBuffer>
   keepalive?: boolean
 }
 

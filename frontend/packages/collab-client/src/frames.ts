@@ -1,5 +1,8 @@
+// `disabled`: collaboration is off on this site. `unconverted`: the document is not collaborative
+export type OpenState = 'live' | 'disabled' | 'unconverted'
+
 export interface FrameHeader {
-  state: 'live' | 'disabled' | 'unconverted' | string
+  state: OpenState
   proto: number
   lineage?: string
   can_write?: boolean
@@ -40,7 +43,7 @@ export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; rows: Row
   return { header, rows }
 }
 
-export function encodePush(header: Record<string, unknown>, update: Uint8Array): Uint8Array {
+export function encodePush(header: Record<string, unknown>, update: Uint8Array): Uint8Array<ArrayBuffer> {
   const json = new TextEncoder().encode(JSON.stringify(header))
   const body = new Uint8Array(4 + json.byteLength + update.byteLength)
   new DataView(body.buffer).setUint32(0, json.byteLength)

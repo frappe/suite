@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { decodeFrame, encodePush, type FrameHeader, type Row } from './frames'
+import { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
 
 export interface Answer {
   status: number
@@ -11,7 +11,7 @@ export interface Answer {
 export interface CollabEndpoints {
   open(): Promise<Answer>
   pull(since: number): Promise<Answer>
-  push(body: Uint8Array, options?: { keepalive?: boolean }): Promise<Answer>
+  push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
   session(sid: string): Promise<Answer>
 }
 
@@ -37,7 +37,7 @@ export interface CollabRoom {
   close(): Promise<void>
 }
 
-export type Opened = { state: 'live'; room: CollabRoom } | { state: Exclude<FrameHeader['state'], 'live'> }
+export type Opened = { state: 'live'; room: CollabRoom } | { state: Exclude<OpenState, 'live'> }
 
 export class CollabOpenError extends Error {
   constructor(
