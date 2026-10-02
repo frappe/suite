@@ -88,20 +88,26 @@ const saveLabel = computed(() =>
 );
 const blockedMessage = computed(() => {
   const kept = recoveryKept.value ? " Your unsent changes were kept as a recovery copy." : "";
-  return {
-    signed_out: "You're signed out. Sign in again to keep saving; your changes stay in this tab.",
-    locked: "This document is locked again. Unlock it to keep saving; your changes stay in this tab.",
+  const messages: Partial<Record<Blocked, string>> = {
+    locked: `This document was locked again, so your recent changes aren't saved yet. Unlock it to save them.${closeNote.value}`,
     offline: "You're offline, and this browser isn't keeping changes for this site, so editing is paused until the connection is back.",
     stale_session: roomOnDevice.value
-      ? "You signed in again in another tab. Reload to keep saving; your unsent changes come back with the reload."
+      ? "You signed in again in another tab. Reload to keep saving. Your unsent changes come back after the reload."
       : `You signed in again in another tab.${kept} Reload to keep saving.`,
     other_user: roomOnDevice.value
       ? "This browser is now signed in as someone else. Your unsent changes stay on this device until you sign back in. Reload to continue as them."
       : `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
     lost_edit: `You can no longer edit this document.${kept}`,
     lost_read: `You can no longer open this document.${kept}`,
-  }[roomBlocked.value!] ?? `Saving stopped in this tab.${kept} Reload to keep editing.`;
+  };
+  return messages[roomBlocked.value!] ?? `Saving stopped in this tab.${kept} Reload to keep editing.`;
 });
+const closeNote = computed(() =>
+  roomOnDevice.value
+    ? " If you close this tab, they stay on this device until you can save again."
+    : " Keep this tab open until then.",
+);
+const signInUrl = computed(() => `/login?redirect-to=${encodeURIComponent(location.pathname)}`);
 const openFailure = computed(() =>
   ({
     signed_out: "You're signed out. Sign in again to open this document.",
@@ -304,7 +310,11 @@ onBeforeUnmount(() => {
     </header>
 
     <div v-if="collab === 'live' && (roomBlocked || roomSaveState === 'failed')" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
-      {{ blockedMessage }}
+      <template v-if="roomBlocked === 'signed_out'">
+        You've been signed out, so your recent changes aren't saved yet.
+        <a :href="signInUrl" target="_blank" class="underline">Sign in</a> to save them.{{ closeNote }}
+      </template>
+      <template v-else>{{ blockedMessage }}</template>
     </div>
 
     <div v-if="!readable" class="m-auto text-center">
