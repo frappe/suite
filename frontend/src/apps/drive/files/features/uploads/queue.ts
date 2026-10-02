@@ -12,11 +12,14 @@ import {
   uploadTransfer,
   type UploadSession,
 } from '@/apps/drive/client/uploads'
+import { readMaxFileSize } from '@/platform/boot'
 import { serverState } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 import { TransportError, type PlatformError } from '@/platform/transport'
 
 import { sha256 } from './checksum'
+import { formatSize } from './format'
 import { createUploadRecords, type UploadRecord, type UploadRecords } from './records'
 import type { FolderUpload, PickedFile } from './sources'
 
@@ -140,6 +143,8 @@ export interface UploadQueueOptions {
   records?: UploadRecords
   now?: () => number
   parallel?: number
+  /** The site's per-file limit in bytes, or `null` when unknown. Defaults to the boot's. */
+  maxFileSize?: () => number | null
 }
 
 const ACTIVE: readonly UploadState[] = ['queued', 'checking', 'uploading', 'held']
@@ -148,6 +153,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   const records = options.records ?? createUploadRecords({ now: options.now })
   const now = options.now ?? Date.now
   const parallel = options.parallel ?? PARALLEL_FILES
+  const maxFileSize = options.maxFileSize ?? readMaxFileSize
   const jobs = shallowReactive(new Map<string, Job>())
   const state = reactive({
     /** A 413 stopped the queue. It starts nothing until Retry all. */
@@ -406,9 +412,18 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     job.entry.note = note
   }
 
-  /** Opens the session. A taken title asks the user before any byte moves (spec §6.4). */
+  /**
+   * Opens the session. A taken title asks the user before any byte moves (spec §6.4).
+   * A file above the site's limit fails here without a request; `create_upload`
+   * still refuses it when the limit is unknown.
+   */
   async function open(job: Job): Promise<boolean> {
     const { entry, file } = job
+    const limit = maxFileSize()
+    if (limit !== null && entry.size > limit) {
+      fail(job, tooLargeMessage(limit, entry.size), false)
+      return false
+    }
     while (true) {
       try {
         job.session = await openUpload({
@@ -514,6 +529,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    */
   async function settleRefusal(job: Job, error: PlatformError): Promise<boolean> {
     const { entry } = job
+    // One file over the site's limit: only it fails, and Retry cannot help it.
+    if (error.type === 'DriveFileTooLarge') {
+      fail(job, error.message, false)
+      return false
+    }
     if (isOverQuota(error)) {
       entry.state = 'held'
       entry.error = error.message
@@ -758,6 +778,11 @@ async function readHandle(handle: FileSystemFileHandle | undefined): Promise<Fil
 type PermissionHandle = FileSystemFileHandle & {
   queryPermission?: (options: { mode: 'read' }) => Promise<PermissionState>
   requestPermission?: (options: { mode: 'read' }) => Promise<PermissionState>
+}
+
+/** The server's `DriveFileTooLarge` message, for a file refused before any request. */
+function tooLargeMessage(limit: number, size: number): string {
+  return __('Files can be up to {0}. This one is {1}.', [formatSize(limit), formatSize(size, { roundUp: true })])
 }
 
 /** A full root answers `DriveOverQuota`; a proxy's body cap answers a bare 413. */

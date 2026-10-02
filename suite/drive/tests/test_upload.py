@@ -20,6 +20,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from suite.drive._core.access import require
 from suite.drive._core.errors import (
     DriveConflict,
+    DriveFileTooLarge,
     DriveForbidden,
     DriveLinkExpired,
     DriveNotFound,
@@ -425,6 +426,32 @@ class TestDriveFileAccounting(IntegrationTestCase):
             with self.assertRaises(DriveOverQuota):
                 create_upload(self.principals, self.root.name, "too-large.bin", 6)
         storage_create.assert_not_called()
+
+    def test_a_file_above_the_site_limit_is_too_large_not_over_quota(self):
+        frappe.set_user(USER)
+        gigabyte = 1024 * 1024 * 1024
+        # The root is full as well: the size limit still decides, because it
+        # is what refuses this file whatever the root holds.
+        frappe.db.set_value("Drive Root", self.root.name, "quota_bytes", 5)
+        with (
+            patch("frappe.core.api.file.get_max_file_size", return_value=gigabyte),
+            patch("suite.drive._core.upload.create_blob_upload") as storage_create,
+        ):
+            with self.assertRaises(DriveFileTooLarge) as caught:
+                create_upload(self.principals, self.root.name, "film.mov", int(1.2 * gigabyte))
+        self.assertNotIsInstance(caught.exception, DriveOverQuota)
+        self.assertEqual(str(caught.exception), "Files can be up to 1 GB. This one is 1.2 GB.")
+        storage_create.assert_not_called()
+
+    def test_a_file_at_the_site_limit_opens_a_session(self):
+        frappe.set_user(USER)
+        with patch("frappe.core.api.file.get_max_file_size", return_value=1024):
+            opened = self._open(self.principals, self.root.name, "exact.bin", 1024)
+            self.assertEqual(opened["mode"], "chunked")
+            with self.assertRaises(DriveFileTooLarge) as caught:
+                create_upload(self.principals, self.root.name, "over.bin", 1025)
+        # Just over the limit never reads as the limit itself.
+        self.assertEqual(str(caught.exception), "Files can be up to 1 KB. This one is 1.1 KB.")
 
     def test_a_taken_filename_is_refused_with_the_free_title_before_a_session_exists(self):
         # D11: the collision is caught before a byte moves. A Trashed sibling

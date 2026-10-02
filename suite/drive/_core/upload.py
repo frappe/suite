@@ -1,5 +1,7 @@
 """Drive-authorized browser uploads backed by trusted blob sessions."""
 
+import math
+
 import frappe
 from frappe import _
 from frappe.storage.upload import (
@@ -9,7 +11,7 @@ from frappe.storage.upload import (
 )
 
 from suite.drive._core.access import require, require_link
-from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
+from suite.drive._core.errors import DriveFileTooLarge, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import (
     _content_time,
     _lock_create_parent,
@@ -46,9 +48,11 @@ def create_upload(
 ) -> dict:
     """Authorize and preflight a private, blob-only storage session.
 
-    A `filename` an Active sibling holds is refused here with the free title
-    (§8.6), before a byte moves. `finish_upload` checks again, because the
-    title can be taken while the bytes travel.
+    A `size` above the site's per-file limit is `DriveFileTooLarge`; one the
+    root has no room for is `DriveOverQuota`. A `filename` an Active sibling
+    holds is refused with the free title (§8.6), before a byte moves.
+    `finish_upload` checks again, because the title can be taken while the
+    bytes travel.
 
     `replaces` opens a replace session for one Active file below `parent`,
     under EDIT on that file. Its own title does not block `filename`; any
@@ -68,10 +72,12 @@ def create_upload(
     replaced_bytes = 0
     if replaces is not None:
         replaced_bytes = int(_require_replaceable(principals, replaces, parent_row.name).size or 0)
+    # Before the title and the quota: a file the site never accepts gets that
+    # answer, not a rename prompt or a full-storage refusal that stops a batch.
+    _refuse_over_site_limit(size)
     _refuse_sibling_collision(parent_row.name, filename, exclude=replaces, for_update=False)
     root = root_for_node(parent_row)
     preflight(root, max(size - replaced_bytes, 0))
-    _refuse_over_site_limit(size)
 
     result = create_blob_upload(filename, size, is_private=True)
     binding = {
@@ -89,21 +95,44 @@ def create_upload(
 
 
 def _refuse_over_site_limit(size: int) -> None:
-    """Report the framework's own file cap as §11.6's over-quota refusal.
+    """Refuse a file above the site's per-file limit as `DriveFileTooLarge`.
 
-    `create_blob_upload` refuses a declared size above `max_file_size` with
-    `MaxFileSizeReachedError`, a plain `ValidationError` that an adapter can
-    only score 400. §11.2 says this route answers on the declared size and
-    that over quota is never anything else, so the bound is read here and
-    reported in Drive's own class.
+    The limit is Frappe's `max_file_size`, the one every Frappe upload path
+    reads; Suite sets it to 1 GB on install unless the site has its own.
+    `create_blob_upload` would refuse the same size with
+    `MaxFileSizeReachedError`, a plain `ValidationError` that the boundary can
+    only score 400, so the bound is read here and reported in Drive's own
+    class. It is not `DriveOverQuota`: the root may have room, and the other
+    files of a batch can still go (§11.2, §11.6).
     """
     from frappe.core.api.file import get_max_file_size
 
     limit = get_max_file_size()
     if size > limit:
-        raise DriveOverQuota(
-            _("This upload exceeds the largest file this site accepts, {0} bytes").format(limit)
+        raise DriveFileTooLarge(
+            _("Files can be up to {0}. This one is {1}.").format(
+                _readable_size(limit), _readable_size(size, round_up=True)
+            )
         )
+
+
+def _readable_size(size: int, *, round_up: bool = False) -> str:
+    """A byte count as people read it: `512 B`, `1.2 GB`, `1 GB`.
+
+    Base 1024, like `max_file_size` in MB. `round_up` keeps a file just over
+    the limit from reading as the limit itself. The upload queue words its own
+    copy of this refusal the same way (`formatSize` in `uploads/format.ts`).
+    """
+    value = float(max(size, 0))
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit = 0
+    while value >= 1024 and unit < len(units) - 1:
+        value /= 1024
+        unit += 1
+    scale = 1 if unit == 0 or value >= 100 else 10
+    # The epsilon keeps float noise (1.2 * 10 is 12.000000000000002) from rounding up.
+    value = math.ceil(value * scale - 1e-9) / scale if round_up else round(value * scale) / scale
+    return f"{value:g} {units[unit]}"
 
 
 def authorize_chunk(principals: Principals, upload_id: str) -> dict:

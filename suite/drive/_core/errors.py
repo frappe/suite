@@ -27,6 +27,17 @@ class DriveOverQuota(DriveError):
     http_status_code = 413
 
 
+class DriveFileTooLarge(DriveError):
+    """One file is larger than the site accepts (§11.6).
+
+    The bound is the site's own per-file limit, not a root's quota, so it says
+    nothing about the other files in a batch. It is not 413: an upload client
+    stops its whole queue on 413, because a full root refuses every file.
+    """
+
+    http_status_code = 422
+
+
 class DriveConflict(DriveError):
     """A title is taken, or the tree refuses the write (§11.6).
 

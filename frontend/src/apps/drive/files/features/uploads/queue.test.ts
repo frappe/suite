@@ -16,6 +16,8 @@ const drive = vi.hoisted(() => {
     usage: { used: 0, quota: 0 },
     /** A limit only `POST /uploads` knows, as when usage is stale. */
     createLimit: Infinity,
+    /** The site's per-file limit, which refuses one file and not the root. */
+    fileLimit: Infinity,
     chunkOffsets: [] as number[],
     finished: [] as Array<Record<string, unknown>>,
     /** Create answers a direct target instead of a chunked session. */
@@ -75,6 +77,9 @@ const drive = vi.hoisted(() => {
     if (method === 'POST' && path === 'uploads') {
       const body = json()
       if (!body.replaces && taken(body.parent, body.filename)) return conflict(body.parent, body.filename)
+      if (body.size > state.fileLimit) {
+        return refuse(422, { type: 'DriveFileTooLarge', message: `Files can be up to ${state.fileLimit} B. This one is ${body.size} B.` })
+      }
       const free = state.usage.quota ? state.usage.quota - state.usage.used : Infinity
       if (body.size > Math.min(free, state.createLimit)) {
         return refuse(413, { type: 'DriveOverQuota', message: 'This Drive is full.' })
@@ -161,6 +166,7 @@ const drive = vi.hoisted(() => {
       state.sessions.clear()
       state.usage = { used: 0, quota: 0 }
       state.createLimit = Infinity
+      state.fileLimit = Infinity
       state.chunkOffsets = []
       state.finished = []
       state.direct = false
@@ -333,6 +339,39 @@ describe('Drive upload queue', () => {
 
     expect(queue.state.halted).toBeNull()
     expect(drive.titlesIn('folder')).toEqual(['one.bin', 'two.bin'])
+  })
+
+  it('fails only the file the site refuses as too large, and the others upload', async () => {
+    drive.state.fileLimit = 50
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1, maxFileSize: () => null })
+    queue.setPrompts(prompts())
+    const tones: Array<string | undefined> = []
+    drive.state.before = () => void tones.push(queue.indicator.value?.tone)
+
+    await queue.uploadFiles([{ file: file('film.mov', 80) }, { file: file('a.txt', 10) }, { file: file('b.txt', 20) }], target)
+    await settled(queue)
+
+    const [film, ...rest] = queue.entries.value
+    expect(film).toMatchObject({ state: 'failed', error: 'Files can be up to 50 B. This one is 80 B.', retryable: false })
+    expect(rest.map((entry) => entry.state)).toEqual(['done', 'done'])
+    expect(drive.titlesIn('folder')).toEqual(['a.txt', 'b.txt'])
+    expect(queue.state.halted).toBeNull()
+    expect(tones).not.toContain('paused')
+  })
+
+  it('refuses a file above the boot limit before any request, in the server\'s words', async () => {
+    const queue = createUploadQueue({ records: memoryRecords(), maxFileSize: () => 1024 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('over.bin', 1025) }, { file: file('fits.bin', 1024) }], target)
+    await settled(queue)
+
+    expect(queue.entries.value.map((entry) => [entry.state, entry.error])).toEqual([
+      ['failed', 'Files can be up to 1 KB. This one is 1.1 KB.'],
+      ['done', null],
+    ])
+    expect(drive.state.creates).toBe(1)
+    expect(queue.state.halted).toBeNull()
   })
 
   it('resumes after a reload from the bytes the server holds, and proves the file with its sha256', async () => {

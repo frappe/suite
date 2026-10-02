@@ -42,7 +42,8 @@ const startOperation = driveOperation<UploadStartInput, UploadSession>(api.uploa
 
 /**
  * Opens one session. A taken `filename` refuses with `DriveConflict` and its
- * `free_title`; no room refuses with `DriveOverQuota` (413).
+ * `free_title`; a file above the site's limit with `DriveFileTooLarge` (422);
+ * no room with `DriveOverQuota` (413).
  */
 export function openUpload(input: OpenUploadInput, signal?: AbortSignal): Promise<UploadSession> {
   return transport.request(openOperation, input, { signal })

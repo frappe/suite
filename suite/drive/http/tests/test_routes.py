@@ -20,6 +20,7 @@ from suite.drive._core import nodes as node_core
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
+    DriveFileTooLarge,
     DriveForbidden,
     DriveLinkExpired,
     DriveLocked,
@@ -59,6 +60,7 @@ class TestRefusalMapping(BoundaryCase):
             (DriveNotFound, 404),
             (DriveConflict, 409),
             (DriveLinkExpired, 410),
+            (DriveFileTooLarge, 422),
             (DriveOverQuota, 413),
         )
         for kind, status in expected:

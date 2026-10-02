@@ -110,6 +110,8 @@ suite.mail.patches.rebuild_screening_gates
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
+# Frappe's 25 MB per-file default is too small for Drive. Leaves a site's own value alone.
+suite.suite_core.patches.set_default_max_file_size
 suite.drive.patches.webdav_property_index
 # §9.2 redefined `preview_size` from a megabyte cutoff to pixels; translates
 # only the known legacy sentinel a site could still be carrying, additive

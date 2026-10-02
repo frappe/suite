@@ -3176,7 +3176,8 @@
         "DriveNotFound",
         "DriveForbidden",
         "DriveConflict",
-        "DriveOverQuota"
+        "DriveOverQuota",
+        "DriveFileTooLarge"
       ],
       "entity": null,
       "nodeParams": []

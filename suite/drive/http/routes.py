@@ -551,8 +551,9 @@ def upload_create(
 ) -> dict:
     """Open one private blob session, refusing on the declared size (§11.2).
 
-    The refusal is `DriveOverQuota`, never a permission error: a caller who may
-    upload here and has no room is told which of the two is missing. A taken
+    A file above the site's per-file limit is `DriveFileTooLarge`. A root
+    without room is `DriveOverQuota`, never a permission error: a caller who
+    may upload here and has no room is told which of the two is missing. A taken
     `filename` is `DriveConflict` with `free_title`, unless the taken title is
     the file named by `replaces`.
     """

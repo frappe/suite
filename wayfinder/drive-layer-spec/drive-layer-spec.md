@@ -1664,7 +1664,7 @@ job [010 §4].
 
 Browser, two stages [010 §5]:
 
-1. `create_upload` reads the root's `used_bytes` and effective quota and refuses when the declared size exceeds the free bytes. It is a plain read before `frappe.storage.upload.create_upload`, so no byte lands on an obvious overshoot. The refusal is `DriveOverQuota`, not a permission error [014].
+1. `create_upload` reads the root's `used_bytes` and effective quota and refuses when the declared size exceeds the free bytes. It is a plain read before `frappe.storage.upload.create_upload`, so no byte lands on an obvious overshoot. The refusal is `DriveOverQuota`, not a permission error [014]. Before the quota, it refuses a declared size above the site's per-file limit (`max_file_size`) with `DriveFileTooLarge` (§11.6): the root may have room, and the other files of a batch can still go.
 2. On finish, node create runs the admission UPDATE with the actual size. A refusal there aborts the node; the blob then has no reference and the framework GC removes it after 24 h.
 
 A late refusal happens only when concurrent uploads race near the limit.
@@ -1876,7 +1876,7 @@ so the client retries that session under the free title. `PUT /nodes/<id>/conten
 | `copy` | READ on `node`, UPLOAD on `parent` [009 §8] | `create`: `kind`, `title`, `copied_from` | `+size` of the new nodes on the destination root; no version is copied | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 | `children` | READ on `parent` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
 | `views` | per view, see §11 | none | none | `DriveForbidden` |
-| `create_upload` | UPLOAD on `parent`; EDIT on `replaces` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (with `free_title`) |
+| `create_upload` | UPLOAD on `parent`; EDIT on `replaces` | none | reads the counter, writes nothing [010 §5] | `DriveForbidden`, `DriveFileTooLarge`, `DriveOverQuota`, `DriveConflict` (with `free_title`) |
 | `finish_upload` | UPLOAD on `parent`; EDIT on `replaces` | `create` or `edit` | `+actual size` through the admission `UPDATE` | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 
 Rules that hold for every row above.
@@ -3024,8 +3024,11 @@ the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
 | PUT | `/uploads/<upload_id>/chunk` | UPLOAD on `parent` | raw bytes, `?offset=` | `{upload_id, received}` |
 | POST | `/uploads/<upload_id>/finish` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, title, checksum?, content_modified?, replaces?}` | node shape |
 
-`POST /uploads` returns `DriveOverQuota` (413) from the declared size, never
-a permission error [010 §5, 014]. It returns `DriveConflict` (409) with
+`POST /uploads` refuses on the declared size before a session exists. A
+size above the site's per-file limit (Frappe's `max_file_size`, 1 GB unless
+the site sets its own) is `DriveFileTooLarge` (422), and it refuses that one
+file only. A size the root has no room for is `DriveOverQuota` (413), never a
+permission error [010 §5, 014]. It returns `DriveConflict` (409) with
 `free_title` when an Active sibling of `parent` holds `filename`, before any
 session exists (§8.4, unified frontend ask D11). With `replaces`, the session
 is a replace session (§8.1): that file's own title does not collide, and the
@@ -3314,6 +3317,7 @@ class DriveForbidden(DriveError):   http_status_code = 403
 class DriveLocked(DriveError):      http_status_code = 401
 class DriveLinkExpired(DriveError): http_status_code = 410
 class DriveOverQuota(DriveError):   http_status_code = 413
+class DriveFileTooLarge(DriveError): http_status_code = 422
 class DriveConflict(DriveError):    http_status_code = 409
 
 class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
@@ -3326,6 +3330,7 @@ class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
 | Password link, no ticket | `DriveLocked` | 401 |
 | Link past `expires_on` | `DriveLinkExpired` | 410 |
 | Admission `UPDATE` hit zero rows | `DriveOverQuota` | 413 |
+| One file above the site's per-file limit | `DriveFileTooLarge` | 422 |
 | Title taken, or node moved under itself | `DriveConflict` | 409 |
 | Restore with the original parent chain gone and no `parent` | `DriveRestoreDestinationRequired` | 409 |
 
@@ -3338,7 +3343,9 @@ The body is the v2 envelope, produced by the framework:
 
 The class name is the code. Over quota is never a permission error, a
 locked link is never a 403, and an expired link is never a locked one
-[014 §5].
+[014 §5]. A file too large for the site is never over quota: a full root
+refuses every file, so an upload client stops its queue on 413, while a
+too-large file fails alone. That is why it is 422 and not 413.
 
 A title collision adds one field to its error entry, `free_title`, the
 title §8.6's dedupe rule would give:

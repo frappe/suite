@@ -49,12 +49,14 @@ def after_install():
     from suite.drive.install import ensure_custom_fields
     from suite.mail.install import after_install as mail_after_install
     from suite.meet.install import after_install as meet_after_install
+    from suite.suite_core.file_size import set_default_max_file_size
 
     _run("drive.ensure_custom_fields", ensure_custom_fields)
     _run("drive.after_install", drive_after_install)
     _run("mail.after_install", mail_after_install)
     _run("calendar.after_install", calendar_after_install)
     _run("meet.after_install", meet_after_install)
+    _run("suite_core.set_default_max_file_size", set_default_max_file_size)
     # A fresh install never migrates, so it needs the same boot validation.
     _run("drive.validate_content_registry", validate_content_registry)
 

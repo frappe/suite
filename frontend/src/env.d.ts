@@ -26,6 +26,8 @@ declare global {
     suite_flip_shell?: boolean
     /** Files flip for Home, Drive and documents (site config, served by www/suite.py). Read through `@/platform/boot`. */
     suite_flip_files?: boolean
+    /** The largest file the site accepts, in bytes (served by www/suite.py). Read through `@/platform/boot`. */
+    max_file_size?: number
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */

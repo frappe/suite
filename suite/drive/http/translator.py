@@ -28,6 +28,7 @@ import frappe
 from suite.composition.http import ORIGINAL_PATH, Route, dispatch, original_path
 from suite.drive._core.errors import (
     DriveConflict,
+    DriveFileTooLarge,
     DriveForbidden,
     DriveLinkExpired,
     DriveLocked,
@@ -135,7 +136,7 @@ ROUTES = (
         "uploads",
         "upload_create",
         body=shapes.OpenUpload,
-        errors=(DriveNotFound, DriveForbidden, DriveConflict, DriveOverQuota),
+        errors=(DriveNotFound, DriveForbidden, DriveConflict, DriveOverQuota, DriveFileTooLarge),
         allow_guest=True,
     ),
     Route("PUT", "uploads/{upload_id}/chunk", "upload_chunk", allow_guest=True),

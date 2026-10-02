@@ -385,7 +385,7 @@ export type UploadCreateInput = { "parent": string; "filename": string; "size": 
 
 export type UploadCreateOutput = {  }
 
-export type UploadCreateError = "DriveNotFound" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+export type UploadCreateError = "DriveNotFound" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota" | "DriveFileTooLarge"
 
 const operationUploadCreate: Operation<UploadCreateInput, UploadCreateOutput, UploadCreateError> = {
   id: "upload_create",
@@ -396,7 +396,7 @@ const operationUploadCreate: Operation<UploadCreateInput, UploadCreateOutput, Up
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveConflict","DriveOverQuota"],
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict","DriveOverQuota","DriveFileTooLarge"],
   validateInput(value): asserts value is UploadCreateInput { assertSchema(value, {"type":"object","properties":{"parent":{"title":"Parent","type":"string"},"filename":{"title":"Filename","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"title":"Mime","type":"string"},"replaces":{"title":"Replaces","type":"string"}},"required":["parent","filename","size"],"additionalProperties":false,"$defs":{}}, 'upload_create input') },
   validateOutput(value): asserts value is UploadCreateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'upload_create output') },
 }

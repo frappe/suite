@@ -114,7 +114,10 @@ class HttpConformanceMixin:
                 self.assertEqual(handler in frappe.guest_methods, route.allow_guest)
 
     def test_conformance_declared_errors_have_shared_http_statuses(self):
-        statuses = {400, 401, 403, 404, 409, 410, 413, 429}
+        # 422 is a request that is well formed but refused on its content,
+        # such as a file over the per-file size limit. It is not a conflict
+        # with the current state (409) or a full quota (413).
+        statuses = {400, 401, 403, 404, 409, 410, 413, 422, 429}
         for route in self.HTTP.routes:
             for error in route.errors:
                 with self.subTest(route=route.path, error=error.__name__):

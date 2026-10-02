@@ -1,6 +1,7 @@
 import os
 
 import frappe
+from frappe.core.api.file import get_max_file_size
 
 from suite import __version__
 from suite.api.account import get_onboarding_state, get_workspace
@@ -79,5 +80,9 @@ def get_boot():
             # `bench set-config -p suite_flip_files 1` mounts the Drive area under /drive,
             # lists Home and Drive on the rail, and sends / to /home. Read on each page load.
             "suite_flip_files": flip_is_on("suite_flip_files"),
+            # The largest file the site accepts, in bytes. Drive's upload queue
+            # refuses a larger file before it opens a session; the server
+            # still decides.
+            "max_file_size": get_max_file_size(),
         }
     )
