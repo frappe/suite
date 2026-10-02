@@ -52,6 +52,7 @@ export interface DeviceStore {
   copy(doc: string): Promise<DeviceCopy | null>
   // Moves every remaining entry of the session, plus `extra`, to a recovery record and forgets the session
   recover(doc: string, sid: string, reason: string, extra?: StoredEntry[]): Promise<void>
+  // A session that still holds entries is kept, so another tab's ack can't orphan what its own tab typed since
   forget(doc: string, sid: string): Promise<void>
   recovery(doc: string): Promise<RecoveryRecord[]>
   close(): void
@@ -175,7 +176,12 @@ class IndexedDeviceStore implements DeviceStore {
   }
 
   forget(doc: string, sid: string) {
-    return this.write(['sessions'], (tx) => tx.objectStore('sessions').delete([doc, sid]))
+    return this.write(['sessions', 'entries'], (tx) => {
+      const left = tx.objectStore('entries').count(sessionRange(doc, sid))
+      left.onsuccess = () => {
+        if (!left.result) tx.objectStore('sessions').delete([doc, sid])
+      }
+    })
   }
 
   close() {

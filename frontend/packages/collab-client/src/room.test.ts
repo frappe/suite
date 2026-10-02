@@ -625,6 +625,53 @@ describe('collab room on a device', () => {
     expect([text(next), server.rows.length]).toEqual(['typed in first', 1])
   })
 
+  it('without Web Locks, a tab that sends an offline tab’s work leaves what it typed meanwhile for the next tab', async () => {
+    fakeTime()
+    vi.stubGlobal('navigator', { ...navigator, locks: undefined })
+    try {
+      const server = fakeServer()
+      const kept = await device()
+      const cut = { off: false }
+      const offline = { ...server.endpoints() }
+      const reachable = offline.push
+      offline.push = async (body, request) => {
+        if (cut.off) throw new TypeError('Failed to fetch')
+        return reachable(body, request)
+      }
+      let release = () => {}
+      const held = new Promise<void>((resolve) => (release = resolve))
+      const slow = { ...server.endpoints() }
+      const pass = slow.push
+      slow.push = async (body, request) => {
+        await held
+        return pass(body, request)
+      }
+      const first = await join(offline, { device: kept })
+      cut.off = true
+      first.doc.getText('t').insert(0, 'one')
+      await vi.advanceTimersByTimeAsync(0)
+      await idle()
+
+      const second = await join(slow, { device: kept })
+      await vi.advanceTimersByTimeAsync(0)
+      first.doc.getText('t').insert(3, ' two')
+      await vi.advanceTimersByTimeAsync(0)
+      await idle()
+      release()
+      await vi.advanceTimersByTimeAsync(0)
+      await idle()
+      await second.close()
+      await first.close()
+      await idle()
+
+      const next = await join(server.endpoints(), { device: kept })
+      await next.flush()
+      expect(text(await join(server.endpoints()))).toBe('one two')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('a tab opened without the network edits its device copy, then claims, sends, and only then shows others', async () => {
     fakeTime()
     const server = fakeServer()
