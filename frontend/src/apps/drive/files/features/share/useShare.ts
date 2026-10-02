@@ -17,6 +17,7 @@ import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { transport as defaultTransport, type Transport } from '@/platform/transport'
 
 import {
+  organizationLabel,
   principalLabel,
   remainingAccess,
   roleAfter,
@@ -38,6 +39,10 @@ export interface ShareOptions {
   me?: string
   /** Asks the caller to confirm losing their own access. Resolves true to go on. */
   confirmLoss?: () => Promise<boolean>
+  /** The workspace name, which names everyone at the org. Empty when unknown. */
+  workspace?: string
+  /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
+  placeTitle?: (node: { name: string; title: string }) => string
 }
 
 /**
@@ -49,6 +54,7 @@ export interface ShareOptions {
  */
 export function useShare(nodeId: string, options: ShareOptions = {}) {
   const transport = options.transport ?? defaultTransport
+  const placeTitle = options.placeTitle ?? ((node: { title: string }) => node.title)
   const grants = nodeGrants(nodeId, transport)
   const node = shallowRef<DriveNode | null>(null)
   const list = shallowRef<GrantList | null>(null)
@@ -62,9 +68,20 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const names = reactive(new Map<string, string>())
 
   const canManage = computed(() => managesNode(node.value))
-  const sections = computed(() => (list.value && node.value ? shareSections(list.value, node.value.kind) : null))
+  // Ancestors show under their place name, which can change once the caller's roots load.
+  const named = computed<GrantList | null>(
+    () =>
+      list.value && {
+        ...list.value,
+        inherited: list.value.inherited.map((entry) => ({
+          ...entry,
+          source_title: placeTitle({ name: entry.source_node, title: entry.source_title }),
+        })),
+      },
+  )
+  const sections = computed(() => (named.value && node.value ? shareSections(named.value, node.value.kind) : null))
   const titles = computed(
-    () => new Map((list.value?.inherited ?? []).map((entry) => [entry.source_node, entry.source_title])),
+    () => new Map((named.value?.inherited ?? []).map((entry) => [entry.source_node, entry.source_title])),
   )
 
   let reads = 0
@@ -77,6 +94,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       if (read !== reads) return
       node.value = fresh
       list.value = freshList
+      if (freshList?.owner) names.set(freshList.owner.user, freshList.owner.full_name)
       loadError.value = ''
     } catch (error) {
       if (read === reads) loadError.value = messageOf(error, 'Could not load who has access.')
@@ -123,7 +141,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     return undefined
   }
 
-  const label = (principal: string) => principalLabel(principal, names)
+  const label = (principal: string) => principalLabel(principal, names, options.workspace)
 
   /**
    * Keeps a live row's expiry: a grant write replaces it (Drive spec §5.9).
@@ -143,6 +161,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     canManage,
     load,
     label,
+    organization: organizationLabel(options.workspace),
     isPending: (key: RowKey) => pending.has(key),
     rememberName(email: string, name: string | null) {
       if (name) names.set(email, name)

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-import { request, type APIRequestContext, type Page } from "@playwright/test";
+import { request, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 import { loginViaApi } from "../../../shared/auth";
 
@@ -85,9 +85,25 @@ async function putGrant(node: string, principal: string, body: Record<string, un
 async function openShare(page: Page, node: string) {
 	await page.goto(`/d/${node}`);
 	await page.getByRole("button", { name: "Share", exact: true }).click();
-	const dialog = page.getByRole("dialog", { name: /^Share "/ });
+	const dialog = page.getByRole("dialog", { name: /^Share “/ });
 	await expect(dialog.getByRole("heading", { name: "People" })).toBeVisible();
 	return dialog;
+}
+
+const peopleField = (dialog: Locator) => dialog.getByRole("combobox", { name: "Add people, groups or emails" });
+
+/** Picks PERSON in the people field. The pick waits as a chip until Share is pressed. */
+async function pickPerson(page: Page, dialog: Locator) {
+	await peopleField(dialog).fill("backfill-owner");
+	await page.getByRole("option", { name: /Backfill Owner/ }).click();
+	await expect(dialog.getByRole("list", { name: "People to add" }).getByRole("listitem")).toHaveText(["Backfill Owner"]);
+}
+
+/** Adds everyone picked, without the notification email. */
+async function sharePicked(dialog: Locator) {
+	await dialog.getByRole("checkbox", { name: "Notify by email" }).uncheck();
+	await dialog.getByRole("button", { name: "Share", exact: true }).click();
+	await expect(dialog.getByRole("list", { name: "People to add" })).toBeHidden();
 }
 
 test("a local grant: pick a person, give Edit, and the server holds it", async ({ page }) => {
@@ -95,12 +111,17 @@ test("a local grant: pick a person, give Edit, and the server holds it", async (
 
 	await dialog.getByRole("combobox", { name: "Role for people you add" }).click();
 	await page.getByRole("option", { name: "Edit" }).click();
-	await dialog.getByPlaceholder("Add people, groups or emails").fill("backfill-owner");
-	await page.getByRole("option", { name: /Backfill Owner/ }).click();
+	await pickPerson(page, dialog);
+	// A pick is not a grant until Share is pressed.
+	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
+	await sharePicked(dialog);
 
-	const row = dialog.getByRole("region", { name: "People" }).getByRole("listitem").filter({ hasText: "Backfill Owner" });
-	await expect(row.getByRole("button")).toHaveText(/Edit/);
-	await expect(dialog.getByPlaceholder("Add people, groups or emails")).toHaveValue("");
+	const people = dialog.getByRole("region", { name: "People" }).getByRole("listitem");
+	// The owner comes first, with nothing to change.
+	await expect(people.first()).toContainText("Owner");
+	await expect(people.first().getByRole("button")).toHaveCount(0);
+	await expect(dialog.getByRole("button", { name: "Access for Backfill Owner: Edit" })).toBeVisible();
+	await expect(peopleField(dialog)).toHaveValue("");
 	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(40);
 });
 
@@ -128,8 +149,8 @@ test("an inherited grant: Deny access here, then Allow again", async ({ page }) 
 	await putGrant(home.name, PERSON, { role: 20 });
 	const dialog = await openShare(page, file.name);
 
-	await dialog.getByRole("button", { name: `From "${home.title}"` }).click();
-	const inherited = dialog.getByRole("region", { name: `From ${home.title}` });
+	await dialog.getByRole("button", { name: `From “${home.title}”` }).click();
+	const inherited = dialog.getByRole("region", { name: `From “${home.title}”` });
 	await expect(inherited.getByText(PERSON)).toBeVisible();
 	await inherited.getByRole("button", { name: "Deny access here" }).click();
 
@@ -167,7 +188,7 @@ test("an outsider gets a link of their own", async ({ page }) => {
 	const outsider = `${runTag("outsider")}@example.com`;
 	const dialog = await openShare(page, file.name);
 
-	await dialog.getByPlaceholder("Add people, groups or emails").fill(outsider);
+	await peopleField(dialog).fill(outsider);
 	await page.getByRole("option", { name: `Send a link to ${outsider}` }).click();
 
 	const links = dialog.getByRole("region", { name: "Share links" });
@@ -180,7 +201,7 @@ test("an outsider gets a link of their own", async ({ page }) => {
 test("Public on the web lets a guest read the item", async ({ page, baseURL }) => {
 	const dialog = await openShare(page, file.name);
 
-	await dialog.getByRole("listitem").filter({ hasText: "Public on the web" }).getByRole("button").click();
+	await dialog.getByRole("button", { name: "Public access: Off" }).click();
 	await page.getByRole("menuitem", { name: "On" }).click();
 
 	await expect(dialog.getByText("Anyone on the internet can view")).toBeVisible();
@@ -199,6 +220,11 @@ test("a document surface places Share, and it opens the same dialog", async ({ p
 	await dialog.getByRole("button", { name: "New link" }).click();
 	await expect(dialog.getByRole("region", { name: "Share links" }).getByText("View link")).toBeVisible();
 	expect((await grants(deck.name)).filter((grant) => grant.principal.startsWith("$LINK:"))).toHaveLength(1);
+
+	// The footer copies the item's own address and closes the dialog.
+	await expect(dialog.getByRole("button", { name: "Copy link" }).last()).toBeVisible();
+	await dialog.getByRole("button", { name: "Done" }).click();
+	await expect(dialog).toBeHidden();
 });
 
 test("a folder row in Files opens the same dialog, and the grant lands on the folder", async ({ page }) => {
@@ -207,10 +233,10 @@ test("a folder row in Files opens the same dialog, and the grant lands on the fo
 	await page.getByRole("button", { name: `Actions for ${folder.title}` }).click();
 	await page.getByRole("menuitem", { name: "Share" }).click();
 
-	const dialog = page.getByRole("dialog", { name: `Share "${folder.title}"` });
+	const dialog = page.getByRole("dialog", { name: `Share “${folder.title}”` });
 	await expect(dialog.getByRole("heading", { name: "People" })).toBeVisible();
-	await dialog.getByPlaceholder("Add people, groups or emails").fill("backfill-owner");
-	await page.getByRole("option", { name: /Backfill Owner/ }).click();
+	await pickPerson(page, dialog);
+	await sharePicked(dialog);
 
 	const row = dialog.getByRole("region", { name: "People" }).getByRole("listitem").filter({ hasText: "Backfill Owner" });
 	await row.getByRole("button", { name: /View/ }).click();
@@ -234,7 +260,7 @@ test("a manager who lowers their own access is asked first, and the row loses Sh
 	await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
 	await page.getByRole("menuitem", { name: "Share" }).click();
 
-	const dialog = page.getByRole("dialog", { name: `Share "${folder.title}"` });
+	const dialog = page.getByRole("dialog", { name: `Share “${folder.title}”` });
 	const row = dialog.getByRole("region", { name: "People" }).getByRole("listitem").filter({ hasText: PERSON });
 	await row.getByRole("button", { name: /Manage/ }).click();
 	await page.getByRole("menuitem", { name: "View" }).click();
@@ -261,7 +287,7 @@ test.describe("on a phone", () => {
 	test("the share dialog opens as a bottom sheet with the same sections", async ({ page }) => {
 		await page.goto(`/d/${file.name}`);
 		await page.getByRole("button", { name: "Share", exact: true }).click();
-		const sheet = page.getByRole("dialog", { name: /^Share "/ });
+		const sheet = page.getByRole("dialog", { name: /^Share “/ });
 		await expect(sheet.getByRole("heading", { name: "People" })).toBeVisible();
 		await expect(sheet.getByRole("heading", { name: "General access" })).toBeVisible();
 		await expect(sheet.getByRole("heading", { name: "Share links" })).toBeVisible();

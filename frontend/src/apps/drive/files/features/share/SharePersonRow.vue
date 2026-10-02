@@ -14,11 +14,14 @@
       <Button v-if="row.denied" label="Allow again" :loading="busy" @click="state.allowAgain(row)" />
       <Dropdown v-else :options="options" align="end">
         <Button
-          :label="row.expired ? 'Expired' : roleLabel(row.grant.role)"
+          :aria-label="`Access for ${state.label(principal)}: ${value}`"
           icon-right="lucide-chevron-down"
           variant="ghost"
+          class="shrink-0"
           :loading="busy"
-        />
+        >
+          {{ value }}
+        </Button>
       </Dropdown>
     </div>
 
@@ -50,6 +53,8 @@ const day = ref('')
 const principal = computed(() => props.row.grant.principal)
 const busy = computed(() => props.state.isPending(principal.value))
 const error = computed(() => props.state.errors.get(principal.value))
+
+const value = computed(() => (props.row.expired ? 'Expired' : roleLabel(props.row.grant.role)))
 
 const meta = computed(() => {
   const { row } = props

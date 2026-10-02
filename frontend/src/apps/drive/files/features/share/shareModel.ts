@@ -40,6 +40,14 @@ export interface InheritedPart {
   rows: InheritedRow[]
 }
 
+/** Someone picked in the people picker and not yet added. `name` is a user's full name, which grant rows do not carry. */
+export interface PickedPerson {
+  principal: string
+  kind: 'user' | 'group'
+  label: string
+  name: string | null
+}
+
 /** The effective state of everyone at the org, or of Public on the web (§7.6). */
 export type GeneralAccess =
   | { state: 'off' }
@@ -50,6 +58,12 @@ export type GeneralAccess =
   | { state: 'expired'; row: LocalRow; entry: InheritedGrant | null }
 
 export interface ShareSections {
+  /**
+   * The user whose Personal root holds the node, listed first in People with
+   * no actions: they cannot be denied. Their own grant rows are left out of
+   * People and the folded parts. `null` in the Shared root.
+   */
+  owner: string | null
   people: LocalRow[]
   organization: GeneralAccess
   /** `null` on a root: a root cannot be public (Drive spec §6.5). */
@@ -61,6 +75,7 @@ export interface ShareSections {
 
 export function shareSections(list: GrantList, nodeKind: string, now = new Date()): ShareSections {
   const isRoot = nodeKind === 'root'
+  const owner = list.owner?.user ?? null
   const local = list.grants.map((grant): LocalRow => ({
     grant,
     kind: principalKind(grant.principal),
@@ -71,6 +86,7 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
 
   const parts = new Map<string, InheritedPart>()
   for (const entry of list.inherited) {
+    if (entry.grant.principal === owner) continue
     const kind = principalKind(entry.grant.principal)
     // A deny needs no deny. A redacted link hides its principal, and a root has
     // no public access to deny.
@@ -85,7 +101,8 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
   }
 
   return {
-    people: local.filter((row) => row.kind === 'user' || row.kind === 'group'),
+    owner,
+    people: local.filter((row) => (row.kind === 'user' || row.kind === 'group') && row.grant.principal !== owner),
     organization: generalAccess(GENERAL, local, list.inherited),
     public: isRoot ? null : generalAccess(PUBLIC, local, list.inherited),
     links: isRoot ? null : local.filter((row) => row.kind === 'link'),
@@ -177,14 +194,19 @@ export function remainingAccess(
   if (!winner) return `${who} still has access.`
   if (winner.principal !== principal) return `${who} still has access through ${labelOf(winner.principal)}.`
   const title = titles.get(winner.node)
-  return title ? `${who} still has access from "${title}".` : `${who} still has access.`
+  return title ? `${who} still has access from “${title}”.` : `${who} still has access.`
+}
+
+/** Everyone at the org, named after the workspace when its name is known. */
+export function organizationLabel(workspace = ''): string {
+  return workspace ? `Everyone at ${workspace}` : 'Everyone in your organization'
 }
 
 /** The words for a principal nobody named: groups, the org, the public. */
-export function principalLabel(principal: string, users: ReadonlyMap<string, string> = new Map()): string {
+export function principalLabel(principal: string, users: ReadonlyMap<string, string> = new Map(), workspace = ''): string {
   switch (principalKind(principal)) {
     case 'general':
-      return 'Everyone at the org'
+      return organizationLabel(workspace)
     case 'public':
       return 'Public on the web'
     case 'group':

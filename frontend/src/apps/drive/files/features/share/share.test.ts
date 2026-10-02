@@ -64,6 +64,7 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
       { grant: { node: 'root', principal: '$LINK', role: 10, expires_on: null, has_password: false }, redacted: true, source_node: 'root', source_title: 'My files' },
       { grant: grant('$GENERAL', 30, { node: 'root' }), redacted: false, source_node: 'root', source_title: 'My files' },
     ],
+    owner: null,
   }
 
   it('keeps expired rows and denies in People, and shows public access from a parent', () => {
@@ -81,7 +82,7 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
 
   it('keeps an expired org-wide row greyed with Remove, and says what applies meanwhile', () => {
     const sections = shareSections(
-      { grants: [grant('$GENERAL', 40, { expires_on: '2026-09-01 23:59:59' })], inherited: list.inherited },
+      { grants: [grant('$GENERAL', 40, { expires_on: '2026-09-01 23:59:59' })], inherited: list.inherited, owner: null },
       'document',
       NOW,
     )
@@ -102,8 +103,34 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
     ])
   })
 
+  it('lists the owner once, first, with nothing to deny or remove', () => {
+    const owner = { user: 'faris@example.com', full_name: 'Faris' }
+    const ownGrant = (node: string) => grant(owner.user, 50, { node })
+    const inFolder = shareSections(
+      {
+        grants: [grant('asha@example.com', 40)],
+        inherited: [
+          { grant: ownGrant('root'), redacted: false, source_node: 'root', source_title: 'Faris' },
+          { grant: grant('$GENERAL', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
+        ],
+        owner,
+      },
+      'document',
+      NOW,
+    )
+
+    expect(inFolder.owner).toBe(owner.user)
+    expect(inFolder.people.map((row) => row.grant.principal)).toEqual(['asha@example.com'])
+    // The root held only the owner's grant, so it folds away.
+    expect(inFolder.inherited.map((part) => part.title)).toEqual(['Launch'])
+
+    const onRoot = shareSections({ grants: [ownGrant('root')], inherited: [], owner }, 'root', NOW)
+    expect(onRoot.owner).toBe(owner.user)
+    expect(onRoot.people).toEqual([])
+  })
+
   it('hides Public on the web and Share links on a root', () => {
-    const sections = shareSections({ grants: [grant('$GENERAL', 30)], inherited: [] }, 'root', NOW)
+    const sections = shareSections({ grants: [grant('$GENERAL', 30)], inherited: [], owner: null }, 'root', NOW)
 
     expect(sections.public).toBeNull()
     expect(sections.links).toBeNull()
@@ -154,6 +181,38 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
 
     expect(share.sections.value!.people).toEqual([])
     expect(share.notice.value).toBe('Asha still has access through Design team.')
+  })
+
+  it('names the owner and the organization in its words', async () => {
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : { grants: [], inherited: [], owner: { user: 'faris@example.com', full_name: 'Faris Ansari' } },
+    )
+    const share = useShare('doc', { transport: server.transport, workspace: 'Frappe' })
+    await share.load()
+
+    expect(share.label('faris@example.com')).toBe('Faris Ansari')
+    expect(share.organization).toBe('Everyone at Frappe')
+    expect(useShare('doc', { transport: server.transport }).organization).toBe('Everyone in your organization')
+  })
+
+  it('names an ancestor by its place for the caller, in the fold and in its words', async () => {
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : {
+            grants: [],
+            inherited: [{ grant: grant('$GENERAL', 10, { node: 'root' }), redacted: false, source_node: 'root', source_title: 'Faris Ansari' }],
+            owner: null,
+          },
+    )
+    const placeTitle = (place: { name: string; title: string }) => (place.name === 'root' ? 'My files' : place.title)
+    const share = useShare('doc', { transport: server.transport, placeTitle })
+    await share.load()
+
+    expect(share.sections.value!.inherited.map((part) => part.title)).toEqual(['My files'])
+    expect(share.sections.value!.organization).toMatchObject({ state: 'inherited', entry: { source_title: 'My files' } })
   })
 
   it('shows a failed write on its own row and still reads the grants again', async () => {

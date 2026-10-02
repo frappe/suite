@@ -43,11 +43,19 @@ export interface InheritedGrant {
   source_title: string
 }
 
+/** The user whose Personal root holds a node. Their access cannot be denied. */
+export interface GrantOwner {
+  user: string
+  full_name: string
+}
+
 export interface GrantList {
   /** The node's own rows, expired ones included. */
   grants: DriveGrant[]
   /** Live grants on ancestors, nearest ancestor first. */
   inherited: InheritedGrant[]
+  /** `null` in the Shared root. */
+  owner: GrantOwner | null
 }
 
 export interface ExplainRow {
@@ -185,7 +193,7 @@ export function nodeGrants(node: string, transport: Transport = defaultTransport
   return {
     async list(): Promise<GrantList> {
       const answer = await transport.request(listOperation, { node, inherited: 1 })
-      return { grants: answer.grants ?? [], inherited: answer.inherited ?? [] }
+      return { grants: answer.grants ?? [], inherited: answer.inherited ?? [], owner: answer.owner ?? null }
     },
     async explain(principal: string): Promise<GrantExplanation> {
       return (await transport.request(explainOperation, { node, principal })).explain
