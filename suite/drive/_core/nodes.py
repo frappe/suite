@@ -2932,6 +2932,10 @@ ORDER_TERMS = {
     "content_modified": "COALESCE({p}content_modified, {p}modified)",
     "modified": "{p}modified",
     "size": "{p}size",
+    "owner": "COALESCE({p}owner, '')",
+    # Documents before files, then by document type and MIME type, so files of
+    # one type sit together. Folders already come first in every order.
+    "kind": "CONCAT(CASE {p}kind WHEN 'document' THEN 1 ELSE 2 END, COALESCE({p}content_doctype, ''), COALESCE({p}mime, ''))",
 }
 
 GROUP_TERMS = {
@@ -2954,9 +2958,12 @@ def _listing_order(order_by: str, direction: str, *, group_by: str | None, prefi
         (
             f"CASE WHEN {prefix}kind = 'folder' THEN 0 ELSE 1 END ASC",
             f"{ORDER_TERMS[order_by].format(p=prefix)} {direction}",
-            f"{prefix}name ASC",
         )
     )
+    # Rows that tie, such as files of one owner or one type, read in name order.
+    if order_by != "title":
+        terms.append(f"{ORDER_TERMS['title'].format(p=prefix)} ASC")
+    terms.append(f"{prefix}name ASC")
     return ", ".join(terms)
 
 

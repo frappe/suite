@@ -479,6 +479,28 @@ class TestDriveViews(IntegrationTestCase):
             ],
         )
 
+    def test_children_sort_by_owner_and_by_type_with_ties_in_name_order(self):
+        folder = self._node(self.personal.name, "Sort folder")
+        made = {}
+        for owner, kind, mime, title in (
+            ("b@example.com", "file", "image/png", "E picture"),
+            ("a@example.com", "file", "application/pdf", "B paper"),
+            ("c@example.com", "file", "image/jpeg", "C photo"),
+            ("b@example.com", "file", "image/png", "A picture"),
+            ("b@example.com", "folder", None, "D folder"),
+        ):
+            node = self._node(folder.name, title, kind=kind)
+            frappe.db.set_value("Drive Node", node.name, {"owner": owner, "mime": mime}, update_modified=False)
+            made[node.name] = title
+
+        def titles(order_by, ascending=True):
+            rows = children(self.principals, folder.name, order_by=order_by, ascending=ascending)["rows"]
+            return [made[row.name] for row in rows]
+
+        self.assertEqual(titles("owner"), ["D folder", "B paper", "A picture", "E picture", "C photo"])
+        self.assertEqual(titles("owner", ascending=False), ["D folder", "C photo", "A picture", "E picture", "B paper"])
+        self.assertEqual(titles("kind"), ["D folder", "B paper", "C photo", "A picture", "E picture"])
+
     def test_document_children_are_hidden_from_children_and_general_views(self):
         document = self._node(self.other.name, "Deck", kind="document")
         media = self._node(document.name, "unique-media-token", kind="file")
