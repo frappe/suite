@@ -626,6 +626,43 @@ class TestRootBreakdown(IntegrationTestCase):
             ],
         )
 
+    def test_a_documents_media_counts_as_the_document(self):
+        # A Drive listing shows the deck, not the video inside it, so the
+        # breakdown names the deck and charges it the video's bytes.
+        deck = self.node(
+            "Deck",
+            50,
+            kind="document",
+            mime="frappe/slides",
+            content_doctype="Presentation",
+            content_docname="d1",
+        )
+        inside = {"parent": deck, "path": f"/{deck}/"}
+        self.node("talk.mp4", 4000, mime="video/mp4", **inside)
+        self.node("slide.png", 1000, mime="image/png", **inside)
+        clip = self.node("clip.mp4", 3000, mime="video/mp4")
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(
+            usage.by_type,
+            [{"type": "Presentation", "bytes": 5050}, {"type": "Video", "bytes": 3000}],
+        )
+        self.assertEqual(
+            [(row["node"], row["title"], row["size"], row["type"]) for row in usage.largest],
+            [(deck, "Deck", 5050, "Presentation"), (clip, "clip.mp4", 3000, "Video")],
+        )
+
+    def test_a_generic_mime_takes_its_type_from_the_extension(self):
+        notes = self.node("Talk notes.md", 700, mime="application/octet-stream")
+        self.node("blob", 300, mime="application/octet-stream")
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(usage.by_type, [{"type": "Code", "bytes": 700}, {"type": "Application", "bytes": 300}])
+        self.assertEqual(usage.largest[0]["node"], notes)
+        self.assertEqual(usage.largest[0]["type"], "Code")
+
     def test_the_largest_list_is_capped_but_the_totals_are_not(self):
         count = LARGEST_FILES + 2
         for index in range(count):

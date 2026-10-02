@@ -1,10 +1,16 @@
 <!--
   How much the caller's personal Drive holds, against its quota, and what
-  those bytes are: totals by type and the largest files. One request answers
-  all three, so the tab loads once, and every state shares one layout.
+  those bytes are: totals by type and the largest items, both named as a
+  Drive listing shows them. One request answers all three, so the tab loads
+  once, and every state shares one layout.
 -->
 <template>
-  <SettingsPage :title="__('Statistics')">
+  <!-- The server folds a document's media into the document, so every listed
+       item is one Drive shows. The description says so: those bytes are real. -->
+  <SettingsPage
+    :title="__('Statistics')"
+    :description="__('Pictures and videos inside a document count towards that document.')"
+  >
     <div class="flex flex-col gap-6">
       <div class="flex flex-col gap-2">
         <Progress :value="percent" size="md" :aria-label="__('Storage used')" />
@@ -21,8 +27,8 @@
             <ul v-if="byType.length" class="flex flex-col">
               <li v-for="row in byType" :key="row.type" class="flex h-8 items-center gap-2">
                 <span
-                  :class="storageTypeIcon(row.type)"
-                  class="size-4 shrink-0 text-ink-gray-6"
+                  :class="[storageTypeIcon(row.type), storageTypeTint(row.type)]"
+                  class="size-4 shrink-0"
                   aria-hidden="true"
                 />
                 <span class="flex-1 truncate text-base text-ink-gray-8">{{ __(row.type) }}</span>
@@ -46,7 +52,7 @@
             <ul v-if="largest.length" class="flex flex-col">
               <li v-for="file in largest" :key="file.node" class="flex h-8 items-center gap-2">
                 <span
-                  :class="[nodeIcon(largestFileNode(file)), nodeIconTint(largestFileNode(file))]"
+                  :class="[storageTypeIcon(file.type), storageTypeTint(file.type)]"
                   class="size-4 shrink-0"
                   aria-hidden="true"
                 />
@@ -78,11 +84,10 @@ import { Progress, Skeleton } from 'frappe-ui'
 import { roots } from '@/apps/drive/client/roots'
 import { rootStorage } from '@/apps/drive/client/settings'
 import { formatBytes } from '@/apps/drive/files/internal/format'
-import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
 import { useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 import SettingsPage from './SettingsPage.vue'
-import { largestFileNode, storageTypeIcon } from './storageTypes'
+import { storageTypeIcon, storageTypeTint } from './storageTypes'
 
 const discovered = useQuery(roots())
 const usage = useQuery(() => {
@@ -116,6 +121,6 @@ const summary = computed(() => {
   if (!answer) return __('Loading…')
   const used = formatBytes(answer.used_bytes)
   if (answer.effective_quota <= 0) return __('{0} used', [used])
-  return __('{0} used of {1}', [used, formatBytes(answer.effective_quota)])
+  return __('{0} of {1} used', [used, formatBytes(answer.effective_quota)])
 })
 </script>

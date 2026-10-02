@@ -1,5 +1,6 @@
 """Atomic lifecycle for the one-to-one Drive root pair."""
 
+import mimetypes
 from uuid import uuid4
 
 import frappe
@@ -16,6 +17,9 @@ ILLEGAL_ROOT_OPERATIONS = frozenset({"move", "copy", "trash", "restore", "purge"
 # The breakdown lists this many of a root's largest nodes. Every node still
 # counts towards its type's total.
 LARGEST_FILES = 10
+# Mimes that name no type. A browser sends one for a file it does not know,
+# such as Markdown, so the extension decides the type instead.
+GENERIC_MIMES = frozenset({"", "application/octet-stream", "binary/octet-stream"})
 
 
 def create_root(
@@ -186,19 +190,34 @@ def usage_for(root: str, principals: Principals, *, breakdown: bool = False) -> 
 
 
 def _breakdown(root: str) -> dict:
-    """Bytes by type, and the largest nodes, among one root's Active nodes.
+    """Bytes by type, and the largest items, among one root's Active nodes.
+
+    It answers in the items a Drive listing shows. A Media Node is not listed
+    on its own: it lives inside its Content Document, so its bytes count
+    towards that document, both in the document's type and in its size among
+    the largest. Every byte is still counted once.
 
     Only nodes that hold bytes are read: folders, links, and empty nodes are
     free (§7.1), so they never appear. Trash and versions are charged too, but
-    this answers what the root holds now. The totals group in SQL by the three
+    this answers what the root holds now. The totals group in SQL by the
     columns the type rule reads, so the fold below sees one row per distinct
-    mime, not one per node.
+    mime, not one per node. A file with a generic mime also groups by title,
+    because its type then comes from its extension.
     """
+    holder = """
+        FROM `tabDrive Node` n
+        LEFT JOIN `tabDrive Node` d ON d.name = n.parent AND d.kind = 'document'
+        JOIN `tabDrive Node` item ON item.name = COALESCE(d.name, n.name)
+        WHERE n.root = %(root)s AND n.state = 'Active' AND n.kind IN ('file', 'document') AND n.size > 0
+    """
+    generic = ", ".join(frappe.db.escape(mime) for mime in sorted(GENERIC_MIMES))
     groups = frappe.db.sql(
-        """SELECT kind, content_doctype, mime, SUM(size) AS bytes
-           FROM `tabDrive Node`
-           WHERE root = %(root)s AND state = 'Active' AND kind IN ('file', 'document') AND size > 0
-           GROUP BY kind, content_doctype, mime""",
+        f"""SELECT item.kind, item.content_doctype, item.mime,
+               CASE WHEN item.mime IS NULL OR item.mime IN ({generic}) THEN item.title END AS title,
+               SUM(n.size) AS bytes
+           {holder}
+           GROUP BY item.kind, item.content_doctype, item.mime,
+               CASE WHEN item.mime IS NULL OR item.mime IN ({generic}) THEN item.title END""",
         {"root": root},
         as_dict=True,
     )
@@ -207,10 +226,10 @@ def _breakdown(root: str) -> dict:
         name = _storage_type(group)
         by_type[name] = by_type.get(name, 0) + int(group.bytes)
     largest = frappe.db.sql(
-        """SELECT name, title, size, mime, kind, content_doctype
-           FROM `tabDrive Node`
-           WHERE root = %(root)s AND state = 'Active' AND kind IN ('file', 'document') AND size > 0
-           ORDER BY size DESC, name
+        f"""SELECT item.name, item.title, item.mime, item.kind, item.content_doctype, SUM(n.size) AS size
+           {holder}
+           GROUP BY item.name, item.title, item.mime, item.kind, item.content_doctype
+           ORDER BY size DESC, item.name
            LIMIT %(limit)s""",
         {"root": root, "limit": LARGEST_FILES},
         as_dict=True,
@@ -239,14 +258,18 @@ def _storage_type(row) -> str:
 
     A content document is its content doctype. A file is its mime family from
     the legacy mime table, which is still the clients' vocabulary; a mime the
-    table does not hold is "Unknown". The import is function-local because
-    `suite.drive.utils` builds a query-builder DocType at import time.
+    table does not hold is "Unknown". A generic mime is replaced by the one its
+    title's extension names, when there is one. The import is function-local
+    because `suite.drive.utils` builds a query-builder DocType at import time.
     """
     from suite.drive.utils import get_file_type
 
     if row.get("kind") == "document":
         return row.get("content_doctype") or "Unknown"
-    return get_file_type(row.get("mime") or "")
+    mime = row.get("mime") or ""
+    if mime in GENERIC_MIMES:
+        mime = mimetypes.guess_type(row.get("title") or "")[0] or mime
+    return get_file_type(mime)
 
 
 def purge_root(root: str, principals: Principals) -> frappe._dict:

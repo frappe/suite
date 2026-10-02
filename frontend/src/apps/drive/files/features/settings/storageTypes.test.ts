@@ -1,19 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
-import { nodeIcon } from '@/apps/drive/files/internal/icons'
-import { largestFileNode, storageTypeIcon } from './storageTypes'
+import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
+import { storageTypeIcon, storageTypeTint } from './storageTypes'
 
-describe('storage breakdown icons', () => {
-  it('draws a largest document with its content icon and a file by its mime', () => {
-    const deck = { node: 'n1', title: 'Deck', size: 5, mime: 'frappe/slides', kind: 'document', type: 'Presentation' } as const
-    const photo = { node: 'n2', title: 'a.png', size: 9, mime: 'image/png', kind: 'file', type: 'Image' } as const
-    expect(nodeIcon(largestFileNode(deck))).toBe('lucide-presentation')
-    expect(nodeIcon(largestFileNode(photo))).toBe('lucide-image')
+describe('storage type icons', () => {
+  it('draws a type the way Drive draws a file of that type', () => {
+    const deck = { kind: 'document', mime: 'frappe/slides', content_doctype: 'Presentation' } as const
+    const photo = { kind: 'file', mime: 'image/png', content_doctype: null } as const
+    const pdf = { kind: 'file', mime: 'application/pdf', content_doctype: null } as const
+    const clip = { kind: 'file', mime: 'video/mp4', content_doctype: null } as const
+    for (const [type, node] of [['Presentation', deck], ['Image', photo], ['PDF', pdf], ['Video', clip]] as const) {
+      expect(storageTypeIcon(type)).toBe(nodeIcon(node))
+      expect(storageTypeTint(type)).toBe(nodeIconTint(node))
+    }
   })
 
-  it('names the same icon for a type row as for a file of that type', () => {
-    expect(storageTypeIcon('Image')).toBe('lucide-image')
-    expect(storageTypeIcon('Presentation')).toBe('lucide-presentation')
+  it('falls back to a plain gray file for a type it does not know', () => {
     expect(storageTypeIcon('Unknown')).toBe('lucide-file')
+    expect(storageTypeTint('Unknown')).toBe(nodeIconTint({ kind: 'file', mime: null, content_doctype: null }))
   })
 })
