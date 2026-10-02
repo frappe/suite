@@ -139,7 +139,8 @@ test("Upload new version replaces a file's bytes from its preview", async ({ pag
 	await expect(page.getByRole("heading", { name: "No preview" })).toBeVisible();
 
 	const chooser = page.waitForEvent("filechooser");
-	await page.getByRole("button", { name: "Upload new version" }).click();
+	await page.getByRole("button", { name: "More file actions" }).click();
+	await page.getByRole("menuitem", { name: "Upload new version" }).click();
 	const replacement = Buffer.from("the new version, longer than the old one");
 	await (await chooser).setFiles({ name: "anything.bin", mimeType: "application/octet-stream", buffer: replacement });
 

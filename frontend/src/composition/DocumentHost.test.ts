@@ -12,6 +12,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock("@/apps/drive", async () => {
   const { defineComponent: define, h: render } = await import("vue");
+  const { openingTitleState } = await import("@/platform/page-meta");
   return {
     // Stands in for the password form: a click is a right password.
     DriveUnlockScreen: define({
@@ -24,6 +25,11 @@ vi.mock("@/apps/drive", async () => {
     openDocumentSession: testState.open,
     driveNodeRoute: (node: string, title: string) => ({
       path: `/d/${node}/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      state: openingTitleState(title),
+    }),
+    DriveDocumentHeaderSkeleton: define({
+      props: { title: String },
+      setup: (props) => () => render("header", { "data-skeleton": "" }, props.title),
     }),
   };
 });
@@ -39,6 +45,7 @@ vi.mock("@/composition/documentRegistry", () => ({
 
 import DocumentHost, { selectDocumentSurface } from "./DocumentHost.vue";
 import { TransportError } from "@/platform/transport";
+import { installPageMeta, openingTitleState } from "@/platform/page-meta";
 import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
 async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
@@ -108,6 +115,34 @@ describe("DocumentHost", () => {
     expect(router.options.history.state.back).toBeFalsy();
     app.unmount();
     expect(testState.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("names the tab from the first frame: the opener's title, else Opening…, then the document's", async () => {
+    let answer!: (value: unknown) => void;
+    testState.open.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/d/:node/:slug?", component: DocumentHost, meta: { title: "Opening…" } }],
+    });
+    const uninstall = installPageMeta(router);
+    await router.push({ path: "/d/node-1/q3", state: openingTitleState("Q3 plan") });
+    // Before the host mounts, the route already carries the opener's title.
+    expect(document.title).toBe("Q3 plan");
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = createApp(DocumentHost);
+    app.use(router);
+    app.mount(root);
+    expect(root.querySelector("[data-skeleton]")?.textContent).toBe("Q3 plan");
+
+    answer(session());
+    await vi.waitFor(() => expect(document.title).toBe("Quarterly plan"));
+
+    testState.open.mockReturnValue(new Promise(() => {}));
+    await router.push("/d/node-2");
+    await vi.waitFor(() => expect(document.title).toBe("Opening…"));
+    app.unmount();
+    uninstall();
   });
 
   it("shows the unlock screen in place for a locked link, and opens the document once unlocked", async () => {

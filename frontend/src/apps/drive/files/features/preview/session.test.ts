@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Operation } from '@/platform/transport'
 
-const server = vi.hoisted(() => ({ viaLink: null as string | null, visits: [] as string[] }))
+const server = vi.hoisted(() => ({ viaLink: null as string | null, visits: [] as string[], starred: new Set<string>() }))
 
 vi.mock('@/platform/transport', async (actual) => ({
   ...(await actual<typeof import('@/platform/transport')>()),
@@ -14,7 +14,7 @@ vi.mock('@/platform/transport', async (actual) => ({
         name: input.node, title: 'Plan.pdf', kind: 'file', parent: 'p', root: 'r', state: 'Active', size: 1,
         mime: 'application/pdf', url: `/f/${input.node}`, content_doctype: null, content_docname: null,
         is_template: 0, owner: 'asha@example.com', creation: null, modified: null, content_modified: null,
-        access: { role: 10, via_link: server.viaLink },
+        access: { role: 10, via_link: server.viaLink }, favourite: server.starred.has(input.node),
       }
     },
   },
@@ -31,5 +31,20 @@ describe('file preview session', () => {
     expect(server.visits).toEqual(['own'])
     own.dispose()
     linked.dispose()
+  })
+
+  it("carries the caller's star and reads it again on refresh", async () => {
+    server.viaLink = null
+    server.starred.add('starred')
+    const starred = await openFilePreviewSession('starred')
+    const plain = await openFilePreviewSession('plain')
+    expect(starred.favourite.value).toBe(true)
+    expect(plain.favourite.value).toBe(false)
+
+    server.starred.delete('starred')
+    await starred.refreshPreview()
+    expect(starred.favourite.value).toBe(false)
+    starred.dispose()
+    plain.dispose()
   })
 })

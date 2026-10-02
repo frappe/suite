@@ -137,12 +137,16 @@ export function driveNodeRoute(
   const nodeKind = typeof node === 'string' ? kind : node.kind
   const slug = slugify(label)
   const base = nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
-  return { path: `${base}${slug ? `/${slug}` : ''}` }
+  // The history entry carries the title, so the tab names the node before
+  // its page loads.
+  return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
 }
 
 export function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
   rememberDialogContext(getCurrentInstance()?.appContext)
+  // Every surface shows the document header: fetch it while the session opens.
+  void loadDocumentHeader()
   return openDriveDocumentSession(nodeId).catch(async (error) => {
     if (!(error instanceof Error) || !error.message.includes('is not a content document')) throw error
     const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
@@ -160,6 +164,23 @@ export const DriveUploadTracker = defineAsyncComponent(() => import('@/apps/driv
 
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
 export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))
+
+const loadDocumentHeader = () => import('@/apps/drive/files/features/document/DocumentHeader.vue')
+
+/**
+ * The header every document surface shows: type icon, title, save status, the
+ * surface's actions, side-panel toggles and Share. Pass `session`, `title-label`,
+ * and optionally `save-state`, `view-only`, `recoverable` with
+ * `@download-changes`, `panels` with `v-model:panel`, `location`, and `mime`
+ * for a file. Slots: `status` (after the badges) and `actions` (before the
+ * panel toggles). Exposes `focusTitle()`.
+ */
+export const DriveDocumentHeader = defineAsyncComponent(loadDocumentHeader)
+
+/** The document header's shape while a document opens. Shows `title` when one is known. */
+export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
+
+export type { DocumentPanel, DocumentSaveState } from '@/apps/drive/files/features/document/header'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),

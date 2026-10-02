@@ -9,25 +9,36 @@ import {
   type DocumentSession,
   type MediaHandle,
 } from "@/apps/drive/client/session";
-import type { DriveNode, DrivePreview } from "@/apps/drive/client/types";
+import type { DriveBreadcrumb, DriveNode, DrivePreview } from "@/apps/drive/client/types";
 import { transport } from "@/platform/transport";
 import { presentShareDialog } from "../share/present";
 
 const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true });
 const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true });
 const copyNode = driveOperation<{ node: string; parent: string; title?: string }, DriveNode>(api.node_copy, { entity: true });
+const EXPAND = "access,preview,breadcrumbs";
 
 export interface FilePreviewSession extends DocumentSession {
   readonly mime: string | null;
-  /** The folder the file is in. A replace names it; `null` for a root. */
-  readonly parent: string | null;
+  /** The id of the folder the file is in. A replace names it; `null` for a root. Follows a move. */
+  readonly parent: Readonly<Ref<string | null>>;
+  /**
+   * The folder the file is in, when the caller can read it: the header links
+   * back to it. Follows a move.
+   */
+  readonly folder: Readonly<Ref<DriveBreadcrumb | null>>;
   readonly preview: Readonly<Ref<DrivePreview | null>>;
+  /**
+   * The caller's own star on the file. Writable, so a star toggle can show
+   * the new state before the server answers and put it back on a refusal.
+   */
+  readonly favourite: Ref<boolean>;
   refreshPreview(): Promise<void>;
 }
 
 export async function openFilePreviewSession(nodeId: string): Promise<FilePreviewSession> {
   const controller = new AbortController();
-  const initial = await transport.request(nodeGet, { node: nodeId, expand: "access,preview" }, { signal: controller.signal });
+  const initial = await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal });
   if (initial.kind !== "file" || initial.content_doctype || initial.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a previewable file`);
   }
@@ -36,6 +47,9 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const state = ref<"Active" | "Trashed" | "Refused">(sessionState(initial));
   const access = ref(initial.access ?? {});
   const preview = ref<DrivePreview | null>(initial.preview ?? null);
+  const parent = ref(initial.parent);
+  const folder = ref<DriveBreadcrumb | null>(folderOf(initial));
+  const favourite = ref(initial.favourite ?? false);
   let disposed = false;
 
   // A file reached through a share link records no visit (spec §10.13): the
@@ -45,11 +59,14 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   async function refresh() {
     if (disposed) return;
     try {
-      const node = await transport.request(nodeGet, { node: nodeId, expand: "access,preview" }, { signal: controller.signal });
+      const node = await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal });
       title.value = node.title;
+      parent.value = node.parent;
+      folder.value = folderOf(node);
       access.value = node.access ?? {};
       state.value = sessionState(node);
       preview.value = node.preview ?? null;
+      favourite.value = node.favourite ?? false;
     } catch {
       state.value = "Refused";
       access.value = {};
@@ -83,8 +100,10 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     contentDoctype: "File",
     contentDocname: nodeId,
     mime: initial.mime,
-    parent: initial.parent,
+    parent: readonly(parent),
+    folder: readonly(folder),
     preview: readonly(preview),
+    favourite,
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
@@ -129,6 +148,12 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       stopAccessChanges();
     },
   };
+}
+
+/** The breadcrumbs end at the file's own folder, when the caller can read it. */
+function folderOf(node: DriveNode): DriveBreadcrumb | null {
+  const parent = node.breadcrumbs?.at(-1);
+  return parent && parent.name === node.parent ? parent : null;
 }
 
 function sessionState(node: DriveNode): "Active" | "Trashed" | "Refused" {

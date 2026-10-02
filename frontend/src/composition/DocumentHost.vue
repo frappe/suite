@@ -20,7 +20,7 @@ export async function selectDocumentSurface(
 </script>
 
 <script setup lang="ts">
-import { Button, Spinner } from "frappe-ui";
+import { Button } from "frappe-ui";
 import {
   computed,
   inject,
@@ -31,6 +31,7 @@ import {
 import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 
 import {
+  DriveDocumentHeaderSkeleton,
   DriveUnlockScreen,
   driveNodeRoute,
   isDriveLocked,
@@ -38,7 +39,7 @@ import {
   openDocumentSession,
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
-import { usePageTitle } from "@/platform/page-meta";
+import { openingTitle as historyOpeningTitle, usePageTitle } from "@/platform/page-meta";
 import { TransportError } from "@/platform/transport";
 import { GUEST_FRAME_KEY } from "@/platform/contracts";
 
@@ -56,7 +57,11 @@ const reopen = shallowRef(0);
 let opening = 0;
 
 const nodeId = computed(() => String(route.params.node ?? ""));
-usePageTitle(() => session.value?.title.value || "Document");
+// Until the session answers, the tab keeps the route's title: the name the
+// opener put on this history entry, otherwise "Opening…". The skeleton header
+// shows the same name. The entry is current once the route is.
+const openingTitle = computed(() => (nodeId.value ? historyOpeningTitle(router.options.history.state) : null));
+usePageTitle(() => session.value?.title.value ?? "");
 const downloadUrl = computed(
   () => `/api/suite/drive/nodes/${encodeURIComponent(nodeId.value)}/content`,
 );
@@ -165,8 +170,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base text-ink-gray-8">
-    <div v-if="loading" class="flex flex-1 items-center justify-center" aria-label="Opening document">
-      <Spinner class="size-5 text-ink-gray-5" />
+    <div v-if="loading" class="flex min-w-0 flex-1 flex-col">
+      <DriveDocumentHeaderSkeleton :title="session?.title.value || openingTitle || undefined" />
     </div>
 
     <DriveUnlockScreen v-else-if="locked" :node="nodeId" @unlocked="reopen += 1" />

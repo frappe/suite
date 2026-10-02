@@ -1,16 +1,11 @@
 <template>
   <input ref="input" data-slot="upload-new-version-input" type="file" class="hidden" @change="take" />
-  <Button
-    label="Upload new version"
-    icon-left="lucide-upload"
-    :loading="uploading"
-    @click="pick"
-  />
+  <Badge v-if="uploading" label="Uploading new version…" theme="gray" variant="subtle" class="shrink-0" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Button } from 'frappe-ui'
+import { Badge } from 'frappe-ui'
 
 import { confirm, toast } from '@/platform/feedback'
 
@@ -18,7 +13,8 @@ import { uploadQueue, type UploadEntry } from '../uploads/queue'
 
 /**
  * Replaces the file's bytes from the browser (spec §6.8). A browser replace
- * keeps no old version, so the user confirms first.
+ * keeps no old version, so the user confirms first. The caller's menu calls
+ * `pick()`; this shows a badge while the upload runs.
  */
 const props = defineProps<{ node: string; parent: string; title: string }>()
 const emit = defineEmits<{ replaced: [] }>()
@@ -57,4 +53,5 @@ watch(
     }
   },
 )
+defineExpose({ pick })
 </script>
