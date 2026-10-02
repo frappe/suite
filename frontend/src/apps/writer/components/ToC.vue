@@ -62,7 +62,7 @@
               <div v-for="anchor in currentTabAnchors" class="flex pr-2.5">
                 <Tooltip :text="anchor.textContent" class="min-w-0 grow">
                   <a :href="'#' + anchor.id"
-                    class="link block truncate text-sm text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
+                    class="link block truncate text-sm leading-tighter text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
                     :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id"
                     :class="anchor.isActive && 'text-ink-gray-8 bg-surface-gray-3 hover:bg-surface-gray-4'"
                     :style="{ '--level': anchor.level - maxLevel }">
@@ -80,7 +80,7 @@
         <div v-for="anchor in anchors" class="flex">
           <Tooltip :text="anchor.textContent" class="min-w-0 grow">
             <a :href="'#' + anchor.id"
-              class="link block truncate text-sm text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
+              class="link block truncate text-sm leading-tighter text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
               :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id"
               :class="anchor.isActive && 'text-ink-gray-8'" :style="{ '--level': anchor.level - maxLevel }">
               {{ anchor.textContent }}

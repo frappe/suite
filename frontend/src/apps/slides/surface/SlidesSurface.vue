@@ -468,7 +468,7 @@ onBeforeUnmount(() => {
         v-for="item in compositeItems"
         :key="item.reference"
         type="button"
-        class="rounded-4 px-2 py-1 text-xs"
+        class="rounded-4 px-2 py-1 text-xs leading-tighter"
         :class="item.status === 'ready' ? 'bg-surface-green-2 text-ink-green-7' : item.status === 'loading' ? 'bg-surface-gray-2 text-ink-gray-6' : 'bg-surface-amber-2 text-ink-amber-7'"
         :disabled="item.status !== 'failed'"
         @click="item.group !== undefined && compositeLoader?.retry(item.group)"

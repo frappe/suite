@@ -6,7 +6,7 @@
         You're adding {{ preview.data.length }} {{ preview.data.length == 1 ? 'item' : 'items' }}:
       </div>
       <div class="h-64 overflow-auto">
-        <Tree :nodes="tree" node-key="label">
+        <Tree v-model:expanded="expanded" :nodes="tree" node-key="label">
           <template #item-label="{ node, hasChildren, expanded }">
             <div class="text-base truncate pl-3.5 flex gap-2">
               <template v-if="hasChildren">
@@ -45,7 +45,7 @@
 <script setup>
 import { Button, Tree, createResource } from 'frappe-ui'
 import Alert from '@/apps/drive/legacy/components/Alert.vue'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { toast } from '@/apps/drive/legacy/utils/toasts'
 import emitter from '@/apps/drive/legacy/emitter'
 import { clearDialogs } from '@/apps/drive/legacy/utils/dialogs'
@@ -101,6 +101,15 @@ const preview = createResource({
   cache: 'preview',
 })
 preview.submit()
+
+// The preview opens fully expanded, so every incoming item is visible at once.
+const expanded = ref([])
+watch(tree, (nodes) => (expanded.value = nodes ? folderKeys(nodes) : []), { immediate: true })
+
+function folderKeys(nodes) {
+  return nodes.flatMap((node) => (node.children ? [node.label, ...folderKeys(node.children)] : []))
+}
+
 const syncFromDisk = createResource({
   url: 'suite.drive.api.scripts.sync_from_disk',
   beforeSubmit: () => {

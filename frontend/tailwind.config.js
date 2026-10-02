@@ -1,4 +1,4 @@
-import frappeUIPreset from "frappe-ui/tailwind";
+import frappeUIPreset, { content as frappeUIContent } from "frappe-ui/tailwind";
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -10,13 +10,9 @@ export default {
     './index.html',
     './recorder/**/*.{vue,js,ts,jsx,tsx}',
     './src/**/*.{vue,js,ts,jsx,tsx}',
-    './node_modules/frappe-ui/src/components/**/*.{vue,js,ts,jsx,tsx}',
-    '../node_modules/frappe-ui/src/components/**/*.{vue,js,ts,jsx,tsx}',
-    './node_modules/frappe-ui/src/molecules/**/*.{vue,js,ts,jsx,tsx}',
-    '../node_modules/frappe-ui/src/molecules/**/*.{vue,js,ts,jsx,tsx}',
-    './node_modules/frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
-    '../node_modules/frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
-    '../frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
+    // frappe-ui's own source globs, resolved from wherever the package is
+    // installed. Presets do not merge `content`, so the app must list them.
+    ...frappeUIContent,
   ],
   variants: {
     extend: {

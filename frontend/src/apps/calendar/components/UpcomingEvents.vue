@@ -15,9 +15,9 @@
 		:class="isCollapsed ? 'max-h-0 overflow-hidden py-0 opacity-0' : 'max-h-96 py-2 opacity-100'"
 	>
 		<!-- Mirrors the section labels and unread suffixes of the sidebar's nav groups.
-		     leading-4 on every truncating line: the preset's 1.15 line-height is
-		     shorter than Inter's glyph box, so truncate's overflow-hidden shaves
-		     the descenders. 16px is what frappe-ui pins its own section label to. -->
+		     leading-4 on every truncating line: 16px is the height frappe-ui gives its
+		     own section label, and it holds Inter's glyph box, so truncate's
+		     overflow-hidden keeps the descenders. -->
 		<div class="flex items-center justify-between px-2 py-1.5">
 			<span class="truncate text-sm leading-4 text-ink-gray-5">{{ __('Upcoming events') }}</span>
 			<!-- The list shows three rows before scrolling, so a count only says

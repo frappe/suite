@@ -54,9 +54,8 @@ const showRemoveParticipant = (participant: any) =>
 							/>
 						</div>
 					</div>
-					<!-- The paragraph variant, not `text-sm`: at 13px its 1.15 leading gives a
-					     line box shorter than the glyphs themselves, so the descender of a g or a
-					     y hung below it and the participants list clipped it at its scroll edge. -->
+					<!-- The paragraph variant, not `text-sm`: its taller line box keeps the
+					     descender of a g or a y well inside the participants list's scroll edge. -->
 					<span class="text-ink-gray-5 text-p-sm">{{ p.email }}</span>
 				</div>
 			</div>

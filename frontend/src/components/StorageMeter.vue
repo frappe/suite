@@ -11,12 +11,11 @@
 				:style="{ width: `${usedPercentage}%`, maxWidth: '100%' }"
 			/>
 		</div>
-		<!-- leading-4 on both lines: the preset's 1.15 line-height would make the
-		     label ~14px and the min-h'd figure 16px, and the block would jump by
-		     the difference on collapse. The rail leaves a 16px column and "100%"
-		     needs twice that, so the figure borrows the padding either side to
-		     sit centred under the icon; min-h keeps the row when there is no
-		     percent to show (unlimited). -->
+		<!-- leading-4 on both lines, so the label and the min-h'd figure are both
+		     16px and the block keeps its height on collapse. The rail leaves a
+		     16px column and "100%" needs twice that, so the figure borrows the
+		     padding either side to sit centred under the icon; min-h keeps the
+		     row when there is no percent to show (unlimited). -->
 		<span
 			v-if="collapsed"
 			class="-mx-2 min-h-4 w-8 text-center text-xs leading-4 tabular-nums"

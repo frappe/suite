@@ -482,11 +482,12 @@ async function copyLink() {
 /* ── Type scale ──────────────────────────────────────────────────────────────
    The whole dialog speaks three text styles, differentiated by weight + colour
    rather than a spread of pixel sizes (this was the founder's "so many different
-   font styles" note). The metrics mirror frappe-ui's own text tokens exactly —
-   line-height 1.15, letter-spacing 0.02em, regular weight 420 (InterVar) — so
-   this text tracks identically to the Dialog title, Selects and Buttons around
-   it (there's no compound `text-*-medium` class to reuse, and `text-base` +
-   `font-medium` utilities fight over weight, so we set it here). */
+   font styles" note). The metrics mirror frappe-ui's own text tokens —
+   letter-spacing 0.02em, regular weight 420 (InterVar) — and the 1.15
+   line-height of its `leading-tighter`, which its Selects and Buttons use, so
+   this text tracks identically to the controls around it (there's no compound
+   `text-*-medium` class to reuse, and `text-base` + `font-medium` utilities
+   fight over weight, so we set it here). */
 .sd-section-label {                 /* "General Access", "Members" */
   font-size: 13px; font-weight: 500; letter-spacing: 0.02em; line-height: 1.15;
   color: var(--ink-gray-5); margin: 0 0 12px;

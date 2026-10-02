@@ -25,7 +25,7 @@
 				<span
 					v-for="mailbox in result.mailboxes"
 					:key="mailbox.mailbox_id"
-					class="shrink-0 rounded-4 bg-surface-gray-2 px-1.5 py-0.5 text-xs text-ink-gray-6 group-data-[state=active]:bg-surface-elevation-1"
+					class="shrink-0 rounded-4 bg-surface-gray-2 px-1.5 py-0.5 text-xs leading-tighter text-ink-gray-6 group-data-[state=active]:bg-surface-elevation-1"
 				>
 					{{ mailbox.mailbox_name }}
 				</span>

@@ -200,7 +200,7 @@ onBeforeUnmount(() => {
       <span class="lucide-file-question mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <h1 class="mt-3 text-lg-semibold">No preview</h1>
       <p class="mt-1 text-p-sm text-ink-gray-6">This file type cannot be previewed here.</p>
-      <Button class="mt-4" label="Download" icon-left="lucide-download" :link="downloadUrl" />
+      <Button class="mt-4" label="Download" icon-left="lucide-download" :href="downloadUrl" />
     </div>
   </div>
 </template>

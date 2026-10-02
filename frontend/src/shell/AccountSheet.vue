@@ -140,7 +140,7 @@ async function showApps(open: boolean) {
   await nextTick();
   const target = open
     ? appsView.value?.querySelector<HTMLElement>("button")
-    : accountView.value?.querySelector<HTMLElement>("[data-apps-row] button");
+    : accountView.value?.querySelector<HTMLElement>("[data-apps-row]");
   target?.focus();
 }
 

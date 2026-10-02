@@ -27,9 +27,9 @@
 		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
 		     and its border is the separator content passes under. -->
 		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-			<!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
-			     baked in) and MailLayout's `.mail-app h2` rule outrank a plain leading-*
-			     utility — wrapped lines sat nearly touching. -->
+			<!-- !leading-7: subjects wrap and want a looser line, and both text-lg-semibold
+			     (its own line-height baked in) and MailLayout's `.mail-app h2` rule outrank a
+			     plain leading-* utility. -->
 			<h2 class="text-lg-semibold !leading-7">
 				{{ thread[0].subject || __('[No subject]') }}
 			</h2>
@@ -215,8 +215,8 @@
 														   whatever sets the text block's height decides where the name
 														   sits. The preview beside it states a 20px line box, matching
 														   the 20px hover actions that replace the timestamp — but a mail
-														   with no body has an empty preview, so the name's own 16.1px box
-														   set the height and the row rose ~2px under the cursor.
+														   with no body has an empty preview, so the name's own 18.9px box
+														   set the height and the row rose ~1px under the cursor.
 														   sm:, because the preset's font sizes carry a line-height of
 														   their own: a bare leading-5 loses to the sm:text-base above. */
 														'sm:leading-5': isCollapsed(mail) && !isMobile,
@@ -224,10 +224,9 @@
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>
-												<!-- leading-4: truncate is overflow-hidden, and the preset's 1.15 puts 13px
-												     text in a 14.95px box while Inter's glyph box wants ~15.7 — so the
-												     descenders of a g or a p were shaved off. 16px still sits under the
-												     sender name beside it, so the row does not grow. -->
+												<!-- leading-4: 16px holds Inter's ~15.7px glyph box at 13px, so truncate's
+												     overflow-hidden keeps the descenders of a g or a p, and it still sits
+												     under the sender name beside it, so the row does not grow. -->
 												<span
 													v-if="!isMobile && !isCollapsed(mail)"
 													class="text-ink-gray-5 truncate leading-4"
@@ -274,10 +273,9 @@
 											</div>
 											<!-- Desktop collapsed rows are one line: the preview rides
 											     beside the name instead of on a row of its own.
-											     leading-5: truncate is overflow-hidden and the preset's
-											     1.15 puts 14px text in a ~16.1px box while Inter's glyph
-											     box wants ~16.4 — descenders were shaved. The row is
-											     avatar-tall, so the stated 20px adds no height. -->
+											     leading-5 states a 20px box, the height of the hover
+											     actions that replace the timestamp. The row is
+											     avatar-tall, so it adds no height. -->
 											<span
 												v-if="isCollapsed(mail) && !isMobile"
 												class="text-ink-gray-7 min-w-0 flex-1 truncate leading-5"

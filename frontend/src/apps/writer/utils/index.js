@@ -2,7 +2,7 @@ import router from '@/apps/writer/router'
 
 import { formatSize } from '@/apps/writer/utils/format'
 import { nextTick, h } from 'vue'
-import { useTimeAgo } from '@vueuse/core'
+import { formatTimeAgo, useTimeAgo } from '@vueuse/core'
 import editorStyle from '@/apps/writer/styles/editor.css?inline'
 import globalStyle from '@/apps/writer/styles/index.css?inline'
 import slugify from 'slugify'
@@ -24,6 +24,17 @@ export const prettyData = (entities) => {
     entity.file_size_pretty = formatSize(entity.file_size)
     entity.relativeModified = useTimeAgo(entity.modified)
     if (entity.accessed) entity.relativeAccessed = useTimeAgo(entity.accessed)
+    return entity
+  })
+}
+
+// For a list's `transform`, which runs again after every page and row update:
+// plain strings, so no rerun leaves a `useTimeAgo` timer behind.
+export const prettyListData = (entities) => {
+  return entities.map((entity) => {
+    entity.file_size_pretty = formatSize(entity.file_size)
+    entity.relativeModified = formatTimeAgo(new Date(entity.modified))
+    if (entity.accessed) entity.relativeAccessed = formatTimeAgo(new Date(entity.accessed))
     return entity
   })
 }

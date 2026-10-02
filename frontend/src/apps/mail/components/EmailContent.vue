@@ -7,10 +7,9 @@
 			<!-- Centered on the FIRST line, not on the block: the label wraps to two lines
 			     at 393px and a block-centered icon would float between them.
 
-			     leading-5 states the line box instead of leaving it at the preset's 1.15,
-			     which lands on 16.1px — tighter than a wrapped label wants, and not a
-			     number an icon can be centered on. At a stated 20px the offset is
-			     arithmetic: an 18px glyph, 1px of it either side. -->
+			     leading-5 states the line box instead of leaving it to the preset, whose
+			     18.9px is not a number an icon can be centered on. At a stated 20px the
+			     offset is arithmetic: an 18px glyph, 1px of it either side. -->
 			<ImageOff class="mt-px h-4.5 w-4.5 shrink-0 stroke-1.5" />
 			<span class="text-ink-gray-8 min-w-0 flex-1 leading-5"> {{ blockedLabel }} </span>
 		</div>

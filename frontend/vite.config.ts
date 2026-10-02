@@ -4,7 +4,7 @@ import path from 'path'
 
 import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 import { devBootFlags } from './src/platform/boot/devFlips'
@@ -101,6 +101,28 @@ const serveDevBootFlags = () => {
   }
 }
 
+/**
+ * frappe-ui's `codeLanguages` plugin adds an esbuild plugin to dependency
+ * pre-bundling. Vite 8 pre-bundles with Rolldown, and its esbuild compat layer
+ * throws "Not implemented" for the `build.resolve` and `initialOptions.absWorkingDir`
+ * calls that plugin makes, so every `@codemirror/lang-*` fails to optimize in dev.
+ * The esbuild plugin only stubs language packages that frappe-ui's own
+ * code editor imports and the app did not install. Dev serves frappe-ui
+ * un-bundled (see `optimizeDeps.exclude`), so the Rollup half of the same plugin
+ * still covers it. Remove this once frappe-ui ships a Rolldown version.
+ */
+const dropFrappeUICodeLanguagesEsbuildPlugin = (): Plugin => ({
+  name: 'drop-frappeui-code-languages-esbuild-plugin',
+  apply: 'serve',
+  enforce: 'post',
+  config(config) {
+    const esbuildOptions = config.optimizeDeps?.esbuildOptions
+    if (esbuildOptions?.plugins) {
+      esbuildOptions.plugins = esbuildOptions.plugins.filter((plugin: { name: string }) => plugin.name !== 'frappeui-code-languages')
+    }
+  },
+})
+
 const benchRoot = path.resolve(__dirname, '../../..')
 const commonSiteConfigPath = path.join(benchRoot, 'sites/common_site_config.json')
 // Allow static tooling to load this config in a standalone checkout/worktree.
@@ -143,6 +165,7 @@ export default defineConfig(({ mode }) => ({
         sourcemap: true,
       },
     }),
+    dropFrappeUICodeLanguagesEsbuildPlugin(),
     vue(),
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
@@ -233,9 +256,6 @@ export default defineConfig(({ mode }) => ({
       // left alone Vite resolves it through its `browser` field to a UMD build that has no
       // default export, and the page fails to load.
       '@iframe-resizer/core',
-      // Legacy frappe-ui FeatherIcon imports the CommonJS package as a default;
-      // pre-bundle it so Vite provides the interop instead of serving raw CJS as ESM.
-      'feather-icons',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',

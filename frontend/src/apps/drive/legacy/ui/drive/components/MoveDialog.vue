@@ -216,7 +216,6 @@ const fetchFolderContents = (tree, params = {}, nested = false) => {
           label: item.file_name,
           value: item.name,
           children: [],
-          expanded: false,
         })
         tree.children.push(node)
         if (!nested)

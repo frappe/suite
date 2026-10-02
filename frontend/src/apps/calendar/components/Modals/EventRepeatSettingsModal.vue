@@ -288,10 +288,9 @@ const removeRepeat = () => {
 				     outgrew its badge.
 
 				     text-p-sm, not text-sm: the size's own line-height is meant for a label
-				     that never wraps, and this wraps as soon as enough days are picked —
-				     two lines of it would sit with the descenders of one nearly touching
-				     the caps of the next. The paragraph variant of the same size leaves
-				     the leading a sentence needs. -->
+				     that never wraps, and this wraps as soon as enough days are picked.
+				     The paragraph variant of the same size leaves the leading a sentence
+				     needs. -->
 				<div
 					class="flex items-start gap-2.5 border-t border-outline-gray-1 pt-3 text-p-sm text-ink-gray-8"
 				>

@@ -65,7 +65,7 @@
 			<span
 				v-for="letter in weekdays"
 				:key="letter"
-				class="pb-1 pt-1 text-center text-xs text-ink-gray-4"
+				class="pb-1 pt-1 text-center text-xs leading-tighter text-ink-gray-4"
 			>
 				{{ letter }}
 			</span>

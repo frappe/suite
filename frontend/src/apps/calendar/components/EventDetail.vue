@@ -554,7 +554,7 @@ const openUrl = (location: string) => {
 							"
 						/>
 						<Tooltip :text="calendarEvent.title || __('Untitled event')" class="min-w-0">
-							<h3 class="text-ink-gray-8 truncate text-md font-semibold">
+							<h3 class="text-ink-gray-8 truncate text-md font-semibold leading-tighter">
 								{{ calendarEvent.title || __('Untitled event') }}
 							</h3>
 						</Tooltip>
@@ -594,16 +594,17 @@ const openUrl = (location: string) => {
 				     lines where there used to be a 24px title and a 15px date — and the numbers
 				     below are solved against that. -->
 				<div class="-mt-0.5 flex shrink-0 flex-col px-4.5 pb-[15px]">
-					<!-- The three numbers are solved together, not chosen. text-md is 15px at 1.15,
-					     so the title's line box is 17.25 and the header's 48 leaves 15.4 under it —
-					     more than the 12 a pb-3 put below the block, which is what left the pair
-					     sitting low. Balanced means the bottom padding equals that slack, and the
-					     49px the block has to be says the same numbers can only add to 49. Both
+					<!-- The three numbers are solved together, not chosen. The title and both lines
+					     here are leading-tighter (1.15). The title is 15px, so its line box is 17.25
+					     and the header's 48 leaves 15.4 under it — more than the 12 a pb-3 put below
+					     the block, which is what left the pair sitting low. Balanced means the bottom
+					     padding equals that slack, and the 49px the block has to be says the same
+					     numbers can only add to 49. Both
 					     hold at -2 / 6 / 15: -2 + 14.95 + 6 + 14.95 + 15. 15px is not a step on the
 					     scale, and is spelled out rather than rounded to 14 or 16 because it is the
 					     one value that matches a slack the header's own height fixes at 15.4. -->
 					<div class="min-w-0 space-y-1.5">
-						<div class="flex items-center gap-2 text-sm text-ink-gray-6">
+						<div class="flex items-center gap-2 text-sm leading-tighter text-ink-gray-6">
 							<span class="break-words">{{ dateLabel }}</span>
 						</div>
 						<!-- How often, under when: "every week on Thursday" is the rest of the
@@ -612,7 +613,7 @@ const openUrl = (location: string) => {
 						     has none, and one here would indent this line 22px past the start of
 						     the sentence it continues. The words name themselves. Truncated rather
 						     than wrapped: the block is a fixed 49px. -->
-						<div v-if="repeatMessage" class="min-w-0 truncate text-sm text-ink-gray-6">
+						<div v-if="repeatMessage" class="min-w-0 truncate text-sm leading-tighter text-ink-gray-6">
 							{{ repeatMessage }}
 						</div>
 					</div>

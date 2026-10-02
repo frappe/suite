@@ -1,5 +1,5 @@
 import { useList, createResource, useCall } from 'frappe-ui'
-import { prettyData } from '@/apps/writer/utils'
+import { prettyListData } from '@/apps/writer/utils'
 import { getAppSwitcherItems } from '@/apps/registry'
 import { getSessionUser } from '@/boot/session'
 
@@ -9,9 +9,7 @@ export const getDocuments = useList({
   limit: 50,
   immediate: false,
   cacheKey: 'writer-document-list',
-  transform: (data) => {
-    return prettyData(data)
-  },
+  transform: prettyListData,
 })
 
 export const createDocument = createResource({
