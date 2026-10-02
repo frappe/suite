@@ -1,9 +1,9 @@
 export { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
+export { CollabOpenError } from './answers'
+export { openCollabRoom } from './open'
+export { REMOTE } from './room'
 export {
-  CollabOpenError,
-  openCollabRoom,
   recoverable,
-  REMOTE,
   type Answer,
   type Blocked,
   type CollabEndpoints,
@@ -11,5 +11,5 @@ export {
   type Opened,
   type OpenOptions,
   type SaveState,
-} from './room'
+} from './types'
 export { openDeviceStore, type DeviceCopy, type DeviceStore, type RecoveryRecord, type StoredEntry, type StoredSession } from './store'

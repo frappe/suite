@@ -60,6 +60,7 @@ export interface DeviceStore {
 const VERSION = 1
 // The device copy is merged back into one piece once it holds this many
 const MAX_PIECES = 64
+const EMPTY_UPDATE = Y.encodeStateAsUpdate(new Y.Doc())
 
 // Null where the browser keeps no IndexedDB for this page (blocked storage, or opening hangs)
 export function openDeviceStore(name: string, timeoutMs = 3000): Promise<DeviceStore | null> {
@@ -117,7 +118,7 @@ class IndexedDeviceStore implements DeviceStore {
       done<{ bytes: Uint8Array }[]>(tx.objectStore('copies').index('doc').getAll(doc)),
     ])
     if (!meta) return null
-    const bytes = pieces.length ? Y.mergeUpdates(pieces.map((piece) => piece.bytes)) : new Uint8Array([0, 0])
+    const bytes = pieces.length ? Y.mergeUpdates(pieces.map((piece) => piece.bytes)) : EMPTY_UPDATE
     return { lineage: meta.lineage, rev: meta.rev, canWrite: meta.canWrite, bytes }
   }
 
@@ -135,8 +136,9 @@ class IndexedDeviceStore implements DeviceStore {
   ack(doc: string, sid: string, through: number, bytes: Uint8Array, lineage: string) {
     return this.write(['entries', 'meta', 'copies'], (tx) => {
       tx.objectStore('entries').delete(IDBKeyRange.bound([doc, sid, 0], [doc, sid, through]))
-      tx.objectStore('meta').get(doc).onsuccess = (event) => {
-        if (bytes.byteLength && (event.target as IDBRequest).result?.lineage === lineage) addPiece(tx, doc, bytes)
+      const meta = tx.objectStore('meta').get(doc)
+      meta.onsuccess = () => {
+        if (bytes.byteLength && meta.result?.lineage === lineage) addPiece(tx, doc, bytes)
       }
     })
   }
@@ -144,13 +146,12 @@ class IndexedDeviceStore implements DeviceStore {
   commit(doc: string, copy: Omit<DeviceCopy, 'bytes'>, bytes: Uint8Array | null) {
     return this.write(['meta', 'copies'], (tx) => {
       const meta = tx.objectStore('meta')
-      meta.get(doc).onsuccess = (event) => {
-        const stored = (event.target as IDBRequest).result
-        if (stored && stored.lineage !== copy.lineage) {
+      const stored = meta.get(doc)
+      stored.onsuccess = () => {
+        if (stored.result && stored.result.lineage !== copy.lineage) {
           const pieces = tx.objectStore('copies')
-          pieces.index('doc').getAllKeys(doc).onsuccess = (keys) => {
-            for (const key of (keys.target as IDBRequest).result) pieces.delete(key)
-          }
+          const keys = pieces.index('doc').getAllKeys(doc)
+          keys.onsuccess = () => keys.result.forEach((key) => pieces.delete(key))
         }
         meta.put({ doc, ...copy })
         if (bytes?.byteLength) addPiece(tx, doc, bytes)
@@ -161,8 +162,9 @@ class IndexedDeviceStore implements DeviceStore {
   recover(doc: string, sid: string, reason: string, extra: StoredEntry[] = []) {
     return this.write(['sessions', 'entries', 'recovery'], (tx) => {
       const entries = tx.objectStore('entries')
-      entries.getAll(sessionRange(doc, sid)).onsuccess = (event) => {
-        const stored: StoredEntry[] = (event.target as IDBRequest).result
+      const left = entries.getAll(sessionRange(doc, sid))
+      left.onsuccess = () => {
+        const stored: StoredEntry[] = left.result
         const seen = new Set(stored.map((entry) => entry.seq))
         const all = [...stored, ...extra.filter((entry) => !seen.has(entry.seq))]
         if (all.length) tx.objectStore('recovery').add({ doc, sid, reason, created: Date.now(), entries: all })
@@ -202,10 +204,12 @@ class IndexedDeviceStore implements DeviceStore {
 function addPiece(tx: IDBTransaction, doc: string, bytes: Uint8Array) {
   const pieces = tx.objectStore('copies')
   pieces.add({ doc, bytes })
-  pieces.index('doc').count(doc).onsuccess = (event) => {
-    if ((event.target as IDBRequest<number>).result <= MAX_PIECES) return
-    pieces.index('doc').getAll(doc).onsuccess = (all) => {
-      const stored: { id: number; bytes: Uint8Array }[] = (all.target as IDBRequest).result
+  const count = pieces.index('doc').count(doc)
+  count.onsuccess = () => {
+    if (count.result <= MAX_PIECES) return
+    const all = pieces.index('doc').getAll(doc)
+    all.onsuccess = () => {
+      const stored: { id: number; bytes: Uint8Array }[] = all.result
       for (const piece of stored) pieces.delete(piece.id)
       pieces.add({ doc, bytes: Y.mergeUpdates(stored.map((piece) => piece.bytes)) })
     }

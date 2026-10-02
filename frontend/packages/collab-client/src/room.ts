@@ -1,160 +1,38 @@
-import { digest } from 'lib0/hash/sha256'
 import * as Y from 'yjs'
-import { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
-import type { DeviceCopy, DeviceStore, StoredEntry, StoredSession } from './store'
-
-export interface Answer {
-  status: number
-  bytes: Uint8Array
-}
-
-// A clientID a tab chose itself offline, offered to the server before it is used anywhere
-export interface Claim {
-  cid: number
-  lineage: string
-}
-
-// The product's routes for one document. Each answers every status as it came;
-// a network failure throws
-export interface CollabEndpoints {
-  open(): Promise<Answer>
-  pull(since: number): Promise<Answer>
-  push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
-  session(sid: string, claim?: Claim): Promise<Answer>
-}
-
-export interface OpenOptions {
-  endpoints: CollabEndpoints
-  principal: string
-  // Who the browser is signed in as now, or 'Guest'
-  signedIn: () => string
-  // Where unsent work and the last committed copy survive the tab; without it they live only in memory
-  device?: { store: DeviceStore; doc: string } | null
-  pollMs?: number
-  sendDelayMs?: number
-  sendMaxDelayMs?: number
-}
-
-export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
-
-// Why the server stopped hearing this tab. `offline` is only for a tab with no device store to keep work in.
-// Only `signed_out`, `locked` and `offline` clear, once the server hears it again
-export type Blocked = 'signed_out' | 'locked' | 'offline' | 'stale_session' | 'other_user' | 'lost_edit' | 'lost_read'
-
-export const recoverable = (blocked: Blocked) => blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline'
-
-export interface CollabRoom {
-  readonly doc: Y.Doc
-  readonly canWrite: boolean
-  readonly blocked: Blocked | null
-  // Why the server asked this tab to wait before saving again, until a push is committed
-  readonly paused: string | null
-  readonly saveState: SaveState
-  readonly unsent: number
-  // Whether unsent work outlives this tab
-  readonly onDevice: boolean
-  readonly appliedThrough: number
-  onChange(listener: () => void): () => void
-  pull(): Promise<void>
-  flush(): Promise<void>
-  close(): Promise<void>
-}
-
-export type Opened = { state: 'live'; room: CollabRoom } | { state: Exclude<OpenState, 'live'> }
-
-export class CollabOpenError extends Error {
-  constructor(
-    readonly status: number,
-    readonly reason: string | null,
-  ) {
-    super(`Could not open the collaborative document (${reason ?? status})`)
-    this.name = 'CollabOpenError'
-  }
-}
+import { readReply, staleSession, type Reply } from './answers'
+import { decodeFrame, encodePush, type Row } from './frames'
+import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
+import type { DeviceStore, StoredSession } from './store'
+import { recoverable, type Answer, type Blocked, type CollabRoom, type OpenOptions, type SaveState } from './types'
 
 // Updates applied from the server; everything else in the doc is this tab's own work
 export const REMOTE = Symbol('collab-remote')
 // Another tab's unsent work, applied here so this tab shows and sends it
 const ADOPT = Symbol('collab-adopt')
 
-// Each sha adds 67 bytes to the push header, which the server caps at 4 KiB
-const MAX_ENTRIES = 48
-const MAX_PUSH_BYTES = 256 * 1024
-// Browsers refuse keepalive bodies over 64 KiB
-const MAX_KEEPALIVE_BYTES = 60 * 1024
-// Server-issued clientIDs sit below this; a tab offline picks its own above it
-const DEVICE_IDS = 2 ** 30
 const PERSIST_AFTER_MS = 60_000
 
-// `sha` lets the server tell a resent seq from a different one under the same number
-type Entry = { seq: number; bytes: Uint8Array; sha: string }
-
-// One session's unsent work: this tab's own, or one adopted from a tab that closed
-type Outbox = { sid: string; cid: number; pending: Entry[]; nextSeq: number; acked: number; release: () => void }
-
-export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
-  const { endpoints, device } = options
-  let opened: Answer
-  try {
-    opened = await endpoints.open()
-  } catch (error) {
-    const copy = device ? await device.store.copy(device.doc).catch(() => null) : null
-    if (!copy) throw error
-    return { state: 'live', room: await openOffline(copy, options, error) }
-  }
-  if (opened.status !== 200) throw openError(opened, options)
-  const { header, rows } = decodeFrame(opened.bytes)
-  if (header.state !== 'live') return { state: header.state }
-
-  const doc = new Y.Doc()
-  let canWrite = !!header.can_write
-  const sid = randomHex(16)
-  if (canWrite) {
-    const answer = await endpoints.session(sid)
-    if (answer.status === 200) doc.clientID = json(answer).client_id
-    else if (answer.status === 403 || answer.status === 404) canWrite = false
-    else throw openError(answer, options)
-  }
-  const room = new Room(doc, header.lineage!, canWrite, sid, options, true)
-  await room.start(rows)
-  return { state: 'live', room }
+export interface RoomInit {
+  doc: Y.Doc
+  lineage: string
+  canWrite: boolean
+  sid: string
+  // False while a clientID chosen offline waits for the server to accept it
+  bound: boolean
+  appliedThrough?: number
 }
 
-// The device copy, with a clientID no session of this document has used, bound only once the server accepts the claim
-async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: unknown) {
-  const { store, doc: key } = options.device!
-  const doc = new Y.Doc()
-  Y.applyUpdate(doc, copy.bytes, REMOTE)
-  const sid = randomHex(16)
-  // Another tab took the same clientID between reading the sessions and saving this one
-  for (let attempt = 0; copy.canWrite; attempt++) {
-    const used = new Set([...Y.decodeStateVector(Y.encodeStateVector(doc)).keys()])
-    for (const session of await store.sessions(key)) used.add(session.cid)
-    let cid = 0
-    while (!cid || used.has(cid)) cid = DEVICE_IDS + Math.floor(Math.random() * DEVICE_IDS)
-    const session: StoredSession = { doc: key, sid, lineage: copy.lineage, cid, bound: false }
-    try {
-      await store.saveSession(session)
-      doc.clientID = cid
-      break
-    } catch (error) {
-      if ((error as Error)?.name !== 'ConstraintError' || attempt === 2) throw unreachable
-    }
-  }
-  // A viewer has nothing to claim
-  const room = new Room(doc, copy.lineage, copy.canWrite, sid, options, !copy.canWrite)
-  room.appliedThrough = copy.rev
-  await room.start([])
-  return room
-}
-
-class Room implements CollabRoom {
-  saveState: SaveState = 'clean'
+export class Room implements CollabRoom {
+  readonly doc: Y.Doc
   blocked: Blocked | null = null
   paused: string | null = null
-  appliedThrough = 0
-  private own: Outbox
-  private adopted: Outbox[] = []
+  appliedThrough: number
+  private readonly lineage: string
+  private writable: boolean
+  private bound: boolean
+  private readonly own: Outbox
+  // Tabs' leftovers come first and this tab's own stays last
+  private boxes: Outbox[]
   private inFlight: Promise<void> | null = null
   private pulling: Promise<void> | null = null
   private connecting: Promise<void> | null = null
@@ -167,22 +45,25 @@ class Room implements CollabRoom {
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<() => void>()
   private closed = false
+  // Set once this tab's work can never be committed; the reason it was kept as a recovery copy
   private dead: string | null = null
+  private failed = false
   private unheard = false
   private persisted = false
   private device: { store: DeviceStore; doc: string } | null
 
   constructor(
-    readonly doc: Y.Doc,
-    private readonly lineage: string,
-    private writable: boolean,
-    sid: string,
+    init: RoomInit,
     private readonly options: OpenOptions,
-    // False while a clientID chosen offline waits for the server to accept it
-    private bound: boolean,
   ) {
+    this.doc = init.doc
+    this.lineage = init.lineage
+    this.writable = init.canWrite
+    this.bound = init.bound
+    this.appliedThrough = init.appliedThrough ?? 0
     this.device = options.device ?? null
-    this.own = { sid, cid: doc.clientID, pending: [], nextSeq: 1, acked: 0, release: () => {} }
+    this.own = new Outbox(init.sid, init.doc.clientID, () => {})
+    this.boxes = [this.own]
   }
 
   async start(rows: Row[]) {
@@ -207,7 +88,14 @@ class Room implements CollabRoom {
   }
 
   get unsent() {
-    return this.outboxes().reduce((sum, box) => sum + box.pending.length, 0)
+    return this.boxes.reduce((sum, box) => sum + box.pending.length, 0)
+  }
+
+  // A stopped tab stays failed while it holds work; once a refusal leaves nothing unsent there is nothing to fail
+  get saveState(): SaveState {
+    if (this.failed && !(this.blocked && !this.unsent)) return 'failed'
+    if (this.inFlight) return 'saving'
+    return this.unsent ? 'unsaved' : 'clean'
   }
 
   onChange(listener: () => void) {
@@ -227,7 +115,7 @@ class Room implements CollabRoom {
       .pull(this.appliedThrough)
       .then((answer) => {
         if (answer.status !== 200) {
-          this.refused(answer, 'lost_read')
+          this.refused(readReply(answer), 'lost_read')
           return
         }
         this.apply(decodeFrame(answer.bytes).rows)
@@ -259,7 +147,7 @@ class Room implements CollabRoom {
     this.clearTimers()
     this.doc.off('update', this.capture)
     this.listeners.clear()
-    for (const box of this.outboxes()) box.release()
+    for (const box of this.boxes) box.release()
     if (this.device && !this.own.pending.length && !this.dead) {
       void this.device.store.forget(this.device.doc, this.own.sid).catch(() => {})
     }
@@ -277,8 +165,8 @@ class Room implements CollabRoom {
         if (answer === null || this.closed) return
         if (answer !== 'ok') {
           // Other tabs' work never used this clientID, so a later tab can still send it
-          for (const box of this.adopted) box.release()
-          this.adopted = []
+          for (const box of this.boxes) if (box.adopted) box.release()
+          this.boxes = [this.own]
           await this.die(lost(answer))
           return
         }
@@ -296,20 +184,29 @@ class Room implements CollabRoom {
   private async claim(box: Outbox): Promise<string | null> {
     let answer: Answer
     try {
-      answer = await this.options.endpoints.session(box.sid, { cid: box.cid, lineage: this.lineage })
+      answer = await this.options.endpoints.session(box.sid, {
+        cid: box.cid,
+        lineage: this.lineage,
+      })
     } catch {
       this.unreachable()
       return null
     }
-    const verdict = answer.status === 200 ? json(answer)?.claim : null
-    if (typeof verdict === 'string') {
-      if (verdict === 'ok' && this.device) {
-        const session = { doc: this.device.doc, sid: box.sid, lineage: this.lineage, cid: box.cid, bound: true }
+    const reply = readReply(answer)
+    if (reply.status === 200 && typeof reply.claim === 'string') {
+      if (reply.claim === 'ok' && this.device) {
+        const session = {
+          doc: this.device.doc,
+          sid: box.sid,
+          lineage: this.lineage,
+          cid: box.cid,
+          bound: true,
+        }
         await this.device.store.saveSession(session).catch(() => {})
       }
-      return verdict
+      return reply.claim
     }
-    return this.refused(answer, 'lost_edit') ? null : reasonOf(answer)
+    return this.refused(reply, 'lost_edit') ? null : (reply.collab ?? null)
   }
 
   // Unsent work other tabs of this document left on the device, once no live tab holds it
@@ -318,25 +215,18 @@ class Room implements CollabRoom {
     const { store, doc: key } = this.device
     const sessions = await store.sessions(key).catch(() => [])
     for (const session of sessions) {
-      if (session.sid === this.own.sid || this.adopted.some((box) => box.sid === session.sid)) continue
+      if (this.boxes.some((box) => box.sid === session.sid)) continue
       if (!session.bound && !this.bound) continue
       const release = await holdLock(this.lockName(session.sid))
       if (!release) continue
       if (this.closed) return release()
-      const entries = await store.entries(key, session.sid).catch(() => [] as StoredEntry[])
+      const entries = await store.entries(key, session.sid).catch(() => [])
       if (!entries.length) {
         await store.forget(key, session.sid).catch(() => {})
         release()
         continue
       }
-      const box: Outbox = {
-        sid: session.sid,
-        cid: session.cid,
-        pending: entries.map(({ seq, bytes, sha }) => ({ seq, bytes, sha })),
-        nextSeq: entries[entries.length - 1].seq + 1,
-        acked: entries[0].seq - 1,
-        release,
-      }
+      const box = new Outbox(session.sid, session.cid, release, true, entries)
       const verdict = session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
       if (this.closed) return release()
       if (verdict !== 'ok') {
@@ -345,7 +235,7 @@ class Room implements CollabRoom {
         continue
       }
       Y.applyUpdate(this.doc, Y.mergeUpdates(box.pending.map((entry) => entry.bytes)), ADOPT)
-      this.adopted.push(box)
+      this.boxes.splice(-1, 0, box)
     }
     this.counted()
     if (this.unsent && this.bound) this.scheduleSend()
@@ -364,7 +254,11 @@ class Room implements CollabRoom {
     if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
     if (run.length) this.appliedThrough = run[run.length - 1].rev
     if (this.device) {
-      const copy = { lineage: this.lineage, rev: this.appliedThrough, canWrite: this.writable }
+      const copy = {
+        lineage: this.lineage,
+        rev: this.appliedThrough,
+        canWrite: this.writable,
+      }
       void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
     }
     if (run.length) this.changed()
@@ -375,18 +269,15 @@ class Room implements CollabRoom {
     // The editor turns read-only a moment after the verdict, so typing can still arrive
     if (this.dead) {
       if (!this.device) return
-      const entry = { doc: this.device.doc, sid: this.own.sid, seq: this.own.nextSeq++, bytes: update, sha: '' }
-      void this.device.store.recover(this.device.doc, this.own.sid, this.dead, [entry]).catch(() => {})
+      const entry = this.own.mint(update)
+      void this.device.store.recover(this.device.doc, this.own.sid, this.dead, this.own.stored(this.device.doc, [entry])).catch(() => {})
       return
     }
     if (!this.writable) return
-    const entry = { seq: this.own.nextSeq++, bytes: update, sha: hex(digest(update)) }
-    this.own.pending.push(entry)
+    const entry = this.own.add(update)
     if (this.device) {
-      const stored = { doc: this.device.doc, sid: this.own.sid, ...entry }
-      void this.device.store.capture(this.session(), [stored]).catch(() => this.lostStore())
+      void this.device.store.capture(this.session(), this.own.stored(this.device.doc, [entry])).catch(() => this.lostStore())
     }
-    if (this.saveState !== 'failed') this.saveState = this.inFlight ? 'saving' : 'unsaved'
     this.counted()
     if (this.bound) this.scheduleSend()
     else this.persist()
@@ -414,23 +305,19 @@ class Room implements CollabRoom {
     if (!this.sendTimer) this.firstUnsentAt = now
     else clearTimeout(this.sendTimer)
     const delay = Math.min(this.options.sendDelayMs ?? 1000, this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000) - now)
-    this.sendTimer = setTimeout(() => {
-      this.sendTimer = null
-      void this.send()
-    }, Math.max(0, delay))
+    this.sendTimer = setTimeout(
+      () => {
+        this.sendTimer = null
+        void this.send()
+      },
+      Math.max(0, delay),
+    )
   }
 
   private batch(keepalive?: boolean) {
-    const box = this.adopted.find((other) => other.pending.length) ?? this.own
+    const box = this.boxes.find((other) => other.pending.length) ?? this.own
     if (!box.pending.length || this.closed || !this.bound || this.saveState === 'failed') return null
-    const batch: Entry[] = []
-    let size = 0
-    const maxBytes = keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES
-    for (const entry of box.pending) {
-      if (batch.length && (batch.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes)) break
-      batch.push(entry)
-      size += entry.bytes.byteLength
-    }
+    const batch = box.batch(keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES)
     const header = {
       proto: 1,
       lineage: this.lineage,
@@ -451,11 +338,10 @@ class Room implements CollabRoom {
     const next = this.batch(request.keepalive)
     if (!next) return Promise.resolve()
     const { box, header, body } = next
-    this.setSaveState('saving')
     this.inFlight = Promise.resolve()
       .then(() => this.options.endpoints.push(body, request))
       .then(
-        (answer) => this.settle(answer, box, header.to),
+        (answer) => this.settle(readReply(answer), box, header.to),
         () => {
           this.unreachable()
           this.retryAfter(backoff())
@@ -463,49 +349,46 @@ class Room implements CollabRoom {
       )
       .finally(() => {
         this.inFlight = null
-        if (this.saveState !== 'failed' || (this.blocked && !this.unsent)) {
-          this.setSaveState(this.unsent ? 'unsaved' : 'clean')
-        }
+        this.changed()
       })
+    this.changed()
     return this.inFlight
   }
 
-  private async settle(answer: Answer, box: Outbox, to: number) {
-    const body = json(answer)
-    if (answer.status !== 423) this.pause(null)
-    if (answer.status === 200) {
+  private async settle(reply: Reply, box: Outbox, to: number) {
+    if (reply.status !== 423) this.pause(null)
+    if (reply.status === 200) {
       this.heard()
-      this.ack(box, body?.dup ? body.acked : to)
-      if (body?.head > this.appliedThrough) void this.pull()
+      this.ack(box, reply.dup ? (reply.acked ?? to) : to)
+      if ((reply.head ?? 0) > this.appliedThrough) void this.pull()
       if (this.unsent) this.scheduleSend()
       return
     }
-    if (answer.status === 409 && body?.collab === 'seq' && typeof body.acked === 'number') {
+    if (reply.status === 409 && reply.collab === 'seq' && typeof reply.acked === 'number') {
       // The server lost seqs it already acknowledged, so resending can't restore them
-      if (body.acked < box.acked) return this.die('seq')
-      this.ack(box, body.acked)
-      if (box.pending.length && box.pending[0].seq !== box.acked + 1) return this.die('seq')
+      if (reply.acked < box.acked) return this.die('seq')
+      this.ack(box, reply.acked)
+      if (box.gap) return this.die('seq')
       return this.retryAfter(0)
     }
-    if (answer.status === 423) {
-      this.pause(body?.reason ?? body?.collab ?? 'busy')
-      return this.retryAfter(body?.retry_ms ?? 1000)
+    if (reply.status === 423) {
+      this.pause(reply.reason ?? reply.collab ?? 'busy')
+      return this.retryAfter(reply.retry_ms ?? 1000)
     }
-    const blocked = this.refused(answer, 'lost_edit')
+    const blocked = this.refused(reply, 'lost_edit')
     if (blocked && recoverable(blocked)) return this.retryAfter(backoff())
     if (blocked) return
-    if (!body?.collab) return this.retryAfter(backoff())
-    await this.die(body.collab)
+    if (!reply.collab) return this.retryAfter(backoff())
+    await this.die(reply.collab)
   }
 
   // A refusal about who is asking, or a lost right once the signed-in person is confirmed unchanged
-  private refused(answer: Answer, lost: 'lost_edit' | 'lost_read'): Blocked | null {
-    const reason = reasonOf(answer)
+  private refused(reply: Reply, lost: 'lost_edit' | 'lost_read'): Blocked | null {
     let blocked: Blocked | null = null
-    if (answer.status === 401 && (reason === 'signed_out' || reason === 'locked')) blocked = reason
-    else if (staleSession(answer)) blocked = 'stale_session'
-    else if (answer.status === 409 && reason === 'principal_changed') blocked = 'other_user'
-    else if (answer.status === 403 || answer.status === 404) blocked = this.reconcile(lost)
+    if (reply.status === 401 && (reply.collab === 'signed_out' || reply.collab === 'locked')) blocked = reply.collab
+    else if (staleSession(reply)) blocked = 'stale_session'
+    else if (reply.status === 409 && reply.collab === 'principal_changed') blocked = 'other_user'
+    else if (reply.status === 403 || reply.status === 404) blocked = this.reconcile(lost)
     if (blocked) this.block(blocked)
     return blocked
   }
@@ -521,7 +404,7 @@ class Room implements CollabRoom {
     if (this.blocked === reason || (this.blocked && !replaces(reason, this.blocked))) return
     if (!recoverable(reason)) {
       this.writable = false
-      if (this.unsent) this.saveState = 'failed'
+      if (this.unsent) this.failed = true
       if (reason === 'lost_edit' || reason === 'lost_read') void this.toRecovery('lost_access')
     }
     this.blocked = reason
@@ -531,7 +414,7 @@ class Room implements CollabRoom {
   // The work this tab holds can never be committed: keep it as a recovery copy and stop
   private async die(reason: string) {
     this.writable = false
-    this.setSaveState('failed')
+    this.failed = true
     this.changed()
     await this.toRecovery(reason)
   }
@@ -541,10 +424,7 @@ class Room implements CollabRoom {
     this.dead = reason
     if (!this.device) return
     const { store, doc: key } = this.device
-    for (const box of this.outboxes()) {
-      const entries = box.pending.map((entry) => ({ doc: key, sid: box.sid, ...entry }))
-      await store.recover(key, box.sid, reason, entries).catch(() => {})
-    }
+    for (const box of this.boxes) await store.recover(key, box.sid, reason, box.stored(key)).catch(() => {})
   }
 
   // Without a device store nothing typed offline would survive the tab, so editing stops until the server answers
@@ -577,49 +457,48 @@ class Room implements CollabRoom {
 
   // Work held while the server was out of reach goes out on the first answer, not after the retry wait
   private heard() {
-    const back = this.unheard
+    const wasUnheard = this.unheard
     this.unheard = false
     if (this.blocked && !recoverable(this.blocked)) return
-    if (this.blocked) {
+    const wasBlocked = this.blocked !== null
+    if (wasBlocked) {
       this.blocked = null
       this.changed()
-    } else if (!back) return
-    if (this.retrying) {
+    }
+    if ((wasBlocked || wasUnheard) && this.retrying) {
       this.endRetry?.()
       void this.send()
     }
   }
 
   private ack(box: Outbox, through: number) {
-    box.acked = Math.max(box.acked, through)
-    const committed = box.pending.filter((entry) => entry.seq <= box.acked)
-    if (!committed.length) return
-    box.pending = box.pending.filter((entry) => entry.seq > box.acked)
+    const committed = box.ack(through)
+    if (!committed) return
     if (this.device) {
-      const bytes = Y.mergeUpdates(committed.map((entry) => entry.bytes))
-      void this.device.store.ack(this.device.doc, box.sid, box.acked, bytes, this.lineage).catch(() => {})
-      if (box !== this.own && !box.pending.length) {
+      void this.device.store.ack(this.device.doc, box.sid, box.acked, committed, this.lineage).catch(() => {})
+      if (box.adopted && !box.pending.length) {
         void this.device.store.forget(this.device.doc, box.sid).catch(() => {})
         box.release()
-        this.adopted = this.adopted.filter((other) => other !== box)
+        this.boxes = this.boxes.filter((other) => other !== box)
       }
     }
     this.counted()
   }
 
   private counted() {
-    const unsent = this.unsent
-    if (!unsent) this.unsentSince = 0
+    if (!this.unsent) this.unsentSince = 0
     else if (!this.unsentSince) this.unsentSince = Date.now()
     this.changed()
   }
 
   private session(): StoredSession {
-    return { doc: this.device!.doc, sid: this.own.sid, lineage: this.lineage, cid: this.own.cid, bound: this.bound }
-  }
-
-  private outboxes() {
-    return [...this.adopted, this.own]
+    return {
+      doc: this.device!.doc,
+      sid: this.own.sid,
+      lineage: this.lineage,
+      cid: this.own.cid,
+      bound: this.bound,
+    }
   }
 
   private lockName(sid: string) {
@@ -648,12 +527,6 @@ class Room implements CollabRoom {
     this.endRetry?.()
   }
 
-  private setSaveState(state: SaveState) {
-    if (this.saveState === state) return
-    this.saveState = state
-    this.changed()
-  }
-
   private changed() {
     for (const listener of this.listeners) listener()
   }
@@ -664,55 +537,6 @@ function replaces(next: Blocked, current: Blocked) {
   return recoverable(current) || (current === 'lost_edit' && (next === 'lost_read' || next === 'other_user'))
 }
 
-// Web Locks only cut duplicate sends between tabs; where they are missing, every session counts as free
-function holdLock(name: string): Promise<(() => void) | null> {
-  const locks = globalThis.navigator?.locks
-  if (!locks) return Promise.resolve(() => {})
-  return new Promise((resolve) => {
-    void locks
-      .request(name, { ifAvailable: true }, (lock) => {
-        if (!lock) return resolve(null)
-        return new Promise<void>((release) => resolve(release))
-      })
-      .catch(() => resolve(() => {}))
-  })
-}
-
 const lost = (verdict: string) => (verdict === 'clash' ? 'id_clash' : verdict)
 
 const backoff = () => 1000 + Math.random() * 29_000
-
-function json(answer: Answer): any {
-  try {
-    return JSON.parse(new TextDecoder().decode(answer.bytes))
-  } catch {
-    return null
-  }
-}
-
-function openError(answer: Answer, options: OpenOptions) {
-  if (staleSession(answer)) return new CollabOpenError(answer.status, 'stale_session')
-  const reason = reasonOf(answer)
-  if (answer.status !== 403 && answer.status !== 404) return new CollabOpenError(answer.status, reason)
-  const now = options.signedIn()
-  if (now === 'Guest') return new CollabOpenError(401, 'signed_out')
-  return new CollabOpenError(answer.status, now === options.principal ? reason : 'principal_changed')
-}
-
-function reasonOf(answer: Answer): string | null {
-  const body = json(answer)
-  return typeof body?.collab === 'string' ? body.collab : null
-}
-
-// Frappe refuses a token from before the browser signed in again; only a reload brings the new one
-function staleSession(answer: Answer) {
-  return answer.status === 400 && json(answer)?.exc_type === 'CSRFTokenError'
-}
-
-function randomHex(bytes: number) {
-  return hex(crypto.getRandomValues(new Uint8Array(bytes)))
-}
-
-function hex(bytes: Uint8Array) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}

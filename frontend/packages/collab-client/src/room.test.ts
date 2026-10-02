@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import { CollabOpenError, openCollabRoom, type Answer, type CollabEndpoints, type CollabRoom, type OpenOptions } from './room'
+import { CollabOpenError } from './answers'
+import { openCollabRoom } from './open'
+import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
 import { openDeviceStore, type DeviceStore } from './store'
 
 const reply = (status: number, body: unknown): Answer => ({
