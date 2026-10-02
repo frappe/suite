@@ -3,6 +3,7 @@ import { readonly, ref, type Ref } from 'vue'
 import { api } from './generated'
 import { driveOperation } from './operation'
 import type { DriveAccess, DriveNode } from './types'
+import { getCookieSessionUser } from '@/platform/session'
 import { transport as defaultTransport, TransportError, type Transport } from '@/platform/transport'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
@@ -80,6 +81,7 @@ export interface DocumentSession {
 interface SessionDependencies {
   transport?: Transport
   window?: Window
+  signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
 }
@@ -98,6 +100,7 @@ export async function openDriveDocumentSession(
   dependencies: SessionDependencies = {},
 ): Promise<DocumentSession> {
   const requester = dependencies.transport ?? defaultTransport
+  const signedIn = dependencies.signedIn ?? getCookieSessionUser
   const controller = new AbortController()
   const node = await requester.request(nodeGet, { node: nodeId, expand: 'access' }, { signal: controller.signal })
   if (!node.content_doctype || !node.content_docname) {
@@ -136,6 +139,8 @@ export async function openDriveDocumentSession(
     } catch (error) {
       const status = error instanceof TransportError ? error.status : 0
       if (status < 400 || status >= 500 || status === 408 || status === 429) return
+      // A guest is refused everything; that says nothing about this person's access
+      if (!signedIn()) return
       state.value = 'Refused'
       access.value = {}
     }

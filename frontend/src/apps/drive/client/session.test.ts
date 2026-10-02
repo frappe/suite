@@ -78,7 +78,7 @@ describe('document session access refresh', () => {
       request: (operation, input: any) =>
         operation.id === 'node_get' && answer ? Promise.reject(answer) : Promise.resolve(documentNode(input.node) as never),
     }
-    const session = await openDriveDocumentSession('root', { transport: requester })
+    const session = await openDriveDocumentSession('root', { transport: requester, signedIn: () => 'Administrator' })
 
     for (const error of [failure('NetworkError', 0), failure('ServerError', 500), failure('Timeout', 408)]) {
       answer = error
@@ -94,15 +94,31 @@ describe('document session access refresh', () => {
     session.dispose()
   })
 
-  it('refuses when signed out elsewhere', async () => {
+  it('keeps access when signed out elsewhere, so the editor can say so', async () => {
     let answer: TransportError | null = null
+    let user: string | null = 'Administrator'
+    let refused = 0
     const target = new EventTarget()
     const requester: Transport = {
-      request: (operation, input: any) =>
-        operation.id === 'node_get' && answer ? Promise.reject(answer) : Promise.resolve(documentNode(input.node) as never),
+      request: (operation, input: any) => {
+        if (operation.id !== 'node_get' || !answer) return Promise.resolve(documentNode(input.node) as never)
+        refused += 1
+        return Promise.reject(answer)
+      },
     }
-    const session = await openDriveDocumentSession('root', { transport: requester, window: target as Window })
-    answer = failure('SessionExpired', 401)
+    const session = await openDriveDocumentSession('root', { transport: requester, window: target as Window, signedIn: () => user })
+    user = null
+    for (const error of [failure('DriveNotFound', 404), failure('SessionExpired', 401), failure('PermissionError', 403)]) {
+      answer = error
+      const before = refused
+      target.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(refused).toBe(before + 1))
+      await Promise.resolve()
+      expect(session.state.value).toBe('Active')
+      expect(session.access.value.role).toBe(40)
+    }
+
+    user = 'Administrator'
     target.dispatchEvent(new Event('focus'))
     await vi.waitFor(() => expect(session.state.value).toBe('Refused'))
     session.dispose()
