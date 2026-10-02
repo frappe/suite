@@ -1,5 +1,7 @@
 <template>
-	<div ref="slideContainer" class="flex size-full" @dragenter="showOverlay">
+	<!-- the slide's containing block, clipped so OverflowContentOverlay's mask stays on the canvas;
+	     clip, not hidden: a hidden box still scrolls when a caret lands past its edge -->
+	<div ref="slideContainer" class="relative flex size-full overflow-clip" @dragenter="showOverlay">
 		<!-- when mounting place slide directly in the center of the visible container -->
 		<!-- 1/2 width of viewport + 1/2 width of offset caused due to thinner navigation panel -->
 		<div
@@ -137,6 +139,11 @@ import {
 	snapToPort,
 } from '@/apps/slides/utils/connectors'
 
+const props = defineProps({
+	// scale the slide to fit the container, centered, with pan and zoom off (the phone layout)
+	fit: { type: Boolean, default: false },
+})
+
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
@@ -181,13 +188,52 @@ const { activeGuides, snapForDrag, snapForResize } = useSnapping(
 // that authored size and is only scaled down to DISPLAY_WIDTH for display —
 // shrinking the authored width instead would shift every existing element.
 const SLIDE_WIDTH = 960
+const SLIDE_HEIGHT = 540
 const DISPLAY_WIDTH = 900
 
-const { allowPanAndZoom, transform, transformOrigin } = usePanAndZoom(
-	slideContainerRef,
-	slideRef,
-	DISPLAY_WIDTH / SLIDE_WIDTH,
+const {
+	allowPanAndZoom,
+	transform: pannedTransform,
+	transformOrigin: pannedTransformOrigin,
+} = usePanAndZoom(slideContainerRef, slideRef, DISPLAY_WIDTH / SLIDE_WIDTH)
+
+const FIT_MARGIN = 16
+const containerSize = ref({ width: 0, height: 0 })
+useResizeObserver(slideContainerRef, ([entry]) => {
+	containerSize.value = { width: entry.contentRect.width, height: entry.contentRect.height }
+})
+
+const fitScale = computed(() => {
+	const { width, height } = containerSize.value
+	if (!width || !height) return DISPLAY_WIDTH / SLIDE_WIDTH
+	return Math.max(
+		0.1,
+		Math.min((width - FIT_MARGIN * 2) / SLIDE_WIDTH, (height - FIT_MARGIN * 2) / SLIDE_HEIGHT),
+	)
+})
+
+watch(
+	() => props.fit,
+	(fit) => {
+		allowPanAndZoom.value = !fit
+	},
+	{ immediate: true },
 )
+
+const transform = computed(() =>
+	props.fit ? `matrix(${fitScale.value}, 0, 0, ${fitScale.value}, 0, 0)` : pannedTransform.value,
+)
+const transformOrigin = computed(() => (props.fit ? '0 0' : pannedTransformOrigin.value))
+
+// the fitted slide is centered in px; the panned slide by the position classes below
+const fitPosition = computed(() => {
+	if (!props.fit) return {}
+	const { width, height } = containerSize.value
+	return {
+		left: `${(width - SLIDE_WIDTH * fitScale.value) / 2}px`,
+		top: `${(height - SLIDE_HEIGHT * fitScale.value) / 2}px`,
+	}
+})
 
 const slideClasses = computed(() => {
 	const classes = [
@@ -204,9 +250,11 @@ const slideClasses = computed(() => {
 
 	// Offsets center the scaled slide (900x506.25), shifted for the side panels
 	// (edit: nav + properties; readonly: nav only). Recompute if widths change.
-	const positionClasses = inReadonlyMode.value
-		? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
-		: ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
+	const positionClasses = props.fit
+		? []
+		: inReadonlyMode.value
+			? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
+			: ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
 
 	return [...classes, outlineClasses, positionClasses]
 })
@@ -230,6 +278,7 @@ const highlightElement = (element) => {
 }
 
 const slideStyles = computed(() => ({
+	...fitPosition.value,
 	transformOrigin: transformOrigin.value,
 	transform: transform.value,
 	backgroundColor: currentSlide.value?.background || '#ffffff',

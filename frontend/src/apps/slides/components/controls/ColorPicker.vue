@@ -54,7 +54,7 @@
 						<Input
 							:key="revertKey"
 							type="text"
-							placeholder="Set Color"
+							placeholder="Set color"
 							:aria-label="'Hex color input'"
 							:value="getDisplayColor()"
 							class="max-w-[94px] border-none text-sm"
@@ -71,7 +71,7 @@
 							<Button
 								@click="handleClipboardCopy"
 								class="flex items-center justify-center rounded-4 text-ink-gray-6 transition-colors hover:bg-surface-gray-3"
-								title="Copy Color"
+								title="Copy color"
 							>
 								<LucideClipboard class="size-3.5 text-ink-gray-7" />
 							</Button>

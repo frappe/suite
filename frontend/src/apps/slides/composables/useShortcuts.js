@@ -444,14 +444,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		{
 			combo: 'Mod+B',
 			description: 'Bold',
-			group: 'Format Text',
+			group: 'Format text',
 			enabled: inEditMode,
 			handler: handleBold,
 		},
 		{
 			combo: 'Mod+I',
 			description: 'Italic',
-			group: 'Format Text',
+			group: 'Format text',
 			enabled: inEditMode,
 			handler: () => {
 				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('italic')
@@ -460,7 +460,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		{
 			combo: 'Mod+U',
 			description: 'Underline',
-			group: 'Format Text',
+			group: 'Format text',
 			enabled: inEditMode,
 			handler: () => {
 				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('underline')

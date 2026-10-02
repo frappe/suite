@@ -39,7 +39,7 @@
 			</PropertyRow>
 		</template>
 
-		<Button class="w-full" label="Apply to all slides" @click="applyTransitionToAllSlides">
+		<Button class="w-full" label="Apply transition to all slides" @click="applyTransitionToAllSlides">
 			<template #prefix>
 				<lucide-check-check class="size-3.5 stroke-[1.5]" />
 			</template>

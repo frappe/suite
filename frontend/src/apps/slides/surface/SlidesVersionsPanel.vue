@@ -95,7 +95,7 @@ onMounted(() => load());
 
 <template>
   <aside
-    class="absolute bottom-0 right-0 top-12 z-30 flex w-80 flex-col border-l border-outline-gray-2 bg-surface-base text-ink-gray-8 shadow-xl"
+    class="absolute bottom-0 right-0 top-12 z-30 flex w-full flex-col md:w-80 border-l border-outline-gray-2 bg-surface-base text-ink-gray-8 shadow-xl"
     aria-label="Versions"
     @click.stop
     @keydown.stop

@@ -28,7 +28,7 @@
 			@change-end="delay.commit"
 		/>
 
-		<Button class="w-full" label="Apply to all slides" @click="applyToAllSlides">
+		<Button class="w-full" label="Apply playback to all slides" @click="applyToAllSlides">
 			<template #prefix>
 				<lucide-check-check class="size-3.5 stroke-[1.5]" />
 			</template>

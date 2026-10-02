@@ -112,7 +112,7 @@ const previewDetails = computed(() => {
 			[`Modified by ${modified_by}`]: dayjs(modified).fromNow(),
 		},
 		{
-			'Total Slides': props.presentation.slide_count,
+			'Total slides': props.presentation.slide_count,
 			[`Created by ${owner}`]: dayjs(creation).fromNow(),
 		},
 	]

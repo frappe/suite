@@ -33,13 +33,13 @@
 			</Select>
 		</PropertyRow>
 		<PropertyRow
-			label="Banded Rows"
+			label="Banded rows"
 			class="cursor-pointer"
 			@click="toggleFromRow($event, () => setBandedRows(!activeElement.bandedRows))"
 		>
 			<Switch :modelValue="activeElement.bandedRows || false" @update:modelValue="setBandedRows" />
 		</PropertyRow>
-		<PropertyRow v-if="activeElement.bandedRows" label="Band Color">
+		<PropertyRow v-if="activeElement.bandedRows" label="Band color">
 			<ColorPicker
 				:modelValue="activeElement.bandColor || getDefaultBandColor(activeElement.color)"
 				@update:modelValue="bandColor.set"

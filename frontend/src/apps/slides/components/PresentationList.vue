@@ -74,7 +74,7 @@
 				</div>
 				<Button
 					variant="subtle"
-					label="New Presentation"
+					label="New presentation"
 					iconLeft="lucide-plus"
 					@click="$emit('newPresentation')"
 				/>

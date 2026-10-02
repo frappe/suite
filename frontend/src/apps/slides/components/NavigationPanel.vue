@@ -42,7 +42,7 @@
 				@click="openLayoutDialog(slidesLength - 1)"
 			>
 				<LucidePlus class="size-4 stroke-[1.5]" />
-				<span class="font-text text-base">Add Slide</span>
+				<span class="font-text text-base">Add slide</span>
 			</div>
 		</div>
 	</div>

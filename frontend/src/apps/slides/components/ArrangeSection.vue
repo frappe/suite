@@ -2,14 +2,14 @@
 	<Section label="Arrange">
 		<ButtonGroup label="Order" :options="orderOptions" @select="arrangeElements" />
 		<ButtonGroup
-			label="Align Horizontal"
+			label="Align horizontal"
 			:options="alignHorizontalOptions"
 			:active="alignedDirections"
 			@select="alignElement"
 			@hover="onAlignHover"
 		/>
 		<ButtonGroup
-			label="Align Vertical"
+			label="Align vertical"
 			:options="alignVerticalOptions"
 			:active="alignedDirections"
 			@select="alignElement"

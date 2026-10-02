@@ -28,7 +28,7 @@
 				@change-start="sizeScrub.begin"
 				@change-end="sizeScrub.commit"
 			/>
-			<PropertyRow v-if="canSetWidthMode" label="Width Mode">
+			<PropertyRow v-if="canSetWidthMode" label="Width mode">
 				<TabButtons
 					:modelValue="widthMode"
 					:options="widthModes"

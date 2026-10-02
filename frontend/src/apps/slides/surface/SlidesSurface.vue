@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput, toast } from "frappe-ui";
+import { useMediaQuery } from "@vueuse/core";
+import { Button, Skeleton, TextInput, toast } from "frappe-ui";
 import {
   computed,
   nextTick,
@@ -12,9 +13,11 @@ import {
 
 import {
   DriveCommentAuthor,
+  DriveDocumentHeader,
   GUEST_NAME_LIMIT,
   useDriveGuestName,
   type CredentialGrouper,
+  type DocumentPanel,
   type DocumentSession,
 } from "@/apps/drive";
 import NavigationPanel from "@/apps/slides/components/NavigationPanel.vue";
@@ -71,7 +74,7 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from "./recovery";
 
 type Send = CredentialGrouper["fetch"];
-type Panel = "comments" | "versions";
+type Panel = DocumentPanel;
 
 /** `GET nodes/<id>/threads` */
 interface CommentThread {
@@ -81,7 +84,6 @@ interface CommentThread {
 }
 
 const props = defineProps<{ session: DocumentSession }>();
-const titleDraft = ref(props.session.title.value);
 const loading = ref(true);
 const loadError = ref("");
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -132,7 +134,10 @@ const access = createSlidesAccess(props.session, {
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false);
 const editable = computed(() => access.writable.value && !composite.value && !restoring.value);
-const trashed = computed(() => props.session.state.value === "Trashed");
+// Phones get a viewer: the slide fitted to the screen with previous and next. The
+// editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
+const phone = useMediaQuery("(max-width: 767px)");
+const editing = computed(() => editable.value && !phone.value);
 
 // Body requests go through the session, with this document's link credentials.
 // A refused write is a verdict: access narrows until the presentation opens again.
@@ -148,14 +153,26 @@ const history = useCommandHistory(slides, {
   actionOrder: historyMetaActionOrder,
 });
 setCommandHistory(history);
-useShortcuts(inReadonlyMode, inSlideShowMode);
+// What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
+// stores keep their own `inReadonlyMode`, which follows access and edit locks only.
+const canvasReadonly = computed(() => inReadonlyMode.value || phone.value);
+useShortcuts(canvasReadonly, inSlideShowMode);
 
-provide("inReadonlyMode", inReadonlyMode);
+provide("inReadonlyMode", canvasReadonly);
 provide("inSlideShowMode", inSlideShowMode);
 provide("isOnline", online);
 
-watch(() => props.session.title.value, (title) => { titleDraft.value = title; });
+// The header renames through the session; the deck keeps its own copy of the title.
+watch(() => props.session.title.value, (title) => {
+  if (presentationDoc.value) presentationDoc.value.title = title;
+});
 watch(editable, (canEdit) => { viewOnly.value = !canEdit; }, { immediate: true, flush: "sync" });
+watch(phone, (isPhone) => { if (isPhone) resetFocus(); });
+
+const slidePosition = computed(() => (slideIndex.value ?? 0) + 1);
+function showSlide(step: number) {
+  changeEditorSlide((slideIndex.value ?? 0) + step, false);
+}
 // A save that lands with edit access makes the recovery copy stale.
 watch(isSaving, (now, before) => {
   if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return;
@@ -163,24 +180,9 @@ watch(isSaving, (now, before) => {
   hasRecovery.value = false;
 });
 
-async function rename() {
-  const title = titleDraft.value.trim();
-  if (!title || title === props.session.title.value || !access.writable.value) {
-    titleDraft.value = props.session.title.value;
-    return;
-  }
-  try {
-    await props.session.rename(title);
-    if (presentationDoc.value) presentationDoc.value.title = title;
-  } catch (error) {
-    titleDraft.value = props.session.title.value;
-    toast.error(error instanceof Error ? error.message : "Could not rename the presentation.");
-  }
-}
-
-function togglePanel(kind: Panel) {
-  panel.value = panel.value === kind ? null : kind;
-  if (panel.value === "comments") void loadComments();
+function showPanel(next: Panel | null) {
+  panel.value = next;
+  if (next === "comments") void loadComments();
 }
 
 async function loadComments() {
@@ -272,20 +274,28 @@ async function loadComposite() {
   await loader.load();
 }
 
+// Access can widen while the first load is still out, which starts another. Only the
+// latest load may end the loading state: an earlier one returns no document, and
+// ending it then draws the panels before any slide is there.
+let latestLoad = 0;
+
 async function load() {
+  const run = ++latestLoad;
   loading.value = true;
   loadError.value = "";
   try {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
     const doc = await initPresentationDoc(props.session.contentDocname, !access.writable.value || composite.value);
+    if (run !== latestLoad) return;
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value;
     setSlideIndex(1);
     composite.value = !!doc?.is_composite;
     if (composite.value) await loadComposite();
   } catch (error) {
+    if (run !== latestLoad) return;
     loadError.value = error instanceof Error ? error.message : "Could not open this presentation.";
   } finally {
-    loading.value = false;
+    if (run === latestLoad) loading.value = false;
   }
 }
 
@@ -380,73 +390,77 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
-    <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
-      <span class="lucide-presentation size-5 text-ink-gray-6" aria-hidden="true" />
-      <TextInput
-        v-model="titleDraft"
-        class="min-w-0 max-w-md flex-1"
-        variant="ghost"
-        :disabled="!access.writable.value"
-        aria-label="Presentation title"
-        @blur="rename"
-        @keydown.stop
-        @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-        @keydown.escape.prevent="titleDraft = session.title.value; ($event.target as HTMLInputElement).blur()"
-      />
-      <span class="ml-auto text-sm text-ink-gray-5">
-        {{ isSaving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}
-      </span>
-      <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
-      <Badge v-if="trashed" label="Trashed" theme="gray" variant="subtle" />
-      <Badge v-if="!editable" label="View only" theme="gray" variant="subtle" />
-      <Button v-if="hasRecovery" label="Download my changes" icon-left="lucide-download" variant="ghost" @click="downloadChanges" />
-      <Button
-        icon="lucide-file-down"
-        tooltip="Export"
-        aria-label="Export"
-        variant="ghost"
-        :disabled="loading || !access.readable.value || !slides.length"
-        @click="exportPdf"
-      />
-      <Button
-        icon="lucide-message-square"
-        tooltip="Comments"
-        aria-label="Comments"
-        :variant="panel === 'comments' ? 'subtle' : 'ghost'"
-        :aria-pressed="panel === 'comments'"
-        @click="togglePanel('comments')"
-      />
-      <Button
-        icon="lucide-history"
-        tooltip="Versions"
-        aria-label="Versions"
-        :variant="panel === 'versions' ? 'subtle' : 'ghost'"
-        :aria-pressed="panel === 'versions'"
-        @click="togglePanel('versions')"
-      />
-      <Button
-        v-if="session.canShare.value"
-        label="Share"
-        icon-left="lucide-share-2"
-        variant="solid"
-        @click="session.share()"
-      />
-    </header>
+    <DriveDocumentHeader
+      :session="session"
+      title-label="Presentation title"
+      :save-state="saveState"
+      :view-only="!editable"
+      :recoverable="hasRecovery"
+      :panels="['comments', 'versions']"
+      :panel="panel"
+      @update:panel="showPanel"
+      @download-changes="downloadChanges"
+    >
+      <template #actions>
+        <Button
+          icon="lucide-file-down"
+          tooltip="Export"
+          aria-label="Export"
+          variant="ghost"
+          class="max-md:hidden"
+          :disabled="loading || !access.readable.value || !slides.length"
+          @click="exportPdf"
+        />
+      </template>
+    </DriveDocumentHeader>
 
     <div v-if="!access.readable.value" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">You no longer have permission to read this presentation.</p>
     </div>
-    <div v-else-if="loading" class="m-auto text-sm text-ink-gray-5">Opening presentation…</div>
+    <div
+      v-else-if="loading"
+      class="flex min-h-0 flex-1 bg-surface-gray-1"
+      role="status"
+      aria-label="Opening presentation"
+    >
+      <div class="flex w-56 shrink-0 flex-col gap-4 border-r border-outline-elevation-1 bg-surface-elevation-1 p-4 max-md:hidden">
+        <Skeleton class="h-4 w-24" />
+        <Skeleton v-for="n in 5" :key="n" class="aspect-video w-full rounded-6" />
+      </div>
+      <div class="flex min-w-0 flex-1 items-center justify-center p-4 md:p-10">
+        <Skeleton class="aspect-video w-full max-w-[900px] rounded-4" />
+      </div>
+      <div v-if="editable" class="flex w-72 shrink-0 flex-col gap-4 border-l border-outline-elevation-1 bg-surface-elevation-1 p-4 max-md:hidden">
+        <Skeleton class="h-4 w-28" />
+        <Skeleton class="h-7 w-full" />
+        <Skeleton class="h-4 w-20" />
+        <Skeleton class="h-7 w-full" />
+      </div>
+    </div>
     <div v-else-if="loadError" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
+    <div v-else-if="phone" class="flex min-h-0 flex-1 flex-col bg-surface-gray-1">
+      <div class="relative flex min-h-0 flex-1">
+        <SlideContainer v-if="presentationDoc" v-model:has-ongoing-interaction="isSlideInteractionActive" fit />
+      </div>
+      <nav
+        v-if="slidesLength"
+        class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
+        aria-label="Slides"
+      >
+        <Button icon="lucide-chevron-left" aria-label="Previous slide" variant="ghost" :disabled="slidePosition <= 1" @click="showSlide(-1)" />
+        <span class="text-sm tabular-nums text-ink-gray-6">{{ slidePosition }} of {{ slidesLength }}</span>
+        <Button icon="lucide-chevron-right" aria-label="Next slide" variant="ghost" :disabled="slidePosition >= slidesLength" @click="showSlide(1)" />
+      </nav>
+    </div>
     <div v-else class="relative flex min-h-0 flex-1 bg-surface-gray-1">
       <SlideContainer v-if="presentationDoc" v-model:has-ongoing-interaction="isSlideInteractionActive" />
       <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
-      <Toolbar v-if="editable && presentationDoc" />
-      <PropertiesPanel v-if="editable" class="absolute inset-y-0 right-0" />
+      <Toolbar v-if="editing && presentationDoc" />
+      <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
     </div>
 
     <div v-if="compositeItems.length && access.readable.value" class="absolute bottom-3 left-1/2 z-20 flex max-w-[70%] -translate-x-1/2 gap-1 rounded-6 border border-outline-gray-1 bg-surface-elevation-2 p-2 shadow-2xl">
@@ -465,7 +479,7 @@ onBeforeUnmount(() => {
 
     <aside
       v-if="panel === 'comments'"
-      class="absolute bottom-0 right-0 top-12 z-30 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
+      class="absolute bottom-0 right-0 top-12 z-30 flex w-full flex-col md:w-80 border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
       aria-label="Comments"
     >
       <div class="flex min-h-12 items-center justify-between border-b border-outline-gray-1 px-4">

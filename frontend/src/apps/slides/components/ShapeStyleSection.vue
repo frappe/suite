@@ -1,6 +1,6 @@
 <template>
 	<Section label="Style">
-		<PropertyRow label="Stroke Style">
+		<PropertyRow label="Stroke style">
 			<LineStyleSelect
 				:modelValue="displayStrokeStyle"
 				:options="strokeStyleOptions"
@@ -9,7 +9,7 @@
 		</PropertyRow>
 		<NumberControl
 			:modelValue="firstEditableElement.strokeWidth ?? 0"
-			label="Stroke Width"
+			label="Stroke width"
 			suffix="px"
 			:min="strokeMin"
 			:max="50"
@@ -19,7 +19,7 @@
 			@change-start="strokeWidth.begin"
 			@change-end="strokeWidth.commit"
 		/>
-		<PropertyRow label="Stroke Color">
+		<PropertyRow label="Stroke color">
 			<ColorPicker
 				:modelValue="firstEditableElement.strokeColor"
 				@update:modelValue="strokeColor.set"
@@ -27,7 +27,7 @@
 				@colorup="strokeColor.commit"
 			/>
 		</PropertyRow>
-		<PropertyRow v-if="!hasLine" label="Fill Color">
+		<PropertyRow v-if="!hasLine" label="Fill color">
 			<ColorPicker
 				:modelValue="firstEditableElement.fillColor"
 				@update:modelValue="fillColor.set"
@@ -38,7 +38,7 @@
 		<NumberControl
 			v-if="isRectangleSelection"
 			:modelValue="firstEditableElement.borderRadius ?? 0"
-			label="Corner Radius"
+			label="Corner radius"
 			suffix="px"
 			:min="0"
 			:max="MAX_BORDER_RADIUS"
@@ -49,21 +49,21 @@
 			@change-end="borderRadius.commit"
 		/>
 		<template v-if="isLineSelection">
-			<PropertyRow v-if="activeElement?.connector" label="Line Type">
+			<PropertyRow v-if="activeElement?.connector" label="Line type">
 				<TabButtons
 					:modelValue="activeElement.connector.route"
 					:options="lineTypes"
 					@update:modelValue="setLineType"
 				/>
 			</PropertyRow>
-			<PropertyRow label="Line Start">
+			<PropertyRow label="Line start">
 				<ArrowheadSelect
 					:modelValue="normalizeMarker(firstEditableElement.markerStart) ?? 'none'"
 					mirrored
 					@update:modelValue="(value) => setMarker('markerStart', value)"
 				/>
 			</PropertyRow>
-			<PropertyRow label="Line End">
+			<PropertyRow label="Line end">
 				<ArrowheadSelect
 					:modelValue="normalizeMarker(firstEditableElement.markerEnd) ?? 'none'"
 					@update:modelValue="(value) => setMarker('markerEnd', value)"

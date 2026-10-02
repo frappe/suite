@@ -7,7 +7,7 @@
 				@update:modelValue="(value) => updateProperty('textAlign', value)"
 			/>
 		</PropertyRow>
-		<PropertyRow v-if="showListStyle" label="List Style">
+		<PropertyRow v-if="showListStyle" label="List style">
 			<TabButtons
 				:modelValue="listStyle"
 				:options="listStyleOptions"
@@ -16,7 +16,7 @@
 		</PropertyRow>
 		<NumberControl
 			:modelValue="parseFloat(editorStyles.lineHeight) || 1.5"
-			label="Line Height"
+			label="Line height"
 			:min="1"
 			:max="5"
 			:max-digits="3"
@@ -25,7 +25,7 @@
 		/>
 		<NumberControl
 			:modelValue="editorStyles.letterSpacing || 0"
-			label="Letter Spacing"
+			label="Letter spacing"
 			suffix="px"
 			:min="-10"
 			:max="50"

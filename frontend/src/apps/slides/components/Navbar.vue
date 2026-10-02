@@ -91,7 +91,7 @@ const presentationActions = [
 	{ label: 'New', icon: 'lucide-plus', action: 'create' },
 	{ label: 'Duplicate', icon: 'lucide-copy', action: 'duplicate' },
 	{ label: 'Delete', icon: 'lucide-trash', action: 'delete' },
-	{ label: 'Change Theme', icon: 'lucide-swatch-book', action: 'updateTheme' },
+	{ label: 'Change theme', icon: 'lucide-swatch-book', action: 'updateTheme' },
 ]
 
 const getContextMenuOptions = () => {
@@ -102,7 +102,7 @@ const getContextMenuOptions = () => {
 			group: '',
 			options: [
 				{
-					label: 'Back to Home',
+					label: 'Back to home',
 					icon: 'lucide-arrow-left',
 					onClick: () => router.replace({ name: 'slides-home' }),
 				},

@@ -196,7 +196,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
 	)
 
 	onMounted(() => {
-		addPanAndZoom()
+		if (allowPanAndZoom.value) addPanAndZoom()
 	})
 
 	onBeforeUnmount(() => {
