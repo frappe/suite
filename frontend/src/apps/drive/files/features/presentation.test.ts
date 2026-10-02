@@ -12,3 +12,10 @@ describe('presentation state', () => {
   })
 })
 
+
+describe('chosen grouping', () => {
+  it('ignores the Recent-only grouping from the URL and a saved preference', () => {
+    expect(resolvePresentation({ group: 'opened' }, null).group).toBe('none')
+    expect(resolvePresentation({}, { group: 'opened' as never }).group).toBe('none')
+  })
+})

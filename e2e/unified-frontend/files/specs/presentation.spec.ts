@@ -44,7 +44,8 @@ test("the initial presentation is list, no grouping, Name ascending", async ({ p
 	await page.goto(`/drive/f/${folder.name}`);
 
 	await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
-	await expect(page.getByRole("columnheader", { name: "Owner" })).toBeVisible();
+	// Owner is a default column, but a folder in My files leaves it out: every row there is the user's.
+	await expect(page.getByRole("columnheader", { name: "Owner" })).toHaveCount(0);
 	await expect(page.getByRole("columnheader", { name: "Modified" })).toBeVisible();
 	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
 	await expect(page.getByRole("columnheader", { name: "Type" })).toHaveCount(0);
@@ -70,12 +71,12 @@ test("grid view asks for the preview expansion and paints tiles", async ({ page 
 test("the view settings menu switches between list and grid", async ({ page }) => {
 	await page.goto(`/drive/f/${folder.name}?view=list`);
 	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menuitem", { name: "Grid" }).click();
+	await page.getByRole("radio", { name: "Grid" }).click();
 	await expect(page).toHaveURL(/view=grid/);
 	await expect(page.getByRole("listitem")).toHaveCount(3);
 
-	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menuitem", { name: "List" }).click();
+	// The panel stays open while settings change.
+	await page.getByRole("radio", { name: "List" }).click();
 	await expect(page).toHaveURL(/view=list/);
 	await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
 });
@@ -90,15 +91,10 @@ test("group by Type renders contiguous server-ordered sections", async ({ page }
 	expect(headings.length).toBeGreaterThan(0);
 });
 
-// The Columns switches carry no accessible name (frappe-ui Switch receives no
-// label), so this journey selects the Size switch by position. Recorded as an
-// accessibility gap against ticket 006's menu rules.
-const SIZE_SWITCH = 3;
-
 test("optional columns are a saved preference, not URL state", async ({ page }) => {
 	await page.goto(`/drive/f/${folder.name}?view=list`);
 	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menu", { name: "View settings" }).getByRole("switch").nth(SIZE_SWITCH).click();
+	await page.getByRole("dialog").getByRole("button", { name: "Size", exact: true }).click();
 	await page.keyboard.press("Escape");
 
 	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
@@ -108,7 +104,7 @@ test("optional columns are a saved preference, not URL state", async ({ page }) 
 	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
 
 	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menu", { name: "View settings" }).getByRole("switch").nth(SIZE_SWITCH).click();
+	await page.getByRole("dialog").getByRole("button", { name: "Size", exact: true }).click();
 	await page.keyboard.press("Escape");
 	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
 });

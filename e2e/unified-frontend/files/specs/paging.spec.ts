@@ -89,7 +89,8 @@ test("changing the group restarts the listing without a cursor", async ({ page }
 	});
 
 	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menuitem", { name: "Owner" }).click();
+	await page.getByRole("combobox", { name: "Group by" }).click();
+	await page.getByRole("option", { name: "Owner" }).click();
 	await expect(page).toHaveURL(/group=owner/);
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);

@@ -3,8 +3,16 @@ import type { LocationQuery, Router } from 'vue-router'
 export type FilesViewMode = 'list' | 'grid'
 export type FilesSort = 'title' | 'owner' | 'modified' | 'kind' | 'size'
 export type FilesDirection = 'asc' | 'desc'
-export type FilesGroup = 'none' | 'type' | 'owner' | 'modified'
+const CHOSEN_GROUPS = ['none', 'type', 'owner', 'modified'] as const
+/** A grouping the user can pick, from the menu, the URL or their saved preference. */
+export type FilesChosenGroup = (typeof CHOSEN_GROUPS)[number]
+/** `opened` is Recent's own grouping, by visit day. Only the page shows it. */
+export type FilesGroup = FilesChosenGroup | 'opened'
+/** The optional list columns, in the order the list shows them. Name is always shown. */
+export const FILES_COLUMNS = ['owner', 'modified', 'kind', 'size'] as const
+export type FilesColumn = (typeof FILES_COLUMNS)[number]
 
+/** How the listing shows its rows. */
 export interface PresentationState {
   view: FilesViewMode
   sort: FilesSort
@@ -13,7 +21,12 @@ export interface PresentationState {
   columns: string[]
 }
 
-export const DEFAULT_PRESENTATION: PresentationState = {
+/** What the user chose, and what folder links and the saved preference carry. */
+export interface ChosenPresentation extends PresentationState {
+  group: FilesChosenGroup
+}
+
+export const DEFAULT_PRESENTATION: ChosenPresentation = {
   view: 'list',
   sort: 'title',
   dir: 'asc',
@@ -28,21 +41,21 @@ export function resolvePresentation(
   preference: Partial<PresentationState> | null = readPresentationPreference(),
   /** Narrow screens open in grid: a rem-sized table does not fit a phone. */
   viewOverride: FilesViewMode | null = null,
-): PresentationState {
+): ChosenPresentation {
   const saved = { ...DEFAULT_PRESENTATION, ...(preference ?? {}) }
   return {
     view: oneOf(query.view, ['list', 'grid']) ?? viewOverride ?? saved.view,
     sort: oneOf(query.sort, ['title', 'owner', 'modified', 'kind', 'size']) ?? saved.sort,
     dir: oneOf(query.dir, ['asc', 'desc']) ?? saved.dir,
-    group: oneOf(query.group, ['none', 'type', 'owner', 'modified']) ?? saved.group,
+    group: oneOf(query.group, CHOSEN_GROUPS) ?? oneOf(saved.group, CHOSEN_GROUPS) ?? DEFAULT_PRESENTATION.group,
     columns: normalizeColumns(saved.columns),
   }
 }
 
 export async function replacePresentation(
   router: Router,
-  state: PresentationState,
-  change: Partial<Pick<PresentationState, 'view' | 'sort' | 'dir' | 'group'>>,
+  state: ChosenPresentation,
+  change: Partial<Pick<ChosenPresentation, 'view' | 'sort' | 'dir' | 'group'>>,
 ): Promise<void> {
   const next = { ...state, ...change }
   writePresentationPreference(next)
@@ -57,7 +70,7 @@ export async function replacePresentation(
   })
 }
 
-export function writePresentationPreference(value: PresentationState): void {
+export function writePresentationPreference(value: ChosenPresentation): void {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(KEY, JSON.stringify(value))
 }
@@ -79,6 +92,6 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
 
 function normalizeColumns(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_PRESENTATION.columns]
-  return value.filter((column): column is string => ['owner', 'modified', 'kind', 'size'].includes(column))
+  return value.filter((column): column is FilesColumn => (FILES_COLUMNS as readonly unknown[]).includes(column))
 }
 
