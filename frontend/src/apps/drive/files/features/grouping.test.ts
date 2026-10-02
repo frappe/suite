@@ -16,3 +16,16 @@ describe('group headings', () => {
   })
 })
 
+
+describe('recent grouping', () => {
+  it('splits files opened today from earlier ones', () => {
+    const now = new Date(2026, 9, 2, 15, 0)
+    const opened = (name: string, at: Date): DriveNode => ({ ...row(name, 'file'), opened_at: at.toISOString() })
+    const rows = [
+      opened('a', new Date(2026, 9, 2, 9, 0)),
+      opened('b', new Date(2026, 9, 1, 23, 30)),
+      opened('c', new Date(2026, 8, 20, 12, 0)),
+    ]
+    expect(rows.map((node) => groupingHeading(node, 'opened', now))).toEqual(['Today', 'Earlier', 'Earlier'])
+  })
+})
