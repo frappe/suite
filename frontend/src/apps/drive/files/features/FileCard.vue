@@ -1,5 +1,5 @@
 <template>
-  <div class="relative flex w-full min-w-0 select-none">
+  <div class="group/card relative flex w-full min-w-0 select-none">
     <!-- `as` is the card's own control, a button or a link. Listeners and
          attributes land on it, not on this wrapper. -->
     <component
@@ -7,7 +7,7 @@
       :type="tag === 'button' ? 'button' : undefined"
       v-bind="$attrs"
       class="relative flex aspect-[1.7] w-full min-w-0 flex-col items-start gap-3 overflow-hidden rounded-5 border p-3 text-start transition-colors focus-visible:focus-ring"
-      :class="selected ? 'border-outline-gray-3 bg-surface-gray-2' : 'border-outline-gray-1 bg-surface-elevation-1 hover:bg-surface-gray-1'"
+      :class="selected ? 'border-outline-gray-3 bg-surface-gray-2' : 'border-outline-gray-1 bg-surface-elevation-1 group-hover/card:border-outline-gray-2 group-hover/card:bg-surface-gray-1 dark:group-hover/card:bg-surface-elevation-2'"
     >
       <!-- The preview fills the space above the name, edge to edge, where the
            icon would be. It shows only once it has loaded, so a slow or failed

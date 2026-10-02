@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
-import { canOpenFolder, destination } from './folderPicker'
+import { canOpenFolder, destination, itemsRoot } from './folderPicker'
 
-const report = { name: 'report', parent: 'root' }
-const archive = { name: 'archive', parent: 'root' }
-const notes = { name: 'notes', parent: 'talk' }
+const report = { name: 'report', parent: 'root', root: 'root' }
+const archive = { name: 'archive', parent: 'root', root: 'root' }
+const notes = { name: 'notes', parent: 'talk', root: 'root' }
 
 describe('folder picker destinations', () => {
   it('does not open a folder that is being moved, so nothing moves into itself or its subfolders', () => {
@@ -44,5 +44,24 @@ describe('folder picker destinations', () => {
 
   it('waits for the folder access before deciding', () => {
     expect(destination('move', [report], 'root', undefined)).toEqual({ status: 'unknown' })
+  })
+})
+
+describe('folder picker starting root', () => {
+  const roots = { personal: { node: 'mine', title: 'My files' }, organization: { node: 'org', title: 'Acme' } }
+  const plan = { name: 'plan', parent: 'team', root: 'org' }
+  const budget = { name: 'budget', parent: 'org', root: 'org' }
+  const draft = { name: 'draft', parent: 'mine', root: 'mine' }
+
+  it('opens on the root the items are in, wherever they were picked from', () => {
+    expect(itemsRoot([plan, budget], roots)).toBe('organization')
+    expect(itemsRoot([draft], roots)).toBe('personal')
+  })
+
+  it('has no starting root for a mixed selection or items in another user\'s root', () => {
+    expect(itemsRoot([plan, draft], roots)).toBeNull()
+    expect(itemsRoot([{ name: 'shared', parent: 'theirs', root: 'theirs' }], roots)).toBeNull()
+    expect(itemsRoot([plan], { ...roots, organization: null })).toBeNull()
+    expect(itemsRoot([], roots)).toBeNull()
   })
 })

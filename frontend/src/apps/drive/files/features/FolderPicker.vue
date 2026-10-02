@@ -97,7 +97,7 @@ import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { useQuery } from '@/platform/server-state'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
-import { canOpenFolder, destination, type PickedItem, type PickerMode } from './folderPicker'
+import { canOpenFolder, destination, itemsRoot, type PickedItem, type PickerMode } from './folderPicker'
 
 const props = withDefaults(defineProps<{
   mode: PickerMode
@@ -128,6 +128,12 @@ const rootOptions = computed(() => [
 watch(rootOptions, (options) => {
   const only = options.length === 1 ? options[0]!.value : null
   if (only === 'personal' || only === 'organization') rootKind.value = only
+}, { immediate: true })
+// Each time it opens, the picker shows the root the items are in, whichever
+// view they were picked from. A restore stays in its own root.
+const startingRoot = computed(() => discovered.data ? itemsRoot(props.items, discovered.data) : null)
+watch([open, startingRoot], () => {
+  if (open.value && !props.root) rootKind.value = startingRoot.value ?? 'personal'
 }, { immediate: true })
 const root = computed(() => discovered.data?.[rootKind.value] ?? null)
 

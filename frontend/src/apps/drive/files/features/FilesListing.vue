@@ -66,17 +66,17 @@
         </template>
         <template v-else>
           <ListRow
-            v-for="row in rows"
+            v-for="(row, index) in rows"
             :key="row.name"
             :value="row.name"
             tabindex="0"
             :data-node="row.name"
             :data-listing-item="row.name"
-            :class="['select-none', isHighlighted(row) && '!bg-surface-gray-2']"
+            :class="['select-none', runClasses(index)]"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
-            @pointerdown="startLongPress(row)"
+            @pointerdown="startLongPress($event, row)"
             @pointerup="cancelLongPress"
             @pointercancel="cancelLongPress"
           >
@@ -104,7 +104,7 @@
               <Avatar size="xs" :label="row.owner" class="mr-2 shrink-0" />
               <span class="truncate text-base text-ink-gray-7">{{ row.owner }}</span>
             </ListCell>
-            <ListCell v-if="shows('size')" class="justify-end" :class="wideOnly('size')"><span class="truncate text-base text-ink-gray-5">{{ formatBytes(row.size) }}</span></ListCell>
+            <ListCell v-if="shows('size')" class="justify-end" :class="wideOnly('size')"><span class="truncate text-base text-ink-gray-5">{{ row.size ? formatBytes(row.size) : '' }}</span></ListCell>
             <ListCell v-if="shows('modified')" class="justify-end" :class="wideOnly('modified')"><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell>
             <ListCell class="justify-end">
               <Dropdown :options="menuOptions(row)" align="end">
@@ -137,7 +137,7 @@
               :selected="isHighlighted(row)"
               @click="onRowClick($event, row)"
               @dblclick="$emit('open', row)"
-              @pointerdown="startLongPress(row)"
+              @pointerdown="startLongPress($event, row)"
               @pointerup="cancelLongPress"
               @pointercancel="cancelLongPress"
               @preview-error="$emit('preview-error', row)"
@@ -324,6 +324,28 @@ function isSelected(row: DriveNode) {
 function isHighlighted(row: DriveNode) {
   return isSelected(row) || row.name === props.menuTarget
 }
+/** Hides the divider a list row draws along its top edge. */
+const NO_DIVIDER = '[&_[data-slot=list-divider]]:!opacity-0'
+/**
+ * Consecutive highlighted rows read as one block: only the block's outer
+ * corners are rounded, and no divider shows inside it or along its edges. A
+ * focused row takes back all four corners, so its focus ring stays rounded.
+ */
+function runClasses(index: number) {
+  const highlighted = (at: number) => {
+    const row = rows.value[at]
+    return row !== undefined && isHighlighted(row)
+  }
+  const prevHighlighted = highlighted(index - 1)
+  if (!highlighted(index)) return prevHighlighted ? NO_DIVIDER : undefined
+  return [
+    '!bg-surface-gray-2',
+    NO_DIVIDER,
+    prevHighlighted && 'sm:!rounded-t-none',
+    highlighted(index + 1) && 'sm:!rounded-b-none',
+    'sm:focus-visible:!rounded-[10px]',
+  ]
+}
 function toggleAll() {
   const names = new Set(rows.value.map((row) => row.name))
   emit('update:selection', allSelected.value
@@ -394,8 +416,14 @@ async function loadMore() {
     },
   })
 }
-function startLongPress(row: DriveNode) {
+function startLongPress(event: PointerEvent, row: DriveNode) {
   cancelLongPress()
+  // A mouse selects with a drag or a modifier click. A press on a control inside
+  // the item, such as the menu button, belongs to that control: its menu opens
+  // on the press, so the release lands on the menu and never cancels the timer.
+  // A card is itself a button, so its own element does not count.
+  const control = (event.target as Element).closest('button, [role="checkbox"]')
+  if (event.pointerType === 'mouse' || (control && control !== event.currentTarget)) return
   longPress = setTimeout(() => {
     // The press already answered. Swallow the click that follows the release,
     // or it toggles the row straight back off.
@@ -415,8 +443,10 @@ function cancelLongPress() {
   longPress = null
 }
 function onKeydown(event: KeyboardEvent) {
-  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-node]')
-  const node = rows.value.find((row) => row.name === target?.dataset.node)
+  // Only keys pressed on the row itself. Enter and Space on its menu button or
+  // checkbox belong to that control.
+  const target = event.target as HTMLElement
+  const node = rows.value.find((row) => row.name === target.dataset.node)
   if (!node) return
   if (event.key === 'Enter') {
     event.preventDefault()

@@ -82,6 +82,20 @@ describe('FilesListing selection', () => {
   })
 })
 
+describe('FilesListing selected runs', () => {
+  it('rounds only the outer corners of adjacent selected rows', async () => {
+    const { root } = mount({ rows: [...rows, file('c', 'Gamma.png')], selection: ['a', 'b'] })
+    await nextTick()
+    const classes = (name: string) => root.querySelector(`[data-node="${name}"]`)!.className
+
+    expect(classes('a')).toContain('sm:!rounded-b-none')
+    expect(classes('a')).not.toContain('sm:!rounded-t-none')
+    expect(classes('b')).toContain('sm:!rounded-t-none')
+    expect(classes('b')).not.toContain('sm:!rounded-b-none')
+    expect(classes('c')).not.toContain('!bg-surface-gray-2')
+  })
+})
+
 describe('FilesListing type column', () => {
   it('names a file by its extension when Drive stored a generic MIME type', async () => {
     const generic = { mime: 'application/octet-stream' }

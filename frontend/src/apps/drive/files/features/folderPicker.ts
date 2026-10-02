@@ -1,9 +1,9 @@
-import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 
 export type PickerMode = 'move' | 'copy' | 'restore'
 
-/** An item the picker places: which node it is and the folder it is in now. */
-export type PickedItem = Pick<DriveNode, 'name' | 'parent'>
+/** An item the picker places: which node it is, and the folder and root it is in now. */
+export type PickedItem = Pick<DriveNode, 'name' | 'parent' | 'root'>
 
 /** Whether the folder the picker shows can take the items. */
 export type Destination =
@@ -11,6 +11,19 @@ export type Destination =
   | { status: 'unknown' }
   | { status: 'allowed' }
   | { status: 'refused'; reason: string }
+
+/**
+ * The root the items are in, when they share one of the caller's roots, so the
+ * picker opens where the items are. `null` for a mixed selection or items in
+ * another user's root.
+ */
+export function itemsRoot(items: readonly PickedItem[], roots: DriveRoots): keyof DriveRoots | null {
+  const root = items[0]?.root
+  if (!root || items.some((item) => item.root !== root)) return null
+  if (roots.personal.node === root) return 'personal'
+  if (roots.organization?.node === root) return 'organization'
+  return null
+}
 
 /**
  * Whether the picker can open `folder`. A folder that is being moved cannot go
