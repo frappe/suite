@@ -7,12 +7,15 @@ import App from "@/App.vue";
 import router from "@/router";
 import { initSentry } from "@/boot/sentry";
 import { clearSlidesUserData } from "@/apps/slides/utils/serviceWorker";
+import { initializeCursor } from "@/platform/cursor";
 import { useSession } from "@/platform/session";
 import { initializeTheme } from "@/platform/theme";
 import {
   ready as translationsReady,
   translationPlugin,
 } from "@/platform/translation";
+
+initializeCursor();
 
 const app = createApp(App);
 

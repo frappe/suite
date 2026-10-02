@@ -14,6 +14,16 @@
         />
       </SettingsRow>
       <SettingsRow
+        :title="__('Cursor')"
+        :description="__('Show the hand cursor on every control, or only on links that leave the app')"
+      >
+        <Select
+          :model-value="cursor.mode.value"
+          :options="CURSOR_OPTIONS"
+          @update:model-value="selectCursor"
+        />
+      </SettingsRow>
+      <SettingsRow
         :title="__('Language')"
         :description="__('The language that the interface is shown in')"
       >
@@ -56,6 +66,7 @@ import {
   toast,
 } from 'frappe-ui'
 
+import { useCursor, type CursorMode } from '@/platform/cursor'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
@@ -74,7 +85,18 @@ function selectTheme(value?: string | number | null) {
   if (option) void theme.set(option.value)
 }
 
+const CURSOR_OPTIONS: { label: string; value: CursorMode }[] = [
+  { label: __('Normal'), value: 'normal' },
+  { label: __('Pointer'), value: 'pointer' },
+]
+
+function selectCursor(value?: string | number | null) {
+  const option = CURSOR_OPTIONS.find((candidate) => candidate.value === value)
+  if (option) cursor.set(option.value)
+}
+
 const theme = useTheme()
+const cursor = useCursor()
 const session = useSession()
 
 const user = createDocumentResource({
