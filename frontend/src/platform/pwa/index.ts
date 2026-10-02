@@ -6,8 +6,11 @@ import SPLASH_DEVICES from './splash-devices.json'
 
 declare global {
   interface Window {
-    /** Notification relay server base URL, from the SPA boot (`suite/www/suite.py`). */
-    push_relay_server_url: string
+    /**
+     * Notification relay server base URL, from the SPA boot (`suite/www/suite.py`).
+     * `""` when the site config has none; missing on the Vite dev page, which has no boot.
+     */
+    push_relay_server_url?: string
   }
 }
 
@@ -18,7 +21,8 @@ declare global {
  * - The push service worker registers once a user signs in, in every area and
  *   whether or not Mail, Calendar and Meet are in the shell. It is Mail's FCM
  *   worker (`src/apps/mail/sw.ts`, built to `sw.js`); its push handlers stay
- *   there.
+ *   there. A site with no notification relay registers no worker: the worker
+ *   only handles push, and its scope covers no Suite page.
  * - A push subscription belongs to one user. Logout drops it on the server
  *   and in the browser. A sign-in that finds another user's subscription (a
  *   logout that did not go through the platform session) drops it in the
@@ -61,17 +65,27 @@ export const PUSH_OWNER_KEY = 'suite_push_owner'
 type PushClient = InstanceType<typeof import('./frappe-push-notification').default>
 
 /**
+ * The notification relay's base URL, or `null` when the site has none. With
+ * no relay there is no push: an empty base would send the relay's requests to
+ * a path relative to the current page.
+ */
+function pushRelayURL(): string | null {
+  return window.push_relay_server_url || null
+}
+
+/**
  * Registers the FCM worker with the relay's web config in its URL, then
- * starts the FCM client on that registration. Fail-safe: a failure logs and
- * leaves the page as it is. `firebase` loads on demand, outside the shell
- * chunk.
+ * starts the FCM client on that registration. Does nothing on a site with no
+ * relay. Fail-safe: a failure logs and leaves the page as it is. `firebase`
+ * loads on demand, outside the shell chunk.
  */
 async function registerPushServiceWorker(user: string | null): Promise<PushClient | null> {
   try {
-    if (!('serviceWorker' in navigator)) return null
+    const relayURL = pushRelayURL()
+    if (!relayURL || !('serviceWorker' in navigator)) return null
 
     const { default: FrappePushNotification } = await import('./frappe-push-notification')
-    const client = new FrappePushNotification(PUSH_PROJECT)
+    const client = new FrappePushNotification(PUSH_PROJECT, relayURL)
 
     let url = PUSH_SERVICE_WORKER_URL
     let config: unknown = ''

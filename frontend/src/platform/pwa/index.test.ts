@@ -16,11 +16,16 @@ const fcm = vi.hoisted(() => ({
   initialized: [] as unknown[],
   handlers: [] as Array<(payload: object) => void>,
   calls: [] as string[],
+  relayRequests: [] as string[],
 }))
 vi.mock('@/platform/pwa/frappe-push-notification', () => ({
   default: class {
-    constructor(readonly projectName: string) {}
+    constructor(
+      readonly projectName: string,
+      readonly relayURL: string,
+    ) {}
     async fetchWebConfig() {
+      fcm.relayRequests.push(`${this.relayURL}/api/method/notification_relay.api.get_config`)
       if (fcm.config instanceof Error) throw fcm.config
       return fcm.config
     }
@@ -62,6 +67,8 @@ beforeEach(() => {
   fcm.initialized = []
   fcm.handlers = []
   fcm.calls = []
+  fcm.relayRequests = []
+  window.push_relay_server_url = 'https://relay.test'
   showNotification = vi.fn(async () => {})
   register = vi.fn(async () => ({ scope: 'http://suite.test/assets/suite/frontend/', showNotification }))
   Object.defineProperty(navigator, 'serviceWorker', {
@@ -73,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Reflect.deleteProperty(navigator, 'serviceWorker')
+  Reflect.deleteProperty(window, 'push_relay_server_url')
   vi.restoreAllMocks()
 })
 
@@ -130,6 +138,7 @@ describe('Suite PWA', () => {
     const config = encodeURIComponent(JSON.stringify(fcm.config))
     expect(register).toHaveBeenCalledTimes(1)
     expect(register).toHaveBeenCalledWith(`${WORKER_URL}?config=${config}`, { type: 'module' })
+    expect(fcm.relayRequests).toEqual(['https://relay.test/api/method/notification_relay.api.get_config'])
     expect(fcm.initialized).toEqual([await register.mock.results[0]!.value])
 
     // A sign-out and a new sign-in in the same page do not register it twice.
@@ -146,6 +155,18 @@ describe('Suite PWA', () => {
 
     expect(register).toHaveBeenCalledWith(WORKER_URL, { type: 'module' })
     expect(fcm.initialized).toEqual([])
+  })
+
+  it.each([
+    ['the site config has no relay', ''],
+    ['the page has no boot, as on the Vite dev server', undefined],
+  ])('asks no relay for push config and registers no worker when %s', async (_, relayURL) => {
+    window.push_relay_server_url = relayURL
+    await install('authenticated')
+
+    expect(fcm.relayRequests).toEqual([])
+    expect(register).not.toHaveBeenCalled()
+    expect(console.error).not.toHaveBeenCalled()
   })
 
   it('shows one notification for a push that every open tab receives', async () => {

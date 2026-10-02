@@ -21,12 +21,9 @@ type WebConfigType = {
 type OnMessageCallback = (payload: MessagePayload) => void
 
 class FrappePushNotification {
-	static get relayServerBaseURL(): string {
-		return window.push_relay_server_url
-	}
-
 	// client info
 	projectName: string
+	relayURL: string
 	webConfig: WebConfigType | null
 	vapidPublicKey: string
 	token: string | null
@@ -39,9 +36,11 @@ class FrappePushNotification {
 	// event handlers
 	onMessageHandler: OnMessageCallback | null
 
-	constructor(projectName: string) {
+	// `relayURL` is the notification relay's base URL. The caller checks that the site has one.
+	constructor(projectName: string, relayURL: string) {
 		// client info
 		this.projectName = projectName
+		this.relayURL = relayURL
 		this.webConfig = null
 		this.vapidPublicKey = ''
 		this.token = null
@@ -77,7 +76,7 @@ class FrappePushNotification {
 	async fetchWebConfig(): Promise<WebConfigType> {
 		if (this.webConfig !== null && this.webConfig !== undefined) return this.webConfig
 
-		const url = `${FrappePushNotification.relayServerBaseURL}/api/method/notification_relay.api.get_config?project_name=${this.projectName}`
+		const url = `${this.relayURL}/api/method/notification_relay.api.get_config?project_name=${this.projectName}`
 		const response = await fetch(url)
 		const response_json = await response.json()
 		this.webConfig = response_json.config
@@ -88,7 +87,7 @@ class FrappePushNotification {
 	async fetchVapidPublicKey(): Promise<string> {
 		if (this.vapidPublicKey !== '') return this.vapidPublicKey
 
-		const url = `${FrappePushNotification.relayServerBaseURL}/api/method/notification_relay.api.get_config?project_name=${this.projectName}`
+		const url = `${this.relayURL}/api/method/notification_relay.api.get_config?project_name=${this.projectName}`
 		const response = await fetch(url)
 		const response_json = await response.json()
 		this.vapidPublicKey = response_json.vapid_public_key
