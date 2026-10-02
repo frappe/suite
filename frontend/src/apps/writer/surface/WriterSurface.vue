@@ -10,15 +10,15 @@ import {
   watch,
 } from "vue";
 
-import { CollabOpenError, recoverable, type Blocked, type CollabRoom } from "@suite/collab-client";
 import type { DocumentSession } from "@/apps/drive";
-import { openWriterRoom } from "@/apps/writer/collab";
+import { withinTenSeconds } from "@/apps/writer/collab";
 import CollabTextEditor from "@/apps/writer/components/CollabTextEditor.vue";
 import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
 import emitter from "@/apps/writer/emitter";
 import { freezesEdits } from "./access";
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
+import { useWriterCollab } from "./useWriterCollab";
 
 const props = defineProps<{ session: DocumentSession }>();
 const titleDraft = ref(props.session.title.value);
@@ -31,18 +31,19 @@ const comments = ref<unknown[]>([]);
 const versions = ref<unknown[]>([]);
 const panelLoading = ref(false);
 const commentText = ref("");
-const collab = shallowRef<"opening" | "legacy" | "live" | "failed">("opening");
-const room = shallowRef<CollabRoom | null>(null);
-const roomSaveState = ref<DocumentSaveState>("clean");
-const roomCanWrite = ref(false);
-const roomBlocked = ref<Blocked | null>(null);
-const roomPaused = ref<string | null>(null);
-const roomUnsent = ref(0);
-const openRefusal = ref<string | null>(null);
-const recoveryKept = ref(false);
-const roomOnDevice = ref(false);
-let stopWatchingRoom = () => {};
-let unmounted = false;
+const {
+  mode: collab,
+  room,
+  live: collabLive,
+  allowsEditing,
+  saveState: roomSaveState,
+  unsent: roomUnsent,
+  paused: roomPaused,
+  banner,
+  openFailure,
+  open: openCollab,
+  close: closeCollab,
+} = useWriterCollab(props.session, retainRecovery);
 
 const documentResource = useDoc({
   doctype: "Writer Document",
@@ -67,8 +68,7 @@ const editable = computed(
     readable.value &&
     props.session.state.value === "Active" &&
     role.value >= 40 &&
-    (collab.value !== "live" ||
-      (roomCanWrite.value && roomSaveState.value !== "failed" && roomBlocked.value !== "offline")),
+    allowsEditing.value,
 );
 const saving = computed(
   () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
@@ -76,45 +76,13 @@ const saving = computed(
 const saveFailed = computed(
   () => !!documentResource.saveDoc?.error || !!documentResource.saveHtml?.error,
 );
-const saveState = computed<DocumentSaveState>(() =>
-  collab.value === "live"
-    ? roomSaveState.value
-    : saving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean",
+const saveState = computed<DocumentSaveState>(
+  () => roomSaveState.value ?? (saving.value ? "saving" : saveFailed.value ? "failed" : dirty.value ? "unsaved" : "clean"),
 );
 const saveLabel = computed(() =>
-  collab.value === "live" && roomPaused.value && saveState.value !== "failed"
+  roomPaused.value && saveState.value !== "failed"
     ? "Saving paused"
     : ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
-);
-const blockedMessage = computed(() => {
-  const kept = recoveryKept.value ? " Your unsent changes were kept as a recovery copy." : "";
-  const messages: Partial<Record<Blocked, string>> = {
-    locked: `This document was locked again, so your recent changes aren't saved yet. Unlock it to save them.${closeNote.value}`,
-    offline: "You're offline, and this browser isn't keeping changes for this site, so editing is paused until the connection is back.",
-    stale_session: roomOnDevice.value
-      ? "You signed in again in another tab. Reload to keep saving. Your unsent changes come back after the reload."
-      : `You signed in again in another tab.${kept} Reload to keep saving.`,
-    other_user: roomOnDevice.value
-      ? "This browser is now signed in as someone else. Your unsent changes stay on this device until you sign back in. Reload to continue as them."
-      : `This browser is now signed in as someone else.${kept} Reload to continue as them.`,
-    lost_edit: `You can no longer edit this document.${kept}`,
-    lost_read: `You can no longer open this document.${kept}`,
-  };
-  return messages[roomBlocked.value!] ?? `Saving stopped in this tab.${kept} Reload to keep editing.`;
-});
-const closeNote = computed(() =>
-  roomOnDevice.value
-    ? " If you close this tab, they stay on this device until you can save again."
-    : " Keep this tab open until then.",
-);
-const signInUrl = computed(() => `/login?redirect-to=${encodeURIComponent(location.pathname)}`);
-const openFailure = computed(() =>
-  ({
-    signed_out: "You're signed out. Sign in again to open this document.",
-    locked: "This document is locked. Unlock it to open it.",
-    stale_session: "You signed in again in another tab. Reload to open this document.",
-    principal_changed: "This browser is now signed in as someone else. Reload to open this document as them.",
-  })[openRefusal.value ?? ""] ?? "This document couldn't be opened.",
 );
 const settings = computed(() => documentResource.doc?.settings ?? {});
 const fakeFileResource = computed(() => ({
@@ -142,41 +110,7 @@ watch(saving, (next, previous) => {
 });
 
 function markDirty(event: Event) {
-  if (editable.value && event.isTrusted && collab.value !== "live") dirty.value = true;
-}
-
-async function openCollab() {
-  collab.value = "opening";
-  openRefusal.value = null;
-  try {
-    const opened = await openWriterRoom(props.session);
-    if (unmounted) {
-      if (opened.state === "live") void opened.room.close();
-      return;
-    }
-    if (opened.state !== "live") {
-      collab.value = "legacy";
-      return;
-    }
-    room.value = opened.room;
-    const sync = () => {
-      const live = opened.room;
-      const stopped = live.saveState === "failed" || (live.blocked && !recoverable(live.blocked));
-      if (stopped && live.unsent && !recoveryKept.value) recoveryKept.value = retainRecovery();
-      roomSaveState.value = live.saveState;
-      roomCanWrite.value = live.canWrite;
-      roomBlocked.value = live.blocked;
-      roomPaused.value = live.paused;
-      roomUnsent.value = live.unsent;
-      roomOnDevice.value = live.onDevice;
-    };
-    stopWatchingRoom = opened.room.onChange(sync);
-    sync();
-    collab.value = "live";
-  } catch (error) {
-    openRefusal.value = error instanceof CollabOpenError ? error.reason : null;
-    collab.value = "failed";
-  }
+  if (editable.value && event.isTrusted && !collabLive.value) dirty.value = true;
 }
 
 async function rename() {
@@ -251,14 +185,10 @@ function flush(): Promise<void> {
   }));
 }
 
-function withinTenSeconds(work: Promise<void>): Promise<void> {
-  return Promise.race([work, new Promise<void>((resolve) => window.setTimeout(resolve, 10_000))]);
-}
-
 useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery });
 
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: () => (collab.value === "live" ? saveState.value : "clean"), retainRecovery }, event);
+  resolveDocumentUnload({ state: () => (collabLive.value ? saveState.value : "clean"), retainRecovery }, event);
 }
 
 function setOnline() {
@@ -276,12 +206,10 @@ onMounted(() => {
   void openCollab();
 });
 onBeforeUnmount(() => {
-  unmounted = true;
   window.removeEventListener("online", setOnline);
   window.removeEventListener("offline", setOffline);
   window.removeEventListener("beforeunload", warnBeforeUnload);
-  stopWatchingRoom();
-  void room.value?.close();
+  closeCollab();
 });
 </script>
 
@@ -299,7 +227,7 @@ onBeforeUnmount(() => {
         @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
       />
       <span class="ml-auto text-sm text-ink-gray-5">
-        {{ saveLabel }}<template v-if="collab === 'live' && roomUnsent"> · {{ roomUnsent }} unsent</template>
+        {{ saveLabel }}<template v-if="roomUnsent"> · {{ roomUnsent }} unsent</template>
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
       <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
@@ -309,12 +237,8 @@ onBeforeUnmount(() => {
       <Button label="Share" icon-left="lucide-share-2" variant="solid" @click="share" />
     </header>
 
-    <div v-if="collab === 'live' && (roomBlocked || roomSaveState === 'failed')" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
-      <template v-if="roomBlocked === 'signed_out'">
-        You've been signed out, so your recent changes aren't saved yet.
-        <a :href="signInUrl" target="_blank" class="underline">Sign in</a> to save them.{{ closeNote }}
-      </template>
-      <template v-else>{{ blockedMessage }}</template>
+    <div v-if="banner" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
+      {{ banner.text }}<template v-if="banner.signInUrl"> <a :href="banner.signInUrl" target="_blank" class="underline">Sign in</a> to save them.</template>{{ banner.note }}
     </div>
 
     <div v-if="!readable" class="m-auto text-center">
@@ -330,7 +254,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-else class="flex min-h-0 flex-1 overflow-hidden">
       <CollabTextEditor
-        v-if="collab === 'live' && room"
+        v-if="collabLive && room"
         ref="editorSurface"
         :room="room"
         :file="fakeFileResource"

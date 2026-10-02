@@ -38,6 +38,10 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
   }
 }
 
+// Waits for slow work, but never longer than a person should be held up
+export const withinTenSeconds = (work: Promise<void>) =>
+  Promise.race([work, new Promise<void>((resolve) => setTimeout(resolve, 10_000))])
+
 const signedIn = () => getCookieSessionUser() ?? 'Guest'
 
 // One store per person on this site; another person's stays untouched on the device

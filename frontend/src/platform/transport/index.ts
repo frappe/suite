@@ -127,9 +127,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           response = await fetcher(url, init)
         } catch (cause) {
           if (isAbort(cause)) throw cause
-          if (operation.method !== 'GET' || attempt >= maxRetries) {
-            throw new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
-          }
+          if (operation.method !== 'GET' || attempt >= maxRetries) throw networkError(cause)
           await delay(retryBaseMs * 2 ** attempt, requestOptions.signal)
           attempt += 1
           continue
@@ -181,7 +179,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         response = await fetcher(url, init)
       } catch (cause) {
         if (isAbort(cause)) throw cause
-        throw new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
+        throw networkError(cause)
       }
       return { status: response.status, headers: response.headers, bytes: new Uint8Array(await response.arrayBuffer()) }
     },
@@ -198,6 +196,10 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
 function setLinkCodes(headers: Headers, codes: readonly string[]): void {
   const selected = [...new Set(codes)].slice(0, LINK_HEADER_CAP)
   if (selected.length) headers.set('X-Drive-Links', selected.join(','))
+}
+
+function networkError(cause: unknown) {
+  return new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
 }
 
 function requestHeaders(requestOptions: TransportOptions, accept: string): Headers {
