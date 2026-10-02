@@ -178,6 +178,16 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual([payload for _, payload in rows], [b"a1", b"b1", b"a2", b"b2"])
         self.assert_one_order(node, 4)
 
+    def test_a_push_at_the_size_cap_keeps_every_byte_value(self):
+        self.set_mode("on")
+        node = self.new_document()
+        payload = bytes(range(256)) * 1024
+
+        self.assertEqual(self.push(node, *self.session(node), 1, payload)[0], 200)
+
+        self.assertEqual(self.open(node)[1], [(1, payload)])
+        self.assert_one_order(node, 1)
+
     def test_a_resent_push_commits_once(self):
         self.set_mode("on")
         node = self.new_document()

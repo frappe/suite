@@ -65,8 +65,8 @@ def create(adapter: str, node: str) -> str:
     lineage = secrets.token_hex(16)
     frappe.db.sql(
         f"""INSERT INTO `{table(adapter, "doc")}` (`id`, `node`, `lineage`, `head_rev`, `head_chain`, `created`)
-        VALUES (%s, %s, %s, 0, %s, %s)""",
-        (doc_id, node, lineage, chain_seed(lineage), now_datetime()),
+        VALUES (%s, %s, %s, 0, UNHEX(%s), %s)""",
+        (doc_id, node, lineage, chain_seed(lineage).hex(), now_datetime()),
     )
     return doc_id
 
@@ -293,7 +293,7 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
         frappe.db.sql(
             f"""INSERT INTO `{table(adapter, "update")}`
             (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `payload`, `sha256`, `seq_shas`, `chain`, `created`)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
             (
                 doc_id,
                 rev,
@@ -301,16 +301,16 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
                 header["from"],
                 header["to"],
                 header["cid"],
-                payload,
-                payload_sha,
-                b"".join(header["shas"]),
-                chain,
+                payload.hex(),
+                payload_sha.hex(),
+                b"".join(header["shas"]).hex(),
+                chain.hex(),
                 now,
             ),
         )
         frappe.db.sql(
-            f"UPDATE `{table(adapter, 'doc')}` SET `head_rev` = %s, `head_chain` = %s WHERE `id` = %s",
-            (rev, chain, doc_id),
+            f"UPDATE `{table(adapter, 'doc')}` SET `head_rev` = %s, `head_chain` = UNHEX(%s) WHERE `id` = %s",
+            (rev, chain.hex(), doc_id),
         )
         frappe.db.sql(
             f"UPDATE `{table(adapter, 'session')}` SET `acked_seq` = %s, `last_push_at` = %s WHERE `doc_id` = %s AND `sid` = %s",
