@@ -612,6 +612,11 @@ def grants_for(
     so whoever `?principal=` named is resolved here, after the gate. Resolving
     them at the call site would answer "that names no user" to a caller with no
     right to ask anything about this node at all.
+
+    `owner` names the user whose Personal root holds the node, with their full
+    name, or is None in the Shared root. Their access comes from the root's
+    anchor grant, and `grant` refuses to deny them, so the dialog lists them
+    first as Owner with no actions.
     """
     node = _node_or_not_found(node_id)
     require(node, MANAGE, principals)
@@ -621,7 +626,11 @@ def grants_for(
         fields=["name", "node", "principal", "role", "expires_on", "password_hash", "sent_to"],
         order_by="principal asc",
     )
-    answer = {"grants": [_grant_result(row) for row in rows]}
+    owner = _personal_root_owner(node)
+    answer = {
+        "grants": [_grant_result(row) for row in rows],
+        "owner": _user_entry(owner) if owner else None,
+    }
     if inherited:
         answer["inherited"] = _inherited_grants(node, principals)
     if resolve_subject is not None:
@@ -777,6 +786,7 @@ def grant(
         raise DriveForbidden(_("Only a Drive share link can have a password"))
     if role == NONE and _is_personal_root_owner(node, principal):
         raise DriveForbidden(_("A Personal Drive root owner cannot be denied"))
+    _refuse_owner_loss(node, principal, role=role, expires_on=expires_on)
     if principal.startswith("$LINK:"):
         _refuse_borrowed_link_token(node, principal, role)
 
@@ -868,6 +878,7 @@ def revoke(node_id: str, principal: str, principals: Principals) -> None:
     """Delete only the named local grant; inherited rows remain untouched."""
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
+    _refuse_owner_loss(node, principal)
     savepoint = f"drive_revoke_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
@@ -899,6 +910,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
     """Delete a principal's grant at the origin and throughout its subtree."""
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
+    _refuse_owner_loss(node, principal)
     is_root = node.kind == "root"
     root = node.name if is_root else node.root
     prefix = "" if is_root else f"{node.path or '/'}{node.name}/%"
@@ -1194,10 +1206,36 @@ def _refuse_borrowed_link_token(node: Mapping, principal: str, role: int) -> Non
         raise DriveForbidden(_("That Drive share link already addresses another node"))
 
 
-def _is_personal_root_owner(node: Mapping, principal: str) -> bool:
+def _personal_root_owner(node: Mapping) -> str | None:
+    """Answer the user whose Personal root holds `node`, or None in the Shared root."""
     root_id = node.get("name") if node.get("kind") == "root" else node.get("root")
     root = frappe.db.get_value("Drive Root", root_id, ["kind", "user"], as_dict=True)
-    return bool(root and root.kind == "Personal" and root.user == principal)
+    return root.user if root and root.kind == "Personal" else None
+
+
+def _refuse_owner_loss(
+    node: Mapping, principal: str, *, role: int | None = None, expires_on: datetime | str | None = None
+) -> None:
+    """Refuse a write to a Personal root's anchor grant, which gives its owner MANAGE.
+
+    Removing that row, lowering it, or giving it an expiry would lock the
+    owner out of their own files. Rows below the root are ordinary grants.
+    `role=None` is a removal, and on the root `revoke_below` removes the
+    anchor too.
+    """
+    if node.get("kind") != "root" or not _is_personal_root_owner(node, principal):
+        return
+    if role is None or role < MANAGE or expires_on is not None:
+        raise DriveForbidden(_("The owner of a Personal Drive root keeps Manage on their own files"))
+
+
+def _user_entry(user: str) -> dict:
+    return {"user": user, "full_name": frappe.db.get_value("User", user, "full_name") or user}
+
+
+def _is_personal_root_owner(node: Mapping, principal: str) -> bool:
+    owner = _personal_root_owner(node)
+    return owner is not None and owner == principal
 
 
 def _future_expiry(expires_on: datetime | str | None) -> datetime | None:

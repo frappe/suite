@@ -359,6 +359,22 @@ class TestGrantWorkflows(_GrantFixture):
         self.assertTrue(frappe.db.exists("Drive Grant", {"node": other_root.name, "principal": MANAGER}))
         self.assertEqual(self._activity(self.root.name)[0].detail["rows"], 3)
 
+    def test_the_personal_root_owner_keeps_manage_on_their_root(self):
+        tomorrow = add_to_date(now_datetime(), days=1)
+        cases = (
+            ("remove", lambda: revoke(self.root.name, TARGET, self.admin)),
+            ("remove below", lambda: revoke_below(self.root.name, TARGET, self.admin)),
+            ("lower", lambda: grant(self.root.name, TARGET, EDIT, self.admin)),
+            ("expire", lambda: grant(self.root.name, TARGET, MANAGE, self.admin, expires_on=tomorrow)),
+        )
+        for label, operation in cases:
+            with self.subTest(label=label):
+                self._assert_no_mutation(operation, DriveForbidden)
+        self.assertEqual(effective_role(self.root, Principals(TARGET, (TARGET,), ("$PUBLIC",))), MANAGE)
+
+        # Rewriting the anchor as it stands is allowed.
+        self.assertEqual(grant(self.root.name, TARGET, MANAGE, self.admin)["role"], MANAGE)
+
     def test_explain_is_authorized_ordered_fresh_and_includes_unheld_rows(self):
         for principal, role in (
             ("$GROUP:manage", MANAGE),
@@ -951,6 +967,16 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
         outsider = Principals(UNHELD, (UNHELD,), ("$PUBLIC",))
         with self.assertRaises(DriveNotFound):
             grants_for(leaf.name, outsider, inherited=True)
+
+    def test_the_listing_names_the_personal_root_owner(self):
+        from suite.drive._core.access import grants_for
+
+        frappe.db.set_value("User", TARGET, "full_name", "Grant Target")
+        for node in (self.root.name, self.folder.name):
+            self.assertEqual(
+                grants_for(node, self.admin)["owner"],
+                {"user": TARGET, "full_name": "Grant Target"},
+            )
 
     def test_a_link_password_is_kept_cleared_and_set(self):
         created = grant(self.folder.name, "$LINK", READ, self.admin, password="first secret")

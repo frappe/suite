@@ -583,17 +583,22 @@ class TestGrantRoutes(BoundaryCase):
     """§5.8 to §5.11 at the boundary: what is asked, and what comes back."""
 
     def test_no_named_principal_asks_for_no_explanation(self):
-        listed = {"grants": [{"name": "g1", "node": "n1", "principal": "a@example.com", "role": 40}]}
+        owner = {"user": "o@example.com", "full_name": "Owner"}
+        listed = {
+            "grants": [{"name": "g1", "node": "n1", "principal": "a@example.com", "role": 40}],
+            "owner": owner,
+        }
         with patch.object(routes.access, "grants_for", return_value=listed) as workflow:
             with patch.object(routes.framework, "principals_for_principal") as resolved:
                 answer = routes.node_grants(node="n1")
         self.assertIsNone(workflow.call_args.kwargs["resolve_subject"])
         resolved.assert_not_called()
-        self.assertEqual(set(answer), {"grants"})
+        self.assertEqual(set(answer), {"grants", "owner"})
+        self.assertEqual(answer["owner"], owner)
 
     def test_a_named_principal_is_resolved_and_its_explanation_is_published(self):
         subject = Principals(user="b@example.com", own=("b@example.com",), open=(), is_admin=False)
-        listed = {"grants": [], "explain": {"role": 40, "source": "grant", "rows": []}}
+        listed = {"grants": [], "owner": None, "explain": {"role": 40, "source": "grant", "rows": []}}
         with patch.object(routes.access, "grants_for", return_value=listed) as workflow:
             with patch.object(routes.framework, "principals_for_principal", return_value=subject) as resolved:
                 answer = routes.node_grants(node="n1", principal="b@example.com")
@@ -660,7 +665,7 @@ class TestGrantRoutes(BoundaryCase):
             "has_password": 1,
             "password_hash": "$2b$12$secret",
         }
-        with patch.object(routes.access, "grants_for", return_value={"grants": [row]}):
+        with patch.object(routes.access, "grants_for", return_value={"grants": [row], "owner": None}):
             answer = routes.node_grants(node="n1")
         self.assertNotIn("password_hash", answer["grants"][0])
         self.assertTrue(answer["grants"][0]["has_password"])

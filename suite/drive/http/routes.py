@@ -693,6 +693,10 @@ def node_grants(node: Given = None, principal: Given = None, inherited: Given = 
     sits on and that node's title, nearest ancestor first. The share dialog
     shows them under "From <folder>" (issue 44, D19).
 
+    `owner` is the user whose Personal root holds the node, as `{user,
+    full_name}`, or null in the Shared root. The dialog lists them first, as
+    Owner, with nothing to change.
+
     `?principal=` is the accepted spelling of §5.8's `explain`. MANAGE on the
     target is what the caller needs, and it is checked before the named
     principal is even resolved: whether that person can reach the node is the
@@ -715,7 +719,7 @@ def node_grants(node: Given = None, principal: Given = None, inherited: Given = 
         inherited=shapes.flag(inherited, "inherited", False),
         resolve_subject=(lambda: framework.principals_for_principal(named)) if named else None,
     )
-    shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]]}
+    shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]], "owner": answer["owner"]}
     if "inherited" in answer:
         shaped["inherited"] = [shapes.inherited_grant_shape(row) for row in answer["inherited"]]
     if "explain" in answer:
