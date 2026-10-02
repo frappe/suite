@@ -1,4 +1,4 @@
-import { defineComponent, h } from "vue";
+import { computed, defineComponent, h } from "vue";
 
 const passthrough = (tag = "div") => defineComponent({
 	inheritAttrs: false,
@@ -60,3 +60,5 @@ export const debounce = <T extends (...args: never[]) => void>(fn: T, wait: numb
 	let timer: ReturnType<typeof setTimeout>;
 	return (...args: Parameters<T>) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); };
 };
+// No app shell is mounted here, so there is no shell scroll region.
+export const shellScrollContainer = computed<HTMLElement | null>(() => null);

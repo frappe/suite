@@ -24,6 +24,7 @@ import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa } from '@/platform/pwa'
+import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { transport, type Operation } from '@/platform/transport'
 
@@ -277,6 +278,7 @@ router.beforeEach(async (to, from) => {
 })
 
 installPageMeta(router)
+installScrollRestoration(router)
 installPwa(session)
 
 router.afterEach((to, _from, failure) => {
