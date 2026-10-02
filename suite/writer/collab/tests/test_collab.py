@@ -225,6 +225,43 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual((status, body), (409, {"collab": "seq_conflict"}))
         self.assertEqual([payload for _, payload in self.open(node)[1]], [b"a"])
 
+    def test_a_push_that_skips_seqs_is_out_of_another_lineage_or_ahead_of_the_log_is_refused(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+
+        for body, refusal in (
+            (push_body(lineage, sid, cid, 2, 0, b"a"), {"collab": "seq", "acked": 0}),
+            (push_body("0" * 32, sid, cid, 1, 0, b"a"), {"collab": "lineage"}),
+            (push_body(lineage, sid, cid, 1, 1, b"a"), {"collab": "diverged"}),
+        ):
+            with self.subTest(refusal=refusal):
+                response = call(routes.collab_updates_post, node, body=body)
+                self.assertEqual((response.status_code, answer(response)), (409, refusal))
+
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1, b"a")[1]["rev"], 1)
+
+    def test_a_push_that_fails_midway_leaves_no_trace(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        sql = frappe.db.sql
+
+        def failing(query, *args, **kwargs):
+            if "`last_push_at`" in query:
+                raise RuntimeError("database gone")
+            return sql(query, *args, **kwargs)
+
+        with patch.object(frappe.db, "sql", failing), self.assertRaises(RuntimeError):
+            self.push(node, sid, cid, 1, b"a")
+
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1, b"b")[1]["rev"], 1)
+        self.assertEqual(self.open(node)[1], [(1, b"b")])
+        self.assert_one_order(node, 1)
+
     def test_a_worker_killed_at_any_step_loses_and_duplicates_nothing(self):
         self.set_mode("on")
         node = self.new_document()
