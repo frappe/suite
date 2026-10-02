@@ -129,9 +129,10 @@ export default defineConfig(({ mode }) => ({
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
-      // `/files` is Frappe's public upload path. `/l/<token>` and its old
-      // address `/drive/l/<token>` are server pages, not SPA routes (ticket 011).
-      frappeProxy: { source: '^/(desk|app|login|api|assets|files|private|(drive/)?l/)' },
+      // `/files` is Frappe's public upload path. `/f/<blob>/...` is Frappe's
+      // signed blob URL, where the content API redirects. `/l/<token>` and its
+      // old address `/drive/l/<token>` are server pages, not SPA routes (ticket 011).
+      frappeProxy: { source: '^/(desk|app|login|api|assets|files|private|f/|(drive/)?l/)' },
       lucideIcons: true,
       jinjaBootData: true,
       buildConfig: {
