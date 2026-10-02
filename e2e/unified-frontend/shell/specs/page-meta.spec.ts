@@ -38,7 +38,7 @@ test("client-side navigation updates the title", async ({ page }) => {
 
 test("a hosted document sets the page title to the document title", async ({ page, baseURL }) => {
 	// DocumentHost.vue registers usePageTitle() with the session title, so the
-	// static route title "Document" only shows while the session opens.
+	// static route title "Opening…" only shows while the session opens.
 	const api = await adminApi(baseURL!);
 	const discovered = await roots(api);
 	const title = runTag("w4-title");

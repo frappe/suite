@@ -136,10 +136,12 @@ export const canonicalRoutes: RouteRecordRaw[] = [
       scroll: "content",
     }),
   ),
+  // The tab says "Opening…" until the document host names it after the node,
+  // unless the opener named the node in the history entry (`openingTitleState`).
   placeholder(
     "/d/:node/:slug?",
     "document-host",
-    areaMeta("files", "Document", driveLogo, {
+    areaMeta("files", "Opening…", driveLogo, {
       scroll: "content",
       allowGuest: true,
     }),

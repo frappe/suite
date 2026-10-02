@@ -7,7 +7,7 @@ import {
   onUnmounted,
   watch,
 } from 'vue'
-import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
+import type { HistoryState, RouteLocationNormalizedLoaded, Router } from 'vue-router'
 
 type TitleRegistration = {
   id: symbol
@@ -21,11 +21,30 @@ let routeTitle = ''
 let order = 0
 let installedRouter: Router | null = null
 
+const OPENING_TITLE = 'pageTitle'
+
+/**
+ * History state that names the page a navigation opens. The tab shows this
+ * title in place of the route's own until the page registers a title, so a
+ * link that knows its target's name never shows a placeholder. Back and
+ * forward keep it, because it is part of the history entry.
+ */
+export function openingTitleState(title: string): HistoryState {
+  return title ? { [OPENING_TITLE]: title } : {}
+}
+
+/** The title an entry's opener gave it through `openingTitleState`, or `null`. */
+export function openingTitle(state: HistoryState): string | null {
+  const title = state[OPENING_TITLE]
+  return typeof title === 'string' && title ? title : null
+}
+
 export function installPageMeta(router: Router): () => void {
   installedRouter = router
-  applyRouteMeta(router.currentRoute.value)
+  applyRouteMeta(router.currentRoute.value, router.options.history.state)
+  // The history entry, and so its state, is already current in `afterEach`.
   const remove = router.afterEach((to, _from, failure) => {
-    if (!failure) applyRouteMeta(to)
+    if (!failure) applyRouteMeta(to, router.options.history.state)
   })
   return () => {
     remove()
@@ -75,8 +94,8 @@ export function usePageTitle(source: () => string): () => void {
   return release
 }
 
-export function applyRouteMeta(route: RouteLocationNormalizedLoaded): void {
-  routeTitle = typeof route.meta.title === 'string' ? route.meta.title : ''
+export function applyRouteMeta(route: RouteLocationNormalizedLoaded, state: HistoryState = {}): void {
+  routeTitle = openingTitle(state) ?? (typeof route.meta.title === 'string' ? route.meta.title : '')
   setFavicon(typeof route.meta.favicon === 'string' ? route.meta.favicon : null)
   renderTitle()
 }

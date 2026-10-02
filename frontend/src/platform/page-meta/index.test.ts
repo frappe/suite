@@ -1,7 +1,7 @@
 import { effectScope, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyRouteMeta, installPageMeta, usePageTitle } from './index'
+import { applyRouteMeta, installPageMeta, openingTitleState, usePageTitle } from './index'
 
 describe('page meta', () => {
   it('arbitrates title overrides and restores the route fallback', () => {
@@ -36,6 +36,7 @@ describe('page meta', () => {
     const remove = vi.fn()
     const router = {
       currentRoute: { value: { meta: { title: 'Home', favicon: '/home.png' } } },
+      options: { history: { state: {} } },
       afterEach: vi.fn((handler) => {
         afterEach = handler
         return remove
@@ -51,5 +52,15 @@ describe('page meta', () => {
     expect(document.querySelector<HTMLLinkElement>("link[rel='icon']")?.type).toBe('image/svg+xml')
     uninstall()
     expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('names the page from its history entry until the page names itself', () => {
+    applyRouteMeta({ meta: { title: 'Opening…' } } as any, openingTitleState('Q3 plan'))
+    expect(document.title).toBe('Q3 plan')
+    const release = usePageTitle(() => 'Q3 plan (renamed)')
+    expect(document.title).toBe('Q3 plan (renamed)')
+    release()
+    applyRouteMeta({ meta: { title: 'Opening…' } } as any, openingTitleState(''))
+    expect(document.title).toBe('Opening…')
   })
 })
