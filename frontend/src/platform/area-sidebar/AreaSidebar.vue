@@ -6,6 +6,9 @@
   header rather than under it. Its width is fixed, so an area switch never moves
   the content pane. Phone: the same body opens in a bottom sheet when the
   shell's bottom nav or the page header sends `openAreaSidebar(area)`.
+
+  Content inside `<AreaSidebarFooter>` sits below the body. On desktop it stays
+  pinned to the bottom while the body scrolls.
 -->
 <template>
   <Teleport v-if="!isPhone" defer :to="`#${AREA_SIDEBAR_TARGET_ID}`">
@@ -36,6 +39,7 @@
           class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-surface-sidebar to-transparent"
         />
       </div>
+      <div ref="footer" class="shrink-0 px-2 pb-2 empty:hidden" />
     </Sidebar>
   </Teleport>
 
@@ -45,6 +49,7 @@
         <Skeleton v-for="row in SKELETON_ROWS" :key="row" class="h-7 rounded-4" />
       </div>
       <slot v-else />
+      <div ref="footer" class="mt-4 empty:hidden" />
     </div>
   </BottomSheet>
 </template>
@@ -55,6 +60,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  provide,
   ref,
   watch,
   watchEffect,
@@ -62,7 +68,9 @@ import {
 } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { showSettings } from '@/platform/settings'
 import {
+  AREA_SIDEBAR_FOOTER_KEY,
   AREA_SIDEBAR_TARGET_ID,
   OPEN_AREA_SIDEBAR_EVENT,
   isPhone,
@@ -90,6 +98,8 @@ const skeletonAttrs = { class: 'space-y-0.5', 'aria-busy': true, 'data-area-side
 
 const route = useRoute()
 const sheetOpen = ref(false)
+const footer = ref<HTMLElement | null>(null)
+provide(AREA_SIDEBAR_FOOTER_KEY, footer)
 
 watchEffect((onCleanup) => onCleanup(trackAreaSidebar(props.area)))
 
@@ -115,6 +125,12 @@ watch(
     sheetOpen.value = false
   },
 )
+
+// Settings opens over the page without navigating. Close the sheet, or it
+// stays on top of Settings.
+watch(showSettings, (open) => {
+  if (open) sheetOpen.value = false
+})
 
 // Fades show that the body scrolls past either edge.
 type ScrollAreaInstance = ComponentPublicInstance & { viewportElement?: HTMLElement | null }

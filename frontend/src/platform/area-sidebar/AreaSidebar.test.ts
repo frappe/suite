@@ -11,7 +11,7 @@ vi.mock("frappe-ui", async () => ({
   Skeleton: (await import("../../../../node_modules/frappe-ui/src/components/Skeleton/Skeleton.vue")).default,
 }));
 
-import { AreaSidebar, AreaSidebarTarget, hasAreaSidebar } from "@/platform/area-sidebar";
+import { AreaSidebar, AreaSidebarFooter, AreaSidebarTarget, hasAreaSidebar } from "@/platform/area-sidebar";
 
 let cleanup: (() => void) | undefined;
 afterEach(() => cleanup?.());
@@ -28,7 +28,10 @@ async function mountShell() {
     setup: () => () =>
       area.value &&
       h(AreaSidebar, { area: area.value, title: area.value === "files" ? "Files" : "Home", loading: loading.value }, () =>
-        h("nav", { "data-panel": area.value }, "Panel"),
+        h("nav", { "data-panel": area.value }, [
+          "Panel",
+          h(AreaSidebarFooter, () => h("button", { "data-footer": area.value }, "Storage")),
+        ]),
       ),
   });
   const root = document.createElement("div");
@@ -75,5 +78,17 @@ describe("AreaSidebar on desktop", () => {
     await nextTick();
     expect(sidebar()).toBeNull();
     expect(hasAreaSidebar("home")).toBe(false);
+  });
+
+  it("pins footer content below the body, outside the part that scrolls", async () => {
+    const { loading, sidebar } = await mountShell();
+    loading.value = false;
+    await nextTick();
+
+    const footer = sidebar()?.querySelector("[data-footer='files']");
+    const panel = sidebar()?.querySelector("[data-panel='files']");
+    expect(footer).not.toBeNull();
+    expect(panel?.contains(footer!)).toBe(false);
+    expect(sidebar()?.lastElementChild?.contains(footer!)).toBe(true);
   });
 });

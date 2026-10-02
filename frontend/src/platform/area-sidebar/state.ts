@@ -1,5 +1,5 @@
 import { useMediaQuery } from '@vueuse/core'
-import { ref } from 'vue'
+import { ref, type InjectionKey, type Ref } from 'vue'
 
 /**
  * The window event that asks the active area's sidebar to open its phone
@@ -14,6 +14,10 @@ export interface OpenAreaSidebarDetail {
 
 /** The element id of the desktop slot that `<AreaSidebar>` teleports into. */
 export const AREA_SIDEBAR_TARGET_ID = 'suite-area-sidebar'
+
+/** The element that `<AreaSidebarFooter>` teleports into, below the body. */
+export const AREA_SIDEBAR_FOOTER_KEY: InjectionKey<Readonly<Ref<HTMLElement | null>>> =
+  Symbol('area-sidebar-footer')
 
 /** Same breakpoint as the shell's phone layout (`shell/useIsMobile.ts`). */
 export const isPhone = useMediaQuery('(max-width: 767px)')
