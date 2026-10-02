@@ -146,7 +146,7 @@ export function useYjs(id, document, editor, edited) {
 
   // WebRTC for real-time P2P collaboration
   const provider = new WebrtcProvider(roomName, doc, REALTIME_CONFIG)
-  const { users, cleanup: cleanupUsers } = useCollaborationUsers(
+  const { peers, cleanup: cleanupPeers } = useCollaborationUsers(
     provider.awareness,
   )
   const permanentUserData = new Y.PermanentUserData(doc)
@@ -165,14 +165,14 @@ export function useYjs(id, document, editor, edited) {
   return {
     doc,
     cleanup: () => {
-      cleanupUsers()
+      cleanupPeers()
       provider.destroy()
       db.destroy()
       cleanupComments()
     },
     save,
     provider,
-    users,
+    peers,
     permanentUserData,
     loaded,
     ...commentsData,

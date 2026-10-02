@@ -3,12 +3,12 @@
     class="gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
     :class="[show ? 'w-56 p-2' : 'w-12 p-2.5']">
     <div v-if="!show" class="flex justify-center">
-      <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
+      <Button variant="ghost" :icon="LucideTableOfContents" label="Show table of contents" tooltip="Show table of contents" :aria-expanded="false" @click="show = !show" />
     </div>
     <div v-if="show" class="grow flex flex-col gap-0.5 w-52">
       <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
-        <span class="text-base-medium text-ink-gray-8 select-none whitespace-nowrap">Table of Contents</span>
-        <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
+        <span class="text-base-medium text-ink-gray-8 select-none whitespace-nowrap">Table of contents</span>
+        <Button :icon="LucideLeftClose" variant="ghost" label="Hide table of contents" tooltip="Hide" :aria-expanded="true" @click="show = !show" />
       </div>
       <div v-if="tabs.length > 0" class="flex flex-col gap-0.5 mb-2" @drop.prevent="onDrop">
         <div v-for="(tab, index) in tabs" :key="tab.id" :class="[
@@ -44,6 +44,7 @@
                 @dragend.prevent="onDragEnd">
                 <template #prefix>
                   <span v-if="tab.id === activeTabId && currentTabAnchors.length" role="button"
+                    :aria-label="showHeadings ? 'Hide headings' : 'Show headings'" :aria-expanded="showHeadings"
                     class="shrink-0 cursor-pointer" @click.stop="showHeadings = !showHeadings">
                     <LucideChevronRight class="size-4 transition-transform duration-200"
                       :class="showHeadings && 'rotate-90'" />
@@ -95,7 +96,7 @@
               ? editor.commands.createTab({ label: 'Untitled' })
               : editor.commands.wrapInTab()
             " />
-        <Button v-if="!hasContent" :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
+        <Button v-if="!hasContent" :icon="LucideLeftClose" variant="ghost" label="Hide table of contents" tooltip="Hide" :aria-expanded="true" @click="show = !show" />
       </div>
     </div>
   </div>
@@ -356,7 +357,7 @@ const tabActions = [
     onClick: () => startRenaming(activeTabId.value),
   },
   {
-    label: 'Copy Link',
+    label: 'Copy link',
     icon: LucideLink,
     onClick: () =>
       navigator.clipboard.writeText(

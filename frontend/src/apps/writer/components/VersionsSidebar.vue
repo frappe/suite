@@ -45,6 +45,7 @@
         />
         <Button
           :icon="LucideX"
+          label="Close versions"
           variant="ghost"
           class="absolute right-1 top-2"
           @click="showVersions = false"
@@ -54,12 +55,13 @@
         <Button
           v-if="tab === 'manual'"
           :icon="LucidePlus"
+          label="Create version"
           class="absolute right-3 bottom-3"
           variant="outline"
           @click="
             () =>
               createDialog({
-                title: 'Create Version',
+                title: 'Create version',
                 size: 'sm',
                 component: h(NewVersionDialog, {
                   data: editor.getHTML(),

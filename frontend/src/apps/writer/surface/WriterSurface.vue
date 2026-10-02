@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Skeleton, TextInput, toast, useDoc } from "frappe-ui";
+import { Button, Skeleton, TextInput, toast, useDoc } from "frappe-ui";
 import {
   computed,
   onBeforeUnmount,
@@ -14,9 +14,18 @@ import {
 
 import type { Editor } from "@tiptap/core";
 
-import { DriveCommentAuthor, GUEST_NAME_LIMIT, useDriveGuestName, type DocumentSession } from "@/apps/drive";
+import {
+  DriveCommentAuthor,
+  DriveDocumentHeader,
+  GUEST_NAME_LIMIT,
+  useDriveGuestName,
+  type DocumentPanel,
+  type DocumentSession,
+} from "@/apps/drive";
 import NonCollabEditor from "@/apps/writer/components/NonCollabEditor.vue";
 import TextEditor from "@/apps/writer/components/TextEditor.vue";
+import UsersBar from "@/apps/writer/components/UsersBar.vue";
+import type { CollaborationUser } from "@/apps/writer/composables/useCollaborationUsers";
 import emitter from "@/apps/writer/emitter";
 import { DOCUMENT_MEDIA } from "@/apps/writer/extensions/drive-media";
 import { RENAME_DOCUMENT } from "@/apps/writer/renameDocument";
@@ -61,11 +70,11 @@ interface VersionRow {
 /** What `TextEditor` and `NonCollabEditor` expose. */
 interface EditorSurface {
   editor?: Editor | null;
-  users?: readonly unknown[];
+  /** Other people in the document; only the collaborative editor has them. */
+  peers?: CollaborationUser[];
 }
 
 const props = defineProps<{ session: DocumentSession }>();
-const titleDraft = ref(props.session.title.value);
 const editorSurface = shallowRef<EditorSurface | null>(null);
 /** The editor's own unsaved flag, bound to its `dirty` model. */
 const dirty = ref(false);
@@ -145,7 +154,7 @@ const fakeFileResource = computed(() => ({
     modified: new Date().toISOString(),
   },
 }));
-const collaborators = computed(() => editorSurface.value?.users ?? []);
+const peers = computed(() => editorSurface.value?.peers ?? []);
 
 provide("file", fakeFileResource);
 provide("isOffline", computed(() => !online.value));
@@ -154,7 +163,6 @@ provide(RENAME_DOCUMENT, async (title) => {
 });
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id));
 
-watch(() => props.session.title.value, (title) => { titleDraft.value = title; });
 // A save that lands with edit access makes the recovery copy stale.
 watch(saving, (now, before) => {
   if (!before || now || saveFailed.value || !writes.writable.value || !hasRecovery.value) return;
@@ -162,28 +170,16 @@ watch(saving, (now, before) => {
   hasRecovery.value = false;
 });
 
-async function rename() {
-  const title = titleDraft.value.trim();
-  if (!title || title === props.session.title.value || !editable.value) {
-    titleDraft.value = props.session.title.value;
-    return;
-  }
-  try {
-    await props.session.rename(title);
-  } catch (error) {
-    titleDraft.value = props.session.title.value;
-    toast.error(error instanceof Error ? error.message : "Could not rename the document.");
-  }
-}
+const panel = computed<DocumentPanel | null>({
+  get: () => (showComments.value ? "comments" : showVersions.value ? "versions" : null),
+  set(kind) {
+    showComments.value = kind === "comments";
+    showVersions.value = kind === "versions";
+    if (kind) void loadPanel(kind);
+  },
+});
 
-function togglePanel(kind: "comments" | "versions") {
-  const open = kind === "comments" ? !showComments.value : !showVersions.value;
-  showComments.value = open && kind === "comments";
-  showVersions.value = open && kind === "versions";
-  if (open) void loadPanel(kind);
-}
-
-async function loadPanel(kind: "comments" | "versions") {
+async function loadPanel(kind: DocumentPanel) {
   panelLoading.value = true;
   try {
     if (kind === "comments") {
@@ -252,29 +248,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface-base">
-    <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-outline-gray-1 px-3 sm:px-5">
-      <span class="lucide-file-text size-5 text-ink-gray-6" aria-hidden="true" />
-      <TextInput
-        v-model="titleDraft"
-        class="min-w-0 max-w-md flex-1"
-        variant="ghost"
-        :disabled="!editable"
-        aria-label="Document title"
-        @blur="rename"
-        @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-      />
-      <span class="ml-auto text-sm text-ink-gray-5">
-        {{ saving ? "Saving…" : saveFailed ? "Not saved" : dirty ? "Unsaved" : "Saved" }}
-      </span>
-      <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
-      <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
-      <Button v-if="hasRecovery" label="Download my changes" icon-left="lucide-download" variant="ghost" @click="downloadChanges" />
-      <div v-if="collaborators.length" class="text-sm text-ink-gray-5">{{ collaborators.length }} present</div>
-      <Button icon="lucide-message-square" tooltip="Comments" aria-label="Comments" variant="ghost" @click="togglePanel('comments')" />
-      <Button icon="lucide-history" tooltip="Versions" aria-label="Versions" variant="ghost" @click="togglePanel('versions')" />
-      <Button v-if="session.canShare.value" label="Share" icon-left="lucide-share-2" variant="solid" @click="session.share()" />
-    </header>
+  <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-surface-base">
+    <DriveDocumentHeader
+      v-model:panel="panel"
+      :session="session"
+      title-label="Document title"
+      :save-state="saveState"
+      :view-only="!editable"
+      :recoverable="hasRecovery"
+      :panels="['comments', 'versions']"
+      @download-changes="downloadChanges"
+    >
+      <template #actions>
+        <UsersBar v-if="peers.length" :users="peers" />
+      </template>
+    </DriveDocumentHeader>
 
     <div v-if="!readable" class="m-auto text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
@@ -304,7 +292,7 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <aside v-if="showComments || showVersions" :aria-label="showComments ? 'Comments' : 'Versions'" class="absolute inset-y-0 right-0 z-20 flex w-80 flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
+    <aside v-if="showComments || showVersions" :aria-label="showComments ? 'Comments' : 'Versions'" class="absolute bottom-0 right-0 top-12 z-20 flex w-full flex-col md:w-80 border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl">
       <div class="flex min-h-12 items-center justify-between border-b px-4">
         <h2 class="text-lg-semibold">{{ showComments ? "Comments" : "Versions" }}</h2>
         <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="showComments = showVersions = false" />

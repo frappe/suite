@@ -14,14 +14,14 @@
     <template #content v-if="document.doc?.settings && file.doc.write">
       <UsersBar v-if="collaborators.length" :users="collaborators" />
 
-      <Button v-if="document.doc?.settings?.lock" :icon="LucideLock" variant="outline" @click="
+      <Button v-if="document.doc?.settings?.lock" :icon="LucideLock" label="Unlock document" tooltip="Unlock document" variant="outline" @click="
         () => {
           document.doc.settings.lock = null
           editor.commands.focus()
           toast('Unlocked document temporarily.')
         }
       " />
-      <Button v-if="document.doc?.settings?.lock === null" :icon="LucideLockOpen" variant="outline" @click="
+      <Button v-if="document.doc?.settings?.lock === null" :icon="LucideLockOpen" label="Lock document" tooltip="Lock document" variant="outline" @click="
         () => {
           document.doc.settings.lock = true
           editor.commands.blur()
@@ -110,11 +110,7 @@ const props = defineProps({
 
 const editorEl = useTemplateRef('editorEl')
 const editor = computed(() => editorEl.value?.editor)
-const collaborators = computed(() =>
-  (editorEl.value?.users || []).filter(
-    (user) => user.id !== currentUserId.value,
-  ),
-)
+const collaborators = computed(() => editorEl.value?.peers || [])
 provide('editor', editor)
 
 const versionPreview = ref(null)
@@ -180,7 +176,7 @@ onBeforeRouteUpdate((to, from) => {
 watch(showVersions, (v) => {
   if (!v) versionPreview.value = null
 })
-usePageMeta(() => appPageMeta(file.doc ? file.doc.file_name : 'Loading...', 'Writer'))
+usePageMeta(() => appPageMeta(file.doc ? file.doc.file_name : 'Loading…', 'Writer'))
 
 // fix: bad pattern
 const globalSettings = !isLoggedIn.value

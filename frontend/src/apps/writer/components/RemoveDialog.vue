@@ -51,7 +51,7 @@ const dialogData = computed(() => {
         'will be moved to Trash.<br/><br/> Items in trash are deleted forever after 30 days.',
       state: 'Trashed',
       button: {
-        label: 'Move to Trash',
+        label: 'Move to trash',
         theme: 'red',
         variant: 'subtle',
       },

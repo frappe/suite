@@ -46,7 +46,7 @@
       />
       <template v-if="!isLoggedIn">
         <Button variant="outline" @click="signIn">
-          Sign In
+          Sign in
         </Button>
         <Button
           v-if="!isLoggedIn"
@@ -208,7 +208,7 @@ const exportDocx = () => {
     message: 'This document has multiple tabs. Export just the current tab, or all of them?',
     actions: [
       {
-        label: 'All Tabs',
+        label: 'All tabs',
         variant: 'outline',
         onClick: ({ close }) => {
           downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
@@ -216,7 +216,7 @@ const exportDocx = () => {
         },
       },
       {
-        label: 'Current Tab',
+        label: 'Current tab',
         variant: 'solid',
         onClick: ({ close }) => {
           downloadDocxFromHtml(editor.value.commands.getCurrentTabHTML(), filename, settings)
@@ -292,7 +292,7 @@ const fileActions = computed(() =>
               onClick: () => emitter.emit('print-file'),
             },
             {
-              label: __('Copy Link'),
+              label: __('Copy link'),
               icon: LucideLink,
               onClick: copyLink,
             },
@@ -315,7 +315,7 @@ const fileActions = computed(() =>
               isEnabled: () => props.file.doc.write,
             },
             {
-              label: __('Show Info'),
+              label: __('Show info'),
               icon: LucideInfo,
               onClick: () => (dialog.value = 'i'),
             },
@@ -441,7 +441,7 @@ const fileActions = computed(() =>
           options: [
             {
               onClick: () => clearCache(),
-              label: 'Clear Cache',
+              label: 'Clear cache',
               icon: LucideListRestart,
             },
             {

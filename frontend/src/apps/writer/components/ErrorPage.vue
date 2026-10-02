@@ -21,7 +21,7 @@
         @click="$router.go(-1)"
       >
         <div class="flex gap-2">
-          <LucideArrowBigLeft class="size-4" />Go Back
+          <LucideArrowBigLeft class="size-4" />Go back
         </div>
       </Button>
       <template v-if="$route.name != 'writer-home'">
@@ -31,7 +31,7 @@
           size="md"
           @click="$router.replace({ name: 'writer-home' })"
         >
-          <div class="flex gap-2"><LucideHome class="size-4" />Go Home</div>
+          <div class="flex gap-2"><LucideHome class="size-4" />Go home</div>
         </Button>
         <Button v-else variant="solid" size="md" @click="redirectLogin()">
           <div class="flex gap-2"><LucideUser class="size-4" />Login</div>

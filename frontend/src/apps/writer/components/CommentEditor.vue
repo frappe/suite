@@ -14,8 +14,8 @@
             :placeholder style="--editor-font-size: 14px" />
           <div v-if="editable" class="self-end me-1 flex-shrink-0 flex gap-1 mb-1.5">
             <Button v-if="!isEmpty" :disabled size="xs" variant="ghost" :icon="LucideMessageCircleReply"
-              @click="$emit('submit', editor)" />
-            <Button v-if="!isEmpty" size="xs" variant="ghost" :icon="LucideX" @click="$emit('cancel', editor)" />
+              label="Send" tooltip="Send" @click="$emit('submit', editor)" />
+            <Button v-if="!isEmpty" size="xs" variant="ghost" :icon="LucideX" label="Cancel" tooltip="Cancel" @click="$emit('cancel', editor)" />
           </div>
         </template>
       </Editor>
@@ -35,12 +35,11 @@ import {
   Strike,
   InlineCode,
   Blockquote,
-  BulletList,
-  OrderedList,
   InsertLink,
   Separator,
 } from 'frappe-ui/editor'
 import { Button } from 'frappe-ui'
+import { BulletListItem, OrderedListItem } from './core-editor/menu-buttons'
 import { useUsers } from '@/apps/writer/composables/useUsers'
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
@@ -88,6 +87,6 @@ const bubbleItems = [
   InlineCode,
   Blockquote,
   Separator,
-  { type: 'group', label: 'List', icon: 'lucide-list', items: [BulletList, OrderedList] },
+  { type: 'group', label: 'List', icon: 'lucide-list', items: [BulletListItem, OrderedListItem] },
 ]
 </script>

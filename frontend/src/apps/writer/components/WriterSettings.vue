@@ -23,6 +23,8 @@
                     v-model="settings.font_size"
                     type="number"
                     label="Font size"
+                    :min="FONT_SIZE_MIN"
+                    :max="FONT_SIZE_MAX"
                     autocomplete="off"
                     placeholder="Automatic"
                     description="Set the font size of the editor (px)."
@@ -162,7 +164,7 @@
 import { computed, ref, reactive, watchEffect } from 'vue'
 import { Button, FormControl, Dialog, Tabs, FormLabel } from 'frappe-ui'
 import { FONT_FAMILIES, dynamicList } from '@/apps/writer/utils/'
-import { toCssLineHeight, toLineSpacing } from '@/apps/writer/utils/typography'
+import { FONT_SIZE_MAX, FONT_SIZE_MIN, toCssLineHeight, toLineSpacing } from '@/apps/writer/utils/typography'
 import Form from '@/apps/writer/components/Form.vue'
 import FontSelect from './FontSelect.vue'
 import LucideFileText from '~icons/lucide/file-text'

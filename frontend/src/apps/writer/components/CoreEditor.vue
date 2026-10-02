@@ -11,7 +11,7 @@
           <div class="hidden md:block" />
           <div class="flex flex-col grow min-w-0">
             <FTextEditor ref="textEditor" :upload-function="uploadFunction"
-              :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
+              :autofocus="true" v-model="localContent" placeholder="Start thinking…" :extensions="editorExtensions"
               :editable @change="handleEditorChange">
               <template #default="{ editor }">
                 <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
@@ -36,7 +36,7 @@
       </div>
       <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
         <Dropdown :options="commentFilterOptions" align="end">
-          <Button :icon="LucideMessageSquareQuote" variant="outline" />
+          <Button :icon="LucideMessageSquareQuote" variant="outline" label="Comment visibility" tooltip="Comment visibility" />
         </Dropdown>
       </div>
     </div>

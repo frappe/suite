@@ -5,7 +5,7 @@
          our own — same as DropdownMenuGroup.vue. It has to stay the direct child
          of #trigger: PopoverTrigger wires the click onto it via as-child. -->
     <template #trigger="{ open }">
-      <Button size="xs" variant="ghost" :icon="icon" label="Custom Spacing" tooltip="Custom Spacing"
+      <Button size="xs" variant="ghost" :icon="icon" label="Custom spacing" tooltip="Custom spacing"
         class="aria-pressed:bg-surface-gray-3" :aria-pressed="open" />
     </template>
     <template #default>
@@ -22,7 +22,7 @@
           label="Line spacing"
         />
         <div class="space-y-1">
-          <FormLabel label="Paragraph Spacing" />
+          <FormLabel label="Paragraph spacing" />
           <div class="grid grid-cols-2 gap-2">
             <FormControl
               type="number"

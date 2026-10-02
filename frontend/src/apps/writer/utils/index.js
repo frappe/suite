@@ -429,7 +429,7 @@ export function downloadZippedHTML(editor, foldername, settings = {}) {
       saveAs(blob, `${foldername}.zip`)
     })(),
     {
-      loading: 'Preparing download...',
+      loading: 'Preparing download…',
       success: 'Download completed!',
       error: 'Download failed',
     },

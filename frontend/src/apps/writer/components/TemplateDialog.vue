@@ -10,7 +10,7 @@
               v-model="query"
               @update:model-value="activeIndex = 0"
               type="text"
-              placeholder="Search templates..."
+              placeholder="Search templates…"
               @keydown="onKeyDown"
               autocomplete="off"
             >

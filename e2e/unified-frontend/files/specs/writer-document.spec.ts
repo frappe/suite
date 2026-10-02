@@ -79,14 +79,14 @@ test("types, saves and renames a Writer document without a legacy Drive call", a
 	expect(seen.errors).toEqual([]);
 });
 
-test("Paint Styles arms the format painter without an error", async ({ page }) => {
+test("Paint styles arms the format painter without an error", async ({ page }) => {
 	const seen = watchPage(page);
 	const editor = await openDocument(page);
 
 	await editor.click();
 	await page.keyboard.type("Copy this style");
 	await page.keyboard.press("ControlOrMeta+a");
-	const paint = page.getByRole("button", { name: "Paint Styles" });
+	const paint = page.getByRole("button", { name: "Paint styles" });
 	await expect(paint).toHaveAttribute("aria-pressed", "false");
 	await paint.click();
 

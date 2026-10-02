@@ -15,7 +15,7 @@
               : 'opacity-0 pointer-events-none',
           ]" :style="cardStyle(comment)" @click="activeComment = comment.id">
           <Button class="md:!hidden absolute top-1 right-1" size="sm" variant="ghost" :icon="LucideX"
-            @click.stop="activeComment = null" />
+            label="Close comment" @click.stop="activeComment = null" />
         <div v-show="activeComment === comment.id &&
           currentUserId !== 'Guest' &&
           !comment.new &&
@@ -119,7 +119,7 @@
                         !reply.resolved &&
                         comment.owner == currentUserId &&
                         'opacity-100'
-                        " variant="ghost" :icon="LucideMoreVertical" />
+                        " variant="ghost" :icon="LucideMoreVertical" label="Reply options" />
                   </Dropdown>
                   <LucideBadgeCheck v-if="comment.resolved" class="text-ink-gray-6 size-4" />
                 </div>
@@ -178,7 +178,9 @@
       }
         " class="absolute flex items-center rounded-full border border-outline-gray-2 bg-surface-base p-0.5 transition-colors hover:bg-surface-gray-2"
         :class="comment.top ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-        :style="{ top: `${comment.top}px`, right: '1rem' }" @click.stop="activeComment = comment.id">
+        :style="{ top: `${comment.top}px`, right: '1rem' }"
+        :aria-label="`Open comment by ${$user(comment.owner)?.full_name || comment.owner}`"
+        @click.stop="activeComment = comment.id">
         <Avatar size="sm" :label="$user(comment.owner)?.full_name || comment.owner"
           :image="$user(comment.owner)?.user_image" />
         <span v-if="comment.replies.length" class="px-1 text-[10px] leading-none text-ink-gray-6">

@@ -2,7 +2,7 @@ import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/writer/utils'
 
 export const exportBlog = async () => {
-  toast('Starting export...')
+  toast('Starting export…')
   createResource({
     url: 'suite.writer.api.docs.create_blog',
     auto: true,

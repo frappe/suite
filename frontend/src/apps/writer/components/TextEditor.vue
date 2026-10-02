@@ -52,7 +52,7 @@ const {
   provider,
   permanentUserData,
   loaded,
-  users,
+  peers,
   ...commentsDetail
 } = useYjs(props.file.doc.name, props.document, editor, edited)
 let saveRevision = 0
@@ -64,7 +64,7 @@ const save = async (...args) => {
   await saveDocument(...args)
   if (saveRevision === revision) edited.value = false
 }
-defineExpose({ editor, users })
+defineExpose({ editor, peers })
 watch(loaded, () => rebuild(editor.value))
 
 const extensions = [

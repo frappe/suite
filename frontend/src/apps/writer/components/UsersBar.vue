@@ -1,7 +1,11 @@
 <template>
   <Dropdown align="end" :options="users">
     <template #default>
-      <div class="ml-2.5 flex items-center rounded-4 cursor-pointer">
+      <button
+        type="button"
+        class="ml-2.5 flex items-center rounded-4 cursor-pointer"
+        :aria-label="users.length === 1 ? `${users[0].name} is here` : `${users.length} other people here`"
+      >
         <div
           v-for="user in users.slice(0, 3)"
           :key="user.name"
@@ -30,7 +34,7 @@
 				+{{ users.length - 3 }}
 			</div>
 		</Tooltip>
-      </div>
+      </button>
     </template>
     <template #item="{ item }">
       <div
