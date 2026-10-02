@@ -105,7 +105,6 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
 				{
 					id: "meet-settings",
 					label: "Settings",
-					shortcut: "Mod+Shift+Comma",
 					enterHint: "open meet settings",
 					icon: "lucide-settings",
 					keywords: ["audio", "video", "camera", "microphone", "devices"],

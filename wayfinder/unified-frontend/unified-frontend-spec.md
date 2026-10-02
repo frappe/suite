@@ -55,8 +55,9 @@ model and one platform layer [MAP].
 
 ### 1.2 Out of scope
 
-- A command palette and global search across products. The unified
-  frontend ships with no Cmd+K and no rail Search button [T012].
+- Rebuilding search across products. The shell mounts the existing Cmd+K
+  command palette over every frame for signed-in people: search, commands,
+  and app switching after typing `>`. The rail has no Search button [T012].
 - Rebuilding Mail, Meet or Calendar pages. They adopt the shell. Their
   internals are later efforts [MAP].
 - REST migration of Mail, Meet, Calendar, Writer, Sheets and Slides
@@ -2570,10 +2571,11 @@ post-launch fog.
    reporter (item 15) [T010, T013, Faris, 2026-09-29].
 5. **Meet recordings and past meetings** (9.4). Meanwhile they are not on
    `/meet` (ask M1) [T010].
-6. **Keyboard shortcuts across areas** (Cmd+number, Escape) (3.5). Cmd+K
-   is out of scope. Meanwhile each app keeps its Shortcuts entry, Mail's
-   keys fire only on Mail routes, and the theme shortcut is not restored
-   for the flag-off state [T010, T012, T016, T018].
+6. **Keyboard shortcuts across areas** (Cmd+number, Escape) (3.5).
+   Meanwhile the shell binds Cmd+K (palette), Cmd+Shift+K (theme, not
+   during a meeting) and Cmd+Shift+, (Settings, signed in) in every state,
+   each app keeps its Shortcuts entry, and Mail's keys fire only on Mail
+   routes [T010, T012, T016, T018].
 7. **Quota and storage breakdown surface** (6.5, 12.2). Settings > Drive >
    Statistics is the launch surface [T016, T017]. Until ask D10 lands it
    shows `/roots/<id>/usage` totals [Drive §11.7]. Whether the Drive area

@@ -109,9 +109,11 @@ command palette, and rebuilds its Rooms control from endpoints that exist.
 
 ### Command palette
 
-Out of scope for this effort. The unified frontend ships with no Cmd+K
-palette and no rail Search button. Global search across products returns as
-a separate effort together with the palette that fronts it.
+The unified shell ships upstream's Cmd+K palette (#848) over every frame for
+signed-in users. It searches the current area where that area has a search,
+runs the commands areas register, and `>` switches between the rail's areas.
+There is no rail Search button. Global search across products stays out of
+scope and returns as a separate effort.
 
 ### Notifications
 

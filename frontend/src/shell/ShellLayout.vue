@@ -74,7 +74,23 @@
 
   <slot v-else-if="resolvedFrame === 'none'" />
 
-  <SuiteSettingsDialog v-model:open="showSettings" v-model:tab="settingsTab" />
+  <!-- Settings and its Cmd+Shift+, shortcut are for signed-in people only: a
+       guest has no account or workspace to set. -->
+  <SuiteSettingsDialog
+    v-if="session.status.value === 'authenticated'"
+    v-model:open="showSettings"
+    v-model:tab="settingsTab"
+  />
+  <!-- Search, commands and app switching (Cmd+K, then `>`), over every frame,
+       with the suite's theme shortcut. Signed in only: every search it runs
+       needs a session. -->
+  <SuiteCommandPalette
+    v-if="session.status.value === 'authenticated'"
+    :areas="areas"
+  />
+  <!-- The suite is one PWA, so the offer to install it is the shell's, not an
+       area's; it decides for itself when to show. -->
+  <InstallPrompt v-if="isMobile" />
 </template>
 
 <script setup lang="ts">
@@ -97,6 +113,7 @@ import AreaProgressRing from "@/shell/AreaProgressRing.vue";
 import { progressDetail, useAreaProgress } from "@/shell/areaProgress";
 import ContentPane from "@/shell/ContentPane.vue";
 import GuestSurface from "@/shell/GuestSurface.vue";
+import InstallPrompt from "@/shell/InstallPrompt.vue";
 import MobileNav from "@/shell/MobileNav.vue";
 import Rail from "@/shell/Rail.vue";
 import UnavailableSurface from "@/shell/UnavailableSurface.vue";
@@ -114,6 +131,9 @@ defineSlots<{ default?: () => unknown; bell?: () => unknown }>();
 const route = useRoute();
 const SuiteSettingsDialog = defineAsyncComponent(
   () => import("@/shell/settings/SuiteSettingsDialog.vue"),
+);
+const SuiteCommandPalette = defineAsyncComponent(
+  () => import("@/shell/SuiteCommandPalette.vue"),
 );
 const session = useSession();
 const activeArea = computed(() =>

@@ -47,11 +47,11 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 
 ## Open questions for Faris
 
-1. **Cmd+K palette (stage 0).** Upstream #848 added a Cmd+K palette to the
-   shell and palette entries in the Mail, Calendar and Meet sidebars.
-   Ticket 012 says launch has no palette. Production already has it,
-   because production tracks `develop`. Interim: the run keeps upstream's
-   palette and builds nothing new on it.
+1. **Cmd+K palette (stage 0). Resolved.** Upstream #848 added a Cmd+K
+   palette to the shell and palette entries in the Mail, Calendar and Meet
+   sidebars. The unified shell now ships it: `ShellLayout.vue` mounts it over
+   every frame, and its `>` switcher lists the rail's areas. Ticket 012 says
+   so.
 2. **`auto_detect_links` (Drive 39).** Upstream #879 (`c005af4b1`) deleted
    this field from `Drive Settings`. Drive spec §3.14 and §11.2 still list
    it. Orchestrator ruling: follow upstream; `GET /settings` answers
@@ -192,7 +192,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 | Upstream `SuiteCommandPalette.vue` calls legacy `suite.drive.api.*` for search | stage 0 review | stage 11 (legacy-call baseline) |
 | `/mail` stays blank and does not redirect to the inbox | stage 3 | stage 5 (Mail sub-lane) |
 | Calendar opens a site socket per mount and never closes it | stage 3 | stage 5 (Calendar sub-lane) |
-| `shell/SuiteLayout.vue` is mounted nowhere; its theme-cycle and Mod+Shift+Comma shortcuts are dead | stage 3 | stage 15 |
+| `shell/SuiteLayout.vue` is mounted nowhere; its theme-cycle and Mod+Shift+Comma shortcuts are dead | stage 3 | fixed (file deleted; `ShellLayout` mounts the palette, which binds Cmd+Shift+K, and the Settings dialog, which binds Cmd+Shift+,) |
 | Slides composite references are Reference Presentation row ids, not node ids, so a separately linked deck sends no code. Needs the manifest to return each reference's node id (backend ask) | stage 2 review | stage 11 (Slides) |
 | Legacy share shim maps `read, write, comment` without `upload` to COMMENT, so the old-page journey "editor can edit" fails now that Writer shows the real Drive role. Not checked on the base commit | stage 11 Writer | Drive program (check `shims._legacy_role`) |
 | Old Writer page loses the favourite star and share count on load: `GET nodes/{node}` lacks `expand=favourite,shares` | stage 11 Writer | backend ask; old page goes in stage 15 |

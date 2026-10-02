@@ -1,5 +1,6 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
+import { toast } from '@/platform/feedback'
 import { useSession, type Session } from '@/platform/session'
 import { transport, type Operation, type Transport } from '@/platform/transport'
 
@@ -103,8 +104,7 @@ export function createTheme(options: CreateThemeOptions = {}): Theme {
   }
 
   function cycle(): Promise<boolean> {
-    const order: ThemeMode[] = ['light', 'dark', 'automatic']
-    return set(order[(order.indexOf(savedMode.value) + 1) % order.length]!)
+    return set(nextThemeMode(savedMode.value))
   }
 
   function withOverride(mode: ResolvedTheme): () => void {
@@ -132,6 +132,13 @@ export function createTheme(options: CreateThemeOptions = {}): Theme {
   }
 }
 
+const themeCycle: readonly ThemeMode[] = ['light', 'dark', 'automatic']
+
+/** The mode `cycle` moves to from `mode`. */
+export function nextThemeMode(mode: ThemeMode): ThemeMode {
+  return themeCycle[(themeCycle.indexOf(mode) + 1) % themeCycle.length]!
+}
+
 const singleton = createTheme()
 
 export function useTheme(): Theme {
@@ -142,6 +149,24 @@ export const savedMode = singleton.savedMode
 export const resolvedMode = singleton.resolvedMode
 export const setTheme = singleton.set
 export const cycleTheme = singleton.cycle
+
+/**
+ * Moves to the next mode and says in a toast which one it moved to, for the theme shortcut and
+ * menu items, which change the page without showing the mode they chose. A save that fails puts
+ * the previous mode back, so that is what the toast reports instead.
+ */
+export async function cycleThemeAndAnnounce(): Promise<void> {
+  if (!(await singleton.cycle())) {
+    toast.error(__('Could not save the theme'))
+    return
+  }
+  const mode = singleton.savedMode.value
+  toast.success(
+    mode === 'automatic'
+      ? __('Theme set to follow your system')
+      : __('Theme changed to {0}', [__(mode === 'light' ? 'Light' : 'Dark')]),
+  )
+}
 export const withOverride = singleton.withOverride
 export const initializeTheme = singleton.initialize
 

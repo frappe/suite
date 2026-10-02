@@ -19,8 +19,8 @@ line names the stage that made the change.
 - Log out from the Suite user menu stops this browser's mail pushes. After
   any log out, the next user who signs in on the same browser gets only
   their own pushes. (stage 5)
-- Cmd+Shift+L no longer changes the theme. Change it in Settings > Account >
-  Preferences. (stage 3)
+- Cmd+Shift+L no longer changes the theme. Cmd+Shift+K does, or change it
+  in Settings > Account > Preferences. (stage 3)
 - Desk is no longer in the Apps menu. (stage 4)
 - `/home` and `/d/<id>` open for a signed-in user who types the address.
   (stage 6)
@@ -53,14 +53,15 @@ line names the stage that made the change.
 
 These are regressions from today. They need a decision before the release.
 
-- Search does not open. The sidebar Search item and Ctrl+K / Cmd+K do
-  nothing. The phone offer to install Suite is gone. Cmd+Shift+K (theme)
-  and Cmd+Shift+Comma (Settings) have no key binding. Cause: `App.vue` no
-  longer mounts `shell/SuiteLayout.vue`, which holds the command palette,
-  the install offer and these two shortcuts (commit 61b6401e4, before this
-  run). `PROGRESS.md` assigns it to stage 15. Checked in a browser: Search
-  and Ctrl+K, flag off, in Mail. The two shortcuts were not checked in a
-  browser.
+- Fixed: Search did not open. The sidebar Search item and Ctrl+K / Cmd+K
+  did nothing, the phone offer to install Suite was gone, and Cmd+Shift+K
+  (theme) and Cmd+Shift+Comma (Settings) had no key binding. Cause:
+  `App.vue` no longer mounted `shell/SuiteLayout.vue`, which held the
+  command palette, the install offer and these two shortcuts (commit
+  61b6401e4, before this run). `SuiteLayout.vue` is now deleted.
+  `ShellLayout` mounts the palette and the install offer in every state.
+  The palette binds Cmd+Shift+K and the Settings dialog binds
+  Cmd+Shift+Comma.
 - Mail on a phone has no Push Notifications switch. Stage 4 deleted it with
   Mail's phone settings page, and no Settings tab replaces it. Existing
   subscriptions still deliver.

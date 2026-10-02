@@ -215,18 +215,18 @@
 				label="Navigate"
 			>
 				<CommandPaletteItem
-					v-for="app in exactApps"
-					:key="app.name"
-					:value="app"
+					v-for="item in exactApps"
+					:key="item.area.id"
+					:value="item"
 				>
 					<template #prefix>
-						<img
-							:src="app.logo"
-							alt=""
-							class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1"
+						<component
+							:is="item.area.icon"
+							class="mr-3 size-[18px] shrink-0"
+							aria-hidden="true"
 						/>
 					</template>
-					{{ app.title }}
+					{{ item.label }}
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
@@ -399,18 +399,18 @@
 				label="Navigate"
 			>
 				<CommandPaletteItem
-					v-for="app in remainingApps"
-					:key="app.name"
-					:value="app"
+					v-for="item in remainingApps"
+					:key="item.area.id"
+					:value="item"
 				>
 					<template #prefix>
-						<img
-							:src="app.logo"
-							alt=""
-							class="mr-3 size-4 shrink-0 scale-[1.2] rounded-1"
+						<component
+							:is="item.area.icon"
+							class="mr-3 size-[18px] shrink-0"
+							aria-hidden="true"
 						/>
 					</template>
-					{{ app.title }}
+					{{ item.label }}
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 		</CommandPaletteList>
@@ -431,7 +431,9 @@
 			v-slot="{ active }"
 			class="!justify-between !px-2.5 !text-xs"
 		>
-			<span class="flex items-center gap-4">
+			<!-- Key hints need a keyboard and the width of a desktop dialog. A phone's
+			     palette keeps only what Enter does. -->
+			<span class="hidden items-center gap-4 sm:flex">
 				<span class="flex items-center gap-1">
 					<span
 						class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
@@ -463,7 +465,7 @@
 					<span>to switch apps</span>
 				</span>
 			</span>
-			<span class="flex min-w-40 items-center justify-end gap-1">
+			<span class="ml-auto flex min-w-40 items-center justify-end gap-1">
 				<span
 					class="inline-flex items-center rounded-1 bg-surface-gray-2 p-0.5 text-ink-gray-5"
 				>
@@ -486,6 +488,9 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
+import type { AreaDefinition } from '@/platform/contracts'
+import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
+import { openSettings } from '@/shell/settings/useSettingsDialog'
 import {
 	Button,
 	createResource,
@@ -505,7 +510,6 @@ import {
 	type CommandPaletteValue,
 } from 'frappe-ui/experimental'
 import { DialogDescription } from 'reka-ui'
-import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
 import {
 	useMailCommandPaletteSearch,
 	type MailFilterOption,
@@ -601,7 +605,26 @@ type PaletteItem =
 	| MailFilterSuggestion
 	| MailRecentSearch
 	| PaletteCommand
-	| SuiteAppSwitcherItem
+	| AreaSwitchItem
+
+const themeActionLabels: Record<ThemeMode, string> = {
+	light: 'Switch to light theme',
+	dark: 'Switch to dark theme',
+	automatic: 'Use system theme',
+}
+const themeIcons: Record<ThemeMode, string> = {
+	light: 'lucide-sun',
+	dark: 'lucide-moon',
+	automatic: 'lucide-monitor',
+}
+
+/** A row of the `>` app switcher: one of the rail's areas. */
+type AreaSwitchItem = { area: AreaDefinition; label: string }
+
+const props = defineProps<{
+	/** The rail's areas, in rail order, so the switcher lists what the rail shows. */
+	areas: readonly AreaDefinition[]
+}>()
 
 const minimumQueryLength = 3
 // The calendar answers from the first character. Its titles are short and usually a name, the
@@ -807,10 +830,6 @@ const mailSearchPageLabel = computed(() => {
 })
 let openSelectionInNewTab = false
 
-// What the palette opens on, when a shortcut opens it with a line already begun. Read once by
-// the open watcher, after it has cleared the line, so a shortcut's `>` survives the clearing.
-let openingQuery = ''
-
 useKeyboardShortcut([
 	{
 		combo: 'Mod+K',
@@ -821,19 +840,62 @@ useKeyboardShortcut([
 			root.paletteOpen = true
 		},
 	},
-	{
-		// The key the palette's own footer names for switching apps, made to work from the
-		// page as well: `>` typed anywhere opens the palette with the `>` already on the line.
-		combo: 'Shift+Period',
-		description: 'Switch apps',
-		group: 'Suite',
-		enabled: () => !mailSearchOnly.value,
-		handler: () => {
-			openingQuery = '>'
-			root.paletteOpen = true
-		},
-	},
 ])
+
+// The suite's own commands, offered in every area. The theme stays fixed during a
+// meeting, which sets its own. Settings is the fallback for pages that offer none of their
+// own: an area's Settings command opens on its tab, so where one exists it replaces this one.
+const shellSettingsCommandId = 'shell-settings'
+const theme = useTheme()
+const canChangeTheme = computed(() => route.name !== 'meet-meeting')
+const nextTheme = computed(() => {
+	const mode = nextThemeMode(theme.savedMode.value)
+	return { label: themeActionLabels[mode], icon: themeIcons[mode] }
+})
+const unregisterSuiteCommands = root.registerPaletteGroups(
+	'suite',
+	computed(() => [
+		{
+			commands: [
+				...(canChangeTheme.value
+					? [
+							{
+								id: 'suite-cycle-theme',
+								label: nextTheme.value.label,
+								shortcut: 'Mod+Shift+K',
+								enterHint: nextTheme.value.label.toLowerCase(),
+								icon: nextTheme.value.icon,
+								keywords: ['appearance', 'color scheme', 'theme'],
+								keepOpen: true,
+								run: () => void cycleThemeAndAnnounce(),
+							},
+					  ]
+					: []),
+				{
+					// The key belongs to the Settings dialog; the hint only names it.
+					id: shellSettingsCommandId,
+					label: 'Settings',
+					shortcut: 'Mod+Shift+Comma',
+					enterHint: 'open settings',
+					icon: 'lucide-settings',
+					keywords: ['account', 'personal', 'preferences', 'workspace'],
+					run: () => openSettings(),
+				},
+			],
+		},
+	])
+)
+onScopeDispose(unregisterSuiteCommands)
+
+useKeyboardShortcut({
+	combo: 'Mod+Shift+K',
+	description: 'Cycle Theme',
+	group: 'Suite',
+	enabled: canChangeTheme,
+	allowInInput: true,
+	allowInDialog: true,
+	handler: () => void cycleThemeAndAnnounce(),
+})
 
 // The query the results on screen answer. Recorded when an answer arrives rather than when a
 // request stops loading: aborting the previous request on each keystroke stops its loading too,
@@ -970,27 +1032,29 @@ const contextSearchLabel = computed(
 			calendar: 'Calendar',
 		}[activeApp.value])
 )
-const palettePlaceholder = computed(() =>
-	navigationMode.value
-		? 'Switch apps'
-		: `Search in ${contextSearchLabel.value || 'Suite'}`
-)
-const apps = computed(() =>
-	getAppSwitcherItems(String(route.meta.appId ?? ''), true)
+// Where nothing is searched (Home, and the Drive area behind the files flip),
+// the query line only filters commands, so it says that instead of offering a search.
+const palettePlaceholder = computed(() => {
+	if (navigationMode.value) return 'Switch apps'
+	if (contextSearchLabel.value) return `Search in ${contextSearchLabel.value}`
+	return 'Type a command'
+})
+const apps = computed<AreaSwitchItem[]>(() =>
+	props.areas.map((area) => ({ area, label: area.label() }))
 )
 const filteredApps = computed(() => {
 	if (mailSearchActive.value && mailAppliedFilters.value.length) return []
 	if (!appQuery.value) return apps.value
 	return apps.value.filter((app) =>
-		`${app.title} ${app.name}`.toLowerCase().includes(appQuery.value)
+		`${app.label} ${app.area.id}`.toLowerCase().includes(appQuery.value)
 	)
 })
 const exactApps = computed(() =>
 	appQuery.value
 		? filteredApps.value.filter(
 				(app) =>
-					app.title.toLowerCase() === appQuery.value ||
-					app.name.toLowerCase() === appQuery.value
+					app.label.toLowerCase() === appQuery.value ||
+					app.area.id === appQuery.value
 		  )
 		: []
 )
@@ -1004,7 +1068,13 @@ const filteredCommands = computed(() => {
 		(mailSearchActive.value && mailAppliedFilters.value.length)
 	)
 		return []
-	const commands = root.paletteGroups.flatMap((group) => group.commands)
+	const registered = root.paletteGroups.flatMap((group) => group.commands)
+	const pageOffersSettings = registered.some(
+		(command) => command.id !== shellSettingsCommandId && command.label === 'Settings'
+	)
+	const commands = pageOffersSettings
+		? registered.filter((command) => command.id !== shellSettingsCommandId)
+		: registered
 	return commands
 		.filter(
 			(command) =>
@@ -1049,8 +1119,7 @@ function enterHint(value: unknown) {
 			return `to ${String(item.enterHint)}`
 		return `to run ${label}`
 	}
-	if ('route' in item)
-		return `to switch to ${'title' in item ? String(item.title) : 'app'}`
+	if ('area' in item && 'label' in item) return `to switch to ${String(item.label)}`
 	if ('is_folder' in item && item.is_folder) return 'to open folder'
 	if ('content_doctype' in item) {
 		if (item.content_doctype === 'Presentation') return 'to open presentation'
@@ -1184,6 +1253,10 @@ watch(
 				time_zone: dayjs.tz.guess(),
 				filters: calendarFilterParams.value,
 			})
+		} else {
+			// No search here (Home, and the Drive area behind the files flip): only the
+			// commands answer, and they are filtered already, so nothing is left to wait for.
+			resetSearches()
 		}
 	}
 )
@@ -1220,20 +1293,6 @@ watch(
 				) as Record<string, string>
 			)
 		}
-		if (openingQuery) {
-			query.value = openingQuery
-			openingQuery = ''
-			// The caret after it, not the text selected: the dialog's focus scope selects an
-			// input's text as it focuses it, and a selected `>` is one the next key replaces.
-			// The scope leaves an input that is already focused alone, so focusing it here
-			// first keeps the selection off whichever of the two runs first.
-			nextTick(() => {
-				const input = paletteInputEl()
-				if (!input) return
-				input.focus()
-				input.setSelectionRange(input.value.length, input.value.length)
-			})
-		}
 	}
 )
 
@@ -1259,6 +1318,7 @@ const emptyMessage = computed(() => {
 		contextSearchLabel.value
 	)
 		return `Type more to search ${contextSearchLabel.value}`
+	if (!contextSearchLabel.value) return `No commands match "${text}"`
 	if (isSearching.value) return 'Searching…'
 	if (mailAppliedFilters.value.length) return 'No mail matches these filters'
 	// A filter-only search has no words to quote back, so it names the filters instead.
@@ -1414,16 +1474,12 @@ async function selectItem(value: CommandPaletteValue, event: CommandPaletteSelec
 		await item.run({ query: query.value })
 		return
 	}
-	if ('route' in item) {
+	if ('area' in item) {
 		if (openInNewTab) {
-			window.open(item.route, '_blank', 'noopener')
+			window.open(router.resolve(item.area.to).href, '_blank', 'noopener')
 			return
 		}
-		if (!item.spa) {
-			window.location.assign(item.route)
-			return
-		}
-		await router.push(item.route)
+		await router.push(item.area.to)
 		return
 	}
 	if ('resultType' in item) {

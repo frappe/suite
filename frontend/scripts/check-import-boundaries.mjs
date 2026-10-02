@@ -347,13 +347,8 @@ const moduleGraphDebtGroups = [
       "shell/SuiteCommandPalette.vue|@/apps/mail/composables/useMailCommandPaletteSearch",
       "shell/SuiteCommandPalette.vue|@/apps/mail/stores/user",
       "shell/SuiteCommandPalette.vue|@/apps/mail/utils/composables",
-      "shell/SuiteCommandPalette.vue|@/apps/registry",
       "shell/SuiteCommandPalette.vue|@/components/HighlightedText.vue",
-      "shell/SuiteCommandPalette.vue|@/stores/root",
-      "shell/SuiteLayout.vue|@/composables/useScreenSize",
-      "shell/SuiteLayout.vue|@/composables/useTheme",
-      "shell/SuiteLayout.vue|@/stores/root",
-      "shell/SuiteLayout.vue|@/utils/themeValues"
+      "shell/SuiteCommandPalette.vue|@/stores/root"
     ]
   },
   {
