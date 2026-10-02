@@ -14,7 +14,7 @@
 		"format": "biome format .",
 		"format:write": "biome format --write .",
 		"test": "vitest run",
-		"test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
+		"test:ci": "RUN_STT_FFMPEG_TESTS=1 vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
 		"test:watch": "vitest"
 	},
 	"keywords": [
