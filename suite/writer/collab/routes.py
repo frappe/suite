@@ -71,8 +71,7 @@ def unknown() -> None:
 def _open(node: str) -> Response:
     if not collab.enabled():
         return _frame({"state": "disabled", "proto": collab.PROTO})
-    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
-    _check(node, drive.READ)
+    _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
     doc = collab.find(ADAPTER, node)
     if doc is None:
         return _frame({"state": "unconverted", "proto": collab.PROTO})
@@ -82,8 +81,7 @@ def _open(node: str) -> Response:
 
 def _pull(node: str, since: str | None) -> Response:
     collab.require_enabled()
-    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
-    _check(node, drive.READ)
+    _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
     doc = _doc(node)
     try:
         after = int(since or 0)
@@ -95,18 +93,14 @@ def _pull(node: str, since: str | None) -> Response:
 def _push(node: str) -> Response:
     collab.require_enabled()
     header, payload = collab.parse_push(frappe.request.get_data())
-    _require_principal(header.get("principal"))
-    _require_signed_in()
-    _check(node, drive.EDIT)
+    _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
     return _json(200, collab.push(ADAPTER, doc.id, header, payload, frappe.session.user))
 
 
 def _session(node: str) -> Response:
     collab.require_enabled()
-    _require_principal(frappe.get_request_header(PRINCIPAL_HEADER))
-    _require_signed_in()
-    _check(node, drive.EDIT)
+    _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
     doc = _doc(node)
     try:
         body = json.loads(frappe.request.get_data() or b"{}")
@@ -128,6 +122,14 @@ def _doc(node: str):
     return doc
 
 
+def _authorize(node: str, role: int, principal) -> None:
+    """Who the tab says it is, then what Drive says it may do. Editing needs a signed-in user."""
+    _require_principal(principal)
+    if role == drive.EDIT and frappe.session.user == "Guest":
+        raise collab.Refusal(401, "signed_out")
+    _check(node, role)
+
+
 def _check(node: str, role: int) -> None:
     try:
         drive.check(node, role)
@@ -140,8 +142,8 @@ def _check(node: str, role: int) -> None:
 
 def _can(node: str, role: int) -> bool:
     try:
-        drive.check(node, role)
-    except drive.DriveError:
+        _check(node, role)
+    except (collab.Refusal, drive.DriveError):
         return False
     return True
 
@@ -152,11 +154,6 @@ def _require_principal(principal) -> None:
     if frappe.session.user == "Guest":
         raise collab.Refusal(401, "signed_out")
     raise collab.Refusal(409, "principal_changed")
-
-
-def _require_signed_in() -> None:
-    if frappe.session.user == "Guest":
-        raise collab.Refusal(401, "signed_out")
 
 
 def _answer(handle) -> Response:

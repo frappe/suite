@@ -101,32 +101,43 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
     }
 
 
-def issue_session(adapter: str, doc_id: str, sid: str, principal: str) -> int:
-    """Bind a fresh clientID to `sid` before the tab reveals or uses it. Idempotent per sid."""
-    sessions = table(adapter, "session")
-    existing = frappe.db.sql(
-        f"SELECT `client_id`, `principal` FROM `{sessions}` WHERE `doc_id` = %s AND `sid` = %s",
+def load_session(adapter: str, doc_id: str, sid: str, principal: str):
+    """The session row for `sid`, or None. Refused if it belongs to another principal."""
+    rows = frappe.db.sql(
+        f"SELECT `client_id`, `principal`, `acked_seq` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
         (doc_id, sid),
         as_dict=True,
     )
+    if rows and rows[0].principal != principal:
+        raise Refusal(409, "session_owner")
+    return rows[0] if rows else None
+
+
+def insert_session(adapter: str, doc_id: str, sid: str, client_id: int, principal: str) -> bool:
+    """Commit a new session row. False if the sid or the clientID is already taken."""
+    try:
+        frappe.db.sql(
+            f"""INSERT INTO `{table(adapter, "session")}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `created`)
+            VALUES (%s, %s, %s, %s, 0, %s)""",
+            (doc_id, sid, client_id, principal, now_datetime()),
+        )
+    except Exception as error:
+        if frappe.db.is_duplicate_entry(error):
+            return False
+        raise
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    return True
+
+
+def issue_session(adapter: str, doc_id: str, sid: str, principal: str) -> int:
+    """Bind a fresh clientID to `sid` before the tab reveals or uses it. Idempotent per sid."""
+    existing = load_session(adapter, doc_id, sid, principal)
     if existing:
-        if existing[0].principal != principal:
-            raise Refusal(409, "session_owner")
-        return int(existing[0].client_id)
+        return int(existing.client_id)
     for _attempt in range(8):
         client_id = secrets.randbelow(CLIENT_ID_MAX - 1) + 1
-        try:
-            frappe.db.sql(
-                f"""INSERT INTO `{sessions}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `created`)
-                VALUES (%s, %s, %s, %s, 0, %s)""",
-                (doc_id, sid, client_id, principal, now_datetime()),
-            )
-        except Exception as error:
-            if frappe.db.is_duplicate_entry(error):
-                continue
-            raise
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
-        return client_id
+        if insert_session(adapter, doc_id, sid, client_id, principal):
+            return client_id
     raise busy()
 
 
@@ -140,35 +151,17 @@ def claim_session(adapter: str, doc: dict, sid: str, claim, principal: str) -> s
         raise Refusal(400, "malformed")
     if lineage != doc["lineage"]:
         return "lineage"
-    sessions = table(adapter, "session")
 
     def bound() -> str | None:
-        rows = frappe.db.sql(
-            f"SELECT `client_id`, `principal` FROM `{sessions}` WHERE `doc_id` = %s AND `sid` = %s",
-            (doc["id"], sid),
-            as_dict=True,
-        )
-        if not rows:
-            return None
-        if rows[0].principal != principal:
-            raise Refusal(409, "session_owner")
-        return "ok" if int(rows[0].client_id) == cid else "clash"
+        row = load_session(adapter, doc["id"], sid, principal)
+        return row and ("ok" if int(row.client_id) == cid else "clash")
 
     answer = bound()
     if answer:
         return answer
-    try:
-        frappe.db.sql(
-            f"""INSERT INTO `{sessions}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `created`)
-            VALUES (%s, %s, %s, %s, 0, %s)""",
-            (doc["id"], sid, cid, principal, now_datetime()),
-        )
-    except Exception as error:
-        if frappe.db.is_duplicate_entry(error):
-            return bound() or "clash"
-        raise
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    return "ok"
+    if insert_session(adapter, doc["id"], sid, cid, principal):
+        return "ok"
+    return bound() or "clash"  # lost a race for the sid or the clientID
 
 
 def parse_push(body: bytes) -> tuple[dict, bytes]:
@@ -204,16 +197,9 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
 
 def session_for(adapter: str, doc_id: str, header: dict, principal: str):
     """The pushing session, refused unless it is this principal's and bound to this clientID."""
-    session = frappe.db.sql(
-        f"SELECT `client_id`, `principal`, `acked_seq` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
-        (doc_id, header["sid"]),
-        as_dict=True,
-    )
-    if not session:
+    session = load_session(adapter, doc_id, header["sid"], principal)
+    if session is None:
         raise Refusal(409, "session_unknown")
-    session = session[0]
-    if session.principal != principal:
-        raise Refusal(409, "session_owner")
     if int(session.client_id) != header["cid"]:
         raise Refusal(409, "client_conflict")
     return session
