@@ -5,9 +5,8 @@ import { expect, test } from "../../helpers/flips";
 import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
 
 /**
- * Ticket 010: the shell draws a rail and one box. A page draws its own
- * sidebar, and the sidebar keeps one width, so an area switch does not move
- * the layout.
+ * Ticket 010: the shell draws a rail and one box. A page may draw its own
+ * sidebar, which keeps one width. An area switch never moves the rail.
  */
 
 async function box(locator: Locator) {
@@ -21,22 +20,23 @@ const rail = (page: Page) => page.getByRole("navigation", { name: "Areas" });
 const sidebar = (page: Page) => page.locator("[data-area-sidebar]");
 const contentPane = (page: Page) => page.locator("[data-shell-content-pane]");
 
-test("an area switch keeps the rail, the sidebar and the content box in place", async ({ page }) => {
+test("Home draws no sidebar, and an area switch keeps the rail in place", async ({ page }) => {
 	await page.goto("/home");
-	await expect(sidebar(page)).toHaveAttribute("data-area-sidebar", "home");
+	await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+	await expect(sidebar(page)).toHaveCount(0);
 	const homeRail = await box(rail(page));
-	const homeSidebar = await box(sidebar(page));
 	const homeContent = await box(contentPane(page));
-	expect(homeSidebar.width).toBe(224);
+	// The content box starts at the rail's edge and takes the rest of the width.
+	expect(homeContent.x).toBeLessThanOrEqual(homeRail.x + homeRail.width + 1);
 
 	await rail(page).getByRole("link", { name: "Drive" }).click();
 	await expect(page).toHaveURL(/\/drive$/);
 	await expect(sidebar(page)).toHaveAttribute("data-area-sidebar", "files");
 
 	expect(await box(rail(page))).toEqual(homeRail);
-	expect(await box(sidebar(page))).toEqual(homeSidebar);
-	expect((await box(contentPane(page))).x).toBe(homeContent.x);
-	expect((await box(contentPane(page))).width).toBe(homeContent.width);
+	const driveSidebar = await box(sidebar(page));
+	expect(driveSidebar.width).toBe(224);
+	expect((await box(contentPane(page))).x).toBeGreaterThanOrEqual(driveSidebar.x + driveSidebar.width);
 });
 
 test("the area sidebar is a named landmark beside the page header", async ({ page }) => {

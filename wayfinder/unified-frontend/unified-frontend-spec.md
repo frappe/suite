@@ -258,7 +258,8 @@ only.
 - The sidebar arrives with the page chunk. An area switch shows the
   skeleton for a moment. The rail never moves [T010].
 - `ShellLayout` loses `ContextualPanel` and its panel branch.
-  `HomePanel.vue` and `FilesPanel.vue` render inside `<AreaSidebar>`. The
+  `FilesPanel.vue` renders inside `<AreaSidebar>`. Home draws no sidebar:
+  only the rail and its content. The
   Mail and Calendar placeholder panels are deleted [T010].
 - **Outside.** A `frame: 'none'` route renders with no shell [T010].
 - **Guest frame.** A visitor without a session on an `allowGuest` route

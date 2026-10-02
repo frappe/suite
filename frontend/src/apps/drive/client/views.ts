@@ -32,8 +32,8 @@ export function view(input: ViewInput) {
   })
 }
 
-export function recents(limit = 12) {
-  return query(viewOperation, { view: 'recents', limit }, {
+export function recents(input: Pick<ViewInput, 'limit' | 'expand'> = {}) {
+  return query(viewOperation, { view: 'recents', limit: 12, ...input }, {
     member: (row: DriveNode) => row.state === 'Active',
   })
 }

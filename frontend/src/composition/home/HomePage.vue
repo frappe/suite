@@ -1,16 +1,13 @@
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <AreaSidebar area="home" :title="__('Home')">
-      <HomePanel />
-    </AreaSidebar>
     <PageHeader v-if="!isMobile">
-      <div class="flex w-full items-center justify-between">
+      <div class="flex w-full items-center justify-between gap-3">
         <PageHeaderTitle :title="__('Home')" />
         <Dropdown :options="newMenuItems" align="end">
           <Button
             :loading="createDocumentMutation.isPending"
             :label="__('New')"
-            icon-right="lucide-chevrons-up-down"
+            icon-right="lucide-chevron-down"
             variant="subtle"
           />
         </Dropdown>
@@ -22,14 +19,14 @@
           <Button
             :loading="createDocumentMutation.isPending"
             :label="__('New')"
-            icon-right="lucide-chevrons-up-down"
+            icon-right="lucide-chevron-down"
             variant="subtle"
           />
         </Dropdown>
       </template>
     </PageHeaderMobile>
 
-    <ScrollArea class="min-h-0 flex-1">
+    <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
       <div
         class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6"
       >
@@ -58,11 +55,13 @@
             <div
               v-for="index in 4"
               :key="index"
-              class="rounded-5 border border-outline-gray-1 p-3"
+              class="flex aspect-[1.7] flex-col justify-between rounded-5 border border-outline-gray-1 bg-surface-elevation-1 p-3"
             >
-              <Skeleton class="mb-3 size-4.5" />
-              <Skeleton class="mb-2 h-4 w-4/5" />
-              <Skeleton class="h-3 w-2/5" />
+              <Skeleton class="size-4.5" />
+              <span>
+                <Skeleton class="mb-2 h-4 w-4/5" />
+                <Skeleton class="h-3 w-2/5" />
+              </span>
             </div>
           </div>
           <div
@@ -99,26 +98,15 @@
             class="grid grid-cols-2 gap-3 lg:grid-cols-4"
             data-testid="recent-rows"
           >
-            <RouterLink
+            <DriveFileCard
               v-for="node in recentRows"
               :key="node.name"
+              :as="RouterLink"
               :to="driveNodeRoute(node)"
-              class="flex min-w-0 flex-col items-start gap-3 rounded-5 border border-outline-gray-1 bg-surface-base p-3 text-left hover:bg-surface-gray-1"
-            >
-              <span
-                class="size-4.5"
-                :class="nodeIcon(node)"
-                aria-hidden="true"
-              />
-              <span class="flex w-full min-w-0 flex-col gap-0.5">
-                <span class="w-full truncate text-base font-medium text-ink-gray-8">
-                  {{ node.title }}
-                </span>
-                <span class="text-xs text-ink-gray-5">
-                  {{ formatOpenedAt(node.opened_at, homeNow) }}
-                </span>
-              </span>
-            </RouterLink>
+              :node="node"
+              :meta="formatDriveListingDate(node.opened_at ?? null, homeNow)"
+              @preview-error="recentQuery.refetch()"
+            />
           </div>
           <div
             v-if="recentQuery.status === 'error' && recentRows.length"
@@ -323,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, useTemplateRef } from "vue";
 import {
   Button,
   Dialog,
@@ -344,37 +332,49 @@ import {
   type CalendarEvent,
 } from "@/apps/calendar";
 import {
+  DriveFileCard,
   driveNodeRoute,
   driveRecents,
+  formatDriveListingDate,
   useDriveDocumentCreation,
+  useDrivePreviewRefresh,
   type DriveNodeSummary,
 } from "@/apps/drive";
 import { createRoom, scheduleMeeting } from "@/apps/meet";
 import { documentTypes } from "@/composition/documentRegistry";
-import HomePanel from "@/composition/home/HomePanel.vue";
 import { driveAreaMounted } from "@/composition/routes";
 import {
   formatEventTime,
-  formatOpenedAt,
   groupHomeEvents,
   homeEventWindow,
   toLocalDateTimeInput,
 } from "@/composition/home/homeTime";
-import { AreaSidebar } from "@/platform/area-sidebar";
+import { useRestoredScroll } from "@/platform/scroll-restoration";
 import { useMutation, useQuery } from "@/platform/server-state";
 import { translate as __ } from "@/platform/translation";
 import { isMobile } from "@/shell/useIsMobile";
 
 const router = useRouter();
+const scrollArea = useTemplateRef<InstanceType<typeof ScrollArea>>("home-scroll");
+useRestoredScroll(() => scrollArea.value?.viewportElement);
 const homeNow = new Date();
 const eventWindow = homeEventWindow(homeNow);
-const recentQuery = useQuery(driveRecents());
+// Recent shows documents and files, not folders. Recents has no kind filter,
+// so ask for more than the grid holds and keep the first non-folders.
+const RECENT_CARDS = 12;
+const recentQuery = useQuery(driveRecents(RECENT_CARDS * 4));
+// Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
+useDrivePreviewRefresh(() => recentQuery.refetch());
 const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow));
 const createDocumentMutation = useDriveDocumentCreation();
 const createRoomMutation = useMutation(createRoom);
 const scheduleMeetingMutation = useMutation(scheduleMeeting);
 
-const recentRows = computed(() => recentQuery.rows as DriveNodeSummary[]);
+const recentRows = computed(() =>
+  (recentQuery.rows as DriveNodeSummary[])
+    .filter((node) => node.kind !== "folder")
+    .slice(0, RECENT_CARDS),
+);
 const upcomingEvents = computed(
   () => (upcomingQuery.data ?? []) as CalendarEvent[],
 );
@@ -496,19 +496,5 @@ function eventKey(event: CalendarEvent): string {
   return String(
     event.id ?? event.name ?? event.uid ?? `${event.start}-${event.title}`,
   );
-}
-
-function nodeIcon(node: DriveNodeSummary): string[] {
-  if (node.kind === "folder") return ["lucide-folder", "text-ink-gray-6"];
-  if (node.content_doctype === "Writer Document")
-    return ["lucide-file-text", "text-ink-blue-6"];
-  if (node.content_doctype === "Sheet" || node.content_doctype === "Spreadsheet")
-    return ["lucide-table", "text-ink-green-6"];
-  if (node.content_doctype === "Presentation")
-    return ["lucide-presentation", "text-ink-orange-6"];
-  if (node.mime === "application/pdf") return ["lucide-file", "text-ink-red-6"];
-  if (node.mime?.startsWith("image/"))
-    return ["lucide-image", "text-ink-violet-6"];
-  return ["lucide-file", "text-ink-gray-6"];
 }
 </script>

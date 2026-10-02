@@ -93,24 +93,22 @@ vi.mock("vue-router", async () => {
   };
 });
 
-vi.mock("@/platform/area-sidebar", async () => {
-  const { defineComponent, h } = await import("vue");
-  return {
-    AreaSidebar: defineComponent({
-      setup(_props, { slots }) {
-        return () => h("aside", slots.default?.());
-      },
-    }),
-  };
-});
-
 vi.mock("@/shell/useIsMobile", async () => {
   const { ref } = await import("vue");
   return { isMobile: ref(false) };
 });
 
-vi.mock("@/apps/drive", () => ({
+vi.mock("@/apps/drive", async (importOriginal) => ({
+  // Drive's own listing date, so the Recent meta is checked against Drive's format.
+  formatDriveListingDate: (await importOriginal<typeof import("@/apps/drive")>())
+    .formatDriveListingDate,
+  DriveFileCard: defineComponent({
+    props: { node: Object, meta: String },
+    setup: (props) => () =>
+      h("a", `${(props.node as { title: string }).title} ${props.meta}`),
+  }),
   driveRecents: () => ({ test: "recent" }),
+  useDrivePreviewRefresh: () => {},
   useDriveDocumentCreation: () => ({
     isPending: false,
     run: state.createDocument,
@@ -134,12 +132,20 @@ vi.mock("@/platform/server-state", () => ({
         ? failedQuery("Recent failed")
         : successfulRows([
             {
+              name: "folder-1",
+              title: "Planning",
+              kind: "folder",
+              content_doctype: null,
+              mime: null,
+              opened_at: new Date().toISOString(),
+            },
+            {
               name: "node-1",
               title: "Roadmap",
               kind: "document",
               content_doctype: "Writer Document",
               mime: null,
-              opened_at: new Date().toISOString(),
+              opened_at: new Date(Date.now() - 6 * 60_000).toISOString(),
             },
           ]);
     }
@@ -170,6 +176,7 @@ const cleanups: Array<() => void> = [];
 
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup());
+  vi.useRealTimers();
   state.push.mockReset();
   state.createDocument.mockReset();
   state.recentFails = true;
@@ -195,6 +202,19 @@ describe("Home page", () => {
       root.querySelector('[data-testid="recent-rows"]')?.textContent,
     ).toContain("Roadmap");
     expect(root.querySelector('[data-testid="upcoming-error"]')).not.toBeNull();
+  });
+
+  it("shows recent documents without folders, dated the way Drive dates them", () => {
+    // Midday, so six minutes ago is still today.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 2, 12, 0));
+    state.recentFails = false;
+    const root = mount();
+    const recent =
+      root.querySelector('[data-testid="recent-rows"]')?.textContent ?? "";
+
+    expect(recent).toContain("Roadmap 6 min ago");
+    expect(recent).not.toContain("Planning");
   });
 
   it.each([

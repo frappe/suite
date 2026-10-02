@@ -1,6 +1,7 @@
-import { defineAsyncComponent, defineComponent, getCurrentInstance, h, ref } from 'vue'
+import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
+import FilesIcon from '@/apps/drive/AreaIcon.vue'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
@@ -9,8 +10,10 @@ import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { recents } from '@/apps/drive/client/views'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
+import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
+import { openingTitleState } from '@/platform/page-meta'
 import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -40,15 +43,33 @@ export { GUEST_NAME_LIMIT, type GuestCommentName } from '@/apps/drive/client/gue
 /** A comment's author: a guest's name and the Guest marker, or the product's own label in the slot. */
 export { default as DriveCommentAuthor } from '@/apps/drive/files/features/CommentAuthor.vue'
 
+/**
+ * A file's card, as Drive's grid shows it. Pass `node` and `meta`. The card picks
+ * the type icon, and shows the thumbnail once it loads when the node carries one.
+ * Emits `preview-error` once per file when a thumbnail fails: refetch for a fresh URL.
+ */
+export { default as DriveFileCard } from '@/apps/drive/files/features/FileCard.vue'
+
+/**
+ * Keeps the signed thumbnail URLs on a card grid fresh while the calling
+ * component is mounted: every 10 minutes, and when the tab is shown again.
+ * Call it in a component's setup.
+ */
+export function useDrivePreviewRefresh(refresh: () => unknown): void {
+  let stop: (() => void) | undefined
+  onMounted(() => {
+    stop = observePreviewRefresh({ refresh: async () => { await refresh() } })
+  })
+  onBeforeUnmount(() => stop?.())
+}
+
+/** A file's date as Drive's listing shows it: `Just now`, `5 min ago`, `Yesterday`, then the day. */
+export { formatModified as formatDriveListingDate } from '@/apps/drive/files/internal/format'
+
 export type DriveNodeSummary = Pick<
   DriveNode,
-  'name' | 'title' | 'kind' | 'mime' | 'content_doctype' | 'content_docname' | 'state' | 'access' | 'preview' | 'opened_at'
+  'name' | 'title' | 'kind' | 'mime' | 'content_doctype' | 'content_docname' | 'state' | 'access' | 'preview' | 'opened_at' | 'favourite'
 >
-
-const FilesIcon = defineComponent({
-  name: 'FilesAreaIcon',
-  setup: () => () => h('span', { class: 'lucide-folder size-4', 'aria-hidden': 'true' }),
-})
 
 export const filesArea: AreaDefinition = {
   id: 'files',
@@ -62,8 +83,9 @@ export const filesArea: AreaDefinition = {
 export const loadDriveSettings = () =>
   import('@/apps/drive/files/features/settings/settingsGroup').then((module) => module.driveSettings())
 
+/** The caller's recently opened nodes, newest first, with thumbnails for `DriveFileCard`. */
 export function driveRecents(limit = 12) {
-  return recents(limit)
+  return recents({ limit, expand: 'preview' })
 }
 
 export interface DriveDocumentCreation {

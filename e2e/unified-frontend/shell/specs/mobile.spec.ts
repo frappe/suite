@@ -67,17 +67,13 @@ test("the avatar opens the account sheet with Settings, Theme and Log out", asyn
 	await expect(page.getByRole("dialog").filter({ hasText: "Settings" }).first()).toBeVisible();
 });
 
-test("a tap on the active Home item opens the Home sidebar in a sheet", async ({ page }) => {
+test("Home has no sidebar, so a tap on the active Home item opens no sheet", async ({ page }) => {
 	await page.goto("/home");
 	await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
 	await navItems(page).filter({ hasText: "Home" }).click();
 
-	const sheet = page.getByRole("dialog", { name: "Home" });
-	await expect(sheet).toBeVisible();
 	await expect(page).toHaveURL(/\/home$/);
-	await sheet.getByRole("link", { name: "Starred" }).click();
-	await expect(page).toHaveURL(/\/drive\/starred$/);
-	await expect(sheet).toBeHidden();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 // BottomSheet has no trigger element. reka's focus scope returns focus to the

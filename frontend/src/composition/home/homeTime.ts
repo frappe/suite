@@ -56,28 +56,6 @@ export function formatEventTime(event: CalendarEvent): string {
   }).format(start);
 }
 
-export function formatOpenedAt(
-  openedAt: string | null | undefined,
-  now = new Date(),
-): string {
-  const opened = parseDate(openedAt);
-  if (!opened) return "Opened recently";
-  const seconds = Math.round((opened.getTime() - now.getTime()) / 1_000);
-  const absolute = Math.abs(seconds);
-  const [amount, unit] =
-    absolute < 60
-      ? [seconds, "second"]
-      : absolute < 3_600
-        ? [Math.round(seconds / 60), "minute"]
-        : absolute < 86_400
-          ? [Math.round(seconds / 3_600), "hour"]
-          : [Math.round(seconds / 86_400), "day"];
-  const relative = new Intl.RelativeTimeFormat(undefined, {
-    numeric: "auto",
-  }).format(amount, unit as Intl.RelativeTimeFormatUnit);
-  return `Opened ${relative}`;
-}
-
 export function toLocalDateTimeInput(date: Date): string {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return shifted.toISOString().slice(0, 16);
