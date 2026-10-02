@@ -193,6 +193,8 @@ class Room implements CollabRoom {
     this.apply(rows, true)
     if (this.writable) await this.adopt()
     this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 2000)
+    document.addEventListener('visibilitychange', this.hidden)
+    window.addEventListener('pagehide', this.sendNow)
   }
 
   get canWrite() {
@@ -250,6 +252,8 @@ class Room implements CollabRoom {
       await this.send({ keepalive: true })
     }
     this.closed = true
+    document.removeEventListener('visibilitychange', this.hidden)
+    window.removeEventListener('pagehide', this.sendNow)
     if (this.pollTimer) clearInterval(this.pollTimer)
     this.clearTimers()
     this.doc.off('update', this.capture)
@@ -385,6 +389,17 @@ class Room implements CollabRoom {
     this.counted()
     if (this.bound) this.scheduleSend()
     else this.persist()
+  }
+
+  private hidden = () => {
+    if (document.visibilityState === 'hidden') this.sendNow()
+  }
+
+  // A hidden or departing page may never run its send timer
+  private sendNow = () => {
+    if (this.sendTimer) clearTimeout(this.sendTimer)
+    this.sendTimer = null
+    void this.send({ keepalive: true })
   }
 
   private scheduleSend() {

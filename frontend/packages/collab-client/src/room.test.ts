@@ -358,6 +358,53 @@ describe('collab room', () => {
     expect(text(await join(server.endpoints()))).toBe('first second')
   })
 
+  it('hiding the tab sends what was typed at once, and showing it sends nothing', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const sent: (boolean | undefined)[] = []
+    const push = endpoints.push
+    endpoints.push = (body, options) => {
+      sent.push(options?.keepalive)
+      return push(body, options)
+    }
+    const room = await join(endpoints, { sendDelayMs: 60_000, sendMaxDelayMs: 60_000 })
+    room.doc.getText('t').insert(0, 'typed before hiding')
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(sent).toEqual([])
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    try {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.waitFor(() => expect(room.unsent).toBe(0))
+    } finally {
+      delete (document as { visibilityState?: string }).visibilityState
+    }
+
+    expect(sent).toEqual([true])
+    expect(text(await join(server.endpoints()))).toBe('typed before hiding')
+  })
+
+  it('leaving the page sends what was typed at once', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const sent: (boolean | undefined)[] = []
+    const push = endpoints.push
+    endpoints.push = (body, options) => {
+      sent.push(options?.keepalive)
+      return push(body, options)
+    }
+    const room = await join(endpoints, { sendDelayMs: 60_000, sendMaxDelayMs: 60_000 })
+    room.doc.getText('t').insert(0, 'typed before leaving')
+
+    window.dispatchEvent(new Event('pagehide'))
+    await vi.waitFor(() => expect(room.unsent).toBe(0))
+
+    expect(sent).toEqual([true])
+    expect(text(await join(server.endpoints()))).toBe('typed before leaving')
+  })
+
   it('a viewer follows the document but nothing they do is sent', async () => {
     const server = fakeServer()
     const writer = await join(server.endpoints())
