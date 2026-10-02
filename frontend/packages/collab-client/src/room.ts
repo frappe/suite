@@ -168,6 +168,7 @@ class Room implements CollabRoom {
   private listeners = new Set<() => void>()
   private closed = false
   private dead: string | null = null
+  private unheard = false
   private persisted = false
   private device: { store: DeviceStore; doc: string } | null
 
@@ -536,6 +537,7 @@ class Room implements CollabRoom {
 
   // Without a device store nothing typed offline would survive the tab, so editing stops until the server answers
   private unreachable() {
+    this.unheard = true
     if (this.device) {
       if (this.unsent) this.persist()
     } else if (!this.blocked) {
@@ -561,10 +563,15 @@ class Room implements CollabRoom {
     this.changed()
   }
 
+  // Work held while the server was out of reach goes out on the first answer, not after the retry wait
   private heard() {
-    if (!this.blocked || !recoverable(this.blocked)) return
-    this.blocked = null
-    this.changed()
+    const back = this.unheard
+    this.unheard = false
+    if (this.blocked && !recoverable(this.blocked)) return
+    if (this.blocked) {
+      this.blocked = null
+      this.changed()
+    } else if (!back) return
     if (this.retrying) {
       this.endRetry?.()
       void this.send()

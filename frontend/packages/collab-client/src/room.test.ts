@@ -798,6 +798,27 @@ describe('collab room on a device', () => {
     expect([room.blocked, room.saveState, server.rows.length]).toEqual([null, 'clean', 1])
   })
 
+  it('work held offline is sent on the first poll that reaches the server, not after a long retry wait', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const room = await join(server.endpoints(), { device: await device(), pollMs: 2000 })
+    server.access.online = false
+    room.doc.getText('t').insert(0, 'typed offline')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(room.unsent).toBe(1)
+
+    vi.spyOn(Math, 'random').mockReturnValue(1)
+    try {
+      await vi.advanceTimersByTimeAsync(2000)
+      server.access.online = true
+      await vi.advanceTimersByTimeAsync(2000)
+    } finally {
+      vi.mocked(Math.random).mockRestore()
+    }
+
+    expect([room.unsent, room.saveState, server.rows.length]).toEqual([0, 'clean', 1])
+  })
+
   it('asks the browser to keep this site’s data once unsent work is held offline', async () => {
     fakeTime()
     const persist = vi.fn(async () => true)
