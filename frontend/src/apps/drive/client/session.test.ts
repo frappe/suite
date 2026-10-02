@@ -25,6 +25,23 @@ describe('document session credentials', () => {
     await expect(session.credentials.codesFor(ids)).rejects.toBeInstanceOf(CredentialOverflowError)
     session.dispose()
   })
+
+  it('looks up a node held without a link once, not before every request', async () => {
+    const looked: string[] = []
+    const requester = transport((id, input) => {
+      if (id !== 'node_get') return {}
+      looked.push(input.node)
+      return documentNode(input.node)
+    })
+    const session = await openDriveDocumentSession('root', { transport: requester })
+
+    for (let request = 0; request < 3; request++) {
+      expect(await session.credentials.codesFor(['root', 'other'])).toEqual([])
+    }
+
+    expect(looked).toEqual(['root', 'other'])
+    session.dispose()
+  })
 })
 
 describe('document session media', () => {

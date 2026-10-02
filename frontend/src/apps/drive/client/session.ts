@@ -197,7 +197,7 @@ export async function openDriveDocumentSession(
 
   function rememberCredential(value: DriveNode): void {
     const held = value.access?.via_link
-    if (held && held.startsWith('$LINK:')) credentialsByNode.set(value.name, [held.slice(6)])
+    credentialsByNode.set(value.name, held && held.startsWith('$LINK:') ? [held.slice(6)] : [])
   }
 
   const credentials: CredentialGrouper = {
