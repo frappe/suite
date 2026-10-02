@@ -1208,11 +1208,16 @@ def update(
     _via_link: str | None = None,
     _bound_parent: str | None = None,
     _keep_old_head: bool = True,
+    _keep_extension: bool = True,
 ) -> dict:
     """Apply one complete node mutation, or restore with an explicit parent.
 
     `_keep_old_head=False` is the browser replace (§8.5): §8.4's finish passes
     it, and WebDAV and internal workflows leave it set.
+
+    `_keep_extension=False` is the WebDAV MOVE. A desktop app can save a file
+    by renaming it to a temporary name and back, so WebDAV may change a file's
+    extension. Every other rename keeps it.
     """
     if any(value is not None for value in (blob, size, mime)):
         if title is not None or parent is not None or state is not None:
@@ -1246,7 +1251,7 @@ def update(
             frappe.throw(_("Rename and move must be separate Drive writes"), frappe.ValidationError)
         return _move(principals, node, parent)
     if title is not None:
-        return _rename(principals, node, title)
+        return _rename(principals, node, title, keep_extension=_keep_extension)
     frappe.throw(_("A Drive node mutation is required"), frappe.ValidationError)
 
 
@@ -1365,7 +1370,7 @@ def _replace_file(
     return frappe.db.get_value("Drive Node", current.name, NODE_FIELD_NAMES, as_dict=True)
 
 
-def _rename(principals: Principals, node_id: str, title: str) -> dict:
+def _rename(principals: Principals, node_id: str, title: str, *, keep_extension: bool = True) -> dict:
     _validate_title(title)
     savepoint = f"drive_rename_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -1374,6 +1379,8 @@ def _rename(principals: Principals, node_id: str, title: str) -> dict:
         via_link = require(current, EDIT, principals)
         if current.state != "Active":
             raise DriveForbidden(_("A trashed Drive node cannot be renamed"))
+        if keep_extension and current.kind == "file":
+            _refuse_extension_change(current.title, title)
         if current.kind == "root":
             root_for_node(current, for_update=True)
         else:
@@ -2360,6 +2367,34 @@ def _validate_stored_position(node: frappe._dict, *, for_update: bool = False) -
 def _validate_title(title: str) -> None:
     if not isinstance(title, str) or not title.strip():
         frappe.throw(_("A Drive file title is required"), frappe.ValidationError)
+
+
+def _title_extension(title: str) -> str | None:
+    """Return a file title's extension without its dot, or None if it has none.
+
+    The extension is the text after the last dot, when that dot is not the
+    first character and the text is 1 to 10 characters with no whitespace. So
+    `.env` has none, `archive.tar.gz` has `gz`, and `v1.2 notes` has none. The
+    frontend's `titleExtension` in `files/internal/filename.ts` matches this.
+    """
+    dot = title.rfind(".")
+    extension = title[dot + 1 :]
+    if dot < 1 or not 1 <= len(extension) <= 10 or any(char.isspace() for char in extension):
+        return None
+    return extension
+
+
+def _refuse_extension_change(old_title: str, new_title: str) -> None:
+    """Refuse a file rename that removes or changes the extension.
+
+    A file with no extension may take any title. Letter case does not count,
+    so `.PDF` may become `.pdf`.
+    """
+    extension = _title_extension(old_title)
+    if extension is None:
+        return
+    if (_title_extension(new_title) or "").lower() != extension.lower():
+        frappe.throw(_("Keep the .{0} extension.").format(extension), frappe.ValidationError)
 
 
 def _refuse_sibling_collision(

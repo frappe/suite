@@ -154,13 +154,16 @@ def _relocate(ctx: DavContext, row: frappe._dict, dest_parent: frappe._dict, des
     node still sits. Neither is more right, so the first order is tried and a
     collision falls back to the other. The savepoint is what makes the retry
     honest: without it a fallback could leave a node renamed where it stands.
+
+    A rename here may change a file's extension, because desktop apps save
+    through temporary names. The browser rename keeps it.
     """
     moving = dest_parent.name != row.parent
     renaming = dest_name != row.title
     if not moving and not renaming:
         return
     if not moving:
-        node_core.update(ctx.principals, row.name, title=dest_name)
+        node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
         return
     if not renaming:
         node_core.update(ctx.principals, row.name, parent=dest_parent.name)
@@ -171,10 +174,10 @@ def _relocate(ctx: DavContext, row: frappe._dict, dest_parent: frappe._dict, des
     try:
         try:
             node_core.update(ctx.principals, row.name, parent=dest_parent.name)
-            node_core.update(ctx.principals, row.name, title=dest_name)
+            node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
         except DriveConflict as collision:
             rollback_savepoint(savepoint, collision)
-            node_core.update(ctx.principals, row.name, title=dest_name)
+            node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
             node_core.update(ctx.principals, row.name, parent=dest_parent.name)
     except Exception as failure:
         # the fallback's own first leg has to be discarded too. Placing a

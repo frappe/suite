@@ -1867,7 +1867,7 @@ so the client retries that session under the free title. `PUT /nodes/<id>/conten
 | `create_document` | UPLOAD on `parent`; READ on `from_node` when given | `create`: `kind`, `title`, `content_doctype` | none (bodies are free) [010 §2] | `DriveForbidden`, `DriveNotFound`, `DriveConflict` |
 | `create_link` | UPLOAD on `parent` | `create`: `kind`, `title`, `url` | none | `DriveForbidden`, `DriveConflict` |
 | `get` | READ on `node` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
-| `update(title=)` | EDIT on `node` | `rename`: `old_title`, `new_title` | none | `DriveForbidden`, `DriveConflict` |
+| `update(title=)` | EDIT on `node` | `rename`: `old_title`, `new_title` | none | `DriveForbidden`, `DriveConflict`, `ValidationError` (a file's extension, §8.6) |
 | `update(parent=)` | EDIT on `node`, UPLOAD on the new parent [002] | `move`: `from`, `to`, `from_root`, `to_root` | moves `SUM(size)` of the subtree plus its versions between roots [010 §8] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (cycle, depth > 40) |
 | `update(state="Trashed")` | EDIT on `node` | `trash`: `trash_root`, `nodes` | none; trash stays charged [010 §2] | `DriveForbidden` |
 | `update(state="Active")` | EDIT when the actor trashed it, else MANAGE [002] | `restore`: `trash_root`, `nodes`, `reparented_to` | none | `DriveForbidden`, `DriveConflict` |
@@ -2027,6 +2027,16 @@ editor's save over WebDAV.
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
   ` (2)`, ` (3)` (`suite/drive/utils/__init__.py:644`).
+- A file keeps its extension. A rename that removes or changes it is
+  refused with `ValidationError` ("Keep the .pdf extension."). Letter case
+  does not count, so `.PDF` may become `.pdf`. The extension is the text
+  after the last dot, when that dot is not the first character and the
+  text is 1 to 10 characters with no whitespace: `.env` and `v1.2 notes`
+  have none, and `archive.tar.gz` has `gz`. A file with no extension may
+  take any title. The rule covers files only; folders, links, and
+  documents take any title.
+- WebDAV MOVE is exempt. A desktop app saves a file by renaming it to a
+  temporary name and back, so a WebDAV rename may change the extension.
 - A document node keeps no extension of its own. Document export naming
   over WebDAV is deferred with document visibility (§12.2).
 

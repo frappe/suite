@@ -19,19 +19,30 @@
         <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
       </template>
       <span class="size-4 shrink-0" :class="typeIcon" aria-hidden="true" />
-      <TextInput
-        ref="titleInput"
-        v-model="titleDraft"
-        class="document-title min-w-0 max-w-md flex-1"
-        variant="ghost"
-        :readonly="!renamable"
-        :aria-label="titleLabel"
-        :title="session.title.value"
-        @blur="rename"
-        @keydown.stop
-        @keydown.enter.prevent="blurTitle"
-        @keydown.escape.prevent="titleDraft = session.title.value; blurTitle()"
-      />
+      <!-- The hidden copy of the title gives the field its width, so the field
+        fits its text and a refusal sits right after it. -->
+      <div class="document-title relative min-w-0 max-w-md">
+        <span class="invisible block h-7 overflow-hidden whitespace-pre ps-2 pe-2.5 text-base font-medium" aria-hidden="true">{{ titleDraft || ' ' }}</span>
+        <TextInput
+          ref="titleInput"
+          v-model="titleDraft"
+          class="!absolute inset-0"
+          variant="ghost"
+          :readonly="!renamable"
+          :aria-label="titleLabel"
+          :title="session.title.value"
+          :aria-invalid="titleError ? true : undefined"
+          @pointerdown="noteTitlePress"
+          @click="selectTitleOnClick"
+          @blur="renameOnBlur"
+          @keydown.stop
+          @keydown.enter.prevent="renameOnEnter"
+          @keydown.escape.prevent="titleDraft = session.title.value; blurTitle()"
+        />
+      </div>
+      <span v-if="titleError" class="ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
+        {{ titleError }}
+      </span>
       <Badge v-if="trashed" label="Trashed" theme="gray" variant="subtle" class="shrink-0" />
       <Badge v-else-if="viewOnly" label="View only" theme="gray" variant="subtle" class="shrink-0" />
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
@@ -92,7 +103,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
-import { toast } from '@/platform/feedback'
+import { selectStem } from '@/apps/drive/files/internal/filename'
 import { PANEL_BUTTONS, SAVE_LABELS, documentTypeIcon, type DocumentPanel, type DocumentSaveState } from './header'
 
 /**
@@ -137,29 +148,75 @@ const renamable = computed(
 )
 const typeIcon = computed(() => documentTypeIcon(props.session.contentDoctype, props.mime))
 
+/** A refused rename, shown beside the title until the title changes. */
+const titleError = ref<string>()
+
 watch(() => props.session.title.value, (title) => { titleDraft.value = title })
+watch(titleDraft, () => { titleError.value = undefined }, { flush: 'sync' })
 
 function blurTitle() {
   titleInput.value?.inputElement?.blur()
 }
 
-async function rename() {
+/** Selects a file's name up to its extension, or a document's whole title. */
+function selectTitle(input: HTMLInputElement) {
+  if (props.session.contentDoctype === 'File') selectStem(input)
+  else input.select()
+}
+
+/** The press that is focusing the title, as opposed to one inside a focused title. */
+let focusingPress = false
+
+function noteTitlePress(event: PointerEvent) {
+  focusingPress = renamable.value && document.activeElement !== event.currentTarget
+}
+
+/**
+ * A click into the title selects all of it, extension included. A drag that
+ * selected part of the title keeps that selection.
+ */
+function selectTitleOnClick(event: MouseEvent) {
+  const input = event.currentTarget
+  if (!focusingPress || !(input instanceof HTMLInputElement)) return
+  focusingPress = false
+  if (input.selectionStart === input.selectionEnd) input.select()
+}
+
+/** Saves the draft title and returns the refusal message, or null. */
+async function rename(): Promise<string | null> {
   const title = titleDraft.value.trim()
   if (!title || title === props.session.title.value || !renamable.value) {
     titleDraft.value = props.session.title.value
-    return
+    return null
   }
   try {
     await props.session.rename(title)
+    return null
   } catch (error) {
-    titleDraft.value = props.session.title.value
-    toast.error(error instanceof Error ? error.message : 'Could not rename this file.')
+    return error instanceof Error ? error.message : 'Could not rename this file.'
   }
+}
+
+/** Enter keeps the field focused on a refusal, so the name can be corrected. */
+async function renameOnEnter() {
+  const refusal = await rename()
+  const input = titleInput.value?.inputElement
+  if (!refusal || !input) return blurTitle()
+  titleError.value = refusal
+  selectTitle(input)
+}
+
+/** Leaving the field restores the saved title on a refusal and says why. */
+async function renameOnBlur() {
+  const refusal = await rename()
+  if (!refusal) return
+  titleDraft.value = props.session.title.value
+  titleError.value = refusal
 }
 
 defineExpose({
   /**
-   * Puts the caret in the title with the whole name selected, for a Rename menu
+   * Puts the caret in the title with the name selected, for a Rename menu
    * item. A closing menu hands focus back to its trigger a moment later, so the
    * title takes it back once if that happens straight away.
    */
@@ -168,7 +225,7 @@ defineExpose({
     if (!input) return
     const take = () => {
       input.focus()
-      input.select()
+      selectTitle(input)
     }
     take()
     document.addEventListener('focusin', take, { once: true })
@@ -178,10 +235,19 @@ defineExpose({
 </script>
 
 <style scoped>
-/* The title reads as a heading; it turns into a field on hover and focus. */
+/*
+ * The title reads as a heading. An editable title shows an outline on hover,
+ * and a stronger one while it is being edited.
+ */
 .document-title :deep([data-slot='control']) {
   font-weight: 500;
   text-overflow: ellipsis;
+}
+.document-title :deep([data-slot='control']:not([readonly]):hover) {
+  box-shadow: inset 0 0 0 1px var(--outline-gray-2);
+}
+.document-title :deep([data-slot='control']:not([readonly]):focus) {
+  box-shadow: inset 0 0 0 1px var(--outline-gray-4);
 }
 .document-title :deep([data-slot='control'][readonly]) {
   background: transparent;

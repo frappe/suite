@@ -132,6 +132,41 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(renamed.title, "One")
         self.assertEqual(frappe.db.count("Drive Activity", {"node": second, "action": "rename"}), 1)
 
+    def test_file_rename_keeps_the_extension(self):
+        # (current title, new title, refusal message or None when allowed)
+        cases = (
+            ("Report.pdf", "Report", "Keep the .pdf extension."),
+            ("Report.pdf", "Report.txt", "Keep the .pdf extension."),
+            ("Report.pdf", "Report.pdf.bak", "Keep the .pdf extension."),
+            ("Scan.PDF", "Scan.pdf", None),
+            ("Report.pdf", "Q3 summary.pdf", None),
+            ("archive.tar.gz", "backup.tar.gz", None),
+            ("archive.tar.gz", "archive.tar", "Keep the .gz extension."),
+            ("README", "README.md", None),
+            (".env", "env", None),
+            ("v1.2 notes", "notes", None),
+        )
+        for index, (title, new_title, refusal) in enumerate(cases):
+            with self.subTest(title=title, new_title=new_title):
+                folder = create_folder(self.admin, self.root.name, f"Case {index}")
+                node = self._file(folder, title)
+                if refusal is None:
+                    self.assertEqual(update(self.admin, node, title=new_title).title, new_title)
+                    continue
+                with self.assertRaisesRegex(frappe.ValidationError, f"^{refusal}$"):
+                    update(self.admin, node, title=new_title)
+                self.assertEqual(frappe.db.get_value("Drive Node", node, "title"), title)
+                self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "rename"}))
+
+        folder = create_folder(self.admin, self.root.name, "Photos.2024")
+        self.assertEqual(update(self.admin, folder, title="Photos").title, "Photos")
+
+        # A WebDAV MOVE may change the extension, as a desktop app's save does.
+        node = self._file(self.root.name, "Draft.docx")
+        self.assertEqual(
+            update(self.admin, node, title="~WRL0001.tmp", _keep_extension=False).title, "~WRL0001.tmp"
+        )
+
     def test_every_create_kind_refuses_a_taken_title_and_names_the_free_one(self):
         # §8.6: an Active sibling blocks the title and a Trashed one does not.
         # The refusal carries the title the dedupe rule would give, so a client
