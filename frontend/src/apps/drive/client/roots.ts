@@ -21,6 +21,14 @@ export function roots() {
   return query(discoverOperation, {}, { staleTime: 5 * 60_000, gcTime: 30 * 60_000 })
 }
 
+/**
+ * One root's counters, without the breakdown the Statistics tab reads. Uploads,
+ * deletes and Empty Trash invalidate it.
+ */
+export function rootUsage(root: string) {
+  return query(usageOperation, { root })
+}
+
 /** One root's counters, read once outside any cache. `root` is the root's node. */
 export function readRootUsage(root: string, signal?: AbortSignal): Promise<RootUsage> {
   return transport.request(usageOperation, { root }, { signal })

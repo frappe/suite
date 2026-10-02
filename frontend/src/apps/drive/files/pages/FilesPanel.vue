@@ -1,25 +1,50 @@
 <template>
   <div>
-    <div class="flex h-7 items-center"><SidebarLabel>Locations</SidebarLabel></div>
-    <nav class="mt-0.5 space-y-0.5" aria-label="File locations">
-      <SidebarItem label="My files" icon="lucide-folder" route="/drive" />
-      <SidebarItem v-if="discovered.data?.organization" label="Organization files" icon="lucide-building-2" route="/drive/organization" />
-    </nav>
-    <div class="mt-5 flex h-7 items-center"><SidebarLabel>Views</SidebarLabel></div>
-    <nav class="mt-0.5 space-y-0.5" aria-label="File views">
-      <SidebarItem label="Shared with me" icon="lucide-users" route="/drive/shared-with-me" />
+    <SidebarSection label="Locations" class="!mt-0">
+      <SidebarItem label="My files" icon="lucide-folder" route="/drive" :active="current === 'personal'" />
+      <SidebarItem
+        v-if="discovered.data?.organization"
+        label="Organization files"
+        icon="lucide-building-2"
+        route="/drive/organization"
+        :active="current === 'organization'"
+      />
+    </SidebarSection>
+    <SidebarSection label="Views" class="!mt-4">
+      <SidebarItem label="Shared with me" icon="lucide-users" route="/drive/shared-with-me" :active="current === 'shared'" />
       <SidebarItem label="Recent" icon="lucide-clock-3" route="/drive/recent" />
       <SidebarItem label="Starred" icon="lucide-star" route="/drive/starred" />
-      <div class="my-2 border-t border-outline-gray-1" />
       <SidebarItem label="Trash" icon="lucide-trash-2" route="/drive/trash" />
-    </nav>
+    </SidebarSection>
+    <AreaSidebarFooter>
+      <StorageMeter />
+    </AreaSidebarFooter>
   </div>
 </template>
 
 <script setup lang="ts">
-import { SidebarItem, SidebarLabel } from 'frappe-ui'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { SidebarItem, SidebarSection } from 'frappe-ui'
+import { node } from '@/apps/drive/client/nodes'
 import { roots } from '@/apps/drive/client/roots'
+import StorageMeter from '@/apps/drive/files/features/StorageMeter.vue'
+import { locationOf, type FilesLocation } from '@/apps/drive/files/internal/locations'
+import { AreaSidebarFooter } from '@/platform/area-sidebar'
 import { useQuery } from '@/platform/server-state'
 
+const route = useRoute()
 const discovered = useQuery(roots())
+const folderId = computed(() => route.name === 'files-folder' ? String(route.params.node ?? '') : '')
+// The same read the folder page makes, so it costs no extra request.
+const folder = useQuery(() => folderId.value ? node(folderId.value, 'access,breadcrumbs') : false)
+
+/** The location whose item stays lit, also inside one of its folders. */
+const current = computed<FilesLocation | null>(() => {
+  if (route.name === 'files') return 'personal'
+  if (route.name === 'files-organization') return 'organization'
+  if (route.name === 'files-shared-with-me') return 'shared'
+  if (!folderId.value || !folder.data) return null
+  return locationOf(folder.data, discovered.data)
+})
 </script>
