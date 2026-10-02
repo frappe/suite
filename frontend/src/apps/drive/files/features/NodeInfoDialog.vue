@@ -19,7 +19,7 @@ import { Dialog, ErrorMessage, Skeleton } from 'frappe-ui'
 
 import { node } from '@/apps/drive/client/nodes'
 import { useQuery } from '@/platform/server-state'
-import { formatBytes, formatModified } from '../internal/format'
+import { formatBytes, formatDate } from '../internal/format'
 import { nodeTypeLabel } from '../internal/icons'
 
 /** Read-only facts about one node: type, size, location, owner and dates. */
@@ -36,8 +36,8 @@ const fields = computed(() => {
     ...(row.kind === 'file' ? [{ label: 'Size', value: formatBytes(row.size) }] : []),
     { label: 'Location', value: row.breadcrumbs?.map((crumb) => crumb.title).join(' / ') || '—' },
     { label: 'Owner', value: row.owner },
-    { label: 'Created', value: formatModified(row.creation) },
-    { label: 'Modified', value: formatModified(row.content_modified ?? row.modified) },
+    { label: 'Created', value: formatDate(row.creation) },
+    { label: 'Modified', value: formatDate(row.content_modified ?? row.modified) },
   ]
 })
 </script>
