@@ -50,10 +50,7 @@ export interface AreaDefinition {
 }
 
 export interface DocumentTypeDefinition {
-  /**
-   * URL key, for example `sheets`. The Recent view's `type` query holds it,
-   * and redirects write it into URLs, so it never changes.
-   */
+  /** Stable name for the type, for example `sheets`. */
   key: string
   /** Frappe content doctype this product renders, for example `Writer Document`. */
   contentDoctype: string

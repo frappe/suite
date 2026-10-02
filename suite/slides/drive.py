@@ -242,6 +242,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="presentation",
     # §10.7, accepted 2026-09-05: every content app stays hidden over WebDAV in
     # this release, and Slides offers no export format of its own.
     default_export=None,

@@ -21,6 +21,13 @@ describe('empty states', () => {
     expect(new Set(titles).size).toBe(titles.length)
   })
 
+  it('names the type filter when nothing of that type is here', () => {
+    expect(emptyState({ destination: 'recent', term: '', canCreate: false, typeNoun: 'images' }))
+      .toEqual({ title: 'No images here', description: 'Try another type, or clear the filter.' })
+    expect(emptyState({ destination: 'folder', term: 'budget', canCreate: true, typeNoun: 'PDFs' }).title)
+      .toBe('No PDFs match this search')
+  })
+
   it('states how long Trash keeps items', () => {
     expect(emptyState({ destination: 'trash', term: '', canCreate: false }).description).toContain('30 days')
   })

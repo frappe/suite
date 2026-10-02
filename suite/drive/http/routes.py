@@ -276,8 +276,7 @@ def node_children(
     cursor: Given = None,
     order_by: Given = None,
     ascending: Given = None,
-    mime_prefix: Given = None,
-    kind: Given = None,
+    type: Given = None,
     group_by: Given = None,
     expand: Given = None,
 ) -> shapes.Page[shapes.NodeShape]:
@@ -292,8 +291,7 @@ def node_children(
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
         order_by=shapes.text(order_by, "order_by") or "title",
         ascending=shapes.flag(ascending, "ascending", True),
-        mime_prefix=shapes.text(mime_prefix, "mime_prefix"),
-        kind=shapes.text(kind, "kind"),
+        listing_types=shapes.listing_types(type),
         group_by=shapes.text(group_by, "group_by"),
         with_access="access" in asked,
     )
@@ -863,6 +861,7 @@ def view_list(
     root: Given = None,
     content_doctype: Given = None,
     term: Given = None,
+    type: Given = None,
     expand: Given = None,
 ) -> shapes.Page[shapes.NodeShape | shapes.ArchivedRootShape]:
     """Page one of §11.2's seven frozen discovery views.
@@ -899,7 +898,7 @@ def view_list(
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
         with_access="access" in asked,
         with_breadcrumbs="breadcrumbs" in asked,
-        **_view_filters(name, root, content_doctype, term),
+        **_view_filters(name, root, content_doctype, term, type),
     )
     if name == "archived-roots":
         return shapes.page(result, [dict(row) for row in result["rows"]])
@@ -919,20 +918,26 @@ def view_list(
     return shapes.page(result, rows)
 
 
-def _view_filters(name: str, root: Given, content_doctype: Given, term: Given) -> dict:
+def _view_filters(name: str, root: Given, content_doctype: Given, term: Given, listing_types: Given) -> dict:
     """Pass each view only the filters §11.2 declares for it.
 
     Forwarding every argument to every view would let `?term=` reach `trash`
     and be silently ignored, which reads to a client as a filter that did not
     work rather than an argument that does not exist.
+
+    Every node view but `templates` takes `?type=`. Templates are documents
+    only, and filter by `content_doctype`.
     """
-    if name == "trash":
-        return {"root": shapes.required_text(root, "root")}
-    if name in ("templates", "recents"):
+    if name == "templates":
         return {"content_doctype": shapes.text(content_doctype, "content_doctype")}
+    if name == "archived-roots":
+        return {}
+    filters = {"listing_types": shapes.listing_types(listing_types)}
+    if name == "trash":
+        filters["root"] = shapes.required_text(root, "root")
     if name == "search":
-        return {"term": shapes.required_text(term, "term")}
-    return {}
+        filters["term"] = shapes.required_text(term, "term")
+    return filters
 
 
 @frappe.whitelist(methods=["DELETE"])

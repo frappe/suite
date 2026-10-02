@@ -1,6 +1,6 @@
 """Drive activity, recents, favourites, and notification workflows."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -198,8 +198,21 @@ FROM `tabDrive Recent` r
 JOIN `tabDrive Node` n ON n.name = r.node
 WHERE r.user = %(user)s
   AND n.state = 'Active'
-  AND (%(content_doctype)s IS NULL OR (n.kind = 'document' AND n.content_doctype = %(content_doctype)s))
+  AND {type_filter}
 ORDER BY r.opened_at DESC, r.name DESC
+LIMIT %(limit)s OFFSET %(offset)s
+"""
+
+# The caller's marks, newest first. The join is there for the `?type=` filter,
+# and STRAIGHT_JOIN reads the caller's own rows first, as in `RECENTS_SQL`.
+# `f.name` breaks ties between marks made the same second.
+FAVOURITES_SQL = """
+SELECT STRAIGHT_JOIN f.name, f.node, f.creation
+FROM `tabDrive Favourite` f
+JOIN `tabDrive Node` n ON n.name = f.node
+WHERE f.user = %(user)s
+  AND {type_filter}
+ORDER BY f.creation DESC, f.name DESC
 LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -210,29 +223,30 @@ def recents(
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
     with_access: bool = False,
-    content_doctype: str | None = None,
+    listing_types: Sequence[str] = (),
 ) -> dict:
     """Page only the caller's still-readable, Active recent nodes, newest first.
 
-    `content_doctype` keeps only documents of that type. It is a predicate in
-    the query, not a filter on the fetched window, so a history full of other
-    types cannot leave a page short. An unknown doctype answers an empty page.
+    `listing_types` keeps the nodes of any of those `?type=` values
+    (`nodes.type_filter`). It is a predicate in the query, not a filter on the
+    fetched window, so a history full of other types cannot leave a page short.
 
     Readability is checked after the query, so a window can lose rows. Further
     windows are read, up to `MAX_RECENT_WINDOWS`, until the page is full.
     """
-    from suite.drive._core.nodes import decode_cursor, encode_cursor, page_limit
+    from suite.drive._core.nodes import decode_cursor, encode_cursor, page_limit, type_filter
 
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    values = {"user": principals.user, "content_doctype": content_doctype, "limit": window}
+    query = RECENTS_SQL.format(type_filter=type_filter(listing_types, "n."))
+    values = {"user": principals.user, "limit": window}
     page: list = []
     read = 0
     exhausted = False
     for _ in range(MAX_RECENT_WINDOWS):
         values["offset"] = offset + read
-        rows = frappe.db.sql(RECENTS_SQL, values, as_dict=True)
+        rows = frappe.db.sql(query, values, as_dict=True)
         kept = {row.name for row in _visible_personal_rows(principals, rows, with_access=with_access)}
         for row in rows:
             read += 1
@@ -301,20 +315,21 @@ def favourites(
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
     with_access: bool = False,
+    listing_types: Sequence[str] = (),
 ) -> dict:
-    """Page only the caller's still-readable favourite nodes."""
-    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+    """Page only the caller's still-readable favourite nodes.
+
+    `listing_types` keeps those `?type=` values inside the query, as in `recents`.
+    """
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of, type_filter
 
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    rows = frappe.get_all(
-        "Drive Favourite",
-        filters={"user": principals.user},
-        fields=["name", "node", "creation"],
-        order_by="creation desc",
-        limit=window,
-        start=offset,
+    rows = frappe.db.sql(
+        FAVOURITES_SQL.format(type_filter=type_filter(listing_types, "n.")),
+        {"user": principals.user, "limit": window, "offset": offset},
+        as_dict=True,
     )
     return page_of(
         _visible_personal_rows(principals, rows, with_access=with_access),

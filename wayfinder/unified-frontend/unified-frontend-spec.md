@@ -85,7 +85,7 @@ model and one platform layer [MAP].
 | `/drive/organization` | **Organization files**, the site's active Shared Root. Personal sites omit it [T001, T006] | in shell | shell | no |
 | `/drive/f/<node-id>/<slug>` | One open folder [T001] | in shell or Guest surface | shell | yes [T011] |
 | `/drive/shared-with-me` | Saved view **Shared with me** [T001, T006] | in shell | shell | no |
-| `/drive/recent` | Saved view **Recent**. `?type=writer\|sheets\|slides` filters it to one document type (section 5.1) [T001, T006, Faris, 2026-09-29] | in shell | shell | no |
+| `/drive/recent` | Saved view **Recent**. `?type=` keeps items of the chosen types, as on every listing (section 5.1) [T001, T006, Faris, 2026-09-29] | in shell | shell | no |
 | `/drive/starred` | Saved view **Starred** [T001, T006] | in shell | shell | no |
 | `/drive/trash` | Saved view **Trash**, My files tab. `?root=organization` selects the Organization files tab [T006] | in shell | shell | no |
 | `/d/<node-id>/<slug>` | One open document or previewable file [T001, T009] | in shell or Guest surface | content | yes [T011] |
@@ -132,8 +132,8 @@ an open document own their scrolling [CONTEXT].
   shares no prefix with it, so no upload name is reserved and dev needs no
   proxy bypass for the area [T020].
 - Saved views are paths. Query parameters carry only presentation and
-  filter state: `view`, `sort`, `dir`, `group`, `q`, `root` and `type`
-  (section 5) [T001, T006, Faris, 2026-09-29].
+  filter state: `view`, `sort`, `dir`, `q`, `root` and `type`
+  (section 5) [T001, T006, Faris, 2026-09-29, Faris, 2026-10-02].
 - `/d/<node-id>/<slug>` is the single content route for Writer, Sheets and
   Slides documents and for uploaded files. The node response selects the
   renderer [T001, T009].
@@ -725,22 +725,30 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   `views/shared`, Recent calls `views/recents`, Starred calls
   `views/favourites`, Trash calls `views/trash` with a root id. The first
   three keep the order the Drive spec freezes [T006, Drive §11.2].
-- Recent takes an optional `type` query with the values `writer`,
-  `sheets` and `slides` [Faris, 2026-09-29]:
+- Every listing takes an optional `type` query that keeps items of any of
+  the chosen types: `folder`, `document`, `spreadsheet`, `presentation`,
+  `pdf`, `image`, `video` or `audio`. Several are comma-separated, as in
+  `?type=pdf,image`. My files, Organization files, folders,
+  Shared with me, Recent, Starred, Trash and search results all offer it
+  [Faris, 2026-10-02]:
+  - The values are the Drive API's own `?type=` (Drive §11.2). The page
+    sends the list to `nodes/<id>/children` or the view, and the server
+    filters, so every page holds only those types.
   - It is how old per-type lists reach Drive. `/sheets` redirects to
-    `/drive/recent?type=sheets` (section 14.3).
-  - The view maps the value to a content doctype through
-    `DocumentTypeDefinition.key` in the document registry (section 8.2).
-    There is no second mapping. It sends `content_doctype` to
-    `views/recents` (ask D31). The server filters, so every page holds only
-    that type.
-  - While `type` is set, the view shows a visible filter that names the
-    type and clears it. Clearing removes `type` from the URL without a
-    history entry and shows every recent row.
-  - An unknown value is dropped from the URL without a history entry; the
-    view shows every recent row.
-  - `type` is filter state, not a saved preference. The sidebar's
-    **Recent** entry opens `/drive/recent` with no `type`.
+    `/drive/recent?type=spreadsheet` (section 14.3).
+  - A **Type** multi-select (frappe-ui `MultiSelect`) directly after the
+    search field sets it, and each type shows the icon its rows have. The
+    trigger reads "Type" with nothing chosen, the type's name and icon for
+    one (the icon alone on a phone), and "2 types" for more. Its footer
+    offers **Clear**. An empty result names the types ("No PDFs or images
+    here") and offers **Clear filter**. Setting or clearing it changes the
+    URL without a history entry.
+  - Recent hides folder rows, so it does not offer Folders.
+  - Values the listing does not offer are dropped from the URL without a
+    history entry, and the rest keep menu order.
+  - `type` is filter state, not a saved preference. Opening a folder or a
+    breadcrumb drops it, as it drops the search. The sidebar's **Recent**
+    entry opens `/drive/recent` with no `type`.
 - Trash shows one root at a time with a `My files | Organization files`
   tab switcher. `/drive/trash` is My files.
   `/drive/trash?root=organization` is Organization files. The query names
@@ -769,20 +777,19 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - A failed next page keeps the loaded rows and shows an inline retry
   [T006].
 
-### 5.3 Sort, group and presentation state
+### 5.3 Sort and presentation state
 
-- Sorting and grouping are server-owned. The client never sorts or groups
-  only the loaded window [T006, Drive §5.3].
-- A sort or group change clears the loaded pages and starts again with no
-  cursor [T006].
-- Folder and root listings group by **Type**, **Owner** or **Modified**.
-  The client derives each group heading from fields on the row [T006].
-- The server makes each group contiguous. With a group, folders come first
-  inside each group. Without one, folders come first globally. The chosen
-  sort is the secondary order, and the node id breaks ties
-  [T006, Drive §5.3]. The client does not reorder rows.
-- The initial presentation is list view, no grouping, title ascending
-  (shown as Name) [T006].
+- Sorting is server-owned. The client never sorts only the loaded window
+  [T006, Drive §5.3].
+- A sort change clears the loaded pages and starts again with no cursor
+  [T006].
+- Folders come first. The chosen sort is the secondary order, and the node
+  id breaks ties [T006, Drive §5.3]. The client does not reorder rows.
+- The listing has no grouping. **Group by** was removed from View settings
+  for now. An old link or saved preference that still carries `group` loads
+  as if it had none [Faris, 2026-10-02].
+- The initial presentation is list view, title ascending (shown as Name)
+  [T006].
 - Default list columns are **Name**, **Owner** and **Modified**. **Type**
   and **Size** are optional. Location and sharing-summary columns do not
   launch. The client never sends one request per row to imitate a column
@@ -800,12 +807,11 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   `application/octet-stream` therefore sort together, by name, whatever
   their label [Drive §5.3].
 - Precedence: URL query, then the saved Drive preference, then defaults.
-  `view`, `sort`, `dir` and `group` are presentation keys. A change
-  replaces the current history entry and updates the saved preference
-  [T006].
+  `view`, `sort` and `dir` are presentation keys. A change replaces the
+  current history entry and updates the saved preference [T006].
 - Folder navigation carries supported settings forward. Saved views drop
-  sort and group keys they cannot honor. Visible columns are a saved
-  preference, not URL state [T006].
+  sort keys they cannot honor. Visible columns are a saved preference, not
+  URL state [T006].
 
 ### 5.4 Expansions
 
@@ -877,8 +883,8 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - Selection holds explicit node ids from the loaded rows. **Select all**
   means all loaded rows, never unseen matches. A new cursor window does not
   select its rows [T006].
-- A change of folder, root, saved view, search, sort, group or Trash tab
-  clears selection [T006].
+- A change of folder, root, saved view, search, sort or Trash tab clears
+  selection [T006].
 - Desktop: a checkbox or Cmd/Ctrl-click enters selection. Shift-click
   selects a loaded visible range. Escape clears [T006].
 - Phone: a long press or **Select** in the row menu enters selection. Taps
@@ -1009,7 +1015,7 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 ### 5.16 Required tests
 
 - Listing tests cover short and empty filtered windows, cursor reset on
-  presentation changes, stable folders-first grouping, preview refresh,
+  presentation changes, stable folders-first order, preview refresh,
   search breadcrumbs, permission changes and mixed batch outcomes [T006].
 - Browser coverage includes both root kinds, personal sites, desktop
   keyboard selection and both phone bottom-sheet affordances [T006].
@@ -1349,9 +1355,9 @@ interface DocumentTypeDefinition {
   self-registration [T009].
 - The Drive area uses it for its New menu and template filter [T009]. Home uses it
   for its New menu [T012].
-- `key` is the value of the Recent view's `type` query (section 5.1). It
-  never changes, because redirects write it into URLs (section 14.3)
-  [Faris, 2026-09-29].
+- `key` is a stable name for the type, such as `sheets`. Listings filter
+  by the Drive API's own type values instead (section 5.1)
+  [Faris, 2026-10-02].
 - Composition provides the registry through the platform injection key
   `DOCUMENT_TYPES_KEY` (`App.vue`). Drive never imports composition
   [T009, T013, T015].
@@ -2208,8 +2214,8 @@ or a stated reason to have none [T020].
 | `/drive/favourites` | `/drive/starred` [T006] |
 | `/drive/shared` | `/drive/shared-with-me` [T006] |
 | `/drive/inbox`, `/drive/attachments/<doctype>?/<docname>?` | `/drive` [T020]. The Attachments view has no successor; the loss is accepted [Faris, 2026-09-29] |
-| `/drive/documents` | `/drive/recent?type=writer` [Faris, 2026-09-29, orchestrator reading] |
-| `/drive/presentations` | `/drive/recent?type=slides` [Faris, 2026-09-29, orchestrator reading] |
+| `/drive/documents` | `/drive/recent?type=document` [Faris, 2026-09-29, orchestrator reading] |
+| `/drive/presentations` | `/drive/recent?type=presentation` [Faris, 2026-09-29, orchestrator reading] |
 | `/drive/signup` | none: deleted (section 14.6) [T014] |
 | `/drive/d/<id>` (folder) | `/drive/f/<id>` [T014] |
 | `/drive/f/<id>` (file) | none: the new folder route's kind check replace-redirects to `/d/<id>` (section 2.2) [T020] |
@@ -2218,9 +2224,9 @@ or a stated reason to have none [T020].
 | `/drive/{folder,document,file}/<old>`, `/drive/t/<team>/` | by kind, through `Drive Legacy Route` [Drive §3.15, T014, T015] |
 | `/drive/t/<team>/<letter>/<id>` | as `/drive/g/<id>` [T014] |
 | `/drive/l/<token>` | `/l/<token>` [T011, T014] |
-| `/writer` | `/drive/recent?type=writer` [Faris, 2026-09-29] |
-| `/sheets` | `/drive/recent?type=sheets` [Faris, 2026-09-29] |
-| `/slides` | `/drive/recent?type=slides` [Faris, 2026-09-29] |
+| `/writer` | `/drive/recent?type=document` [Faris, 2026-09-29] |
+| `/sheets` | `/drive/recent?type=spreadsheet` [Faris, 2026-09-29] |
+| `/slides` | `/drive/recent?type=presentation` [Faris, 2026-09-29] |
 | `/sheets/new`, `/slides/presentation/new`, `/slides/not-permitted` | `/home` [T020] |
 | `/sheets/trash` | `/drive/trash` [T020] |
 | `/sheets/<docname>` | `/d/<node>` (one read of `Sheet.node`) [T014] |
@@ -2255,7 +2261,7 @@ or a stated reason to have none [T020].
   `/d/<node>?slide=3` [T020].
 - A target with its own query keeps it, and the old query's other keys
   follow. On a clash the target's value wins. `/sheets?x=1` becomes
-  `/drive/recent?type=sheets&x=1` [Faris, 2026-09-29].
+  `/drive/recent?type=spreadsheet&x=1` [Faris, 2026-09-29].
 - A lookup that finds no node does not redirect. The request falls through
   to normal routing. While `suite_flip_files` is off, the old page mounts
   and shows its own missing-document state. After deletion an unmatched

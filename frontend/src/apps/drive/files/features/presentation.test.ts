@@ -3,19 +3,18 @@ import { resolvePresentation } from './presentation'
 
 describe('presentation state', () => {
   it('uses query over preference over defaults', () => {
-    const saved = { view: 'grid' as const, sort: 'modified' as const, dir: 'desc' as const, group: 'owner' as const }
+    const saved = { view: 'grid' as const, sort: 'modified' as const, dir: 'desc' as const }
     expect(resolvePresentation({ view: 'list', sort: 'owner' }, saved)).toMatchObject({
-      view: 'list', sort: 'owner', dir: 'desc', group: 'owner',
+      view: 'list', sort: 'owner', dir: 'desc',
     })
     expect(resolvePresentation({}, saved)).toMatchObject(saved)
-    expect(resolvePresentation({}, null)).toMatchObject({ view: 'list', sort: 'title', dir: 'asc', group: 'none' })
+    expect(resolvePresentation({}, null)).toMatchObject({ view: 'list', sort: 'title', dir: 'asc' })
   })
-})
 
-
-describe('chosen grouping', () => {
-  it('ignores the Recent-only grouping from the URL and a saved preference', () => {
-    expect(resolvePresentation({ group: 'opened' }, null).group).toBe('none')
-    expect(resolvePresentation({}, { group: 'opened' as never }).group).toBe('none')
+  it('ignores the grouping an old link or saved preference still carries', () => {
+    const oldPreference = JSON.parse('{"view":"grid","sort":"title","dir":"asc","group":"owner","columns":["owner"]}')
+    expect(resolvePresentation({ group: 'type' }, oldPreference)).toEqual({
+      view: 'grid', sort: 'title', dir: 'asc', columns: ['owner'],
+    })
   })
 })

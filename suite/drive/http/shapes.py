@@ -137,8 +137,8 @@ class ChildrenQuery(TypedDict, total=False):
     cursor: str
     order_by: str
     ascending: bool
-    mime_prefix: str
-    kind: Literal["folder"]
+    # A comma-separated list of `nodes.LISTING_TYPES`, as `listing_types` reads it.
+    type: str
     group_by: Literal["type", "owner", "modified"]
     expand: str
 
@@ -197,6 +197,8 @@ class ViewQuery(TypedDict, total=False):
     root: str
     content_doctype: str
     term: str
+    # As `ChildrenQuery.type`.
+    type: str
     expand: str
 
 
@@ -611,6 +613,15 @@ def expansions(value, name: str = "expand", allowed: tuple[str, ...] = EXPANSION
             frappe.ValidationError,
         )
     return frozenset(asked)
+
+
+def listing_types(value, name: str = "type") -> tuple[str, ...]:
+    """Accept a comma-separated list of `?type=` values. `nodes.type_filter` checks each one."""
+    if value is None or value == "":
+        return ()
+    if not isinstance(value, str):
+        _refuse(name)
+    return tuple(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
 
 
 def sequence(value, name: str) -> int:

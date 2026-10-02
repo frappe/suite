@@ -28,7 +28,7 @@ import {
   shallowRef,
   watch,
 } from "vue";
-import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   DriveDocumentHeaderSkeleton,
@@ -157,8 +157,7 @@ watch(
 );
 
 async function replaceDecorativeSlug(opened: DocumentSession) {
-  const canonical = driveNodeRoute(opened.nodeId, opened.title.value);
-  const destination = { ...(canonical as Record<string, unknown>), query: route.query } as RouteLocationRaw;
+  const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query };
   if (router.resolve(destination).path !== route.path) await router.replace(destination);
 }
 

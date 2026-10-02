@@ -997,12 +997,26 @@ each group. `order_by` is the stable secondary order. Every form ends with
 the node id as its final tie-breaker. Type groups use the stored node kind.
 Owner groups use the stored owner. Modified groups use one calendar date per
 bucket in the database session's site timezone, newest bucket first. The
-server owns these bucket boundaries.
+server owns these bucket boundaries. The Files area no longer offers
+grouping, so no client sends `group_by` now. The parameter stays until it is
+removed or used again [Faris, 2026-10-02].
 
-`kind=folder` is the only kind filter. It is part of the child-window SQL,
-before `LIMIT` and `OFFSET`, so picker pages do not become short because
-non-folder rows occupied the window. Permission filtering still runs after
-the SQL window.
+`type=` is a comma-separated list of types, such as `type=pdf,image`, and
+keeps the nodes of any of them. The types are `folder`, `document`,
+`spreadsheet`, `presentation`, `pdf`, `image`, `video` and `audio`. Folders
+match on kind.
+PDFs, images, video and audio match on the stored mime, the same way the
+listing picks an icon. The three document types match the content doctypes
+whose `ContentTypeSpec.listing_type` names them, so Drive core never names an
+app's doctype. They also match an uploaded file of that type by its mime, as
+the legacy `MIME_LIST_MAP` did: Word, OpenDocument text, Pages and AbiWord
+files are `document`; Excel, OpenDocument spreadsheet, Numbers and CSV files
+are `spreadsheet`; PowerPoint, OpenDocument presentation and Keynote files are
+`presentation`. `nodes.DOCUMENT_FILE_MIMES` lists the mimes. Every value is checked, and one unknown value refuses the
+whole request (400). The filter is part of the
+child-window SQL, before `LIMIT` and `OFFSET`, so picker and filtered pages do
+not become short because other rows occupied the window. Permission filtering
+still runs after the SQL window.
 
 **Preview URLs are opt-in.** A page mints them only when the caller asks
 for `expand=preview` (§9.2, §11.3). Ticket [006 §4] has the folder listing
@@ -1828,7 +1842,7 @@ def purge(p: Principals, node: str) -> int: ...  # returns the node count purged
 def copy(p: Principals, node: str, parent: str, *, title: str | None = None) -> str: ...
 def children(p: Principals, parent: str, *, cursor: str | None = None, limit: int = 60,
 	order_by: str = "title", ascending: bool = True,
-	mime_prefix: str | None = None) -> dict: ...
+	listing_types: Sequence[str] = ()) -> dict: ...  # () keeps every node
 def views(p: Principals, name: str, *, cursor: str | None = None, limit: int = 60, **filters) -> dict: ...
 
 # suite/drive/_core/upload.py
@@ -2556,6 +2570,7 @@ class ContentTypeSpec:
 	node_field: str                    # fieldname holding the Link to Drive Node [005 §1]
 	default_export: str | None = None  # WebDAV and ZIP format key; None = invisible over DAV [009 §3]
 	export_formats: tuple[str, ...] = ()   # formats `export` accepts; includes default_export when set
+	listing_type: str | None = None    # the `?type=` value that lists these documents: document | spreadsheet | presentation
 
 	# factories. Drive creates the node first, then calls these.
 	create_empty: Callable[[str], str] = None
@@ -2987,7 +3002,7 @@ are listed.
 | GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
 | PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{parent, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409, 413 |
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403 |
-| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&mime_prefix=&kind=folder&group_by=type\|owner\|modified&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
+| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&group_by=type\|owner\|modified&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent` | `{parent, title?}` | node shape | 403, 409, 413 |
 | POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
 | GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
@@ -3132,12 +3147,17 @@ caller cannot read marked as unreadable, instead of dropping it silently
 | Name | Rows | Role |
 |---|---|---|
 | `shared` | the caller's grant roots outside their own Personal Root | per grant |
-| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at`; Active nodes only; `?content_doctype=` keeps only documents of that type, filtered in the query, and an unknown type answers an empty page | READ |
+| `recents` | `Drive Recent` for the caller, newest first; each node row adds `opened_at`; Active nodes only | READ |
 | `favourites` | `Drive Favourite` for the caller | READ |
 | `trash` | Trashed nodes where `trash_root = name`, in roots the caller reaches | READ to list; EDIT or MANAGE to restore (§8.8) |
 | `archived-roots` | Archived Roots holding a grant for the caller | per grant [001] |
 | `templates` | readable nodes with `is_template = 1`, `?content_doctype=` filters | READ [012 §6] |
 | `search` | title matches, ancestor-union grant filtered | READ |
+
+`shared`, `recents`, `favourites`, `trash` and `search` accept the same
+`?type=` as folder children, filtered in the query before the window. An
+unknown value is refused (400). `templates` filters by `?content_doctype=`
+instead, and `archived-roots` has no type filter.
 
 `DELETE /api/suite/drive/views/recents` clears the caller's recents and
 never touches favourites [014]. Every view excludes `is_template` nodes

@@ -3,7 +3,7 @@ import { transport } from '@/platform/transport'
 
 import { api } from './generated'
 import { driveOperation } from './operation'
-import type { DriveBatchResult, DriveNode, DrivePage } from './types'
+import { listingTypesParam, type DriveBatchResult, type DriveListingType, type DriveNode, type DrivePage } from './types'
 
 export interface ChildrenInput {
   node: string
@@ -11,15 +11,17 @@ export interface ChildrenInput {
   cursor?: string
   order_by?: string
   ascending?: boolean
-  kind?: 'folder'
-  group_by?: 'type' | 'owner' | 'modified'
+  /** Keeps the nodes of any of these types. */
+  types?: readonly DriveListingType[]
   expand?: string
 }
 
 const nodeGetOperation = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, {
   entity: true,
 })
-const childrenOperation = driveOperation<ChildrenInput, DrivePage>(api.node_children, { entity: true })
+type ChildrenRequest = Omit<ChildrenInput, 'types'> & { type?: string }
+
+const childrenOperation = driveOperation<ChildrenRequest, DrivePage>(api.node_children, { entity: true })
 const createOperation = driveOperation<Record<string, unknown>, DriveNode>(api.node_create, {
   entity: true,
   looseInput: true,
@@ -66,8 +68,8 @@ export function node(node: string, expand = 'access,breadcrumbs') {
   return query(nodeGetOperation, { node, expand }, { member: (row: DriveNode) => row.name === node })
 }
 
-export function children(input: ChildrenInput) {
-  return infinite(childrenOperation, { limit: 60, ...input }, {
+export function children({ types, ...input }: ChildrenInput) {
+  return infinite(childrenOperation, { limit: 60, ...input, type: listingTypesParam(types) }, {
     cursorParam: 'cursor',
     member: (row: DriveNode) => row.parent === input.node && row.state === 'Active',
   })

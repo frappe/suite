@@ -261,6 +261,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="document",
     # §10.7, accepted 2026-09-05: Writer stays hidden over WebDAV, and the
     # explicit HTML export stays available through the content API's format.
     default_export=None,

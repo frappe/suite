@@ -142,7 +142,7 @@ const crumbs = computed(() => trail.value.map((crumb, index) => ({
   onClick: () => openCrumb(index),
 })))
 const folders = useQuery(() => current.value
-  ? children({ node: current.value.node, kind: 'folder', expand: 'access', order_by: 'title', ascending: true })
+  ? children({ node: current.value.node, types: ['folder'], expand: 'access', order_by: 'title', ascending: true })
   : false)
 const currentDetail = useQuery(() => current.value ? node(current.value.node, 'access') : false)
 const target = computed(() => current.value

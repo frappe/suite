@@ -184,7 +184,7 @@ describe('View settings panel', () => {
     unmount?.()
     await mountPanel({ query: { view: 'grid' } })
     await openPanel()
-    expect(labels()).toEqual(['Sort by', 'Order', 'Group by'])
+    expect(labels()).toEqual(['Sort by', 'Order'])
     expect(pills()).toEqual([])
   })
 })

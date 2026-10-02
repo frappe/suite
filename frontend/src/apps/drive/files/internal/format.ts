@@ -36,7 +36,7 @@ export function formatDate(value: string | null): string {
 }
 
 /** Whole calendar days from `from` to `to`, in local time. */
-export function calendarDaysBetween(from: Date, to: Date): number {
+function calendarDaysBetween(from: Date, to: Date): number {
   const start = new Date(from.getFullYear(), from.getMonth(), from.getDate())
   const end = new Date(to.getFullYear(), to.getMonth(), to.getDate())
   return Math.round((end.getTime() - start.getTime()) / 86_400_000)

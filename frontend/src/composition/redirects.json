@@ -23,27 +23,27 @@
     },
     {
       "old": "/drive/documents",
-      "new": "/drive/recent?type=writer",
+      "new": "/drive/recent?type=document",
       "lookup": null
     },
     {
       "old": "/drive/presentations",
-      "new": "/drive/recent?type=slides",
+      "new": "/drive/recent?type=presentation",
       "lookup": null
     },
     {
       "old": "/writer",
-      "new": "/drive/recent?type=writer",
+      "new": "/drive/recent?type=document",
       "lookup": null
     },
     {
       "old": "/sheets",
-      "new": "/drive/recent?type=sheets",
+      "new": "/drive/recent?type=spreadsheet",
       "lookup": null
     },
     {
       "old": "/slides",
-      "new": "/drive/recent?type=slides",
+      "new": "/drive/recent?type=presentation",
       "lookup": null
     },
     {

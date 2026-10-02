@@ -6,8 +6,8 @@ export interface EmptyStateInput {
   term: string
   /** The caller can add items here, through the New menu. */
   canCreate: boolean
-  /** Recent is filtered to one document type, by its label. */
-  recentType?: string
+  /** The listing keeps one type of item, named as in a sentence, such as "images". */
+  typeNoun?: string
 }
 
 export interface EmptyState {
@@ -19,7 +19,13 @@ export interface EmptyState {
 const TRASH_RETENTION_DAYS = 30
 
 /** What an empty listing says, per view. */
-export function emptyState({ destination, term, canCreate, recentType }: EmptyStateInput): EmptyState {
+export function emptyState({ destination, term, canCreate, typeNoun }: EmptyStateInput): EmptyState {
+  // The page offers to clear the filter, so the copy names it.
+  if (typeNoun) {
+    return term
+      ? { title: `No ${typeNoun} match this search`, description: 'Try a different search term, or clear the filter.' }
+      : { title: `No ${typeNoun} here`, description: 'Try another type, or clear the filter.' }
+  }
   if (term) return { title: 'No files match this search', description: 'Try a different search term.' }
   const addHint = canCreate ? 'Use New to add a folder, a document, or files.' : ''
   switch (destination) {
@@ -35,9 +41,7 @@ export function emptyState({ destination, term, canCreate, recentType }: EmptySt
     case 'shared':
       return { title: 'Nothing shared with you yet', description: 'Files and folders that people share with you will appear here.' }
     case 'recent':
-      return recentType
-        ? { title: `No recent ${recentType.toLowerCase()}s`, description: `${recentType}s you open will appear here.` }
-        : { title: 'No recent files', description: 'Files you open will appear here.' }
+      return { title: 'No recent files', description: 'Files you open will appear here.' }
     case 'starred':
       return { title: 'No starred files', description: 'Star a file or folder to find it here quickly.' }
     case 'trash':

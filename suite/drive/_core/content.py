@@ -83,6 +83,10 @@ FORBIDDEN_FIELD_PREFIXES = ("share_", "shared_")
 # The node column a `DriveContent` controller uses unless it names another one.
 DEFAULT_NODE_FIELD = "node"
 
+# The `?type=` values (§11.2) a content type may declare for its documents.
+# The listing's other types are kinds and mimes, which `nodes` owns.
+DOCUMENT_LISTING_TYPES = ("document", "spreadsheet", "presentation")
+
 # What every content workflow reads about the document node it acts on.
 # `parent` is here for `nodes._validate_stored_position`, which walks the stored
 # `parent` link upwards: a row read without it looks like a node with no parent,
@@ -144,6 +148,9 @@ class ContentTypeSpec:
     node_field: str
     default_export: str | None = None
     export_formats: tuple[str, ...] = ()
+    # The `?type=` value that lists these documents, one of
+    # `DOCUMENT_LISTING_TYPES`. Without one, only an unfiltered listing shows them.
+    listing_type: str | None = None
 
     # factories. Drive creates the node first, then calls these.
     create_empty: Callable[[str], str] = None
@@ -434,6 +441,8 @@ def _validate_shape(spec: ContentTypeSpec) -> None:
         raise DriveConflict(_("The Drive content export formats are invalid"))
     if spec.default_export is not None and spec.default_export not in spec.export_formats:
         raise DriveConflict(_("The Drive content default export is not an offered format"))
+    if spec.listing_type is not None and spec.listing_type not in DOCUMENT_LISTING_TYPES:
+        raise DriveConflict(_("The Drive content listing type is invalid"))
     if not isinstance(spec.legacy_fields, tuple) or any(
         not isinstance(item, str) or not item for item in spec.legacy_fields
     ):

@@ -5,7 +5,7 @@ import { children, createDocument } from './nodes'
 describe('children descriptors', () => {
   it('resets the cursor when server presentation changes', () => {
     const first = children({ node: 'p', cursor: 'opaque', order_by: 'title', ascending: true })
-    const changed = children({ node: 'p', order_by: 'modified', ascending: false, group_by: 'owner' })
+    const changed = children({ node: 'p', order_by: 'modified', ascending: false })
     expect(changed.input.cursor).toBeUndefined()
     expect(changed.input).not.toEqual(first.input)
   })

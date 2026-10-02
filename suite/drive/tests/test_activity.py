@@ -247,7 +247,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             set_favourite(self.other, self.node)
 
-    def test_recents_filter_by_content_doctype_inside_the_query(self):
+    def test_recents_filter_by_type_inside_the_query(self):
         # The owner's history, oldest first. The two newest visits are not
         # sheets, so an unfiltered two-row window holds no sheet at all.
         opened = [
@@ -269,27 +269,27 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
 
         self.assertEqual(names(recents(self.owner, limit=2)), newest_first[:2])
 
-        first = recents(self.owner, content_doctype="Sheet", limit=2)
+        first = recents(self.owner, listing_types=("spreadsheet",), limit=2)
         self.assertEqual(names(first), sheets[:2])
         self.assertIsNotNone(first["next_cursor"])
-        second = recents(self.owner, content_doctype="Sheet", cursor=first["next_cursor"], limit=2)
+        second = recents(self.owner, listing_types=("spreadsheet",), cursor=first["next_cursor"], limit=2)
         self.assertEqual(names(second), sheets[2:])
         self.assertIsNone(second["next_cursor"])
 
         self.assertEqual(
-            names(recents(self.owner, content_doctype="Presentation")),
+            names(recents(self.owner, listing_types=("presentation",))),
             [newest_first[0], newest_first[3]],
         )
-        letters = recents(self.owner, content_doctype="Writer Document")
+        letters = recents(self.owner, listing_types=("document",))
         self.assertEqual(names(letters), [newest_first[2]])
         self.assertEqual(letters["rows"][0].opened_at, frappe.utils.get_datetime(self.stamp(4)))
 
-        unknown = recents(self.owner, content_doctype="No Such Doctype")
-        self.assertEqual(unknown, {"rows": [], "next_cursor": None})
+        with self.assertRaises(frappe.ValidationError):
+            recents(self.owner, listing_types=("spreadsheets",))
         self.assertEqual(names(recents(self.owner)), newest_first)
 
         # The view door carries the filter through to the same query.
-        view = views(self.owner, "recents", content_doctype="Sheet", limit=2)
+        view = views(self.owner, "recents", listing_types=("spreadsheet",), limit=2)
         self.assertEqual([row.name for row in view["rows"]], sheets[:2])
         self.assertEqual(view["rows"][0].opened_at, frappe.utils.get_datetime(self.stamp(2)))
 
@@ -298,11 +298,11 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         for node in tied:
             self.opened(node, 7)
         self.opened(self.node, 1)
-        for content_doctype, expected in (("Sheet", set(tied)), (None, {*tied, self.node})):
-            with self.subTest(content_doctype=content_doctype):
+        for listing_types, expected in ((("spreadsheet",), set(tied)), ((), {*tied, self.node})):
+            with self.subTest(listing_types=listing_types):
                 seen, cursor = [], None
                 while True:
-                    page = recents(self.owner, content_doctype=content_doctype, cursor=cursor, limit=2)
+                    page = recents(self.owner, listing_types=listing_types, cursor=cursor, limit=2)
                     seen += [row.node.name for row in page["rows"]]
                     cursor = page["next_cursor"]
                     if cursor is None:
@@ -319,13 +319,11 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         frappe.db.delete("Drive Recent", {"user": OTHER})
         for minute, node in enumerate((readable[2], readable[1], hidden, readable[0])):
             self.opened(node, minute, user=OTHER)
-        for content_doctype in ("Sheet", None):
-            with self.subTest(content_doctype=content_doctype):
-                first = recents(self.other, content_doctype=content_doctype, limit=2)
+        for listing_types in (("spreadsheet",), ()):
+            with self.subTest(listing_types=listing_types):
+                first = recents(self.other, listing_types=listing_types, limit=2)
                 self.assertEqual([row.node.name for row in first["rows"]], readable[:2])
-                second = recents(
-                    self.other, content_doctype=content_doctype, cursor=first["next_cursor"], limit=2
-                )
+                second = recents(self.other, listing_types=listing_types, cursor=first["next_cursor"], limit=2)
                 self.assertEqual([row.node.name for row in second["rows"]], readable[2:])
                 self.assertIsNone(second["next_cursor"])
 
@@ -339,10 +337,10 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         for minute in range(1, MAX_RECENT_WINDOWS + 2):
             self.opened(self.document(f"Hidden {minute}", "Sheet"), minute, user=OTHER)
 
-        first = recents(self.other, content_doctype="Sheet", limit=1)
+        first = recents(self.other, listing_types=("spreadsheet",), limit=1)
         self.assertEqual(first["rows"], [])
         self.assertIsNotNone(first["next_cursor"])
-        second = recents(self.other, content_doctype="Sheet", cursor=first["next_cursor"], limit=1)
+        second = recents(self.other, listing_types=("spreadsheet",), cursor=first["next_cursor"], limit=1)
         self.assertEqual([row.node.name for row in second["rows"]], [readable])
 
     def test_recents_leave_out_trashed_nodes(self):
@@ -351,9 +349,9 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.opened(kept, 0)
         self.opened(trashed, 1)
         frappe.db.set_value("Drive Node", trashed, "state", "Trashed", update_modified=False)
-        for content_doctype in ("Sheet", None):
-            with self.subTest(content_doctype=content_doctype):
-                page = recents(self.owner, content_doctype=content_doctype)
+        for listing_types in (("spreadsheet",), ()):
+            with self.subTest(listing_types=listing_types):
+                page = recents(self.owner, listing_types=listing_types)
                 names = [row.node.name for row in page["rows"]]
                 self.assertIn(kept, names)
                 self.assertNotIn(trashed, names)

@@ -2,7 +2,7 @@
 import { useEventListener, useMediaQuery } from "@vueuse/core";
 import { Button, Dropdown, TabButtons } from "frappe-ui";
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { driveNodeRoute, useDriveDialogs } from "@/apps/drive";
 import { children, starNode, unstarNode } from "@/apps/drive/client/nodes";
@@ -13,6 +13,7 @@ import { useSession } from "@/platform/session";
 import DocumentHeader from "../document/DocumentHeader.vue";
 import { linkAccess } from "../linkAccess";
 import { readPresentationPreference, resolvePresentation } from "../presentation";
+import { offeredTypes, typeQuery, typesFromQuery } from "../typeFilter";
 import { useLocationTitle } from "../../internal/locations";
 import PreviewFallback from "./PreviewFallback.vue";
 import { previewKind } from "../../internal/previewKind";
@@ -22,6 +23,7 @@ import TextPreview from "./TextPreview.vue";
 import UploadNewVersion from "./UploadNewVersion.vue";
 
 const props = defineProps<{ session: DocumentSession }>();
+const route = useRoute();
 const router = useRouter();
 const dialogs = useDriveDialogs();
 const locationTitle = useLocationTitle();
@@ -52,20 +54,32 @@ const unstarMutation = useMutation(unstarNode());
 const header = ref<{ focusTitle(): void } | null>(null);
 const upload = ref<{ pick(): void } | null>(null);
 
+// The type filter of the listing the file was opened from. The route carries
+// it, so a reload, Back and the folder link all keep it.
+const types = computed(() => typesFromQuery(route.query.type, offeredTypes({ folders: true })));
+const typeFilter = computed(() => ({ type: typeQuery(types.value) }));
+
 const folder = computed(() => file.value.folder.value);
 const location = computed(() => {
   const crumb = folder.value;
   if (!crumb) return null;
   const label = locationTitle(crumb);
-  return { label, to: driveNodeRoute(crumb.name, label, "folder") };
+  return { label, to: { ...driveNodeRoute(crumb.name, label, "folder"), query: typeFilter.value } };
 });
 
 // Previous and next walk the folder's files in the order the listing shows them
-// by default: the saved sort, folders left out.
+// by default: the saved sort, folders left out. The server applies the type
+// filter as it does for the listing, so the same files come in the same order.
 const order = resolvePresentation({}, readPresentationPreference());
 const siblings = useQuery(() =>
   folder.value
-    ? children({ node: folder.value.name, order_by: order.sort, ascending: order.dir === "asc", limit: 200 })
+    ? children({
+        node: folder.value.name,
+        order_by: order.sort,
+        ascending: order.dir === "asc",
+        types: types.value.map((option) => option.value),
+        limit: 200,
+      })
     : false,
 );
 const files = computed(() => siblings.rows.filter((row) => row.kind === "file" && row.state === "Active"));
@@ -76,7 +90,7 @@ const next = computed(() =>
 );
 
 function show(row: { name: string; title: string; kind: string } | null) {
-  if (row) void router.push(driveNodeRoute(row));
+  if (row) void router.push({ ...driveNodeRoute(row), query: typeFilter.value });
 }
 
 // Arrow keys step through the folder unless something on the page has focus,

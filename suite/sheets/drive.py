@@ -311,6 +311,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="spreadsheet",
     # §10.7, accepted 2026-09-05: Sheets stays hidden over WebDAV for this
     # release, so there is no default export and no export at all. Enabling one
     # is later work, not a requirement of the rewrite.

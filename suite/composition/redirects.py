@@ -81,11 +81,11 @@ ROWS: tuple[Row, ...] = (
     Row("/drive/attachments/:doctype", "/drive"),
     Row("/drive/attachments/:doctype/:docname", "/drive"),
     # Old per-type lists go to Recent, filtered by type.
-    Row("/drive/documents", "/drive/recent?type=writer"),
-    Row("/drive/presentations", "/drive/recent?type=slides"),
-    Row("/writer", "/drive/recent?type=writer"),
-    Row("/sheets", "/drive/recent?type=sheets"),
-    Row("/slides", "/drive/recent?type=slides"),
+    Row("/drive/documents", "/drive/recent?type=document"),
+    Row("/drive/presentations", "/drive/recent?type=presentation"),
+    Row("/writer", "/drive/recent?type=document"),
+    Row("/sheets", "/drive/recent?type=spreadsheet"),
+    Row("/slides", "/drive/recent?type=presentation"),
     # Old saved views.
     Row("/drive/recents", "/drive/recent"),
     Row("/drive/favourites", "/drive/starred"),

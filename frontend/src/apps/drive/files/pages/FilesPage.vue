@@ -86,6 +86,32 @@
                   </button>
                 </template>
               </TextInput>
+              <!-- A set filter stays, so an empty result can still change or clear it.
+                   The wrapper keeps the filter its width, since MultiSelect's own root takes no class. -->
+              <div v-if="listingTypes.length || !settledEmpty" class="shrink-0">
+                <MultiSelect
+                  :model-value="listingTypes.map((option) => option.value)"
+                  :options="typeOptions"
+                  placeholder="Type"
+                  hide-search
+                  class="max-w-40"
+                  @update:model-value="setTypes"
+                >
+                  <template #item-prefix="{ item }">
+                    <span :class="['size-4 shrink-0', typeIcon(item.value)]" aria-hidden="true" />
+                  </template>
+                  <!-- A phone shows one type by its icon only, so the search field keeps its room. -->
+                  <template #summary="{ summary }">
+                    <span :class="listingTypes.length === 1 && 'max-md:sr-only'">{{ typeSummary(listingTypes) ?? summary }}</span>
+                  </template>
+                  <!-- Clear only. Every type at once would still hide links and other files, so there is no Select all. -->
+                  <template #footer="{ clear }">
+                    <div v-if="listingTypes.length" class="border-t border-outline-gray-1 px-2 py-1.5">
+                      <Button variant="ghost" label="Clear" @click="clear" />
+                    </div>
+                  </template>
+                </MultiSelect>
+              </div>
               <div class="ml-auto flex items-center gap-2">
                 <Button
                   v-if="trashActions && trash.canEmptyTrash.value"
@@ -93,13 +119,6 @@
                   icon-left="lucide-trash-2"
                   :disabled="!listing.rows.length || trash.pending.value"
                   @click="trash.emptyTrash()"
-                />
-                <Button
-                  v-if="recentType"
-                  :label="`Type: ${recentType.newLabel()}`"
-                  icon-right="lucide-x"
-                  tooltip="Clear filter"
-                  @click="clearRecentType"
                 />
                 <!-- An empty view has nothing to arrange or select. The control stays
                      while rows load, so it does not pop in after them. -->
@@ -145,13 +164,18 @@
             :menu-options="rowMenuOptions"
             :row-drop="rowDrop"
             :menu-target="contextOpen ? contextRow : null"
+            :date-column="destination === 'recent' && !isSearching ? 'opened' : 'modified'"
             @update:selection="selection = $event"
             @sort="changeSort"
             @open="openNode"
             @select="selectNode"
             @menu="openContextMenu"
             @preview-error="refreshPreviews"
-          />
+          >
+            <template v-if="listingTypes.length" #empty-action>
+              <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
+            </template>
+          </FilesListing>
           <DropOverlay :zone="drop.over.value" />
         </div>
       </div>
@@ -178,6 +202,7 @@ import {
   Button,
   ContextMenu,
   Dropdown,
+  MultiSelect,
   PageHeader,
   PageHeaderBackButton,
   PageHeaderMobile,
@@ -218,6 +243,7 @@ import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import { heldWhileRearranging } from '../features/heldRows'
 import { recentFiles } from '../features/recent'
+import { offeredTypes, typeNouns, typeQuery, typesFromQuery, typeSummary } from '../features/typeFilter'
 import { copyLink } from '../features/share/shareFormat'
 import FolderPicker from '../features/FolderPicker.vue'
 import RenameDialog from '../features/RenameDialog.vue'
@@ -244,7 +270,7 @@ import {
   FILES_COLUMNS,
   type FilesColumn,
   type FilesSort,
-  type ChosenPresentation,
+  type PresentationChange,
   type PresentationState,
 } from '../features/presentation'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
@@ -308,7 +334,7 @@ const presentation = computed<PresentationState>(() => {
   // loaded list have the same columns.
   const shown = inOwnSpace.value ? { ...chosen, columns: chosen.columns.filter((column) => column !== 'owner') } : chosen
   if (isSearching.value || !concreteDestination.value) {
-    return { ...shown, sort: 'modified', dir: 'desc', group: props.destination === 'recent' && !isSearching.value ? 'opened' : 'none' }
+    return { ...shown, sort: 'modified', dir: 'desc' }
   }
   return shown
 })
@@ -411,7 +437,6 @@ const presentationQuery = computed(() => ({
   view: userPresentation.value.view,
   sort: userPresentation.value.sort,
   dir: userPresentation.value.dir,
-  group: userPresentation.value.group === 'none' ? undefined : userPresentation.value.group,
 }))
 const expansion = computed(() => {
   const parts = ['access']
@@ -419,10 +444,13 @@ const expansion = computed(() => {
   if (presentation.value.view === 'grid') parts.push('preview')
   return parts.join(',')
 })
-// Recent's `?type=` is a document type key (spec §5.1). It is filter state, not a preference.
-const recentType = computed(() => props.destination === 'recent' && !isSearching.value
-  ? documentTypes.find((definition) => definition.key === route.query.type)
-  : undefined)
+// Recent shows the files the user opened, without the folders they passed through.
+const hidesFolders = computed(() => props.destination === 'recent' && !isSearching.value)
+const typeChoices = computed(() => offeredTypes({ folders: !hidesFolders.value }))
+// `?type=` keeps items of any of the chosen types. It is filter state, not a
+// preference, so folder links and breadcrumbs leave it behind, as they leave the search.
+const listingTypes = computed(() => typesFromQuery(route.query.type, typeChoices.value))
+const typeOptions = computed(() => typeChoices.value.map((option) => ({ label: option.label, value: option.value })))
 /**
  * Trash has a tab per root. The tabs show from the first frame, before the
  * roots load, so the list below them never moves down. They go only when the
@@ -439,14 +467,15 @@ const trashRoot = computed(() => {
   return (route.query.root === 'organization' ? discovered.data?.organization?.node : discovered.data?.personal.node) ?? null
 })
 const listingQuery = useQuery(() => {
-  if (isSearching.value) return view({ view: 'search', term: searchTerm.value, expand: expansion.value })
+  const types = listingTypes.value.map((option) => option.value)
+  if (isSearching.value) return view({ view: 'search', term: searchTerm.value, types, expand: expansion.value })
   if (concreteDestination.value) {
     if (!parentId.value) return false
     return nodesChildren({
       node: parentId.value,
       order_by: userPresentation.value.sort,
       ascending: userPresentation.value.dir === 'asc',
-      group_by: userPresentation.value.group === 'none' ? undefined : userPresentation.value.group,
+      types,
       expand: expansion.value,
     })
   }
@@ -455,12 +484,12 @@ const listingQuery = useQuery(() => {
       : props.destination === 'starred' ? 'favourites' : 'trash'
   const root = trashRoot.value ?? undefined
   if (props.destination === 'trash' && !root) return false
-  return view({ view: name, root, content_doctype: recentType.value?.contentDoctype, expand: expansion.value })
+  return view({ view: name, root, types, expand: expansion.value })
 })
 // A new sort, view or search term keeps the old rows up until the new ones come.
 const listing = heldWhileRearranging(
-  recentFiles(listingQuery, () => props.destination === 'recent' && !isSearching.value),
-  () => [props.destination, parentId.value, isSearching.value, trashRoot.value, recentType.value?.key].join('|'),
+  recentFiles(listingQuery, () => hidesFolders.value),
+  () => [props.destination, parentId.value, isSearching.value, trashRoot.value, typeQuery(listingTypes.value)].join('|'),
 )
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
@@ -482,7 +511,7 @@ const empty = computed(() => emptyState({
   destination: props.destination,
   term: searchTerm.value,
   canCreate: canCreate.value,
-  recentType: recentType.value?.newLabel(),
+  typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
 }))
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
@@ -518,11 +547,13 @@ watch(() => presentation.value.view, (mode) => {
   if (mode === 'grid') startPreviewObservation()
   else { stopPreviews?.(); stopPreviews = null }
 })
-// An unknown type is dropped without a history entry.
-watch(() => [props.destination, route.query.type] as const, ([destination, type]) => {
-  if (destination === 'recent' && type !== undefined && !documentTypes.some((definition) => definition.key === type)) {
-    clearRecentType()
-  }
+// A type this listing does not offer is dropped without a history entry, and so
+// is `group`, which an older listing put in the URL.
+watch(() => [route.query.type, typeQuery(listingTypes.value), route.query.group] as const, ([raw, kept, group]) => {
+  if ((raw === undefined || raw === kept) && group === undefined) return
+  const { type: _type, group: _group, ...query } = route.query
+  const type = raw === undefined ? undefined : kept
+  void router.replace({ query: type ? { ...query, type } : query })
 }, { immediate: true })
 watch(() => route.fullPath, () => {
   searchText.value = String(route.query.q ?? '')
@@ -561,8 +592,8 @@ watch(() => [detail.error, listing.error] as const, (errors) => {
   if (guestFrame && refused) guestFrame.requireSignIn()
 })
 
-// Sort and Group by reorder a folder on the server. Search and the saved views
-// come in their own order, so they offer neither.
+// Sort reorders a folder on the server. Search and the saved views come in
+// their own order, so they offer no sort.
 const arrangeable = computed(() => concreteDestination.value && !isSearching.value)
 /** The listing hides Owner in the user's own space, so View settings does not offer it there. */
 const offeredColumns = computed(() => inOwnSpace.value ? FILES_COLUMNS.filter((column) => column !== 'owner') : FILES_COLUMNS)
@@ -625,7 +656,7 @@ const newOptions = computed<DropdownItem[]>(() => {
   ]
 })
 
-function setPresentation(change: Partial<Pick<ChosenPresentation, 'view' | 'sort' | 'dir' | 'group'>>) {
+function setPresentation(change: PresentationChange) {
   clearSelected()
   void replacePresentation(router, userPresentation.value, change)
 }
@@ -686,9 +717,17 @@ function rootPath(id: string): string | null {
   if (id === discovered.data?.organization?.node) return '/drive/organization'
   return null
 }
-function clearRecentType() {
+function typeIcon(value: string | number) {
+  const option = typeChoices.value.find((choice) => choice.value === value)
+  return option ? [nodeIcon(option.sample), nodeIconTint(option.sample)] : []
+}
+function setTypes(values: readonly (string | number)[]) {
+  const chosen = new Set(values)
+  replaceTypeQuery(typeQuery(typeChoices.value.filter((option) => chosen.has(option.value))))
+}
+function replaceTypeQuery(type: string | undefined) {
   const { type: _type, ...query } = route.query
-  void router.replace({ query })
+  void router.replace({ query: type ? { ...query, type } : query })
 }
 function switchTrashRoot(value: string | number) {
   clearSelected()
@@ -719,10 +758,13 @@ async function openNode(row: DriveNode, newTab = false) {
     return
   }
   // A folder keeps the user's view settings. A document's history entry
-  // carries its title, so its tab is named before it loads.
+  // carries its title, so its tab is named before it loads. A file keeps the
+  // type filter, so its preview steps through the files this listing shows.
   const target: RouteLocationRaw = row.kind === 'folder'
     ? { path: nodePath(row), query: presentationQuery.value }
-    : driveNodeRoute(row)
+    : row.kind === 'file'
+      ? { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
+      : driveNodeRoute(row)
   if (newTab) {
     window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
     return
@@ -913,8 +955,8 @@ function replaceSlug(row: DriveNode) {
 }
 function syncSavedViewQuery() {
   if (concreteDestination.value || isSearching.value) return
-  if (!route.query.sort && !route.query.dir && !route.query.group) return
-  const { sort: _sort, dir: _dir, group: _group, ...query } = route.query
+  if (!route.query.sort && !route.query.dir) return
+  const { sort: _sort, dir: _dir, ...query } = route.query
   void router.replace({ query })
 }
 </script>

@@ -15,6 +15,7 @@
       <span class="lucide-folder-open size-6 text-ink-gray-4" aria-hidden="true" />
       <p class="text-base text-ink-gray-5">{{ emptyTitle }}</p>
       <p class="text-p-sm text-ink-gray-5">{{ emptyDescription }}</p>
+      <slot name="empty-action" />
     </div>
 
     <template v-else-if="presentation.view === 'list'">
@@ -63,9 +64,9 @@
             <ListCell />
           </ListRow>
         </template>
-        <ListGroup v-for="section in sections" v-else :key="section.heading || 'all'" :label="section.heading || undefined">
+        <template v-else>
           <ListRow
-            v-for="row in section.rows"
+            v-for="row in rows"
             :key="row.name"
             :value="row.name"
             tabindex="0"
@@ -111,7 +112,7 @@
               </Dropdown>
             </ListCell>
           </ListRow>
-        </ListGroup>
+        </template>
       </List>
     </template>
 
@@ -127,10 +128,9 @@
           </div>
         </div>
       </section>
-      <section v-for="section in sections" v-else :key="section.heading || 'all'" class="pt-5 first:pt-0">
-        <h2 v-if="section.heading" class="px-1 pb-2 text-base text-ink-gray-5">{{ section.heading }}</h2>
+      <section v-else>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-3" role="list">
-          <div v-for="row in section.rows" :key="row.name" role="listitem" class="flex min-w-0" :data-listing-item="row.name" v-bind="rowDrop?.(row) ?? {}">
+          <div v-for="row in rows" :key="row.name" role="listitem" class="flex min-w-0" :data-listing-item="row.name" v-bind="rowDrop?.(row) ?? {}">
             <FileCard
               :node="row"
               :meta="cardMeta(row)"
@@ -195,7 +195,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Alert, Avatar, Button, Checkbox, Dropdown, ErrorMessage, LoadingIndicator, Skeleton, type DropdownItem } from 'frappe-ui'
-import { List, ListCell, ListGroup, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
+import { List, ListCell, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
@@ -204,7 +204,6 @@ import type { QueryResult } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import FileCard from './FileCard.vue'
-import { groupContiguous } from './grouping'
 import { loadUntilVisible } from './listingWindows'
 import type { FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
@@ -225,6 +224,8 @@ const props = defineProps<{
   rowDrop?: (node: DriveNode) => DropHandlers | null
   /** The item whose right-click menu is open. It looks selected while the menu shows. */
   menuTarget?: string | null
+  /** The date the date column shows. Recent shows when the user opened each file. */
+  dateColumn?: 'modified' | 'opened'
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -278,7 +279,6 @@ watch(loading, (isLoading) => {
   if (isLoading) skeletonTimer = setTimeout(() => { showSkeleton.value = true }, SKELETON_DELAY)
 }, { immediate: true })
 const rows = computed(() => props.query.rows)
-const sections = computed(() => groupContiguous(rows.value, props.presentation.group))
 const COLUMN_TRACKS: Record<string, string> = {
   owner: '12rem',
   modified: '8rem',
@@ -295,8 +295,7 @@ const columnTracks = computed(() => {
     md: tracks(columns.value),
   }
 })
-// Recent groups by visit day, so its date column is when the user opened the file.
-const byOpened = computed(() => props.presentation.group === 'opened')
+const byOpened = computed(() => props.dateColumn === 'opened')
 const headerCell = computed(() => props.sortable === false ? ListHeaderCell : ListHeaderCellSort)
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(isSelected))
 const someSelected = computed(() => !allSelected.value && rows.value.some(isSelected))

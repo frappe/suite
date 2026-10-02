@@ -2582,10 +2582,10 @@ def _slide_counts(rows: list) -> dict[str, int]:
 def _matching_kinds(rows: list, file_kinds) -> list:
     """Keep the rows whose legacy `file_type` the caller asked for.
 
-    §11.2 replaced the family filter with one `mime_prefix`, which cannot spell
-    `Folder` and cannot spell two families at once. The old vocabulary is kept
-    and applied to the page instead, so a client's saved filter still selects
-    what it selected before.
+    §11.2's `?type=` has its own vocabulary (`nodes.LISTING_TYPES`), which is
+    not the legacy `file_type` families. The old vocabulary is kept and applied
+    to the page instead, so a client's saved filter still selects what it
+    selected before.
     """
     if not file_kinds:
         return rows

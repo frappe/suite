@@ -2238,16 +2238,21 @@ class TestViewRoutes(DriveHTTPCase):
                 self.assertEqual(theirs["rows"], [])
                 self.assertEqual([row["name"] for row in self.view(name)["rows"]], [self.file])
 
-    def test_recents_filter_by_content_doctype_from_the_query_string(self):
-        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.document}/visit", body={}))
+    def test_recents_filter_by_type_from_the_query_string(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.folder}/visit", body={}))
         self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
         everything = self.view("recents")
-        self.assertEqual({row["name"] for row in everything["rows"]}, {self.document, self.file})
-        todo = self.view("recents", content_doctype="ToDo")
-        self.assertEqual([row["name"] for row in todo["rows"]], [self.document])
-        self.assertIsNotNone(todo["rows"][0]["opened_at"])
-        unknown = self.view("recents", content_doctype="No Such Doctype")
-        self.assertEqual(unknown, {"rows": [], "next_cursor": None})
+        self.assertEqual({row["name"] for row in everything["rows"]}, {self.folder, self.file})
+        folders = self.view("recents", type="folder")
+        self.assertEqual([row["name"] for row in folders["rows"]], [self.folder])
+        self.assertIsNotNone(folders["rows"][0]["opened_at"])
+        self.assertEqual(self.view("recents", type="image"), {"rows": [], "next_cursor": None})
+        either = self.view("recents", type="image,folder")
+        self.assertEqual([row["name"] for row in either["rows"]], [self.folder])
+        for unknown in ("spreadsheets", "folder,spreadsheets"):
+            with self.subTest(type=unknown):
+                answer = self.as_owner("GET", f"{PREFIX}/views/recents", query={"type": unknown})
+                self.refusal(answer, 400, "DriveError")
 
     def test_clearing_recents_leaves_the_favourites_alone(self):
         self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))

@@ -57,11 +57,11 @@ class TestRedirectTable(DriveHTTPCase):
             ("/drive/attachments", "/drive/attachments", "/drive"),
             ("/drive/attachments/:doctype", "/drive/attachments/ToDo", "/drive"),
             ("/drive/attachments/:doctype/:docname", "/drive/attachments/ToDo/todo-1", "/drive"),
-            ("/drive/documents", "/drive/documents", "/drive/recent?type=writer"),
-            ("/drive/presentations", "/drive/presentations", "/drive/recent?type=slides"),
-            ("/writer", "/writer", "/drive/recent?type=writer"),
-            ("/sheets", "/sheets", "/drive/recent?type=sheets"),
-            ("/slides", "/slides", "/drive/recent?type=slides"),
+            ("/drive/documents", "/drive/documents", "/drive/recent?type=document"),
+            ("/drive/presentations", "/drive/presentations", "/drive/recent?type=presentation"),
+            ("/writer", "/writer", "/drive/recent?type=document"),
+            ("/sheets", "/sheets", "/drive/recent?type=spreadsheet"),
+            ("/slides", "/slides", "/drive/recent?type=presentation"),
             ("/drive/recents", "/drive/recents", "/drive/recent"),
             ("/drive/favourites", "/drive/favourites", "/drive/starred"),
             ("/drive/shared", "/drive/shared", "/drive/shared-with-me"),
@@ -133,7 +133,7 @@ class TestRedirectTable(DriveHTTPCase):
     def test_a_row_with_its_own_query_keeps_it_and_carries_the_other_keys(self):
         self.assertRedirect(
             self.open("/sheets", flipped=True, query={"x": "1", "type": "old"}),
-            "/drive/recent?type=sheets&x=1",
+            "/drive/recent?type=spreadsheet&x=1",
         )
 
     def test_a_lookup_the_caller_may_not_read_falls_through_like_a_missing_node(self):

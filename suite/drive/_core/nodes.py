@@ -6,7 +6,7 @@ import collections
 import io
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import IO
 from uuid import uuid4
@@ -121,7 +121,7 @@ FROM (
           AND state = 'Active'
           AND kind <> 'root'
           AND is_template = 0
-          AND (%(kind)s IS NULL OR kind = %(kind)s)
+          AND {type_filter}
         ORDER BY {inner_order}
         LIMIT %(limit)s OFFSET %(offset)s
     ) children
@@ -142,6 +142,7 @@ WHERE g.principal IN %(own)s
   AND n.is_template = 0
   AND r.state = 'Active'
   AND (%(personal_root)s IS NULL OR n.root <> %(personal_root)s)
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -209,6 +210,7 @@ WHERE n.root = %(root)s
   AND n.trash_root = n.name
   AND n.kind <> 'root'
   AND n.is_template = 0
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -258,6 +260,7 @@ WHERE n.state = 'Active'
   AND n.is_template = 0
   AND n.root IN %(visible_roots)s
   AND n.title LIKE %(term)s
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -2650,26 +2653,26 @@ def children(
     limit: int = DEFAULT_PAGE_SIZE,
     order_by: str = "title",
     ascending: bool = True,
-    mime_prefix: str | None = None,
-    kind: str | None = None,
+    listing_types: Sequence[str] = (),
     group_by: str | None = None,
     with_access: bool = False,
 ) -> dict:
     """Return one three-query SQL window of readable, ordinary children.
 
+    `listing_types` keeps the nodes of any of those `?type=` values inside the
+    window (`type_filter`).
     `with_access` adds §11.3's access detail to every row from the grant rows
     this page already read, so an expanded listing costs no extra query.
     """
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     order_column = _order_column(order_by)
-    _validate_kind_filter(kind)
     _validate_group(group_by)
     direction = "ASC" if ascending else "DESC"
-    query = _folder_page_query(order_column, direction, group_by=group_by)
+    query = _folder_page_query(order_column, direction, group_by=group_by, listing_types=listing_types)
     result = frappe.db.sql(
         query,
-        {"parent": parent, "limit": page_size, "offset": offset, "kind": kind},
+        {"parent": parent, "limit": page_size, "offset": offset},
         as_dict=True,
     )
     return _folder_page_from_result(
@@ -2678,7 +2681,6 @@ def children(
         parent,
         offset=offset,
         page_size=page_size,
-        mime_prefix=mime_prefix,
         with_access=with_access,
     )
 
@@ -2688,11 +2690,13 @@ def _folder_page_query(
     direction: str = "ASC",
     *,
     group_by: str | None = None,
+    listing_types: Sequence[str] = (),
 ) -> str:
     return FOLDER_PAGE_SQL.format(
         parent_fields=", ".join(f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
+        type_filter=type_filter(listing_types),
         inner_order=_listing_order(order_column, direction, group_by=group_by, prefix=""),
         outer_order=_listing_order(order_column, direction, group_by=group_by, prefix="page."),
     )
@@ -2705,7 +2709,6 @@ def _folder_page_from_result(
     *,
     offset: int,
     page_size: int,
-    mime_prefix: str | None,
     with_access: bool = False,
 ) -> dict:
     parent_row = None
@@ -2733,11 +2736,7 @@ def _folder_page_from_result(
     if parent_row.kind == "document" or parent_row.pop("_drive_document_descendant", 0):
         raise DriveConflict(_("A content document cannot be listed as a folder"))
 
-    rows = [
-        row
-        for row in window
-        if roles[row.name] >= READ and (not mime_prefix or (row.mime or "").startswith(mime_prefix))
-    ]
+    rows = [row for row in window if roles[row.name] >= READ]
     if with_access:
         detail = describe_page(chain, {row.name: by_child[row.name] for row in rows}, chain_rows, principals)
         for row in rows:
@@ -2767,6 +2766,7 @@ def views(
     kept by `_core.activity` and answer in their own row shape, and unwrapping
     them here is what lets every view page answer in node shapes.
     """
+    listing_types = filters.get("listing_types", ())
     if name in ("recents", "favourites"):
         return _personal_view(
             principals,
@@ -2775,16 +2775,17 @@ def views(
             limit=limit,
             with_access=with_access,
             with_breadcrumbs=with_breadcrumbs,
-            content_doctype=filters.get("content_doctype"),
+            listing_types=listing_types,
         )
 
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     values = {"limit": page_size, "offset": offset, "now": now(), "own": _sql_values(principals.own)}
+    kept_type = type_filter(listing_types, "n.")
 
     if name == "shared":
         values["personal_root"] = personal_root_for(principals.user)
-        window = frappe.db.sql(SHARED_SQL, values, as_dict=True)
+        window = frappe.db.sql(SHARED_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2800,7 +2801,7 @@ def views(
         if not isinstance(root, str) or not root:
             frappe.throw(_("The trash view requires a Drive root"), frappe.ValidationError)
         values["root"] = root
-        window = frappe.db.sql(TRASH_SQL, values, as_dict=True)
+        window = frappe.db.sql(TRASH_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2825,7 +2826,7 @@ def views(
             frappe.throw(_("The search term is required"), frappe.ValidationError)
         values["visible_roots"] = _sql_values(_visible_root_ids(principals))
         values["term"] = f"%{term}%"
-        window = frappe.db.sql(SEARCH_SQL, values, as_dict=True)
+        window = frappe.db.sql(SEARCH_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2846,13 +2847,9 @@ def _personal_view(
     limit: int,
     with_access: bool,
     with_breadcrumbs: bool,
-    content_doctype: str | None = None,
+    listing_types: Sequence[str] = (),
 ) -> dict:
-    """Answer a personal list as node rows, keeping its own cursor.
-
-    Only `recents` takes a `content_doctype` filter; the adapter passes it to
-    no other personal list.
-    """
+    """Answer a personal list as node rows, keeping its own cursor."""
     from suite.drive._core import activity
 
     if name == "recents":
@@ -2861,10 +2858,16 @@ def _personal_view(
             cursor=cursor,
             limit=limit,
             with_access=with_access,
-            content_doctype=content_doctype,
+            listing_types=listing_types,
         )
     else:
-        result = activity.favourites(principals, cursor=cursor, limit=limit, with_access=with_access)
+        result = activity.favourites(
+            principals,
+            cursor=cursor,
+            limit=limit,
+            with_access=with_access,
+            listing_types=listing_types,
+        )
     rows = _view_eligible([row.node for row in result["rows"]])
     if with_breadcrumbs:
         rows = _readable_rows(rows, principals, with_breadcrumbs=True)
@@ -2984,6 +2987,70 @@ GROUP_TERMS = {
 }
 
 
+# One predicate per `?type=` value (§11.2). Every listing adds the chosen ones
+# inside its SQL window, so a page is never cut short by a filter applied after
+# the read. A type is what the listing's type icon shows: a file by its mime,
+# and a Suite document by the `listing_type` its content app declares. `%%` is
+# a literal `%`, because every listing query is run with values. `{p}` is the
+# table prefix.
+FILE_TYPE_TERMS = {
+    "folder": "{p}kind = 'folder'",
+    "pdf": "{p}kind = 'file' AND {p}mime = 'application/pdf'",
+    "image": "{p}kind = 'file' AND {p}mime LIKE 'image/%%'",
+    "video": "{p}kind = 'file' AND {p}mime LIKE 'video/%%'",
+    "audio": "{p}kind = 'file' AND {p}mime LIKE 'audio/%%'",
+}
+# An uploaded office file is a document type too, by its mime, as it was in the
+# legacy `MIME_LIST_MAP`. A Suite document of the same type matches as well.
+DOCUMENT_FILE_MIMES = {
+    "document": (
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.apple.pages",
+        "application/x-abiword",
+    ),
+    "spreadsheet": (
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.apple.numbers",
+        "text/csv",
+    ),
+    "presentation": (
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.apple.keynote",
+    ),
+}
+LISTING_TYPES = ("folder", *content.DOCUMENT_LISTING_TYPES, "pdf", "image", "video", "audio")
+
+
+def type_filter(listing_types: Sequence[str] = (), prefix: str = "") -> str:
+    """Return the SQL predicate that keeps a node of any of `listing_types`, or a true one for none."""
+    if set(listing_types) - set(LISTING_TYPES):
+        frappe.throw(_("The Drive listing type is invalid"), frappe.ValidationError)
+    if not listing_types:
+        return "1 = 1"
+    terms = [_type_term(listing_type, prefix) for listing_type in LISTING_TYPES if listing_type in listing_types]
+    return f"({' OR '.join(terms)})"
+
+
+def _type_term(listing_type: str, prefix: str) -> str:
+    if listing_type in FILE_TYPE_TERMS:
+        return f"({FILE_TYPE_TERMS[listing_type].format(p=prefix)})"
+    # Neither registered doctypes, which are checked SQL identifiers, nor the
+    # mimes above hold a `%`.
+    mimes = ", ".join(frappe.db.escape(mime) for mime in DOCUMENT_FILE_MIMES[listing_type])
+    terms = [f"({prefix}kind = 'file' AND {prefix}mime IN ({mimes}))"]
+    doctypes = [spec.doctype for spec in content.registry().values() if spec.listing_type == listing_type]
+    if doctypes:
+        names = ", ".join(frappe.db.escape(doctype) for doctype in doctypes)
+        terms.append(f"({prefix}kind = 'document' AND {prefix}content_doctype IN ({names}))")
+    return f"({' OR '.join(terms)})"
+
+
 def _listing_order(order_by: str, direction: str, *, group_by: str | None, prefix: str) -> str:
     terms = []
     if group_by:
@@ -3011,11 +3078,6 @@ def _order_column(order_by: str) -> str:
 def _validate_group(group_by: str | None) -> None:
     if group_by is not None and group_by not in GROUP_TERMS:
         frappe.throw(_("The Drive listing group is invalid"), frappe.ValidationError)
-
-
-def _validate_kind_filter(kind: str | None) -> None:
-    if kind is not None and kind != "folder":
-        frappe.throw(_("The Drive child kind filter is invalid"), frappe.ValidationError)
 
 
 def _grant_rows(node_ids: list[str], principals: Principals) -> list:

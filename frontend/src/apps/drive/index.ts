@@ -1,5 +1,5 @@
 import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
+import type { RouteLocationPathRaw } from 'vue-router'
 
 import FilesIcon from '@/apps/drive/AreaIcon.vue'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
@@ -131,7 +131,7 @@ export function driveNodeRoute(
   node: DriveNodeSummary | { name: string; title: string; kind: string } | string,
   title?: string,
   kind = 'document',
-): RouteLocationRaw {
+): RouteLocationPathRaw {
   const id = typeof node === 'string' ? node : node.name
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind

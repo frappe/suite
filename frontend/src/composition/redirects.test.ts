@@ -36,9 +36,9 @@ describe('old links clicked inside the app, with the files flip on', () => {
     ['/drive/shared', '/drive/shared-with-me'],
     ['/drive/inbox', '/drive'],
     ['/drive/attachments/Task/TASK-1', '/drive'],
-    ['/drive/documents', '/drive/recent?type=writer'],
-    ['/drive/presentations', '/drive/recent?type=slides'],
-    ['/writer', '/drive/recent?type=writer'],
+    ['/drive/documents', '/drive/recent?type=document'],
+    ['/drive/presentations', '/drive/recent?type=presentation'],
+    ['/writer', '/drive/recent?type=document'],
     ['/drive/d/folder-1', '/drive/f/folder-1'],
     ['/drive/w/doc-1', '/d/doc-1'],
     ['/writer/w/doc-1', '/d/doc-1'],
@@ -54,8 +54,8 @@ describe('old links clicked inside the app, with the files flip on', () => {
   })
 
   it('keeps a target query, and the old query adds its other keys', async () => {
-    expect((await openPath('/drive/documents?x=1')).at).toBe('/drive/recent?type=writer&x=1')
-    expect((await openPath('/writer?type=sheets&sort=name')).at).toBe('/drive/recent?type=writer&sort=name')
+    expect((await openPath('/drive/documents?x=1')).at).toBe('/drive/recent?type=document&x=1')
+    expect((await openPath('/writer?type=sheets&sort=name')).at).toBe('/drive/recent?type=document&sort=name')
   })
 
   it.each([
@@ -92,7 +92,7 @@ describe('old links clicked inside the app, with the files flip on', () => {
 
   it('on the first load, a Sheets or Slides page with a fixed target goes there in the app', async () => {
     expect(await openPath('/sheets/new', { firstLoad: true })).toEqual({ at: '/home', loads: [] })
-    expect(await openPath('/slides?x=1', { firstLoad: true })).toEqual({ at: '/drive/recent?type=slides&x=1', loads: [] })
+    expect(await openPath('/slides?x=1', { firstLoad: true })).toEqual({ at: '/drive/recent?type=presentation&x=1', loads: [] })
   })
 
   it.each(['/suite/setup', '/suite/load-error', '/drive', '/drive/trash', '/drive/f/node-1', '/mail/inbox', '/home'])(

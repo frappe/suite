@@ -266,11 +266,11 @@ class TestPageEnvelope(BoundaryCase):
                 order_by="modified",
                 ascending="0",
                 group_by="owner",
-                kind="folder",
+                type="folder, pdf,,folder",
             )
         self.assertIsNone(listed.call_args.kwargs["cursor"])
         self.assertEqual(listed.call_args.kwargs["group_by"], "owner")
-        self.assertEqual(listed.call_args.kwargs["kind"], "folder")
+        self.assertEqual(listed.call_args.kwargs["listing_types"], ("folder", "pdf"))
 
     def test_a_cursor_seeking_past_the_bound_is_a_bad_request_not_a_query(self):
         # MariaDB parses OFFSET as an unsigned bigint and fails the statement
@@ -335,9 +335,10 @@ class TestViewProjection(BoundaryCase):
                     self.assertIn(f"n.`{field}`", statement)
 
     def test_no_view_statement_carries_an_unformatted_placeholder(self):
+        # `{type_filter}` is the one placeholder left for the call to fill.
         for name in self.VIEWS:
             with self.subTest(view=name):
-                self.assertNotIn("{", getattr(node_core, name))
+                self.assertNotIn("{", getattr(node_core, name).replace("{type_filter}", ""))
 
 
 class TestSubjectPrincipals(BoundaryCase):
@@ -828,17 +829,19 @@ class TestViewRoutes(BoundaryCase):
 
     def test_each_view_is_given_only_the_filters_it_declares(self):
         expected = (
-            ("trash", {"root": "r1"}),
+            ("trash", {"root": "r1", "listing_types": ("pdf", "image")}),
             ("templates", {"content_doctype": "Presentation"}),
-            ("search", {"term": "budget"}),
-            ("shared", {}),
-            ("recents", {"content_doctype": "Presentation"}),
-            ("favourites", {}),
+            ("search", {"term": "budget", "listing_types": ("pdf", "image")}),
+            ("shared", {"listing_types": ("pdf", "image")}),
+            ("recents", {"listing_types": ("pdf", "image")}),
+            ("favourites", {"listing_types": ("pdf", "image")}),
             ("archived-roots", {}),
         )
         for name, filters in expected:
             with self.subTest(view=name):
-                routes.view_list(view=name, root="r1", content_doctype="Presentation", term="budget")
+                routes.view_list(
+                    view=name, root="r1", content_doctype="Presentation", term="budget", type="pdf,image"
+                )
                 passed = dict(self.workflow.call_args.kwargs)
                 passed.pop("cursor")
                 passed.pop("limit")

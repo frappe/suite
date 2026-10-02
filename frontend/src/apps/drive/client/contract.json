@@ -2281,13 +2281,8 @@
             "title": "Ascending",
             "type": "boolean"
           },
-          "mime_prefix": {
-            "title": "Mime Prefix",
-            "type": "string"
-          },
-          "kind": {
-            "const": "folder",
-            "title": "Kind",
+          "type": {
+            "title": "Type",
             "type": "string"
           },
           "group_by": {
@@ -3430,6 +3425,10 @@
           },
           "term": {
             "title": "Term",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
             "type": "string"
           },
           "expand": {

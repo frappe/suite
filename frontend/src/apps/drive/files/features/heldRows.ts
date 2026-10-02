@@ -4,7 +4,7 @@ import type { QueryResult } from '@/platform/server-state'
 
 /**
  * Keeps a listing's last rows on screen while the same place is read again in
- * a new arrangement: another sort, order, grouping or view, or another search
+ * a new arrangement: another sort, order or view, or another search
  * term. Without it the listing empties to a skeleton and back, and the user
  * loses their place. Opening a different place still starts empty, so one
  * folder's rows never show under another folder's name.

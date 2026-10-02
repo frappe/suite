@@ -1,5 +1,13 @@
 export const DRIVE_NODE_TAG = 'DriveNode'
 
+/** A `?type=` value that keeps one type of node in a listing (`nodes.LISTING_TYPES`). */
+export type DriveListingType = 'folder' | 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'video' | 'audio'
+
+/** The `?type=` argument for a listing that keeps any of `types`: a comma-separated list, or none. */
+export function listingTypesParam(types: readonly DriveListingType[] | undefined): string | undefined {
+  return types?.length ? types.join(',') : undefined
+}
+
 export const DRIVE_ROLES = {
   read: 10,
   comment: 20,
