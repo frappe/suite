@@ -18,13 +18,6 @@ export default {
     '../node_modules/frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
     '../frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
   ],
-  theme: {
-    extend: {
-      colors: {
-        surface: { "raised-hand": "#e54e17" },
-      },
-    },
-  },
   variants: {
     extend: {
       display: ["group-hover"],

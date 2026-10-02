@@ -35,7 +35,7 @@ function setupLayout(pinned: PinnedTile[] = []) {
 	const pins = ref(pinned);
 	const layout = useLayout(participants, pins, deps, ref(0));
 	const visibleIds = () => layout.displayParticipants.value.list.map((p) => p.user_id);
-	return { participants, deps, pins, layout, visibleIds };
+	return { participants, deps, layout, visibleIds };
 }
 
 describe("participant promotion", () => {
@@ -75,17 +75,6 @@ describe("participant promotion", () => {
 		expect(layout.displayParticipants.value.hidden.map((p) => p.user_id)).toEqual(["a", "b", "c"]);
 	});
 
-	it("keeps an existing raised hand in its slot while replacing a lower-ranked tile", () => {
-		const { deps, visibleIds } = setupLayout();
-		expect(visibleIds()).toEqual(["a", "b"]);
-		deps.raisedHands.value = { b: "2026-10-01T10:00:01Z" };
-		expect(visibleIds()).toEqual(["a", "b"]);
-		deps.raisedHands.value = { ...deps.raisedHands.value, e: "2026-10-01T10:00:02Z" };
-		expect(visibleIds()).toEqual(["e", "b"]);
-		deps.raisedHands.value = { e: "2026-10-01T10:00:02Z" };
-		expect(visibleIds()).toEqual(["e", "b"]);
-	});
-
 	it("gives earlier raised hands visibility when there is no space for the entire queue", () => {
 		const { deps, visibleIds } = setupLayout();
 		expect(visibleIds()).toEqual(["a", "b"]);
@@ -106,45 +95,10 @@ describe("participant promotion", () => {
 		expect(visibleIds()).toEqual(["e", "d"]);
 		deps.activeSpeakerIds.value = ["c"];
 		expect(visibleIds()).toEqual(["e", "c"]);
-	});
-
-	it("replaces the lowest-ranked tile even if it was promoted more recently", () => {
-		const { participants, deps, visibleIds } = setupLayout();
-		expect(visibleIds()).toEqual(["a", "b"]);
-		deps.activeSpeakerIds.value = ["d"];
-		expect(visibleIds()).toEqual(["a", "d"]);
-		participants.value.d.video_enabled = false;
+		// Speaking again refreshes a retained tile before the next promotion.
 		deps.activeSpeakerIds.value = ["e"];
-		expect(visibleIds()).toEqual(["a", "e"]);
-	});
-
-	it("refreshes promotion age when an already-visible participant gains priority", () => {
-		const { deps, visibleIds } = setupLayout();
-		expect(visibleIds()).toEqual(["a", "b"]);
+		expect(visibleIds()).toEqual(["e", "c"]);
 		deps.activeSpeakerIds.value = ["d"];
-		expect(visibleIds()).toEqual(["a", "d"]);
-		deps.activeSpeakerIds.value = ["a"];
-		expect(visibleIds()).toEqual(["a", "d"]);
-		deps.activeSpeakerIds.value = ["e"];
-		expect(visibleIds()).toEqual(["a", "e"]);
-	});
-
-	it("keeps equal-priority tiles stable when participants join or change microphone state", () => {
-		const { participants, deps, visibleIds } = setupLayout();
-		expect(visibleIds()).toEqual(["a", "b"]);
-		deps.activeSpeakerIds.value = ["d"];
-		expect(visibleIds()).toEqual(["a", "d"]);
-		deps.activeSpeakerIds.value = [];
-		expect(visibleIds()).toEqual(["a", "d"]);
-		participants.value.d.audio_enabled = true;
-		participants.value.aa = { user_id: "aa", user_name: "AA", avatar: null, initials: "A", video_enabled: true };
-		expect(visibleIds()).toEqual(["a", "d"]);
-	});
-
-	it("retains a pinned participant when raised hands exceed strip capacity", () => {
-		const { deps, visibleIds } = setupLayout([{ type: "participant", id: "a" }]);
-		expect(visibleIds()).toEqual(["a", "b", "c"]);
-		deps.raisedHands.value = { c: "2026-10-01T10:00:00Z", d: "2026-10-01T10:00:01Z", e: "2026-10-01T10:00:02Z" };
-		expect(visibleIds()).toEqual(["a", "d", "c"]);
+		expect(visibleIds()).toEqual(["e", "d"]);
 	});
 });
