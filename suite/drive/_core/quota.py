@@ -30,9 +30,8 @@ WHERE name = %(root)s
 """
 
 
-# `Drive Disk Settings` is a Single, so every field is stored in `tabSingles.value`,
-# a longtext column. Frappe casts a Single's `Int` and `Check` fields back to numbers
-# but not its `Long Int` fields, so the byte quotas arrive as text.
+# A Single stores its values as text. Validate raw quota values because Frappe
+# casts malformed Int values to zero when loading a document.
 _INTEGER_TEXT = re.compile(r"[+-]?[0-9]+\Z")
 
 
@@ -61,9 +60,9 @@ def effective_quota(root: Mapping) -> int:
     if override:
         return override
 
-    settings = frappe.get_cached_doc("Drive Disk Settings")
     field = "shared_quota" if kind == "Shared" else "default_personal_quota"
-    return site_quota_bytes(settings.get(field), _("Drive site quota"))
+    raw_settings = frappe.db.get_singles_dict("Drive Disk Settings", cast=False)
+    return site_quota_bytes(raw_settings.get(field), _("Drive site quota"))
 
 
 def root_for_node(node: Mapping, *, for_update: bool = False) -> frappe._dict:

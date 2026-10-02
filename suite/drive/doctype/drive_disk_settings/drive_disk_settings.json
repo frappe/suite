@@ -59,14 +59,16 @@
    "default": "0",
    "description": "Default quota for Personal Drive roots, in bytes. 0 means unlimited.",
    "fieldname": "default_personal_quota",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Default Personal Quota"
   },
   {
    "default": "0",
    "description": "Default quota for the Shared Drive root, in bytes. 0 means unlimited.",
    "fieldname": "shared_quota",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Shared Quota"
   },
   {

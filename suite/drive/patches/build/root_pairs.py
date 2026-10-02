@@ -382,7 +382,7 @@ def _refuse_mismatch(node_id: str, existing_node, existing_metadata, intended: d
         }
         for field, expected in canonical.items():
             actual = existing_node.get(field)
-            # Database Check/Long Int values may arrive as bool/int, so
+            # Database Check/Int values may arrive as bool/int, so
             # ordinary equality is intentionally enough for zero fields.
             if actual != expected:
                 raise BuildPairError(

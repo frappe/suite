@@ -38,7 +38,8 @@
   },
   {
    "fieldname": "head_seq",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Head op-log seq",
    "default": "0",
    "description": "Highest op-log seq applied to the live sheets_data blob."

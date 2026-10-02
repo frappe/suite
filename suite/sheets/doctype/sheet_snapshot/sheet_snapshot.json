@@ -27,7 +27,8 @@
   },
   {
    "fieldname": "seq",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Op-log sequence",
    "description": "Operation-log sequence number captured by this snapshot.",
    "reqd": 1,

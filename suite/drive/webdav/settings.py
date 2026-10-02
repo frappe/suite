@@ -69,8 +69,8 @@ def site_settings() -> dict:
     Everyone reads `preview_size` and whether they are an admin. Only an admin
     reads the WebDAV switch, the method allow-list, and the quota defaults.
 
-    A Single stores every value as text, and a `Long Int` loads back as a
-    string. Each number is cast here, so the answer carries integers.
+    A Single stores every value as text. Cast each number so the answer
+    carries integers even when settings were supplied as text.
     """
     settings = frappe.get_cached_doc("Drive Disk Settings")
     admin = is_drive_admin()

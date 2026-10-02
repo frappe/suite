@@ -85,7 +85,7 @@ concurrent upload; Meet's budget model would need a redesign).
 
 ### 4. Counter on Drive Root
 
-`Drive Root.used_bytes` (Long Int). Maintained in the same transaction as
+`Drive Root.used_bytes` (Int, length 20). Maintained in the same transaction as
 every node create, replace, purge, version create, version thin,
 reservation change, and move. Admission is one statement:
 

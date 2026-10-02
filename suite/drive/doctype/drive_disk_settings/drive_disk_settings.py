@@ -21,7 +21,7 @@ class DriveDiskSettings(Document):
         aws_key: DF.Data | None
         aws_secret: DF.Password | None
         bucket: DF.Data | None
-        default_personal_quota: DF.LongInt
+        default_personal_quota: DF.Int
         enabled: DF.Check
         endpoint_url: DF.Data | None
         flat: DF.Check
@@ -29,7 +29,7 @@ class DriveDiskSettings(Document):
         quota: DF.Int
         root_folder: DF.Data | None
         signature_version: DF.Data | None
-        shared_quota: DF.LongInt
+        shared_quota: DF.Int
         thumbnail_prefix: DF.Data | None
         webdav_allowed_methods: DF.SmallText | None
         webdav_enabled: DF.Check
@@ -44,8 +44,7 @@ class DriveDiskSettings(Document):
         self._validate_webdav_methods()
 
     def _validate_drive_quotas(self):
-        # Both quotas are `Long Int` on a Single, so a reloaded doc carries them as
-        # text. Normalize to the integer the quota engine and the counters expect.
+        # Validate both quotas even when a caller sets them as text before saving.
         self.set(
             "default_personal_quota",
             site_quota_bytes(self.get("default_personal_quota"), _("Default personal quota")),

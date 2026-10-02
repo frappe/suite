@@ -1557,8 +1557,7 @@ class TestSettingsRoutes(DriveHTTPCase):
         self.assertIs(answer["webdav_enabled"], False)
 
     def test_every_numeric_site_setting_is_a_json_integer(self):
-        # A Single keeps its values as text, and `Long Int` survives the load
-        # as a string. The contract says integer, so the client refuses text.
+        # The site settings contract returns integer quotas to the client.
         quotas = {"default_personal_quota": 5 * 1024**3, "shared_quota": 50 * 1024**3}
         kept = {field: frappe.db.get_single_value("Drive Disk Settings", field) for field in quotas}
         self.addCleanup(self.set_site_values, kept)

@@ -44,7 +44,7 @@ def scan_active_and_archived_roots(doctype, filters=None, pluck=None):
 
 
 class TestQuotaContract(UnitTestCase):
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_effective_quota_prefers_override_then_kind_default(self, get_settings):
         get_settings.return_value = frappe._dict(default_personal_quota=100, shared_quota=200)
 
@@ -52,20 +52,14 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 100)
         self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 200)
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
-    def test_effective_quota_reads_a_site_default_a_single_stores_as_text(self, get_settings):
-        """`Drive Disk Settings` is a Single, so its `Long Int` quotas come back as text.
-
-        `tabSingles.value` is a longtext column and Frappe casts a Single's `Int`
-        and `Check` fields but not its `Long Int` ones, so the installed default
-        `0` reads back as `"0"`.
-        """
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
+    def test_effective_quota_reads_raw_site_defaults(self, get_settings):
         get_settings.return_value = frappe._dict(default_personal_quota="0", shared_quota="20480")
 
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 0)
         self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 20480)
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_a_malformed_site_default_is_refused_not_read_as_unlimited(self, get_settings):
         for stored in ("5GB", "1.5", "-1", "0x10", "1_000"):
             with self.subTest(stored=stored):
@@ -73,7 +67,7 @@ class TestQuotaContract(UnitTestCase):
                 with self.assertRaises(frappe.ValidationError):
                     effective_quota({"kind": "Personal", "quota_bytes": 0})
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_an_unset_site_default_is_unlimited(self, get_settings):
         for stored in (None, "", "   ", 0):
             with self.subTest(stored=stored):
@@ -199,9 +193,8 @@ class TestSiteDefaultQuota(IntegrationTestCase):
     """The site defaults on a root with no override, read off the real Single.
 
     `Drive Disk Settings` is a Single, so `default_personal_quota` and
-    `shared_quota` live in `tabSingles.value`, a longtext column. Frappe casts a
-    Single's `Int` and `Check` fields back to numbers but not its `Long Int`
-    ones, so both quotas reach `effective_quota` as text on every site.
+    `shared_quota` live in `tabSingles.value`. Quota checks read the raw text
+    to reject malformed values before Frappe casts them to zero.
     """
 
     user = "Administrator"

@@ -207,7 +207,7 @@ Naming: `autoname: hash`, which is a 10-char id
 | `path` | Data | | length 500 | Ids of the ancestors below the root, `/<id>/<id>/`. Empty string at top level. Depth cap 40. |
 | `kind` | Select | `root`<br>`folder`<br>`file`<br>`link`<br>`document` | reqd 1 | What the node is. |
 | `blob` | Link | File Blob | search_index 1 | The head bytes of a file node. NULL for every other kind. |
-| `size` | Long Int | | default 0 | Logical bytes charged to the root (§7). 0 for folders, links, and documents. |
+| `size` | Int, length 20 | | default 0 | Logical bytes charged to the root (§7). 0 for folders, links, and documents. |
 | `mime` | Data | | | The blob's sniffed mime, copied at create. Decides preview rendering. |
 | `url` | Data | | length 500 | Target of a `link` node. |
 | `content_doctype` | Link | DocType | | Content doctype of a `document` node. |
@@ -301,8 +301,8 @@ The shared key preserves existing root-id API and accounting semantics.
 | `user` | Link | User | | The owner of a Personal root. Empty on a Shared root. |
 | `kind` | Select | `Personal`<br>`Shared` | reqd 1 | Which namespace this is. |
 | `state` | Select | `Active`<br>`Archived` | reqd 1, default `Active` | Archived is offboarding: one field, no node writes [001]. |
-| `quota_bytes` | Long Int | | default 0 | 0 means inherit the site default for the kind [010 §6]. |
-| `used_bytes` | Long Int | | default 0 | The counter (§7.2). Maintained in the same transaction as every charged write. |
+| `quota_bytes` | Int, length 20 | | default 0 | 0 means inherit the site default for the kind [010 §6]. |
+| `used_bytes` | Int, length 20 | | default 0 | The counter (§7.2). Maintained in the same transaction as every charged write. |
 | `acl_generation` | Int | | default 0 | Reserved [001]. No reader in this spec. Nothing increments it. |
 
 Rules:
@@ -377,7 +377,7 @@ content documents alike [006 §6].
 | `label` | Data | | | What the user called it. |
 | `pinned` | Check | | default 0 | Pinned versions are never thinned. |
 | `actor` | Link | User | | Who caused the version. |
-| `size` | Long Int | | default 0 | Bytes charged to the root (§7.1). |
+| `size` | Int, length 20 | | default 0 | Bytes charged to the root (§7.1). |
 | `blob` | Link | File Blob | search_index 1 | The version bytes. |
 
 `creation` is the version time and drives the retention ladder.
@@ -516,7 +516,7 @@ gets no HTTP endpoint [014].
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
 | `root` | Link | Drive Root | reqd 1, search_index 1 | Was `storage_owner`, a Link to User [010 §3]. |
-| `reserved_bytes` | Long Int | | reqd 1, default 0 | Counts as used from the moment it is made. |
+| `reserved_bytes` | Int, length 20 | | reqd 1, default 0 | Counts as used from the moment it is made. |
 
 Naming stays `prompt` (the caller sets the name). The four operations
 stay: create, grow, reduce, release. A reservation never moves with a
@@ -531,8 +531,8 @@ node [010 §3].
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
 | `preview_size` | Int | | reqd 1, default 512 | Longest side of the preview, in px [006 §2]. |
-| `default_personal_quota` | Long Int | | default 0 | Site default for a Personal root, in bytes. 0 is unlimited [010 §6]. |
-| `shared_quota` | Long Int | | default 0 | Site default for the Shared root, in bytes. 0 is unlimited [010 §6]. |
+| `default_personal_quota` | Int, length 20 | | default 0 | Site default for a Personal root, in bytes. 0 is unlimited [010 §6]. |
+| `shared_quota` | Int, length 20 | | default 0 | Site default for the Shared root, in bytes. 0 is unlimited [010 §6]. |
 | `webdav_enabled` | Check | | default 0 | Site switch for the DAV mount. |
 | `webdav_allowed_methods` | Small Text | | | The method allow-list [009 §12]. |
 

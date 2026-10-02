@@ -55,7 +55,8 @@
   {
    "default": "0",
    "fieldname": "size",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Size"
   },
   {

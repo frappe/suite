@@ -26,7 +26,8 @@
   {
    "default": "0",
    "fieldname": "reserved_bytes",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Reserved Bytes",
    "reqd": 1
   }
