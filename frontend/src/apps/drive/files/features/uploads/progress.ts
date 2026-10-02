@@ -3,7 +3,7 @@ import { getCurrentInstance, type AppContext } from 'vue'
 import { uploadQueue, type UploadIndicator, type UploadPrompts } from './queue'
 
 /**
- * The upload queue as the app root sees it: the indicator the shell's ring
+ * The upload queue as the app root sees it: the indicator the shell's dot
  * reads, a way to open the tracker, and whether the tracker needs mounting.
  * `apps/drive/index.ts` exports it for composition.
  */

@@ -80,7 +80,7 @@ decision 5, and Faris approved the report.
 ### 3. Guest is a shell state
 
 - `ShellLayout` gets a guest frame: no rail, no sidebar, one slim header
-  with the Suite mark, the upload ring (decision 6) and Sign in.
+  with the Suite mark, the upload dot (decision 6) and Sign in.
 - The same `FilesPage` and `DocumentHost` render for guests. Actions hide
   through ticket 006's role rule. No second folder list.
 - On folder routes the trail is `FilesPage`'s own breadcrumbs through
@@ -112,8 +112,8 @@ decision 5, and Faris approved the report.
 
 ### 6. Guest uploads through a link
 
-- The progress ring sits in the guest header in a fixed slot and opens
-  ticket 007's tracker.
+- The progress dot sits on the **Uploads** button in a fixed slot in the
+  guest header. The button opens ticket 007's tracker.
 - Resume after reload works for guests on the same code path.
 - The upload shows in the listing: UPLOAD (30) includes READ (10), and the
   folder's link covers the new child.

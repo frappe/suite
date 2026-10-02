@@ -17,7 +17,7 @@
     >
       <component :is="icon" v-if="icon" class="size-[22px]" aria-hidden="true" />
       <slot v-else />
-      <AreaProgressRing :progress="progress" :label="label" :around="icon ? 22 : 16" />
+      <AreaProgressDot :progress="progress" :label="label" />
       <span v-if="hasBadgeSlot" class="absolute -right-2.5 -top-2.5">
         <slot name="badge" />
       </span>
@@ -30,7 +30,7 @@ import { computed, useSlots, type Component } from "vue";
 import { SidebarRailItem as FrappeRailItem } from "frappe-ui";
 import { useRoute, type RouteLocationRaw } from "vue-router";
 
-import AreaProgressRing from "@/shell/AreaProgressRing.vue";
+import AreaProgressDot from "@/shell/AreaProgressDot.vue";
 import { progressDetail, type AreaProgress } from "@/shell/areaProgress";
 
 const props = withDefaults(
@@ -44,7 +44,7 @@ const props = withDefaults(
     badge?: number;
     badgeStyle?: "count" | "dot";
     variant?: "subtle" | "ghost";
-    /** Background work of this item's area, drawn as a ring around the icon. */
+    /** Background work of this item's area, drawn as a dot on the icon. */
     progress?: AreaProgress | null;
   }>(),
   {

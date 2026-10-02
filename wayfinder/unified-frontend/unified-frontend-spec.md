@@ -562,7 +562,8 @@ PWA [T010]:
   `shell/` owns rail geometry, route rules and badges. The platform's
   `<AreaSidebar>` owns sidebar geometry, the scroll area and fades
   (section 3.4) [T004, T010].
-- The upload ring uses frappe-ui's `ProgressRing` [T007].
+- The upload indicator is a small dot, the shell's `AreaProgressDot`,
+  drawn with design tokens (section 6.3) [T007, Faris, 2026-10-02].
 - Styling uses frappe-ui design tokens [MAP]. Icons are frappe-ui's lucide
   set on every surface. This overrides the standing Figma rule for this
   effort. No Figma swap is planned [T021].
@@ -1045,23 +1046,27 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 
 ### 6.3 Progress in the rail
 
-- The Drive rail item shows one ring for the whole queue, weighted by
-  bytes, in every area while uploads run. In the Drive area the tracker panel also
-  shows [T007].
-- Clicking the ring opens `/drive` with the tracker open [T007].
+- The Drive rail item shows one dot for the whole queue, in every area
+  while uploads run. The dot sits at the top-right corner of the item's
+  icon. In the Drive area the tracker panel also shows [T007].
+- The dot shows state, not progress. The item's tooltip shows the
+  percentage done, weighted by bytes. A screen reader hears the state in
+  words, with no percentage [T007, Faris, 2026-10-02].
+- Clicking the item while the dot shows opens `/drive` with the tracker
+  open [T007].
 
 | State | Indicator |
 |---|---|
-| Uploading | Determinate ring |
-| Paused or retrying | Amber |
-| All done | Ring completes, then fades after about 3 s |
+| Uploading | Orange dot. The tooltip shows the percentage |
+| Paused or retrying | Orange dot. The tooltip reads "Paused" |
+| All done | The dot fades out |
 | Some failed, or interrupted after reload | Red dot until the user opens the tracker |
 
-[T007]
+[T007, Faris, 2026-10-02]
 
 - The phone Drive bottom-nav item shows the same indicator [T007].
-- In the guest frame the ring sits in a fixed header slot (section 10.6)
-  [T011].
+- In the guest frame the dot sits on the **Uploads** button in a fixed
+  header slot (section 10.6) [T011].
 - The tracker component does not cross the Drive seam [T007].
 
 ### 6.4 Collisions
@@ -1651,8 +1656,8 @@ Each app's later migration owns these. They are named and baselined
 
 - The Guest surface is a shell state. `ShellLayout` gets a guest frame: no
   rail, no area sidebar, one slim header [T011].
-- The header holds the Suite mark, the upload ring (section 10.6) and Sign
-  in. On `/d/` it holds only the Suite mark and Sign in [T011].
+- The header holds the Suite mark, the **Uploads** button with its
+  progress dot (section 10.6) and Sign in. On `/d/` it holds only the Suite mark and Sign in [T011].
 - The same `FilesPage` and `DocumentHost` render for guests. Actions hide
   by role (section 5.6). There is no second folder list [T011].
 - On folder routes the trail is `FilesPage`'s own breadcrumbs through
@@ -1685,8 +1690,8 @@ Each app's later migration owns these. They are named and baselined
 
 ### 10.6 Guest uploads through a link
 
-- The progress ring sits in the guest header in a fixed slot and opens the
-  tracker [T011].
+- The **Uploads** button sits in the guest header in a fixed slot. It
+  carries the progress dot and opens the tracker [T011].
 - The upload shows in the listing. UPLOAD includes READ, and the folder's
   link covers the new child [T011].
 - No creator grant is written, so the guest cannot rename or trash the

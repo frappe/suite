@@ -156,7 +156,7 @@ export function openDocumentSession(nodeId: string) {
 
 export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
 
-/** The upload queue for the app root: the ring's indicator, the tracker's state and the queue's questions (spec §6.3). */
+/** The upload queue for the app root: the shell's indicator, the tracker's state and the queue's questions (spec §6.3). */
 export { driveUploadProgress, type DriveUploadProgress } from '@/apps/drive/files/features/uploads/progress'
 
 /** The upload tracker. The app root mounts it while the queue has work, so it outlives the page. */

@@ -7,7 +7,7 @@
         <span class="truncate text-base-semibold text-ink-gray-9">Frappe Suite</span>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <!-- The guest upload ring's fixed slot (spec §10.6). The frame fills it only on folder routes. -->
+        <!-- The guest Uploads button's fixed slot (spec §10.6). The frame fills it only on folder routes. -->
         <div v-if="$slots.uploads" class="grid size-7 place-items-center">
           <slot name="uploads" />
         </div>

@@ -122,18 +122,18 @@ describe("phone bottom nav", () => {
 });
 
 describe("area progress on the bottom nav", () => {
-  it("draws the ring on the area that runs work, and opens its view on click", async () => {
+  it("draws one dot on the area that runs work, and opens its view on click", async () => {
     const opened: string[] = [];
     const { root, item } = await mountAt("/home", {
       progress: (area) => (area === "files" ? { fraction: 0.4, tone: "paused", attention: true } : null),
       open: (area) => opened.push(area),
     });
 
-    const ring = item("Drive").querySelector("[data-slot='area-progress-ring']");
-    expect(ring?.getAttribute("data-tone")).toBe("paused");
-    expect(item("Drive").querySelector("[data-slot='area-progress-attention']")).not.toBeNull();
-    expect(item("Home").querySelector("[data-slot='area-progress-ring']")).toBeNull();
-    expect(root.querySelectorAll("[data-slot='area-progress-ring']")).toHaveLength(1);
+    const dot = item("Drive").querySelector("[data-slot='area-progress-dot']");
+    expect(dot?.getAttribute("data-tone")).toBe("paused");
+    expect(dot?.getAttribute("data-attention")).toBe("true");
+    expect(item("Home").querySelector("[data-slot='area-progress-dot']")).toBeNull();
+    expect(root.querySelectorAll("[data-slot='area-progress-dot']")).toHaveLength(1);
 
     item("Drive").click();
     expect(opened).toEqual(["files"]);
@@ -152,5 +152,16 @@ describe("area progress on the bottom nav", () => {
     expect(opened).toEqual(["files"]);
     expect(document.body.querySelector("[role='dialog'] [data-files-panel]")).toBeNull();
     expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: In progress");
+    expect(item("Drive").querySelector("[data-slot='area-progress-dot']")?.getAttribute("data-attention")).toBe("false");
+  });
+
+  it("draws no dot once the work is done, and still says so", async () => {
+    const { root, item } = await mountAt("/home", {
+      progress: (area) => (area === "files" ? { fraction: 1, tone: "done", attention: false } : null),
+      open: () => {},
+    });
+
+    expect(root.querySelector("[data-slot='area-progress-dot']")).toBeNull();
+    expect(item("Drive").querySelector("[role='status']")?.textContent).toBe("Drive: Done");
   });
 });

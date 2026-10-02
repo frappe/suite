@@ -15,7 +15,7 @@
           :class="item.active ? 'text-ink-gray-8' : 'text-ink-gray-5'"
           aria-hidden="true"
         />
-        <AreaProgressRing :progress="progressOf(item.id)" :label="item.label" :around="24" />
+        <AreaProgressDot :progress="progressOf(item.id)" :label="item.label" />
       </span>
     </FrappeMobileNavItem>
     <FrappeMobileNavItem :label="__('Account')" @click="$emit('open-account')">
@@ -41,7 +41,7 @@ import { hasAreaSidebar, openAreaSidebar } from "@/platform/area-sidebar";
 import type { AreaDefinition } from "@/platform/contracts";
 import { useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
-import AreaProgressRing from "@/shell/AreaProgressRing.vue";
+import AreaProgressDot from "@/shell/AreaProgressDot.vue";
 import { useAreaProgress } from "@/shell/areaProgress";
 import {
   deriveMobileNav,
@@ -69,9 +69,9 @@ function progressOf(area: string) {
 }
 
 /**
- * One tap does one thing. With a ring, the tap opens the area with its
- * progress view (spec §6.3: the ring opens Drive with the tracker open), and
- * never the sidebar. Without one, the active area's tap opens its sidebar.
+ * One tap does one thing. With progress, the tap opens the area with its
+ * progress view (spec §6.3: the indicator opens Drive with the tracker open),
+ * and never the sidebar. Without one, the active area's tap opens its sidebar.
  */
 function select(item: MobileNavItemDefinition) {
   if (progressOf(item.id)) {

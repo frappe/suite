@@ -27,8 +27,8 @@ import type { FolderUpload, PickedFile } from './sources'
  */
 
 export const PARALLEL_FILES = 3
-/** How long the full ring stays after the last upload finishes. */
-export const DONE_RING_MS = 3000
+/** How long the indicator stays `done` after the last upload finishes. */
+export const DONE_MS = 3000
 
 const EXPIRED_NOTE = 'The earlier upload expired. This file starts again.'
 const DIRECT_NOTE = 'This upload cannot continue where it stopped. It starts again.'
@@ -182,7 +182,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     return attention ? { fraction: null, tone: 'running', attention } : null
   })
 
-  // The ring completes, then goes; a new run counts its own bytes.
+  // The indicator turns done, then goes; a new run counts its own bytes.
   watch(
     () => active.value.length + state.preparing,
     (count, previous) => {
@@ -194,7 +194,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       if (doneTimer) clearTimeout(doneTimer)
       doneTimer = setTimeout(() => {
         state.showDone = false
-      }, DONE_RING_MS)
+      }, DONE_MS)
     },
   )
 

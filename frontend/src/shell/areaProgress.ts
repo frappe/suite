@@ -7,11 +7,11 @@ import { translate as __ } from "@/platform/translation";
  * Drive's upload queue is the one source today (spec §6.3).
  */
 export interface AreaProgress {
-  /** Done over total, 0 to 1. `null` draws no ring. */
+  /** Done over total, 0 to 1. `null` draws no dot, unless `attention` is set. */
   fraction: number | null;
-  /** `paused` draws the ring amber. `done` draws it full, then it fades. */
+  /** `running` and `paused` draw an orange dot. `done` fades the dot out. */
   tone: "running" | "paused" | "done";
-  /** A red dot: work failed or stopped, and the user has not looked yet. */
+  /** The dot turns red: work failed or stopped, and the user has not looked yet. */
   attention: boolean;
 }
 
