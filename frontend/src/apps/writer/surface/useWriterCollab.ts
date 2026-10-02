@@ -83,7 +83,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value;
     if (!live.value || !now || !(now.blocked || now.saveState === "failed")) return null;
-    return bannerFor({ blocked: now.blocked, onDevice: now.onDevice, kept: kept.value });
+    return bannerFor({ blocked: now.blocked, onDevice: now.onDevice, kept: kept.value, unsent: now.unsent });
   });
   const openFailure = computed(() => openFailureFor(openReason.value));
 

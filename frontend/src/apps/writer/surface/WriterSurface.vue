@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div v-if="banner" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
-      {{ banner.text }}<template v-if="banner.signInUrl">{{ " " }}<a :href="banner.signInUrl" target="_blank" class="underline">Sign in</a> to save them.</template>{{ banner.note }}
+      {{ banner.text }}<template v-if="banner.signInUrl">{{ " " }}<a :href="banner.signInUrl" target="_blank" class="underline">Sign in</a></template>{{ banner.note }}
     </div>
 
     <div v-if="!readable" class="m-auto text-center">
