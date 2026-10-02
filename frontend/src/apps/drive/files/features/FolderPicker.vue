@@ -115,7 +115,8 @@ const ACTIONS = { move: 'Move here', copy: 'Copy here', restore: 'Restore here' 
 const SKELETON_BAR = '!bg-surface-gray-2 motion-reduce:animate-none'
 const SKELETON_WIDTHS = ['w-40', 'w-28', 'w-48', 'w-32']
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ choose: [node: string] }>()
+/** `title` is the folder's name as the picker shows it, for the message after the action. */
+const emit = defineEmits<{ choose: [node: string, title: string] }>()
 const listElement = useTemplateRef<HTMLElement>('listElement')
 const discovered = useQuery(roots())
 const rootKind = ref<'personal' | 'organization'>('personal')
@@ -164,6 +165,6 @@ function focusList() {
 }
 function choose() {
   if (!current.value || target.value.status !== 'allowed' || props.busy) return
-  emit('choose', current.value.node)
+  emit('choose', current.value.node, crumbs.value.at(-1)?.label ?? current.value.title)
 }
 </script>

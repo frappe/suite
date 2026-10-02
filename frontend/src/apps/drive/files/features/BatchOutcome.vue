@@ -1,10 +1,11 @@
 <template>
+  <!-- What worked is reported in a toast. The alert shows only when some items failed. -->
   <Alert
-    v-if="result"
+    v-if="result?.failed.length"
     v-bind="$attrs"
     :title="batchResultText(result, verb)"
-    :theme="result.failed.length ? 'amber' : 'green'"
-    :primary-action="result.failed.length ? detailsAction : undefined"
+    theme="amber"
+    :primary-action="detailsAction"
     dismissible
     @dismiss="$emit('dismiss')"
   />

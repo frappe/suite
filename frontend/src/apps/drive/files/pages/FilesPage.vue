@@ -246,6 +246,7 @@ import { recentFiles } from '../features/recent'
 import { offeredTypes, typeNouns, typeQuery, typesFromQuery, typeSummary } from '../features/typeFilter'
 import { copyLink } from '../features/share/shareFormat'
 import FolderPicker from '../features/FolderPicker.vue'
+import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
 import RenameDialog from '../features/RenameDialog.vue'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import UnlockScreen from '../features/UnlockScreen.vue'
@@ -846,7 +847,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
     ] },
     ...(editable ? [{ group: 'Trash', hideLabel: true, options: [
-      { label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashMutation.run({ node: row.name, state: 'Trashed' }) },
+      { label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashRow(row) },
     ] }] : []),
   ]
 }
@@ -879,17 +880,29 @@ function pickUpload(source: 'files' | 'folder') {
 function rowDrop(row: DriveNode) {
   return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
 }
-async function runRestore() { await trash.restore(selection.value) }
-async function runPurge() { await trash.purge(selection.value) }
+function itemOf(row: Pick<DriveNode, 'name' | 'title'>) { return { node: row.name, title: row.title } }
+async function runRestore() { await trash.restore(selectedRows.value.map(itemOf)) }
+async function runPurge() { await trash.purge(selectedRows.value.map(itemOf)) }
+async function trashRow(row: DriveNode) {
+  const item = itemOf(row)
+  if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
+}
 function beginRename(row: DriveNode) { activeNode.value = row; renameOpen.value = true }
 function beginPicker(row: DriveNode, mode: 'move' | 'copy') {
   activeNode.value = row; pickerMode.value = mode; pickerBulk.value = false; pickerOpen.value = true
 }
 function beginBulkMove() { pickerMode.value = 'move'; pickerBulk.value = true; pickerOpen.value = true }
-async function applyPicker(parent: string) {
+async function applyPicker(parent: string, destination: string) {
+  // Read before the move: a move changes each node's parent in place.
+  const moving: MovedItem[] = (pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : [])
+    .flatMap((row) => row.parent ? [{ node: row.name, title: row.title, from: row.parent }] : [])
   if (pickerBulk.value) {
-    await runBatch({ parent }, 'moved')
-    if (batchOutcome.value) pickerOpen.value = false
+    const result = await runBatch(moving.map((item) => item.node), { parent }, 'moved')
+    if (!result) return
+    pickerOpen.value = false
+    announceMove(moving.filter((item) => result.ok.includes(item.node)), destination)
+    // The toast reports what moved. The alert stays only to list failures.
+    if (!result.failed.length) batchOutcome.value = null
     return
   }
   if (!activeNode.value) return
@@ -900,15 +913,24 @@ async function applyPicker(parent: string) {
     toast.error((pickerMode.value === 'move' ? moveMutation.error : copyMutation.error)?.message ?? 'The action failed.')
     return
   }
+  if (pickerMode.value === 'move') announceMove(moving, destination)
+  else announceCopy({ node: result.name, title: result.title }, destination)
   pickerOpen.value = false
 }
-async function runBulkTrash() { await runBatch({ state: 'Trashed' }, 'moved to trash') }
-async function runBatch(patch: { parent?: string; state?: 'Trashed' }, verb: string) {
-  const result = await batchMutation.run({ nodes: [...selection.value], patch })
+async function runBulkTrash() {
+  const trashing = selectedRows.value.map(itemOf)
+  const result = await runBatch(trashing.map((item) => item.node), { state: 'Trashed' }, 'moved to trash')
   if (!result) return
+  announceTrash(trashing.filter((item) => result.ok.includes(item.node)))
+}
+/** Sends the nodes the caller also announces, so the toast's Undo covers exactly what changed. */
+async function runBatch(nodes: string[], patch: { parent?: string; state?: 'Trashed' }, verb: string): Promise<DriveBatchResult | null> {
+  const result = await batchMutation.run({ nodes, patch })
+  if (!result) return null
   batchOutcome.value = result
   batchVerb.value = verb
   selectionState.value = { selected: result.failed.map((failure) => failure.node), anchor: null }
+  return result
 }
 async function toggleStar(row: DriveNode) {
   const starred = !row.favourite
