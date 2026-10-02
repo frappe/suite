@@ -594,7 +594,7 @@ const bulkActions = computed(() => trashActions.value
       { label: 'Move to trash', icon: 'lucide-trash-2', disabled: !canBulkEdit.value, onClick: runBulkTrash },
     ])
 /** A menu row led by the type icon the listing shows for what it creates. */
-function typedOption(label: string, kind: Pick<DriveNode, 'kind' | 'mime' | 'content_doctype'>, onClick: () => void, icon = nodeIcon(kind)): DropdownActionOption {
+function typedOption(label: string, kind: Pick<DriveNode, 'kind' | 'title' | 'mime' | 'content_doctype'>, onClick: () => void, icon = nodeIcon(kind)): DropdownActionOption {
   return {
     label,
     onClick,
@@ -606,13 +606,13 @@ const newOptions = computed<DropdownItem[]>(() => {
   const documents = canCreateDocuments.value ? documentTypes : []
   return [
     { group: 'Create', options: [
-      typedOption('Folder', { kind: 'folder', mime: null, content_doctype: null }, () => create('folder')),
+      typedOption('Folder', { kind: 'folder', title: 'Folder', mime: null, content_doctype: null }, () => create('folder')),
       ...documents.map((definition) => typedOption(
         definition.newLabel(),
-        { kind: 'document', mime: null, content_doctype: definition.contentDoctype },
+        { kind: 'document', title: definition.newLabel(), mime: null, content_doctype: definition.contentDoctype },
         () => create('document', definition.contentDoctype),
       )),
-      typedOption('Link', { kind: 'link', mime: null, content_doctype: null }, () => create('link')),
+      typedOption('Link', { kind: 'link', title: 'Link', mime: null, content_doctype: null }, () => create('link')),
       ...(documents.length
         ? [{ label: 'From template', icon: 'lucide-layout-template', onClick: () => { templatesOpen.value = true } }]
         : []),

@@ -107,7 +107,8 @@ const serveDevBootFlags = () => {
  * throws "Not implemented" for the `build.resolve` and `initialOptions.absWorkingDir`
  * calls that plugin makes, so every `@codemirror/lang-*` fails to optimize in dev.
  * The esbuild plugin only stubs language packages that frappe-ui's own
- * code editor imports and the app did not install. Dev serves frappe-ui
+ * code editor imports and the app did not install, and the app installs all
+ * of them, so dropping it loses nothing. Dev serves frappe-ui
  * un-bundled (see `optimizeDeps.exclude`), so the Rollup half of the same plugin
  * still covers it. Remove this once frappe-ui ships a Rolldown version.
  */

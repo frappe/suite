@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useEventListener } from "@vueuse/core";
-import { Button, Dropdown } from "frappe-ui";
-import { computed, ref } from "vue";
+import { useEventListener, useMediaQuery } from "@vueuse/core";
+import { Button, Dropdown, TabButtons } from "frappe-ui";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { driveNodeRoute, useDriveDialogs } from "@/apps/drive";
@@ -14,7 +14,11 @@ import DocumentHeader from "../document/DocumentHeader.vue";
 import { linkAccess } from "../linkAccess";
 import { readPresentationPreference, resolvePresentation } from "../presentation";
 import { useLocationTitle } from "../../internal/locations";
+import PreviewFallback from "./PreviewFallback.vue";
+import { previewKind } from "../../internal/previewKind";
 import type { FilePreviewSession } from "./session";
+import { TEXT_PREVIEW_LIMIT } from "./textContent";
+import TextPreview from "./TextPreview.vue";
 import UploadNewVersion from "./UploadNewVersion.vue";
 
 const props = defineProps<{ session: DocumentSession }>();
@@ -31,6 +35,8 @@ const contentUrl = computed(
     `/api/suite/drive/nodes/${encodeURIComponent(props.session.nodeId)}/content` +
     (revision.value ? `?v=${revision.value}` : ""),
 );
+/** An empty file has no bytes on the server, so there is nothing to download or show. */
+const empty = computed(() => file.value.size.value === 0);
 const role = computed(() => props.session.access.value.role ?? 0);
 const active = computed(() => props.session.state.value === "Active");
 const canEdit = computed(() => active.value && role.value >= DRIVE_ROLES.edit);
@@ -74,7 +80,8 @@ function show(row: { name: string; title: string; kind: string } | null) {
 }
 
 // Arrow keys step through the folder unless something on the page has focus,
-// such as the title field or a video's controls.
+// such as the title field, a video's controls, or the text of a text file.
+// Escape leaves the text.
 useEventListener(window, "keydown", (event: KeyboardEvent) => {
   if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
   if (document.activeElement && document.activeElement !== document.body) return;
@@ -115,15 +122,25 @@ async function replaced() {
   await file.value.refreshPreview();
   revision.value += 1;
 }
-const canPreview = computed(
-  () =>
-    !!previewUrl.value ||
-    mime.value.startsWith("image/") ||
-    mime.value.startsWith("audio/") ||
-    mime.value.startsWith("video/") ||
-    mime.value === "application/pdf" ||
-    mime.value.startsWith("text/"),
+const preview = computed(() =>
+  previewKind({ title: props.session.title.value, mime: file.value.mime, hasPreview: !!previewUrl.value }),
 );
+/** A Markdown file can show rendered or as source. Over the size limit it shows neither. */
+const markdown = computed(
+  () => preview.value.kind === "text" && preview.value.language === "markdown" && file.value.size.value <= TEXT_PREVIEW_LIMIT,
+);
+// A phone header has room for the file name only when the toggle shows icons.
+const narrow = useMediaQuery("(max-width: 767px)");
+const markdownViews = computed(() => [
+  { label: "Preview", value: "preview", icon: narrow.value ? "lucide-eye" : undefined },
+  { label: "Source", value: "source", icon: narrow.value ? "lucide-code" : undefined },
+]);
+/** Every Markdown file opens as its source. The viewer switches to Preview with the toggle. */
+const markdownView = ref<"preview" | "source">("source");
+watch(() => props.session.nodeId, () => (markdownView.value = "source"));
+function chooseMarkdownView(value: string | number) {
+  markdownView.value = value === "preview" ? "preview" : "source";
+}
 /** Image types every browser draws. Others, such as HEIC or TIFF, show the server's preview. */
 const WEB_IMAGES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/svg+xml", "image/bmp"]);
 const source = computed(() =>
@@ -151,6 +168,16 @@ const source = computed(() =>
         />
       </template>
       <template #actions>
+        <!-- A click does not move focus to the toggle, so the arrow keys still step through files. Tab reaches it. -->
+        <TabButtons
+          v-if="markdown"
+          :model-value="markdownView"
+          :options="markdownViews"
+          aria-label="Markdown view"
+          class="mr-1"
+          @mousedown.prevent
+          @update:model-value="chooseMarkdownView"
+        />
         <template v-if="files.length > 1 && position !== -1">
           <Button
             variant="ghost"
@@ -170,21 +197,25 @@ const source = computed(() =>
             @click="show(next)"
           />
         </template>
-        <Button variant="ghost" icon="lucide-download" tooltip="Download" aria-label="Download" :href="contentUrl" />
+        <Button v-if="!empty" variant="ghost" icon="lucide-download" tooltip="Download" aria-label="Download" :href="contentUrl" />
         <Dropdown :options="menu" align="end">
           <Button variant="ghost" icon="lucide-ellipsis" tooltip="More file actions" aria-label="More file actions" />
         </Dropdown>
       </template>
     </DocumentHeader>
-    <div v-if="!canPreview" class="m-auto max-w-md px-6 text-center">
-      <span class="lucide-file-question mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
-      <h2 class="mt-3 text-lg-semibold">No preview</h2>
-      <p class="mt-1 text-p-sm text-ink-gray-6">Download this file to open it.</p>
-      <Button class="mt-4" label="Download" icon-left="lucide-download" :href="contentUrl" />
-    </div>
-    <img v-else-if="mime.startsWith('image/')" :src="source" :alt="session.title.value" class="m-auto max-h-full min-h-0 max-w-full object-contain p-4" />
-    <audio v-else-if="mime.startsWith('audio/')" :src="contentUrl" controls class="m-auto w-full max-w-xl" />
-    <video v-else-if="mime.startsWith('video/')" :src="contentUrl" controls class="m-auto max-h-full min-h-0 max-w-full" />
-    <iframe v-else :src="contentUrl" :title="session.title.value" class="min-h-0 flex-1 border-0 bg-surface-base" />
+    <TextPreview
+      v-if="preview.kind === 'text'"
+      :src="contentUrl"
+      :size="file.size.value"
+      :language="preview.language"
+      :title="session.title.value"
+      :rendered="markdown && markdownView === 'preview'"
+    />
+    <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
+    <img v-else-if="preview.kind === 'image'" :src="source" :alt="session.title.value" class="m-auto max-h-full min-h-0 max-w-full object-contain p-4" />
+    <audio v-else-if="preview.kind === 'audio'" :src="contentUrl" controls class="m-auto w-full max-w-xl" />
+    <video v-else-if="preview.kind === 'video'" :src="contentUrl" controls class="m-auto max-h-full min-h-0 max-w-full" />
+    <iframe v-else-if="preview.kind === 'pdf'" :src="contentUrl" :title="session.title.value" class="min-h-0 flex-1 border-0 bg-surface-base" />
+    <PreviewFallback v-else title="No preview" message="Download this file to open it." :download="contentUrl" />
   </div>
 </template>

@@ -25,7 +25,7 @@ function file(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
   }
 }
 
-function mount(options: { rows: DriveNode[], view?: PresentationState['view'], selection?: string[], status?: string }) {
+function mount(options: { rows: DriveNode[], view?: PresentationState['view'], columns?: string[], selection?: string[], status?: string }) {
   const state = reactive({ selection: options.selection ?? [] })
   const events: { previewErrors: string[] } = { previewErrors: [] }
   const query = reactive({ status: options.status ?? 'success', rows: options.rows, error: null, hasNext: false, isFetchingNext: false, refetch() {}, fetchNext() {} })
@@ -34,7 +34,7 @@ function mount(options: { rows: DriveNode[], view?: PresentationState['view'], s
   const app = createApp({
     setup: () => () => h(FilesListing, {
       query: query as never,
-      presentation: { ...DEFAULT_PRESENTATION, view: options.view ?? 'list' },
+      presentation: { ...DEFAULT_PRESENTATION, view: options.view ?? 'list', columns: options.columns ?? DEFAULT_PRESENTATION.columns },
       selection: state.selection,
       selectionMode: state.selection.length > 0,
       emptyTitle: 'Empty',
@@ -79,6 +79,35 @@ describe('FilesListing selection', () => {
     await nextTick()
     expect(state.selection).toEqual([])
     expect(header()).toBeNull()
+  })
+})
+
+describe('FilesListing type column', () => {
+  it('names a file by its extension when Drive stored a generic MIME type', async () => {
+    const generic = { mime: 'application/octet-stream' }
+    const { root } = mount({
+      columns: ['kind'],
+      rows: [
+        file('md', 'Notes.md', generic),
+        file('json', 'data.json', generic),
+        file('csv', 'report.csv', { mime: 'text/plain' }),
+        file('py', 'script.py', generic),
+        file('bin', 'firmware.bin', generic),
+        file('zip', 'photos.zip', { mime: 'application/zip' }),
+        file('png', 'Alpha.png'),
+        file('doc', 'Plan', { kind: 'document', mime: null, content_doctype: 'Writer Document' }),
+      ],
+    })
+    await nextTick()
+    const type = (name: string) => root.querySelector(`[data-node="${name}"] [data-slot="list-cell"]:nth-child(2)`)?.textContent?.trim()
+    const icon = (name: string) => root.querySelector(`[data-node="${name}"] [aria-hidden="true"]`)?.className
+
+    expect(['md', 'json', 'csv', 'py', 'bin', 'zip', 'png', 'doc'].map(type)).toEqual([
+      'Markdown', 'JSON', 'CSV', 'Python', 'File', 'ZIP', 'Image', 'Writer Document',
+    ])
+    expect(icon('md')).toContain('lucide-file-text')
+    expect(icon('json')).toContain('lucide-file-code')
+    expect(icon('bin')).toContain('lucide-file ')
   })
 })
 

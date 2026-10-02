@@ -146,7 +146,7 @@ const trashed = computed(() => props.session.state.value === 'Trashed')
 const renamable = computed(
   () => props.session.state.value === 'Active' && (props.session.access.value.role ?? 0) >= DRIVE_ROLES.edit,
 )
-const typeIcon = computed(() => documentTypeIcon(props.session.contentDoctype, props.mime))
+const typeIcon = computed(() => documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime))
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()

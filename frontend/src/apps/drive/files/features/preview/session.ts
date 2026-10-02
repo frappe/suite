@@ -20,6 +20,8 @@ const EXPAND = "access,preview,breadcrumbs";
 
 export interface FilePreviewSession extends DocumentSession {
   readonly mime: string | null;
+  /** The file's size in bytes. Follows a new version. */
+  readonly size: Readonly<Ref<number>>;
   /** The id of the folder the file is in. A replace names it; `null` for a root. Follows a move. */
   readonly parent: Readonly<Ref<string | null>>;
   /**
@@ -50,6 +52,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const parent = ref(initial.parent);
   const folder = ref<DriveBreadcrumb | null>(folderOf(initial));
   const favourite = ref(initial.favourite ?? false);
+  const size = ref(initial.size);
   let disposed = false;
 
   // A file reached through a share link records no visit (spec §10.13): the
@@ -67,6 +70,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       state.value = sessionState(node);
       preview.value = node.preview ?? null;
       favourite.value = node.favourite ?? false;
+      size.value = node.size;
     } catch {
       state.value = "Refused";
       access.value = {};
@@ -100,6 +104,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     contentDoctype: "File",
     contentDocname: nodeId,
     mime: initial.mime,
+    size: readonly(size),
     parent: readonly(parent),
     folder: readonly(folder),
     preview: readonly(preview),

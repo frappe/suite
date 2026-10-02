@@ -10,6 +10,7 @@ export default defineConfig({
 			"@": path.resolve(__dirname, "src"),
 			// More specific first: a bare "frappe-ui" alias also matches "frappe-ui/…" imports.
 			"frappe-ui/list": path.resolve(__dirname, "../node_modules/frappe-ui/src/molecules/list/index.ts"),
+			"frappe-ui/code-editor": path.resolve(__dirname, "../node_modules/frappe-ui/src/molecules/code-editor/index.ts"),
 			"frappe-ui/experimental": path.resolve(__dirname, "src/test/frappe-ui-experimental-stub.ts"),
 			"frappe-ui": path.resolve(__dirname, "recorder/frappeUi.ts"),
 			"~icons/lucide/scan": path.resolve(__dirname, "src/test/icon-stub.ts"),

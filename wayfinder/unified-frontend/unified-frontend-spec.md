@@ -787,6 +787,18 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   and **Size** are optional. Location and sharing-summary columns do not
   launch. The client never sends one request per row to imitate a column
   [T006].
+- The **Type** column names a file by its MIME type: Image, Video, Audio,
+  PDF or ZIP. Drive stores the MIME type it sniffs from the bytes, and most
+  text formats have no signature, so they arrive as
+  `application/octet-stream`. For those the column reads the name's
+  extension through the text preview's classifier: Markdown, HTML, Text,
+  JSON, CSV, JavaScript, TypeScript, Python, CSS, XML or YAML. Any other
+  file reads **File**. The row icon follows the same rule
+  [Faris, 2026-10-02].
+- Sorting by **Type** uses the server's order: documents by content
+  doctype, then files by stored MIME type. Text files that share
+  `application/octet-stream` therefore sort together, by name, whatever
+  their label [Drive §5.3].
 - Precedence: URL query, then the saved Drive preference, then defaults.
   `view`, `sort`, `dir` and `group` are presentation keys. A change
   replaces the current history entry and updates the saved preference
