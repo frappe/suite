@@ -75,13 +75,16 @@ watch(
   [nodeId, reopen],
   async ([node]) => {
     const request = ++opening;
-    const previous = session.value;
-    session.value = null;
-    surface.value = null;
     error.value = "";
     locked.value = false;
-    loading.value = true;
-    previous?.dispose();
+    // A file preview stays on screen while the next node opens, so stepping
+    // through a folder's files keeps the header and its breadcrumb in place.
+    // Any other document makes way for the skeleton at once.
+    const keep = !!node && !!surface.value && session.value?.contentDoctype === FILE_CONTENT_DOCTYPE;
+    if (!keep) {
+      present(null, null);
+      loading.value = true;
+    }
 
     if (!node) {
       error.value = "This document link is incomplete.";
@@ -91,21 +94,20 @@ watch(
 
     try {
       const opened = await openDocumentSession(node);
+      const selected = await selectDocumentSurface(opened, documentTypes).catch((reason: unknown) => {
+        opened.dispose();
+        throw reason;
+      });
       if (request !== opening) {
         opened.dispose();
         return;
       }
 
-      session.value = opened;
-      surface.value = await selectDocumentSurface(opened, documentTypes);
-      if (request !== opening) {
-        opened.dispose();
-        return;
-      }
-
+      present(opened, selected);
       await replaceDecorativeSlug(opened);
     } catch (reason) {
       if (request !== opening) return;
+      present(null, null);
       if (isDriveLocked(reason)) {
         locked.value = true;
         return;
@@ -141,20 +143,30 @@ watch(
       return;
     }
     opening += 1;
-    session.value = null;
-    surface.value = null;
-    lapsed.dispose();
+    present(null, null);
     loading.value = false;
     locked.value = true;
   },
 );
 
+// A kept file preview is not the route's node, so its renames leave the route alone.
 watch(
   () => session.value?.title.value,
   () => {
-    if (session.value) void replaceDecorativeSlug(session.value);
+    if (session.value?.nodeId === nodeId.value) void replaceDecorativeSlug(session.value);
   },
 );
+
+/**
+ * Shows `next` with its surface in one step, so a surface never renders
+ * another document's session, and closes the session it replaces.
+ */
+function present(next: DocumentSession | null, nextSurface: Component | null) {
+  const previous = session.value;
+  session.value = next;
+  surface.value = nextSurface;
+  if (previous !== next) previous?.dispose();
+}
 
 async function replaceDecorativeSlug(opened: DocumentSession) {
   const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query };

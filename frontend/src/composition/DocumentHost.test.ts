@@ -6,8 +6,8 @@ const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
-  surface: { name: "WriterTestSurface", render: () => null },
-  preview: { name: "FileTestSurface", render: () => null },
+  surface: { name: "WriterTestSurface", render: (): unknown => null },
+  preview: { name: "FileTestSurface", props: ["session"], render: (): unknown => null },
 }));
 
 vi.mock("@/apps/drive", async () => {
@@ -47,6 +47,12 @@ import DocumentHost, { selectDocumentSurface } from "./DocumentHost.vue";
 import { TransportError } from "@/platform/transport";
 import { installPageMeta, openingTitleState } from "@/platform/page-meta";
 import { GUEST_FRAME_KEY } from "@/platform/contracts";
+
+// The surfaces mark themselves, so a test can wait for the document to show.
+testState.surface.render = () => h("div", { "data-surface": "" });
+testState.preview.render = function (this: { session: { title: { value: string } } }) {
+  return h("div", { "data-preview": "" }, this.session.title.value);
+};
 
 async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
   const router = createRouter({
@@ -145,6 +151,36 @@ describe("DocumentHost", () => {
     uninstall();
   });
 
+  it("keeps a file preview on screen while the next file opens, then shows the next one", async () => {
+    const first = { ...session("File"), dispose: vi.fn() };
+    const second = { ...session("File"), nodeId: "node-2", title: ref("Budget.pdf"), dispose: vi.fn() };
+    let answer!: (value: unknown) => void;
+    testState.open.mockResolvedValueOnce(first).mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/d/:node/:slug?", component: DocumentHost }],
+    });
+    await router.push("/d/node-1/quarterly-plan");
+    await router.isReady();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = createApp(DocumentHost);
+    app.use(router);
+    app.mount(root);
+    await vi.waitFor(() => expect(root.querySelector("[data-preview]")?.textContent).toBe("Quarterly plan"));
+
+    await router.push("/d/node-2/budget-pdf");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(root.querySelector("[data-skeleton]")).toBeNull();
+    expect(root.querySelector("[data-preview]")?.textContent).toBe("Quarterly plan");
+    expect(first.dispose).not.toHaveBeenCalled();
+
+    answer(second);
+    await vi.waitFor(() => expect(root.querySelector("[data-preview]")?.textContent).toBe("Budget.pdf"));
+    expect(first.dispose).toHaveBeenCalledOnce();
+    app.unmount();
+  });
+
   it("shows the unlock screen in place for a locked link, and opens the document once unlocked", async () => {
     testState.open.mockRejectedValueOnce(refusal(401, "DriveLocked")).mockResolvedValue(session());
     const { root, app } = await mountHost();
@@ -163,7 +199,7 @@ describe("DocumentHost", () => {
     testState.open.mockResolvedValue(open);
     testState.nodeLocked.mockResolvedValue(true);
     const { root, app } = await mountHost();
-    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(root.querySelector("[data-surface]")).not.toBeNull());
 
     open.state.value = "Refused";
 
@@ -180,7 +216,7 @@ describe("DocumentHost", () => {
     testState.open.mockResolvedValue(open);
     testState.nodeLocked.mockResolvedValue(false);
     const { root, app } = await mountHost();
-    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(root.querySelector("[data-surface]")).not.toBeNull());
 
     open.state.value = "Refused";
     await vi.waitFor(() => expect(root.textContent).toContain("You do not have access"));
@@ -197,8 +233,8 @@ describe("DocumentHost", () => {
     testState.open.mockResolvedValue(open);
     testState.nodeLocked.mockResolvedValue(false);
     const requireSignIn = vi.fn();
-    const { app } = await mountHost((host) => host.provide(GUEST_FRAME_KEY, { requireSignIn }));
-    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledOnce());
+    const { root, app } = await mountHost((host) => host.provide(GUEST_FRAME_KEY, { requireSignIn }));
+    await vi.waitFor(() => expect(root.querySelector("[data-surface]")).not.toBeNull());
 
     open.state.value = "Refused";
     await vi.waitFor(() => expect(requireSignIn).toHaveBeenCalledOnce());

@@ -99,14 +99,20 @@ const siblings = useQuery(() =>
 const files = computed(() =>
   siblings.rows.filter((row) => row.kind === "file" && row.state === (inTrashedFolder.value ? "Trashed" : "Active")),
 );
-const position = computed(() => files.value.findIndex((row) => row.name === props.session.nodeId));
+// Steps count from the file the route names. The host keeps this preview on
+// screen while the next file opens, so a quick second press moves on from the
+// file being opened, not from the one still shown.
+const current = computed(() => String(route.params.node ?? props.session.nodeId));
+const position = computed(() => files.value.findIndex((row) => row.name === current.value));
 const previous = computed(() => (position.value > 0 ? files.value[position.value - 1] : null));
 const next = computed(() =>
   position.value !== -1 && position.value < files.value.length - 1 ? files.value[position.value + 1] : null,
 );
 
+// A step replaces the history entry, so Back leaves the preview in one step
+// however many files the user stepped through.
 function show(row: { name: string; title: string; kind: string } | null) {
-  if (row) void router.push({ ...driveNodeRoute(row), query: typeFilter.value });
+  if (row) void router.replace({ ...driveNodeRoute(row), query: typeFilter.value });
 }
 
 // Arrow keys step through the folder unless something on the page has focus,
