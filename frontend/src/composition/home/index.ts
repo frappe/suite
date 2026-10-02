@@ -1,13 +1,6 @@
-import { defineComponent, h } from "vue";
-
+import HomeIcon from "@/composition/home/AreaIcon.vue";
 import type { AreaDefinition } from "@/platform/contracts";
 import { translate as __ } from "@/platform/translation";
-
-const HomeIcon = defineComponent({
-  name: "HomeAreaIcon",
-  setup: () => () =>
-    h("span", { class: "lucide-house size-4", "aria-hidden": "true" }),
-});
 
 export const homeArea: AreaDefinition = {
   id: "home",

@@ -1,12 +1,28 @@
 <template>
-  <FrappeRail class="!border-r !border-outline-gray-1 !p-0">
+  <FrappeRail class="suite-rail !w-14 !border-r !border-outline-gray-1 !p-0">
+    <!-- The workspace's mark: its logo, else its initial. A site that has not
+         named its workspace yet shows the Suite logo. The row matches the page
+         header's height, and its divider spans only the items' column. -->
+    <div
+      class="mx-[11px] flex h-12 shrink-0 items-center justify-center self-stretch border-b border-outline-gray-1"
+    >
+      <Avatar
+        :image="workspaceMark"
+        :label="workspaceName"
+        shape="square"
+        size="xl"
+        role="img"
+        :aria-label="workspaceName || 'Suite'"
+        :title="workspaceName || 'Suite'"
+      />
+    </div>
     <div class="relative min-h-0 w-full flex-1">
       <ScrollArea
         ref="areaScroll"
         class="h-full w-full"
-        viewport-class="px-[11px] py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        viewport-class="px-[11px] pb-2.5 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <nav class="flex flex-col items-center gap-0.5" :aria-label="__('Areas')">
+        <nav class="flex flex-col items-center gap-1" :aria-label="__('Areas')">
           <RailItem
             v-for="area in areas"
             :key="area.id"
@@ -30,8 +46,12 @@
       />
     </div>
 
-    <div class="flex shrink-0 flex-col items-center gap-0.5 px-[11px] pb-3 pt-2">
-      <slot name="bell" />
+    <div class="flex shrink-0 flex-col items-center gap-1 px-[11px] pb-3 pt-2">
+      <!-- The bell is a plain Button (it triggers a popover), so this wrapper
+           lets the styles below size and ink it like the items around it. -->
+      <div class="rail-bell flex">
+        <slot name="bell" />
+      </div>
       <RailItem :label="__('Settings')" variant="ghost" @click="openSettings()">
         <span class="lucide-settings size-4" aria-hidden="true" />
       </RailItem>
@@ -42,6 +62,7 @@
 
 <script setup lang="ts">
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -49,13 +70,14 @@ import {
   watch,
   type ComponentPublicInstance,
 } from "vue";
-import { SidebarRail as FrappeRail, ScrollArea } from "frappe-ui";
+import { Avatar, SidebarRail as FrappeRail, ScrollArea } from "frappe-ui";
 
 import type { AreaDefinition } from "@/platform/contracts";
 import AccountMenu from "@/shell/AccountMenu.vue";
 import RailItem from "@/shell/RailItem.vue";
 import { useAreaProgress } from "@/shell/areaProgress";
 import { openSettings } from "@/shell/settings/useSettingsDialog";
+import { useWorkspace } from "@/shell/useWorkspace";
 
 defineProps<{
   areas: readonly AreaDefinition[];
@@ -64,6 +86,11 @@ defineProps<{
 
 defineSlots<{ bell?: () => unknown }>();
 
+const suiteLogo = "/assets/suite/frontend/logo.svg";
+const { workspaceName, workspaceLogo } = useWorkspace();
+const workspaceMark = computed(
+  () => workspaceLogo.value || (workspaceName.value ? "" : suiteLogo),
+);
 const areaProgress = useAreaProgress();
 
 // The item still navigates to its area. The source opens its own view there.
@@ -118,3 +145,24 @@ watch(
 );
 onBeforeUnmount(() => bindViewport(null));
 </script>
+
+<style scoped>
+/* The rail is 56 px and its items 34 px, so each 22 px area icon sits with
+   room around it. Idle items step back to gray-5 and hover to gray-7, so the
+   active item is the only full-strength mark. SidebarRailItem fixes its size
+   and ink and takes no class, so both are set here by its data attributes,
+   and the bell gets the same treatment. */
+.suite-rail :deep([data-slot="sidebar-rail-item"]),
+.rail-bell > :deep(button) {
+  width: 34px;
+  height: 34px;
+}
+.suite-rail :deep([data-slot="sidebar-rail-item"][data-state="inactive"]),
+.rail-bell > :deep(button:not([aria-expanded="true"])) {
+  color: var(--ink-gray-5);
+}
+.suite-rail :deep([data-slot="sidebar-rail-item"][data-state="inactive"]:hover),
+.rail-bell > :deep(button:not([aria-expanded="true"]):hover) {
+  color: var(--ink-gray-7);
+}
+</style>

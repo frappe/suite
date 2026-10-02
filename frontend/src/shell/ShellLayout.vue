@@ -15,7 +15,7 @@
         <template #icon>
           <span class="relative grid size-4 place-items-center">
             <span class="lucide-upload size-4" aria-hidden="true" />
-            <AreaProgressRing :progress="guestProgress" :label="__('Uploads')" size="rail" />
+            <AreaProgressRing :progress="guestProgress" :label="__('Uploads')" :around="16" />
           </span>
         </template>
       </Button>

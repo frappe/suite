@@ -15,7 +15,7 @@
           :class="item.active ? 'text-ink-gray-8' : 'text-ink-gray-5'"
           aria-hidden="true"
         />
-        <AreaProgressRing :progress="progressOf(item.id)" :label="item.label" size="nav" />
+        <AreaProgressRing :progress="progressOf(item.id)" :label="item.label" :around="24" />
       </span>
     </FrappeMobileNavItem>
     <FrappeMobileNavItem :label="__('Account')" @click="$emit('open-account')">

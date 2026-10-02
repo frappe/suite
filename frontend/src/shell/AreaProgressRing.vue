@@ -51,8 +51,11 @@ import { progressState, type AreaProgress } from "@/shell/areaProgress";
 
 const props = defineProps<{
   progress: AreaProgress | null;
-  /** `rail`: around a 16 px icon. `nav`: around the 24 px bottom-nav icon. */
-  size: "rail" | "nav";
+  /**
+   * The icon the ring goes around: 16 px (the guest frame's Uploads button),
+   * 22 px (a rail area) or 24 px (a bottom-nav area).
+   */
+  around: 16 | 22 | 24;
   /** The area's name, spoken before the state: "Files: Paused". */
   label: string;
 }>();
@@ -67,8 +70,8 @@ const status = computed(() => {
 const clamped = computed(() =>
   Math.min(1, Math.max(0, props.progress?.fraction ?? 0)),
 );
-const ringClass = computed(() =>
-  props.size === "rail" ? "size-6" : "size-8",
+const ringClass = computed(
+  () => ({ 16: "size-6", 22: "size-7", 24: "size-8" })[props.around],
 );
 const toneClass = computed(
   () =>

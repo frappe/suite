@@ -1,15 +1,8 @@
-import { defineComponent, h } from "vue";
-
+import MailIcon from "@/apps/mail/AreaIcon.vue";
 import { inboxSummary } from "@/apps/mail/client/inboxSummary";
 import type { AreaDefinition } from "@/platform/contracts";
 import { useQuery } from "@/platform/server-state";
 import { translate as __ } from "@/platform/translation";
-
-const MailIcon = defineComponent({
-  name: "MailAreaIcon",
-  setup: () => () =>
-    h("span", { class: "lucide-mail size-4", "aria-hidden": "true" }),
-});
 
 export const mailArea: AreaDefinition = {
   id: "mail",

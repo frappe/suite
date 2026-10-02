@@ -9,10 +9,15 @@
     :variant="variant"
     @click="$emit('click', $event)"
   >
-    <span class="relative grid size-4 place-items-center">
-      <component :is="icon" v-if="icon" class="size-4" aria-hidden="true" />
+    <!-- An area's duotone icon is drawn at 22 px; a slotted utility icon
+         (Settings) stays a 16 px Lucide glyph. -->
+    <span
+      class="relative grid place-items-center"
+      :class="icon ? 'size-[22px]' : 'size-4'"
+    >
+      <component :is="icon" v-if="icon" class="size-[22px]" aria-hidden="true" />
       <slot v-else />
-      <AreaProgressRing :progress="progress" :label="label" size="rail" />
+      <AreaProgressRing :progress="progress" :label="label" :around="icon ? 22 : 16" />
       <span v-if="hasBadgeSlot" class="absolute -right-2.5 -top-2.5">
         <slot name="badge" />
       </span>
