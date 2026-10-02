@@ -43,15 +43,8 @@ export type SettingsTabIdOf<Loader> = Loader extends () => Promise<infer Group>
     : never
   : never
 
-/**
- * The tab ids of the composition settings list. `composition/settings.ts`
- * fills this interface through declaration merging, so a misspelled id fails
- * the type check without the shell importing composition.
- */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface SettingsTabIds {}
-
-export type SettingsTabId = Extract<keyof SettingsTabIds, string>
+// The tab ids live in the platform, so a product can name a tab too.
+export type { SettingsTabId, SettingsTabIds } from '@/platform/settings'
 
 /** The composition settings list, provided once at the app root. */
 export const SETTINGS_GROUPS_KEY: InjectionKey<readonly SettingsGroupLoader[]> =

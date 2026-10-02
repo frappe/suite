@@ -38,7 +38,7 @@ type CompositionTabId = SettingsTabIdOf<(typeof settingsGroups)[number]>;
 
 // Fills the shell's tab id interface, so `openSettings(tab)` takes exactly
 // these ids and a misspelled id fails the type check.
-declare module "@/shell/settings/settings" {
+declare module "@/platform/settings" {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface SettingsTabIds extends Record<CompositionTabId, true> {}
 }

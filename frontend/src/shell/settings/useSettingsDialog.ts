@@ -1,4 +1,4 @@
-import { computed, inject, ref, shallowRef, watch, type Ref } from 'vue'
+import { computed, inject, shallowRef, watch, type Ref } from 'vue'
 
 import { useSession } from '@/platform/session'
 
@@ -7,19 +7,10 @@ import {
   visibleSettingsGroups,
   type SettingsGroup,
   type SettingsGroupLoader,
-  type SettingsTabId,
   type VisibleSettingsGroup,
 } from '@/shell/settings/settings'
 
-export const showSettings = ref(false)
-/** The tab `openSettings` asked for. Unset opens the first tab, or the phone list. */
-export const settingsTab = ref<SettingsTabId | undefined>()
-
-/** Opens Settings on `tab`. On phone, `tab` opens that tab's page over the list. */
-export function openSettings(tab?: SettingsTabId): void {
-  settingsTab.value = tab
-  showSettings.value = true
-}
+export { openSettings, settingsTab, showSettings } from '@/platform/settings'
 
 interface ResolvedList {
   /** The visible groups, with their conditions read when the load settled. */
