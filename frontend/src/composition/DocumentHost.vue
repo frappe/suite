@@ -37,6 +37,7 @@ import {
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
 import { usePageTitle } from "@/platform/page-meta";
+import { TransportError } from "@/platform/transport";
 
 const route = useRoute();
 const router = useRouter();
@@ -57,47 +58,53 @@ const refused = computed(
     (session.value?.access.value.role ?? 0) < 10,
 );
 
-watch(
-  nodeId,
-  async (node) => {
-    const request = ++opening;
-    const previous = session.value;
-    session.value = null;
-    surface.value = null;
-    error.value = "";
-    loading.value = true;
-    previous?.dispose();
+watch(nodeId, (node) => open(node), { immediate: true });
 
-    if (!node) {
-      error.value = "This document link is incomplete.";
-      loading.value = false;
+async function open(node: string) {
+  const request = ++opening;
+  const previous = session.value;
+  session.value = null;
+  surface.value = null;
+  error.value = "";
+  loading.value = true;
+  previous?.dispose();
+
+  if (!node) {
+    error.value = "This document link is incomplete.";
+    loading.value = false;
+    return;
+  }
+
+  try {
+    const opened = await openDocumentSession(node);
+    if (request !== opening) {
+      opened.dispose();
       return;
     }
 
-    try {
-      const opened = await openDocumentSession(node);
-      if (request !== opening) {
-        opened.dispose();
-        return;
-      }
-
-      session.value = opened;
-      surface.value = await selectDocumentSurface(opened, documentTypes);
-      if (request !== opening) {
-        opened.dispose();
-        return;
-      }
-
-      await replaceDecorativeSlug(opened);
-    } catch (reason) {
-      if (request !== opening) return;
-      error.value = reason instanceof Error ? reason.message : "This document could not be opened.";
-    } finally {
-      if (request === opening) loading.value = false;
+    session.value = opened;
+    surface.value = await selectDocumentSurface(opened, documentTypes);
+    if (request !== opening) {
+      opened.dispose();
+      return;
     }
-  },
-  { immediate: true },
-);
+
+    await replaceDecorativeSlug(opened);
+  } catch (reason) {
+    if (request !== opening) return;
+    error.value = failureMessage(reason);
+  } finally {
+    if (request === opening) loading.value = false;
+  }
+}
+
+function failureMessage(reason: unknown) {
+  const status = reason instanceof TransportError ? reason.status : null;
+  if (status === 0) return "Couldn't reach the server. Check your connection and try again.";
+  if (status === 408 || status === 429) return "The server is busy. Try again in a moment.";
+  if (status !== null && status >= 500) return "The server had a problem opening this document. Try again in a moment.";
+  return reason instanceof Error ? reason.message : "This document could not be opened.";
+}
 
 watch(
   () => session.value?.title.value,
@@ -128,6 +135,7 @@ onBeforeUnmount(() => {
       <span class="lucide-circle-alert mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <h1 class="mt-3 text-lg-semibold">Could not open this document</h1>
       <p class="mt-1 text-p-sm text-ink-gray-6">{{ error }}</p>
+      <Button v-if="nodeId" class="mt-4" label="Try again" @click="open(nodeId)" />
     </div>
 
     <div v-else-if="refused" class="m-auto max-w-md px-6 text-center">

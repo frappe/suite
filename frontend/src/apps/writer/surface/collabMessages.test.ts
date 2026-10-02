@@ -80,4 +80,14 @@ describe("collab open failure copy", () => {
       "Someone else is now signed in here. Reload to open this document.",
     );
   });
+
+  it("names a failure the reply's status explains", () => {
+    expect(openFailureFor(null, 0)).toBe("Couldn't reach the server. Check your connection and try again.");
+    expect(openFailureFor(null, 500)).toBe("The server had a problem opening this document. Try again in a moment.");
+    expect(openFailureFor(null, 503)).toBe("The server had a problem opening this document. Try again in a moment.");
+    expect(openFailureFor(null, 429)).toBe("The server is busy. Try again in a moment.");
+    expect(openFailureFor(null, 400)).toBe("This document couldn't be opened.");
+    expect(openFailureFor(null, null)).toBe("This document couldn't be opened.");
+    expect(openFailureFor("locked", 500)).toBe("This document is locked. Unlock it to open it.");
+  });
 });

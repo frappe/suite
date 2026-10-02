@@ -2,6 +2,7 @@ import { CollabOpenError, recoverable, type Blocked, type CollabRoom } from "@su
 import { computed, ref, shallowRef } from "vue";
 import type { DocumentSession } from "@/apps/drive";
 import { openWriterRoom } from "@/apps/writer/collab";
+import { TransportError } from "@/platform/transport";
 import { bannerFor, openFailureFor } from "./collabMessages";
 import type { DocumentSaveState } from "./navigation";
 
@@ -32,6 +33,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const room = shallowRef<CollabRoom | null>(null);
   const status = shallowRef<RoomStatus | null>(null);
   const openReason = ref<string | null>(null);
+  const openStatus = ref<number | null>(null);
   const kept = ref(false);
   let stopWatching = () => {};
   let closed = false;
@@ -39,6 +41,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   async function open() {
     mode.value = "opening";
     openReason.value = null;
+    openStatus.value = null;
     try {
       const opened = await openWriterRoom(session);
       if (closed) {
@@ -61,6 +64,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
       mode.value = "live";
     } catch (error) {
       openReason.value = error instanceof CollabOpenError ? error.reason : null;
+      openStatus.value = error instanceof CollabOpenError || error instanceof TransportError ? error.status : null;
       mode.value = "failed";
     }
   }
@@ -85,7 +89,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     if (!live.value || !now || !(now.blocked || now.saveState === "failed")) return null;
     return bannerFor({ blocked: now.blocked, onDevice: now.onDevice, kept: kept.value, unsent: now.unsent });
   });
-  const openFailure = computed(() => openFailureFor(openReason.value));
+  const openFailure = computed(() => openFailureFor(openReason.value, openStatus.value));
 
   return { mode, room, live, allowsEditing, saveState, unsent, paused, banner, openFailure, open, close };
 }

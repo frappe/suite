@@ -54,4 +54,12 @@ const OPEN_FAILURES: Record<string, string> = {
   principal_changed: "Someone else is now signed in here. Reload to open this document.",
 }
 
-export const openFailureFor = (reason: string | null) => OPEN_FAILURES[reason ?? ""] ?? "This document couldn't be opened."
+function failureForStatus(status: number | null) {
+  if (status === 0) return "Couldn't reach the server. Check your connection and try again."
+  if (status === 408 || status === 429) return "The server is busy. Try again in a moment."
+  if (status !== null && status >= 500) return "The server had a problem opening this document. Try again in a moment."
+  return "This document couldn't be opened."
+}
+
+export const openFailureFor = (reason: string | null, status: number | null = null) =>
+  OPEN_FAILURES[reason ?? ""] ?? failureForStatus(status)
