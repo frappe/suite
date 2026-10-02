@@ -1119,6 +1119,15 @@ state; root nodes are not surfaced by general node listings [001].
 Only the trash roots are listed. A node trashed as part of a subtree
 carries the same `trash_root` and is reached by opening it.
 
+A trashed folder opens read-only. Its children page lists the children
+that share its `state` and `trash_root`, which are the nodes trashed with
+it; child counts follow the same rule. A child trashed earlier on its own
+has its own `trash_root`, so it is listed only here, at the top of Trash,
+and not inside the folder it was in. An Active folder lists its Active
+children, as before. Every row inside a trashed folder is part of its trash
+root's subtree, so none of them can be restored or purged on its own; the
+client names the trash root and offers its Restore (§8.8).
+
 ```sql
 SELECT name, title, kind, size, mime, trashed_at, owner
 FROM `tabDrive Node`
@@ -1886,7 +1895,7 @@ so the client retries that session under the free title. `PUT /nodes/<id>/conten
 | `update(state="Trashed")` | EDIT on `node` | `trash`: `trash_root`, `nodes` | none; trash stays charged [010 §2] | `DriveForbidden` |
 | `update(state="Active")` | EDIT when the actor trashed it, else MANAGE [002] | `restore`: `trash_root`, `nodes`, `reparented_to` | none | `DriveForbidden`, `DriveConflict` |
 | `update(blob=)` | EDIT on `node` | `edit`: `blob`, `size`, `version` | `+new_size` (the old head stays charged as a version) | `DriveForbidden`, `DriveOverQuota` |
-| `purge` | MANAGE on `node` | `delete`: `nodes`, `bytes` | `-SUM(size)` of the subtree plus its versions | `DriveForbidden` |
+| `purge` | MANAGE on `node` | `delete`: `nodes`, `bytes` | `-SUM(size)` of the subtree plus its versions | `DriveForbidden`, `DriveConflict` |
 | `copy` | READ on `node`, UPLOAD on `parent` [009 §8] | `create`: `kind`, `title`, `copied_from` | `+size` of the new nodes on the destination root; no version is copied | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` |
 | `children` | READ on `parent` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
 | `views` | per view, see §11 | none | none | `DriveForbidden` |
@@ -2160,6 +2169,14 @@ WHERE state = 'Trashed'
 `:stamp` is the node's own `trashed_at`, read under the row lock. The
 inner folder trashed earlier stays in the trash [design C, 011 §7].
 
+Only a trash root is restored: a node with `trash_root <> name` is refused
+with `DriveConflict`, and comes back with its trash root. A trashed node
+takes no other write: rename, move, copy, share and star are refused on
+the trash root and on every node trashed with it. A write that only takes
+something away stays open: revoking a grant, a deny, lowering an existing
+grant's role, and removing a star. Lowering a role may not also mint a
+link, change a password, extend the expiry, or send a share email.
+
 Restore rules.
 
 - EDIT restores what the actor trashed. Restoring anyone else's trashing
@@ -2195,6 +2212,10 @@ cannot complete this case until they support the choice; no shim may silently
 select a destination for them.
 
 Purge deletes the node row. There is no stored `Purged` state.
+
+Like restore, purge takes only a trash root, and refuses any other node
+with `DriveConflict`. An Active node goes to the trash first, and a node
+trashed with a folder is purged with that folder.
 
 Purge cascade, in this order, for the node and every descendant:
 
@@ -3001,7 +3022,7 @@ are listed.
 | POST | `/nodes` | UPLOAD on `parent` | `{parent, title, kind, blob?, size?, mime?, url?, content_doctype?, from_node?, content_modified?}` | node shape | 403, 409, 413 |
 | GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
 | PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{parent, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409, 413 |
-| DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403 |
+| DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403, 409 when the node is not a trash root |
 | GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&group_by=type\|owner\|modified&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent` | `{parent, title?}` | node shape | 403, 409, 413 |
 | POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
@@ -3015,7 +3036,7 @@ are listed.
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
 | GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
 | POST | `/nodes/<id>/visit` | READ on node | none | `{}` | none |
-| PUT | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
+| PUT | `/nodes/<id>/favourite` | READ on node | none | `{}` | 403 on a trashed node |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
 
 A title collision on `POST /nodes`, for every kind, answers `DriveConflict`
@@ -3267,12 +3288,17 @@ Base fields, identical in a list row and in a detail fetch [014 §7]:
 ```json
 { "name": "a1b2c3d4e5", "title": "Q3 deck", "kind": "document",
   "parent": "f9e8d7c6b5", "root": "r1a2b3c4d5", "state": "Active",
-  "size": 0, "mime": "frappe/slides", "url": null,
+  "trash_root": null, "size": 0, "mime": "frappe/slides", "url": null,
   "content_doctype": "Presentation", "content_docname": "deck-7",
   "is_template": 0, "owner": "priya@example.com",
   "creation": "2026-09-01 09:14:22", "modified": "2026-09-04 11:02:10",
   "content_modified": "2026-09-04 11:02:10" }
 ```
+
+`trash_root` is the stored column (§3.1): the node's own `name` on a trash
+root, the trash root's `name` on a node trashed with it, and `null` while
+Active. A client uses it to tell the node it may restore from the nodes
+inside it, and to name and link that node from a trashed folder (§5.6).
 
 Three expansions, each costing its queries only when named in `?expand=`:
 
@@ -3411,7 +3437,7 @@ deleted.
 | `rename` | `PATCH /nodes/<id>` `{title}` |
 | `move` | `PATCH /nodes/<id>` `{parent}`, or `POST /nodes/batch` |
 | `remove_or_restore` | `PATCH /nodes/<id>` `{state}`, or `POST /nodes/batch` |
-| `delete_entities` | `DELETE /nodes/<id>`, or `POST /nodes/batch` |
+| `delete_entities` | `DELETE /nodes/<id>`; `clear_all` is `POST /roots/<id>/trash/empty` on the caller's Home |
 | `update_access` | `PUT`/`DELETE /nodes/<id>/grants/<principal>` |
 | `set_favourite` | `PUT`/`DELETE /nodes/<id>/favourite` |
 | `track_visit` | `POST /nodes/<id>/visit` |

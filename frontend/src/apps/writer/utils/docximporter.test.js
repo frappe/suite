@@ -10,7 +10,10 @@ const uploadMock = vi.fn()
 const driveRequests = []
 vi.stubGlobal('fetch', async (url, init) => {
   driveRequests.push(`${init.method} ${url}`)
-  return new Response(JSON.stringify({ data: {} }), { headers: { 'Content-Type': 'application/json' } })
+  // A batch answers with the nodes it changed; here every node succeeds.
+  const nodes = init.body ? JSON.parse(init.body).nodes : undefined
+  const data = nodes ? { ok: nodes, failed: [] } : {}
+  return new Response(JSON.stringify({ data }), { headers: { 'Content-Type': 'application/json' } })
 })
 const toastMock = { success: vi.fn(), error: vi.fn() }
 
@@ -312,7 +315,8 @@ describe('importDocx', () => {
 
     await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
-    expect(driveRequests).toEqual(['DELETE /api/suite/drive/nodes/embed-1'])
+    // Drive purges only a trash root, so the image goes to the trash first.
+    expect(driveRequests).toEqual(['POST /api/suite/drive/nodes/batch', 'POST /api/suite/drive/nodes/batch/purge'])
     expect(toastMock.error).toHaveBeenCalled()
     expect(editor.getText()).toBe('Original text')
   })

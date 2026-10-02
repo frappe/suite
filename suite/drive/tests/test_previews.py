@@ -665,6 +665,7 @@ class TestPreviews(IntegrationTestCase):
         copied_usage = frappe.db.get_value("Drive Root", self.other_root.name, "used_bytes")
         self.assertEqual(copied_usage, frappe.db.get_value("Drive Node", copied, "size"))
 
+        update(self.admin, copied, state="Trashed")
         purge(self.admin, copied)
         self.assertFalse(frappe.db.exists("Drive Node Preview", {"node": copied}))
         self.assertTrue(frappe.db.exists("File Blob", preview))

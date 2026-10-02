@@ -6,15 +6,16 @@ import { useRoute, useRouter } from "vue-router";
 
 import { driveNodeRoute, useDriveDialogs } from "@/apps/drive";
 import { children, starNode, unstarNode } from "@/apps/drive/client/nodes";
+import { roots } from "@/apps/drive/client/roots";
 import type { DocumentSession } from "@/apps/drive/client/session";
-import { DRIVE_ROLES } from "@/apps/drive/client/types";
 import { useMutation, useQuery } from "@/platform/server-state";
 import { useSession } from "@/platform/session";
 import DocumentHeader from "../document/DocumentHeader.vue";
-import { linkAccess } from "../linkAccess";
+import { nodeActions } from "../nodeActions";
+import { useTrashActions } from "../trash/useTrashActions";
 import { readPresentationPreference, resolvePresentation } from "../presentation";
 import { offeredTypes, typeQuery, typesFromQuery } from "../typeFilter";
-import { useLocationTitle } from "../../internal/locations";
+import { trashLocation, useLocationTitle } from "../../internal/locations";
 import PreviewFallback from "./PreviewFallback.vue";
 import { previewKind } from "../../internal/previewKind";
 import type { FilePreviewSession } from "./session";
@@ -39,15 +40,28 @@ const contentUrl = computed(
 );
 /** An empty file has no bytes on the server, so there is nothing to download or show. */
 const empty = computed(() => file.value.size.value === 0);
-const role = computed(() => props.session.access.value.role ?? 0);
-const active = computed(() => props.session.state.value === "Active");
-const canEdit = computed(() => active.value && role.value >= DRIVE_ROLES.edit);
-const parent = computed(() => file.value.parent.value);
-const canReplace = computed(() => !!parent.value && canEdit.value);
 const account = useSession();
 const signedIn = computed(() => account.status.value === "authenticated");
-// The listing's rule: a signed-in caller's own access, never a share link's.
-const canStar = computed(() => active.value && linkAccess({ access: props.session.access.value }, signedIn.value).star);
+const trashed = computed(() => props.session.state.value === "Trashed");
+/** The listing's rules for this file. A trashed file is read-only, and only a trash root can be restored. */
+const can = computed(() =>
+  nodeActions(
+    {
+      name: props.session.nodeId,
+      kind: "file",
+      state: props.session.state.value,
+      trash_root: file.value.trashRoot.value,
+      access: props.session.access.value,
+    },
+    signedIn.value,
+  ),
+);
+const parent = computed(() => file.value.parent.value);
+const canReplace = computed(() => !!parent.value && can.value.rename);
+/** The file is in a trashed folder, so it steps through what was trashed with it. */
+const inTrashedFolder = computed(() => trashed.value && file.value.trashRoot.value !== props.session.nodeId);
+const trash = useTrashActions(() => (trashed.value ? file.value.root : null));
+const discovered = useQuery(() => (signedIn.value ? roots() : false));
 const starMutation = useMutation(starNode());
 const unstarMutation = useMutation(unstarNode());
 
@@ -82,7 +96,9 @@ const siblings = useQuery(() =>
       })
     : false,
 );
-const files = computed(() => siblings.rows.filter((row) => row.kind === "file" && row.state === "Active"));
+const files = computed(() =>
+  siblings.rows.filter((row) => row.kind === "file" && row.state === (inTrashedFolder.value ? "Trashed" : "Active")),
+);
 const position = computed(() => files.value.findIndex((row) => row.name === props.session.nodeId));
 const previous = computed(() => (position.value > 0 ? files.value[position.value - 1] : null));
 const next = computed(() =>
@@ -104,20 +120,38 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
 });
 
 const menu = computed(() => [
-  ...(canEdit.value
+  ...(can.value.rename
     ? [{ label: "Rename", icon: "lucide-pencil", onClick: () => header.value?.focusTitle() }]
     : []),
-  ...(canEdit.value
+  ...(can.value.move
     ? [{ label: "Move", icon: "lucide-folder-input", onClick: move }]
     : []),
   ...(canReplace.value
     ? [{ label: "Upload new version", icon: "lucide-upload", onClick: () => upload.value?.pick() }]
     : []),
-  ...(canStar.value
+  ...(can.value.star
     ? [{ label: file.value.favourite.value ? "Unstar" : "Star", icon: "lucide-star", onClick: toggleStar }]
     : []),
   { label: "Details", icon: "lucide-info", onClick: () => void dialogs.showDetails(props.session.nodeId) },
+  ...(can.value.restore ? [{ label: "Restore", icon: "lucide-undo-2", onClick: restore }] : []),
+  ...(can.value.deleteForever
+    ? [{ label: "Delete forever", icon: "lucide-trash-2", theme: "red" as const, onClick: deleteForever }]
+    : []),
 ]);
+
+const item = computed(() => ({ node: props.session.nodeId, title: props.session.title.value }));
+
+/** The file comes back in place: the session hears the restore and reads its new state. */
+async function restore() {
+  await trash.restore([item.value]);
+}
+
+/** The file is gone, so the preview goes back to the Trash that listed it. */
+async function deleteForever() {
+  const result = await trash.purge([item.value]);
+  if (!result?.ok.length) return;
+  await router.replace(trashLocation(file.value, discovered.data));
+}
 
 /** The menu shows the new state at once, and the old one again if the server refuses. */
 async function toggleStar() {

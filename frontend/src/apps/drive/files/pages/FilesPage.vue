@@ -145,6 +145,14 @@
             @update:model-value="switchTrashRoot"
           />
 
+          <Alert
+            v-if="trashedFolder && !isSearching"
+            class="mt-3"
+            title="This folder is in Trash"
+            :description="trashedNotice.description"
+            :primary-action="trashedNotice.primary"
+            :secondary-action="trashedNotice.secondary"
+          />
           <BatchOutcome
             :result="trash.outcome.value ?? batchOutcome"
             :verb="trash.outcome.value ? trash.verb.value : batchVerb"
@@ -198,6 +206,7 @@
 <script setup lang="ts">
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  Alert,
   Breadcrumbs,
   Button,
   ContextMenu,
@@ -208,6 +217,7 @@ import {
   PageHeaderMobile,
   TabButtons,
   TextInput,
+  type AlertAction,
   type DropdownActionOption,
   type DropdownItem,
 } from 'frappe-ui'
@@ -228,7 +238,7 @@ import {
 import { archiveDownloadUrl, startArchive } from '@/apps/drive/client/archives'
 import { observeDriveChanges } from '@/apps/drive/client/realtime'
 import { roots } from '@/apps/drive/client/roots'
-import { DRIVE_ROLES, hasRole, type DriveBatchResult, type DriveNode } from '@/apps/drive/client/types'
+import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { view } from '@/apps/drive/client/views'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
@@ -257,6 +267,7 @@ import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import { uploadTargetOf } from '../features/uploads/queue'
 import { linkAccess } from '../features/linkAccess'
+import { allAllow, nodeActions, type NodeActions } from '../features/nodeActions'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import {
   clearSelection,
@@ -276,7 +287,7 @@ import {
 } from '../features/presentation'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
-import { LOCATION_LABELS, locationTitle } from '../internal/locations'
+import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
 import { slugify } from '../internal/slugify'
 import FilesPanel from './FilesPanel.vue'
 
@@ -370,6 +381,21 @@ const detail = useQuery(() => parentId.value && concreteDestination.value
 // A password link shows the unlock screen in place of the folder (spec §10.2),
 // also when its ticket expires and the next listing refresh is refused.
 const locked = computed(() => isDriveLocked(detail.error) || (concreteDestination.value && isDriveLocked(listing.error)))
+/**
+ * The open folder, when it is in Trash. It opens read-only, listing what was
+ * trashed with it, and only its trash root can be restored (spec §5.6, §8.8).
+ */
+const trashedFolder = computed(() => {
+  const folder = detail.data
+  return props.destination === 'folder' && folder?.name === parentId.value && folder.state === 'Trashed' ? folder : null
+})
+/** The node the user trashed: the open folder itself, or the ancestor whose trashing took it to Trash. */
+const trashedRoot = computed(() => {
+  const folder = trashedFolder.value
+  if (!folder?.trash_root) return null
+  if (folder.trash_root === folder.name) return { name: folder.name, title: folder.title }
+  return folder.breadcrumbs?.find((crumb) => crumb.name === folder.trash_root) ?? null
+})
 /** Set when a folder row opens, so the header can name it before its details load. */
 const openedTrail = ref<FolderTrail | null>(null)
 /**
@@ -413,9 +439,12 @@ const destinationLabel = computed(() => isSearching.value ? 'Search results' : p
 const breadcrumbs = computed(() => {
   if (isSearching.value) return [{ label: `Search results for “${searchTerm.value}”`, route: route.fullPath }]
   if (props.destination !== 'folder') return [{ label: placeLabel.value, route: route.path }]
-  const known = folderTitle.value === null ? null : trail.value
+  const whole = folderTitle.value === null ? null : trail.value
   // Unknown until the details load. The header keeps its height meanwhile.
-  if (!known) return []
+  if (!whole) return []
+  // A trashed folder is reached from Trash, so its trail starts there, at the node the user trashed.
+  const from = trashedRoot.value ? whole.findIndex((crumb) => crumb.name === trashedRoot.value?.name) : -1
+  const known = from >= 0 ? whole.slice(from) : whole
   const items = known.slice(0, -1).map((crumb) => ({
     label: locationTitle(crumb, discovered.data),
     route: {
@@ -423,7 +452,8 @@ const breadcrumbs = computed(() => {
       query: presentationQuery.value,
     },
   }))
-  return [...items, { label: placeLabel.value, route: route.fullPath }]
+  const trashCrumb = trashedFolder.value ? [{ label: 'Trash', route: trashPath(trashedFolder.value) }] : []
+  return [...trashCrumb, ...items, { label: placeLabel.value, route: route.fullPath }]
 })
 usePageTitle(() => {
   if (isSearching.value) return `Search results for “${searchTerm.value}”`
@@ -494,7 +524,8 @@ const listing = heldWhileRearranging(
 )
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
-const trash = useTrashActions(() => trashRoot.value)
+// A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
+const trash = useTrashActions(() => trashRoot.value ?? trashedFolder.value?.root ?? null)
 // Search replaces the Trash listing, so its rows get no Trash actions.
 const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
 const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)
@@ -503,16 +534,17 @@ const uploadTarget = computed(() => concreteDestination.value && !isSearching.va
 const drop = useUploadDrop((selection, target) => uploads.value?.upload(selection, target))
 const paneDrop = drop.zone(() => uploadTarget.value && { key: uploadTarget.value.parent, label: placeLabel.value, target: uploadTarget.value })
 // New stays while a search shows. It adds to the folder the search started from.
-const canCreate = computed(() => concreteDestination.value && hasRole(detail.data, DRIVE_ROLES.upload))
+// A trashed folder takes no new items, so it offers no New.
+const canCreate = computed(() => concreteDestination.value && !!uploadTargetOf(detail.data))
 const newUploadTarget = computed(() => concreteDestination.value ? uploadTargetOf(detail.data) : null)
 const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value).documentKinds)
 const selectedRows = computed(() => (listing.rows as DriveNode[]).filter((row) => selection.value.includes(row.name)))
-const canBulkEdit = computed(() => !!selectedRows.value.length && selectedRows.value.every((row) => hasRole(row, DRIVE_ROLES.edit)))
 const empty = computed(() => emptyState({
   destination: props.destination,
   term: searchTerm.value,
   canCreate: canCreate.value,
   typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
+  inTrash: !!trashedFolder.value,
 }))
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
@@ -602,11 +634,34 @@ const offeredColumns = computed(() => inOwnSpace.value ? FILES_COLUMNS.filter((c
 const folderActions = computed<DropdownActionOption[]>(() => {
   const folder = detail.data
   if (props.destination !== 'folder' || isSearching.value || !folder || folder.kind !== 'folder') return []
+  const can = nodeActions(folder, signedIn.value)
   return [
-    ...(hasRole(folder, DRIVE_ROLES.manage) ? [{ label: 'Share folder', icon: 'lucide-share-2', onClick: () => shareRow(folder) }] : []),
-    { label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(folder) },
-    ...(hasRole(folder, DRIVE_ROLES.edit) ? [{ label: 'Rename folder', icon: 'lucide-pencil', onClick: () => beginRename(folder) }] : []),
+    ...(can.share ? [{ label: 'Share folder', icon: 'lucide-share-2', onClick: () => shareRow(folder) }] : []),
+    ...(can.copyLink ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(folder) }] : []),
+    ...(can.rename ? [{ label: 'Rename folder', icon: 'lucide-pencil', onClick: () => beginRename(folder) }] : []),
   ]
+})
+/** The trashed folder's notice. Its trash root offers Restore and Delete forever; a folder inside one points to it. */
+const trashedNotice = computed<{ description: string; primary?: AlertAction; secondary?: AlertAction }>(() => {
+  const folder = trashedFolder.value
+  const root = trashedRoot.value
+  if (!folder) return { description: '' }
+  if (!root) return { description: 'Restore the folder it is in to use its contents.' }
+  if (root.name !== folder.name) {
+    return {
+      description: `Restore “${root.title}” to use its contents.`,
+      primary: { label: `Open “${root.title}”`, onClick: () => { void router.push(folderPath(root)) } },
+    }
+  }
+  const can = nodeActions(folder, signedIn.value)
+  const item = { node: folder.name, title: folder.title }
+  const restore: AlertAction | undefined = can.restore
+    ? { label: 'Restore', disabled: trash.pending.value, onClick: async () => { await trash.restore([item]) } }
+    : undefined
+  const remove: AlertAction | undefined = can.deleteForever
+    ? { label: 'Delete forever', disabled: trash.pending.value, onClick: () => purgeOpenFolder(item, folder) }
+    : undefined
+  return { description: 'Restore it to use its contents.', primary: restore ?? remove, secondary: restore && remove }
 })
 const moreOptions = computed<DropdownItem[]>(() => [
   ...(folderActions.value.length ? [{ group: 'This folder', options: folderActions.value }] : []),
@@ -616,15 +671,19 @@ const moreOptions = computed<DropdownItem[]>(() => [
   ] }] : []),
 ])
 /** What a selection of several items offers, in the toolbar and on right-click. */
-const bulkActions = computed(() => trashActions.value
-  ? [
-      { label: 'Restore', icon: 'lucide-undo-2', disabled: trash.pending.value, onClick: runRestore },
-      { label: 'Delete forever', icon: 'lucide-trash-2', disabled: trash.pending.value, onClick: runPurge },
-    ]
-  : [
-      { label: 'Move', icon: 'lucide-folder-input', disabled: !canBulkEdit.value, onClick: beginBulkMove },
-      { label: 'Move to trash', icon: 'lucide-trash-2', disabled: !canBulkEdit.value, onClick: runBulkTrash },
-    ])
+// An action is enabled only when every selected row allows it (spec §5.8).
+const bulkActions = computed(() => {
+  const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
+  return trashActions.value
+    ? [
+        { label: 'Restore', icon: 'lucide-undo-2', disabled: trash.pending.value || !allow('restore'), onClick: runRestore },
+        { label: 'Delete forever', icon: 'lucide-trash-2', disabled: trash.pending.value || !allow('deleteForever'), onClick: runPurge },
+      ]
+    : [
+        { label: 'Move', icon: 'lucide-folder-input', disabled: !allow('move'), onClick: beginBulkMove },
+        { label: 'Move to trash', icon: 'lucide-trash-2', disabled: !allow('trash'), onClick: runBulkTrash },
+      ]
+})
 /** A menu row led by the type icon the listing shows for what it creates. */
 function typedOption(label: string, kind: Pick<DriveNode, 'kind' | 'title' | 'mime' | 'content_doctype'>, onClick: () => void, icon = nodeIcon(kind)): DropdownActionOption {
   return {
@@ -824,32 +883,33 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
   if (selected.length && !(selected.length === 1 && selected[0] === row.name)) clearSelected()
   return rowMenuOptions(row)
 }
+/** A row's own menu. `nodeActions` decides what it offers, so a trashed row offers only what Trash allows. */
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
-  const editable = hasRole(row, DRIVE_ROLES.edit)
-  return [
+  const can = nodeActions(row, signedIn.value)
+  const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
     { group: 'Open', hideLabel: true, options: [
       { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
-      { label: 'Open in new tab', icon: 'lucide-external-link', onClick: () => openNode(row, true) },
-      // Share needs MANAGE (spec §7.2). A link gives at most EDIT, so guests and link-only readers never see it.
-      ...(hasRole(row, DRIVE_ROLES.manage) ? [{ label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }] : []),
-      { label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) },
-      ...(row.kind !== 'link' ? [{ label: 'Download', icon: 'lucide-download', onClick: () => download(row) }] : []),
+      ...(can.openInNewTab ? [{ label: 'Open in new tab', icon: 'lucide-external-link', onClick: () => openNode(row, true) }] : []),
+      ...(can.share ? [{ label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }] : []),
+      ...(can.copyLink ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }] : []),
+      ...(can.download ? [{ label: 'Download', icon: 'lucide-download', onClick: () => download(row) }] : []),
     ] },
     { group: 'Organize', hideLabel: true, options: [
-      ...(editable ? [
-        { label: 'Rename', icon: 'lucide-pencil', onClick: () => beginRename(row) },
-        { label: 'Move', icon: 'lucide-folder-input', onClick: () => beginPicker(row, 'move') },
-      ] : []),
-      { label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') },
-      ...(linkAccess(row, signedIn.value).star ? [{ label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) }] : []),
+      ...(can.rename ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => beginRename(row) }] : []),
+      ...(can.move ? [{ label: 'Move', icon: 'lucide-folder-input', onClick: () => beginPicker(row, 'move') }] : []),
+      ...(can.copy ? [{ label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') }] : []),
+      ...(can.star ? [{ label: row.favourite ? 'Unstar' : 'Star', icon: 'lucide-star', onClick: () => toggleStar(row) }] : []),
     ] },
     { group: 'Select', hideLabel: true, options: [
       { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
     ] },
-    ...(editable ? [{ group: 'Trash', hideLabel: true, options: [
-      { label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashRow(row) },
-    ] }] : []),
+    { group: 'Trash', hideLabel: true, options: [
+      ...(can.trash ? [{ label: 'Move to trash', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trashRow(row) }] : []),
+      ...(can.restore ? [{ label: 'Restore', icon: 'lucide-undo-2', onClick: () => trash.restore([itemOf(row)]) }] : []),
+      ...(can.deleteForever ? [{ label: 'Delete forever', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => trash.purge([itemOf(row)]) }] : []),
+    ] },
   ]
+  return groups.filter((group) => group.options.length)
 }
 /**
  * A row's trail, as far as the page knows it. Search rows carry their path. A
@@ -865,7 +925,13 @@ function trailOf(row: DriveNode): FolderTrail {
 function copyNodeLink(row: DriveNode) {
   void copyLink(row.kind === 'link' && row.url ? row.url : router.resolve(nodePath(row)).href)
 }
-function nodePath(row: DriveNode) {
+function folderPath(folder: Pick<DriveNode, 'name' | 'title'>) {
+  return { path: nodePath({ ...folder, kind: 'folder' }), query: presentationQuery.value }
+}
+function trashPath(row: Pick<DriveNode, 'root'>): RouteLocationRaw {
+  return trashLocation(row, discovered.data)
+}
+function nodePath(row: Pick<DriveNode, 'name' | 'title' | 'kind'>) {
   const slug = slugify(row.title)
   const base = row.kind === 'folder' ? '/drive/f' : '/d'
   return `${base}/${encodeURIComponent(row.name)}${slug ? `/${slug}` : ''}`
@@ -886,6 +952,11 @@ async function runPurge() { await trash.purge(selectedRows.value.map(itemOf)) }
 async function trashRow(row: DriveNode) {
   const item = itemOf(row)
   if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
+}
+/** A folder deleted forever is gone, so the page goes back to the Trash it was in. */
+async function purgeOpenFolder(item: { node: string; title: string }, folder: DriveNode) {
+  const result = await trash.purge([item])
+  if (result?.ok.includes(item.node)) await router.replace(trashPath(folder))
 }
 function beginRename(row: DriveNode) { activeNode.value = row; renameOpen.value = true }
 function beginPicker(row: DriveNode, mode: 'move' | 'copy') {

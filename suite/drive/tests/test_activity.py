@@ -17,10 +17,10 @@ from suite.drive._core.activity import (
     unread_count,
     visit,
 )
-from suite.drive._core.errors import DriveNotFound
-from suite.drive._core.nodes import create_folder, purge, views
+from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.nodes import copy, create_folder, purge, update, views
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import READ
+from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive._core.roots import create_root
 from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
@@ -220,6 +220,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         set_favourite(self.owner, self.node)
         activity = record(self.admin, self.node, "edit")
         notify_users(activity, (OWNER,))
+        update(self.admin, self.node, state="Trashed")
 
         self.assertEqual(purge(self.admin, self.node), 1)
         self.assertFalse(frappe.db.exists("Drive Notification", {"activity": activity}))
@@ -342,6 +343,49 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertIsNotNone(first["next_cursor"])
         second = recents(self.other, listing_types=("spreadsheet",), cursor=first["next_cursor"], limit=1)
         self.assertEqual([row.node.name for row in second["rows"]], [readable])
+
+    def test_a_trashed_node_and_its_contents_refuse_writes_but_can_lose_access(self):
+        # §4.2 and §8.8: a trashed node is read-only until it is restored. Its
+        # contents are trashed with it, so they refuse the same writes.
+        inside = create_folder(self.owner, self.node, "Inside")
+        elsewhere = create_folder(self.owner, self.root.name, "Elsewhere")
+        set_favourite(self.owner, self.node)
+        grant(self.node, OTHER, EDIT, self.owner)
+        update(self.owner, self.node, state="Trashed")
+
+        for trashed in (self.node, inside):
+            writes = {
+                "rename": lambda: update(self.owner, trashed, title="Renamed"),
+                "move": lambda: update(self.owner, trashed, parent=elsewhere),
+                "copy": lambda: copy(self.owner, trashed, elsewhere),
+                "share": lambda: grant(trashed, OUTSIDER, READ, self.owner),
+                "star": lambda: set_favourite(self.owner, trashed),
+            }
+            for name, write in writes.items():
+                with self.subTest(node=trashed, write=name), self.assertRaises(DriveForbidden):
+                    write()
+        self.assertFalse(frappe.db.exists("Drive Grant", {"principal": OUTSIDER}))
+        self.assertFalse(frappe.db.exists("Drive Favourite", {"node": inside}))
+
+        # A grant may not raise a role, or rewrite it unchanged.
+        for role in (MANAGE, EDIT):
+            with self.subTest(role=role), self.assertRaises(DriveForbidden):
+                grant(self.node, OTHER, role, self.owner)
+        self.assertEqual(self.role_of(OTHER), EDIT)
+
+        # Taking access away, or the owner's own star, is still allowed:
+        # lowering a role, denying, revoking, and unstarring.
+        grant(self.node, OTHER, READ, self.owner)
+        self.assertEqual(self.role_of(OTHER), READ)
+        grant(self.node, OUTSIDER, NONE, self.owner)
+        self.assertEqual(self.role_of(OUTSIDER), NONE)
+        revoke(self.node, OTHER, self.owner)
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": self.node, "principal": OTHER}))
+        set_favourite(self.owner, self.node, False)
+        self.assertFalse(frappe.db.exists("Drive Favourite", {"node": self.node}))
+
+    def role_of(self, principal: str) -> int:
+        return frappe.db.get_value("Drive Grant", {"node": self.node, "principal": principal}, "role")
 
     def test_recents_leave_out_trashed_nodes(self):
         kept = self.document("Kept", "Sheet")

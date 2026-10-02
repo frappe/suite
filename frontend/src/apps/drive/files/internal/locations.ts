@@ -33,6 +33,15 @@ export function locationOf(folder: Pick<DriveNode, 'root'>, discovered: DriveRoo
   return 'shared'
 }
 
+/**
+ * The Trash tab that lists a node's root. Organization Trash has its own tab;
+ * every other root's trash is the personal tab.
+ */
+export function trashLocation(node: Pick<DriveNode, 'root'>, discovered: DriveRoots | null | undefined): { path: string; query: Record<string, string> } {
+  const organization = discovered?.organization?.node
+  return { path: '/drive/trash', query: organization && node.root === organization ? { root: 'organization' } : {} }
+}
+
 /** `locationTitle` bound to the caller's roots, for templates. Call it in a component's setup. */
 export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
   const session = useSession()

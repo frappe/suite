@@ -21,6 +21,13 @@ describe('empty states', () => {
     expect(new Set(titles).size).toBe(titles.length)
   })
 
+  it('says an empty trashed folder was empty when it was trashed, with no hint to add items', () => {
+    expect(emptyState({ destination: 'folder', term: '', canCreate: false, inTrash: true })).toEqual({
+      title: 'This folder is empty',
+      description: 'It was empty when it was moved to Trash.',
+    })
+  })
+
   it('names the type filter when nothing of that type is here', () => {
     expect(emptyState({ destination: 'recent', term: '', canCreate: false, typeNoun: 'images' }))
       .toEqual({ title: 'No images here', description: 'Try another type, or clear the filter.' })

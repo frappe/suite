@@ -46,6 +46,7 @@ NODE_SHAPE_FIELDS = {
     "parent",
     "root",
     "state",
+    "trash_root",
     "size",
     "mime",
     "url",
@@ -681,6 +682,7 @@ class TestNodeWorkflows(DriveHTTPCase):
     def test_a_purge_reports_how_many_nodes_it_removed(self):
         doomed = create_folder(self.owner, self.root.name, "Doomed")
         frappe.db.commit()
+        self.data(self.as_owner("PATCH", f"{PREFIX}/nodes/{doomed}", body={"state": "Trashed"}))
         answer = self.data(self.as_owner("DELETE", f"{PREFIX}/nodes/{doomed}"))
         self.reread()
         self.assertEqual(answer, {"purged": 1})
@@ -902,6 +904,8 @@ class TestPurgeRoutes(DriveHTTPCase):
         frappe.db.commit()
 
     def test_a_batch_purge_removes_what_it_may_and_reports_the_rest(self):
+        for node in self.mine:
+            self.data(self.as_owner("PATCH", f"{PREFIX}/nodes/{node}", body={"state": "Trashed"}))
         asked = [*self.mine, self.shared]
         answer = self.data(self.as_owner("POST", f"{PREFIX}/nodes/batch/purge", body={"nodes": asked}))
         self.reread()
@@ -916,10 +920,12 @@ class TestPurgeRoutes(DriveHTTPCase):
     def test_a_batch_purge_of_a_folder_and_its_descendant_purges_both(self):
         # The ancestor's purge takes the descendant with it. That is the
         # outcome the caller asked for, so the descendant is reported purged,
-        # not missing.
+        # not missing. Both are trash roots: the inner one was trashed first.
         inner = create_folder(self.owner, self.mine[0], "Inner")
         frappe.db.commit()
         self.addCleanup(self.drop_rows, [inner])
+        for node in (inner, self.mine[0]):
+            self.data(self.as_owner("PATCH", f"{PREFIX}/nodes/{node}", body={"state": "Trashed"}))
         asked = [self.mine[0], inner]
         answer = self.data(self.as_owner("POST", f"{PREFIX}/nodes/batch/purge", body={"nodes": asked}))
         self.reread()

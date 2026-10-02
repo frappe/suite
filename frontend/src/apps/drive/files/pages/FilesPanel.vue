@@ -14,7 +14,7 @@
       <SidebarItem label="Shared with me" icon="lucide-users" route="/drive/shared-with-me" :active="current === 'shared'" />
       <SidebarItem label="Recent" icon="lucide-clock-3" route="/drive/recent" />
       <SidebarItem label="Starred" icon="lucide-star" route="/drive/starred" />
-      <SidebarItem label="Trash" icon="lucide-trash-2" route="/drive/trash" />
+      <SidebarItem label="Trash" icon="lucide-trash-2" route="/drive/trash" :active="current === 'trash' || undefined" />
     </SidebarSection>
     <AreaSidebarFooter>
       <StorageMeter />
@@ -39,12 +39,13 @@ const folderId = computed(() => route.name === 'files-folder' ? String(route.par
 // The same read the folder page makes, so it costs no extra request.
 const folder = useQuery(() => folderId.value ? node(folderId.value, 'access,breadcrumbs') : false)
 
-/** The location whose item stays lit, also inside one of its folders. */
-const current = computed<FilesLocation | null>(() => {
+/** The location whose item stays lit, also inside one of its folders. A trashed folder is reached from Trash. */
+const current = computed<FilesLocation | 'trash' | null>(() => {
   if (route.name === 'files') return 'personal'
   if (route.name === 'files-organization') return 'organization'
   if (route.name === 'files-shared-with-me') return 'shared'
   if (!folderId.value || !folder.data) return null
+  if (folder.data.state === 'Trashed') return 'trash'
   return locationOf(folder.data, discovered.data)
 })
 </script>

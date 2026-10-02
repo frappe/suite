@@ -25,7 +25,7 @@ import sys
 import unittest
 from datetime import datetime
 from typing import ClassVar
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -1574,11 +1574,7 @@ class TestUnadoptedContent(ShimCase):
 
 
 class TestUnadoptedPurge(ShimCase):
-    """`delete_entities` and `does_entity_exist`, for ids no node holds.
-
-    `writer/utils/docximporter.js` rolls back the pictures a failed import
-    uploaded, and every one of those is a `File` under the document.
-    """
+    """`delete_entities` and `does_entity_exist`, for ids no node holds."""
 
     def test_a_named_node_less_row_is_purged_by_the_rule_that_wrote_it(self):
         self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
@@ -1589,15 +1585,16 @@ class TestUnadoptedPurge(ShimCase):
         row.permanent_delete.assert_called_once_with()
         nodes.purge.assert_not_called()
 
-    def test_clearing_the_trash_still_names_only_the_node_view(self):
-        """§11.2 has no trash view for the `File` store, and listing one here
+    def test_clearing_the_trash_empties_only_the_node_store(self):
+        """§11.2 has no trash for the `File` store, and emptying one here
         would be a view this shim invented."""
-        self.enterContext(patch.object(shims, "_unadopted_row", return_value=False))
         self.enterContext(patch.object(shims, "_home", return_value="r1"))
+        get_doc = self.enterContext(patch.object(shims.frappe, "get_doc"))
         nodes = self.stub("node_core")
-        nodes.views.return_value = {"rows": [], "next_cursor": None}
         shims.delete_entities(clear_all=True)
+        nodes.empty_trash.assert_called_once_with(ANY, "r1")
         nodes.purge.assert_not_called()
+        get_doc.assert_not_called()
 
     def test_a_node_less_folder_answers_the_name_check_off_the_old_table(self):
         self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))

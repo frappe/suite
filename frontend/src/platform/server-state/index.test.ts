@@ -523,6 +523,58 @@ describe('server state mutations and realtime', () => {
     state.dispose()
   })
 
+  it('tells touch listeners after a mutation succeeds, and not after it fails', async () => {
+    let fail = false
+    const mock = mockTransport(() => {
+      if (fail) throw new TransportError({ status: 409, type: 'DriveConflict', message: 'No' })
+      return { accepted: true }
+    })
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const heard: string[] = []
+    const stop = state.onTouch('n1', () => heard.push('n1'))
+    state.onTouch('n2', () => heard.push('n2'))
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    await batch.run({ nodes: ['n1'] })
+    fail = true
+    await batch.run({ nodes: ['n1', 'n2'] }).catch(() => {})
+    fail = false
+    stop()
+    await batch.run({ nodes: ['n1', 'n2'] })
+    expect(heard).toEqual(['n1', 'n2'])
+    state.dispose()
+  })
+
+  it('keeps telling touch listeners when one throws or a stop runs twice', async () => {
+    const mock = mockTransport(() => ({ accepted: true }))
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const heard: string[] = []
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    state.onTouch('n1', () => {
+      throw new Error('listener failed')
+    })
+    const stop = state.onTouch('n1', () => heard.push('first'))
+    stop()
+    state.onTouch('n1', () => heard.push('second'))
+    stop()
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    await expect(batch.run({ nodes: ['n1'] })).resolves.toEqual({ accepted: true })
+    expect(heard).toEqual(['second'])
+    expect(error).toHaveBeenCalledOnce()
+    error.mockRestore()
+    state.dispose()
+  })
+
+  it('stops telling touch listeners once disposed', async () => {
+    const mock = mockTransport(() => ({ accepted: true }))
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const heard: string[] = []
+    state.onTouch('n1', () => heard.push('n1'))
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    state.dispose()
+    await batch.run({ nodes: ['n1'] }).catch(() => {})
+    expect(heard).toEqual([])
+  })
+
   it('computes invalidation targets from mutation input', async () => {
     let current = node()
     const mock = mockTransport((operation) => {

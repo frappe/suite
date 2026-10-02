@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { locationOf, locationTitle } from './locations'
+import { locationOf, locationTitle, trashLocation } from './locations'
 
 const discovered = { personal: { node: 'p-root', title: 'Administrator' }, organization: { node: 'o-root', title: 'Frappe' } }
 
@@ -15,5 +15,11 @@ describe('locations', () => {
     expect(locationOf({ root: 'p-root' }, discovered)).toBe('personal')
     expect(locationOf({ root: 'o-root' }, discovered)).toBe('organization')
     expect(locationOf({ root: 'someone-else' }, discovered)).toBe('shared')
+  })
+
+  it('sends organization files to the organization Trash tab, and the rest to the personal one', () => {
+    expect(trashLocation({ root: 'o-root' }, discovered)).toEqual({ path: '/drive/trash', query: { root: 'organization' } })
+    expect(trashLocation({ root: 'p-root' }, discovered)).toEqual({ path: '/drive/trash', query: {} })
+    expect(trashLocation({ root: 'o-root' }, null)).toEqual({ path: '/drive/trash', query: {} })
   })
 })

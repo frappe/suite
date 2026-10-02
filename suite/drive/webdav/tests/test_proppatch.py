@@ -435,5 +435,6 @@ class TestWebDAVProppatch(IntegrationTestCase):
         self._proppatch(SET_CUSTOM)
         self.assertEqual(deadprops.count(self.file.name), 1)
 
+        node_core.update(node_principals(OWNER), self.file.name, state="Trashed")
         node_core.purge(node_principals(OWNER), self.file.name)
         self.assertEqual(frappe.db.count("Drive DAV Property", {"entity": self.file.name}), 0)

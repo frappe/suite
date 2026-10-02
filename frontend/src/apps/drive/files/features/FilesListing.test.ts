@@ -19,7 +19,7 @@ afterEach(() => {
 
 function file(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
   return {
-    name, title, kind: 'File', parent: 'root', root: 'root', state: 'Active', size: 10,
+    name, title, kind: 'File', parent: 'root', root: 'root', state: 'Active', trash_root: null, size: 10,
     mime: 'image/png', url: null, content_doctype: null, content_docname: null, is_template: 0,
     owner: 'someone@example.com', creation: null, modified: null, content_modified: null, ...extra,
   }

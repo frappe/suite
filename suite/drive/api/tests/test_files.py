@@ -36,6 +36,7 @@ from suite.drive._core.nodes import create_folder
 from suite.drive._core.roots import personal_root_for, provision_personal_root
 from suite.drive.api.files import (
     create_auth_token,
+    delete_entities,
     does_entity_exist,
     get_file_content,
     get_new_title,
@@ -743,6 +744,30 @@ class TestLegacyFilesAPI(LegacyNodeCase):
                 remove_or_restore([inner])
 
         self.assertEqual(frappe.db.get_value("Drive Node", inner, "state"), "Trashed")
+
+    def test_emptying_the_trash_takes_a_tree_trashed_inside_one_trashed_later(self):
+        # Both are trash roots. The outer purge removes the inner tree, and
+        # emptying must not then fail on the inner one being gone.
+        with self.set_user(OWNER):
+            nested = create_folder(self.owner, self.folder, "nested")
+            inner = self.make_file(nested, "inner.txt", b"inner")
+            remove_or_restore([nested])
+            remove_or_restore([self.folder])
+
+            delete_entities(clear_all=True)
+
+        for node in (self.folder, nested, inner, self.file):
+            self.assertFalse(frappe.db.exists("Drive Node", node))
+
+    def test_a_named_node_is_deleted_forever_only_from_the_trash(self):
+        with self.set_user(OWNER):
+            with self.assertRaises(DriveConflict):
+                delete_entities([self.file])
+            self.assertTrue(frappe.db.exists("Drive Node", self.file))
+
+            remove_or_restore([self.file])
+            delete_entities([self.file])
+        self.assertFalse(frappe.db.exists("Drive Node", self.file))
 
     # -- access -----------------------------------------------------------
 

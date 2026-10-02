@@ -502,6 +502,53 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         self.assertEqual(frappe.db.get_value("Drive Node", inner_leaf, "state"), "Trashed")
 
+    def test_a_trashed_folder_opens_read_only_on_what_was_trashed_with_it(self):
+        # §5.6: a node trashed with its folder is reached by opening the folder.
+        # A child trashed earlier on its own stays in Trash, not in the folder.
+        from suite.drive.http import routes
+
+        user = Principals(USER, (USER,), ("$PUBLIC",))
+        outer = create_folder(user, self.root.name, "Outer")
+        sub = create_folder(user, outer, "Sub")
+        create_folder(user, sub, "Leaf")
+        earlier = create_folder(user, outer, "Trashed earlier")
+        update(user, earlier, state="Trashed")
+        update(user, outer, state="Trashed")
+
+        def listed(folder):
+            return {row["title"]: row["trash_root"] for row in routes.node_children(node=folder)["rows"]}
+
+        frappe.set_user(USER)
+        self.assertEqual(routes.node_get(node=outer)["trash_root"], outer)
+        self.assertEqual(listed(outer), {"Sub": outer})
+        self.assertEqual(listed(sub), {"Leaf": outer})
+        self.assertEqual(node_workflows.readable_child_counts(user, [outer, sub]), {outer: 1, sub: 1})
+
+        # Only the trash root restores (§8.8). Restoring it brings back what
+        # was trashed with it; the earlier trash keeps its own place in Trash.
+        with self.assertRaises(DriveConflict):
+            update(user, sub, state="Active")
+        update(user, outer, state="Active")
+        self.assertEqual(listed(outer), {"Sub": None})
+        self.assertEqual(listed(sub), {"Leaf": None})
+        self.assertEqual(routes.node_get(node=earlier)["trash_root"], earlier)
+
+    def test_only_a_trash_root_is_deleted_forever(self):
+        # §8.8: purge takes what restore takes. An Active node goes to the
+        # trash first, and a node trashed with its folder goes with the folder.
+        outer = create_folder(self.admin, self.root.name, "Outer")
+        sub = create_folder(self.admin, outer, "Sub")
+        with self.assertRaises(DriveConflict):
+            purge(self.admin, outer)
+
+        update(self.admin, outer, state="Trashed")
+        with self.assertRaises(DriveConflict):
+            purge(self.admin, sub)
+        self.assertTrue(frappe.db.exists("Drive Node", sub))
+
+        self.assertEqual(purge(self.admin, outer), 2)
+        self.assertFalse(frappe.db.exists("Drive Node", sub))
+
     def test_original_trasher_with_direct_edit_restores_in_place_without_parent_upload(self):
         shared = create_root(kind="Shared", title="Shared lifecycle")
         self.root_ids += (shared.name,)
@@ -671,6 +718,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         frappe.db.set_value("Drive Root", self.root.name, "used_bytes", size * 2)
+        update(self.admin, folder, state="Trashed")
         self.assertEqual(purge(self.admin, folder), 2)
         self.assertFalse(frappe.db.exists("Drive Node", folder))
         self.assertFalse(frappe.db.exists("Drive Node", file_node))
@@ -732,6 +780,7 @@ class TestNodeLifecycle(IntegrationTestCase):
 
         frappe.db.set_value("Drive Node", child, "path", f"/{folder}/", update_modified=False)
         document = self._raw_document(folder)
+        update(self.admin, folder, state="Trashed")
         before_nodes = frappe.db.count("Drive Node", {"root": self.root.name})
         before_activity = frappe.db.count("Drive Activity", {"node": folder})
 
@@ -860,14 +909,17 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(effective_role(_row(plain), other), READ)
         self.assertEqual(effective_role(_row(denied), other), 0)
 
-    def test_child_counts_answer_every_named_folder_and_ignore_the_trash(self):
+    def test_child_counts_answer_every_named_folder_and_ignore_the_trash_and_templates(self):
+        # A folder counts what `children` lists, which leaves out templates.
         other = Principals(OTHER, (OTHER,), ())
         left = create_folder(self.admin, self.root.name, "Left")
         right = create_folder(self.admin, self.root.name, "Right")
         create_folder(self.admin, left, "Kept")
         trashed = create_folder(self.admin, left, "Trashed")
+        template = create_folder(self.admin, right, "Template")
         create_folder(self.admin, right, "Only")
         frappe.db.set_value("Drive Node", trashed, "state", "Trashed")
+        frappe.db.set_value("Drive Node", template, "is_template", 1)
         grant(left, OTHER, READ, self.admin)
         grant(right, OTHER, READ, self.admin)
 

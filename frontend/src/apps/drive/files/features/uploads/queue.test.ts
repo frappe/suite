@@ -33,7 +33,7 @@ const drive = vi.hoisted(() => {
   const refuse = (status: number, error: Record<string, unknown>) =>
     new Response(JSON.stringify({ errors: [error] }), { status })
   const row = (node: Node) => ({
-    ...node, root: 'root', state: 'Active', mime: null, url: null, content_doctype: null, content_docname: null,
+    ...node, root: 'root', state: 'Active', trash_root: null, mime: null, url: null, content_doctype: null, content_docname: null,
     is_template: 0, owner: 'owner@example.com', creation: null, modified: `m${state.nextId++}`, content_modified: null,
     access: { role: 40, via_link: null },
   })

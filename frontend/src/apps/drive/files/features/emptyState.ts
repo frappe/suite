@@ -8,6 +8,8 @@ export interface EmptyStateInput {
   canCreate: boolean
   /** The listing keeps one type of item, named as in a sentence, such as "images". */
   typeNoun?: string
+  /** The folder is in Trash, so it keeps what it held when it was trashed. */
+  inTrash?: boolean
 }
 
 export interface EmptyState {
@@ -19,7 +21,7 @@ export interface EmptyState {
 const TRASH_RETENTION_DAYS = 30
 
 /** What an empty listing says, per view. */
-export function emptyState({ destination, term, canCreate, typeNoun }: EmptyStateInput): EmptyState {
+export function emptyState({ destination, term, canCreate, typeNoun, inTrash }: EmptyStateInput): EmptyState {
   // The page offers to clear the filter, so the copy names it.
   if (typeNoun) {
     return term
@@ -37,6 +39,7 @@ export function emptyState({ destination, term, canCreate, typeNoun }: EmptyStat
         description: addHint || 'Files added for your organization will appear here.',
       }
     case 'folder':
+      if (inTrash) return { title: 'This folder is empty', description: 'It was empty when it was moved to Trash.' }
       return { title: 'This folder is empty', description: addHint || 'Nothing has been added to this folder yet.' }
     case 'shared':
       return { title: 'Nothing shared with you yet', description: 'Files and folders that people share with you will appear here.' }

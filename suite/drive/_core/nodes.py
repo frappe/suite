@@ -118,7 +118,8 @@ FROM (
         SELECT {node_fields}
         FROM `tabDrive Node`
         WHERE parent = %(parent)s
-          AND state = 'Active'
+          AND state = (SELECT state FROM `tabDrive Node` WHERE name = %(parent)s)
+          AND trash_root <=> (SELECT trash_root FROM `tabDrive Node` WHERE name = %(parent)s)
           AND kind <> 'root'
           AND is_template = 0
           AND {type_filter}
@@ -680,7 +681,10 @@ def title_taken(principals: Principals, parent: str, title: str) -> bool:
 
 
 def readable_child_counts(principals: Principals, parents: list[str]) -> dict[str, int]:
-    """Count each named folder's Active children that the caller may read.
+    """Count each named folder's listed children that the caller may read.
+
+    The children counted are the ones `children` lists: those that share the
+    folder's state and trash root (§5.6), and are neither roots nor templates.
 
     The third question §11.2 does not answer: a folder page returns rows, and a
     legacy list row carries a count of what is inside each of them. It is a
@@ -704,10 +708,15 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
         row["parent"]: int(row["total"] or 0)
         for row in frappe.db.sql(
             """
-            SELECT parent, COUNT(name) AS total
-            FROM `tabDrive Node`
-            WHERE parent IN %(parents)s AND state = 'Active'
-            GROUP BY parent
+            SELECT child.parent, COUNT(child.name) AS total
+            FROM `tabDrive Node` child
+            JOIN `tabDrive Node` parent_node ON parent_node.name = child.parent
+            WHERE child.parent IN %(parents)s
+              AND child.state = parent_node.state
+              AND child.trash_root <=> parent_node.trash_root
+              AND child.kind <> 'root'
+              AND child.is_template = 0
+            GROUP BY child.parent
             """,
             {"parents": _sql_values(parents)},
             as_dict=True,
@@ -720,8 +729,13 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
         """
         SELECT DISTINCT child.name
         FROM `tabDrive Node` child
+        JOIN `tabDrive Node` parent_node ON parent_node.name = child.parent
         JOIN `tabDrive Grant` grants ON grants.node = child.name
-        WHERE child.parent IN %(parents)s AND child.state = 'Active'
+        WHERE child.parent IN %(parents)s
+          AND child.state = parent_node.state
+          AND child.trash_root <=> parent_node.trash_root
+          AND child.kind <> 'root'
+          AND child.is_template = 0
         """,
         {"parents": _sql_values(parents)},
         pluck=True,
@@ -1626,13 +1640,19 @@ def stored_ancestors(nodes: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
 
 
 def purge(principals: Principals, node: str) -> int:
-    """Permanently remove a non-root subtree and release its logical bytes."""
+    """Permanently remove one trash root's subtree and release its logical bytes.
+
+    Like restore, purge takes only a trash root: an Active node goes to the
+    trash first, and a node trashed with a folder goes with that folder.
+    """
     savepoint = f"drive_purge_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
         current = _node(node, for_update=True)
         reject_illegal_root_operation(current, "purge")
         via_link = require(current, MANAGE, principals)
+        if current.state != "Trashed" or current.trash_root != current.name:
+            raise DriveConflict(_("Only a trash root can be deleted forever"))
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, principals, via_link=via_link, subtree=subtree)
@@ -2658,6 +2678,11 @@ def children(
     with_access: bool = False,
 ) -> dict:
     """Return one three-query SQL window of readable, ordinary children.
+
+    A child is listed when it shares the folder's state and trash root. An
+    Active folder lists its Active children. A trashed folder lists what was
+    trashed with it, read-only; a child trashed earlier on its own has its own
+    trash root and is listed in Trash instead (§5.6).
 
     `listing_types` keeps the nodes of any of those `?type=` values inside the
     window (`type_filter`).

@@ -30,7 +30,7 @@ type Reply = { status: number; body: unknown }
 const ok = (data: unknown): Reply => ({ status: 200, body: { data } })
 const refused = (status: number, type: string): Reply => ({ status, body: { errors: [{ type, message: type }] } })
 const row = (name: string) => ({
-  name, title: name, kind: 'folder', parent: 'p', root: 'r', state: 'Active', size: 0, mime: null, url: null,
+  name, title: name, kind: 'folder', parent: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
   content_doctype: null, content_docname: null, is_template: 0, owner: 'owner@example.com',
   creation: null, modified: null, content_modified: null,
 })

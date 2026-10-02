@@ -340,8 +340,9 @@ interface InternalMediaHandle {
   public: MediaHandle
 }
 
+/** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
-  return state !== 'Refused' && (access.role ?? 0) >= DRIVE_ROLES.manage
+  return state === 'Active' && (access.role ?? 0) >= DRIVE_ROLES.manage
 }
 
 function toSessionState(node: DriveNode): SessionState {

@@ -1953,23 +1953,22 @@ def remove_or_restore(entity_names):
 
 @_legacy
 def delete_entities(entity_names: list[str] | None = None, clear_all: bool = False):
-    """`delete_entities` -> `DELETE /nodes/<id>`.
+    """`delete_entities` -> `DELETE /nodes/<id>`, or `POST /roots/<id>/trash/empty`.
 
-    `clear_all` is walked over the caller's own trash view, so the rows it
-    purges are the rows §11.2 would have listed and nothing else. It names no
-    `File` row: §11.2 has no trash view for the legacy store, and listing one
-    here would be a view this shim invented. A named id still purges from
-    either store, which is what `writer/utils/docximporter.js` needs when it
-    rolls back the pictures a failed import uploaded.
+    `clear_all` empties the caller's Home trash as `empty_trash` does: whole,
+    shallowest trash root first. Purging the listed trash roots one by one
+    would fail on a tree trashed inside one trashed later, which the outer
+    purge has already removed. It names no `File` row: §11.2 has no trash for
+    the legacy store, and emptying one here would be a view this shim invented.
+
+    A named id purges from either store. On the node store it must be a trash
+    root (§8.8); any other node is refused with `DriveConflict`.
     """
     principals = _principals()
     if clear_all:
-        root = _home(principals)
-        entity_names = [
-            row["name"]
-            for row in _walk(lambda cursor: node_core.views(principals, "trash", cursor=cursor, root=root))
-        ]
-    elif isinstance(entity_names, str):
+        node_core.empty_trash(principals, _home(principals))
+        return None
+    if isinstance(entity_names, str):
         entity_names = json.loads(entity_names)
     elif not isinstance(entity_names, list) or not entity_names:
         frappe.throw(

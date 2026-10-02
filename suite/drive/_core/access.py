@@ -806,10 +806,16 @@ def grant(
         existing = frappe.db.get_value(
             "Drive Grant",
             {"node": node_id, "principal": stored_principal},
-            ["name", "role", "password_hash", "sent_to"],
+            ["name", "role", "expires_on", "password_hash", "sent_to"],
             as_dict=True,
             for_update=True,
         )
+        # A trashed node is read-only (§4.2, §8.8), so it gains no new access.
+        # A write that only takes access away stays open, as revoke does.
+        if node.state != "Active" and not _only_takes_access_away(
+            existing, principal, role, normalized_expiry, password, notify
+        ):
+            raise DriveForbidden(_("A trashed Drive node cannot gain access"))
         changes = {"role": role, "expires_on": normalized_expiry}
         if password is not KEEP:
             changes["password_hash"] = passlibctx.hash(password) if password is not None else None
@@ -872,6 +878,31 @@ def grant(
         recipient, path = (send_to, written["url"]) if send_to is not None else (principal, node_url(node_id))
         queue_share_email(node_id, recipient, role, path, principals.user)
     return written
+
+
+def _only_takes_access_away(
+    existing: Mapping | None,
+    principal: str,
+    role: int,
+    expires_on: datetime | None,
+    password: str | None | Keep,
+    notify: bool,
+) -> bool:
+    """Whether a grant write on a trashed node only removes or lowers access.
+
+    A deny always does. Any other write must lower an existing row's role and
+    change nothing that would widen it: no new link, no password change, no
+    later expiry, and no share email.
+    """
+    if principal == "$LINK" or notify:
+        return False
+    if role == NONE:
+        return True
+    if not existing or role >= existing["role"] or password is not KEEP:
+        return False
+    if existing["expires_on"] is None:
+        return True
+    return expires_on is not None and expires_on <= existing["expires_on"]
 
 
 def revoke(node_id: str, principal: str, principals: Principals) -> None:
@@ -1133,7 +1164,7 @@ def _node_or_not_found(node_id: str) -> frappe._dict:
     node = frappe.db.get_value(
         "Drive Node",
         node_id,
-        ["name", "root", "path", "kind"],
+        ["name", "root", "path", "kind", "state"],
         as_dict=True,
     )
     if not node:

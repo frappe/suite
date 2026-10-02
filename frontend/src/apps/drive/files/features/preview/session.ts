@@ -10,6 +10,7 @@ import {
   type MediaHandle,
 } from "@/apps/drive/client/session";
 import type { DriveBreadcrumb, DriveNode, DrivePreview } from "@/apps/drive/client/types";
+import { onTouch } from "@/platform/server-state";
 import { transport } from "@/platform/transport";
 import { presentShareDialog } from "../share/present";
 
@@ -29,6 +30,10 @@ export interface FilePreviewSession extends DocumentSession {
    * back to it. Follows a move.
    */
   readonly folder: Readonly<Ref<DriveBreadcrumb | null>>;
+  /** The root the file is in. A restore whose folder is gone picks a folder in it. */
+  readonly root: string;
+  /** The node whose trashing trashed the file: the file itself, a folder it is in, or `null` while Active. Follows a refresh. */
+  readonly trashRoot: Readonly<Ref<string | null>>;
   readonly preview: Readonly<Ref<DrivePreview | null>>;
   /**
    * The caller's own star on the file. Writable, so a star toggle can show
@@ -51,9 +56,12 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const preview = ref<DrivePreview | null>(initial.preview ?? null);
   const parent = ref(initial.parent);
   const folder = ref<DriveBreadcrumb | null>(folderOf(initial));
+  const trashRoot = ref(initial.trash_root);
   const favourite = ref(initial.favourite ?? false);
   const size = ref(initial.size);
   let disposed = false;
+  /** Counts reads, so an answer that comes back after a newer one never puts older state back. */
+  let reads = 0;
 
   // A file reached through a share link records no visit (spec §10.13): the
   // same rule as the document session and `isLinkOnly`.
@@ -61,17 +69,21 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
 
   async function refresh() {
     if (disposed) return;
+    const read = ++reads;
     try {
       const node = await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal });
+      if (read !== reads) return;
       title.value = node.title;
       parent.value = node.parent;
       folder.value = folderOf(node);
+      trashRoot.value = node.trash_root;
       access.value = node.access ?? {};
       state.value = sessionState(node);
       preview.value = node.preview ?? null;
       favourite.value = node.favourite ?? false;
       size.value = node.size;
     } catch {
+      if (read !== reads || disposed) return;
       state.value = "Refused";
       access.value = {};
       preview.value = null;
@@ -98,6 +110,8 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const onFocus = () => void refresh();
   window.addEventListener("focus", onFocus);
   const stopAccessChanges = onAccessChange(nodeId, () => void refresh());
+  // A move, trash, restore or undo made anywhere names the file in `touches`.
+  const stopTouches = onTouch(nodeId, () => void refresh());
 
   return {
     nodeId,
@@ -107,6 +121,8 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     size: readonly(size),
     parent: readonly(parent),
     folder: readonly(folder),
+    root: initial.root,
+    trashRoot: readonly(trashRoot),
     preview: readonly(preview),
     favourite,
     title: readonly(title),
@@ -115,6 +131,8 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
     canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const node = await transport.request(renameNode, { node: nodeId, title: nextTitle }, { signal: controller.signal });
+      // A read already on its way may predate the rename, so its answer is dropped.
+      reads += 1;
       title.value = node.title;
       return node;
     },
@@ -151,6 +169,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       window.clearInterval(previewTimer);
       window.removeEventListener("focus", onFocus);
       stopAccessChanges();
+      stopTouches();
     },
   };
 }

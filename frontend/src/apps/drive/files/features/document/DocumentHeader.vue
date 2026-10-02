@@ -43,7 +43,9 @@
       <span v-if="titleError" class="ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
         {{ titleError }}
       </span>
-      <Badge v-if="trashed" label="Trashed" theme="gray" variant="subtle" class="shrink-0" />
+      <Badge v-if="trashed" label="Trashed" theme="red" variant="subtle" class="shrink-0">
+        <template #prefix><span class="lucide-trash-2 size-2.5" aria-hidden="true" /></template>
+      </Badge>
       <Badge v-else-if="viewOnly" label="View only" theme="gray" variant="subtle" class="shrink-0" />
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
       <template v-if="recoverable">
@@ -102,8 +104,8 @@ import { computed, ref, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
-import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { selectStem } from '@/apps/drive/files/internal/filename'
+import { canRename } from '../nodeActions'
 import { PANEL_BUTTONS, SAVE_LABELS, documentTypeIcon, type DocumentPanel, type DocumentSaveState } from './header'
 
 /**
@@ -143,9 +145,7 @@ const online = useOnline()
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
 const titleDraft = ref(props.session.title.value)
 const trashed = computed(() => props.session.state.value === 'Trashed')
-const renamable = computed(
-  () => props.session.state.value === 'Active' && (props.session.access.value.role ?? 0) >= DRIVE_ROLES.edit,
-)
+const renamable = computed(() => canRename({ state: props.session.state.value, access: props.session.access.value }))
 const typeIcon = computed(() => documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime))
 
 /** A refused rename, shown beside the title until the title changes. */

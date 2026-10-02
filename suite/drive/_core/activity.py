@@ -286,9 +286,10 @@ def set_favourite(principals: Principals, node: str, value: bool = True) -> bool
         frappe.throw(_("Drive favourite value must be a boolean"), frappe.ValidationError)
     # Adding a mark needs Read on the node. Removing the caller's own private
     # mark does not, or a node that stopped being readable would leave a
-    # favourite its owner can neither see nor clear.
-    if value:
-        _authorized_node(principals, node)
+    # favourite its owner can neither see nor clear. A trashed node takes no
+    # new mark, as it takes no other write (§4.2).
+    if value and _authorized_node(principals, node).state != "Active":
+        raise DriveForbidden(_("A trashed Drive node cannot be starred"))
     existing = frappe.db.get_value(
         "Drive Favourite",
         {"user": principals.user, "node": node},

@@ -91,7 +91,7 @@ ROUTES = (
         output=shapes.NodeShape,
         entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
-    Route("DELETE", "nodes/{node}", "node_purge"),
+    Route("DELETE", "nodes/{node}", "node_purge", errors=(DriveForbidden, DriveConflict)),
     Route(
         "GET",
         "nodes/{node}/children",
@@ -143,7 +143,13 @@ ROUTES = (
     Route("POST", "uploads/{upload_id}/finish", "upload_finish", allow_guest=True),
     Route("GET", "nodes/{node}/activity", "node_activity", allow_guest=True),
     Route("POST", "nodes/{node}/visit", "node_visit", output=shapes.Empty),
-    Route("PUT", "nodes/{node}/favourite", "node_put_favourite", output=shapes.Empty),
+    Route(
+        "PUT",
+        "nodes/{node}/favourite",
+        "node_put_favourite",
+        errors=(DriveForbidden,),
+        output=shapes.Empty,
+    ),
     Route("DELETE", "nodes/{node}/favourite", "node_delete_favourite", output=shapes.Empty),
     Route("GET", "nodes/{node}/grants", "node_grants"),
     # The principal is the whole tail, not one segment. A `$GROUP:` names a

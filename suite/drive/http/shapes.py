@@ -1,11 +1,14 @@
 """The §11.3 node shape, the §11.4 page, and query-string coercion.
 
 One serialiser answers both a list row and a detail fetch, so the two cannot
-drift. It publishes sixteen fields and deliberately drops five that `_core`
-rows carry: `path`, `trash_root`, `trashed_at`, `blob`, and `modified_by`. The
-first three are tree bookkeeping a client never addresses, `blob` is a storage
-id no client may name (§8.4), and `modified_by` is the framework's row author,
-not Drive's.
+drift. It publishes seventeen fields and deliberately drops four that `_core`
+rows carry: `path`, `trashed_at`, `blob`, and `modified_by`. The first two are
+tree bookkeeping a client never addresses, `blob` is a storage id no client may
+name (§8.4), and `modified_by` is the framework's row author, not Drive's.
+
+`trash_root` is published because a client addresses it: a trashed folder
+opens read-only, and only its trash root can be restored or deleted forever,
+so the page names that node and links to it (§5.6, §8.8).
 
 `root` is the effective root node id (§3.1): a root node stores NULL and
 reports its own id. `nodes.root_id` is the one place that rule lives.
@@ -65,6 +68,9 @@ class NodeShape(TypedDict):
     parent: str | None
     root: str
     state: str
+    # The node whose trashing trashed this one: its own name on a trash root,
+    # an ancestor's inside a trashed folder, None while Active (§3.1).
+    trash_root: str | None
     size: int
     mime: str | None
     url: str | None
@@ -343,6 +349,7 @@ def node_shape(row: Mapping) -> NodeShape:
         "parent": row.get("parent"),
         "root": nodes.root_id(row),
         "state": row.get("state"),
+        "trash_root": row.get("trash_root"),
         "size": int(row.get("size") or 0),
         "mime": row.get("mime"),
         "url": row.get("url"),

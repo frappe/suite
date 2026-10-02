@@ -79,7 +79,14 @@ function driveOperation<Input, Output>(
   path: string,
 ): Operation<Input, Output> {
   const pathParams = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!)
-  return { id, owner: 'drive', method, path, pathParams, nodeParams: ['node'] }
+  const nodeParams = pathParams.includes('node') ? ['node'] : []
+  return { id, owner: 'drive', method, path, pathParams, nodeParams }
+}
+
+/** One node's refusal in a batch answer (§11.5). */
+interface BatchResult {
+  ok: string[]
+  failed: Array<{ node: string; type: string; message: string }>
 }
 
 const nodeGet = driveOperation<{ node: string; expand: string }, NodeRow>('node_get', 'GET', 'nodes/{node}')
@@ -94,7 +101,12 @@ const nodeState = driveOperation<{ node: string; state: 'Active' | 'Trashed' }, 
   'PATCH',
   'nodes/{node}',
 )
-const nodePurge = driveOperation<{ node: string }, unknown>('node_purge', 'DELETE', 'nodes/{node}')
+const nodeBatchTrash = driveOperation<{ nodes: string[]; patch: { state: 'Trashed' } }, BatchResult>(
+  'node_batch',
+  'POST',
+  'nodes/batch',
+)
+const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>('node_batch_purge', 'POST', 'nodes/batch/purge')
 const favouriteOn = driveOperation<{ node: string }, unknown>('node_put_favourite', 'PUT', 'nodes/{node}/favourite')
 const favouriteOff = driveOperation<{ node: string }, unknown>(
   'node_delete_favourite',
@@ -143,9 +155,18 @@ export async function setNodeState(node: string, state: 'Active' | 'Trashed'): P
   await transport.request(nodeState, { node, state })
 }
 
-/** Delete nodes forever. Used to roll back the pictures a failed import uploaded. */
+/**
+ * Delete nodes forever. Used to roll back the pictures a failed import uploaded.
+ *
+ * Drive purges only a trash root (§8.8), so the nodes go to the trash first.
+ * Trashing needs EDIT and purging needs MANAGE: a node the caller may trash
+ * but not purge stays in the trash and expires with it. Both batches report a
+ * refused node in `failed` instead of throwing, so one refusal stops nothing.
+ */
 export async function purgeNodes(nodes: readonly string[]): Promise<void> {
-  await Promise.all(nodes.map((node) => transport.request(nodePurge, { node })))
+  if (!nodes.length) return
+  const trashed = await transport.request(nodeBatchTrash, { nodes: [...nodes], patch: { state: 'Trashed' } })
+  if (trashed.ok.length) await transport.request(nodeBatchPurge, { nodes: trashed.ok })
 }
 
 export async function setFavourite(node: string, favourite: boolean): Promise<void> {

@@ -14,7 +14,7 @@ const grant = (principal: string, role: number, extra: Partial<DriveGrant> = {})
 })
 
 const node = (kind: string, role = 50) => ({
-  name: 'doc', title: 'Plan', kind, parent: 'folder', root: 'root', state: 'Active', size: 0, mime: null, url: null,
+  name: 'doc', title: 'Plan', kind, parent: 'folder', root: 'root', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
   content_doctype: kind === 'document' ? 'Writer Document' : null, content_docname: kind === 'document' ? 'w1' : null,
   is_template: 0, owner: 'asha@example.com', creation: null, modified: null, content_modified: null,
   access: { role },

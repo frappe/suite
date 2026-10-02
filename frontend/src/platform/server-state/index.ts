@@ -166,6 +166,11 @@ export interface ServerState {
     options?: { silent?: boolean | readonly string[] },
   ): MutationResult<UploadRun<Input, Session>, Output>
   invalidateAll(predicate?: (descriptor: ReadDescriptor) => boolean): void
+  /**
+   * Calls `listener` after each successful mutation whose `touches` names `id`.
+   * For readers that hold an entity outside the cache. Returns the stop function.
+   */
+  onTouch(id: string, listener: () => void): () => void
   onChallenge(
     type: string,
     handler: ChallengeHandler,
@@ -279,6 +284,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   const entityStore = new Map<string, EntityRecord>()
   const queryStore = new Map<string, QueryRecord>()
   const challenges = new Map<string, ChallengeHandler>()
+  const touchListeners = new Map<string, Set<() => void>>()
   const realtime = options.realtime === undefined ? defaultRealtime : options.realtime
   const persistence = options.persistence === undefined ? browserPersistence() : options.persistence
   const cleanup: Array<() => void> = []
@@ -774,6 +780,16 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         }
       }
     }
+    // Listeners run last, and one that throws is reported, so it cannot keep
+    // the cache or the other listeners from hearing about the mutation.
+    const listeners = touched.flatMap((id) => [...(touchListeners.get(id) ?? [])])
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (error) {
+        console.error(error)
+      }
+    }
   }
 
   function reconcileMembership(entity: EntityRecord): void {
@@ -812,6 +828,17 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   function invalidateAll(predicate?: (descriptor: ReadDescriptor) => boolean): void {
     for (const record of queryStore.values()) {
       if (!predicate || predicate(record.descriptor)) invalidateRecord(record)
+    }
+  }
+
+  function onTouch(id: string, listener: () => void): () => void {
+    const listeners = touchListeners.get(id) ?? new Set<() => void>()
+    listeners.add(listener)
+    touchListeners.set(id, listeners)
+    return () => {
+      // A second call does nothing, and never drops a set a later `onTouch` made.
+      if (!listeners.delete(listener)) return
+      if (!listeners.size && touchListeners.get(id) === listeners) touchListeners.delete(id)
     }
   }
 
@@ -929,9 +956,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       for (const leave of record.rooms) leave()
     }
     queryStore.clear()
+    touchListeners.clear()
   }
 
-  return { useQuery, useMutation, invalidateAll, onChallenge, resume, dispose }
+  return { useQuery, useMutation, invalidateAll, onTouch, onChallenge, resume, dispose }
 
   function isRecordStale(record: QueryRecord): boolean {
     return (
@@ -1165,6 +1193,7 @@ const singleton = createServerState({
 export const useQuery = singleton.useQuery
 export const useMutation = singleton.useMutation
 export const invalidateAll = singleton.invalidateAll
+export const onTouch = singleton.onTouch
 export const onChallenge = singleton.onChallenge
 export const serverState = singleton
 

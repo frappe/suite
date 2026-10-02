@@ -263,7 +263,11 @@ def node_patch(
 @frappe.whitelist(methods=["DELETE"])
 @_route
 def node_purge(node: Given = None) -> dict:
-    """Permanently remove one subtree. MANAGE only, so never a link holder."""
+    """Permanently remove one trash root's subtree (§8.8).
+
+    MANAGE only, so never a link holder. Any node that is not a trash root is
+    `DriveConflict`: an Active node goes to the trash first.
+    """
     purged = node_core.purge(_principals(), shapes.required_text(node, "node"))
     return {"purged": purged}
 

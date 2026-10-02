@@ -41,7 +41,7 @@ from suite.drive._core.content import (
     validate_registry,
 )
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import _link_document, copy, create_file, create_folder, purge
+from suite.drive._core.nodes import _link_document, copy, create_file, create_folder, purge, update
 from suite.drive._core.nodes import create_document as create_document_node
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ, UPLOAD
@@ -1508,6 +1508,7 @@ class TestContentWorkflows(IntegrationTestCase):
             document = self._document("Deck")
             docname = frappe.db.get_value("Drive Node", document, "content_docname")
             self._media(document, "logo.png", b"logo-bytes")
+            update(self.admin, document, state="Trashed")
             with self.assertWarns(UserWarning):
                 purge(self.admin, document)
         self.assertFalse(frappe.db.exists(CONTENT_DOCTYPE, docname))
@@ -1575,6 +1576,7 @@ class TestContentWorkflows(IntegrationTestCase):
             document = self._document("Deck")
             docname = frappe.db.get_value("Drive Node", document, "content_docname")
             self._media(document, "logo.png", b"logo-bytes")
+            update(self.admin, document, state="Trashed")
             purge(self.admin, document)
         self.assertFalse(frappe.db.exists(CONTENT_DOCTYPE, docname))
         self.assertEqual(frappe.db.count("Drive Node", {"parent": document}), 0)
