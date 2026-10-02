@@ -161,7 +161,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   })
   let prompts: UploadPrompts | null = null
   let promptTail: Promise<unknown> = Promise.resolve()
-  let running = 0
+  /**
+   * Jobs whose `execute` has not returned. An entry stays `queued` while its
+   * session opens, so the state alone cannot keep `pump` from starting it twice.
+   */
+  const running = new Set<Job>()
   let nextId = 0
   let run = 0
   let doneTimer: ReturnType<typeof setTimeout> | null = null
@@ -348,11 +352,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   function pump() {
     if (state.halted) return
     for (const job of jobs.values()) {
-      if (running >= parallel) return
-      if (job.entry.state !== 'queued') continue
-      running += 1
+      if (running.size >= parallel) return
+      if (job.entry.state !== 'queued' || running.has(job)) continue
+      running.add(job)
       void execute(job).finally(() => {
-        running -= 1
+        running.delete(job)
         pump()
       })
     }

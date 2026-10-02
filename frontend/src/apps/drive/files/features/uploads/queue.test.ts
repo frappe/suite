@@ -272,6 +272,25 @@ describe('Drive upload queue', () => {
     expect([drive.state.nodes.get(a.name)!.size, drive.state.nodes.get(b.name)!.size]).toEqual([5, 7])
   })
 
+  it('starts a file once while its title question waits and other files finish', async () => {
+    drive.add({ title: 'report.pdf', kind: 'file', parent: 'folder', size: 3 })
+    const queue = createUploadQueue({ records: memoryRecords() })
+    const asked = prompts({
+      collision: async (input) => {
+        asked.asked.push(`collision:${input.title}`)
+        await until(() => queue.entries.value[1]?.state === 'done', 'the other file')
+        return { action: 'keep-both', applyToAll: false }
+      },
+    })
+    queue.setPrompts(asked)
+
+    await queue.uploadFiles([{ file: file('report.pdf', 10) }, { file: file('notes.txt', 20) }], target)
+    await settled(queue)
+
+    expect(asked.asked).toEqual(['collision:report.pdf'])
+    expect(drive.titlesIn('folder')).toEqual(['notes.txt', 'report (1).pdf', 'report.pdf'])
+  })
+
   it('sends a large file in 16 MiB chunks, one after another', async () => {
     const queue = createUploadQueue({ records: memoryRecords() })
     queue.setPrompts(prompts())
