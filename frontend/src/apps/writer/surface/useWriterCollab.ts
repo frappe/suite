@@ -81,6 +81,13 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     const now = status.value;
     return !live.value || !now || (now.canWrite && now.saveState !== "failed" && now.blocked !== "offline");
   });
+  // The room stopped this tab for a reason that clears, not because the person lost the right to edit
+  const editingPaused = computed(() => {
+    const now = status.value;
+    if (!live.value || !now || allowsEditing.value) return false;
+    if (now.blocked === "lost_edit" || now.blocked === "lost_read") return false;
+    return !!now.blocked || now.saveState === "failed";
+  });
   const saveState = computed(() => (live.value ? (status.value?.saveState ?? "clean") : null));
   const unsent = computed(() => (live.value ? (status.value?.unsent ?? 0) : 0));
   const paused = computed(() => (live.value ? status.value?.paused ?? null : null));
@@ -91,5 +98,5 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   });
   const openFailure = computed(() => openFailureFor(openReason.value, openStatus.value));
 
-  return { mode, room, live, allowsEditing, saveState, unsent, paused, banner, openFailure, open, close };
+  return { mode, room, live, allowsEditing, editingPaused, saveState, unsent, paused, banner, openFailure, open, close };
 }

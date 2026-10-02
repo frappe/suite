@@ -36,6 +36,7 @@ const {
   room,
   live: collabLive,
   allowsEditing,
+  editingPaused,
   saveState: roomSaveState,
   unsent: roomUnsent,
   paused: roomPaused,
@@ -230,7 +231,7 @@ onBeforeUnmount(() => {
         {{ saveLabel }}<template v-if="roomUnsent"> · {{ roomUnsent }} unsent</template>
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
-      <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : 'View only'" theme="gray" variant="subtle" />
+      <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : editingPaused && role >= 40 ? 'Editing paused' : 'View only'" theme="gray" variant="subtle" />
       <div v-if="collaborators.length" class="text-sm text-ink-gray-5">{{ collaborators.length }} present</div>
       <Button icon="lucide-message-square" tooltip="Comments" variant="ghost" @click="openPanel('comments')" />
       <Button icon="lucide-history" tooltip="Versions" variant="ghost" @click="openPanel('versions')" />
