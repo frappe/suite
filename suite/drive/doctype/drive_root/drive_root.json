@@ -1,6 +1,7 @@
 {
  "actions": [],
  "autoname": "field:node",
+ "creation": "2026-10-02 16:30:06.636666",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -24,12 +25,14 @@
   {
    "fieldname": "user",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "User",
    "options": "User"
   },
   {
    "fieldname": "kind",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Kind",
    "options": "Personal\nShared",
    "reqd": 1
@@ -38,6 +41,7 @@
    "default": "Active",
    "fieldname": "state",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "State",
    "options": "Active\nArchived",
    "reqd": 1
@@ -45,14 +49,18 @@
   {
    "default": "0",
    "fieldname": "quota_bytes",
-   "fieldtype": "Long Int",
-   "label": "Quota Bytes"
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Quota Bytes",
+   "length": 20
   },
   {
    "default": "0",
    "fieldname": "used_bytes",
-   "fieldtype": "Long Int",
-   "label": "Used Bytes"
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Used Bytes",
+   "length": 20
   },
   {
    "default": "0",
@@ -61,18 +69,22 @@
    "label": "ACL Generation"
   }
  ],
- "index_web_pages_for_search": 0,
  "links": [],
+ "modified": "2026-10-02 16:43:27.926326",
+ "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Root",
  "naming_rule": "By fieldname",
+ "owner": "Administrator",
  "permissions": [
   {
    "read": 1,
    "role": "System Manager"
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "kind"
 }

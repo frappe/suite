@@ -4,6 +4,23 @@ from frappe.model.document import Document
 
 
 class DriveRoot(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from frappe.types import DF
+
+        acl_generation: DF.Int
+        kind: DF.Literal["Personal", "Shared"]
+        node: DF.Link
+        quota_bytes: DF.Int
+        state: DF.Literal["Active", "Archived"]
+        used_bytes: DF.Int
+        user: DF.Link | None
+    # end: auto-generated types
+
     def before_insert(self) -> None:
         if not self.flags.get("drive_root_lifecycle"):
             frappe.throw(_("Drive Root metadata can only be created by the Drive root lifecycle"))
