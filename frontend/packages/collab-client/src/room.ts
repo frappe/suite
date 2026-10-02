@@ -396,10 +396,16 @@ class Room implements CollabRoom {
     if (document.visibilityState === 'hidden') this.sendNow()
   }
 
-  // A hidden or departing page may never run its send timer
+  // A hidden or departing page may never run its send timer, its retry, or hear back from a save on its way
   private sendNow = () => {
     if (this.sendTimer) clearTimeout(this.sendTimer)
     this.sendTimer = null
+    if (this.inFlight) {
+      const copy = this.batch(true)
+      if (copy) void this.options.endpoints.push(copy.body, { keepalive: true }).catch(() => {})
+      return
+    }
+    this.endRetry?.()
     void this.send({ keepalive: true })
   }
 
@@ -414,14 +420,12 @@ class Room implements CollabRoom {
     }, Math.max(0, delay))
   }
 
-  private send(request: { keepalive?: boolean } = {}): Promise<void> {
+  private batch(keepalive?: boolean) {
     const box = this.adopted.find((other) => other.pending.length) ?? this.own
-    if (this.inFlight || this.retrying || !box.pending.length || this.closed || !this.bound || this.saveState === 'failed') {
-      return this.inFlight ?? this.retrying ?? Promise.resolve()
-    }
+    if (!box.pending.length || this.closed || !this.bound || this.saveState === 'failed') return null
     const batch: Entry[] = []
     let size = 0
-    const maxBytes = request.keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES
+    const maxBytes = keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES
     for (const entry of box.pending) {
       if (batch.length && (batch.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes)) break
       batch.push(entry)
@@ -439,6 +443,14 @@ class Room implements CollabRoom {
       shas: batch.map((entry) => entry.sha),
     }
     const body = encodePush(header, Y.mergeUpdates(batch.map((entry) => entry.bytes)))
+    return { box, header, body }
+  }
+
+  private send(request: { keepalive?: boolean } = {}): Promise<void> {
+    if (this.inFlight || this.retrying) return this.inFlight ?? this.retrying!
+    const next = this.batch(request.keepalive)
+    if (!next) return Promise.resolve()
+    const { box, header, body } = next
     this.setSaveState('saving')
     this.inFlight = Promise.resolve()
       .then(() => this.options.endpoints.push(body, request))

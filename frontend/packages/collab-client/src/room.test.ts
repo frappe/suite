@@ -405,6 +405,49 @@ describe('collab room', () => {
     expect(text(await join(server.endpoints()))).toBe('typed before leaving')
   })
 
+  it('leaving the page while a failed save waits to retry still sends what was typed', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const sent: (boolean | undefined)[] = []
+    const push = endpoints.push
+    endpoints.push = (body, options) => {
+      sent.push(options?.keepalive)
+      return sent.length === 1 ? Promise.resolve(reply(500, {})) : push(body, options)
+    }
+    vi.spyOn(Math, 'random').mockReturnValue(1)
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'typed before a failed save')
+    await vi.waitFor(() => expect(sent).toEqual([undefined]))
+
+    window.dispatchEvent(new Event('pagehide'))
+    await vi.waitFor(() => expect(sent).toEqual([undefined, true]))
+    vi.restoreAllMocks()
+
+    expect(text(await join(server.endpoints()))).toBe('typed before a failed save')
+  })
+
+  it('leaving the page while a save is still on its way sends it again', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const sent: (boolean | undefined)[] = []
+    const push = endpoints.push
+    let lose = () => {}
+    endpoints.push = (body, options) => {
+      sent.push(options?.keepalive)
+      if (sent.length > 1) return push(body, options)
+      return new Promise((_, reject) => (lose = () => reject(new TypeError('Failed to fetch'))))
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, 'typed during a slow save')
+    await vi.waitFor(() => expect(sent).toEqual([undefined]))
+
+    window.dispatchEvent(new Event('pagehide'))
+    await vi.waitFor(() => expect(sent).toEqual([undefined, true]))
+    lose()
+
+    expect(text(await join(server.endpoints()))).toBe('typed during a slow save')
+  })
+
   it('a viewer follows the document but nothing they do is sent', async () => {
     const server = fakeServer()
     const writer = await join(server.endpoints())
