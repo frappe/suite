@@ -481,9 +481,9 @@ class TestAddressing(DriveHTTPCase):
 
 
 class TestNodeShape(DriveHTTPCase):
-    def test_a_detail_fetch_publishes_exactly_the_base_fields(self):
+    def test_a_detail_fetch_publishes_exactly_the_base_fields_and_the_callers_star(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.file}"))
-        self.assertEqual(set(answer), NODE_SHAPE_FIELDS)
+        self.assertEqual(set(answer), NODE_SHAPE_FIELDS | {"favourite"})
 
     def test_a_list_row_is_the_same_shape_as_a_detail_fetch(self):
         listed = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.folder}/children"))

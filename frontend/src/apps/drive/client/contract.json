@@ -242,6 +242,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -706,6 +710,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -997,6 +1005,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1289,6 +1301,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1582,6 +1598,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1879,6 +1899,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2171,6 +2195,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2495,6 +2523,10 @@
                   }
                 ],
                 "title": "Opened At"
+              },
+              "favourite": {
+                "title": "Favourite",
+                "type": "boolean"
               }
             },
             "required": [
@@ -2830,6 +2862,10 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3654,6 +3690,10 @@
                   }
                 ],
                 "title": "Opened At"
+              },
+              "favourite": {
+                "title": "Favourite",
+                "type": "boolean"
               }
             },
             "required": [

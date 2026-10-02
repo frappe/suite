@@ -35,6 +35,7 @@ interface NodeRow {
   content_modified: string | null
   access?: { role?: number }
   breadcrumbs?: Array<{ name: string; title: string }>
+  favourite?: boolean
 }
 
 /** One Writer document in the field names the old Writer pages render. */
@@ -58,10 +59,7 @@ export interface WriterFile {
   share: boolean
   /** Ancestors the caller may read, then the document itself. */
   breadcrumbs: Array<{ name: string; file_name: string }>
-  /**
-   * Only what this page did. `GET /nodes/<id>` has no favourite expansion, so
-   * an earlier favourite is not known here.
-   */
+  /** Whether the caller has starred the document. */
   is_favourite: boolean
 }
 
@@ -129,7 +127,7 @@ export async function readWriterFile(node: string): Promise<WriterFile> {
       ...(row.breadcrumbs ?? []).map((step) => ({ name: step.name, file_name: step.title })),
       { name: row.name, file_name: row.title },
     ],
-    is_favourite: false,
+    is_favourite: row.favourite ?? false,
   }
 }
 

@@ -79,6 +79,9 @@ class NodeShape(TypedDict):
     breadcrumbs: NotRequired[list[BreadcrumbShape]]
     preview: NotRequired[PreviewShape | None]
     opened_at: NotRequired[str | None]
+    # The caller's own star. Reads (a detail, a children page, a view) carry
+    # it; a write answers without it.
+    favourite: NotRequired[bool]
 
 
 class ActivityShape(TypedDict):

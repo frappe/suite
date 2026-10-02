@@ -22,6 +22,7 @@ from suite.drive._core.nodes import create_folder, purge, views
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.drive._core.roots import create_root
+from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-record-owner@example.com"
@@ -35,6 +36,8 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         super().setUpClass()
         for user in (OWNER, OTHER, OUTSIDER):
             ensure_user(user)
+            # A new user is given a Personal root; each test makes its own.
+            drop_personal_root(user)
 
     def setUp(self):
         super().setUp()
@@ -103,6 +106,32 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.get_value("Drive Notification", owner_notification, "read"))
         self.assertEqual(mark_read(self.owner, owner_notification), 1)
         self.assertTrue(frappe.db.get_value("Drive Notification", owner_notification, "read"))
+
+    def test_node_reads_carry_only_the_callers_own_favourite(self):
+        from suite.drive.http import routes
+
+        starred = create_folder(self.owner, self.node, "Starred child")
+        plain = create_folder(self.owner, self.node, "Plain child")
+        set_favourite(self.owner, starred)
+
+        def flags(rows):
+            return {row["name"]: row["favourite"] for row in rows if row["name"] in (starred, plain)}
+
+        frappe.set_user(OWNER)
+        self.assertIs(routes.node_get(node=starred)["favourite"], True)
+        self.assertIs(routes.node_get(node=plain)["favourite"], False)
+        self.assertEqual(flags(routes.node_children(node=self.node)["rows"]), {starred: True, plain: False})
+        self.assertEqual(flags(routes.view_list(view="favourites")["rows"]), {starred: True})
+
+        # The other reader sees the same nodes, unstarred: a favourite is one person's own.
+        frappe.set_user(OTHER)
+        self.assertIs(routes.node_get(node=starred)["favourite"], False)
+        self.assertEqual(flags(routes.node_children(node=self.node)["rows"]), {starred: False, plain: False})
+
+        frappe.set_user(OWNER)
+        routes.node_delete_favourite(node=starred)
+        self.assertIs(routes.node_get(node=starred)["favourite"], False)
+        self.assertEqual(flags(routes.view_list(view="favourites")["rows"]), {})
 
     def test_history_and_notifications_hide_currently_unreadable_nodes(self):
         activity = record(self.admin, self.node, "edit", detail={"blob": "sha"})

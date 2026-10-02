@@ -146,6 +146,17 @@ def _principals():
     return framework.principals_for_request()
 
 
+def _mark_favourites(principals, answers: list[shapes.NodeShape]) -> None:
+    """Set the caller's own `favourite` flag on each answered node.
+
+    One `Drive Favourite` read for the whole page. A Guest keeps no
+    favourites, so every node answers `false` for them.
+    """
+    marks = activity_core.personal_marks(principals, [answer["name"] for answer in answers])
+    for answer in answers:
+        answer["favourite"] = bool((marks.get(answer["name"]) or {}).get("favourite"))
+
+
 # --------------------------------------------------------------------------
 # Nodes
 # --------------------------------------------------------------------------
@@ -202,6 +213,7 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
     asked = shapes.expansions(expand)
     row = node_core.get(principals, shapes.required_text(node, "node"))
     answer = shapes.node_shape(row)
+    _mark_favourites(principals, [answer])
     if "access" in asked:
         answer["access"] = describe(row, principals)
     if "breadcrumbs" in asked:
@@ -286,6 +298,7 @@ def node_children(
         with_access="access" in asked,
     )
     rows = [shapes.node_shape(row) for row in result["rows"]]
+    _mark_favourites(principals, rows)
     if "access" in asked:
         for answer, row in zip(rows, result["rows"], strict=True):
             answer["access"] = row.access
@@ -886,6 +899,7 @@ def view_list(
     if name == "archived-roots":
         return shapes.page(result, [dict(row) for row in result["rows"]])
     rows = [shapes.node_shape(row) for row in result["rows"]]
+    _mark_favourites(principals, rows)
     for answer, row in zip(rows, result["rows"], strict=True):
         if "access" in asked:
             answer["access"] = row.access

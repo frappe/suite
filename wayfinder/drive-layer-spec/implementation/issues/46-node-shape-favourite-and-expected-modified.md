@@ -38,4 +38,8 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 ## Completion evidence
 
 Record changed behavior, exact revisions, commands, results, and unresolved gates here.
-Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+Keep this ticket open until its acceptance criteria pass.
+
+**D28 done (2026-10-02).** `GET /nodes/<id>`, `GET /nodes/<id>/children` and `GET /views/<name>` (node views) set `favourite` from one `activity.personal_marks` read per page (`routes._mark_favourites`); a Guest gets `false`. The favourite routes keep `{}` and the client re-reads, recorded in spec §11.3. `NodeShape.favourite` is `NotRequired[bool]`; the drive contract and `generated.ts` are regenerated. Tests: `suite.drive.tests.test_activity` `test_node_reads_carry_only_the_callers_own_favourite` (owner and a second reader, detail, children, favourites view, unstar), `suite.drive.http.tests.test_dispatch` detail-shape test. The guest case is covered only by `personal_marks` answering `{}` for Guest, not by its own test.
+
+**D27 (`if_modified`) not started.**

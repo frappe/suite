@@ -3260,6 +3260,12 @@ node detail and children page, and on search with one ancestor-title union per
 page. A `recents` row additionally carries `opened_at`; this is a view field,
 not a stored node field.
 
+Every node-valued detail, children page, and node view also carries
+`favourite: true | false`, the caller's own `Drive Favourite` mark. It is read
+in one query per page, is not an expansion, and is `false` for a Guest. A write
+answers without it (`PUT` and `DELETE /nodes/<id>/favourite` keep `{}`), so a
+client that needs it again re-reads the node.
+
 ### 11.4 Cursor
 
 ```json
