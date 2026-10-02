@@ -210,12 +210,25 @@ type QueryRecord = {
   stale: boolean
   updatedAt: number
   promise: Promise<void> | null
+  /** The one read queued behind `promise` for `fresh` fetches. */
+  followUp: Promise<void> | null
   controller: AbortController | null
   observers: number
   gcTimer: ReturnType<typeof setTimeout> | null
   interval: ReturnType<typeof setInterval> | null
   rooms: Array<() => void>
 }
+
+/**
+ * How a read treats the cache and a read already in flight.
+ * - `cached`: joins an in-flight read, and skips the request while the data is fresh.
+ * - `next`: requests the next page of an infinite list.
+ * - `revalidate`: requests even fresh data, but joins an in-flight read.
+ * - `fresh`: answers from a request sent after this call. While a read is in
+ *   flight, one follow-up read waits for it, and every `fresh` call during that
+ *   read shares the follow-up.
+ */
+type FetchMode = 'cached' | 'next' | 'revalidate' | 'fresh'
 
 const DEFAULT_STALE_TIME = 30_000
 const DEFAULT_GC_TIME = 5 * 60_000
@@ -341,11 +354,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         return current.value?.isFetchingNext ?? false
       },
       async refetch() {
-        if (current.value) await fetchRecord(current.value, false, true)
+        if (current.value) await fetchRecord(current.value, 'fresh')
         return result
       },
       async fetchNext() {
-        if (current.value) await fetchRecord(current.value, true)
+        if (current.value) await fetchRecord(current.value, 'next')
         return result
       },
       async settled() {
@@ -515,6 +528,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       stale: true,
       updatedAt: 0,
       promise: null,
+      followUp: null,
       controller: null,
       observers: 0,
       gcTimer: null,
@@ -525,11 +539,22 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     return record
   }
 
-  async function fetchRecord(record: QueryRecord, next = false, force = false): Promise<void> {
+  async function fetchRecord(record: QueryRecord, mode: FetchMode = 'cached'): Promise<void> {
     if (paused) return
-    if (record.promise && !next && !record.controller?.signal.aborted) return record.promise
+    const next = mode === 'next'
+    if (record.promise && !next && !record.controller?.signal.aborted) {
+      if (mode !== 'fresh') return record.promise
+      // The in-flight read may predate the change that asked for this one: an
+      // optimistic write invalidates its lists before its own request is sent.
+      // It is not aborted, so a read slower than its poll interval still lands.
+      return (record.followUp ??= record.promise.then(() => {
+        record.followUp = null
+        // A read started since then is already fresh enough to join.
+        if (record.observers && queryStore.get(record.key) === record) return fetchRecord(record, 'revalidate')
+      }))
+    }
     if (next && (record.isFetchingNext || !hasNext(record))) return
-    if (!force && !next && record.normalized !== undefined && !isRecordStale(record)) return
+    if (mode === 'cached' && record.normalized !== undefined && !isRecordStale(record)) return
 
     const controller = new AbortController()
     record.controller = controller
@@ -597,7 +622,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
           entityStore.set(key, entity)
           changed.push(entity)
         } else if (acceptVersion(entity.version, incomingVersion)) {
-          entity.data = structuredCloneSafe(item)
+          // The same version is the same record read with other fields, such
+          // as a detail read without a listing's `preview`. Merge, so one read
+          // does not erase what another asked for. A newer version replaces.
+          const sameVersion = versionField !== null && compareVersion(incomingVersion, entity.version) === 0
+          entity.data = sameVersion ? { ...entity.data, ...structuredCloneSafe(item) } : structuredCloneSafe(item)
           entity.version = incomingVersion
           entity.fetchedAt = now()
           entity.stale = false
@@ -636,7 +665,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (record.observers > 1) return
     joinRecordRooms(record)
     const every = record.descriptor.options.refetchInterval
-    if (every && every > 0) record.interval = setInterval(() => void fetchRecord(record, false, true), every)
+    if (every && every > 0) record.interval = setInterval(() => void fetchRecord(record, 'revalidate'), every)
   }
 
   function detach(record: QueryRecord | null): void {
@@ -770,7 +799,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
 
   function invalidateRecord(record: QueryRecord): void {
     record.stale = true
-    if (record.observers) void fetchRecord(record, false, true)
+    if (record.observers) void fetchRecord(record, 'fresh')
   }
 
   function markEntityStale(entity: EntityRecord): void {
@@ -796,7 +825,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   function resume(): void {
     paused = false
     for (const record of queryStore.values()) {
-      if (record.observers && record.stale) void fetchRecord(record, false, true)
+      if (record.observers && record.stale) void fetchRecord(record, 'fresh')
     }
   }
 
@@ -815,7 +844,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   if (typeof window !== 'undefined') {
     const refetchObserved = () => {
       for (const record of queryStore.values()) {
-        if (record.observers) void fetchRecord(record, false, true)
+        if (record.observers) void fetchRecord(record, 'revalidate')
       }
     }
     const visibility = () => {
@@ -830,7 +859,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   if (realtime) {
     cleanup.push(realtime.onReconnect(() => {
       for (const record of queryStore.values()) {
-        if (record.observers) void fetchRecord(record, false, true)
+        if (record.observers) void fetchRecord(record, 'revalidate')
       }
     }))
     cleanup.push(

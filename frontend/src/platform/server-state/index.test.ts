@@ -76,6 +76,36 @@ describe('server state queries', () => {
     state.dispose()
   })
 
+  it('keeps fields a listing read when a detail read of the same version omits them', async () => {
+    type Previewed = Node & { preview?: { url: string } }
+    const listOperation: Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }> = {
+      ...childrenOperation, id: 'node_children.preview',
+    } as Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }>
+    const mock = mockTransport((operation) => operation.id === 'node_get'
+      ? node()
+      : { rows: [{ ...node(), preview: { url: '/thumb.webp' } }], next_cursor: null })
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const listing = state.useQuery(query(listOperation, { node: 'root' }))
+    await listing.settled()
+    await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
+    expect(listing.data?.rows[0]?.preview?.url).toBe('/thumb.webp')
+    state.dispose()
+  })
+
+  it('replaces fields when a newer version arrives', async () => {
+    const mock = mockTransport((operation) => operation.id === 'node_get'
+      ? { ...node('Renamed', '2026-09-15 02:00:00') }
+      : { rows: [{ ...node(), preview: { url: '/old.webp' } }], next_cursor: null })
+    const listOperation = { ...childrenOperation, id: 'node_children.preview' } as Operation<{ node: string }, { rows: Array<Node & { preview?: { url: string } }>; next_cursor: null }>
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const listing = state.useQuery(query(listOperation, { node: 'root' }))
+    await listing.settled()
+    await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
+    expect(listing.data?.rows[0]?.title).toBe('Renamed')
+    expect(listing.data?.rows[0]?.preview).toBeUndefined()
+    state.dispose()
+  })
+
   it('keeps stale data while revalidating and refetches on focus', async () => {
     let title = 'First'
     let version = 1
@@ -229,6 +259,108 @@ describe('server state queries', () => {
     fails = false
     await result.refetch()
     expect(result).toMatchObject({ status: 'success', error: null })
+    state.dispose()
+  })
+})
+
+describe('server state fresh reads', () => {
+  /**
+   * Each list read takes the server's rows when it is sent, then waits until
+   * the test releases it. Writes answer at once.
+   */
+  function heldReads(answer: () => Page, write: (input: any) => Node = (input) => node(input.title)) {
+    const held: Array<() => void> = []
+    const mock = mockTransport((operation, input) => {
+      if (operation.id !== 'node_children') return write(input)
+      const page = answer()
+      return new Promise<Page>((resolve) => held.push(() => resolve(page)))
+    })
+    const release = async () => {
+      held.shift()?.()
+      await tick()
+    }
+    const reads = () => mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children').length
+    return { transport: mock.transport, release, reads }
+  }
+  const titled = (...titles: string[]): Page => ({ rows: titles.map((title) => node(title)), next_cursor: null })
+
+  it('answers a refetch during an in-flight read with one more read after it', async () => {
+    let titles = ['Old']
+    const server = heldReads(() => titled(...titles))
+    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
+    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
+    await tick()
+
+    let answered: string[] | null = null
+    const refetched = list.refetch().then((result) => (answered = result.rows.map((row) => row.title)))
+    titles = ['New']
+    await tick()
+    expect(server.reads()).toBe(1)
+    await server.release()
+    expect(answered).toBeNull()
+    expect(server.reads()).toBe(2)
+    await server.release()
+    await refetched
+    expect(answered).toEqual(['New'])
+    expect(server.reads()).toBe(2)
+    state.dispose()
+  })
+
+  it('shares one follow-up read between fresh requests, while a plain read joins the in-flight one', async () => {
+    let titles = ['Old']
+    const server = heldReads(() => titled(...titles))
+    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
+    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
+    await tick()
+
+    const joined = list.settled().then((result) => result.rows.map((row) => row.title))
+    const fresh = [list.refetch(), list.refetch()]
+    state.invalidateAll()
+    titles = ['New']
+    await server.release()
+    await expect(joined).resolves.toEqual(['Old'])
+    await server.release()
+    await Promise.all(fresh)
+    expect(list.rows.map((row) => row.title)).toEqual(['New'])
+    expect(server.reads()).toBe(2)
+    state.dispose()
+  })
+
+  it('moves a renamed row to its sorted place when the list read started before the write', async () => {
+    // The server sorts children by title.
+    const titles = new Map([['b', 'b'], ['c', 'c'], ['d', 'd']])
+    const row = (name: string, modified = '2026-09-15 01:00:00'): Node => ({
+      name, title: titles.get(name)!, parent: 'root', modified, state: 'Active',
+    })
+    const server = heldReads(
+      () => ({
+        rows: [...titles.keys()].map((name) => row(name)).sort((left, right) => left.title.localeCompare(right.title)),
+        next_cursor: null,
+      }),
+      (input) => {
+        titles.set(input.node, input.title)
+        return row(input.node, '2026-09-15 02:00:00')
+      },
+    )
+    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
+    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }, {
+      member: (row) => row.parent === 'root' && row.state === 'Active',
+    }))
+    await tick()
+    await server.release()
+    expect(list.rows.map((row) => row.title)).toEqual(['b', 'c', 'd'])
+
+    const rename = state.useMutation(mutation(renameOperation, {
+      optimistic: ({ title }) => ({ title }),
+      invalidates: ['node_children'],
+    }))
+    // The optimistic title starts a list read before the write is sent.
+    await rename.run({ node: 'd', title: 'a' })
+    expect(server.reads()).toBe(2)
+    await server.release()
+    expect(server.reads()).toBe(3)
+    await server.release()
+    expect(list.rows.map((row) => row.title)).toEqual(['a', 'b', 'c'])
     state.dispose()
   })
 })
@@ -487,13 +619,16 @@ describe('server state mutations and realtime', () => {
     const state = createServerState({ transport: mock.transport, realtime, persistence: false })
     const children = state.useQuery(infinite(childrenOperation, { node: 'root' }))
     await children.settled()
+    // The first event starts a read. The later ones may postdate it, so they
+    // share one follow-up read.
     realtime.emit('list_update', { doctype: 'Drive Node', name: 'n2' })
     realtime.emit('list_update', { doctype: 'Drive Node', name: 'n3' })
-    await tick()
-    expect(mock.request).toHaveBeenCalledTimes(2)
-    realtime.emit('update_user_permissions', {})
+    realtime.emit('list_update', { doctype: 'Drive Node', name: 'n4' })
     await tick()
     expect(mock.request).toHaveBeenCalledTimes(3)
+    realtime.emit('update_user_permissions', {})
+    await tick()
+    expect(mock.request).toHaveBeenCalledTimes(4)
     state.dispose()
   })
 
