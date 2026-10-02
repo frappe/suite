@@ -47,6 +47,7 @@ export const writerEditorExtensions = (options: WriterEditorOptions): AnyExtensi
     },
     heading: false,
     mention: { items: options.mentionItems },
+    styleClipboard: {},
   }),
   Heading,
   ListJoin,
