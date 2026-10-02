@@ -2,7 +2,8 @@
 	<div v-if="open" class="sn-vp-banner">
 		<div class="sn-vp-left">
 			<Button variant="ghost" size="sm" icon="lucide-arrow-left"
-			        :tooltip="'Exit version history'"
+			        aria-label="Exit version history"
+			        tooltip="Exit version history"
 			        @click="$emit('exit')" />
 			<span class="sn-vp-text">
 				Previewing <b>{{ formatTimestamp(version?.timestamp) }}</b>
@@ -18,7 +19,8 @@
 		<div class="sn-vp-mid">
 			<Button v-if="diff && diff.total_changed_cells > 0"
 			        size="sm" variant="ghost" icon="lucide-chevron-up"
-			        :tooltip="'Previous change'"
+			        aria-label="Previous change"
+			        tooltip="Previous change"
 			        :disabled="!canStep"
 			        @click="$emit('step', -1)" />
 			<span v-if="diff && diff.total_changed_cells > 0 && stepIndex !== null"
@@ -27,7 +29,8 @@
 			</span>
 			<Button v-if="diff && diff.total_changed_cells > 0"
 			        size="sm" variant="ghost" icon="lucide-chevron-down"
-			        :tooltip="'Next change'"
+			        aria-label="Next change"
+			        tooltip="Next change"
 			        :disabled="!canStep"
 			        @click="$emit('step', +1)" />
 		</div>

@@ -138,12 +138,12 @@ test("losing edit access freezes the sheet, cancels the pending save and offers 
 	expect(await recovery()).toContain("5150");
 
 	const download = page.waitForEvent("download");
-	await page.locator(".sn-topbar").getByRole("button", { name: "Download my changes" }).click();
+	await page.locator(".sheets-header").getByRole("button", { name: "Download my changes" }).click();
 	const file = await download;
 	expect(file.suggestedFilename()).toBe("Sheets journey (recovered).xlsx");
 	// An .xlsx file is a zip archive. Its cells are checked in `recovery.test.ts`.
 	expect(readFileSync((await file.path())!).subarray(0, 2).toString()).toBe("PK");
-	await expect(page.locator(".sn-topbar").getByRole("button", { name: "Download my changes" })).toHaveCount(0);
+	await expect(page.locator(".sheets-header").getByRole("button", { name: "Download my changes" })).toHaveCount(0);
 	expect(await recovery()).toBeNull();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 });
@@ -203,7 +203,7 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 test("the document actions fit on one row of a 320 px screen", async ({ page }) => {
 	await page.setViewportSize({ width: 320, height: 640 });
 	await openSheet(page);
-	const bar = page.locator(".sn-topbar");
+	const bar = page.locator(".sheets-header");
 	const edge = (await bar.boundingBox())!;
 	for (const name of ["More actions", "Comments", "Versions", "Share"]) {
 		const box = (await bar.getByRole("button", { name, exact: true }).boundingBox())!;

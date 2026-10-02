@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput, toast } from "frappe-ui";
+import { Button, toast } from "frappe-ui";
 import { computed, ref, watch } from "vue";
 
-import type { DocumentSession } from "@/apps/drive";
+import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from "@/apps/drive";
 import SheetEditor from "@/apps/sheets/components/SheetEditor/index.vue";
 import { createSheetAccess } from "./access";
 import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
@@ -25,13 +25,10 @@ interface SheetEditorHandle {
   closeNotes(): void;
 }
 
-type Panel = "comments" | "versions" | null;
-
 const props = defineProps<{ session: DocumentSession }>();
 
 const editor = ref<SheetEditorHandle | null>(null);
-const panel = ref<Panel>(null);
-const titleDraft = ref(props.session.title.value);
+const panel = ref<DocumentPanel | null>(null);
 // A restore, or edit access coming back, reloads the server workbook: the
 // editor remounts under a new key.
 const bodyRevision = ref(0);
@@ -58,12 +55,9 @@ const access = createSheetAccess(props.session, {
   },
 });
 const editorWritable = computed(() => access.writable.value && !restoring.value);
-const trashed = computed(() => props.session.state.value === "Trashed");
 const cursor = computed<CellAnchor | null>(() =>
   editor.value ? { sheet: editor.value.currentSheet, cell: editor.value.activeCell } : null,
 );
-
-watch(() => props.session.title.value, (title) => { titleDraft.value = title; });
 
 // A save that lands with edit access makes the recovery copy stale.
 watch(() => editor.value?.saveState, (now, before) => {
@@ -72,23 +66,10 @@ watch(() => editor.value?.saveState, (now, before) => {
   hasRecovery.value = false;
 });
 
-async function rename() {
-  const title = titleDraft.value.trim();
-  if (!title || title === props.session.title.value || !access.writable.value) {
-    titleDraft.value = props.session.title.value;
-    return;
-  }
-  try {
-    await props.session.rename(title);
-  } catch (error) {
-    titleDraft.value = props.session.title.value;
-    toast.error(error instanceof Error ? error.message : "Could not rename the spreadsheet.");
-  }
-}
-
-function togglePanel(next: Exclude<Panel, null>) {
-  panel.value = panel.value === next ? null : next;
-  if (panel.value) editor.value?.closeNotes();
+/** Comments, Versions and Notes share the right edge: one closes the others. */
+function showPanel(next: DocumentPanel | null) {
+  panel.value = next;
+  if (next) editor.value?.closeNotes();
 }
 
 function selectAnchor(anchor: CellAnchor) {
@@ -162,66 +143,26 @@ useDocumentLeaveGuard({
       @access-refused="access.refuse()"
       @notes-opened="panel = null"
     >
-      <template #identity>
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="lucide-table-2 size-4 shrink-0 text-ink-gray-6" aria-hidden="true" />
-          <TextInput
-            v-model="titleDraft"
-            class="w-80 min-w-0"
-            variant="ghost"
-            :disabled="!access.writable.value"
-            aria-label="Spreadsheet title"
-            @blur="rename"
-            @keydown.stop
-            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-            @keydown.escape.prevent="titleDraft = session.title.value; ($event.target as HTMLInputElement).blur()"
-          />
-          <Badge v-if="trashed" label="Trashed" theme="gray" variant="subtle" size="sm" />
-        </div>
-      </template>
-
-      <template #document-actions>
-        <template v-if="hasRecovery">
-          <span class="sheets-wide-only">
-            <Button size="sm" variant="ghost" icon-left="lucide-download" label="Download my changes" @click="downloadChanges" />
-          </span>
-          <span class="sheets-compact-only">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="lucide-download"
-              tooltip="Download my changes"
-              aria-label="Download my changes"
-              @click="downloadChanges"
-            />
-          </span>
-        </template>
-        <Button
-          :variant="panel === 'comments' ? 'subtle' : 'ghost'"
-          size="sm"
-          icon="lucide-messages-square"
-          tooltip="Comments"
-          aria-label="Comments"
-          :aria-pressed="panel === 'comments'"
-          @click="togglePanel('comments')"
-        />
-        <Button
-          :variant="panel === 'versions' ? 'subtle' : 'ghost'"
-          size="sm"
-          icon="lucide-history"
-          tooltip="Versions"
-          aria-label="Versions"
-          :aria-pressed="panel === 'versions'"
-          @click="togglePanel('versions')"
-        />
-        <template v-if="session.canShare.value">
-          <span class="sheets-wide-only">
-            <Button size="sm" variant="ghost" icon-left="lucide-share-2" label="Share" @click="session.share()" />
-          </span>
-          <span class="sheets-compact-only">
-            <Button size="sm" variant="ghost" icon="lucide-share-2" aria-label="Share" @click="session.share()" />
-          </span>
-        </template>
+      <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
+        <DriveDocumentHeader
+          class="sheets-header"
+          :session="session"
+          title-label="Spreadsheet title"
+          :save-state="editor?.saveState ?? null"
+          :view-only="viewOnly"
+          :recoverable="hasRecovery"
+          :panels="['comments', 'versions']"
+          :panel="panel"
+          @update:panel="showPanel"
+          @download-changes="downloadChanges"
+        >
+          <template #status>
+            <component :is="EditorStatus" />
+          </template>
+          <template #actions>
+            <component :is="EditorActions" />
+          </template>
+        </DriveDocumentHeader>
       </template>
 
       <template #side-panel>
@@ -252,20 +193,11 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's top bar is the `sn-topbar` container. Below 640 px the
-   surface's actions drop their labels, as the editor's own do. */
-.sheets-wide-only {
-  display: inline-flex;
-}
-.sheets-compact-only {
-  display: none;
-}
-@container sn-topbar (max-width: 640px) {
-  .sheets-wide-only {
-    display: none;
-  }
-  .sheets-compact-only {
-    display: inline-flex;
-  }
+/* The editor's top-bar actions answer to the `sn-topbar` container: below
+   640 px they fold into one menu. */
+.sheets-header {
+  container: sn-topbar / inline-size;
+  position: relative;
+  z-index: 10;
 }
 </style>

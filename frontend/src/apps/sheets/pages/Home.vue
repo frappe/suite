@@ -33,6 +33,7 @@
              one switches to `subtle` so it inverts against the row. -->
         <div class="home-viewtoggle" role="tablist" aria-label="View mode">
           <Button
+            aria-label="List view"
             :variant="viewMode === 'list' ? 'subtle' : 'ghost'"
             size="sm" icon="lucide-list"
             tooltip="List view"
@@ -41,6 +42,7 @@
             @click="setViewMode('list')"
           />
           <Button
+            aria-label="Grid view"
             :variant="viewMode === 'grid' ? 'subtle' : 'ghost'"
             size="sm" icon="lucide-grid-2x2"
             tooltip="Grid view"
@@ -53,7 +55,7 @@
              from the New Sheet CTA so a nav item isn't styled as a peer action. -->
         <Dropdown :options="overflowActions">
           <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="More" />
+            <Button aria-label="More options" :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="More" />
           </template>
         </Dropdown>
         <Button variant="solid" @click="newSheet()">New Sheet</Button>
@@ -165,7 +167,7 @@
             <div class="home-card-menu" @click.stop>
               <Dropdown :options="cardActions(sheet)" align="end">
                 <template #default="{ open }">
-                  <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="Actions" />
+                  <Button :aria-label="`Actions for ${sheet.title}`" :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="Actions" />
                 </template>
               </Dropdown>
             </div>
@@ -204,6 +206,7 @@
               class="flex min-w-0 items-center gap-1 text-left text-base text-ink-gray-5"
               :class="{ 'font-medium text-ink-gray-8': sortBy === col.key }"
               :disabled="col.key === '_actions'"
+              :aria-label="col.key === '_actions' ? 'Actions' : undefined"
               :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined"
               @click="col.key !== '_actions' && setSort(col.key)"
             >
@@ -228,6 +231,7 @@
             <Dropdown :options="cardActions(row)" align="end">
               <template #default="{ open }">
                 <Button
+                  :aria-label="`Actions for ${row.title}`"
                   :variant="open ? 'subtle' : 'ghost'"
                   size="sm"
                   icon="lucide-ellipsis-vertical"

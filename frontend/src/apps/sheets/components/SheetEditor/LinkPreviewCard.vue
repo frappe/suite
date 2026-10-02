@@ -40,11 +40,13 @@
 					variant="ghost"
 					size="sm"
 					:icon="copied ? 'lucide-check' : 'lucide-copy'"
+					aria-label="Copy link"
 					:tooltip="copied ? 'Copied' : 'Copy link'"
 					@click="copyUrl"
 				/>
 				<Button
 					v-if="canEdit"
+					aria-label="Edit link"
 					variant="ghost"
 					size="sm"
 					icon="lucide-pencil"
@@ -53,6 +55,7 @@
 				/>
 				<Button
 					v-if="canEdit"
+					aria-label="Remove link"
 					variant="ghost"
 					size="sm"
 					icon="lucide-unlink"

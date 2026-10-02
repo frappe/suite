@@ -16,7 +16,7 @@
     <template #trigger="{ setOpen, open }">
       <slot name="trigger" :toggle="() => setOpen(!open)" :open :color="modelValue">
         <Tooltip :text="title">
-          <button type="button" class="sn-cp-trigger" :class="{ open }">
+          <button type="button" class="sn-cp-trigger" :class="{ open }" :aria-label="title">
             <span class="sn-cp-trigger-sw" :style="{ background: isHex(modelValue) ? modelValue : 'transparent' }" />
           </button>
         </Tooltip>
@@ -27,6 +27,7 @@
         <div class="sn-cp-grid">
           <Tooltip v-for="c in COLORS" :key="c" :text="c">
             <button type="button" class="sn-cp-sw" :class="{ sel: eqHex(c, modelValue) }"
+                    :aria-label="c" :aria-pressed="eqHex(c, modelValue)"
                     :style="{ background: c }" @click="choose(c, close)">
               <FeatherIcon v-if="eqHex(c, modelValue)" name="check" class="sn-cp-check" :style="{ color: contrast(c) }" />
             </button>
@@ -35,18 +36,19 @@
         <div class="sn-cp-foot">
           <Tooltip v-if="allowDefault" :text="defaultLabel">
             <button type="button" class="sn-cp-iconbtn" :class="{ sel: !isHex(modelValue) }"
+                    :aria-label="defaultLabel" :aria-pressed="!isHex(modelValue)"
                     @click="choose(defaultValue, close)">
               <FeatherIcon name="slash" class="sn-cp-icon" />
             </button>
           </Tooltip>
           <span class="sn-cp-hash">#</span>
-          <input class="sn-cp-hex" :value="hexBody" maxlength="6" placeholder="rrggbb" spellcheck="false"
+          <input class="sn-cp-hex" aria-label="Hex colour" :value="hexBody" maxlength="6" placeholder="rrggbb" spellcheck="false"
                  @input="hexBody = norm($event.target.value)"
                  @keydown.enter.prevent="commitHex(close)" @blur="commitHex(null)" />
           <Tooltip text="Custom colour">
             <label class="sn-cp-iconbtn">
               <FeatherIcon name="plus" class="sn-cp-icon" />
-              <input type="color" :value="nativeValue()" @input="choose($event.target.value, null)" />
+              <input type="color" aria-label="Custom colour" :value="nativeValue()" @input="choose($event.target.value, null)" />
             </label>
           </Tooltip>
         </div>

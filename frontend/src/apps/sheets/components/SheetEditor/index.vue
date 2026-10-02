@@ -29,13 +29,120 @@
     </div>
 
     <template v-else>
-    <!-- Bar 1 · Identity -->
-    <div class="sn-topbar">
+    <!-- Bar 1 · Identity. The status chips and the app actions are defined once
+         and placed in either top bar. -->
+    <DefineTopbarStatus>
+      <template v-if="saveError">
+        <span class="sn-save-error">
+          <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
+            <span class="truncate">{{ saveError }}</span>
+          </Badge>
+        </span>
+        <Button
+          aria-label="Retry save"
+          variant="ghost"
+          size="sm"
+          icon="lucide-refresh-cw"
+          tooltip="Retry save"
+          :loading="isSaving"
+          @click="onRetrySave"
+        />
+      </template>
+      <Badge v-if="protectionNotice" theme="gray" variant="subtle" size="sm" :label="protectionNotice" :tooltip="protectionNotice" />
+    </DefineTopbarStatus>
+    <DefineTopbarActions>
+      <!-- AI Assist entry point — shown only when an admin has configured a
+           key and enabled it (gated server-side via the boot flag). -->
+      <template v-if="aiEnabled && !readOnly">
+        <span class="sn-wide-only">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="lucide-sparkles"
+            label="Ask AI"
+            tooltip="Ask AI to work on your selection"
+            @click="openAskBar"
+          />
+        </span>
+        <span class="sn-topbar-divider" aria-hidden="true" />
+      </template>
+      <span class="sn-wide-only">
+        <Dropdown :options="fileDropdownOptions" align="end">
+          <template #default="{ open }">
+            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconLeft="lucide-file-text" iconRight="lucide-chevron-down" label="File" tooltip="Import / export" />
+          </template>
+        </Dropdown>
+      </span>
+      <!-- A narrow bar folds Ask AI, File and Keyboard shortcuts into one
+           menu. A container query swaps the two, so nothing moves on load. -->
+      <span class="sn-compact-only">
+        <Dropdown :options="compactMenuOptions" align="end">
+          <template #default="{ open }">
+            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis" aria-label="More actions" tooltip="More actions" />
+          </template>
+        </Dropdown>
+      </span>
+      <input ref="csvInputRef"  name="csv-import"  type="file" accept=".csv"                   style="display:none" @change="importCSV" />
+      <input ref="xlsxInputRef" name="xlsx-import" type="file" accept=".xlsx,.xls,.xlsm,.ods"  style="display:none" @change="importXLSX" />
+      <span class="sn-topbar-divider" aria-hidden="true" />
+      <!-- Notes: button toggles the side panel listing all notes across sheets.
+           Shift+F2 still opens the per-cell inline editor for quick capture. -->
+      <span class="sn-notes-btn-wrap">
+        <Button :variant="notesPanel.open ? 'subtle' : 'ghost'"
+                size="sm" icon="lucide-sticky-note"
+                :aria-label="allNotes.length ? `Notes (${allNotes.length})` : 'Notes'"
+                :aria-pressed="notesPanel.open"
+                :tooltip="`Notes${allNotes.length ? ` (${allNotes.length})` : ''} — Shift+F2 to add`"
+                @click="toggleNotesPanel" />
+        <span v-if="allNotes.length" class="sn-notes-badge">{{ allNotes.length > 9 ? '9+' : allNotes.length }}</span>
+      </span>
+      <!-- Variant flips to "subtle" while the panel is open so the trigger
+           reads as toggled, matching Frappe UI's standard toggle pattern. -->
+      <Button v-if="!embedded" aria-label="Version history" :aria-pressed="vhOpen"
+              :variant="vhOpen ? 'subtle' : 'ghost'"
+              size="sm" icon="lucide-clock"
+              tooltip="Version history"
+              @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
+      <span class="sn-wide-only">
+        <Button aria-label="Keyboard shortcuts" variant="ghost" size="sm" icon="lucide-help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
+      </span>
+      <span class="sn-topbar-divider" aria-hidden="true" />
+      <!-- Presence avatars — other users currently in the workbook.
+           Outline = their cursor color; tooltip says which sub-sheet
+           they're on so cross-sheet collaborators are discoverable. -->
+      <div v-if="presentUsers.length" class="sn-presence">
+        <Avatar
+          v-for="u in presentUsers.slice(0, 3)"
+          :key="u.user"
+          :label="u.initials"
+          :image="u.user_image || undefined"
+          size="sm"
+          :tooltip="u.sub_sheet && u.sub_sheet !== currentSheet
+            ? `${u.full_name} — on ${u.sub_sheet}`
+            : u.full_name"
+          class="sn-presence-avatar"
+          :style="{ '--rc': u.color }"
+        />
+        <span
+          v-if="presentUsers.length > 3"
+          class="sn-presence-more"
+          :title="`${presentUsers.length - 3} more people`"
+        >+{{ presentUsers.length - 3 }}</span>
+      </div>
+    </DefineTopbarActions>
+
+    <!-- On /d/ the surface draws the Drive document header: title, Comments,
+         Versions and Share. The editor fills its status and actions. -->
+    <slot
+      v-if="embedded"
+      name="header"
+      :view-only="readOnly"
+      :status="ReuseTopbarStatus"
+      :actions="ReuseTopbarActions"
+    />
+    <div v-else class="sn-topbar">
       <div class="sn-topbar-left">
-        <!-- On /d/ the Sheets surface names the document through its Drive
-             session, and the shell owns app switching and the account. -->
-        <slot v-if="embedded" name="identity" />
-        <div v-else class="sn-identity">
+        <div class="sn-identity">
           <Dropdown :options="brandMenuOptions" :offset="16">
             <template #default="{ open }">
 			  <Tooltip text="Open Sheets menu">
@@ -75,22 +182,7 @@
           <FeatherIcon name="check" class="sn-save-icon" />
           <span class="sn-save-label">Saved</span>
         </span>
-        <template v-if="saveError">
-          <span class="sn-save-error">
-            <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
-              <span class="truncate">{{ saveError }}</span>
-            </Badge>
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="lucide-refresh-cw"
-            tooltip="Retry save"
-            :loading="isSaving"
-            @click="onRetrySave"
-          />
-        </template>
-        <Badge v-if="protectionNotice" theme="gray" variant="subtle" size="sm" :label="protectionNotice" :tooltip="protectionNotice" />
+        <ReuseTopbarStatus />
         <!-- View-only indicator — shown up front so a viewer knows they can't
              edit before they try. Neutral gray (not an error) because read
              access is expected, not a failure. Uses the Frappe UI Badge so it
@@ -103,103 +195,24 @@
         </Tooltip>
       </div>
       <div class="sn-topbar-right">
-        <!-- AI Assist entry point — shown only when an admin has configured a
-             key and enabled it (gated server-side via the boot flag). -->
-        <template v-if="aiEnabled && !readOnly">
-          <span class="sn-wide-only">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="lucide-sparkles"
-              label="Ask AI"
-              tooltip="Ask AI to work on your selection"
-              @click="openAskBar"
-            />
-          </span>
-          <span class="sn-topbar-divider" aria-hidden="true" />
-        </template>
-        <span class="sn-wide-only">
-          <Dropdown :options="fileDropdownOptions" align="end">
-            <template #default="{ open }">
-              <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconLeft="lucide-file-text" iconRight="lucide-chevron-down" label="File" tooltip="Import / export" />
-            </template>
-          </Dropdown>
-        </span>
-        <!-- A narrow bar folds Ask AI, File and Keyboard shortcuts into one
-             menu. A container query swaps the two, so nothing moves on load. -->
-        <span class="sn-compact-only">
-          <Dropdown :options="compactMenuOptions" align="end">
-            <template #default="{ open }">
-              <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis" aria-label="More actions" tooltip="More actions" />
-            </template>
-          </Dropdown>
-        </span>
-        <input ref="csvInputRef"  name="csv-import"  type="file" accept=".csv"                   style="display:none" @change="importCSV" />
-        <input ref="xlsxInputRef" name="xlsx-import" type="file" accept=".xlsx,.xls,.xlsm,.ods"  style="display:none" @change="importXLSX" />
+        <ReuseTopbarActions />
+        <!-- Share -->
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="lucide-share-2"
+          :label="shareCount > 0 ? `Share · ${shareCount}` : 'Share'"
+          tooltip="Share this sheet"
+          @click="shareOpen = true"
+        />
         <span class="sn-topbar-divider" aria-hidden="true" />
-        <!-- Notes: button toggles the side panel listing all notes across sheets.
-             Shift+F2 still opens the per-cell inline editor for quick capture. -->
-        <span class="sn-notes-btn-wrap">
-          <Button :variant="notesPanel.open ? 'subtle' : 'ghost'"
-                  size="sm" icon="lucide-message-square"
-                  :tooltip="`Notes${allNotes.length ? ` (${allNotes.length})` : ''} — Shift+F2 to add`"
-                  @click="toggleNotesPanel" />
-          <span v-if="allNotes.length" class="sn-notes-badge">{{ allNotes.length > 9 ? '9+' : allNotes.length }}</span>
-        </span>
-        <!-- Variant flips to "subtle" while the panel is open so the trigger
-             reads as toggled, matching Frappe UI's standard toggle pattern. -->
-        <Button v-if="!embedded"
-                :variant="vhOpen ? 'subtle' : 'ghost'"
-                size="sm" icon="lucide-clock"
-                tooltip="Version history"
-                @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
-        <span class="sn-wide-only">
-          <Button variant="ghost" size="sm" icon="lucide-help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
-        </span>
-        <span class="sn-topbar-divider" aria-hidden="true" />
-        <!-- Presence avatars — other users currently in the workbook.
-             Outline = their cursor color; tooltip says which sub-sheet
-             they're on so cross-sheet collaborators are discoverable. -->
-        <div v-if="presentUsers.length" class="sn-presence">
-          <Avatar
-            v-for="u in presentUsers.slice(0, 3)"
-            :key="u.user"
-            :label="u.initials"
-            :image="u.user_image || undefined"
-            size="sm"
-            :tooltip="u.sub_sheet && u.sub_sheet !== currentSheet
-              ? `${u.full_name} — on ${u.sub_sheet}`
-              : u.full_name"
-            class="sn-presence-avatar"
-            :style="{ '--rc': u.color }"
-          />
-          <span
-            v-if="presentUsers.length > 3"
-            class="sn-presence-more"
-            :title="`${presentUsers.length - 3} more people`"
-          >+{{ presentUsers.length - 3 }}</span>
-        </div>
-        <!-- On /d/ the surface places Comments, Versions and Share here. -->
-        <slot v-if="embedded" name="document-actions" />
-        <template v-else>
-          <!-- Share -->
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="lucide-share-2"
-            :label="shareCount > 0 ? `Share · ${shareCount}` : 'Share'"
-            tooltip="Share this sheet"
-            @click="shareOpen = true"
-          />
-          <span class="sn-topbar-divider" aria-hidden="true" />
-          <Avatar
-            :label="userInitial"
-            :image="userImage || undefined"
-            size="sm"
-            :tooltip="userFullName || userEmail"
-            class="sn-user-avatar"
-          />
-        </template>
+        <Avatar
+          :label="userInitial"
+          :image="userImage || undefined"
+          size="sm"
+          :tooltip="userFullName || userEmail"
+          class="sn-user-avatar"
+        />
       </div>
     </div>
 
@@ -213,19 +226,19 @@
       <!-- Number format -->
       <Dropdown :options="numberFormatDropdownOptions" class="sn-numfmt">
         <template #default="{ open }">
-          <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconRight="lucide-chevron-down" :label="numberFormatLabel" tooltip="Number format" />
+          <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconRight="lucide-chevron-down" :aria-label="`Number format: ${numberFormatLabel}`" tooltip="Number format">{{ numberFormatLabel }}</Button>
         </template>
       </Dropdown>
       <Dropdown :options="currencyDropdownOptions" class="sn-currency">
         <template #default="{ open }">
-          <Button :variant="activeNumberFormatType === 'currency' ? 'subtle' : (open ? 'subtle' : 'ghost')" size="sm" :label="activeCurrencySymbol" tooltip="Currency" />
+          <Button :variant="activeNumberFormatType === 'currency' ? 'subtle' : (open ? 'subtle' : 'ghost')" size="sm" :aria-label="`Currency: ${activeCurrencySymbol}`" tooltip="Currency">{{ activeCurrencySymbol }}</Button>
         </template>
       </Dropdown>
-      <Button :variant="activeNumberFormatType === 'percentage' ? 'subtle' : 'ghost'" size="sm" label="%" tooltip="Percentage" @click="toggleNumberFmt('percentage')" />
-      <Button :variant="activeNumberFormatType === 'number'     ? 'subtle' : 'ghost'" size="sm" label="," tooltip="Thousands separator" @click="toggleNumberFmt('number')" />
+      <Button :variant="activeNumberFormatType === 'percentage' ? 'subtle' : 'ghost'" size="sm" aria-label="Percentage" :aria-pressed="activeNumberFormatType === 'percentage'" tooltip="Percentage" @click="toggleNumberFmt('percentage')">%</Button>
+      <Button :variant="activeNumberFormatType === 'number'     ? 'subtle' : 'ghost'" size="sm" aria-label="Thousands separator" :aria-pressed="activeNumberFormatType === 'number'" tooltip="Thousands separator" @click="toggleNumberFmt('number')">,</Button>
       <div class="sn-tool-extra">
-        <Button variant="ghost" size="sm" :icon="DecreaseDecimalIcon" tooltip="Decrease decimal places" @click="adjustDecimals(-1)" />
-        <Button variant="ghost" size="sm" :icon="IncreaseDecimalIcon" tooltip="Increase decimal places" @click="adjustDecimals(+1)" />
+        <Button aria-label="Decrease decimal places" variant="ghost" size="sm" :icon="DecreaseDecimalIcon" tooltip="Decrease decimal places" @click="adjustDecimals(-1)" />
+        <Button aria-label="Increase decimal places" variant="ghost" size="sm" :icon="IncreaseDecimalIcon" tooltip="Increase decimal places" @click="adjustDecimals(+1)" />
       </div>
 
       <div class="sn-vr" />
@@ -233,21 +246,25 @@
       <!-- Font -->
       <Dropdown :options="fontFamilyDropdownOptions" class="sn-font-family">
         <template #default="{ open }">
-          <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconRight="lucide-chevron-down" :label="activeFontFamilyLabel" tooltip="Font family" />
+          <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconRight="lucide-chevron-down" :aria-label="`Font: ${activeFontFamilyLabel}`" tooltip="Font family">{{ activeFontFamilyLabel }}</Button>
         </template>
       </Dropdown>
-      <Tooltip text="Font size">
-        <TextInput type="number" size="sm" class="sn-font-size-input" :model-value="activeFormat.fontSize || 13" min="8" max="72" @change="onFontSizeInput" @keydown.enter.prevent="onFontSizeInput" />
-      </Tooltip>
+      <!-- The wrapper carries the sizing: TextInput puts `class` on an inner
+           element that does not get this component's scoped attribute. -->
+      <div class="sn-font-size">
+        <Tooltip text="Font size">
+          <TextInput type="number" size="sm" aria-label="Font size" :model-value="activeFormat.fontSize || 13" min="8" max="72" @change="onFontSizeInput" @keydown.enter.prevent="onFontSizeInput" />
+        </Tooltip>
+      </div>
 
       <div class="sn-vr" />
 
       <!-- Style -->
-      <Button :variant="activeFormat.bold        ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.bold }"        size="sm" icon="lucide-bold"                tooltip="Bold (Ctrl+B)"             @click="toggleFmt('bold')" />
-      <Button :variant="activeFormat.italic      ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.italic }"      size="sm" icon="lucide-italic"              tooltip="Italic (Ctrl+I)"           @click="toggleFmt('italic')" />
-      <Button :variant="activeFormat.underline   ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.underline }"   size="sm" icon="lucide-underline"           tooltip="Underline (Ctrl+U)"        @click="toggleFmt('underline')" />
+      <Button aria-label="Bold" :variant="activeFormat.bold        ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.bold }" :aria-pressed="!!activeFormat.bold"        size="sm" icon="lucide-bold"                tooltip="Bold (Ctrl+B)"             @click="toggleFmt('bold')" />
+      <Button aria-label="Italic" :variant="activeFormat.italic      ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.italic }" :aria-pressed="!!activeFormat.italic"      size="sm" icon="lucide-italic"              tooltip="Italic (Ctrl+I)"           @click="toggleFmt('italic')" />
+      <Button aria-label="Underline" :variant="activeFormat.underline   ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.underline }" :aria-pressed="!!activeFormat.underline"   size="sm" icon="lucide-underline"           tooltip="Underline (Ctrl+U)"        @click="toggleFmt('underline')" />
       <div class="sn-tool-extra">
-        <Button :variant="activeFormat.strikethrough ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.strikethrough }" size="sm" icon="lucide-strikethrough" tooltip="Strikethrough (Ctrl+Shift+X)" @click="toggleFmt('strikethrough')" />
+        <Button aria-label="Strikethrough" :variant="activeFormat.strikethrough ? 'subtle' : 'ghost'" :class="{ 'sn-fmt-active': activeFormat.strikethrough }" :aria-pressed="!!activeFormat.strikethrough" size="sm" icon="lucide-strikethrough" tooltip="Strikethrough (Ctrl+Shift+X)" @click="toggleFmt('strikethrough')" />
       </div>
 
       <div class="sn-vr" />
@@ -255,14 +272,14 @@
       <!-- Align + Color -->
       <Dropdown :options="alignDropdownOptions">
         <template #default="{ open }">
-          <Button :variant="open ? 'subtle' : 'ghost'" size="sm" :icon="hAlignIcon" tooltip="Alignment" />
+          <Button aria-label="Alignment" :variant="open ? 'subtle' : 'ghost'" size="sm" :icon="hAlignIcon" tooltip="Alignment" />
         </template>
       </Dropdown>
       <ColorPicker :model-value="activeFormat.color || ''" allow-default default-label="Default text color"
                    title="Text colour" fallback="#171717" @update:model-value="setColor('color', $event)">
         <template #trigger="{ toggle, open }">
           <Tooltip text="Text colour">
-            <button type="button" class="sn-swatch-btn" :class="{ 'is-open': open }" @click="toggle()">
+            <button type="button" class="sn-swatch-btn" :class="{ 'is-open': open }" aria-label="Text colour" @click="toggle()">
               <FeatherIcon name="type" class="sn-swatch-glyph" />
               <span class="sn-swatch-underline" :style="{ background: activeFormat.color || '#171717' }"></span>
             </button>
@@ -273,7 +290,7 @@
                    title="Fill colour" fallback="#ffffff" @update:model-value="setColor('backgroundColor', $event)">
         <template #trigger="{ toggle, open }">
           <Tooltip text="Fill colour">
-            <button type="button" class="sn-swatch-btn" :class="{ 'is-open': open }" @click="toggle()">
+            <button type="button" class="sn-swatch-btn" :class="{ 'is-open': open }" aria-label="Fill colour" @click="toggle()">
               <FeatherIcon name="droplet" class="sn-swatch-glyph" />
               <span class="sn-swatch-underline sn-swatch-fill" :style="{ background: activeFormat.backgroundColor || '#ffffff' }"></span>
             </button>
@@ -284,35 +301,35 @@
       <div class="sn-vr" />
 
       <!-- Undo / Redo -->
-      <Button variant="ghost" size="sm" icon="lucide-corner-up-left"  tooltip="Undo (Ctrl+Z)" :disabled="!canUndo" @click="undo" />
-      <Button variant="ghost" size="sm" icon="lucide-corner-up-right" tooltip="Redo (Ctrl+Y)" :disabled="!canRedo" @click="redo" />
+      <Button aria-label="Undo" variant="ghost" size="sm" icon="lucide-corner-up-left"  tooltip="Undo (Ctrl+Z)" :disabled="!canUndo" @click="undo" />
+      <Button aria-label="Redo" variant="ghost" size="sm" icon="lucide-corner-up-right" tooltip="Redo (Ctrl+Y)" :disabled="!canRedo" @click="redo" />
 
       <div class="sn-vr" />
 
       <!-- Extra tools (visible at wide widths; hidden at narrow — overflow via ···) -->
       <div class="sn-tool-extra">
-        <Button :variant="isPaintingFormat ? 'subtle' : 'ghost'" size="sm" icon="lucide-paint-roller"  tooltip="Format painter"             @click="toggleFormatPainter" />
-        <Button variant="ghost"                                   size="sm" icon="lucide-eraser"         tooltip="Clear formatting"           @click="clearFormatting" />
+        <Button aria-label="Format painter" :aria-pressed="isPaintingFormat" :variant="isPaintingFormat ? 'subtle' : 'ghost'" size="sm" icon="lucide-paint-roller"  tooltip="Format painter"             @click="toggleFormatPainter" />
+        <Button aria-label="Clear formatting" variant="ghost"                                   size="sm" icon="lucide-eraser"         tooltip="Clear formatting"           @click="clearFormatting" />
         <div class="sn-vr" />
-        <Button :variant="showSortFilter ? 'subtle' : 'ghost'"   size="sm" icon="lucide-filter"               tooltip="Toggle filter"              @click="showSortFilter = !showSortFilter" />
+        <Button aria-label="Filter" :aria-pressed="showSortFilter" :variant="showSortFilter ? 'subtle' : 'ghost'"   size="sm" icon="lucide-filter"               tooltip="Toggle filter"              @click="showSortFilter = !showSortFilter" />
         <div class="sn-vr" />
         <Dropdown :options="textWrapDropdownOptions">
           <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" :icon="textWrapIcon" tooltip="Text wrapping" />
+            <Button aria-label="Text wrapping" :variant="open ? 'subtle' : 'ghost'" size="sm" :icon="textWrapIcon" tooltip="Text wrapping" />
           </template>
         </Dropdown>
         <div class="sn-vr" />
-        <Button variant="ghost" size="sm" icon="lucide-blend"    tooltip="Conditional formatting"      @click="openCfDialog(null)" />
-        <Button variant="ghost" size="sm" icon="lucide-link"     tooltip="Insert hyperlink (Ctrl+L)"   @click="openHyperlinkDialog" />
+        <Button aria-label="Conditional formatting" variant="ghost" size="sm" icon="lucide-blend"    tooltip="Conditional formatting"      @click="openCfDialog(null)" />
+        <Button aria-label="Insert hyperlink" variant="ghost" size="sm" icon="lucide-link"     tooltip="Insert hyperlink (Ctrl+L)"   @click="openHyperlinkDialog" />
         <div class="sn-vr" />
         <Dropdown :options="borderDropdownOptions">
           <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-layout-grid" tooltip="Borders" />
+            <Button aria-label="Borders" :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-layout-grid" tooltip="Borders" />
           </template>
         </Dropdown>
         <!-- Custom merge glyph (Lucide table-cells-merge) — reads as
              "join two cells" better than the generic maximize-2 icon. -->
-        <Button variant="ghost" size="sm" tooltip="Merge / unmerge cells" @click="toggleMerge">
+        <Button aria-label="Merge / unmerge cells" variant="ghost" size="sm" tooltip="Merge / unmerge cells" @click="toggleMerge">
           <template #icon>
             <svg viewBox="0 0 24 24" class="sn-merge-glyph" aria-hidden="true"
                  fill="none" stroke="currentColor" stroke-width="1.5"
@@ -326,14 +343,14 @@
           </template>
         </Button>
         <div class="sn-vr" />
-        <Button variant="ghost" size="sm" icon="lucide-chart-bar" tooltip="Insert chart" @click="openChartDialog()" />
+        <Button aria-label="Insert chart" variant="ghost" size="sm" icon="lucide-chart-bar" tooltip="Insert chart" @click="openChartDialog()" />
       </div>
 
       <!-- More -->
       <div class="sn-tool-more">
         <Dropdown :options="moreToolbarOptions">
           <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-more-horizontal" tooltip="More" />
+            <Button aria-label="More tools" :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-more-horizontal" tooltip="More tools" />
           </template>
         </Dropdown>
       </div>
@@ -349,6 +366,7 @@
         <input
           ref="formulaInputRef"
           name="formula-bar"
+          aria-label="Cell value or formula"
           class="sn-formula-input"
           :value="formulaValue"
           :readonly="readOnly"
@@ -450,7 +468,7 @@
             Notes
             <span v-if="allNotes.length" class="sn-notes-count">· {{ allNotes.length }}</span>
           </div>
-          <Button variant="ghost" size="sm" icon="lucide-x" @click="notesPanel.open = false" />
+          <Button variant="ghost" size="sm" icon="lucide-x" aria-label="Close notes" @click="notesPanel.open = false" />
         </header>
         <div class="sn-notes-toolbar">
           <Button size="sm" variant="subtle" iconLeft="lucide-plus"
@@ -526,6 +544,7 @@
           class="sn-filter-btn"
           :class="{ active: filterConfig[col.col] }"
           :style="col.style"
+          :aria-label="`Filter column ${colLabel(col.col)}`"
           @click="openFilterPanel(col.col)"
         >
           <FeatherIcon name="chevron-down" class="sn-filter-btn-icon" />
@@ -627,6 +646,7 @@
             >
               <Checkbox
                 :modelValue="filterPanel.valueSet.has(v)"
+                :aria-label="v === '' ? '(Blanks)' : v"
                 @update:modelValue="toggleFilterValue(v)"
                 @click.stop
               />
@@ -643,6 +663,7 @@
             size="sm"
             v-model="filterPanel.operator"
             :options="FILTER_OPERATOR_OPTIONS"
+            aria-label="Condition"
           />
           <FormControl
             v-if="!['empty','notempty'].includes(filterPanel.operator)"
@@ -665,7 +686,7 @@
     <!-- Add-more-rows strip — only when the user has scrolled near the bottom -->
     <div v-if="showAddRows" class="sn-addrows">
       <span class="sn-addrows-label">Add</span>
-      <input name="add-rows-count" class="sn-addrows-input" type="number" min="1" max="10000" v-model.number="addRowsCount" />
+      <input name="add-rows-count" aria-label="Number of rows to add" class="sn-addrows-input" type="number" min="1" max="10000" v-model.number="addRowsCount" />
       <span class="sn-addrows-label">more rows at the bottom</span>
       <Button variant="subtle" size="sm" iconLeft="lucide-plus" label="Add" @click="doAddMoreRows" />
     </div>
@@ -680,7 +701,7 @@
       <!-- Add-sheet is a mutation, so viewers don't get it — hide the whole
            wrapper (button + its divider) rather than leave a dead, greyed pill. -->
       <div v-if="!readOnly" class="sn-tab-add-wrap">
-        <Button variant="ghost" size="sm" icon="lucide-plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
+        <Button aria-label="Add sheet" variant="ghost" size="sm" icon="lucide-plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
       </div>
       <div class="sn-tabs-track">
         <div
@@ -720,6 +741,7 @@
             size="sm"
             icon="lucide-chevron-down"
             class="sn-tab-chevron"
+            :aria-label="`${name} options`"
             @click.stop="_onTabMenu($event, name)"
           />
           <!-- Peer dots — one colored circle per peer currently on this
@@ -1102,7 +1124,7 @@
                     @mousedown.stop @click.stop />
           </template>
         </Dropdown>
-        <Button variant="ghost" size="sm" icon="lucide-x" tooltip="Remove slicer"
+        <Button aria-label="Remove slicer" variant="ghost" size="sm" icon="lucide-x" tooltip="Remove slicer"
                 @mousedown.stop @click="removeSlicer(sl)" />
       </div>
       <div class="sn-fp-vlinks sn-slicer-actions" @mousedown.stop>
@@ -1112,7 +1134,7 @@
       <div class="sn-slicer-values">
         <div v-for="row in sl.rows" :key="'v:' + row.v"
              class="sn-fp-value-row" @click="toggleSlicerValue(sl, row.v)">
-          <Checkbox :modelValue="row.checked" @update:modelValue="toggleSlicerValue(sl, row.v)" @click.stop />
+          <Checkbox :modelValue="row.checked" :aria-label="row.v === '' ? '(Blanks)' : row.v" @update:modelValue="toggleSlicerValue(sl, row.v)" @click.stop />
           <span class="sn-fp-value-text">{{ row.v === '' ? '(Blanks)' : row.v }}</span>
         </div>
       </div>
@@ -1130,8 +1152,9 @@
           <Button v-if="commentPanel.thread.length" variant="ghost" size="sm"
                   :icon="commentPanel.resolved ? 'lucide-rotate-ccw' : 'lucide-check'"
                   :tooltip="commentPanel.resolved ? 'Reopen' : 'Mark resolved'"
+                  :aria-label="commentPanel.resolved ? 'Reopen' : 'Mark resolved'"
                   @click="toggleResolveComment" />
-          <Button variant="ghost" size="sm" icon="lucide-x" @click="commentPanel.open = false" />
+          <Button variant="ghost" size="sm" icon="lucide-x" aria-label="Close comment" @click="commentPanel.open = false" />
         </div>
       </div>
 
@@ -1140,7 +1163,7 @@
           <div class="sn-comment-reply-head">
             <span class="sn-comment-author">{{ r.name || r.author || 'Someone' }}</span>
             <span class="sn-comment-time">{{ commentTime(r.ts) }}</span>
-            <Button v-if="r.author && r.author === userEmail" variant="ghost" size="sm" icon="lucide-trash-2"
+            <Button v-if="r.author && r.author === userEmail" aria-label="Delete reply" variant="ghost" size="sm" icon="lucide-trash-2"
                     tooltip="Delete" class="sn-comment-del" @click="deleteCommentReply(i)" />
           </div>
           <div class="sn-comment-text">{{ r.text }}</div>
@@ -1188,7 +1211,7 @@
               <button type="button" class="sn-cf-rule-pick" @click="openCfDialog(r.id)">
                 {{ cfRuleLabel(r) }}
               </button>
-              <Button variant="ghost" size="sm" icon="lucide-x" theme="red"
+              <Button aria-label="Delete rule" variant="ghost" size="sm" icon="lucide-x" theme="red"
                       @click="deleteCfRuleById(r.id)" tooltip="Delete rule" />
             </div>
           </div>
@@ -1286,7 +1309,7 @@
 
 <script setup>
 import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount, onScopeDispose } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { createReusableTemplate, useMediaQuery } from '@vueuse/core'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
@@ -1367,9 +1390,11 @@ import {
 
 const props = defineProps({
   id: { type: String, default: 'new' },
-  // Mounted by the /d/ surface. The surface fills the `identity`,
-  // `document-actions` and `side-panel` slots, owns the title, sharing and the
-  // leave guard, and its Drive session records the visit.
+  // Mounted by the /d/ surface. The surface fills the `header` and
+  // `side-panel` slots, owns the title, sharing and the leave guard, and its
+  // Drive session records the visit. The `header` slot receives `viewOnly`,
+  // and the editor's `status` and `actions` as components to place; the save
+  // state is on the exposed handle.
   embedded: { type: Boolean, default: false },
   // The surface's access verdict. False freezes the editor and cancels every
   // pending save, retries included.
@@ -1383,6 +1408,10 @@ const props = defineProps({
 // `access-refused`: the server refused a save, or the collaboration server
 // refused the connection. `notes-opened`: the notes panel took the right edge.
 const emit  = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
+// The top bar's status chips and app actions, drawn in the editor's own bar or
+// handed to the surface's header when embedded.
+const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
+const [DefineTopbarActions, ReuseTopbarActions] = createReusableTemplate()
 const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('sheets', async () => {
   await flushSave()
@@ -1734,7 +1763,8 @@ const formulaValue      = ref('')
 const canUndo           = ref(false)
 const canRedo           = ref(false)
 const currentTitle      = ref('Untitled Sheet')
-usePageMeta(() => appPageMeta(currentTitle.value, 'Sheets'))
+// Embedded, the document host names the tab like every other document.
+if (!props.embedded) usePageMeta(() => appPageMeta(currentTitle.value, 'Sheets'))
 const activeNumberFormat = ref('')
 
 // Cross-sheet picker: when the user starts a `=…` edit in the top formula
@@ -2545,6 +2575,9 @@ const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCre
 // autosave path all no-op so a viewer is never misled into editing a doc they
 // can't persist (and never triggers the server's PermissionError on save).
 const readOnly = computed(() => !canWrite.value || !props.writable)
+// Where the workbook's edits are: clean, saving, unsaved or failed.
+const saveState = computed(() =>
+  isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean')
 
 // Losing write access drops every pending edit from the save path: the queued
 // autosave, the failed-save watchdog, the op queue, and a failed batch. The
@@ -4691,8 +4724,7 @@ function _draftEdit() {
 defineExpose({
   activeCell,
   currentSheet,
-  saveState: computed(() =>
-    isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean'),
+  saveState,
   flushSave,
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
@@ -6389,6 +6421,13 @@ function toggleShowFormulas() {
 
 /* ── Bar 3 · Formatting toolbar ──────────────────────────────────────────── */
 .sn-toolbar { display:flex; align-items:center; gap:2px; height:44px; padding:0 15px; border-bottom:1px solid var(--outline-gray-2); background:var(--surface-base); flex-shrink:0; }
+/* A phone-width bar scrolls sideways instead of clipping the controls at
+   its end (including the "…" menu). Menus and tooltips are portalled, so
+   the scroll box does not clip them. */
+@media (max-width: 720px) {
+  .sn-toolbar { overflow-x:auto; scrollbar-width:none; }
+  .sn-toolbar::-webkit-scrollbar { display:none; }
+}
 /* Read-only: dim and make the whole formatting bar inert. pointer-events:none
    swallows clicks on every control (buttons + dropdowns) without per-button
    wiring; the reduced opacity is the visual "disabled" cue. */
@@ -6398,10 +6437,12 @@ function toggleShowFormulas() {
 /* Font family dropdown — uses a Button trigger that hugs the short label. */
 .sn-font-family :deep(button) { padding-left:6px; padding-right:4px; gap:2px; }
 
-.sn-font-size-input { width:52px; margin:0 2px; }
-.sn-font-size-input :deep(input) { text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
-.sn-font-size-input :deep(input::-webkit-outer-spin-button),
-.sn-font-size-input :deep(input::-webkit-inner-spin-button) { -webkit-appearance:none; margin:0; }
+/* flex-shrink:0 — the input has no min-content width, so a narrow bar would
+   squeeze it until the size is hidden. */
+.sn-font-size { width:52px; margin:0 2px; flex-shrink:0; }
+.sn-font-size :deep(input) { text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
+.sn-font-size :deep(input::-webkit-outer-spin-button),
+.sn-font-size :deep(input::-webkit-inner-spin-button) { -webkit-appearance:none; margin:0; }
 .sn-vr  { width:1px; height:18px; background:var(--outline-gray-2); margin:0 6px; flex-shrink:0; }
 
 /* Active-format pip — toolbar buttons (Bold / Italic / Underline /

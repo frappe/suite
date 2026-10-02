@@ -3,7 +3,7 @@
     <!-- Top bar — mirrors Home's chrome, minus search/view-toggle/New. -->
     <div class="home-topbar">
       <div class="home-brand">
-        <Button variant="ghost" size="sm" icon="lucide-arrow-left" tooltip="Back to sheets" @click="goHome()" />
+        <Button aria-label="Back to sheets" variant="ghost" size="sm" icon="lucide-arrow-left" tooltip="Back to sheets" @click="goHome()" />
         <span class="home-brand-name">Trash</span>
       </div>
       <div class="home-topbar-right">
