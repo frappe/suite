@@ -146,7 +146,7 @@ const { workspaceName, workspaceLogo } = useWorkspace()
 
 const userMenuOptions = [
   {
-    label: __('My Profile'),
+    label: __('My profile'),
     icon: h(CircleUser, { class: 'stroke-[1.5]' }),
     onClick: () => openSettings('account.profile'),
   },

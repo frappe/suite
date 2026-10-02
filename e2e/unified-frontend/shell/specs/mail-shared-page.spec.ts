@@ -88,13 +88,15 @@ function isTopmost(element: Locator) {
 	});
 }
 
-/** Open the rail's account menu, then Settings, and read how both stack. */
+/** Open the rail's account menu, then the rail's Settings, and read how both stack. */
 async function shellOverlayStacking(page: Page) {
 	await page.getByRole("button", { name: "Account" }).click();
 	const menu = page.getByRole("menu");
 	await expect(menu).toBeVisible();
 	const menuLevel = await stackLevel(menu);
-	await page.getByRole("menuitem", { name: "Settings" }).click();
+	await page.keyboard.press("Escape");
+	await expect(menu).toBeHidden();
+	await page.getByRole("button", { name: "Settings", exact: true }).first().click();
 
 	const dialog = page.getByRole("dialog", { name: "Settings" });
 	await expect(dialog).toBeVisible();

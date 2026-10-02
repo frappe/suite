@@ -33,9 +33,9 @@ const PLAIN_ACCOUNT = {
 	capabilities: { jmap: false, systemManager: false },
 };
 
-async function openSettingsFromAccountMenu(page: Page) {
-	await page.getByRole("button", { name: "Account" }).click();
-	await page.getByRole("menuitem", { name: "Settings" }).click();
+/** The rail's gear is the one desktop entry to Settings. */
+async function openSettingsFromRail(page: Page) {
+	await page.getByRole("button", { name: "Settings", exact: true }).first().click();
 	const settings = page.getByRole("dialog", { name: "Settings" });
 	await expect(settings).toBeVisible();
 	return settings;
@@ -55,7 +55,7 @@ test.describe("desktop", () => {
 	test("each heading opens its first tab", async ({ page }) => {
 		await patchAccount(page, FULL_ACCOUNT);
 		await page.goto("/home");
-		const settings = await openSettingsFromAccountMenu(page);
+		const settings = await openSettingsFromRail(page);
 
 		// The sidebar's group labels, in heading order.
 		const headings = settings.getByRole("tablist").locator(":scope > div > div > div:first-child:not([role='tab'])");
@@ -72,7 +72,7 @@ test.describe("desktop", () => {
 		await patchAccount(page, FULL_ACCOUNT);
 		const served = trackModules(page);
 		await page.goto("/home");
-		const settings = await openSettingsFromAccountMenu(page);
+		const settings = await openSettingsFromRail(page);
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Profile" })).toBeVisible();
 
 		for (const body of ["PreferencesSettings.vue", "StatisticsSettings.vue", "CredentialsSettings.vue", "DeviceSettingsTab.vue"]) {
@@ -85,7 +85,7 @@ test.describe("desktop", () => {
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
 
-	test("a system manager's account menu offers Open Desk and a disabled Upgrade plan", async ({ page }) => {
+	test("a system manager's account menu offers Open Desk, and no Settings or Upgrade plan", async ({ page }) => {
 		await patchAccount(page, FULL_ACCOUNT);
 		await page.goto("/home");
 		await page.getByRole("button", { name: "Account" }).click();
@@ -93,10 +93,8 @@ test.describe("desktop", () => {
 		const menu = page.getByRole("menu");
 		await expect(menu.getByText("Administrator").first()).toBeVisible();
 		await expect(menu.getByRole("menuitem", { name: "Open Desk" })).toHaveAttribute("href", "/app");
-		const upgrade = menu.getByRole("menuitem", { name: "Upgrade plan" });
-		await expect(upgrade).toHaveAttribute("aria-disabled", "true");
-		await upgrade.getByText("Upgrade plan").hover();
-		await expect(page.getByText("Not available yet").first()).toBeVisible();
+		await expect(menu.getByRole("menuitem", { name: "Settings" })).toHaveCount(0);
+		await expect(menu.getByRole("menuitem", { name: "Upgrade plan" })).toHaveCount(0);
 	});
 
 	test("a plain user sees no Workspace group and no Open Desk", async ({ page }) => {
@@ -105,12 +103,12 @@ test.describe("desktop", () => {
 		await page.getByRole("button", { name: "Account" }).click();
 
 		const menu = page.getByRole("menu");
-		await expect(menu.getByRole("menuitem", { name: "Settings" })).toBeVisible();
+		await expect(menu.getByRole("menuitem", { name: "Log out" })).toBeVisible();
 		await expect(menu.getByRole("menuitem", { name: "Open Desk" })).toHaveCount(0);
 		await expect(menu.getByRole("menuitem", { name: "Upgrade plan" })).toHaveCount(0);
 
-		await menu.getByRole("menuitem", { name: "Settings" }).click();
-		const settings = page.getByRole("dialog", { name: "Settings" });
+		await page.keyboard.press("Escape");
+		const settings = await openSettingsFromRail(page);
 		await expect(settings.getByRole("tab", { name: "Profile" })).toBeVisible();
 		await expect(settings.getByText("Workspace", { exact: true })).toHaveCount(0);
 		await expect(settings.getByRole("tab", { name: "Users" })).toHaveCount(0);
@@ -159,7 +157,7 @@ for (const phone of [false, true]) {
 		async function openStatistics(page: Page) {
 			await page.goto("/home");
 			if (!phone) {
-				const settings = await openSettingsFromAccountMenu(page);
+				const settings = await openSettingsFromRail(page);
 				await settings.getByRole("tab", { name: "Statistics" }).click();
 				return settings.getByRole("tabpanel");
 			}

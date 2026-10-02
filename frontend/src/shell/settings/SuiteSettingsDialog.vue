@@ -17,9 +17,18 @@
     v-model:open="open"
     v-model:tab="activeTab"
     size="5xl"
-    :keyboard-shortcut="false"
   >
     <template #title>{{ __('Settings') }}</template>
+    <!-- SettingsDialog draws no close button. This one sits where Dialog
+         puts its own. -->
+    <Dialog.Close as-child>
+      <Button
+        variant="ghost"
+        icon="lucide-x"
+        class="absolute right-4 top-4 z-10"
+        :aria-label="__('Close')"
+      />
+    </Dialog.Close>
     <template v-if="groups">
       <SettingsSidebar>
         <SettingsNavGroup v-for="group in groups" :key="group.label" :label="group.label">
@@ -56,6 +65,8 @@
 import { computed, ref, watch } from 'vue'
 import {
   Avatar,
+  Button,
+  Dialog,
   LoadingIndicator,
   SettingsContent,
   SettingsDialog,

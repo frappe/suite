@@ -63,7 +63,6 @@
         <FormControl
           v-model="user.doc.first_name"
           :label="__('First name')"
-          variant="outline"
           class="w-full"
           autocomplete="given-name"
           :disabled="user.setValue.loading"
@@ -72,7 +71,6 @@
         <FormControl
           v-model="user.doc.last_name"
           :label="__('Last name')"
-          variant="outline"
           class="w-full"
           autocomplete="family-name"
           :disabled="user.setValue.loading"
@@ -84,7 +82,7 @@
         :title="__('Password')"
         :description="__('Manage password and account access')"
       >
-        <Button :label="__('Update Password')" @click="showPasswordDialog = true" />
+        <Button :label="__('Update password')" @click="showPasswordDialog = true" />
       </SettingsRow>
 
     </div>
@@ -109,27 +107,24 @@
           type="password"
           name="current-password"
           autocomplete="current-password"
-          :label="__('Current Password')"
+          :label="__('Current password')"
           placeholder="••••••••"
-          variant="outline"
         />
         <FormControl
           v-model="newPassword"
           type="password"
           name="new-password"
           autocomplete="new-password"
-          :label="__('New Password')"
+          :label="__('New password')"
           placeholder="••••••••"
-          variant="outline"
         />
         <FormControl
           v-model="confirmPassword"
           type="password"
           name="confirm-password"
           autocomplete="new-password"
-          :label="__('Confirm New Password')"
+          :label="__('Confirm new password')"
           placeholder="••••••••"
-          variant="outline"
         />
         <ErrorMessage :message="passwordError" />
       </form>
@@ -263,7 +258,7 @@ const passwordError = computed(() => {
 })
 
 const passwordDialogOptions = computed(() => ({
-  title: __('Change Password'),
+  title: __('Change password'),
   actions: [
     {
       label: __('Confirm'),

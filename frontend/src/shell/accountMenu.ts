@@ -1,21 +1,17 @@
 import { computed, h, type ComputedRef } from "vue";
-import { ItemListRow, Tooltip, type DropdownOptions } from "frappe-ui";
+import { ItemListRow, type DropdownOptions } from "frappe-ui";
 
 import { readBootFlag } from "@/platform/boot";
 import { useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
-import { openSettings } from "@/shell/settings/useSettingsDialog";
 
 // A custom row takes the menu's highlight itself: the menu item renders as
 // the row, not around it.
 const HIGHLIGHT =
   "cursor-pointer outline-none focus:bg-surface-alpha-gray-2 data-[highlighted]:bg-surface-alpha-gray-2";
 
-function icon(name: string, disabled = false) {
-  return h("span", {
-    class: [name, "size-4 shrink-0", disabled ? "text-ink-gray-4" : "text-ink-gray-6"],
-    "aria-hidden": "true",
-  });
+function icon(name: string) {
+  return h("span", { class: [name, "size-4 shrink-0 text-ink-gray-6"], "aria-hidden": "true" });
 }
 
 /** An old page that is not an area yet. */
@@ -46,8 +42,9 @@ export function showsLegacyApps(): boolean {
 
 /**
  * The desktop account menu [T021]: who is signed in, the temporary Apps
- * submenu between the flips, Settings, Open Desk and Upgrade plan for system
- * managers, then Log out.
+ * submenu between the flips, Open Desk for system managers, then Log out.
+ * Settings is not here: the menu opens from the rail, and the rail's gear
+ * sits directly above the avatar (spec section 3.5).
  */
 export function useAccountMenu(): ComputedRef<DropdownOptions> {
   const session = useSession();
@@ -94,11 +91,6 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
             })),
           },
           {
-            label: __("Settings"),
-            icon: "lucide-settings",
-            onClick: () => openSettings(),
-          },
-          {
             // A full page load in the same tab: Desk is not part of this app.
             label: __("Open Desk"),
             condition: () => systemManager,
@@ -111,28 +103,8 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
                 ),
             },
           },
-          {
-            // Disabled until the site resource carries `upgrade_url` (ask S5).
-            label: __("Upgrade plan"),
-            disabled: true,
-            condition: () => systemManager,
-            slots: {
-              item: () =>
-                h(
-                  ItemListRow,
-                  { disabled: true },
-                  {
-                    prefix: () => icon("lucide-circle-arrow-up", true),
-                    label: () =>
-                      h(
-                        Tooltip,
-                        { text: __("Not available yet"), side: "right" },
-                        { default: () => h("span", { class: "block truncate" }, __("Upgrade plan")) },
-                      ),
-                  },
-                ),
-            },
-          },
+          // Upgrade plan joins here once the site resource carries
+          // `upgrade_url` (ask S5).
         ],
       },
       {
