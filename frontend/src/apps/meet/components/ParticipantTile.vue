@@ -85,7 +85,7 @@
 		<!-- Raised Hand -->
 		<div
 			v-if="showRaisedHand && isHandRaised"
-			class="absolute top-2 left-2 px-2 py-1 rounded-full !bg-[#e54e17] text-white pointer-events-none flex items-center justify-center"
+			class="absolute top-2 left-2 px-2 py-1 rounded-full !bg-surface-raised-hand text-white pointer-events-none flex items-center justify-center"
 			:aria-label="`${resolvedDisplayName} has raised their hand`"
 		>
 			<lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
