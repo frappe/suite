@@ -75,21 +75,56 @@ const MIMES = new Map<string, TextLanguage>([
   ['text/yaml', 'yaml'],
 ])
 
+type ViewerKind = Exclude<PreviewKind['kind'], 'text' | 'none'>
+
+// The sniffer misses some valid PDF and media files, for example a PDF with
+// bytes before `%PDF`. Such a file arrives as `application/octet-stream`, and
+// the file server sends its bytes with the type its name implies. These names
+// open it in the viewer for that type. Images are left out: the sniffer
+// recognises every web image, so an unsniffed `.png` is not a picture.
+const VIEWER_EXTENSIONS = new Map<string, ViewerKind>([
+  ['mp3', 'audio'],
+  ['m4a', 'audio'],
+  ['wav', 'audio'],
+  ['ogg', 'audio'],
+  ['oga', 'audio'],
+  ['flac', 'audio'],
+  ['mp4', 'video'],
+  ['m4v', 'video'],
+  ['webm', 'video'],
+  ['ogv', 'video'],
+  ['pdf', 'pdf'],
+])
+
+const UNSNIFFED = 'application/octet-stream'
+
 /**
- * Media and PDF types win, because the browser draws them. A file whose name
- * or type says text is shown as text, HTML included: an uploaded page is never
- * rendered on the app's origin. Any other file shows its preview image, if
- * Drive made one, or nothing.
+ * Media and PDF types win, because the browser draws them. A file with no
+ * known type takes its viewer from its name. A file whose name or type says
+ * text is shown as text, HTML included: an uploaded page is never rendered on
+ * the app's origin. Any other file shows its preview image, if Drive made one,
+ * or nothing.
  */
 export function previewKind({ title, mime, hasPreview }: PreviewedFile): PreviewKind {
   const type = (mime ?? '').toLowerCase()
-  if (type.startsWith('image/')) return { kind: 'image' }
-  if (type.startsWith('audio/')) return { kind: 'audio' }
-  if (type.startsWith('video/')) return { kind: 'video' }
-  if (type === 'application/pdf') return { kind: 'pdf' }
+  const viewer =
+    viewerKind(type) ?? (type === '' || type === UNSNIFFED ? viewerByName(title) : null)
+  if (viewer) return { kind: viewer }
   const language = textLanguage(title, type)
   if (language) return { kind: 'text', language }
   return hasPreview ? { kind: 'image' } : { kind: 'none' }
+}
+
+function viewerKind(type: string): ViewerKind | null {
+  if (type.startsWith('image/')) return 'image'
+  if (type.startsWith('audio/')) return 'audio'
+  if (type.startsWith('video/')) return 'video'
+  if (type === 'application/pdf') return 'pdf'
+  return null
+}
+
+function viewerByName(title: string): ViewerKind | null {
+  return VIEWER_EXTENSIONS.get(titleExtension(title)?.toLowerCase() ?? '') ?? null
 }
 
 function textLanguage(title: string, type: string): TextLanguage | null {

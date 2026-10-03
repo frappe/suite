@@ -40,6 +40,19 @@ describe('preview kind', () => {
     expect(file('plan.pdf', 'application/pdf')).toEqual({ kind: 'pdf' })
   })
 
+  it('opens a PDF or media file Drive could not sniff in its viewer, by its name', () => {
+    const unsniffed = 'application/octet-stream'
+    expect(file('report.pdf', unsniffed)).toEqual({ kind: 'pdf' })
+    expect(file('Scan.PDF', null)).toEqual({ kind: 'pdf' })
+    expect(file('clip.webm', unsniffed)).toEqual({ kind: 'video' })
+    expect(file('talk.mp4', unsniffed)).toEqual({ kind: 'video' })
+    expect(file('memo.m4a', unsniffed)).toEqual({ kind: 'audio' })
+    // Every web image is sniffed, so an unsniffed one is not a picture.
+    expect(file('photo.png', unsniffed)).toEqual({ kind: 'none' })
+    // A type Drive did sniff wins over the name.
+    expect(file('renamed.pdf', 'application/zip')).toEqual({ kind: 'none' })
+  })
+
   it("shows other files' preview image, or nothing", () => {
     expect(
       file(

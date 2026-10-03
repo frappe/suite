@@ -58,17 +58,18 @@ const TEXT_TYPES: Record<TextLanguage, FileType> = {
 /**
  * A stored file's type. Drive records the MIME type it sniffs from the bytes,
  * and most text formats have no signature, so a Markdown or JSON file often
- * arrives as `application/octet-stream`. The text preview's classifier reads
- * the name's extension for those, so the listing and the preview agree on
- * what a file is. Any other file is just a file.
+ * arrives as `application/octet-stream`; so does a PDF or video the sniffer
+ * misses. The preview's classifier reads the name's extension for those, and
+ * the listing asks it too, so the listing and the preview agree on what a
+ * file is. Any other file is just a file.
  */
 function fileType({ title, mime }: TypedNode): FileType {
   const type = (mime ?? '').toLowerCase()
-  if (type.startsWith('image/')) return { label: 'Image', icon: 'lucide-image' }
-  if (type.startsWith('video/')) return { label: 'Video', icon: 'lucide-video' }
-  if (type.startsWith('audio/')) return { label: 'Audio', icon: 'lucide-audio-lines' }
-  if (type === 'application/pdf') return { label: 'PDF', icon: 'lucide-file' }
   const preview = previewKind({ title, mime, hasPreview: false })
+  if (preview.kind === 'image') return { label: 'Image', icon: 'lucide-image' }
+  if (preview.kind === 'video') return { label: 'Video', icon: 'lucide-video' }
+  if (preview.kind === 'audio') return { label: 'Audio', icon: 'lucide-audio-lines' }
+  if (preview.kind === 'pdf') return { label: 'PDF', icon: 'lucide-file' }
   if (preview.kind === 'text') {
     const extension = titleExtension(title)?.toLowerCase()
     if (extension === 'csv' || type === 'text/csv') return { label: 'CSV', icon: TABLE }
