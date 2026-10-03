@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import resource
+import secrets
 import time
 from datetime import timedelta
 
@@ -67,8 +68,8 @@ def attempt(adapter: str, doc_id: str, roots: dict[str, type]) -> None:
         rows = [payload for _rev, payload in snapshot["rows"]]
         result = compaction.compact(snapshot["checkpoint"], rows, roots)
         report = {**result.report, "ms": int((time.monotonic() - started) * 1000)}
-        store(adapter, doc_id, through, snapshot["head_chain"], result, report, roots)
-        install(adapter, doc_id, snapshot["lineage"], through, snapshot["head_chain"], result, report)
+        sha = store(adapter, doc_id, through, snapshot["head_chain"], result, report, roots)
+        install(adapter, doc_id, snapshot["lineage"], through, snapshot["head_chain"], sha, result, report)
     except Skipped:
         frappe.db.rollback()
         settle(adapter, doc_id)
@@ -154,16 +155,31 @@ def request(adapter: str, doc_id: str, method: str) -> None:
     )
 
 
-def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report: dict, roots) -> None:
-    """T2: the checkpoint row, unreferenced until the install. A row already there must hold the same document."""
+def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report: dict, roots) -> bytes:
+    """T2: the checkpoint row, unreferenced until the install; answers its sha, which names it to the install.
+
+    A row already at this rev was left by an attempt that never installed. It is
+    kept only if it holds the same document on the same chain and is as
+    integrated as this result; otherwise this result replaces it.
+    """
     existing = frappe.db.sql(
-        f"SELECT `gz` FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
+        f"""SELECT `gz`, `sha256`, `chain`, `integrated` FROM `{table(adapter, "checkpoint")}`
+        WHERE `doc_id` = %s AND `through_rev` = %s""",
         (doc_id, through),
     )
     if existing:
-        if not compaction.same(gzip.decompress(bytes(existing[0][0])), result.state, roots):
-            raise compaction.CompactionFailed("checkpoint_mismatch")
-        return
+        gz, sha, stored_chain, integrated = existing[0]
+        if (
+            bytes(stored_chain) == chain
+            and int(integrated) == int(result.integrated)
+            and compaction.same(gzip.decompress(bytes(gz)), result.state, roots)
+        ):
+            return bytes(sha)
+        frappe.db.sql(
+            f"DELETE FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)",
+            (doc_id, through, bytes(sha).hex()),
+        )
+    sha = hashlib.sha256(result.state).digest()
     frappe.db.sql(
         f"""INSERT INTO `{table(adapter, "checkpoint")}`
         (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `report`, `created`)
@@ -172,7 +188,7 @@ def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report:
             doc_id,
             through,
             chain.hex(),
-            hashlib.sha256(result.state).hexdigest(),
+            sha.hex(),
             len(result.state),
             gzip.compress(result.state).hex(),
             int(result.integrated),
@@ -182,12 +198,32 @@ def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report:
         ),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    return sha
 
 
 def install(
-    adapter: str, doc_id: str, lineage: str, through: int, chain: bytes, result, report: dict
+    adapter: str, doc_id: str, lineage: str, through: int, chain: bytes, sha: bytes, result, report: dict
 ) -> None:
-    """T3b: point the control row at the checkpoint, unless a newer compaction or another lineage got there first."""
+    """T3b: point the control row at the checkpoint row `sha` names.
+
+    Nothing changes if a newer compaction or another lineage got there first, or
+    if that row is gone. A deadlock or lock wait retries this short step only.
+    """
+    for attempt in range(3):
+        try:
+            installed = point_at(adapter, doc_id, lineage, through, chain, sha, result, report)
+            break
+        except Exception as error:
+            frappe.db.rollback()
+            if attempt == 2 or not (frappe.db.is_deadlocked(error) or frappe.db.is_timedout(error)):
+                raise
+    if installed and not result.integrated:
+        alert(adapter, doc_id, "fallback", "The compaction kept the merged rows as an open base only")
+
+
+def point_at(
+    adapter: str, doc_id: str, lineage: str, through: int, chain: bytes, sha: bytes, result, report: dict
+) -> bool:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     frappe.db.sql(f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE", doc_id)
     paced = len(result.state) >= PACED_FROM
@@ -207,9 +243,12 @@ def install(
             `last_compaction_ms` = %(ms)s,
             `last_compaction_error` = NULL,
             `next_compaction_at` = %(next)s
-        WHERE `id` = %(doc)s AND `lineage` = %(lineage)s AND `checkpoint_rev` < %(through)s""",
+        WHERE `id` = %(doc)s AND `lineage` = %(lineage)s AND `checkpoint_rev` < %(through)s
+        AND EXISTS (SELECT 1 FROM `{table(adapter, "checkpoint")}` WHERE `doc_id` = %(doc)s
+            AND `through_rev` = %(through)s AND `sha256` = UNHEX(%(sha)s))""",
         {
             "doc": doc_id,
+            "sha": sha.hex(),
             "lineage": lineage,
             "through": through,
             "chain": chain.hex(),
@@ -228,8 +267,7 @@ def install(
         doc_id,
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    if installed and not result.integrated:
-        alert(adapter, doc_id, "fallback", "The compaction kept the merged rows as an open base only")
+    return bool(installed)
 
 
 def count_attempt(adapter: str, doc_id: str) -> None:
@@ -302,27 +340,33 @@ def alert(adapter: str, doc_id: str, reason: str, message: str, error: Exception
 
 
 # Bench-wide places, held in RQ's Redis; a lease outlives the job timeout, so a killed horse frees its place
-def take_place(adapter: str, doc_id: str) -> list[str] | None:
-    """One place of `PLACES`, and the document's own key so two jobs never compact it at once."""
+RELEASE = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
+
+
+def take_place(adapter: str, doc_id: str) -> tuple[str, list[str]] | None:
+    """One place of `PLACES`, and the document's own key so two jobs never compact it at once.
+
+    Both hold a token of this job's own, so a job that outlived its lease can't
+    free a place another job has since taken.
+    """
     redis = get_redis_conn()
-    holder = f"{frappe.local.site}:{adapter}:{doc_id}"
-    own = f"suite:collab:compacting:{holder}"
-    if not redis.set(own, holder, nx=True, ex=LEASE):
+    token = secrets.token_hex(16)
+    own = f"suite:collab:compacting:{frappe.local.site}:{adapter}:{doc_id}"
+    if not redis.set(own, token, nx=True, ex=LEASE):
         return None
     for index in range(PLACES):
         key = f"suite:collab:compaction:{index}"
-        if redis.set(key, holder, nx=True, ex=LEASE):
-            return [key, own]
-    redis.delete(own)
+        if redis.set(key, token, nx=True, ex=LEASE):
+            return token, [key, own]
+    redis.eval(RELEASE, 1, own, token)
     return None
 
 
-def free_place(held: list[str]) -> None:
+def free_place(held: tuple[str, list[str]]) -> None:
+    token, keys = held
     redis = get_redis_conn()
-    holder = (redis.get(held[1]) or b"").decode()
-    for key in held:
-        if (redis.get(key) or b"").decode() == holder:
-            redis.delete(key)
+    for key in keys:
+        redis.eval(RELEASE, 1, key, token)
 
 
 def enough_memory() -> bool:

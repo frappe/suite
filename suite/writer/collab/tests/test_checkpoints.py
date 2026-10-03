@@ -217,8 +217,8 @@ class TestWriterCheckpoints(CheckpointCase):
         rows = [payload for _rev, payload in older["rows"]]
         result = compaction.compact(older["checkpoint"], rows, writer_collab.ROOTS)
         report = {"ms": 1}
-        checkpoints.store("writer", doc_id, 2, older["head_chain"], result, report, writer_collab.ROOTS)
-        checkpoints.install("writer", doc_id, older["lineage"], 2, older["head_chain"], result, report)
+        sha = checkpoints.store("writer", doc_id, 2, older["head_chain"], result, report, writer_collab.ROOTS)
+        checkpoints.install("writer", doc_id, older["lineage"], 2, older["head_chain"], sha, result, report)
 
         [(through, state, _integrated)] = self.checkpoints_of(node)
         self.assertEqual((through, self.doc_row(node).checkpoint_rev), (3, 3))
@@ -249,6 +249,107 @@ class TestWriterCheckpoints(CheckpointCase):
         self.assertEqual(doc.checkpoint_rev, 2)
         wait = (doc.next_compaction_at - frappe.utils.now_datetime()).total_seconds()
         self.assertGreater(wait, 50)
+
+    def stored(self, node: str, *, integrated: bool = True) -> tuple[dict, object, bytes]:
+        """A compaction of the document through its head, stored as T2 leaves it, not yet installed."""
+        doc_id = self.doc_row(node).id
+        snapshot = routes.collab.read("writer", doc_id)
+        rows = [payload for _rev, payload in snapshot["rows"]]
+        result = compaction.compact(snapshot["checkpoint"], rows, writer_collab.ROOTS)
+        if not integrated:
+            result = compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
+        sha = checkpoints.store(
+            "writer",
+            doc_id,
+            snapshot["head_rev"],
+            snapshot["head_chain"],
+            result,
+            {"ms": 1},
+            writer_collab.ROOTS,
+        )
+        return snapshot, result, sha
+
+    def test_a_checkpoint_row_gone_before_its_install_is_never_pointed_at(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        snapshot, result, sha = self.stored(node)
+        # Another job's failure clears the row it thinks is its own
+        frappe.db.sql("DELETE FROM `__writer_collab_checkpoint` WHERE `doc_id` = %s", self.doc_row(node).id)
+        frappe.db.commit()
+
+        checkpoints.install(
+            "writer",
+            self.doc_row(node).id,
+            snapshot["lineage"],
+            2,
+            snapshot["head_chain"],
+            sha,
+            result,
+            {"ms": 1},
+        )
+
+        self.assertEqual(self.doc_row(node).checkpoint_rev, 0)
+        self.assertEqual(self.opened(node)[2], "one two")
+        self.compact(node)
+        self.assertEqual((self.doc_row(node).checkpoint_rev, self.opened(node)[2]), (2, "one two"))
+
+    def test_an_attempt_killed_after_storing_is_finished_by_the_next(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        doc_id = self.doc_row(node).id
+        site = frappe.local.site
+        pid = os.fork()
+        if pid == 0:
+            try:
+                frappe.init(site)
+                frappe.connect()
+                with patch.object(checkpoints, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)):
+                    writer_collab.compact(doc_id)
+            finally:
+                os._exit(0)
+        os.waitpid(pid, 0)
+        frappe.db.rollback()
+        self.release_places()
+        self.assertEqual((self.doc_row(node).checkpoint_rev, len(self.checkpoints_of(node))), (0, 1))
+
+        self.compact(node)
+
+        doc = self.doc_row(node)
+        [(through, state, integrated)] = self.checkpoints_of(node)
+        self.assertEqual((doc.checkpoint_rev, doc.integrated_rev, through, integrated), (2, 2, 2, 1))
+        self.assertEqual(self.text_of(state), "one two")
+
+    def test_a_left_over_open_base_is_replaced_by_an_integrated_result(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        self.stored(node, integrated=False)
+
+        self.compact(node)
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.checkpoint_rev, doc.integrated_rev), (2, 2))
+        self.assertEqual([integrated for _rev, _state, integrated in self.checkpoints_of(node)], [1])
+
+    def test_one_document_compacts_in_one_job_at_a_time(self):
+        self.addCleanup(self.release_places)
+        first = checkpoints.take_place("writer", "doc-a")
+
+        self.assertIsNone(checkpoints.take_place("writer", "doc-a"))
+        self.assertIsNotNone(checkpoints.take_place("writer", "doc-b"))
+        checkpoints.free_place(first)
+        self.assertIsNotNone(checkpoints.take_place("writer", "doc-a"))
+
+    def test_a_job_that_outlived_its_lease_frees_nothing_of_the_next(self):
+        self.addCleanup(self.release_places)
+        stale = checkpoints.take_place("writer", "doc-a")
+        self.release_places()  # the lease ran out
+        current = checkpoints.take_place("writer", "doc-a")
+
+        checkpoints.free_place(stale)
+
+        self.assertIsNone(checkpoints.take_place("writer", "doc-a"))
+        checkpoints.free_place(current)
+        self.assertIsNotNone(checkpoints.take_place("writer", "doc-a"))
 
     def opened(self, node: str) -> tuple[dict, list[int], str]:
         """What a tab opening now gets: the header, the revs sent as rows, and the text it shows."""
