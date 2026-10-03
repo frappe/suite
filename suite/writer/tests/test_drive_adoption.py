@@ -33,6 +33,7 @@ import dataclasses
 import io
 import json
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -370,6 +371,43 @@ class TestWriterDeclaration(UnitTestCase):
     def test_a_body_that_names_nothing_to_remap_is_left_alone(self):
         self.assertIsNone(writer._remap_body(body_with("other"), {"old": "new"}))
         self.assertIsNone(writer._remap_body(None, {"old": "new"}))
+
+
+class TestLegacyEmbedReferences(UnitTestCase):
+    def test_used_nodes_keeps_media_named_by_old_drive_embed_urls(self):
+        html = (
+            '<img src="/api/method/drive.api.embed.get_file_content?embed_name=first'
+            '&parent_entity_name=WR-1">'
+            '<img src="https://example.test/api/method/suite.drive.api.embed.get_file_content'
+            '?embed_name=second&parent_entity_name=WR-1&download=1">'
+            '<img src="/api/method/drive.api.embed.get_file_content'
+            '?parent_entity_name=WR-1&embed_name=third">'
+        )
+        with patch.object(writer, "frappe") as frappe_mock:
+            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+            self.assertEqual(writer.used_nodes("WR-1"), {"first", "second", "third"})
+        frappe_mock.db.get_value.assert_called_once_with(DOCTYPE, "WR-1", ("content", "html"), as_dict=True)
+
+    def test_remap_changes_only_the_old_embed_media_id(self):
+        html = (
+            '<img src="/api/method/drive.api.embed.get_file_content?embed_name=old'
+            '&parent_entity_name=old&download=1">'
+            '<img src="https://example.test/api/method/suite.drive.api.embed.get_file_content'
+            '?embed_name=old&parent_entity_name=WR-1">'
+            '<img src="/api/method/drive.api.embed.get_file_content?embed_name=file'
+            '&parent_entity_name=file">'
+            '<img src="/api/method/drive.api.embed.get_file_content'
+            '?parent_entity_name=old&embed_name=old">'
+        )
+        expected = html.replace("embed_name=old", "embed_name=new").replace(
+            "embed_name=file", "embed_name=other"
+        )
+        with patch.object(writer, "frappe") as frappe_mock:
+            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+            writer.remap_media("WR-1", {"old": "new", "file": "other"})
+        frappe_mock.db.set_value.assert_called_once_with(
+            DOCTYPE, "WR-1", {"html": expected}, update_modified=False
+        )
 
 
 class TestWriterAfterActivation(IntegrationTestCase):

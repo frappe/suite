@@ -51,9 +51,36 @@ describe('Writer media on a Drive session', () => {
   it('reads the media node id from both stored spellings', () => {
     expect(mediaNodeId(STORED)).toBe('media-1')
     expect(mediaNodeId('/api/method/writer.api.embed.get?id=abc_9&x=1')).toBe('abc_9')
+    expect(
+      mediaNodeId(
+        '/api/method/drive.api.embed.get_file_content?embed_name=media-3&parent_entity_name=doc-1',
+      ),
+    ).toBe('media-3')
+    expect(
+      mediaNodeId(
+        '/api/method/suite.drive.api.embed.get_file_content?parent_entity_name=doc-1&embed_name=media-4',
+      ),
+    ).toBe('media-4')
     expect(mediaNodeId('https://example.com/cat.png', 'media-2')).toBe('media-2')
     expect(mediaNodeId('https://example.com/cat.png')).toBeNull()
     expect(mediaNodeId(null)).toBeNull()
+  })
+
+  it('shows an old Drive embed through the session without rewriting stored content', async () => {
+    const stored =
+      '/api/method/drive.api.embed.get_file_content?embed_name=media-1&parent_entity_name=doc-1'
+    const { media, src, opened } = fakeMedia()
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions: [Document, Paragraph, Text, Picture, DriveMedia.configure({ media })],
+      content: `<img src="${stored}">`,
+    })
+    await flush()
+    src.value = '/f/blob-1?signature=a'
+    await flush()
+    expect(opened).toEqual(['media-1'])
+    expect(editor.view.dom.querySelector('img')!.getAttribute('src')).toBe(src.value)
+    expect(editor.getJSON().content?.[0].attrs?.src).toBe(stored)
   })
 
   it('shows the signed URL, follows a refresh, and keeps the stored URL in the document', async () => {

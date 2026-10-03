@@ -99,13 +99,14 @@ VERSION_MIME = "application/json"
 # own. `Writer Document.content` and `.html` are both LONGTEXT.
 MAX_VERSION_BYTES = 64 * 1024 * 1024
 
-# A media reference inside a body is a node id carried in an attribute. Both
-# spellings are read: the embed URL Writer has always written, with and without
-# the `suite.` prefix the standalone app used, and the plain node attribute the
-# Drive media route uses.
+# A media reference inside a body is a node id carried in an attribute. Three
+# spellings are read: the embed URL Writer writes, the old Drive embed URL
+# (`embed_name=`, relative or absolute), both with and without the `suite.`
+# prefix the standalone apps used, and the plain node attribute the Drive
+# media route uses.
 #
-# The two spellings are not symmetrical. In `html` an attribute is text, so
-# both patterns read it. In the Yjs body an attribute is a name and a value
+# The URLs and the plain attribute are not symmetrical. In `html` an attribute
+# is text, so every pattern reads it. In the Yjs body an attribute is a name and a value
 # held apart, and the plain spelling puts the bare id in the value with
 # `data-node` nowhere in it, so the pattern alone would never see it. That is
 # what `_attribute_ids` and `_remapped_attribute` are for.
@@ -113,6 +114,7 @@ NODE_ATTRIBUTE = "data-node"
 MEDIA_ID = r"[A-Za-z0-9_-]{1,140}"
 MEDIA_PATTERNS = (
     re.compile(rf"(?:suite\.)?writer\.api\.embed\.get\?id=({MEDIA_ID})"),
+    re.compile(rf"(?:suite\.)?drive\.api\.embed\.get_file_content\?[^\"'<>\s]*?\bembed_name=({MEDIA_ID})"),
     re.compile(rf'{NODE_ATTRIBUTE}="({MEDIA_ID})"'),
 )
 BARE_MEDIA_ID = re.compile(MEDIA_ID)
@@ -354,7 +356,12 @@ def _remap_text(text: str, mapping: dict[str, str]) -> str:
     def swap(match: re.Match) -> str:
         found = match.group(1)
         replacement = mapping.get(found)
-        return match.group(0) if replacement is None else match.group(0).replace(found, replacement)
+        if replacement is None:
+            return match.group(0)
+        start, end = match.span(1)
+        start -= match.start()
+        end -= match.start()
+        return match.group(0)[:start] + replacement + match.group(0)[end:]
 
     for pattern in MEDIA_PATTERNS:
         text = pattern.sub(swap, text)

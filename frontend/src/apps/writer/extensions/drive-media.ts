@@ -12,17 +12,20 @@ export const DOCUMENT_MEDIA: InjectionKey<DocumentMedia> = Symbol('writer docume
 
 const MEDIA_ID = '[A-Za-z0-9_-]{1,140}'
 const EMBED_URL = new RegExp(`(?:suite\\.)?writer\\.api\\.embed\\.get\\?id=(${MEDIA_ID})`)
+const DRIVE_EMBED_URL = new RegExp(
+  `(?:suite\\.)?drive\\.api\\.embed\\.get_file_content\\?[^"'<>\\s]*?\\bembed_name=(${MEDIA_ID})`,
+)
 const BARE_ID = new RegExp(`^${MEDIA_ID}$`)
 const MEDIA_ELEMENTS = 'img, video'
 
 /**
  * The Drive node a stored media reference names, or null. Writer names media
- * by node id in one of two spellings, the same two `suite/writer/drive.py`
- * reads: the embed URL in `src`, or a bare id in `data-node`.
+ * by node id in a Writer or old Drive embed URL in `src`, or a bare id in
+ * `data-node`. `suite/writer/drive.py` reads the same forms.
  */
 export function mediaNodeId(src: string | null, dataNode?: string | null): string | null {
   if (dataNode && BARE_ID.test(dataNode)) return dataNode
-  return src?.match(EMBED_URL)?.[1] ?? null
+  return src?.match(EMBED_URL)?.[1] ?? src?.match(DRIVE_EMBED_URL)?.[1] ?? null
 }
 
 /**
