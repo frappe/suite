@@ -62,27 +62,25 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
 }
 
 /**
- * Every person a mention can name, from `GET /api/suite/people`, which any
- * Suite user may call. The route pages users and groups together, so this
- * walks every page and keeps the users.
+ * The first page of people who match `query`, from `GET /api/suite/people`,
+ * which any Suite user may call. With no query it is the first page of
+ * everyone. The route pages users and groups together, so groups are dropped.
  */
-export async function listUsers(): Promise<WriterUser[]> {
-  const users: WriterUser[] = []
-  let cursor: string | undefined
-  do {
-    const page = await transport.request(suiteApi.people_get, cursor ? { cursor } : {})
-    for (const row of page.rows) {
-      if (row.kind !== 'user') continue
-      users.push({
-        name: row.name,
-        email: row.email,
-        full_name: row.full_name ?? '',
-        user_image: row.user_image,
-        value: row.email,
-        label: (row.full_name || row.email).trimEnd(),
-      })
-    }
-    cursor = page.next_cursor ?? undefined
-  } while (cursor)
-  return users
+export async function searchUsers(query: string): Promise<WriterUser[]> {
+  const q = query.trim()
+  const page = await transport.request(suiteApi.people_get, q ? { q } : {})
+  return page.rows.flatMap((row) =>
+    row.kind === 'user'
+      ? [
+          {
+            name: row.name,
+            email: row.email,
+            full_name: row.full_name ?? '',
+            user_image: row.user_image,
+            value: row.email,
+            label: (row.full_name || row.email).trimEnd(),
+          },
+        ]
+      : [],
+  )
 }

@@ -75,7 +75,8 @@ import {
 } from 'frappe-ui/editor'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
-import { useUsers } from '@/apps/writer/composables/useUsers'
+import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
+import { MentionSearch } from '@/apps/writer/extensions/mention-search'
 
 import { BulletListItem, OrderedListItem } from './core-editor/menu-buttons'
 
@@ -111,7 +112,10 @@ watch(
 )
 
 const { users } = useUsers()
-const extensions = [RichTextKit.configure({ mention: { items: () => users.value } })]
+const extensions = [
+  RichTextKit.configure({ mention: { items: () => users.value } }),
+  MentionSearch.configure({ onQuery: searchMentions }),
+]
 
 const bubbleItems = [
   Bold,

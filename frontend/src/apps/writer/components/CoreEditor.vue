@@ -102,7 +102,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { computed, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import { hasDefaultDocumentTitle } from '@/apps/drive'
-import { useUsers } from '@/apps/writer/composables/useUsers'
+import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
 import emitter from '@/apps/writer/emitter'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
@@ -110,6 +110,7 @@ import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
 import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import MediaDownload from '@/apps/writer/extensions/media-download'
+import { MentionSearch } from '@/apps/writer/extensions/mention-search'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
@@ -253,6 +254,7 @@ const editorExtensions = [
     // The Paint Styles button arms the format painter.
     styleClipboard: {},
   }),
+  MentionSearch.configure({ onQuery: searchMentions }),
   ...COMMON_EXTENSIONS,
   CoreEditorExtension,
   PageBreakExtension,

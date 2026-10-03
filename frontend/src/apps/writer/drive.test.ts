@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { transport } from '@/platform/transport'
 
-import { listUsers } from './drive'
+import { searchUsers } from './drive'
 
 vi.mock('@/platform/transport', () => ({ transport: { request: vi.fn() } }))
 
@@ -14,26 +14,34 @@ const user = (name: string, full_name: string | null) => ({
   user_image: null,
 })
 
-describe('mention users', () => {
+const page = {
+  rows: [user('asha@x.test', 'Asha '), { kind: 'group', name: 'Design', member_count: 2 }],
+  next_cursor: '20',
+}
+
+describe('mention search', () => {
   beforeEach(() => vi.mocked(transport.request).mockReset())
 
-  it('lists the users on every page of the people route and leaves out groups', async () => {
-    vi.mocked(transport.request)
-      .mockResolvedValueOnce({
-        rows: [user('asha@x.test', 'Asha '), { kind: 'group', name: 'Design', member_count: 2 }],
-        next_cursor: '20',
-      })
-      .mockResolvedValueOnce({ rows: [user('ben@x.test', null)], next_cursor: null })
+  it('sends the typed text as the query and fetches one page of users only', async () => {
+    vi.mocked(transport.request).mockResolvedValue(page)
 
-    const users = await listUsers()
+    const found = await searchUsers(' as ')
 
-    expect(users.map((u) => [u.name, u.value, u.label])).toEqual([
+    expect(found.map((u) => [u.name, u.value, u.label])).toEqual([
       ['asha@x.test', 'asha@x.test', 'Asha'],
-      ['ben@x.test', 'ben@x.test', 'ben@x.test'],
     ])
-    expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([
-      {},
-      { cursor: '20' },
-    ])
+    expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([{ q: 'as' }])
+  })
+
+  it('asks for the first page of everyone when nothing is typed', async () => {
+    vi.mocked(transport.request).mockResolvedValue({
+      rows: [user('ben@x.test', null)],
+      next_cursor: null,
+    })
+
+    const found = await searchUsers('')
+
+    expect(found[0]?.label).toBe('ben@x.test')
+    expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([{}])
   })
 })
