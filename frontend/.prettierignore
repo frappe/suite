@@ -1,4 +1,6 @@
-# Generated from contract.json by `yarn generate:contract`.
+# Written by `suite.composition.contract.write_all`, and generated from it by
+# `yarn generate:contract`. CI compares both with fresh output.
+src/**/contract.json
 src/**/generated.ts
 auto-imports.d.ts
 components.d.ts

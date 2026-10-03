@@ -39,6 +39,7 @@ repos:
         files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
         exclude: |
           (?x)^frontend/(
+              src/.*/contract\.json|
               src/.*/generated\.ts|
               auto-imports\.d\.ts|
               components\.d\.ts|
