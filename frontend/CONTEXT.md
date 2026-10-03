@@ -113,19 +113,22 @@ Product-neutral account, site, user or invitation data owned by Suite and
 consumed by the shell or products.
 _Avoid_: Shell endpoint, Shared app data
 
-**Flip**:
-The moment old URLs start to redirect to the new pages for a set of areas.
-Under `/drive` the flip key selects the route table instead.
-There are two: the shell flip (Mail, Meet, Calendar) and the files flip
-(Home, Drive, documents). Old pages stay until they are deleted after the
-files flip.
+**Flip** (historical):
+The staged switch from the old pages to the new ones, keyed by
+`suite_flip_shell` and `suite_flip_files` in the site config. Both keys and
+the old pages are deleted (Faris, 2026-10-03): the shell and the new Drive
+are always on, and rolling the migration back is a full backup restore. Old
+URLs reach the new pages through the backend's redirect table and
+`composition/redirects.ts`.
 _Avoid_: Cutover, Launch, Migration
 
-**Standalone chrome**:
-The Apps, Settings and Log out entries (and Meet's Theme submenu) that Mail,
-Calendar or Meet draws in its own sidebar header while its routes are
-outside the shell. Inside the shell the rail and the account menu replace
-them. It is deleted with the old pages.
+**Standalone chrome** (historical):
+The sidebar header, tab bars and Apps, Settings and Log out entries Mail,
+Calendar and Meet drew while their routes were outside the shell. Deleted
+with the flips: each product renders its sidebar through the platform's
+`<AreaSidebar>` and its header with frappe-ui's `PageHeader` and
+`PageHeaderMobile`, and the shell's rail, bottom nav and account menu carry
+the rest.
 _Avoid_: Legacy header, Old menu, Fallback chrome
 
 ## Flagged Ambiguities
@@ -134,9 +137,10 @@ _Avoid_: Legacy header, Old menu, Fallback chrome
   (`shell/useWorkspace.ts`, `WorkspaceSettings.vue`). The base prototype
   used it for a Drive Root. The prototype's switcher is removed; use
   "Drive Root", "Shared Root" or "Personal Root" for the Drive meaning.
-- **App**: `apps/registry.ts` and `SUITE_APPS` mean a product's code and
-  route prefix. In the shell's language a product is an Area only if it has a
-  rail item. Writer, Sheets and Slides are products without an area.
+- **App**: older docs use it for a product's code and route prefix. In the
+  shell's language a product is an Area only if it has a rail item
+  (`composition/appRegistry.ts` lists them). Writer, Sheets and Slides are
+  products without an area.
 
 ## Shell mount seam
 
@@ -146,5 +150,4 @@ page a fixed `h-full min-h-0 min-w-0 overflow-hidden` box so it owns
 scrolling. A fixed-size canvas can mount inside it without growing any shell
 ancestor. A page adds its own Area sidebar inside the box with the platform's
 `<AreaSidebar>`. `frame: 'none'` puts the page outside the shell: the Meet
-call and Mail's sign-in pages, and, while `suite_flip_shell` is off, Mail,
-Calendar and Meet (unified frontend spec §14.2).
+call and Mail's sign-in pages (unified frontend spec §14.2).

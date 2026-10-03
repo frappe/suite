@@ -52,18 +52,13 @@ const moduleGraphDebtGroups = [
     "owner": "Calendar frontend owner",
     "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
     "entries": [
-      "calendar/components/AppSidebar.vue|@/boot/session",
       "calendar/components/AppSidebar.vue|@/composables/accountSubmenu",
-      "calendar/components/AppSidebar.vue|@/composables/useAppSwitcher",
       "calendar/components/AppSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
-      "calendar/components/AppSidebar.vue|@/shell/settings/useSettingsDialog",
       "calendar/components/CommandPalette/CalendarFilterPanel.vue|@/apps/mail/components/Controls/ContactCombobox.vue",
       "calendar/components/CommandPalette/CalendarSearchResult.vue|@/components/HighlightedText.vue",
       "calendar/components/EventAlertList.vue|@/utils/calendarAlert",
-      "calendar/components/EventDetail.vue|@/assets/app-logos/meet.png",
       "calendar/components/EventDetail.vue|@/components/LinkifiedText.vue",
       "calendar/components/Modals/EventModal.vue|@/apps/meet/utils/request",
-      "calendar/components/Modals/EventModal.vue|@/assets/app-logos/meet.png",
       "calendar/components/Modals/EventModal.vue|@/composables/useScreenSize",
       "calendar/components/Modals/EventRepeatSettingsModal.vue|@/composables/useScreenSize",
       "calendar/components/Settings/AdvancedSettings.vue|@/components/CopyControl.vue",
@@ -80,13 +75,9 @@ const moduleGraphDebtGroups = [
       "calendar/components/Settings/ImportSettings.vue|@/utils/useChunkedUpload",
       "calendar/components/Settings/ParticipantIdentitySettings.vue|@/components/settings/AppSettingsBody.vue",
       "calendar/components/Settings/ParticipantIdentitySettings.vue|@/components/settings/AppSettingsHeader.vue",
-      "calendar/components/mobile/CalendarTabBar.vue|@/components/mobile/MobileAppTab.vue",
-      "calendar/components/mobile/CalendarTabBar.vue|@/components/mobile/mobileClasses",
-      "calendar/components/mobile/MobileEventForm.vue|@/assets/app-logos/meet.png",
       "calendar/components/mobile/MobileEventForm.vue|@/components/AdaptiveDropdown.vue",
       "calendar/components/mobile/MobileEventForm.vue|@/composables/useKeyboardInsets",
       "calendar/components/mobile/MobileEventForm.vue|@/utils/calendarAlert",
-      "calendar/components/mobile/MobileViewSheet.vue|@/components/mobile/mobileClasses",
       "calendar/pages/CalendarLayout.vue|@/composables/useScreenSize",
       "calendar/pages/CalendarView.vue|@/composables/useScreenSize",
       "calendar/pages/CalendarView.vue|@/stores/root",
@@ -100,56 +91,10 @@ const moduleGraphDebtGroups = [
     ]
   },
   {
-    "owner": "Drive frontend owners",
-    "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
-    "entries": [
-      "drive/legacy/components/DriveListRow.vue|@/boot/session",
-      "drive/legacy/components/DriveToolBar.vue|@/components/SortControl.vue",
-      "drive/legacy/components/ErrorPage.vue|@/boot/session",
-      "drive/legacy/components/FileTypePreview/PDFPreview.vue|@/utils/pdfjs",
-      "drive/legacy/components/GenericPage.test.ts|@/boot/session",
-      "drive/legacy/components/GenericPage.vue|@/boot/session",
-      "drive/legacy/components/Navbar.vue|@/boot/session",
-      "drive/legacy/components/Settings/BackendSettings.vue|@/components/settings/AppSettingsBody.vue",
-      "drive/legacy/components/Settings/BackendSettings.vue|@/components/settings/AppSettingsHeader.vue",
-      "drive/legacy/components/Settings/SettingsDialog.vue|@/components/settings/useCommonSettingsGroups",
-      "drive/legacy/components/Settings/SettingsDialog.vue|@/components/settings/types",
-      "drive/legacy/components/Settings/StorageSettings.vue|@/components/settings/AppSettingsBody.vue",
-      "drive/legacy/components/Settings/StorageSettings.vue|@/components/settings/AppSettingsHeader.vue",
-      "drive/legacy/components/Settings/WebDAVSettings.vue|@/components/CopyControl.vue",
-      "drive/legacy/components/Settings/WebDAVSettings.vue|@/components/settings/AppSettingsBody.vue",
-      "drive/legacy/components/Settings/WebDAVSettings.vue|@/components/settings/AppSettingsHeader.vue",
-      "drive/legacy/components/Sidebar.vue|@/boot/session",
-      "drive/legacy/components/Sidebar.vue|@/composables/useAppSwitcher",
-      "drive/legacy/components/Sidebar.vue|@/stores/root",
-      "drive/legacy/components/Sidebar.vue|@/utils/setupTheme",
-      "drive/legacy/components/StorageBar.vue|@/components/SidebarStorage.vue",
-      "drive/legacy/data/breadcrumbs.ts|@/boot/session",
-      "drive/legacy/pages/DriveLayout.vue|@/boot/session",
-      "drive/legacy/pages/DriveLayout.vue|@/stores/root",
-      "drive/legacy/pages/DriveLayout.vue|@/utils/setupTheme",
-      "drive/legacy/pages/File.vue|@/utils/documentTitle",
-      "drive/legacy/pages/Folder.vue|@/utils/documentTitle",
-      "drive/legacy/resources/permissions.js|@/apps/registry",
-      "drive/legacy/resources/permissions.js|@/boot/session",
-      "drive/legacy/router.ts|@/router",
-      "drive/legacy/routes.ts|@/boot/session",
-      "drive/legacy/routes.ts|@/utils/documentTitle",
-      "drive/legacy/routes.ts|@/utils/setupTheme",
-      "drive/legacy/socket.js|@/realtime",
-      "drive/legacy/ui/drive/components/ShareDialog.vue|@/boot/session",
-      "drive/legacy/utils/files.js|@/assets/app-logos/sheets.svg",
-      "drive/legacy/utils/files.js|@/assets/app-logos/slides.svg",
-      "drive/legacy/utils/files.js|@/assets/app-logos/writer.png",
-      "drive/legacy/utils/files.js|@/utils/session"
-    ]
-  },
-  {
     "owner": "Mail frontend owner",
     "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
     "entries": [
       "mail/components/AppSidebar.vue|@/composables/accountSubmenu",
-      "mail/components/AppSidebar.vue|@/composables/useAppSwitcher",
       "mail/components/AppSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
       "mail/components/AttachmentViewer.vue|@/utils/pdfjs",
       "mail/components/CommandPalette/MailSearchResult.vue|@/components/HighlightedText.vue",
@@ -197,10 +142,6 @@ const moduleGraphDebtGroups = [
       "mail/components/Settings/VacationResponseSettings.vue|@/components/settings/AppSettingsBody.vue",
       "mail/components/Settings/VacationResponseSettings.vue|@/components/settings/AppSettingsHeader.vue",
       "mail/components/ThreadHeader.vue|@/components/AdaptiveDropdown.vue",
-      "mail/components/mobile/MobileFolderSheet.vue|@/components/mobile/mobileClasses",
-      "mail/components/mobile/MobileTabBar.vue|@/components/mobile/MobileAppTab.vue",
-      "mail/components/mobile/MobileTabBar.vue|@/components/mobile/mobileClasses",
-      "mail/components/mobile/MobileTabBar.vue|@/stores/root",
       "mail/composables/useMailCommandPaletteSearch.ts|@/utils/session",
       "mail/pages/AddressBookView.vue|@/utils/documentTitle",
       "mail/pages/AddressBooksView.vue|@/utils/documentTitle",
@@ -249,11 +190,6 @@ const moduleGraphDebtGroups = [
     "owner": "Meet frontend owner",
     "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
     "entries": [
-      "meet/components/MeetSidebar.vue|../../../boot/session",
-      "meet/components/MeetSidebar.vue|@/composables/useAppSwitcher",
-      "meet/components/MeetSidebar.vue|@/shell/settings/useSettingsDialog",
-      "meet/components/MeetSidebar.vue|@/shell/CommandPaletteSidebarItem.vue",
-      "meet/components/MeetSidebar.vue|@/utils/setupTheme",
       "meet/components/MeetingPreview.vue|@/boot/session",
       "meet/components/MeetingToolbar.vue|@/stores/root",
       "meet/components/PreviewToolbar.vue|@/stores/root",
@@ -291,23 +227,13 @@ const moduleGraphDebtGroups = [
     "owner": "Sheets frontend owner",
     "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
     "entries": [
-      "sheets/components/SheetEditor/ShareDialog.vue|@/boot/session",
       "sheets/components/SheetEditor/index.vue|@/boot/session",
-      "sheets/components/SheetEditor/index.vue|@/composables/useAppSwitcher",
       "sheets/components/SheetEditor/index.vue|@/composables/useSettingsMenuOption",
       "sheets/components/SheetEditor/index.vue|@/composables/useThemeMenuOption",
       "sheets/components/SheetEditor/index.vue|@/stores/root",
       "sheets/components/SheetEditor/index.vue|@/utils/confirmLeave",
       "sheets/components/SheetEditor/index.vue|@/utils/documentTitle",
       "sheets/components/SheetEditor/useCollaboration.js|@/boot/session",
-      "sheets/pages/Home.vue|@/boot/session",
-      "sheets/pages/Home.vue|@/composables/useAppSwitcher",
-      "sheets/pages/Home.vue|@/composables/useSettingsMenuOption",
-      "sheets/pages/Home.vue|@/composables/useThemeMenuOption",
-      "sheets/pages/Home.vue|@/stores/root",
-      "sheets/pages/Home.vue|@/utils/setupTheme",
-      "sheets/pages/SheetEditor.vue|@/utils/setupTheme",
-      "sheets/pages/Trash.vue|@/utils/setupTheme"
     ]
   },
   {
@@ -317,15 +243,6 @@ const moduleGraphDebtGroups = [
       "shell/AppContainer.vue|@/boot/session",
       "shell/AppContainer.vue|@/stores/root",
       "shell/CommandPaletteSidebarItem.vue|@/stores/root",
-      "shell/InstallPrompt.vue|@/apps/registry",
-      "shell/LauncherView.vue|@/apps/calendar/stores/user",
-      "shell/LauncherView.vue|@/apps/meet/composables/useStartMeeting",
-      "shell/LauncherView.vue|@/apps/registry",
-      "shell/LauncherView.vue|@/assets/app-logos/settings.svg",
-      "shell/LauncherView.vue|@/composables/useThemeMenuOption",
-      "shell/LauncherView.vue|@/stores/root",
-      "shell/LauncherView.vue|@/utils/setupTheme",
-      "shell/SetupView.vue|@/apps/registry",
       "shell/SetupView.vue|@/utils/setupTheme",
       "shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue",
       "shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue",
@@ -335,10 +252,6 @@ const moduleGraphDebtGroups = [
       "shell/SuiteCommandPalette.vue|@/apps/calendar/stores/user",
       "shell/SuiteCommandPalette.vue|@/apps/calendar/utils/dayjs",
       "shell/SuiteCommandPalette.vue|@/apps/calendar/utils/eventTime",
-      "shell/SuiteCommandPalette.vue|@/apps/drive/legacy/components/DriveSearchResultIcon.vue",
-      "shell/SuiteCommandPalette.vue|@/apps/drive/legacy/components/DriveSearchResultModified.vue",
-      "shell/SuiteCommandPalette.vue|@/apps/drive/legacy/resources/files",
-      "shell/SuiteCommandPalette.vue|@/apps/drive/legacy/utils/files",
       "shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailFilterPanel.vue",
       "shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailSearchResult.vue",
       "shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue",
@@ -355,20 +268,8 @@ const moduleGraphDebtGroups = [
     "owner": "Slides frontend owner",
     "removal": "Remove each entry when the owner migrates that dependency to platform or a declared product package root.",
     "entries": [
-      "slides/SlidesShell.vue|@/utils/setupTheme",
-      "slides/components/EditorNavbar.vue|@/boot/session",
-      "slides/components/Navbar.vue|@/boot/session",
-      "slides/components/Navbar.vue|@/composables/useAppSwitcher",
-      "slides/components/Navbar.vue|@/composables/useSettingsMenuOption",
-      "slides/components/Navbar.vue|@/composables/useThemeMenuOption",
-      "slides/components/PresentationList.vue|@/components/SortControl.vue",
-      "slides/pages/Home.vue|@/stores/root",
-      "slides/pages/PresentationEditor.vue|@/stores/root",
-      "slides/pages/PresentationEditor.vue|@/utils/confirmLeave",
-      "slides/pages/PresentationEditor.vue|@/utils/documentTitle",
       "slides/pages/Slideshow.vue|@/utils/documentTitle",
       "slides/router.ts|@/router",
-      "slides/runtime.ts|@/boot/session",
       "slides/stores/presentation.js|@/boot/session",
       "slides/stores/presentation.js|@/utils/documentTitle",
       "slides/stores/presentationRestore.test.ts|@/boot/session",
@@ -385,27 +286,9 @@ const moduleGraphDebtGroups = [
     "entries": [
       "writer/components/CoreEditor.vue|@/boot/session",
       "writer/components/CoreEditor.vue|@/stores/root",
-      "writer/components/ErrorPage.vue|@/boot/session",
       "writer/components/FloatingComments.vue|@/boot/session",
-      "writer/components/Navbar.vue|@/boot/session",
-      "writer/components/Navbar.vue|@/composables/useAppSwitcher",
-      "writer/components/Navbar.vue|@/composables/useSettingsMenuOption",
-      "writer/components/Navbar.vue|@/composables/useThemeMenuOption",
-      "writer/components/RoundedListView.vue|@/boot/session",
       "writer/components/TextEditor.vue|@/boot/session",
-      "writer/composables/useDocument.ts|@/boot/session",
       "writer/composables/useYjs.ts|@/boot/session",
-      "writer/pages/Document.vue|@/boot/session",
-      "writer/pages/Document.vue|@/stores/root",
-      "writer/pages/Document.vue|@/utils/confirmLeave",
-      "writer/pages/Document.vue|@/utils/documentTitle",
-      "writer/pages/Documents.vue|@/utils/documentTitle",
-      "writer/pages/WriterLayout.vue|@/boot/session",
-      "writer/pages/WriterLayout.vue|@/stores/root",
-      "writer/pages/WriterLayout.vue|@/utils/setupTheme",
-      "writer/resources/index.js|@/apps/registry",
-      "writer/resources/index.js|@/boot/session",
-      "writer/router.ts|@/router"
     ]
   }
 ];
@@ -448,9 +331,6 @@ const unstableFrappeUIDebtGroups = [
       "mail/components/Settings/ScreenedEmailAddressSettings.vue|frappe-ui/experimental",
       "mail/components/Settings/VacationResponseSettings.vue|frappe-ui/experimental",
       "mail/components/ThreadHeader.vue|frappe-ui/experimental",
-      "mail/components/mobile/MobileFolderSheet.vue|frappe-ui/experimental",
-      "mail/components/mobile/MobileTabBar.vue|frappe-ui/experimental",
-      "mail/components/mobile/MobileTabBar.vue|frappe-ui/experimental#2",
       "mail/pages/AddressBookView.vue|frappe-ui/experimental",
       "mail/pages/AddressBooksView.vue|frappe-ui/experimental",
       "mail/pages/CalendarExchangesView.vue|frappe-ui/experimental",
@@ -500,41 +380,20 @@ const unstableFrappeUIDebtGroups = [
       "sheets/components/SheetEditor/PivotDialog.vue|frappe-ui/experimental",
       "sheets/components/SheetEditor/PivotFieldPicker.vue|frappe-ui/experimental",
       "sheets/components/SheetEditor/index.vue|frappe-ui/experimental",
-      "sheets/pages/Home.vue|frappe-ui/experimental",
-      "sheets/pages/Trash.vue|frappe-ui/experimental"
-    ]
-  },
-  {
-    "owner": "Writer frontend owner",
-    "removal": "Remove each entry when the owner migrates it to a stable frappe-ui export.",
-    "entries": [
-      "writer/utils/dialogs.ts|frappe-ui/src/components/Dialog/types"
     ]
   }
 ];
 
-// Legacy Drive calls outside `apps/drive/legacy` (ticket 017, Drive §11.7).
-// One exact, shrinking baseline: no name is permanent, so there is no allowlist.
-// An entry is `<file>|<dotted name>`, or `<file>|<legacy module>` for a module
-// that exists only to make a legacy call. Test files send no request and are
-// not scanned.
-const legacyCallDebtGroups = [
-  {
-    "owner": "Shell owner (upstream SuiteCommandPalette search)",
-    "removal": "Stage 15: palette search moves to GET /api/suite/drive/views/search before the deletion commit.",
-    "entries": [
-      "shell/SuiteCommandPalette.vue|suite.drive.api.files.search",
-      "shell/SuiteCommandPalette.vue|suite.drive.api.list.files"
-    ]
-  }
-];
+// Legacy Drive calls (ticket 017, Drive §11.7). The legacy Drive UI and its
+// `suite.drive.api` methods are deleted; this scan keeps any call from coming
+// back. The baseline is empty and only ever shrinks: an entry would be
+// `<file>|<dotted name>`. Test files send no request and are not scanned.
+const legacyCallDebtGroups = [];
 // A plain substring scan over the whole source text, comments included, so a
 // template string such as `suite.drive.api.${name}` is caught too. The dotted
 // name that follows, when there is one, makes the baseline key readable. A name
 // split across a concatenation ('suite.drive.' + 'api') is out of scope.
 const LEGACY_CALL = /suite\.drive\.api(?:\.[A-Za-z_]\w*)*/g;
-// Legacy modules whose only job is a legacy call. Importing one is a call.
-const legacyCallModules = new Set(["apps/drive/legacy/sdk"]);
 
 function buildBaseline(groups, label) {
   const baseline = new Map();
@@ -635,14 +494,6 @@ function graphViolation(source, target, specifier) {
   const to = target.layer;
   if (from.kind === "legacy") return null;
 
-  if (from.kind === "product"
-    && from.product === "drive"
-    && ["files", "client"].includes(source.split("/")[2])
-    && (target.relative === "apps/drive/legacy"
-      || target.relative.startsWith("apps/drive/legacy/"))) {
-    return "Drive Files and client code must not import Drive legacy code";
-  }
-
   if (from.kind === "composition") {
     if (["composition", "shell", "platform"].includes(to.kind)) return null;
     if (to.kind === "product" && rootProductImport(target, specifier)) return null;
@@ -707,28 +558,15 @@ function scan() {
   return { boundary, frappeUI };
 }
 
-const isLegacyDrive = (relative) => relative === "apps/drive/legacy" || relative.startsWith("apps/drive/legacy/");
 const isTestFile = (relative) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(relative);
 
 /** Legacy calls in one file. `relative` is under `src`, or `suite/public/js/...` for Desk code. */
 function legacyCallsInSource(relative, source) {
-  if (isLegacyDrive(relative) || isTestFile(relative)) return [];
+  if (isTestFile(relative)) return [];
   const found = [];
   const lineAt = (index) => source.slice(0, index).split("\n").length;
   for (const match of source.matchAll(LEGACY_CALL)) {
     found.push({ path: displayPath(relative), line: lineAt(match.index), specifier: match[0], reason: "calls a legacy Drive method" });
-  }
-  if (relative.startsWith("suite/")) return found;
-  const file = path.join(sourceRoot, relative);
-  for (const unit of sourceUnits(file, source)) {
-    for (const item of moduleSpecifiers(unit.source, relative)) {
-      const target = targetFor(file, item.specifier);
-      if (!target || !legacyCallModules.has(target.relative.replace(/\.[cm]?[jt]s$/, ""))) continue;
-      found.push({
-        path: displayPath(relative), line: item.line + unit.lineOffset,
-        specifier: item.specifier, reason: "imports a module that calls a legacy Drive method",
-      });
-    }
   }
   return found;
 }
@@ -763,9 +601,6 @@ function selfTest() {
     ["shell/newFeature.ts", "import { check } from '@/apps/drive'\n", 1],
     ["platform/newFeature.ts", "import Shell from '@/shell/Shell.vue'\n", 1],
     ["composition/newFeature.ts", "import routes from '@/apps/drive/routes'\n", 1],
-    ["apps/drive/files/newFeature.ts", "import routes from '../legacy/routes'\n", 1],
-    ["apps/drive/client/newFeature.ts", "import routes from '@/apps/drive/legacy/routes'\n", 1],
-    ["apps/drive/files/newFeature.ts", "import legacy from '@/apps/drive/legacy'\n", 1],
   ];
   for (const [relative, source, count] of cases) {
     if (violationsInSource(relative, source).boundary.length !== count)
@@ -779,10 +614,8 @@ function selfTest() {
     throw new Error("Import-boundary self-test did not reject unstable frappe-ui");
   const legacyCases = [
     ["apps/writer/newFeature.ts", "call('suite.drive.api.files.track_visit')\n", 1],
-    ["apps/drive/legacy/api.ts", "call('suite.drive.api.files.track_visit')\n", 0],
     ["apps/writer/newFeature.test.ts", "expect(calls).not.toContain('suite.drive.api.files.track_visit')\n", 0],
     ["suite/public/js/Picker.vue", "<script>frappe.call('suite.drive.api.list.files')</script>\n", 1],
-    ["apps/slides/newFeature.ts", "import { getFile } from '@/apps/drive/legacy/sdk'\n", 1],
     ["apps/writer/newFeature.ts", "fetch('/api/suite/drive/nodes/n1/visit')\n", 0],
     ["apps/writer/newFeature.ts", "const method = `suite.drive.api.files.get`\n", 1],
     ["apps/writer/newFeature.ts", "call(`suite.drive.api.${module}.${name}`)\n", 1],

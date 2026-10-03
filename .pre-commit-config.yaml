@@ -32,6 +32,34 @@ repos:
 
   - repo: local
     hooks:
+      - id: prettier-frontend
+        name: Prettier (frontend)
+        entry: bash -c 'cd frontend && ../node_modules/.bin/prettier --write "${@/#frontend\//}"' --
+        language: system
+        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
+        exclude: |
+          (?x)^frontend/(
+              src/.*/generated\.ts|
+              auto-imports\.d\.ts|
+              components\.d\.ts|
+              public/.*
+          )$
+
+      # Staged files only: autofixes are applied, and the baseline comparison
+      # is limited to these files. CI runs the whole tree.
+      - id: eslint-frontend
+        name: ESLint (frontend)
+        entry: node frontend/scripts/lint.mjs --fix
+        language: system
+        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue)$
+        exclude: |
+          (?x)^frontend/(
+              src/.*/generated\.ts|
+              auto-imports\.d\.ts|
+              components\.d\.ts|
+              public/.*
+          )$
+
       - id: knip-e2e
         name: Knip (E2E)
         entry: yarn knip:e2e

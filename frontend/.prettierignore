@@ -1,0 +1,17 @@
+# Generated from contract.json by `yarn generate:contract`.
+src/**/generated.ts
+auto-imports.d.ts
+components.d.ts
+
+# Build output and dependencies.
+dist/
+dist-recorder/
+node_modules/
+test-results/
+coverage/
+
+# Vendored or binary assets.
+public/
+
+# Prose keeps its own line breaks.
+*.md

@@ -2,14 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+
+import { compareBaseline, frontendRoot } from "./baseline.mjs";
 
 // Type-checks the unified frontend: the folders `tsconfig.typecheck.json`
 // includes. The compiler also reads every legacy file those folders import,
-// and reports errors there too. This script fails only on errors inside the
-// included folders, so legacy code can move to strict types one folder at a time.
+// and reports errors there too. Any error inside the included folders fails
+// the check. Errors outside them are counted per file against the shrinking
+// baseline in `baselines/typecheck.json`, so legacy code can move to strict
+// types one file at a time and never gain an error unnoticed.
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const configName = "tsconfig.typecheck.json";
 const config = JSON.parse(fs.readFileSync(path.join(frontendRoot, configName), "utf8"));
 
@@ -55,20 +57,27 @@ if (run.status !== 0 && !errors.some((error) => diagnostic.test(error[0]))) {
   abort(`vue-tsc exited with status ${run.status} and printed no diagnostics.`);
 }
 
-const fileOf = (error) => error[0].match(diagnostic)?.[1];
+const fileOf = (error) => error[0].match(diagnostic)?.[1]?.replaceAll("\\", "/");
 // Output that is not a file diagnostic (a config error, say) is always in scope.
-const inScope = errors.filter((error) => {
+const inScope = [];
+const outside = new Map();
+for (const error of errors) {
   const file = fileOf(error);
-  return !file || scope.some((pattern) => pattern.test(file.replaceAll("\\", "/")));
-});
-const outside = errors.length - inScope.length;
+  if (!file || scope.some((pattern) => pattern.test(file))) {
+    inScope.push(error);
+    continue;
+  }
+  if (!outside.has(file)) outside.set(file, []);
+  outside.get(file).push(error[0]);
+}
 
 if (inScope.length) {
   console.error(inScope.map((error) => error.join("\n")).join("\n"));
-  console.error(`\nTypecheck failed: ${inScope.length} errors in scope (${outside} outside scope ignored).`);
+  console.error(`\nTypecheck failed: ${inScope.length} errors in scope.`);
   process.exit(1);
 }
-console.log(`Typecheck passed (0 errors in scope; ${outside} outside scope ignored).`);
+console.log("Typecheck passed (0 errors in scope).");
+if (compareBaseline("out-of-scope type error", outside, "typecheck.json")) process.exit(1);
 
 // Fails the check when vue-tsc did not finish, with the end of what it printed.
 function abort(message) {

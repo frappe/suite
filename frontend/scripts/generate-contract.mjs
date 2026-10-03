@@ -38,12 +38,22 @@ function generate(contract, source) {
     const name = uniqueName(pascal(operation.id), names)
     const inputSchema = combineInputSchemas(operation)
     const outputSchema = operation.output ?? {}
+    // A stream row moves raw bytes: a PUT takes them in the input's `chunk`
+    // field, the one the platform upload helper fills, and a GET answers them.
+    const uploads = operation.stream === true && operation.method !== 'GET'
+    const downloads = operation.stream === true && operation.method === 'GET'
+    if (uploads) {
+      inputSchema.properties.chunk = {}
+      inputSchema.required.push('chunk')
+    }
     const inputType = `${name}Input`
     const outputType = `${name}Output`
     const errorType = `${name}Error`
     const variable = `operation${name}`
-    declarations.push(`export type ${inputType} = ${schemaType(inputSchema, inputSchema)}`)
-    declarations.push(`export type ${outputType} = ${schemaType(outputSchema, outputSchema)}`)
+    declarations.push(
+      `export type ${inputType} = ${schemaType(inputSchema, inputSchema)}${uploads ? ' & { chunk: Blob }' : ''}`,
+    )
+    declarations.push(`export type ${outputType} = ${downloads ? 'Blob' : schemaType(outputSchema, outputSchema)}`)
     declarations.push(
       `export type ${errorType} = ${operation.errors?.length ? operation.errors.map(JSON.stringify).join(' | ') : 'never'}`,
     )
@@ -56,9 +66,9 @@ function generate(contract, source) {
   pathParams: ${JSON.stringify(operation.pathParams ?? [])},
   nodeParams: ${JSON.stringify(operation.nodeParams ?? [])},
   entity: ${JSON.stringify(operation.entity ?? null)},
-  errors: ${JSON.stringify(operation.errors ?? [])},
+  errors: ${JSON.stringify(operation.errors ?? [])},${uploads ? "\n  body: 'chunk'," : ''}
   validateInput(value): asserts value is ${inputType} { assertSchema(value, ${JSON.stringify(inputSchema)}, '${operation.id} input') },
-  validateOutput(value): asserts value is ${outputType} { assertSchema(value, ${JSON.stringify(outputSchema)}, '${operation.id} output') },
+  validateOutput(value): asserts value is ${outputType} { ${downloads ? 'void value' : `assertSchema(value, ${JSON.stringify(outputSchema)}, '${operation.id} output')`} },
 }`)
     leaves.push({ path: operation.id.split('.'), variable })
   }

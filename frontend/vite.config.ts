@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from 'async_hooks'
 import fs from 'fs'
 import path from 'path'
 
@@ -7,7 +6,6 @@ import frappeui from 'frappe-ui/vite'
 import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-import { devBootFlags } from './src/platform/boot/devFlips'
 
 // Local frappe-ui work: when the submodule is checked out, public component
 // imports resolve to its source instead of the pinned package, so edits show up
@@ -66,42 +64,6 @@ const serveNoiseSuppressionAssets = () => {
 }
 
 /**
- * frappe-ui injects the server boot only into the production build, so under
- * Vite dev the flip flags are missing and the rail is empty. This sets the two
- * flip flags from the site config on every HTML request, so a `bench
- * set-config` applies on reload. It sets nothing else: the dev page must still
- * read as having no server boot.
- */
-const serveDevBootFlags = () => {
-  // The site is the request host, as in Frappe and the frappe-ui proxy.
-  // transformIndexHtml gets no request, so a middleware carries the host to it.
-  const requestHost = new AsyncLocalStorage<string>()
-  const readConfig = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : {})
-  // The bench is the nearest folder above with `sites` and `apps` (a worktree sits deeper than the app).
-  let bench = __dirname
-  while (!(fs.existsSync(path.join(bench, 'sites')) && fs.existsSync(path.join(bench, 'apps'))) && bench !== path.dirname(bench)) {
-    bench = path.dirname(bench)
-  }
-  return {
-    name: 'suite-dev-boot-flags',
-    apply: 'serve' as const,
-    configureServer(server: { middlewares: { use: (fn: (req: { headers: { host?: string } }, res: unknown, next: () => void) => void) => void } }) {
-      server.middlewares.use((req, _res, next) => requestHost.run(req.headers.host?.split(':')[0] ?? '', next))
-    },
-    transformIndexHtml() {
-      const site = requestHost.getStore()
-      if (!site || site.includes('/') || site.startsWith('.')) return
-      const flags = devBootFlags(
-        readConfig(path.join(bench, 'sites/common_site_config.json')),
-        readConfig(path.join(bench, 'sites', site, 'site_config.json')),
-      )
-      const script = Object.entries(flags).map(([flag, on]) => `window[${JSON.stringify(flag)}] = ${on};`).join(' ')
-      return [{ tag: 'script', children: script, injectTo: 'head-prepend' as const }]
-    },
-  }
-}
-
-/**
  * frappe-ui's `codeLanguages` plugin adds an esbuild plugin to dependency
  * pre-bundling. Vite 8 pre-bundles with Rolldown, and its esbuild compat layer
  * throws "Not implemented" for the `build.resolve` and `initialOptions.absWorkingDir`
@@ -148,7 +110,6 @@ export default defineConfig(({ mode }) => ({
     // Do not reintroduce @workadventure/noise-suppression/vite — that path
     // re-pulls the processor into the Rollup graph via import.meta.url.
     serveNoiseSuppressionAssets(),
-    serveDevBootFlags(),
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
@@ -267,6 +228,30 @@ export default defineConfig(({ mode }) => ({
       '@tiptap/pm/state',
       '@tiptap/pm/tables',
       '@tiptap/pm/view',
+      // The same for CodeMirror, which frappe-ui's code editor imports. Vite
+      // never discovers a dep from an importer inside node_modules, so without
+      // this list `@codemirror/language` and `@lezer/highlight` load raw for
+      // frappe-ui, while the app's optimized `@codemirror/lang-javascript`
+      // bundles its own copy. A grammar from one copy and a highlighter from
+      // the other produce no token spans, so TypeScript previews show plain
+      // text. List every package so they all share one pre-bundled copy.
+      '@codemirror/autocomplete',
+      '@codemirror/commands',
+      '@codemirror/language',
+      '@codemirror/search',
+      '@codemirror/state',
+      '@codemirror/view',
+      '@lezer/highlight',
+      '@codemirror/lang-css',
+      '@codemirror/lang-html',
+      '@codemirror/lang-javascript',
+      '@codemirror/lang-json',
+      '@codemirror/lang-markdown',
+      '@codemirror/lang-python',
+      '@codemirror/lang-sass',
+      '@codemirror/lang-sql',
+      '@codemirror/lang-xml',
+      '@codemirror/lang-yaml',
     ],
     exclude: mode === 'production' ? [] : ['frappe-ui'],
   },
